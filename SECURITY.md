@@ -27,7 +27,6 @@ This repo enforces:
 - Weekly full-history gitleaks scan in CI
 - Supply-chain scanning via `cargo-deny` and `cargo-audit`
 - Dependabot alerts and automated security updates
-- OpenSSF Scorecard analysis (applicable checks only — private repo)
 - Egress-blocked CI runners via `step-security/harden-runner` (Linux jobs)
 - Codeowner review required on `.github/`, security docs, and dependency
   manifests
