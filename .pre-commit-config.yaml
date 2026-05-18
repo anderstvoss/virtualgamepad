@@ -1,11 +1,13 @@
+minimum_pre_commit_version: "3.5.0"
+
 repos:
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.24.0
+    rev: 2ca41cc1372d1e939a6a879f18cdc19fc1cac1ce  # frozen: v8.30.0
     hooks:
       - id: gitleaks
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
     hooks:
       - id: check-yaml
       - id: check-toml
@@ -61,7 +63,7 @@ repos:
         name: block private storage URIs
         language: pygrep
         types: [text]
-        entry: '(s3://[A-Za-z0-9._-]+|gs://[A-Za-z0-9._-]+|azure://[A-Za-z0-9._/-]+)'
+        entry: '(s3://[A-Za-z0-9._-]+|gs://[A-Za-z0-9._-]+|gcs://[A-Za-z0-9._-]+|azure://[A-Za-z0-9._/-]+|wasbs?://[A-Za-z0-9._/-]+|abfss?://[A-Za-z0-9._/-]+|oss://[A-Za-z0-9._/-]+)'
         exclude: '^\.pre-commit-config\.yaml$'
 
       - id: block-local-network-targets
