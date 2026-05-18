@@ -24,10 +24,12 @@ This repo enforces:
 - Pre-commit secret scanning (gitleaks) plus a suite of custom blockers for
   env files, private keys, credentials, local paths, private IPs, cloud
   storage URIs, and binary artifacts
+- Pre-push: gitleaks full-tree scan + tracked-file blocker + local-paths
+  guard + `cargo deny check` + `cargo audit`
 - Weekly full-history gitleaks scan in CI
-- Supply-chain scanning via `cargo-deny` and `cargo-audit`
 - Dependabot alerts and automated security updates
-- OpenSSF Scorecard analysis (applicable checks only — private repo)
-- Egress-blocked CI runners via `step-security/harden-runner` (Linux jobs)
 - Codeowner review required on `.github/`, security docs, and dependency
   manifests
+
+Linux-applicable CI gates run on developer machines via pre-commit and
+pre-push; GitHub Actions covers only macOS and Windows compatibility.
