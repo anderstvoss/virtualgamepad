@@ -16,3 +16,14 @@ Include:
 - Reproduction steps
 - Impact
 - Suggested fix, if known
+
+## Defensive Posture
+
+This repo enforces:
+
+- GitHub secret scanning + push protection
+- Branch protection on `main` (signed commits, required reviews, required status checks)
+- Pre-commit secret scanning (gitleaks) and pattern blockers
+- Supply-chain scanning (cargo-deny, cargo-audit, dependency-review-action)
+- OpenSSF Scorecard
+- Egress-blocked CI runners (step-security/harden-runner)
