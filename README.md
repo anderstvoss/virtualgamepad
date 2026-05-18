@@ -56,4 +56,6 @@ Do not commit `.env` or other local configuration files.
 
 ## Security
 
-See `SECURITY.md`.
+See `SECURITY.md`. For the full private/public split and the
+end-to-end setup procedure (reusable across projects), see
+[`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).

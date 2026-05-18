@@ -33,3 +33,6 @@ This repo enforces:
 
 Linux-applicable CI gates run on developer machines via pre-commit and
 pre-push; GitHub Actions covers only macOS and Windows compatibility.
+
+For the full private/public split and the end-to-end setup procedure,
+see [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).
