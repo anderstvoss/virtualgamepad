@@ -21,9 +21,13 @@ Include:
 
 This repo enforces:
 
-- GitHub secret scanning + push protection
-- Branch protection on `main` (signed commits, required reviews, required status checks)
-- Pre-commit secret scanning (gitleaks) and pattern blockers
-- Supply-chain scanning (cargo-deny, cargo-audit, dependency-review-action)
-- OpenSSF Scorecard
-- Egress-blocked CI runners (step-security/harden-runner)
+- Pre-commit secret scanning (gitleaks) plus a suite of custom blockers for
+  env files, private keys, credentials, local paths, private IPs, cloud
+  storage URIs, and binary artifacts
+- Weekly full-history gitleaks scan in CI
+- Supply-chain scanning via `cargo-deny` and `cargo-audit`
+- Dependabot alerts and automated security updates
+- OpenSSF Scorecard analysis (applicable checks only — private repo)
+- Egress-blocked CI runners via `step-security/harden-runner` (Linux jobs)
+- Codeowner review required on `.github/`, security docs, and dependency
+  manifests
