@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running pre-push safety checks..."
+
+gitleaks detect --source . --no-banner
+
+bad_files="$(
+  git ls-files \
+    | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|\.p12$|\.log$|credentials?|secrets?' \
+    | grep -vE '(^|/)\.env\.example$' \
+    || true
+)"
+
+if [ -n "$bad_files" ]; then
+  echo "Blocked push: suspicious tracked files detected:"
+  echo "$bad_files"
+  exit 1
+fi
+
+local_paths="$(
+  git grep -n -I -E '(/Users/|/home/[^/]+/|C:\\Users\\|/mnt/c/Users/)' \
+    -- ':!.pre-commit-config.yaml' ':!.githooks/pre-push' ':!.git/hooks/pre-push' \
+    || true
+)"
+
+if [ -n "$local_paths" ]; then
+  echo "Blocked push: local machine paths detected:"
+  echo "$local_paths"
+  exit 1
+fi
+
+echo "Pre-push checks passed."
