@@ -50,7 +50,7 @@ repos:
         language: pygrep
         types: [text]
         entry: '(/Users/|/home/[^/]+/|/mnt/[A-Za-z]/Users/|[A-Za-z]:\\Users\\|[A-Za-z]:/Users/|\\\\[^\\/]+\\[^\\/]+)'
-        exclude: '^\.pre-commit-config\.yaml$'
+        exclude: '^(\.pre-commit-config\.yaml|\.githooks/pre-push)$'
 
       - id: block-ssh-hosts
         name: block ssh config and known hosts content

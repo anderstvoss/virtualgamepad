@@ -2,6 +2,20 @@
 
 WIP: a rust library to create virtual gamepad devices emulating physical hardware at varying accuracy levels.
 
+## Setup
+
+After cloning, install hooks once:
+
+```bash
+git config core.hooksPath .githooks
+pre-commit install
+```
+
+`core.hooksPath` redirects git to the committed `.githooks/` directory so the
+pre-push checks (gitleaks + tracked-file and local-path scans) travel with the
+repo. `pre-commit install` then writes its pre-commit hook into the same
+location.
+
 ## Development
 
 Build:
