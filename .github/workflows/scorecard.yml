@@ -1,11 +1,11 @@
 name: Scorecard
 
+# Scorecard requires either a public repo or a GITHUB_TOKEN with broader
+# GraphQL scope than is available on a personal private repo. Triggers
+# are disabled here and will be restored when this workflow is ported to
+# the public mirror (see docs/REPO-SETUP.md once added).
 on:
-  branch_protection_rule:
-  schedule:
-    - cron: "23 4 * * 1"
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions: read-all
 

@@ -30,4 +30,17 @@ if [ -n "$local_paths" ]; then
   exit 1
 fi
 
-echo "Pre-push checks passed."
+echo "Custom pre-push checks passed; handing off to pre-commit pre-push hooks..."
+
+# Run pre-commit pre-push-stage hooks (cargo-deny, cargo-audit, etc.).
+# Stdin is preserved by exec so pre-commit receives git's ref info.
+if ! command -v pre-commit >/dev/null 2>&1; then
+  echo 'ERROR: `pre-commit` not found; cannot run pre-push-stage hooks. Install via pipx or pip.' >&2
+  exit 1
+fi
+
+exec pre-commit hook-impl \
+  --config=.pre-commit-config.yaml \
+  --hook-type=pre-push \
+  --hook-dir "$(cd "$(dirname "$0")" && pwd)" \
+  -- "$@"
