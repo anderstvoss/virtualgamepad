@@ -31,3 +31,6 @@ This repo enforces:
 - Egress-blocked CI runners via `step-security/harden-runner` (Linux jobs)
 - Codeowner review required on `.github/`, security docs, and dependency
   manifests
+
+For the full private/public split and the end-to-end setup procedure,
+see [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).
