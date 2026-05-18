@@ -4,17 +4,25 @@ WIP: a rust library to create virtual gamepad devices emulating physical hardwar
 
 ## Setup
 
-After cloning, install hooks once:
+After cloning, run once:
 
 ```bash
+cargo install cargo-deny cargo-audit
 git config core.hooksPath .githooks
-pre-commit install
+
+# If you previously ran `pre-commit install` on this clone, remove the
+# now-stale wrappers in .git/hooks/ so git only consults .githooks/:
+rm -f .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
-`core.hooksPath` redirects git to the committed `.githooks/` directory so the
-pre-push checks (gitleaks + tracked-file and local-path scans) travel with the
-repo. `pre-commit install` then writes its pre-commit hook into the same
-location.
+`core.hooksPath` redirects git to the committed `.githooks/` directory. Both
+hook wrappers (`pre-commit` and `pre-push`) are committed there, so no
+separate `pre-commit install` step is needed. The `pre-commit` wrapper
+delegates to the `pre-commit` Python package (install via pipx or pip — see
+<https://pre-commit.com/#install>); the `pre-push` wrapper runs the custom
+safety checks (gitleaks, tracked-file blocker, local-paths scan) and then
+hands off to pre-commit's pre-push-stage hooks (`cargo deny` + `cargo
+audit`).
 
 ## Development
 
