@@ -48,6 +48,10 @@ cargo test --all-features
 gitleaks detect
 ```
 
+Record user-visible changes in [`CHANGELOG.md`](CHANGELOG.md) under
+the `Unreleased` section as part of any feature, fix, or breaking
+change.
+
 ## Configuration
 
 Copy `.env.example` to `.env` for local development.
