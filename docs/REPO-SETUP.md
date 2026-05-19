@@ -322,17 +322,57 @@ GitHub push protection should reject it server-side.
 
 ## Sync Mechanism
 
-How the public repo receives content from private. Pick one before
-public repo creation:
+How the public repo receives content from private. This project uses
+**filtered per-commit replay** via `scripts/sync-to-public.sh`:
+
+- For each new non-merge commit in `<base>..HEAD` on private,
+  `git format-patch` produces a patch. Merge commits in the range are
+  skipped — their content reaches public via the individual side-branch
+  commits they merged, producing a linear public history.
+- An awk filter (`scripts/sync-lib/filter-patch.awk`) drops `diff --git`
+  blocks that touch private-only paths (`AGENTS.md`, `tasks/`,
+  `.agents/`, `.codex/`, `.claude/`, `scripts/`, `target/`,
+  `_AGENT_HANDOFF.md`) or override-managed paths (`CONTRIBUTING.md`,
+  `.github/workflows/ci.yml`, `.github/workflows/scorecard.yml`).
+- A `Synced-From: <private-sha>` trailer is appended to every patch's
+  message body, so the next sync can detect the range automatically.
+- The filtered patch series is applied to a fresh
+  `sync/<date>-<short-sha>` branch in the public clone via `git am`,
+  which preserves author identity, dates, and commit message.
+- A single trailing commit re-materializes the public-only files from
+  `scripts/public-overrides/` if their content drifts from what's on
+  the public branch (back-to-back syncs produce zero override commits
+  when nothing changed).
+- Before handing back to the user, `scripts/sync-lib/run-gauntlet.sh`
+  runs a five-step local security gauntlet against the sync branch:
+  tracked-path scan, private-path string grep (allowlist for this
+  doc), full-tree `gitleaks detect`, `gitleaks detect
+  --log-opts="main..HEAD"` over the new range, and a full
+  `pre-commit run --all-files` plus the same with
+  `--hook-stage pre-push`. Any failure aborts the script with the
+  sync branch left in place for inspection.
+
+The sync script never pushes — review locally and push manually so
+the public clone's committed pre-push hook still runs at push time
+(`gitleaks` + `cargo deny check` + `cargo audit`).
+
+### `Synced-From:` trailer and bootstrapping
+
+`scripts/sync-to-public.sh` reads the most recent
+`Synced-From: <sha>` trailer on the public clone's `main` to compute
+its range base. On the very first run (no trailer yet on public),
+pass `--base <private-sha>` matching whichever private commit the
+public main is currently consistent with. Each subsequent sync picks
+the range up automatically.
+
+### Trade-offs vs. other mechanisms
 
 | Mechanism | Setup effort | Trade-off |
 |---|---|---|
+| **Filtered per-commit replay** (this repo) | Medium one-shot setup | Per-commit public history, same authors/dates/messages, no force-push, no history rewrite. Cost: merge bubbles flatten to linear; `git am` conflicts require manual resolution. |
 | **Force-mirror** (`git push --mirror`) | Lowest | All commits + branches leak to public, including WIP / private notes. Pick only if private really has nothing sensitive. |
-| **[`git filter-repo`](https://github.com/newren/git-filter-repo)** | Medium | Selective sync: redact paths, squash commits, rewrite history. Best balance for most projects. |
-| **Manual squash-merge of releases** | Highest per release | Cleanest public history. Public sees one commit per release. Private and public diverge in commit shape but track each other in content. |
-
-Document the chosen mechanism in this file once decided, so future
-contributors understand the workflow.
+| **[`git filter-repo`](https://github.com/newren/git-filter-repo)** | Medium per sync | Rewrites and force-pushes; loses any public-side state between runs. |
+| **Manual squash-merge of releases** | Highest per release | Cleanest public history; public sees one commit per release. Private and public diverge in commit shape but track each other in content. |
 
 ---
 
