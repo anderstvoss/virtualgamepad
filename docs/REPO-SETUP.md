@@ -356,6 +356,24 @@ The sync script never pushes — review locally and push manually so
 the public clone's committed pre-push hook still runs at push time
 (`gitleaks` + `cargo deny check` + `cargo audit`).
 
+### Marking commits private-only
+
+Two mechanisms drop a private commit from the sync entirely:
+
+- **`Private-Only: true` trailer** in the commit message body. Use for
+  commits not yet pushed — add via
+  `git commit --trailer Private-Only=true …` or
+  `git commit --amend --trailer Private-Only=true` (case-insensitive
+  on the key, value must be `true`).
+- **`scripts/private-only-commits`** — one SHA per line (short or
+  full), inline `# …` comments allowed. Use for already-merged
+  commits where amending the message would rewrite history.
+
+Both sources are checked at sync time; matching commits are dropped
+before path filtering with a `dropping (skiplist|trailer): <sha>
+<subject>` log line. Prefer the trailer for new commits — it lives
+with the commit and is self-documenting.
+
 ### `Synced-From:` trailer and bootstrapping
 
 `scripts/sync-to-public.sh` reads the most recent

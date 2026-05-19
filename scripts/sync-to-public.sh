@@ -9,14 +9,17 @@
 # public clone's `main` defines the base; pass `--base <sha>` to override.
 #
 # For each non-merge commit in <base>..HEAD on private, `git format-patch`
-# produces a patch; filter-patch.awk drops diff blocks touching private-only
-# or override-managed paths; the patch series is applied via `git am` onto
-# a fresh sync/<date>-<short-sha> branch in the public clone, preserving
-# author identity, dates, and messages. Merge commits in the range are
-# omitted by format-patch's default — their content reaches public via the
-# individual side-branch commits, producing a linear public history. A
-# trailing "Apply public-overrides @ <sha>" commit is added if
-# public-overrides content drifts from the public tree.
+# produces a patch; commits marked private-only (either via a
+# `Private-Only: true` trailer in the message body, or by SHA in
+# scripts/private-only-commits) are dropped entirely; filter-patch.awk
+# drops diff blocks touching private-only or override-managed paths; the
+# patch series is applied via `git am` onto a fresh sync/<date>-<short-sha>
+# branch in the public clone, preserving author identity, dates, and
+# messages. Merge commits in the range are omitted by format-patch's
+# default — their content reaches public via the individual side-branch
+# commits, producing a linear public history. A trailing "Apply
+# public-overrides @ <sha>" commit is added if public-overrides content
+# drifts from the public tree.
 #
 # Then run-gauntlet.sh runs five checks (tracked-path scan, path-string
 # grep, full-tree gitleaks, gitleaks history over the new range, and a
@@ -67,6 +70,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LIB_DIR="$SCRIPT_DIR/sync-lib"
 OVERRIDES_DIR="$SCRIPT_DIR/public-overrides"
+SKIPLIST_FILE="$SCRIPT_DIR/private-only-commits"
 
 # All git operations on the private repo go through REPO_ROOT so cwd
 # does not matter.
@@ -142,11 +146,53 @@ if [ "$RANGE_COUNT" -gt 0 ]; then
     -o "$PATCH_DIR" \
     "$BASE..HEAD" >/dev/null
 
+  # Build the skiplist of full-SHA private-only commits. Sources:
+  #   1. $SKIPLIST_FILE — operator-maintained file of SHAs, useful for
+  #      already-merged commits where amending the message is not an
+  #      option without rewriting history.
+  #   2. `Private-Only: true` trailer on the source commit message —
+  #      preferred for new commits.
+  SKIP_SHAS=""
+  if [ -f "$SKIPLIST_FILE" ]; then
+    while IFS= read -r raw; do
+      # strip inline comments and surrounding whitespace
+      entry="${raw%%#*}"
+      entry="$(echo "$entry" | tr -d '[:space:]')"
+      [ -z "$entry" ] && continue
+      if full="$(git rev-parse --verify --quiet "$entry^{commit}" 2>/dev/null)"; then
+        SKIP_SHAS+="$full"$'\n'
+      else
+        echo "WARN: skiplist entry '$entry' did not resolve to a commit; ignoring" >&2
+      fi
+    done < "$SKIPLIST_FILE"
+  fi
+
   echo "→ filter patches + inject Synced-From trailer"
   for p in "$PATCH_DIR"/*.patch; do
     orig_sha="$(awk '/^From [0-9a-f]+ Mon Sep 17/ { print $2; exit }' "$p")"
     if [ -z "$orig_sha" ]; then
       echo "WARN: could not extract source SHA from $(basename "$p"); skipping trailer" >&2
+    fi
+
+    # Drop private-only commits before any filtering/trailer work.
+    drop_reason=""
+    if [ -n "$orig_sha" ] && printf '%s' "$SKIP_SHAS" | grep -qxF "$orig_sha"; then
+      drop_reason="skiplist"
+    elif awk '
+        # Walk only the in-reply-to/message section: stop at the first "---".
+        /^---$/ { exit }
+        # Match "Private-Only: true" (case-insensitive on key, value=true).
+        tolower($0) ~ /^private-only:[[:space:]]*true[[:space:]]*$/ { found=1; exit }
+        END { exit (found ? 0 : 1) }
+      ' "$p"; then
+      drop_reason="trailer"
+    fi
+    if [ -n "$drop_reason" ]; then
+      subj="$(awk '/^Subject: / { sub(/^Subject: (\[PATCH\] )?/, ""); print; exit }' "$p")"
+      short="${orig_sha:0:7}"
+      echo "  dropping ($drop_reason): ${short:-???????}  $subj"
+      rm -f "$p"
+      continue
     fi
 
     awk -v EXCLUDES="$EXCLUDES" -f "$LIB_DIR/filter-patch.awk" "$p" > "$p.tmp"
@@ -167,13 +213,17 @@ if [ "$RANGE_COUNT" -gt 0 ]; then
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
+  retained="$(find "$PATCH_DIR" -maxdepth 1 -name '*.patch' -type f | wc -l | tr -d '[:space:]')"
+  dropped=$((RANGE_COUNT - retained))
   cat <<EOF
 
 DRY RUN — no changes applied to $PUBLIC_DIR
   patches:        $PATCH_DIR
   would-be base:  $BASE_SHORT (private)
   would-be branch: sync/$(date +%Y%m%d)-$PRIV_SHORT
-  patch count:    $RANGE_COUNT
+  range size:     $RANGE_COUNT non-merge commit(s)
+  retained:       $retained patch(es)
+  dropped:        $dropped patch(es) (private-only via trailer or skiplist)
 EOF
   exit 0
 fi
