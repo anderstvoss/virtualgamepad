@@ -1,9 +1,10 @@
 name: CI
 
+# macOS and Windows matrix disabled on private — cross-platform coverage is
+# provided by the public repo's full-matrix CI after each sync. Re-enable by
+# restoring pull_request and push triggers below.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
