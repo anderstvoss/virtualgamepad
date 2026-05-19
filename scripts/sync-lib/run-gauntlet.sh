@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/sync-lib/run-gauntlet.sh
 #
-# Five-step local security gauntlet, run against a freshly-built public
+# Six-step local security gauntlet, run against a freshly-built public
 # sync branch before the user reviews and pushes. Designed to fail fast
 # with a clear marker so the user knows which check tripped.
 #
@@ -36,7 +36,7 @@ PATH_GREP_ALLOWLIST=(
   ':!docs/REPO-SETUP.md'
 )
 
-echo "→ [1/5] tracked-private-path scan"
+echo "→ [1/6] tracked-private-path scan"
 tracked_leaks=""
 for p in "${PRIVATE_PATHS[@]}"; do
   hits="$(git ls-files -- "$p" "$p/*" 2>/dev/null || true)"
@@ -45,33 +45,51 @@ for p in "${PRIVATE_PATHS[@]}"; do
   fi
 done
 if [ -n "$tracked_leaks" ]; then
-  echo "FAIL [1/5]: private-only paths tracked in public sync branch:" >&2
+  echo "FAIL [1/6]: private-only paths tracked in public sync branch:" >&2
   printf '%s' "$tracked_leaks" >&2
   exit 1
 fi
 
-echo "→ [2/5] private-path string leak grep"
+echo "→ [2/6] private-path string leak grep"
 # Word-bounded match for path strings; allowlist intentional mentions.
 grep_pattern='(\bAGENTS\.md\b|\b_AGENT_HANDOFF\.md\b|(^|[^A-Za-z0-9._-])tasks/|(^|[^A-Za-z0-9._-])\.agents/|(^|[^A-Za-z0-9._-])\.codex/|(^|[^A-Za-z0-9._-])\.claude/)'
 if matches="$(git grep -n -E -I "$grep_pattern" -- "${PATH_GREP_ALLOWLIST[@]}" 2>/dev/null)"; then
-  echo "FAIL [2/5]: private-path references found in retained content:" >&2
+  echo "FAIL [2/6]: private-path references found in retained content:" >&2
   echo "$matches" >&2
   exit 1
 fi
 
-echo "→ [3/5] full-tree gitleaks scan"
+echo "→ [3/6] commit-message scan over ${BASE_REF}..HEAD"
+# Same regex as step 2 but scanned across log messages (subject + body)
+# of the new commits — closes the "path strings sanitised in the tree
+# but still present in `git log`" gap.
+if msg_matches="$(git log --format=%H%n%B%n--END--%n "${BASE_REF}..HEAD" \
+  | awk -v re="$grep_pattern" '
+      BEGIN { sha = "" }
+      /^--END--$/ { sha = ""; next }
+      sha == "" { sha = $0; next }
+      $0 ~ re { printf "%s: %s\n", substr(sha, 1, 12), $0 }
+    ')"; then
+  if [ -n "$msg_matches" ]; then
+    echo "FAIL [3/6]: private-path references in commit messages:" >&2
+    echo "$msg_matches" >&2
+    exit 1
+  fi
+fi
+
+echo "→ [4/6] full-tree gitleaks scan"
 if ! command -v gitleaks >/dev/null 2>&1; then
-  echo "FAIL [3/5]: gitleaks not on PATH (install: https://github.com/gitleaks/gitleaks)" >&2
+  echo "FAIL [4/6]: gitleaks not on PATH (install: https://github.com/gitleaks/gitleaks)" >&2
   exit 1
 fi
 gitleaks detect --source . --no-banner
 
-echo "→ [4/5] gitleaks history scan over ${BASE_REF}..HEAD"
+echo "→ [5/6] gitleaks history scan over ${BASE_REF}..HEAD"
 gitleaks detect --source . --no-banner --log-opts="${BASE_REF}..HEAD"
 
-echo "→ [5/5] full pre-commit replay (all-files + pre-push stage)"
+echo "→ [6/6] full pre-commit replay (all-files + pre-push stage)"
 if ! command -v pre-commit >/dev/null 2>&1; then
-  echo "FAIL [5/5]: pre-commit not on PATH (install via pipx/pip)" >&2
+  echo "FAIL [6/6]: pre-commit not on PATH (install via pipx/pip)" >&2
   exit 1
 fi
 pre-commit run --all-files
