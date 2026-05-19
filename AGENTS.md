@@ -13,6 +13,15 @@
 - Do not use real user data or private logs as fixtures.
 - Use fake or sanitized test fixtures.
 
+## Agent Memory
+
+Per-project agent auto-memory lives at `.agents/memory/` in the repo
+(symlinked from the runtime's expected per-user path — see the Setup
+section of `README.md`). The directory is gitignored for now; treat
+its contents as per-user scratch state and do not rely on memories
+being shared across contributors. Other agent runtimes (Codex, etc.)
+should write to the same location if/when they grow memory support.
+
 ## Rust Checks
 
 Before completing a task, run:
