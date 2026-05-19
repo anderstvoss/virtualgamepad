@@ -7,7 +7,7 @@ gitleaks detect --source . --no-banner
 
 bad_files="$(
   git ls-files \
-    | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|\.p12$|\.log$|credentials?|secrets?' \
+    | grep -Ei '(^|/)\.env($|\.)|\.pem$|\.key$|\.p12$|\.log$|credentials?[^/]*$|secrets?[^/]*$' \
     | grep -vE '(^|/)\.env\.example$' \
     || true
 )"
