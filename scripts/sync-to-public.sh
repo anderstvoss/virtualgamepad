@@ -21,9 +21,15 @@
 # public-overrides @ <sha>" commit is added if public-overrides content
 # drifts from the public tree.
 #
-# Then run-gauntlet.sh runs five checks (tracked-path scan, path-string
-# grep, full-tree gitleaks, gitleaks history over the new range, and a
-# full pre-commit + pre-push replay) against the produced branch.
+# Before any patch reaches the public clone, leak-scan.sh checks each
+# retained patch's commit message body and added diff lines against the
+# same private-path regex used by the gauntlet — fail-fast with a clear
+# remediation message.
+#
+# Then run-gauntlet.sh runs six checks (tracked-path scan, tree
+# path-string grep, commit-message path-string scan over the new range,
+# full-tree gitleaks, gitleaks history over the new range, and a full
+# pre-commit + pre-push replay) against the produced branch.
 #
 # Usage:
 #   scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] /path/to/public-clone
@@ -80,7 +86,7 @@ if [ "$(git rev-parse --show-toplevel)" != "$REPO_ROOT" ]; then
   exit 1
 fi
 
-for f in "$LIB_DIR/filter-patch.awk" "$LIB_DIR/run-gauntlet.sh"; do
+for f in "$LIB_DIR/filter-patch.awk" "$LIB_DIR/run-gauntlet.sh" "$LIB_DIR/leak-scan.sh"; do
   if [ ! -e "$f" ]; then
     echo "ERROR: missing helper $f" >&2
     exit 1
@@ -210,6 +216,38 @@ if [ "$RANGE_COUNT" -gt 0 ]; then
     fi
     rm -f "$p.tmp"
   done
+fi
+
+echo "→ leak pre-scan (filtered patches)"
+leak_any=0
+for p in "$PATCH_DIR"/*.patch; do
+  [ -e "$p" ] || continue
+  if ! "$LIB_DIR/leak-scan.sh" "$p"; then
+    leak_any=1
+  fi
+done
+if [ "$leak_any" -ne 0 ]; then
+  cat >&2 <<EOF
+
+✗ LEAK PRE-SCAN FAILED.
+
+One or more retained patches contain private-path references in their
+commit message body or in added diff lines. The script will NOT touch
+the public clone.
+
+To proceed, choose one per leaky commit:
+
+  1. Add a \`Private-Only: true\` trailer to the source commit
+     (preferred for not-yet-pushed commits — amend or rebase locally
+     and re-run).
+  2. Add the source SHA to scripts/private-only-commits
+     (escape hatch for already-merged commits).
+  3. Re-run with --snapshot to collapse the entire range into one
+     sanitized snapshot commit on the public side.
+
+Filtered patch artefacts retained at: $PATCH_DIR
+EOF
+  exit 3
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
