@@ -34,13 +34,6 @@ todo-private.md
 private/
 .local/
 
-# Per-user agent auto-memory (project-local but not shared across
-# contributors yet — promote specific memory types to tracked once
-# conventions settle). The .agents/ directory itself is tracked via
-# .agents/.gitkeep so the symlink target referenced in README.md
-# exists in fresh clones.
-/.agents/memory/
-
 # OS/editor files
 .DS_Store
 Thumbs.db

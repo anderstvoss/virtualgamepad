@@ -15,21 +15,6 @@ git config core.hooksPath .githooks
 rm -f .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
-If you use Claude Code, point its per-project auto-memory directory at
-the in-repo location so context lives next to the code (per-user,
-gitignored for now):
-
-```bash
-mkdir -p .agents/memory
-CLAUDE_MEM="$HOME/.claude/projects/-home-anton-Projects-virtualgamepad-private/memory"
-mkdir -p "$(dirname "$CLAUDE_MEM")"
-[ -e "$CLAUDE_MEM" ] && [ ! -L "$CLAUDE_MEM" ] && rmdir "$CLAUDE_MEM" 2>/dev/null
-[ -L "$CLAUDE_MEM" ] || ln -s "$(pwd)/.agents/memory" "$CLAUDE_MEM"
-```
-
-Adjust the project-slug segment of `CLAUDE_MEM` to match your local
-checkout path if it differs from `~/Projects/virtualgamepad-private`.
-
 `core.hooksPath` redirects git to the committed `.githooks/` directory. Both
 hook wrappers (`pre-commit` and `pre-push`) are committed there, so no
 separate `pre-commit install` step is needed. The `pre-commit` wrapper
