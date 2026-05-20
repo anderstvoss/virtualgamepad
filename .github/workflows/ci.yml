@@ -66,6 +66,64 @@ jobs:
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  msrv:
+    name: MSRV (cargo check on rust-version)
+    # Verifies the crate still builds on the rust-version declared in
+    # Cargo.toml — catches accidental MSRV breakage on dep updates.
+    # Uses an explicit `with: toolchain: …` input to override the
+    # rust-toolchain.toml pin for this one job.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ab7a9404c0f3da075243ca237b5fac12c98deaa5 # v2.19.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            static.rust-lang.org:443
+            static.crates.io:443
+            index.crates.io:443
+            crates.io:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: |
+          MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$MSRV" ]; then
+            echo "ERROR: could not parse rust-version from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "msrv=$MSRV" >> "$GITHUB_OUTPUT"
+          echo "MSRV: $MSRV"
+
+      - name: Install Rust at MSRV
+        uses: dtolnay/rust-toolchain@350b8170d67565ecb255cb735a9c516a4106d651
+        with:
+          toolchain: ${{ steps.msrv.outputs.msrv }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
+        with:
+          key: msrv-${{ steps.msrv.outputs.msrv }}
+
+      - name: cargo check at MSRV
+        run: cargo check --all-targets --all-features
+
   rust-test:
     name: Rust build and test (${{ matrix.os }})
     if: ${{ !github.event.repository.private }}
