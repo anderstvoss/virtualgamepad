@@ -139,7 +139,9 @@ cat > /tmp/branch-protection.json <<'EOF'
       "Policy checks (ubuntu-latest)",
       "Policy checks (macos-latest)",
       "Policy checks (windows-latest)",
-      "Supply chain audit"
+      "Supply chain audit",
+      "CodeQL (rust)",
+      "Gitleaks (full history)"
     ]
   },
   "enforce_admins": true,
