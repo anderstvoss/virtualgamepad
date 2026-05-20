@@ -1,266 +1,132 @@
-# Two-Repo Hardening Setup
+# Maximally Hardened Public Rust Repo — Reusable Blueprint
 
-Reusable procedure for bootstrapping a private "work" repo plus a
-public mirror, with hardening split across the two so that GitHub
-Free-tier limitations on private repos don't prevent strong server-side
-controls. Apply this file to any new project that wants the same
-split — copy it verbatim and follow the checklists.
+End-to-end procedure for bootstrapping a single public GitHub repo
+with the strongest free-tier hardening surface. Apply this file to
+any new project that wants the same posture — copy it verbatim and
+follow the checklists.
 
----
-
-## Rationale
-
-GitHub Free **private** repos cannot access secret scanning, push
-protection, private vulnerability reporting, branch protection (or the
-newer Rulesets), `dependency-review-action`, or OpenSSF Scorecard with
-default token scope. These features are gated behind GitHub Advanced
-Security (paid) or public visibility.
-
-The two-repo split preserves a private working repo while unlocking
-every gated control at zero cost on a public mirror. The trade-off is
-the cost of keeping two repos in sync — solvable several ways (see
-[Sync Mechanism](#sync-mechanism)).
+> **Why single-repo?** GitHub Free **public** repos unlock secret
+> scanning, push protection, private vulnerability reporting,
+> `actions/dependency-review-action`, OpenSSF Scorecard with token
+> scope, branch protection / Repository Rulesets — all gated behind
+> GHAS (paid) on private repos. Going public is the cheapest path to
+> strong server-side controls. The split this repo used to maintain
+> (a private working repo plus a public mirror) added complexity
+> without adding security; the sync tooling was extracted to a
+> separate toolkit reusable for projects that genuinely need an
+> embargoed or sensitive parallel.
 
 ---
 
-## Repo Roles
+## Hardening Reference
 
-| Role | Repo | Responsibilities |
-|---|---|---|
-| **Private** | Source of truth for work in progress | Minimal GHA CI (macOS + Windows only); developer-side pre-commit + pre-push covers everything else. No community-facing files. |
-| **Public** | Community-facing mirror | Full GHA CI surface; all server-side controls enabled; CONTRIBUTING / CoC / issue templates. Receives content from private via the chosen sync mechanism. |
-
----
-
-## Hardening Split Reference
-
-| Control | Private (Free) | Public (Free) |
-|---|---|---|
-| Pre-commit gitleaks + custom blockers | ✅ | ✅ |
-| Pre-push gitleaks + tracked-file + local-paths + `cargo deny` + `cargo audit` | ✅ | ✅ |
-| Dependabot alerts + automated security updates | ✅ | ✅ |
-| Codeowner review (informational without branch protection) | ✅ | ✅ |
-| `step-security/harden-runner` egress block on CI | ✅ | ✅ |
-| CI: `cargo check` + `cargo test` matrix | macOS + Windows only | full matrix |
-| CI: `cargo fmt` + `clippy` + `cargo-deny` + `cargo-audit` | — (local only) | ✅ |
-| CI: `dependency-review-action` on PRs | ❌ GHAS-gated | ✅ |
-| Secret scanning | ❌ GHAS-gated | ✅ |
-| Push protection | ❌ GHAS-gated | ✅ |
-| Private vulnerability reporting | ❌ | ✅ |
-| Branch protection / Repository Rulesets | ❌ Pro+ | ✅ |
-| OpenSSF Scorecard workflow | ❌ token scope | ✅ |
-| Scorecard public dashboard | ❌ (visibility) | ✅ |
-| Weekly full-history `gitleaks` workflow | ✅ | ✅ |
+| Control | Mechanism |
+|---|---|
+| Pre-commit gitleaks + custom blockers (env files, keys, local paths, private IPs, cloud URIs, binary artifacts) | `.pre-commit-config.yaml`, invoked via committed `.githooks/pre-commit` |
+| Pre-push gitleaks + tracked-file blocker + local-paths guard + `cargo deny` + `cargo audit` | `.githooks/pre-push` + `.pre-commit-config.yaml` pre-push hooks |
+| Full CI matrix: `cargo fmt`, `clippy -D warnings`, `cargo check`, `cargo test` on Ubuntu + macOS + Windows | `.github/workflows/ci.yml` `rust-lint`, `rust-test` jobs |
+| Full pre-commit policy replay in CI on the same matrix | `.github/workflows/ci.yml` `policy` job |
+| Supply chain audit (`cargo-deny` + `cargo-audit`) | `.github/workflows/ci.yml` `supply-chain` job |
+| `actions/dependency-review-action` on PRs, `fail-on-severity: moderate` | `.github/workflows/ci.yml` `dependency-review` job |
+| All third-party actions SHA-pinned | every workflow file |
+| `step-security/harden-runner` egress block + explicit allowlist on every Linux job | every workflow file |
+| OpenSSF Scorecard with SARIF publish + `id-token: write` | `.github/workflows/scorecard.yml` |
+| Weekly full-history gitleaks scan across every ref | `.github/workflows/gitleaks-history.yml` |
+| Ad-hoc deep scan helper | `scripts/deep-scan.sh` |
+| Secret scanning + push protection (server-side) | `gh api` setup, public-repo only |
+| Private vulnerability reporting | `gh api` setup, public-repo only |
+| Dependabot alerts + automated security updates | `.github/dependabot.yml` + `gh api` enable |
+| Branch protection / Rulesets with required-status checks | `gh api` setup |
+| Codeowner review required on sensitive paths | `.github/CODEOWNERS` |
+| AGPL-3.0 license | `LICENSE` + `Cargo.toml` `[package].license` |
+| Clippy `pedantic` + `unsafe_code = "forbid"` | `Cargo.toml` `[lints.*]` |
 
 ---
 
 ## File Inventory
 
-| File / Path | Private | Public | Notes |
-|---|---|---|---|
-| `.pre-commit-config.yaml` | ✅ | ✅ | Identical. `cargo-deny` + `cargo-audit` as pre-push hooks on both. |
-| `.githooks/pre-commit` | ✅ | ✅ | Generic wrapper, no machine paths. |
-| `.githooks/pre-push` | ✅ | ✅ | Custom safety checks then hands off to `pre-commit hook-impl --hook-type=pre-push`. |
-| `.github/CODEOWNERS` | ✅ | ✅ | May differ in scope (e.g., public adds community reviewers). |
-| `.github/dependabot.yml` | ✅ | ✅ | Identical. |
-| `.github/PULL_REQUEST_TEMPLATE.md` | ✅ | ✅ | Identical. |
-| `.github/workflows/ci.yml` | trimmed | full | Private: macOS + Windows only. Public: adds `rust-lint`, `supply-chain`, `dependency-review`, ubuntu legs. |
-| `.github/workflows/scorecard.yml` | `workflow_dispatch:` only | full triggers | File present in both; private just has triggers disabled with a header note. |
-| `.github/workflows/gitleaks-history.yml` | ✅ | ✅ | Identical. |
-| `SECURITY.md` | ✅ | ✅ | Wording differs slightly (public mentions PVR). |
-| `deny.toml` | ✅ | ✅ | Identical. |
-| `Cargo.toml` / `Cargo.lock` / `src/` / `tests/` | ✅ | ✅ | Identical (the project itself). |
-| `.gitignore` | ✅ | ✅ | Identical. |
-| `.env.example` | ✅ | ✅ | Identical. |
-| `AGENTS.md` | ✅ | optional | Internal AI agent rules; safe to publish but not required. |
-| `LICENSE` | ✅ | ✅ | Same license (e.g., AGPL-3.0). |
-| `docs/REPO-SETUP.md` | ✅ | ✅ | This file. |
-| `CONTRIBUTING.md` | — | ✅ | Public-only — how to contribute, dev setup. |
-| `CODE_OF_CONDUCT.md` | — | ✅ | Public-only — Contributor Covenant 2.1. |
-| `.github/ISSUE_TEMPLATE/` | — | ✅ | Public-only — channel reports. |
+| Path | Purpose |
+|---|---|
+| `.pre-commit-config.yaml` | All commit-stage hooks + cargo-deny / cargo-audit at pre-push stage |
+| `.githooks/pre-commit`, `.githooks/pre-push` | Generic wrappers — no machine paths |
+| `.github/CODEOWNERS` | Maintainer ownership of `.github/`, security docs, dependency manifests |
+| `.github/dependabot.yml` | Weekly cargo + GHA updates |
+| `.github/PULL_REQUEST_TEMPLATE.md` | PR checklist |
+| `.github/ISSUE_TEMPLATE/{bug_report.md, feature_request.md, config.yml}` | Issue intake; blank issues disabled; security contact link |
+| `.github/workflows/ci.yml` | rust-lint, rust-test (matrix), policy (matrix), supply-chain, dependency-review |
+| `.github/workflows/scorecard.yml` | OpenSSF Scorecard, full triggers, publish_results |
+| `.github/workflows/gitleaks-history.yml` | Weekly main-history + all-refs gitleaks |
+| `SECURITY.md` | Vulnerability reporting + defensive posture summary |
+| `CONTRIBUTING.md` | Dev setup, required gates, PR process |
+| `deny.toml` | cargo-deny license/source allowlist |
+| `Cargo.toml` / `Cargo.lock` | Package metadata + lockfile (lockfile committed) |
+| `LICENSE` | AGPL-3.0 (or your choice — adjust `Cargo.toml` to match) |
+| `docs/REPO-SETUP.md` | This file |
+| `AGENTS.md` | Optional AI-agent rules; safe to publish, useful to contributors |
+| `scripts/deep-scan.sh` | Operator helper for ad-hoc full-history gitleaks |
 
 ---
 
-## Private Repo Bootstrap
+## Bootstrap
 
-Run from inside a freshly-created private GitHub repo (cloned to your
+Run from inside a freshly-created public GitHub repo (cloned to your
 machine).
 
 ### Step 1 — Drop in the committed files
 
-Copy the files marked `✅ Private` in the inventory above from this
-repo. The minimum set:
+Copy every file from the inventory above into the new repo.
 
-```
-.pre-commit-config.yaml
-.githooks/pre-commit
-.githooks/pre-push
-.github/CODEOWNERS
-.github/dependabot.yml
-.github/PULL_REQUEST_TEMPLATE.md
-.github/workflows/ci.yml            # trimmed version
-.github/workflows/scorecard.yml     # workflow_dispatch only
-.github/workflows/gitleaks-history.yml
-SECURITY.md
-deny.toml
-.gitignore
-.env.example
-LICENSE
-docs/REPO-SETUP.md                  # this file
-```
-
-Make the hook scripts executable:
+Make hook scripts executable:
 
 ```bash
-chmod +x .githooks/pre-commit .githooks/pre-push
+chmod +x .githooks/pre-commit .githooks/pre-push scripts/deep-scan.sh
 ```
 
-### Step 2 — Enable free server-side controls
+Verify the workflow + action SHAs match what this repo currently
+ships — bumping pins is a deliberate, audited change.
 
-```bash
-REPO=<owner>/<repo>
-
-gh api -X PUT /repos/$REPO/vulnerability-alerts
-gh api -X PUT /repos/$REPO/automated-security-fixes
-```
-
-Verify:
-
-```bash
-gh api /repos/$REPO/automated-security-fixes | jq
-# → {"enabled": true, "paused": false}
-```
-
-Note: PVR, secret scanning, push protection, and branch protection all
-return 403/422/404 on Free private. Don't bother trying — they unlock
-on the public mirror.
-
-### Step 3 — Local clone setup
-
-On every clone the project gets:
+### Step 2 — Local clone setup
 
 ```bash
 cargo install cargo-deny cargo-audit
 git config core.hooksPath .githooks
 
-# Optional: remove any stale wrappers from a prior `pre-commit install`.
+# Remove any stale wrappers from a prior `pre-commit install`.
 rm -f .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
-`pre-commit` itself must be installed system-wide (via pipx / pip).
+`pre-commit` itself must be installed system-wide (via pipx or pip).
 The committed wrappers in `.githooks/` invoke whichever `pre-commit`
 is on `PATH`.
 
 Verify:
 
 ```bash
-git config core.hooksPath        # → .githooks
-ls .githooks/                    # → pre-commit  pre-push
-pre-commit run --all-files       # all commit-stage hooks Pass
-pre-commit run --all-files --hook-stage pre-push   # cargo-deny + cargo-audit Pass
+git config core.hooksPath                            # → .githooks
+ls .githooks/                                        # → pre-commit  pre-push
+pre-commit run --all-files                           # all commit-stage hooks pass
+pre-commit run --all-files --hook-stage pre-push     # cargo-deny + cargo-audit pass
 ```
 
-### Step 4 — First push
-
-The pre-push hook will run gitleaks + tracked-file + local-paths
-checks, then `cargo deny check` + `cargo audit`. All must pass before
-the push is accepted.
-
-CI runs 4 jobs (`Rust build and test (macos-latest|windows-latest)`,
-`Policy checks (macos-latest|windows-latest)`). That's the entire
-private CI surface.
-
----
-
-## Public Mirror Bootstrap
-
-### Step 1 — Create the public repo
+### Step 3 — Enable server-side controls
 
 ```bash
-PUB=<owner>/<public-repo-name>
-gh repo create $PUB --public --license agpl-3.0     # or your license
-```
-
-### Step 2 — Decide on a sync mechanism
-
-See [Sync Mechanism](#sync-mechanism) below. Pick before pushing
-content — it affects branch naming and what should/shouldn't live on
-private.
-
-### Step 3 — Seed initial content
-
-Push the private repo's current main (or a filtered subset) to the
-new public repo. The bulk of files in the inventory carry over unchanged.
-
-### Step 4 — Add public-only files
-
-Create:
-
-```
-CONTRIBUTING.md
-CODE_OF_CONDUCT.md
-.github/ISSUE_TEMPLATE/bug_report.md
-.github/ISSUE_TEMPLATE/feature_request.md
-.github/ISSUE_TEMPLATE/config.yml         # disable blank issues, link to security policy
-```
-
-Optional: `.github/FUNDING.yml`, README badges (CI status, license,
-Scorecard).
-
-### Step 5 — Restore the full CI surface
-
-Edit `.github/workflows/ci.yml` on the public repo:
-
-- Re-add the `rust-lint` job (ubuntu, fmt + clippy, with harden-runner
-  block-mode + persist-credentials: false)
-- Re-add the `supply-chain` job (ubuntu, cargo-deny + cargo-audit, with
-  harden-runner)
-- Add `ubuntu-latest` back to the `rust-test` and `policy` matrices;
-  re-add the Linux harden-runner step on both
-- Add a `dependency-review` job (PR-only) using
-  `actions/dependency-review-action` with `fail-on-severity: moderate`
-
-Use SHAs already pinned in the private repo's git history as the
-canonical reference.
-
-Edit `.github/workflows/scorecard.yml` on the public repo:
-
-- Replace `on: workflow_dispatch:` with the full original triggers:
-
-  ```yaml
-  on:
-    branch_protection_rule:
-    schedule:
-      - cron: "23 4 * * 1"
-    push:
-      branches: [main]
-  ```
-
-- Set `publish_results: true` in the `ossf/scorecard-action` step
-- Add `id-token: write` to the job permissions (needed for
-  `publish_results: true`)
-
-`gitleaks-history.yml` stays unchanged.
-
-### Step 6 — Enable server-side controls
-
-```bash
-PUB=<owner>/<public-repo-name>
+REPO=<owner>/<repo>
 
 # Secret scanning + push protection (free on public)
-gh api --method PATCH /repos/$PUB --input - <<'EOF'
+gh api --method PATCH /repos/$REPO --input - <<'EOF'
 {"security_and_analysis":{"secret_scanning":{"status":"enabled"},"secret_scanning_push_protection":{"status":"enabled"}}}
 EOF
 
-# Private vulnerability reporting (free on public)
-gh api -X PUT /repos/$PUB/private-vulnerability-reporting
+# Private vulnerability reporting
+gh api -X PUT /repos/$REPO/private-vulnerability-reporting
 
-# Always free: Dependabot alerts + security updates
-gh api -X PUT /repos/$PUB/vulnerability-alerts
-gh api -X PUT /repos/$PUB/automated-security-fixes
+# Dependabot alerts + automated security updates
+gh api -X PUT /repos/$REPO/vulnerability-alerts
+gh api -X PUT /repos/$REPO/automated-security-fixes
 
-# Branch protection (free on public)
-cat > /tmp/pub-branch-protection.json <<'EOF'
+# Branch protection
+cat > /tmp/branch-protection.json <<'EOF'
 {
   "required_status_checks": {
     "strict": true,
@@ -288,30 +154,39 @@ cat > /tmp/pub-branch-protection.json <<'EOF'
   "required_conversation_resolution": true
 }
 EOF
-gh api -X PUT /repos/$PUB/branches/main/protection --input /tmp/pub-branch-protection.json
+gh api -X PUT /repos/$REPO/branches/main/protection --input /tmp/branch-protection.json
 ```
 
 For repos accepting community PRs, bump `required_approving_review_count`
 to `1` and flip `require_code_owner_reviews` to `true`.
 
-### Step 7 — Verify the public mirror
+### Step 4 — First push
+
+The pre-push hook will run gitleaks + tracked-file + local-paths
+checks, then `cargo deny check` + `cargo audit`. All must pass before
+the push is accepted.
+
+Once pushed, CI runs the eight required-status contexts plus the
+PR-only `dependency-review` job (when triggered by a PR).
+
+### Step 5 — Verify
 
 ```bash
-PUB=<owner>/<public-repo-name>
+REPO=<owner>/<repo>
 
-gh api /repos/$PUB | jq '.security_and_analysis'
+gh api /repos/$REPO | jq '.security_and_analysis'
 # → secret_scanning + secret_scanning_push_protection both "enabled"
 
-gh api /repos/$PUB/branches/main/protection | jq '.required_status_checks.contexts'
-# → returns all 8 contexts
+gh api /repos/$REPO/branches/main/protection | jq '.required_status_checks.contexts'
+# → returns all eight contexts
 
 gh pr create --draft --title "verify ci" --body "noop"
 # → opens a PR running full 8-job CI + dep-review
 
-gh workflow run scorecard.yml --repo $PUB
+gh workflow run scorecard.yml --repo $REPO
 # → SARIF appears in Security tab within ~5 min
 
-gh workflow run gitleaks-history.yml --repo $PUB
+gh workflow run gitleaks-history.yml --repo $REPO
 # → completes green
 ```
 
@@ -320,124 +195,7 @@ GitHub push protection should reject it server-side.
 
 ---
 
-## Sync Mechanism
-
-How the public repo receives content from private. This project uses
-**filtered per-commit replay** via `scripts/sync-to-public.sh`:
-
-- For each new non-merge commit in `<base>..HEAD` on private,
-  `git format-patch` produces a patch. Merge commits in the range are
-  skipped — their content reaches public via the individual side-branch
-  commits they merged, producing a linear public history.
-- An awk filter (`scripts/sync-lib/filter-patch.awk`) drops `diff --git`
-  blocks that touch private-only paths (`AGENTS.md`, `tasks/`,
-  `.agents/`, `.codex/`, `.claude/`, `scripts/`, `target/`,
-  `_AGENT_HANDOFF.md`) or override-managed paths (`CONTRIBUTING.md`,
-  `.github/workflows/ci.yml`, `.github/workflows/scorecard.yml`).
-- A `Synced-From: <private-sha>` trailer is appended to every patch's
-  message body, so the next sync can detect the range automatically.
-- The filtered patch series is applied to a fresh
-  `sync/<date>-<short-sha>` branch in the public clone via `git am`,
-  which preserves author identity, dates, and commit message.
-- A single trailing commit re-materializes the public-only files from
-  `scripts/public-overrides/` if their content drifts from what's on
-  the public branch (back-to-back syncs produce zero override commits
-  when nothing changed).
-- Before handing back to the user, `scripts/sync-lib/run-gauntlet.sh`
-  runs a five-step local security gauntlet against the sync branch:
-  tracked-path scan, private-path string grep (allowlist for this
-  doc), full-tree `gitleaks detect`, `gitleaks detect
-  --log-opts="main..HEAD"` over the new range, and a full
-  `pre-commit run --all-files` plus the same with
-  `--hook-stage pre-push`. Any failure aborts the script with the
-  sync branch left in place for inspection.
-
-The sync script never pushes — review locally and push manually so
-the public clone's committed pre-push hook still runs at push time
-(`gitleaks` + `cargo deny check` + `cargo audit`).
-
-### Marking commits private-only
-
-Two mechanisms drop a private commit from the sync entirely:
-
-- **`Private-Only: true` trailer** in the commit message body. Use for
-  commits not yet pushed — add via
-  `git commit --trailer Private-Only=true …` or
-  `git commit --amend --trailer Private-Only=true` (case-insensitive
-  on the key, value must be `true`).
-- **`scripts/private-only-commits`** — one SHA per line (short or
-  full), inline `# …` comments allowed. Use for already-merged
-  commits where amending the message would rewrite history.
-
-Both sources are checked at sync time; matching commits are dropped
-before path filtering with a `dropping (skiplist|trailer): <sha>
-<subject>` log line. Prefer the trailer for new commits — it lives
-with the commit and is self-documenting.
-
-### Deep history scan (`--deep`)
-
-Every-run gauntlet only `gitleaks`-scans the new commits in the sync
-range. For "before publish" assurance, pass `--deep` to
-`scripts/sync-to-public.sh` to add a 7th step that runs
-`gitleaks detect --log-opts='--all'` over every commit reachable from
-any local ref (branches and tags). Slower; recommended on the final
-sync before merging the public-side PR.
-
-The same scan is available standalone via `scripts/deep-scan.sh`
-(fetches all refs, then runs gitleaks `--log-opts='--all'`) and is
-covered weekly by `.github/workflows/gitleaks-history.yml`, which has
-been extended to fetch every branch and tag before scanning so the
-weekly run also covers un-merged side branches.
-
-### Snapshot fallback (`--snapshot`)
-
-Operator-triggered escape hatch when per-commit replay cannot be made
-clean — e.g. a sequence of commits each independently fine but whose
-sanitized accumulation still references private paths. With
-`--snapshot`, the script:
-
-1. Creates the public sync branch off public `main` as usual.
-2. Overlays the private `HEAD` tree onto the public working tree via
-   `git archive | tar`.
-3. Strips the exclude paths (private-only + override-managed) from the
-   public tree.
-4. Re-applies `scripts/public-overrides/`.
-5. Runs the same leak pre-scan against the staged diff. Fail-fast on
-   hit (likely cause: a public-tracked file on private references a
-   private path — fix it in private first, then re-run).
-6. Commits the entire range as a single sanitized commit with body
-   `Snapshot sync @ <priv-short>` and a `Synced-From: <priv-full-sha>`
-   trailer.
-
-Trade-offs vs. per-commit replay: loses author/date granularity for the
-collapsed range; public history shows one squash commit covering the
-whole range instead of N individual commits. The `Private-Only:` and
-skiplist mechanisms are moot in this mode (the tree is taken as-is and
-filtered by path). Mutually exclusive with `--dry-run`.
-
-### `Synced-From:` trailer and bootstrapping
-
-`scripts/sync-to-public.sh` reads the most recent
-`Synced-From: <sha>` trailer on the public clone's `main` to compute
-its range base. On the very first run (no trailer yet on public),
-pass `--base <private-sha>` matching whichever private commit the
-public main is currently consistent with. Each subsequent sync picks
-the range up automatically.
-
-### Trade-offs vs. other mechanisms
-
-| Mechanism | Setup effort | Trade-off |
-|---|---|---|
-| **Filtered per-commit replay** (this repo) | Medium one-shot setup | Per-commit public history, same authors/dates/messages, no force-push, no history rewrite. Cost: merge bubbles flatten to linear; `git am` conflicts require manual resolution. |
-| **Force-mirror** (`git push --mirror`) | Lowest | All commits + branches leak to public, including WIP / private notes. Pick only if private really has nothing sensitive. |
-| **[`git filter-repo`](https://github.com/newren/git-filter-repo)** | Medium per sync | Rewrites and force-pushes; loses any public-side state between runs. |
-| **Manual squash-merge of releases** | Highest per release | Cleanest public history; public sees one commit per release. Private and public diverge in commit shape but track each other in content. |
-
----
-
 ## Local Developer Setup (one-liner reference)
-
-For both private and public repos:
 
 ```bash
 cargo install cargo-deny cargo-audit
@@ -457,8 +215,36 @@ pip install --user pre-commit
 
 ## Maintenance Notes
 
-- **Dependabot updates land separately on each repo.** Apply manually if syncing release-by-release.
-- **The Scorecard workflow file lives in both repos but is functionally inert on private.** When migrating, the only change is the `on:` block.
-- **Branch protection contexts must exactly match CI job names** (case-sensitive, including matrix expansion). If you add or rename a job, update the required-status-checks list via `gh api -X PUT .../branches/main/protection`.
-- **The CI allowlist for `harden-runner`** is a starter list. First real dependency that pulls from a new endpoint (e.g., a build-script fetching a vendored library) will fail with `blocked egress` — add the endpoint to the allowlist and re-run.
-- **`required_linear_history`** on the public ruleset means PRs must be squashed or rebased — merge commits are blocked. Adjust if your workflow expects merge commits.
+- **Dependabot updates** open PRs against `main`. Treat them like any
+  other dep change: review the changelog, let CI run, merge.
+- **Branch protection contexts must exactly match CI job names**
+  (case-sensitive, including matrix expansion). If you add or rename
+  a job, update the required-status-checks list via
+  `gh api -X PUT .../branches/main/protection`.
+- **The harden-runner allowlist** is a starter list. First real
+  dependency that pulls from a new endpoint (e.g. a build-script
+  fetching a vendored library) will fail with `blocked egress` — add
+  the endpoint to the allowlist and re-run.
+- **`required_linear_history`** on the public ruleset means PRs must
+  be squashed or rebased — merge commits are blocked. Adjust if your
+  workflow expects merge commits.
+- **Deep scan before publish/merge.** Every-run hooks scan staged
+  content and the current ref's history only; un-merged side branches
+  and tags are covered weekly by `.github/workflows/gitleaks-history.yml`
+  and ad-hoc by `scripts/deep-scan.sh`. Run the latter manually before
+  any release tag.
+- **Visibility-gated remote CI.** Every job in
+  `.github/workflows/*.yml` carries `if: ${{ !github.event.repository.private }}`
+  so the entire remote-CI surface is dormant while the repo is private
+  and auto-activates on the flip to public. Rationale: pre-commit and
+  pre-push hooks already cover the Linux gates locally; the matrix
+  jobs and GHAS-gated jobs (`dependency-review`, Scorecard) only add
+  value once public. To force-run a workflow on a private repo, use
+  `gh workflow run <name>` — `workflow_dispatch` triggers still
+  honour the gate, so test workflows by temporarily inverting the
+  `if:` on a scratch branch instead.
+- **Sensitive work fork.** If you ever need an embargoed parallel
+  (security research, pre-disclosure fixes), the sync toolkit that
+  used to live in this repo's `scripts/sync-*` is preserved as a
+  separate private project (`repo-split-toolkit`). See its
+  `docs/BOOTSTRAP.md` for the adoption recipe.

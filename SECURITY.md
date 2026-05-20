@@ -23,16 +23,23 @@ This repo enforces:
 
 - Pre-commit secret scanning (gitleaks) plus a suite of custom blockers for
   env files, private keys, credentials, local paths, private IPs, cloud
-  storage URIs, and binary artifacts
+  storage URIs, and binary artifacts.
 - Pre-push: gitleaks full-tree scan + tracked-file blocker + local-paths
-  guard + `cargo deny check` + `cargo audit`
-- Weekly full-history gitleaks scan in CI
-- Dependabot alerts and automated security updates
-- Codeowner review required on `.github/`, security docs, and dependency
-  manifests
+  guard + `cargo deny check` + `cargo audit`.
+- CI on every PR and push to `main`: `cargo fmt`, `clippy -D warnings`,
+  `cargo check`, `cargo test` across Ubuntu + macOS + Windows; the full
+  pre-commit + pre-push policy replay on the same matrix; `cargo-deny`
+  + `cargo-audit`; `actions/dependency-review-action` on PRs.
+- All third-party actions SHA-pinned; `step-security/harden-runner`
+  with egress-policy `block` and an explicit allowlist on every Linux
+  job.
+- Weekly full-history gitleaks scan over every ref (branches and
+  tags), plus `scripts/deep-scan.sh` for ad-hoc operator runs.
+- OpenSSF Scorecard on push to `main`, weekly cron, and
+  branch-protection-rule events; SARIF published to the Security tab.
+- Dependabot alerts + automated security updates.
+- Codeowner review required on `.github/`, security docs, and
+  dependency manifests.
 
-Linux-applicable CI gates run on developer machines via pre-commit and
-pre-push; GitHub Actions covers only macOS and Windows compatibility.
-
-For the full private/public split and the end-to-end setup procedure,
-see [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).
+For the end-to-end setup procedure (reusable across projects), see
+[`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).

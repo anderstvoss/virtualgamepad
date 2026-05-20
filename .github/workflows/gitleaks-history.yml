@@ -11,6 +11,10 @@ permissions:
 jobs:
   gitleaks:
     name: Gitleaks (full history)
+    # Gated on public visibility along with the other remote-CI jobs;
+    # while private, scripts/deep-scan.sh covers the same surface
+    # locally. Auto-activates on public flip.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 

@@ -3,12 +3,6 @@
 Thanks for your interest. This project is in early WIP — expect APIs to
 shift. Please read this file end-to-end before opening a PR.
 
-## Code of Conduct
-
-Participation is governed by [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
-Report concerns via GitHub's private vulnerability reporting (see
-[SECURITY.md](SECURITY.md)) or directly to the maintainer.
-
 ## Development setup
 
 Run once after cloning:
@@ -68,4 +62,4 @@ vulnerability reporting (see [SECURITY.md](SECURITY.md)).
 ## License
 
 By contributing, you agree your contributions are licensed under
-[the MIT License](LICENSE).
+[AGPL-3.0-only](LICENSE).
