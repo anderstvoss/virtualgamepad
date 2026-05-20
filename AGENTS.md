@@ -15,12 +15,35 @@
 
 ## Agent Memory
 
-Per-project agent auto-memory lives at `.agents/memory/` in the repo
-(symlinked from the runtime's expected per-user path — see the Setup
-section of `README.md`). The directory is gitignored for now; treat
-its contents as per-user scratch state and do not rely on memories
-being shared across contributors. Other agent runtimes (Codex, etc.)
-should write to the same location if/when they grow memory support.
+Per-project agent auto-memory lives at `.agents/memory/` in the repo.
+The directory's contents are per-user scratch state and never reach
+the public mirror (`.agents/` is in the sync EXCLUDE_PATHS). Other
+agent runtimes (Codex, etc.) should write to the same location.
+
+### One-time setup on each clone
+
+The runtime expects its memory at a per-user global path. Symlink
+that path at the in-repo directory so memories live next to the code:
+
+```bash
+mkdir -p .agents/memory
+
+# Adjust the project-slug segment if your local checkout path
+# differs from $HOME/Projects/<this-repo>.
+RUNTIME_MEM="$HOME/.claude/projects/-home-$USER-Projects-virtualgamepad-private/memory"
+mkdir -p "$(dirname "$RUNTIME_MEM")"
+[ -e "$RUNTIME_MEM" ] && [ ! -L "$RUNTIME_MEM" ] && rmdir "$RUNTIME_MEM" 2>/dev/null
+[ -L "$RUNTIME_MEM" ] || ln -s "$(pwd)/.agents/memory" "$RUNTIME_MEM"
+```
+
+The repo's tracked `.gitignore` does not list `.agents/memory/` — that
+rule would itself leak path names into the public mirror. Instead,
+add the rule to your per-clone exclude file once:
+
+```bash
+grep -qxF '/.agents/memory/' .git/info/exclude \
+  || echo '/.agents/memory/' >> .git/info/exclude
+```
 
 ## Rust Checks
 
