@@ -1,6 +1,15 @@
 # VirtualGamepad
 
-WIP: a rust library to create virtual gamepad devices emulating physical hardware at varying accuracy levels.
+Rust library for creating virtual gamepad devices that emulate
+physical hardware at varying accuracy levels.
+
+> **Status:** early WIP. The crate is a scaffold; the public API will
+> land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
+> tracked changes.
+
+## License
+
+[AGPL-3.0-only](LICENSE).
 
 ## Setup
 
@@ -15,14 +24,14 @@ git config core.hooksPath .githooks
 rm -f .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
-`core.hooksPath` redirects git to the committed `.githooks/` directory. Both
-hook wrappers (`pre-commit` and `pre-push`) are committed there, so no
-separate `pre-commit install` step is needed. The `pre-commit` wrapper
-delegates to the `pre-commit` Python package (install via pipx or pip — see
-<https://pre-commit.com/#install>); the `pre-push` wrapper runs the custom
-safety checks (gitleaks, tracked-file blocker, local-paths scan) and then
-hands off to pre-commit's pre-push-stage hooks (`cargo deny` + `cargo
-audit`).
+`core.hooksPath` redirects git to the committed `.githooks/`
+directory. Both hook wrappers (`pre-commit` and `pre-push`) are
+committed there. The `pre-commit` wrapper delegates to the
+`pre-commit` Python package (install via pipx or pip — see
+<https://pre-commit.com/#install>); the `pre-push` wrapper runs the
+custom safety checks (gitleaks, tracked-file blocker, local-paths
+scan) and then hands off to pre-commit's pre-push-stage hooks
+(`cargo deny` + `cargo audit`).
 
 ## Development
 
@@ -32,13 +41,13 @@ Build:
 cargo build
 ```
 
-Run tests:
+Test:
 
 ```bash
 cargo test
 ```
 
-Run checks:
+Local gates (also run in CI on every PR):
 
 ```bash
 cargo fmt --all -- --check
@@ -48,18 +57,29 @@ cargo test --all-features
 gitleaks detect
 ```
 
+Before publishing or merging anything that matters, run a deep
+gitleaks scan across all branches and tags:
+
+```bash
+scripts/deep-scan.sh
+```
+
 Record user-visible changes in [`CHANGELOG.md`](CHANGELOG.md) under
 the `Unreleased` section as part of any feature, fix, or breaking
 change.
 
 ## Configuration
 
-Copy `.env.example` to `.env` for local development.
+Copy `.env.example` to `.env` for local development. Do not commit
+`.env` or other local configuration files (the pre-commit and
+pre-push hooks block this).
 
-Do not commit `.env` or other local configuration files.
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
-See `SECURITY.md`. For the full private/public split and the
-end-to-end setup procedure (reusable across projects), see
+See [SECURITY.md](SECURITY.md). For the end-to-end hardening
+procedure (reusable across projects), see
 [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).
