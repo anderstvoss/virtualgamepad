@@ -207,7 +207,11 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    if: github.event_name == 'pull_request'
+    # actions/dependency-review-action requires Dependency graph + GHAS,
+    # which is paid on private repos and free on public. Gate on
+    # visibility so the job is skipped (not failed) while the repo is
+    # private and auto-activates the moment it flips to public.
+    if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
