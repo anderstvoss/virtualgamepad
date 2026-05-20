@@ -136,6 +136,20 @@ Every job in every workflow is `if: ${{ !github.event.repository.private }}`
   - [ ] Private vulnerability reporting
   - [ ] Dependabot alerts + automated security updates
   - [ ] Branch protection with required-status contexts
+- [ ] Before sending the branch-protection payload, verify the
+      required-status contexts list still matches the actual workflow
+      job names (matrix expansion included). One-shot diff from inside
+      the clone:
+      ```bash
+      # 1. Extract job names from workflows (matrix dimensions
+      #    expanded manually for the matrix jobs).
+      grep -E "name:|matrix:" .github/workflows/*.yml
+      # 2. Compare to the `contexts` array in
+      #    docs/REPO-SETUP.md (Step 3) — they must match exactly,
+      #    case-sensitive, including the parenthesised matrix value.
+      ```
+      If you've added or renamed a CI job since this checklist was
+      written, update both lists in lock-step.
 - [ ] Open a draft PR to trigger the now-active CI; verify all
       required-status contexts pass.
 - [ ] Manually `gh workflow run scorecard.yml --repo $REPO`; verify
