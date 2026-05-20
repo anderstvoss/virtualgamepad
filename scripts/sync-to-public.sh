@@ -59,6 +59,10 @@ Usage: scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] [--snapshot]
                  excluded paths plus overrides. The Private-Only
                  skiplist and trailer are MOOT in this mode (the whole
                  tree is taken as-is and filtered by path).
+  --deep         Adds a 7th gauntlet step that runs gitleaks across the
+                 full history of every ref (`--log-opts=--all`) instead
+                 of only the new range. Slower but recommended before
+                 publishing.
 
 The destination must be an existing git clone of the public mirror.
 USAGE
@@ -66,11 +70,13 @@ USAGE
 
 DRY_RUN=0
 SNAPSHOT=0
+DEEP=0
 BASE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)   DRY_RUN=1; shift ;;
     --snapshot)  SNAPSHOT=1; shift ;;
+    --deep)      DEEP=1; shift ;;
     --base)      BASE="${2:-}"; shift 2 ;;
     --base=*)    BASE="${1#--base=}"; shift ;;
     -h|--help)   print_usage; exit 0 ;;
@@ -456,7 +462,9 @@ fi
 echo ""
 echo "→ running local security gauntlet"
 echo ""
-if ! "$LIB_DIR/run-gauntlet.sh" "$PUBLIC_DIR" main; then
+gauntlet_args=("$PUBLIC_DIR" main)
+[ "$DEEP" -eq 1 ] && gauntlet_args+=(--deep)
+if ! "$LIB_DIR/run-gauntlet.sh" "${gauntlet_args[@]}"; then
   cat >&2 <<EOF
 
 ✗ Gauntlet FAILED. Sync branch $BRANCH left in place at $PUBLIC_DIR for inspection.
