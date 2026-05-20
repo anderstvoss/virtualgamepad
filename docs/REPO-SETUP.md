@@ -5,6 +5,9 @@ with the strongest free-tier hardening surface. Apply this file to
 any new project that wants the same posture — copy it verbatim and
 follow the checklists.
 
+For the tickable one-page version, see
+[HARDENING-CHECKLIST.md](HARDENING-CHECKLIST.md).
+
 > **Why single-repo?** GitHub Free **public** repos unlock secret
 > scanning, push protection, private vulnerability reporting,
 > `actions/dependency-review-action`, OpenSSF Scorecard with token
