@@ -19,6 +19,12 @@ env:
 jobs:
   rust-lint:
     name: Rust lint
+    # All remote-CI jobs are gated on the repo being public.
+    # While private, rely on the local pre-commit / pre-push hooks for
+    # the same gates (cargo fmt, clippy, check, test, deny, audit,
+    # gitleaks). Skipping at job level costs zero runner time and the
+    # jobs auto-activate the moment the repo flips to public.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -63,6 +69,7 @@ jobs:
 
   rust-test:
     name: Rust build and test (${{ matrix.os }})
+    if: ${{ !github.event.repository.private }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -111,6 +118,7 @@ jobs:
 
   policy:
     name: Policy checks (${{ matrix.os }})
+    if: ${{ !github.event.repository.private }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -163,6 +171,7 @@ jobs:
 
   supply-chain:
     name: Supply chain audit
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -207,10 +216,6 @@ jobs:
 
   dependency-review:
     name: Dependency review
-    # actions/dependency-review-action requires Dependency graph + GHAS,
-    # which is paid on private repos and free on public. Gate on
-    # visibility so the job is skipped (not failed) while the repo is
-    # private and auto-activates the moment it flips to public.
     if: ${{ github.event_name == 'pull_request' && !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

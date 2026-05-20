@@ -233,6 +233,16 @@ pip install --user pre-commit
   and tags are covered weekly by `.github/workflows/gitleaks-history.yml`
   and ad-hoc by `scripts/deep-scan.sh`. Run the latter manually before
   any release tag.
+- **Visibility-gated remote CI.** Every job in
+  `.github/workflows/*.yml` carries `if: ${{ !github.event.repository.private }}`
+  so the entire remote-CI surface is dormant while the repo is private
+  and auto-activates on the flip to public. Rationale: pre-commit and
+  pre-push hooks already cover the Linux gates locally; the matrix
+  jobs and GHAS-gated jobs (`dependency-review`, Scorecard) only add
+  value once public. To force-run a workflow on a private repo, use
+  `gh workflow run <name>` — `workflow_dispatch` triggers still
+  honour the gate, so test workflows by temporarily inverting the
+  `if:` on a scratch branch instead.
 - **Sensitive work fork.** If you ever need an embargoed parallel
   (security research, pre-disclosure fixes), the sync toolkit that
   used to live in this repo's `scripts/sync-*` is preserved as a
