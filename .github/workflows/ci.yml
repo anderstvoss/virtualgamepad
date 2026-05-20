@@ -192,7 +192,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
-      SKIP: cargo-fmt,cargo-check,cargo-clippy,cargo-test
+      # cargo-* hooks are covered by the rust-lint / rust-test jobs.
+      # gitleaks pre-commit hook installs gitleaks via Go (language:
+      # golang), which would need go.dev / proxy.golang.org /
+      # sum.golang.org / storage.googleapis.com in the harden-runner
+      # allowlist. Skip it here — gitleaks-history.yml runs a
+      # dedicated full-history gitleaks scan on the same triggers,
+      # which is the authoritative coverage.
+      SKIP: cargo-fmt,cargo-check,cargo-clippy,cargo-test,gitleaks
 
     steps:
       - name: Harden runner
