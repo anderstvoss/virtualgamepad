@@ -374,6 +374,21 @@ before path filtering with a `dropping (skiplist|trailer): <sha>
 <subject>` log line. Prefer the trailer for new commits — it lives
 with the commit and is self-documenting.
 
+### Deep history scan (`--deep`)
+
+Every-run gauntlet only `gitleaks`-scans the new commits in the sync
+range. For "before publish" assurance, pass `--deep` to
+`scripts/sync-to-public.sh` to add a 7th step that runs
+`gitleaks detect --log-opts='--all'` over every commit reachable from
+any local ref (branches and tags). Slower; recommended on the final
+sync before merging the public-side PR.
+
+The same scan is available standalone via `scripts/deep-scan.sh`
+(fetches all refs, then runs gitleaks `--log-opts='--all'`) and is
+covered weekly by `.github/workflows/gitleaks-history.yml`, which has
+been extended to fetch every branch and tag before scanning so the
+weekly run also covers un-merged side branches.
+
 ### Snapshot fallback (`--snapshot`)
 
 Operator-triggered escape hatch when per-commit replay cannot be made
