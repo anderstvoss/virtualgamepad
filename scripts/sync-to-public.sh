@@ -26,34 +26,51 @@
 # same private-path regex used by the gauntlet — fail-fast with a clear
 # remediation message.
 #
+# --snapshot is the operator's escape hatch when per-commit replay
+# cannot be made clean: it overlays private HEAD's tree onto the public
+# sync branch via `git archive | tar`, strips excluded paths, re-applies
+# overrides, runs the same leak pre-scan against the staged diff, and
+# commits the whole thing as a single sanitized snapshot. The
+# Private-Only skiplist and trailer are moot in this mode.
+#
 # Then run-gauntlet.sh runs six checks (tracked-path scan, tree
 # path-string grep, commit-message path-string scan over the new range,
 # full-tree gitleaks, gitleaks history over the new range, and a full
 # pre-commit + pre-push replay) against the produced branch.
 #
 # Usage:
-#   scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] /path/to/public-clone
+#   scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] [--snapshot] /path/to/public-clone
 
 set -euo pipefail
 
 print_usage() {
   cat >&2 <<'USAGE'
-Usage: scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] /path/to/public-clone
+Usage: scripts/sync-to-public.sh [--base <private-sha>] [--dry-run] [--snapshot] /path/to/public-clone
 
   --base <sha>   Range base on private side. Default: parse the most
                  recent `Synced-From:` trailer from public main.
   --dry-run      Produce filtered patches under /tmp/sync-to-public-<sha>/
                  and exit; do not touch the public clone.
+  --snapshot     Operator-triggered fallback when per-commit replay
+                 cannot be made clean (e.g. the leak pre-scan reports
+                 leaks even after path filtering). Collapses the entire
+                 range into one sanitized commit on the public sync
+                 branch, representing private HEAD's tree minus
+                 excluded paths plus overrides. The Private-Only
+                 skiplist and trailer are MOOT in this mode (the whole
+                 tree is taken as-is and filtered by path).
 
 The destination must be an existing git clone of the public mirror.
 USAGE
 }
 
 DRY_RUN=0
+SNAPSHOT=0
 BASE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run)   DRY_RUN=1; shift ;;
+    --snapshot)  SNAPSHOT=1; shift ;;
     --base)      BASE="${2:-}"; shift 2 ;;
     --base=*)    BASE="${1#--base=}"; shift ;;
     -h|--help)   print_usage; exit 0 ;;
@@ -62,6 +79,11 @@ while [ $# -gt 0 ]; do
     *)           break ;;
   esac
 done
+
+if [ "$DRY_RUN" -eq 1 ] && [ "$SNAPSHOT" -eq 1 ]; then
+  echo "ERROR: --dry-run and --snapshot are mutually exclusive." >&2
+  exit 1
+fi
 
 PUBLIC_DIR="${1:-}"
 if [ -z "$PUBLIC_DIR" ] || [ ! -d "$PUBLIC_DIR/.git" ]; then
@@ -97,10 +119,33 @@ if [ ! -d "$OVERRIDES_DIR" ]; then
   exit 1
 fi
 
-# Paths excluded from replayed patches. Private-only paths are dropped
-# entirely; override-managed paths are dropped from patches and instead
-# re-materialized from $OVERRIDES_DIR in a single trailing commit.
-EXCLUDES='^(AGENTS\.md|_AGENT_HANDOFF\.md|tasks/|\.agents/|\.codex/|\.claude/|scripts/|target/|CONTRIBUTING\.md|\.github/workflows/ci\.yml|\.github/workflows/scorecard\.yml)'
+# Paths excluded from replayed patches and from snapshot tree.
+# Private-only paths are dropped entirely; override-managed paths are
+# dropped from patches and instead re-materialized from $OVERRIDES_DIR
+# in a single trailing commit (in per-commit mode) or as part of the
+# single snapshot commit (in --snapshot mode).
+#
+# Trailing `/` denotes a directory prefix; bare names match the exact
+# file. The awk-friendly $EXCLUDES regex is derived from this list, so
+# the two never drift apart.
+EXCLUDE_PATHS=(
+  AGENTS.md
+  _AGENT_HANDOFF.md
+  tasks/
+  .agents/
+  .codex/
+  .claude/
+  scripts/
+  target/
+  CONTRIBUTING.md
+  .github/workflows/ci.yml
+  .github/workflows/scorecard.yml
+)
+EXCLUDES="^($(
+  IFS='|'
+  joined="${EXCLUDE_PATHS[*]}"
+  printf '%s' "${joined//./\\.}"
+))"
 
 PRIV_HEAD="$(git rev-parse HEAD)"
 PRIV_SHORT="$(git rev-parse --short HEAD)"
@@ -135,7 +180,11 @@ PATCH_DIR="/tmp/sync-to-public-$PRIV_SHORT"
 rm -rf "$PATCH_DIR"
 mkdir -p "$PATCH_DIR"
 
-if [ "$RANGE_COUNT" -gt 0 ]; then
+if [ "$SNAPSHOT" -eq 1 ]; then
+  echo "→ snapshot mode: range $BASE_SHORT..$PRIV_SHORT will collapse into one commit"
+fi
+
+if [ "$SNAPSHOT" -eq 0 ] && [ "$RANGE_COUNT" -gt 0 ]; then
   echo "→ git format-patch $BASE_SHORT..$PRIV_SHORT → $PATCH_DIR"
   # format-patch on a range walks all commits, skipping merges by
   # default — exactly what we want: every individual file-changing
@@ -218,15 +267,16 @@ if [ "$RANGE_COUNT" -gt 0 ]; then
   done
 fi
 
-echo "→ leak pre-scan (filtered patches)"
-leak_any=0
-for p in "$PATCH_DIR"/*.patch; do
-  [ -e "$p" ] || continue
-  if ! "$LIB_DIR/leak-scan.sh" "$p"; then
-    leak_any=1
-  fi
-done
-if [ "$leak_any" -ne 0 ]; then
+if [ "$SNAPSHOT" -eq 0 ]; then
+  echo "→ leak pre-scan (filtered patches)"
+  leak_any=0
+  for p in "$PATCH_DIR"/*.patch; do
+    [ -e "$p" ] || continue
+    if ! "$LIB_DIR/leak-scan.sh" "$p"; then
+      leak_any=1
+    fi
+  done
+  if [ "$leak_any" -ne 0 ]; then
   cat >&2 <<EOF
 
 ✗ LEAK PRE-SCAN FAILED.
@@ -247,7 +297,8 @@ To proceed, choose one per leaky commit:
 
 Filtered patch artefacts retained at: $PATCH_DIR
 EOF
-  exit 3
+    exit 3
+  fi
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
@@ -298,37 +349,96 @@ fi
 echo "→ create sync branch $BRANCH"
 git checkout -b "$BRANCH"
 
-if [ "$RANGE_COUNT" -gt 0 ]; then
-  nonempty=()
-  for p in "$PATCH_DIR"/*.patch; do
-    if grep -q "^diff --git " "$p"; then
-      nonempty+=("$p")
-    else
-      echo "  skipping fully-excluded patch: $(basename "$p")"
+apply_overrides() {
+  while IFS= read -r -d '' rel; do
+    rel="${rel#./}"
+    src="$OVERRIDES_DIR/$rel"
+    dst="$PUBLIC_DIR/$rel"
+    mkdir -p "$(dirname "$dst")"
+    cp "$src" "$dst"
+  done < <(cd "$OVERRIDES_DIR" && find . -type f -print0)
+}
+
+if [ "$SNAPSHOT" -eq 1 ]; then
+  echo "→ overlay private HEAD tree into $PUBLIC_DIR via git archive | tar"
+  git -C "$REPO_ROOT" archive --format=tar HEAD | tar -x -C "$PUBLIC_DIR"
+
+  echo "→ strip excluded paths from public working tree"
+  for ex in "${EXCLUDE_PATHS[@]}"; do
+    target="$PUBLIC_DIR/${ex%/}"
+    if [ -e "$target" ]; then
+      rm -rf "$target"
+      echo "  removed: $ex"
     fi
   done
 
-  if [ "${#nonempty[@]}" -gt 0 ]; then
-    echo "→ git am ${#nonempty[@]} patch(es)"
-    git am "${nonempty[@]}"
-  else
-    echo "→ no patches with retained content to apply"
-  fi
-fi
+  echo "→ refresh public-overrides into $PUBLIC_DIR"
+  apply_overrides
 
-echo "→ refresh public-overrides into $PUBLIC_DIR"
-while IFS= read -r -d '' rel; do
-  rel="${rel#./}"
-  src="$OVERRIDES_DIR/$rel"
-  dst="$PUBLIC_DIR/$rel"
-  mkdir -p "$(dirname "$dst")"
-  cp "$src" "$dst"
-done < <(cd "$OVERRIDES_DIR" && find . -type f -print0)
-
-if [ -n "$(git status --porcelain)" ]; then
-  echo "→ commit overrides drift"
+  echo "→ snapshot leak pre-scan (staged diff vs main)"
   git add -A
+  snap_diff="$(mktemp -t snapshot-pseudo-XXXXXX.patch)"
+  trap 'rm -f "$snap_diff"' EXIT
+  {
+    printf '\n---\n'
+    git diff --cached --no-color
+  } > "$snap_diff"
+  if ! "$LIB_DIR/leak-scan.sh" "$snap_diff"; then
+    cat >&2 <<EOF
+
+✗ SNAPSHOT LEAK PRE-SCAN FAILED.
+
+The sanitized snapshot tree still contains private-path references in
+added diff lines. The sync branch $BRANCH is left on $PUBLIC_DIR for
+inspection. Likely cause: a public-tracked file in private HEAD (e.g.
+README.md, .gitignore) was edited to reference a private path.
+
+Fix on the private side (rephrase the public-tracked file to avoid
+naming private paths), then re-run.
+EOF
+    exit 4
+  fi
+  rm -f "$snap_diff"
+  trap - EXIT
+
+  echo "→ commit snapshot"
   git commit -m "$(cat <<EOF
+Snapshot sync @ $PRIV_SHORT
+
+Collapse private range $BASE_SHORT..$PRIV_SHORT ($RANGE_COUNT non-merge
+commit(s)) into one sanitized commit. Per-commit replay was skipped
+via --snapshot — see scripts/sync-to-public.sh in the private repo for
+the rationale and mechanism.
+
+Synced-From: $PRIV_HEAD
+EOF
+)"
+else
+  if [ "$RANGE_COUNT" -gt 0 ]; then
+    nonempty=()
+    for p in "$PATCH_DIR"/*.patch; do
+      if grep -q "^diff --git " "$p"; then
+        nonempty+=("$p")
+      else
+        echo "  skipping fully-excluded patch: $(basename "$p")"
+      fi
+    done
+
+    if [ "${#nonempty[@]}" -gt 0 ]; then
+      echo "→ git am ${#nonempty[@]} patch(es)"
+      git am "${nonempty[@]}"
+    else
+      echo "→ no patches with retained content to apply"
+    fi
+  fi
+
+  echo "→ refresh public-overrides into $PUBLIC_DIR"
+  apply_overrides
+
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "→ commit overrides drift"
+    git add -A
+    git commit -m "$(cat <<EOF
 Apply public-overrides @ $PRIV_SHORT
 
 Refresh CONTRIBUTING.md and public-only workflow overrides from the
@@ -337,8 +447,9 @@ private repo's scripts/public-overrides/ tree.
 Synced-From: $PRIV_HEAD
 EOF
 )"
-else
-  echo "→ overrides already up to date"
+  else
+    echo "→ overrides already up to date"
+  fi
 fi
 
 # ---- Gauntlet ----
