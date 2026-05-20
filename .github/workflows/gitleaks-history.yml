@@ -1,9 +1,16 @@
 name: Gitleaks (full history)
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   schedule:
     - cron: "17 5 * * 1"
   workflow_dispatch:
+
+concurrency:
+  group: gitleaks-history-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
