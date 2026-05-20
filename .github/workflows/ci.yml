@@ -53,9 +53,16 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        # Toolchain channel + components driven by rust-toolchain.toml
-        # at repo root so local and CI resolve identically.
+        # The SHA-pinned dtolnay/rust-toolchain at this revision
+        # requires an explicit toolchain input — it does not fall back
+        # to reading rust-toolchain.toml. `stable` is a baseline; the
+        # actual cargo invocations honour rust-toolchain.toml at the
+        # repo root via rustup, so the pinned channel still drives
+        # what runs.
         uses: dtolnay/rust-toolchain@350b8170d67565ecb255cb735a9c516a4106d651
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -160,7 +167,10 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
+        # See rust-lint job's Install Rust step for rationale.
         uses: dtolnay/rust-toolchain@350b8170d67565ecb255cb735a9c516a4106d651
+        with:
+          toolchain: stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
@@ -255,7 +265,10 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
+        # See rust-lint job's Install Rust step for rationale.
         uses: dtolnay/rust-toolchain@350b8170d67565ecb255cb735a9c516a4106d651
+        with:
+          toolchain: stable
 
       - name: cargo-deny
         uses: EmbarkStudios/cargo-deny-action@6c8f9facfa5047ec02d8485b6bf52b587b7777d1 # v2.0.18

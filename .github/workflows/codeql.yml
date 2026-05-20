@@ -66,8 +66,13 @@ jobs:
           persist-credentials: false
 
       - name: Install Rust
-        # Toolchain pinned via rust-toolchain.toml at repo root.
+        # The SHA-pinned dtolnay/rust-toolchain at this revision
+        # requires an explicit toolchain input. `stable` here is a
+        # baseline; rust-toolchain.toml at the repo root drives the
+        # actual cargo invocations via rustup.
         uses: dtolnay/rust-toolchain@350b8170d67565ecb255cb735a9c516a4106d651
+        with:
+          toolchain: stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
