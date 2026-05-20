@@ -115,6 +115,19 @@ Every job in every workflow is `if: ${{ !github.event.repository.private }}`
 - [ ] Update [.github/ISSUE_TEMPLATE/config.yml](../.github/ISSUE_TEMPLATE/config.yml)
       security advisories URL to match the new name.
 - [ ] Update `Cargo.toml [package].repository` if needed.
+- [ ] (Optional) Rename the local clone directory:
+      `cd .. && mv <old> <new>`. Then re-set `origin`:
+      `git remote set-url origin git@github.com:<owner>/<new>.git`.
+      Required for the Claude Code per-project memory symlink (path
+      slug embeds the directory name) — see below.
+- [ ] (Optional) Migrate the agent-memory symlink to the new local
+      path slug if you renamed the directory:
+      ```bash
+      OLD="$HOME/.claude/projects/-home-$USER-Projects-<old>/memory"
+      NEW="$HOME/.claude/projects/-home-$USER-Projects-<new>/memory"
+      [ -L "$OLD" ] && rm "$OLD"
+      ln -s "$PWD/.agents/memory" "$NEW"
+      ```
 - [ ] Flip visibility to public:
       `gh repo edit --visibility public --accept-visibility-change-consequences`.
 - [ ] Run the server-side controls block from

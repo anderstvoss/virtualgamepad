@@ -29,8 +29,8 @@ that path at the in-repo directory so memories live next to the code:
 mkdir -p .agents/memory
 
 # Adjust the project-slug segment if your local checkout path
-# differs from $HOME/Projects/<this-repo>.
-RUNTIME_MEM="$HOME/.claude/projects/-home-$USER-Projects-virtualgamepad-private/memory"
+# differs from $HOME/Projects/virtualgamepad.
+RUNTIME_MEM="$HOME/.claude/projects/-home-$USER-Projects-virtualgamepad/memory"
 mkdir -p "$(dirname "$RUNTIME_MEM")"
 [ -e "$RUNTIME_MEM" ] && [ ! -L "$RUNTIME_MEM" ] && rmdir "$RUNTIME_MEM" 2>/dev/null
 [ -L "$RUNTIME_MEM" ] || ln -s "$(pwd)/.agents/memory" "$RUNTIME_MEM"
