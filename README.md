@@ -82,4 +82,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 See [SECURITY.md](SECURITY.md). For the end-to-end hardening
 procedure (reusable across projects), see
-[`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).
+[`docs/REPO-SETUP.md`](docs/REPO-SETUP.md); for the tickable one-page
+bootstrap list, see [`docs/HARDENING-CHECKLIST.md`](docs/HARDENING-CHECKLIST.md).
