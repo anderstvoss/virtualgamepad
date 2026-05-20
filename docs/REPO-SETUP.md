@@ -374,6 +374,32 @@ before path filtering with a `dropping (skiplist|trailer): <sha>
 <subject>` log line. Prefer the trailer for new commits — it lives
 with the commit and is self-documenting.
 
+### Snapshot fallback (`--snapshot`)
+
+Operator-triggered escape hatch when per-commit replay cannot be made
+clean — e.g. a sequence of commits each independently fine but whose
+sanitized accumulation still references private paths. With
+`--snapshot`, the script:
+
+1. Creates the public sync branch off public `main` as usual.
+2. Overlays the private `HEAD` tree onto the public working tree via
+   `git archive | tar`.
+3. Strips the exclude paths (private-only + override-managed) from the
+   public tree.
+4. Re-applies `scripts/public-overrides/`.
+5. Runs the same leak pre-scan against the staged diff. Fail-fast on
+   hit (likely cause: a public-tracked file on private references a
+   private path — fix it in private first, then re-run).
+6. Commits the entire range as a single sanitized commit with body
+   `Snapshot sync @ <priv-short>` and a `Synced-From: <priv-full-sha>`
+   trailer.
+
+Trade-offs vs. per-commit replay: loses author/date granularity for the
+collapsed range; public history shows one squash commit covering the
+whole range instead of N individual commits. The `Private-Only:` and
+skiplist mechanisms are moot in this mode (the tree is taken as-is and
+filtered by path). Mutually exclusive with `--dry-run`.
+
 ### `Synced-From:` trailer and bootstrapping
 
 `scripts/sync-to-public.sh` reads the most recent
