@@ -132,6 +132,7 @@ cat > /tmp/branch-protection.json <<'EOF'
     "strict": true,
     "contexts": [
       "Rust lint",
+      "MSRV (cargo check on rust-version)",
       "Rust build and test (ubuntu-latest)",
       "Rust build and test (macos-latest)",
       "Rust build and test (windows-latest)",
