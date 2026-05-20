@@ -8,7 +8,12 @@ Security updates are provided for the latest version on the `main` branch unless
 
 Please do not report security vulnerabilities through public GitHub issues.
 
-Use GitHub private vulnerability reporting if enabled, or contact the maintainer directly.
+**Preferred:** open a private report at
+<https://github.com/anderstvoss/virtualgamepad/security/advisories/new>
+(GitHub Private Vulnerability Reporting).
+
+**Alternative:** email the maintainer at
+<anderstvoss@gmail.com>.
 
 Include:
 
@@ -16,6 +21,9 @@ Include:
 - Reproduction steps
 - Impact
 - Suggested fix, if known
+
+Initial response: within 7 days. Coordinated disclosure preferred; we
+will work with you on a timeline before any public advisory.
 
 ## Defensive Posture
 
