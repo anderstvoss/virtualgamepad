@@ -6,7 +6,18 @@ physical hardware at varying accuracy levels.
 > **Status:** early WIP. The crate is a scaffold; the public API will
 > land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
 > tracked changes, and [docs/spec/](docs/spec/) for the architecture,
-> implementation, and validation spec the buildout follows.
+> implementation, and validation spec the buildout follows. A
+> companion [demo program](demo/) grows alongside the library — see
+> [demo/README.md](demo/README.md) for its growth plan.
+
+## Project goals
+
+- ship a Rust library for virtual controller emulation per the
+  [spec](docs/spec/)
+- ship a separate [demo program](demo/) that grows from a CLI today
+  into a full GUI with an internal controller visualizer once the
+  library is functional (architecture ready for full device-emulation
+  buildout, not necessarily every device supported)
 
 ## License
 
@@ -68,6 +79,19 @@ scripts/deep-scan.sh
 Record user-visible changes in [`CHANGELOG.md`](CHANGELOG.md) under
 the `Unreleased` section as part of any feature, fix, or breaking
 change.
+
+## Demo program
+
+The repo ships a separate demo binary under [`demo/`](demo/) that grows
+with the library. To run the current CLI scaffold:
+
+```bash
+cargo run -p virtual_gamepad_demo -- info
+```
+
+See [demo/README.md](demo/README.md) for the planned growth phases and
+non-goals (the demo is **not** intended to be embedded by real users
+of the library).
 
 ## Configuration
 
