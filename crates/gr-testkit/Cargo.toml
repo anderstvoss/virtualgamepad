@@ -10,6 +10,7 @@ description = "Testing tooling and fixtures for virtualgamepad."
 
 [dependencies]
 gr-core = { path = "../gr-core", version = "0.1" }
+gr-profiles = { path = "../gr-profiles", version = "0.1" }
 proptest.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true

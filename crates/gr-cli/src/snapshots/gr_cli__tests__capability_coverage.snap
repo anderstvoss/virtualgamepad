@@ -1,0 +1,5 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: "serde_yaml::to_string(&report).expect(\"yaml\")"
+---
+gaps: []

@@ -10,3 +10,5 @@ Files in this directory:
 
 - [Phase 1 Manual Gate](phase-1.md): core domain model review and
   manual-to-automation checks for `gr-core`
+- [Phase 2 Manual Gate](phase-2.md): profile registry, capability
+  review, and registry-consistency checks for `gr-profiles`

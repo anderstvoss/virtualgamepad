@@ -100,4 +100,19 @@ mod tests {
         let cli = Cli::parse_from(["vgpd-demo", "show-type"]);
         assert!(matches!(cli.command, Command::ShowTypes));
     }
+
+    #[test]
+    fn list_profiles_subcommand_parses() {
+        let cli = Cli::parse_from(["vgpd-demo", "list-profiles"]);
+        assert!(matches!(cli.command, Command::ListProfiles));
+    }
+
+    #[test]
+    fn show_capabilities_subcommand_parses() {
+        let cli = Cli::parse_from(["vgpd-demo", "show-capabilities", "dualsense"]);
+        assert!(matches!(
+            cli.command,
+            Command::ShowCapabilities { profile_id } if profile_id == "dualsense"
+        ));
+    }
 }

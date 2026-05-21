@@ -8,5 +8,15 @@ repository.workspace = true
 authors.workspace = true
 description = "Built-in profile inventory for virtualgamepad."
 
+[dependencies]
+gr-core = { path = "../gr-core", version = "0.1" }
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+rstest.workspace = true
+serde_yaml.workspace = true
+
 [lints]
 workspace = true

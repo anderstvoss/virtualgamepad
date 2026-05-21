@@ -1,0 +1,169 @@
+---
+source: crates/gr-profiles/src/lib.rs
+expression: "serde_yaml::to_string(profile).expect(\"yaml\")"
+---
+profile_id: steam-controller
+display_name: Steam Controller
+profile_family: steam-controller
+identity:
+  vendor_id: 10462
+  product_id: 4354
+  version: null
+  transport_hints:
+  - usb
+  - bluetooth
+capabilities:
+  input:
+  - category: button
+    semantic: !input face-bottom
+    optionality: required
+  - category: button
+    semantic: !input face-right
+    optionality: required
+  - category: button
+    semantic: !input face-left
+    optionality: required
+  - category: button
+    semantic: !input face-top
+    optionality: required
+  - category: button
+    semantic: !input left-shoulder
+    optionality: required
+  - category: button
+    semantic: !input right-shoulder
+    optionality: required
+  - category: button
+    semantic: !input left-stick-button
+    optionality: required
+  - category: button
+    semantic: !input paddle-left
+    optionality: required
+  - category: button
+    semantic: !input paddle-right
+    optionality: required
+  - category: system
+    semantic: !input menu-primary
+    optionality: required
+  - category: system
+    semantic: !input menu-secondary
+    optionality: required
+  - category: system
+    semantic: !input guide
+    optionality: required
+  - category: stick
+    semantic: !input left-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: touch-surface
+    semantic: !input touch-surface
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: trigger
+    semantic: !input left-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - category: trigger
+    semantic: !input right-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  output:
+  - category: haptic
+    semantic: !output rumble
+    optionality: required
+  - category: lighting
+    semantic: !output lighting
+    optionality: optional
+supported_fidelity:
+- compatibility
+- identity-aware
+- hardware-faithful
+input_contract:
+  required_fields:
+  - buttons.a
+  - buttons.b
+  - buttons.x
+  - buttons.y
+  - buttons.left_grip
+  - buttons.right_grip
+  - buttons.lb
+  - buttons.rb
+  - buttons.menu_primary
+  - buttons.menu_secondary
+  - buttons.steam
+  - buttons.left_pad_click
+  - buttons.right_pad_click
+  - buttons.left_stick_click
+  - sticks.left_pad_x
+  - sticks.left_pad_y
+  - sticks.right_pad_x
+  - sticks.right_pad_y
+  - sticks.left_stick_x
+  - sticks.left_stick_y
+  - triggers.lt
+  - triggers.rt
+  optional_fields: []
+  ranges:
+  - field: sticks.left_pad_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_pad_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_pad_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_pad_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_stick_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_stick_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: triggers.lt
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - field: triggers.rt
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  delta_support: sparse-partial
+descriptor_templates:
+- fidelity: compatibility
+  descriptor: []
+- fidelity: identity-aware
+  descriptor: []
+- fidelity: hardware-faithful
+  descriptor: []
+reverse_command_support:
+  supported:
+  - !semantic rumble
+  - !semantic lighting

@@ -100,3 +100,45 @@ fn workspace_xbox360_fixture_loads_as_profile_input_frame() {
     assert_eq!(frame.profile_id.as_ref(), fixture.profile_id);
     frame.validate().expect("frame should validate");
 }
+
+#[test]
+fn workspace_generic_gamepad_fixture_loads_as_profile_input_frame() {
+    let path = fixture_path("tests/fixtures/generic-gamepad-neutral.yaml");
+    let contents = std::fs::read_to_string(path).expect("read fixture");
+    let fixture: RawInputFrameFixture = serde_yaml::from_str(&contents).expect("parse fixture");
+    let payload: RawInputFramePayload =
+        serde_yaml::from_value(fixture.payload).expect("decode frame payload");
+    let frame = ProfileInputFrame {
+        profile_id: ProfileId::from(fixture.profile_id.as_str()),
+        timestamp: payload.timestamp,
+        sequence: payload.sequence,
+        payload: payload.payload,
+    };
+    assert_eq!(frame.profile_id.as_ref(), "generic-gamepad");
+    assert!(matches!(
+        frame.payload,
+        ProfileInputPayload::GenericGamepad(_)
+    ));
+    frame.validate().expect("frame should validate");
+}
+
+#[test]
+fn workspace_steam_controller_fixture_loads_as_profile_input_frame() {
+    let path = fixture_path("tests/fixtures/steam-controller-neutral.yaml");
+    let contents = std::fs::read_to_string(path).expect("read fixture");
+    let fixture: RawInputFrameFixture = serde_yaml::from_str(&contents).expect("parse fixture");
+    let payload: RawInputFramePayload =
+        serde_yaml::from_value(fixture.payload).expect("decode frame payload");
+    let frame = ProfileInputFrame {
+        profile_id: ProfileId::from(fixture.profile_id.as_str()),
+        timestamp: payload.timestamp,
+        sequence: payload.sequence,
+        payload: payload.payload,
+    };
+    assert_eq!(frame.profile_id.as_ref(), "steam-controller");
+    assert!(matches!(
+        frame.payload,
+        ProfileInputPayload::SteamController(_)
+    ));
+    frame.validate().expect("frame should validate");
+}
