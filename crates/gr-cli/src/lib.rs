@@ -1,5 +1,6 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
+use gr_core::SemanticInputFunction;
 use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, RegistryError,
     SemanticRef, registry,
@@ -330,8 +331,12 @@ struct CapabilitySummaryItem {
     category: String,
     semantic: String,
     optionality: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    covered_fields: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     range: Option<gr_profiles::ValueRange>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    range_applies_to: Vec<String>,
 }
 
 impl From<CapabilityItem> for CapabilitySummaryItem {
@@ -340,12 +345,20 @@ impl From<CapabilityItem> for CapabilitySummaryItem {
             SemanticRef::Input(semantic) => semantic.to_string(),
             SemanticRef::Output(semantic) => semantic.to_string(),
         };
+        let covered_fields = capability_fields(capability);
+        let range_applies_to = if capability.range.is_some() {
+            covered_fields.clone()
+        } else {
+            Vec::new()
+        };
 
         Self {
             category: capability.category.to_string(),
             semantic,
             optionality: serde_name(&capability.optionality),
+            covered_fields,
             range: capability.range,
+            range_applies_to,
         }
     }
 }
@@ -460,6 +473,18 @@ fn output_function_name(function: OutputFunctionRef) -> String {
     match function {
         OutputFunctionRef::Semantic(semantic) => semantic.to_string(),
         _ => "unknown".to_string(),
+    }
+}
+
+fn capability_fields(capability: CapabilityItem) -> Vec<String> {
+    match capability.semantic {
+        SemanticRef::Input(SemanticInputFunction::LeftStick) => {
+            vec!["sticks.left_x".to_string(), "sticks.left_y".to_string()]
+        }
+        SemanticRef::Input(SemanticInputFunction::RightStick) => {
+            vec!["sticks.right_x".to_string(), "sticks.right_y".to_string()]
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -641,6 +666,21 @@ mod tests {
     fn show_capabilities_output_is_stable() {
         let output = show_capabilities("dualsense").expect("show-capabilities succeeds");
         assert_snapshot!("show_capabilities_dualsense", output);
+    }
+
+    #[test]
+    fn xbox360_capability_output_is_stable() {
+        let output = show_capabilities("xbox360").expect("show-capabilities succeeds");
+        assert_snapshot!("show_capabilities_xbox360", output);
+    }
+
+    #[test]
+    fn show_capabilities_makes_stick_axis_coverage_explicit() {
+        let output = show_capabilities("dualsense").expect("show-capabilities succeeds");
+        assert!(output.contains("covered_fields:"));
+        assert!(output.contains("- sticks.left_x"));
+        assert!(output.contains("- sticks.left_y"));
+        assert!(output.contains("range_applies_to:"));
     }
 
     #[test]

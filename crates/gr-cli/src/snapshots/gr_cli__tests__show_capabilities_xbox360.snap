@@ -2,16 +2,15 @@
 source: crates/gr-cli/src/lib.rs
 expression: output
 ---
-profile_id: dualsense
-display_name: DualSense
-profile_family: dualsense
+profile_id: xbox360
+display_name: Xbox 360
+profile_family: xbox360
 identity:
-  vendor_id: 1356
-  product_id: 3302
-  version: 256
+  vendor_id: 1118
+  product_id: 654
+  version: null
   transport_hints:
   - usb
-  - bluetooth
 supported_fidelity:
 - compatibility
 - identity-aware
@@ -49,9 +48,6 @@ input_capabilities:
   optionality: required
 - category: system
   semantic: guide
-  optionality: required
-- category: button
-  semantic: touch-click
   optionality: required
 - category: button
   semantic: dpad
@@ -96,55 +92,33 @@ input_capabilities:
     kind: u16
     min: 0
     max: 65535
-- category: touch-surface
-  semantic: touch-surface
-  optionality: required
-- category: motion-sensor
-  semantic: accelerometer
-  optionality: optional
-- category: motion-sensor
-  semantic: gyroscope
-  optionality: optional
 output_capabilities:
 - category: haptic
   semantic: rumble
   optionality: required
-- category: haptic
-  semantic: haptics
-  optionality: optional
 - category: lighting
   semantic: lighting
   optionality: required
 - category: lighting
   semantic: player-indicators
   optionality: required
-- category: trigger
-  semantic: trigger-effect
-  optionality: required
-- category: audio
-  semantic: audio
-  optionality: optional
 reverse_command_support:
 - rumble
-- haptics
 - lighting
 - player-indicators
-- trigger-effect
-- audio
 input_contract:
   required_fields:
-  - buttons.face.cross
-  - buttons.face.circle
-  - buttons.face.square
-  - buttons.face.triangle
-  - buttons.shoulders.l1
-  - buttons.shoulders.r1
-  - buttons.stick_clicks.l3
-  - buttons.stick_clicks.r3
-  - buttons.system.create
-  - buttons.system.options
-  - buttons.system.ps
-  - buttons.system.touchpad_click
+  - buttons.face.a
+  - buttons.face.b
+  - buttons.face.x
+  - buttons.face.y
+  - buttons.shoulders.lb
+  - buttons.shoulders.rb
+  - buttons.stick_clicks.ls
+  - buttons.stick_clicks.rs
+  - buttons.system.start
+  - buttons.system.back
+  - buttons.system.guide
   - dpad.up
   - dpad.down
   - dpad.left
@@ -153,14 +127,8 @@ input_contract:
   - sticks.left_y
   - sticks.right_x
   - sticks.right_y
-  - triggers.l2
-  - triggers.r2
-  - touchpad.contact_1.active
-  - touchpad.contact_1.x
-  - touchpad.contact_1.y
-  - touchpad.contact_2.active
-  - touchpad.contact_2.x
-  - touchpad.contact_2.y
+  - triggers.lt
+  - triggers.rt
   optional_fields: []
   ranges:
   - field: sticks.left_x
@@ -183,36 +151,16 @@ input_contract:
       kind: i16
       min: -32768
       max: 32767
-  - field: triggers.l2
+  - field: triggers.lt
     range:
       kind: u16
       min: 0
       max: 65535
-  - field: triggers.r2
+  - field: triggers.rt
     range:
       kind: u16
       min: 0
       max: 65535
-  - field: touchpad.contact_1.x
-    range:
-      kind: u16
-      min: 0
-      max: 1920
-  - field: touchpad.contact_1.y
-    range:
-      kind: u16
-      min: 0
-      max: 1080
-  - field: touchpad.contact_2.x
-    range:
-      kind: u16
-      min: 0
-      max: 1920
-  - field: touchpad.contact_2.y
-    range:
-      kind: u16
-      min: 0
-      max: 1080
   delta_support: sparse-partial
 descriptor_templates:
 - fidelity: compatibility

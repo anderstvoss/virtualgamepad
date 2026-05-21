@@ -379,13 +379,28 @@ const GENERIC_GAMEPAD_INPUT_CAPABILITIES: &[CapabilityItem] = &[
 ];
 
 const XBOX360_INPUT_CAPABILITIES: &[CapabilityItem] = GENERIC_GAMEPAD_INPUT_CAPABILITIES;
-const XBOX360_OUTPUT_CAPABILITIES: &[CapabilityItem] = &[cap_output(
-    CapabilityCategory::Haptic,
-    SemanticOutputFunction::Rumble,
-    Optionality::Required,
-)];
-const XBOX360_REVERSE_SUPPORT: &[OutputFunctionRef] =
-    &[OutputFunctionRef::Semantic(SemanticOutputFunction::Rumble)];
+const XBOX360_OUTPUT_CAPABILITIES: &[CapabilityItem] = &[
+    cap_output(
+        CapabilityCategory::Haptic,
+        SemanticOutputFunction::Rumble,
+        Optionality::Required,
+    ),
+    cap_output(
+        CapabilityCategory::Lighting,
+        SemanticOutputFunction::Lighting,
+        Optionality::Required,
+    ),
+    cap_output(
+        CapabilityCategory::Lighting,
+        SemanticOutputFunction::PlayerIndicators,
+        Optionality::Required,
+    ),
+];
+const XBOX360_REVERSE_SUPPORT: &[OutputFunctionRef] = &[
+    OutputFunctionRef::Semantic(SemanticOutputFunction::Rumble),
+    OutputFunctionRef::Semantic(SemanticOutputFunction::Lighting),
+    OutputFunctionRef::Semantic(SemanticOutputFunction::PlayerIndicators),
+];
 
 const DUALSENSE_INPUT_CAPABILITIES: &[CapabilityItem] = &[
     cap_input(
@@ -1263,6 +1278,26 @@ mod tests {
                 .validate_profile_contract(profile)
                 .expect("built-in profile validates");
         }
+    }
+
+    #[test]
+    fn xbox360_declares_led_outputs() {
+        let profile = registry()
+            .profile_by_str("xbox360")
+            .expect("xbox360 profile exists");
+
+        assert!(
+            profile.capabilities.output.iter().any(|capability| {
+                capability.semantic == SemanticRef::Output(SemanticOutputFunction::Lighting)
+            }),
+            "xbox360 should declare lighting output"
+        );
+        assert!(
+            profile.capabilities.output.iter().any(|capability| {
+                capability.semantic == SemanticRef::Output(SemanticOutputFunction::PlayerIndicators)
+            }),
+            "xbox360 should declare player indicator output"
+        );
     }
 
     #[test]

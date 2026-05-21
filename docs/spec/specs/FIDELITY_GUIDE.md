@@ -254,6 +254,8 @@ Input capabilities:
 Output capabilities:
 
 - rumble (dual-rotor force feedback)
+- ring lighting control
+- player-indicator LEDs
 
 Notes:
 

@@ -222,6 +222,7 @@ name = "gr-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "gr-core",
  "gr-profiles",
  "gr-testkit",
  "insta",

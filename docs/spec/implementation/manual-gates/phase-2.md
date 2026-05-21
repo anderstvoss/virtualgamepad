@@ -67,14 +67,20 @@ cargo run -p virtual_gamepad_demo -- show-capabilities dualsense
    - touch surface
    - accelerometer
    - gyroscope
-3. Confirm the output lists these output capabilities:
+3. In the stick capability entries, confirm the YAML makes the shared
+   axis assumption explicit rather than implicit:
+   - `left-stick` names both `sticks.left_x` and `sticks.left_y`
+   - `right-stick` names both `sticks.right_x` and `sticks.right_y`
+   - the shown stick range clearly states it applies to both axes in
+     each stick pair
+4. Confirm the output lists these output capabilities:
    - rumble
    - haptics
    - lighting
    - player-indicators
    - trigger-effect
    - audio
-4. Cross-check the output against the DualSense reviewer table in
+5. Cross-check the output against the DualSense reviewer table in
    [`FIDELITY_GUIDE.md`](../../specs/FIDELITY_GUIDE.md#dualsense-profile_id-dualsense).
 
 ### What to record
@@ -96,10 +102,11 @@ cargo run -p virtual_gamepad_demo -- show-capabilities xbox360
 
 2. Confirm the input side includes sticks, triggers, d-pad, face
    buttons, shoulders, stick clicks, and system buttons.
-3. Confirm the output side includes `rumble`.
-4. Confirm the output does **not** include:
+3. Confirm the output side includes:
+   - `rumble`
    - `lighting`
    - `player-indicators`
+4. Confirm the output does **not** include:
    - `trigger-effect`
    - `audio`
    - `haptics`
@@ -121,7 +128,11 @@ Goal: confirm the registry rejects incomplete profiles with field-specific error
 cargo test -p gr-profiles invalid_profiles_fail_with_field_specific_errors
 ```
 
-2. Confirm it passes and that the failure it asserts is tied to one
+2. Confirm the command reports **1 passed** and the remaining
+   `gr-profiles` tests as **filtered out**. This is expected because the
+   command intentionally runs one targeted test rather than the full
+   crate suite.
+3. Confirm the passing test asserts that the failure is tied to one
    concrete missing field, not a generic "invalid profile" message.
 
 ### What to record
@@ -143,6 +154,10 @@ cargo insta test --check
 2. Open `crates/gr-profiles/src/snapshots/`.
 3. Confirm the snapshots are easy to read by eye and that each built-in
    profile has a capability dump snapshot.
+4. If a snapshot feels too dense to review comfortably, record that as a
+   follow-up readability issue; YAML remains the gate artifact for now,
+   but future reviewer tooling could include a collapsible JSON-oriented
+   viewer without changing the default format.
 
 ### What to record
 

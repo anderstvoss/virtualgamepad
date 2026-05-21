@@ -81,6 +81,12 @@ capabilities:
   - category: haptic
     semantic: !output rumble
     optionality: required
+  - category: lighting
+    semantic: !output lighting
+    optionality: required
+  - category: lighting
+    semantic: !output player-indicators
+    optionality: required
 supported_fidelity:
 - compatibility
 - identity-aware
@@ -151,3 +157,5 @@ descriptor_templates:
 reverse_command_support:
   supported:
   - !semantic rumble
+  - !semantic lighting
+  - !semantic player-indicators
