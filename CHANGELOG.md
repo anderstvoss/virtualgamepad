@@ -9,7 +9,15 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- Companion demo binary under `demo/` (`virtual_gamepad_demo`) that
+  grows from a CLI scaffold into a future GUI controller visualizer
+  alongside the library. The repo is now a Cargo workspace with the
+  library at the root and the demo as a member.
+
 ### Changed
+
+- Top-level README adds an explicit project-goals section covering
+  both the library and the demo program.
 
 ### Deprecated
 
