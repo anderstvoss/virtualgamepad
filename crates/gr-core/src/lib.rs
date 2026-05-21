@@ -1119,22 +1119,30 @@ mod tests {
 
     #[test]
     fn canonical_yaml_snapshots_are_human_readable() {
-        assert_snapshot!(
-            "fidelity-tier",
-            serde_yaml::to_string(&FidelityTier::Compatibility).expect("yaml")
-        );
-        assert_snapshot!(
-            "backend-level",
-            serde_yaml::to_string(&BackendLevel::Evdev).expect("yaml")
-        );
-        assert_snapshot!(
-            "backend-family",
-            serde_yaml::to_string(&BackendFamily::LinuxTransportBluetooth).expect("yaml")
-        );
-        assert_snapshot!(
-            "capability-category",
-            serde_yaml::to_string(&CapabilityCategory::MotionSensor).expect("yaml")
-        );
+        for tier in FidelityTier::ALL {
+            assert_snapshot!(
+                format!("fidelity-tier-{}", tier.as_str()),
+                serde_yaml::to_string(&tier).expect("yaml")
+            );
+        }
+        for level in BackendLevel::ALL {
+            assert_snapshot!(
+                format!("backend-level-{}", level.as_str()),
+                serde_yaml::to_string(&level).expect("yaml")
+            );
+        }
+        for family in BackendFamily::ALL {
+            assert_snapshot!(
+                format!("backend-family-{}", family.as_str()),
+                serde_yaml::to_string(&family).expect("yaml")
+            );
+        }
+        for category in CapabilityCategory::ALL {
+            assert_snapshot!(
+                format!("capability-category-{}", category.as_str()),
+                serde_yaml::to_string(&category).expect("yaml")
+            );
+        }
         assert_snapshot!(
             "dualsense-neutral-payload",
             serde_yaml::to_string(&ProfileInputPayload::DualSense(DualSenseInput::neutral()))
