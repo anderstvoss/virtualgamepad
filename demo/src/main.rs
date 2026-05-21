@@ -19,6 +19,7 @@ enum Command {
     /// Print demo and workspace scaffold information.
     Info,
     /// Print the canonical Phase 1 type catalog.
+    #[command(alias = "show-type")]
     ShowTypes,
     /// Run the automated portion of a phase gate and print the manual checklist.
     PhaseGate { phase: u8 },
@@ -58,10 +59,24 @@ fn print_show_types() {
 
 #[cfg(test)]
 mod tests {
+    use super::{Cli, Command};
+    use clap::Parser;
     use insta::assert_snapshot;
 
     #[test]
     fn show_types_output_is_stable() {
         assert_snapshot!("show_types", gr_core::render_type_catalog());
+    }
+
+    #[test]
+    fn show_types_subcommand_accepts_canonical_name() {
+        let cli = Cli::parse_from(["vgpd-demo", "show-types"]);
+        assert!(matches!(cli.command, Command::ShowTypes));
+    }
+
+    #[test]
+    fn show_types_subcommand_accepts_singular_alias() {
+        let cli = Cli::parse_from(["vgpd-demo", "show-type"]);
+        assert!(matches!(cli.command, Command::ShowTypes));
     }
 }
