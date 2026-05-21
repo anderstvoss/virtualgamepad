@@ -540,6 +540,7 @@ Purpose:
 `PreparedSession` may internally contain one of several tier-specific prepared models as long as the public session handle remains stable.
 
 ```rust
+#[non_exhaustive]
 pub enum PreparedSessionModel {
     Compatibility(PreparedCompatibilitySession),
     IdentityAware(PreparedIdentitySession),
@@ -591,7 +592,7 @@ pub enum OutputPayload {
     Rumble(RumblePayload),
     Lighting(LightingPayload),
     TriggerEffect(TriggerEffectPayload),
-    Audio(AudioPayload),
+    Audio(AudioCommand),
     FeatureRequest(FeatureRequestPayload),
     ProfileSpecific(ProfileSpecificOutputPayload),
 }
@@ -1054,6 +1055,7 @@ Examples of required assertions:
 - queue overflow
 - backend open failure
 - backend write failure
+- backend would-block (`BackendError::WouldBlock`; session must re-arm via `readiness()`)
 - reverse event parse failure
 - session closed
 

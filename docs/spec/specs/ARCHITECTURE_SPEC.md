@@ -276,7 +276,7 @@ Required planner inputs:
 - host platform
 - backend inventory
 - platform-provider inventory
-- strictness policy
+- compiled session options (including validation strictness sourced from `config.validation`)
 - optional placement preferences
 
 ### Resolution 3: make reverse-path flow a mandatory library contract
@@ -742,8 +742,9 @@ Optional fields:
 - host platform preference
 - backend preference
 - provider preference
-- strictness policy
 - host session metadata
+
+Strictness is sourced from `config.validation`, not from a separate request field.
 
 ### `SessionPlan`
 
