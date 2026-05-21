@@ -1,70 +1,88 @@
 # Rust Implementation Plan
 
-This document defines the Rust build plan for implementing the target architecture described in [ARCHITECTURE_SPEC.md](../specs/ARCHITECTURE_SPEC.md).
+This document defines the **sequencing and validation strategy** for the Rust buildout of `virtualgamepad`. It complements:
 
-It is intended to guide a real build-out from a greenfield workspace to a production-capable subsystem that can be embedded inside a larger host program.
+- [RUST_IMPLEMENTATION_SPEC.md](RUST_IMPLEMENTATION_SPEC.md) — authoritative for crate boundaries, runtime types, and contracts
+- [TESTING_TOOLING_SPEC.md](TESTING_TOOLING_SPEC.md) — authoritative for the test stack (fixtures, fakes, snapshots, CLIs)
+- [ARCHITECTURE_SPEC.md](../specs/ARCHITECTURE_SPEC.md) — architectural ground truth
 
-This plan assumes:
+If this plan disagrees with the implementation spec on **shape** (type names, crate ownership, public API), the spec wins and this plan is updated. This plan is authoritative for **sequencing** (what to build when, what proves it works, what blocks the next phase).
 
-- the host program can produce controller input appropriate to the selected target profile
-- the library should ship primarily as an embeddable Rust crate set
-- Linux is the first concrete platform target
-- Windows and macOS must be accounted for in the architecture and planner even before their providers are implemented
-- fidelity tiers will be implemented incrementally
-- session isolation, planning correctness, and reverse-path handling matter more than early transport spoofing
+## How this plan works
 
-Related documents:
+### Phases and gates
 
-- [ARCHITECTURE_SPEC.md](../specs/ARCHITECTURE_SPEC.md)
-- [IMPLEMENTATION_FRAMEWORK.md](../implementation/IMPLEMENTATION_FRAMEWORK.md)
-- [CONFIGURATION_SPEC.md](../specs/CONFIGURATION_SPEC.md)
-- [FIDELITY_GUIDE.md](../specs/FIDELITY_GUIDE.md)
-- [TEST_PLAN.md](../validation/TEST_PLAN.md)
+The buildout is a sequence of **phases**. Between every pair of phases sits a **gate** — a checklist the user steps through before phase N+1 is allowed to start. Gates are intentionally manual at the end so that automated green doesn't disguise a regression in something only a human will catch (UX of CLI output, naming, ergonomics, perceived quality).
+
+A gate has two halves:
+
+1. **Automated portion** — runs in CI and locally via `vgpd-demo phase-gate <N>`. Must be 100% green before manual review starts.
+2. **Manual portion** — a numbered checklist of commands the user runs and observations the user records. The user signs off with an empty commit `chore(phase-gate): Phase N gate passed`.
+
+The gate commit is documentary. Tooling does not enforce it. Reviewers of subsequent PRs check for it.
+
+### Within-phase iteration
+
+Inside a phase, work follows an explicit loop. Agents may drive any step.
+
+1. **Design pass** — sketch the new types / traits / data flow; update the implementation spec only if a real ambiguity is found
+2. **Contract tests** — write failing tests that pin the new contract (snapshot, property, fixture-driven)
+3. **Implementation** — make the tests pass with the minimum code that satisfies them
+4. **Demo wiring** — add or extend `vgpd-demo` subcommands so the new functionality is observable by a human
+5. **Refactor** — simplify with the test suite as a ratchet
+6. **Gate-prep** — author the manual gate items, validate the automated portion, write the gate notes
+
+Steps 2–4 are short and tight; steps 1 and 5 should be cheap once the test stack is solid. Step 6 happens once near the end of the phase.
+
+### Testing tooling is liberal
+
+[TESTING_TOOLING_SPEC.md](TESTING_TOOLING_SPEC.md) describes the test stack — `gr-testkit`, fixtures, `gr-cli`, `vgpd-demo`, snapshot and property testing, backend trace record/replay. This plan treats it as already designed and references the relevant sections per phase.
+
+The user can author **custom test cases as YAML fixtures** starting in Phase 0; that workflow is exercised at every gate from Phase 1 onward.
+
+### Manual gate scope by phase tier
+
+- **Foundation phases (0–3)**: gates exercise authoring workflows and library output. The user reads dumps, validates samples, reviews snapshots.
+- **Runtime phases (4–7)**: gates exercise fake-backend sessions end-to-end. The user runs scenarios and observes input/reverse flow.
+- **Provider phases (8–11)**: gates exercise real Linux devices. The user plugs the virtual device into host software (jstest, SDL games, Steam, etc.) and confirms recognition + functional behavior.
+- **Platform phases (12)**: gates exercise planner-only — Windows/macOS providers begin as inventory stubs and require no real host until later work.
 
 ## Authority and drift rule
 
-[RUST_IMPLEMENTATION_SPEC.md](../implementation/RUST_IMPLEMENTATION_SPEC.md) is the authoritative build-facing specification for crate ownership, public runtime types, backend contracts, translator contracts, and acceptance criteria.
+If this plan and the implementation spec disagree on type shape, crate ownership, or contract surface, **the spec is authoritative**. Update this plan, not the spec.
 
-This plan defines sequencing. If this document conflicts with the implementation specification, update this plan to match the specification rather than broadening the runtime design.
+If this plan and the demo's growth doc disagree on what `vgpd-demo` supports at a given phase, **this plan is authoritative**.
 
-## Implementation goals
+## Architectural alignment
 
-- produce a Rust library workspace that directly reflects the architecture spec
-- keep profile requirements separate from runtime backend selection
-- make every emulated device instance session-scoped
-- prepare profile-specific input validation before runtime translation
-- support both forward input flow and reverse output flow
-- keep platform-provider and transport I/O behind replaceable backend-session traits
-- make degradation, unsupported capabilities, and diagnostics explicit
-- enforce correctness through unit, contract, and integration testing before backend complexity grows
+The Rust buildout must hold these architectural decisions across every phase. Repeated here so they appear in plan-time reviews, not only in spec-time review.
 
-## Architecture alignment
-
-The Rust implementation must align to these architectural decisions:
-
-- planning is a runtime negotiation against backend inventory, not a static profile lookup
-- planning includes host-platform and provider negotiation, not just backend-family negotiation
-- backends are created per session, never shared as mutable singleton device instances
+- planning is runtime negotiation against backend inventory, not static profile lookup
+- planning includes host-platform and provider negotiation, not just backend family
+- backends are created per session and never shared as mutable singletons
 - HID and transport translators are profile-family-specific where required
-- reverse-path output handling is a core runtime contract, not a later bolt-on
-- the primary public API accepts device-focused controller input rather than requiring a unified control model
-- telemetry and structured errors are part of the public integration surface
+- reverse-path handling is core, not a later bolt-on
+- the primary public API accepts profile-typed input, not a unified control model
+- structured errors and telemetry are part of the public surface
+- attached-function modeling is deferred from v1 (see [Decision 7](RUST_IMPLEMENTATION_SPEC.md#decision-7-deferred-attached-function-modeling))
+- audio splits into discrete `OutputCommand::Audio` events and a separate `AudioStreamSink` for PCM (see [Audio stream contract](RUST_IMPLEMENTATION_SPEC.md#audio-stream-contract))
+- backend sessions are sync + non-blocking; see [Backend blocking contract](RUST_IMPLEMENTATION_SPEC.md#backend-blocking-contract)
 
-## Recommended workspace layout
-
-The best long-term shape is a Cargo workspace with focused crates and clean dependency direction.
+## Workspace layout
 
 ```text
 virtualgamepad/
-  Cargo.toml
+  Cargo.toml             # root crate + workspace
+  src/                   # placeholder library crate (kept until Phase 0 splits crates)
+  demo/                  # vgpd-demo (already shipping; grows phase by phase)
   crates/
     gr-core/
     gr-profiles/
     gr-config/
     gr-session-options/
     gr-runtime-model/
-    gr-planner/
     gr-backend-api/
+    gr-planner/
     gr-translators/
     gr-session/
     gr-host-bridge/
@@ -77,1327 +95,875 @@ virtualgamepad/
     gr-cli/
 ```
 
-## Crate responsibilities
-
-### `gr-core`
-
-Owns:
-
-- core ids and metadata types
-- profile-specific input payload ids and shared input metadata
-- semantic input and output function enums
-- fidelity-tier and backend-level enums
-- shared error and diagnostics types
-
-Must not own:
-
-- Linux-specific code
-- compiled session options
-- session plans
-- backend descriptors
-- concrete profiles
-- concrete backend implementations
-
-### `gr-profiles`
-
-Owns:
-
-- built-in target controller profiles
-- identity metadata
-- capability declarations
-- profile-family metadata
-- supported fidelity levels
-- required semantic input and output functions
-- backend descriptor metadata per supported level
-
-Important rule:
-
-- profiles describe what a target needs and supports
-- profiles do not choose the actual runtime backend instance
-
-### `gr-config`
-
-Owns:
-
-- config-file schema
-- serde parsing
-- schema validation
-- normalization into strongly typed config structures
-
-Produces:
-
-- `SessionConfig`
-- validation reports
-
-### `gr-session-options`
-
-Owns:
-
-- session-option validation
-- input-policy compilation
-- provider and delivery option compilation
-- optional out-of-core helper adapters
-
-Produces:
-
-- `CompiledSessionOptions`
-
-Important rule:
-
-- `gr-session-options` compiles session policy only: input validation policy, provider hints, reverse delivery policy, and backpressure policy
-- translators consume exact profile-shaped input and prepared translation context, not compiled semantic mappings
-- optional mapping or adaptation helpers may exist later only outside the core runtime path, and their output must already match the selected profile input contract
-
-### `gr-planner`
-
-Owns:
-
-- backend inventory modeling
-- host-platform inventory modeling
-- fidelity negotiation
-- backend-family selection
-- provider selection
-- degradation analysis
-- unsupported-capability analysis
-- final `SessionPlan` generation
-
-Consumes:
-
-- target profile
-- compiled session options
-- runtime backend inventory
-- host policy
-
-Produces:
-
-- `SessionPlan`
-
-### `gr-runtime-model`
-
-Owns:
-
-- `SessionRequest`
-- `SessionPlan`
-- `PreparedSession`
-- `PreparedTranslationContext`
-- `ControllerOutputCommand`
-- session status and diagnostics snapshots
-- reverse delivery and backpressure policy types
-
-Important rule:
-
-- runtime model types are cross-cutting contracts and must not live in `gr-core`
-- these types may depend on primitive domain types and compiled session-option data
-
-### `gr-backend-api`
-
-Owns:
-
-- backend family enums and capability traits
-- host-platform enums and provider identifiers
-- per-session backend-factory traits
-- per-session backend-session traits
-- backend descriptor types
-- backend frame enums
-- backend-originated reverse event enums
-- backend diagnostics types
-
-This crate is the key boundary that prevents session logic from leaking into backends and backend details from polluting core logic.
-
-### `gr-translators`
-
-Owns:
-
-- forward translator traits
-- reverse translator traits
-- translator registry
-- profile-family-specific translator implementations
-
-Recommended module split:
-
-- `evdev/`
-- `hid/dualsense.rs`
-- `hid/steam_controller.rs`
-- `transport/xbox360_usb.rs`
-- `transport/dualsense_usb.rs`
-- `transport/dualsense_bluetooth.rs`
-
-Important rule:
-
-- do not implement one universal HID translator for all HID-capable profiles
-
-### `gr-session`
-
-Owns:
-
-- session manager
-- session lifecycle state machine
-- session creation and teardown
-- state update processing
-- backend session ownership
-- reverse event dispatch
-- telemetry coordination
-
-Important rule:
-
-- every backend instance belongs to exactly one active session
-- logical session isolation does not imply one dedicated OS thread per session
-
-### `gr-host-bridge`
-
-Owns:
-
-- host-facing manager API
-- callback and channel adapters
-- reverse-output delivery interface
-- optional FFI-safe wrappers if the host is not Rust
-- bounded reverse-event delivery policy
-
-### `gr-provider-linux-uinput`
-
-Owns:
-
-- Linux `uinput` backend factory
-- Linux `uinput` backend session
-- evdev device creation and write path
-- optional force-feedback support hooks
-
-### `gr-provider-linux-uhid`
-
-Owns:
-
-- Linux `UHID` backend factory
-- Linux `UHID` backend session
-- descriptor provisioning
-- HID input report write path
-- output and feature report receive path
-
-### `gr-provider-linux-transport`
-
-Owns:
-
-- future transport backend factories and sessions
-- USB and Bluetooth transport state machines
-- packet encoding and decoding
-- enumeration and protocol behavior
-
-This crate may remain skeletal until the earlier session, planning, and reverse-path contracts are stable.
-
-### `gr-provider-windows-hid`
-
-Owns:
-
-- Windows-oriented virtual HID provider interfaces and sessions
-- provider capability declarations and deployment checks
-- driver-backed realization glue when implemented
-
-Important rule:
-
-- this crate may begin as inventory, diagnostics, and support reporting before full device realization exists
-
-### `gr-provider-macos-hid`
-
-Owns:
-
-- macOS-oriented HID provider interfaces and sessions
-- provider capability declarations and deployment checks
-- entitlement and install-prerequisite modeling when implemented
-
-Important rule:
-
-- this crate may begin as inventory, diagnostics, and support reporting before full device realization exists
-
-### `gr-testkit`
-
-Owns:
-
-- fake backend inventory
-- fake backend factories and sessions
-- profile-input fixture builders
-- config fixtures
-- profile fixtures
-- reverse-event fixtures
-- validation helpers for contract tests
-
-### `gr-cli`
-
-Owns:
-
-- developer diagnostics and validation commands
-
-Recommended commands:
-
-- `validate-config`
-- `list-profiles`
-- `show-capabilities`
-- `plan-session`
-- `simulate-session`
-- `dry-run-route`
+Phase 0 establishes `crates/` and moves the existing root crate into `crates/gr-core/` (or the first crate it becomes). The demo stays at the workspace root under `demo/`.
 
 ## Dependency direction rules
+
+Unchanged from the implementation spec:
 
 - `gr-core` depends on no internal crates
 - `gr-profiles` depends on `gr-core`
 - `gr-config` depends on `gr-core`
-- `gr-session-options` depends on `gr-core`, `gr-config`, and `gr-profiles`
-- `gr-runtime-model` depends on `gr-core` and `gr-session-options`
-- `gr-backend-api` depends on `gr-core` and `gr-runtime-model`
-- `gr-planner` depends on `gr-core`, `gr-profiles`, `gr-session-options`, `gr-runtime-model`, and `gr-backend-api`
-- `gr-translators` depends on `gr-core`, `gr-profiles`, `gr-runtime-model`, and `gr-backend-api`
-- `gr-session` depends on `gr-core`, `gr-runtime-model`, `gr-backend-api`, `gr-planner`, and `gr-translators`
-- `gr-host-bridge` depends on `gr-runtime-model` and `gr-session`
-- concrete backend crates depend on `gr-core`, `gr-runtime-model`, and `gr-backend-api`, but not on `gr-session`
-- `gr-testkit` may depend on all runtime crates as needed for testing
-- `gr-cli` depends on public crates only, never on private crate internals
-
-## Recommended core Rust patterns
-
-### Strong enums
-
-Use enums instead of strings internally for:
-
-- semantic input functions
-- semantic output functions
-- capability categories
-- fidelity tiers
-- backend levels
-- backend families
-- reverse command types
-- session states
-
-### Newtypes
-
-Use newtypes for:
-
-- `ProfileId`
-- `SessionId`
-- `BackendId`
-- `VendorId`
-- `ProductId`
-- `SequenceId`
-
-### Immutable value types
-
-Prefer immutable state snapshots, immutable compiled session options, immutable plans, and immutable outbound frame values.
-
-### Builder patterns
-
-Use builders for:
-
-- profile-input fixtures
-- controller profiles
-- compiled session requests
-- backend descriptors
-- session plans
-
-### Structured errors
-
-Use a central error model with:
-
-- domain-specific enums
-- `thiserror`
-- optional machine-readable error codes
-- rich context for logging and host diagnostics
-
-### Traits
-
-Use traits for:
-
-- backend factories
-- backend sessions
-- forward translators
-- reverse translators
-- telemetry sinks
-- host output sinks
-
-## Recommended dependencies by phase
-
-### Early dependencies
-
-- `serde`
-- `serde_yaml`
-- `serde_json`
-- `thiserror`
-- `indexmap`
-- `smallvec`
-- `bitflags`
-
-### Mid-phase dependencies
-
-- `tracing`
-- `tracing-subscriber`
-- `parking_lot`
-- `crossbeam` if queue patterns need it
-- `tokio` only if async session execution proves worthwhile
-
-### Linux provider dependencies
-
-- `nix`
-- `libc`
-- direct ioctl bindings where required
-
-Optional candidates:
-
-- `evdev`
-- `udev`
-
-Use optional wrappers only if they fit the backend-session abstraction cleanly.
-
-### Planned Windows provider dependencies
-
-- keep optional until the Windows provider is active
-- prefer a narrow provider boundary over leaking Windows SDK types upward
-- model driver-install and availability checks before implementing frame send paths
-
-### Planned macOS provider dependencies
-
-- keep optional until the macOS provider is active
-- prefer a narrow provider boundary over leaking Apple framework types upward
-- model entitlement and install checks before implementing frame send paths
-
-### Testing dependencies
-
-- `rstest`
-- `insta`
-- `proptest`
-- `assert_matches`
-
-## Canonical Rust contracts
-
-### `ProfileInputFrame`
-
-Required fields:
-
-- `timestamp`
-- `sequence`
-- `profile_id`
-- `payload`
-
-Rules:
-
-- every frame is tied to one selected target profile
-- the payload must match that profile's concrete input contract
-- validation happens against the chosen profile contract before translation
-
-### `SessionRequest`
-
-Required fields:
-
-- `profile_id`
-- `goal`
-- `session_config`
-
-Optional fields:
-
-- host platform preference
-- backend preference
-- provider preference
-- host metadata
-
-Strictness lives inside `session_config.validation`, not on the request.
-
-### `SessionPlan`
-
-`SessionPlan` is defined authoritatively in [RUST_IMPLEMENTATION_SPEC.md](../implementation/RUST_IMPLEMENTATION_SPEC.md#sessionplan). The field list below is reproduced for reference; the spec is the source of truth.
-
-Required fields:
-
-- `session_id`
-- `profile_id`
-- `requested_goal`
-- `requested_fidelity_tier`
-- `selected_level`
-- `target_host_platform`
-- `selected_backend_family`
-- `selected_provider_id`
-- `selected_translator_family`
-- `capability_result`
-- `degradation`
-- `warnings`
-- `deployment_requirements`
-- `backend_open_context`
-- `session_options`
-
-### `BackendFactory`
-
-Recommended responsibility:
-
-- create a per-session backend session from a backend realization request and open context
-
-Recommended shape:
-
-```rust
-trait BackendFactory {
-    fn backend_id(&self) -> BackendId;
-    fn family(&self) -> BackendFamily;
-    fn can_realize(&self, request: &BackendRealizationRequest) -> BackendSupportReport;
-    fn open_session(&self, context: &BackendOpenContext) -> Result<Box<dyn BackendSession>, BackendError>;
-}
-```
-
-### `BackendSession`
-
-Recommended responsibility:
-
-- own one concrete emulated device instance
-- send frames
-- surface reverse events
-- close deterministically
-
-Performance rules:
-
-- backend sessions may keep reusable frame buffers or protocol scratch buffers
-- backend sessions must not be shared across active devices
-- reverse-event receive paths must be bounded
-
-Recommended shape:
-
-```rust
-trait BackendSession {
-    fn session_id(&self) -> SessionId;
-    fn open(&mut self) -> Result<(), BackendError>;
-    fn send(&mut self, frame: BackendFrame) -> Result<(), BackendError>;
-    fn drain_reverse_events(&mut self, out: &mut dyn Extend<BackendReverseEvent>) -> Result<(), BackendError>;
-    fn readiness(&self) -> EventReadiness;
-    fn diagnostics(&self) -> BackendDiagnostics;
-    fn close(&mut self) -> Result<(), BackendError>;
-}
-```
-
-`send` and `drain_reverse_events` are non-blocking; see the backend blocking contract in [RUST_IMPLEMENTATION_SPEC.md](../implementation/RUST_IMPLEMENTATION_SPEC.md#backend-blocking-contract).
-
-### `ForwardTranslator`
-
-Recommended shape:
-
-```rust
-trait ForwardTranslator {
-    fn translate(
-        &self,
-        input: &ProfileInputFrame,
-        ctx: &PreparedTranslationContext,
-        out: &mut TranslationScratch,
-    ) -> Result<BackendFrame, TranslationError>;
-}
-```
-
-### `ReverseTranslator`
-
-Recommended shape:
-
-```rust
-trait ReverseTranslator {
-    fn translate_reverse(
-        &self,
-        event: &BackendReverseEvent,
-        ctx: &PreparedTranslationContext,
-        out: &mut SmallVec<[ControllerOutputCommand; 4]>,
-    ) -> Result<(), TranslationError>;
-}
-```
-
-## Phase 0: Workspace bootstrap
+- `gr-session-options` depends on `gr-core`, `gr-config`, `gr-profiles`
+- `gr-runtime-model` depends on `gr-core`, `gr-session-options`
+- `gr-backend-api` depends on `gr-core`, `gr-runtime-model`
+- `gr-planner` depends on `gr-core`, `gr-profiles`, `gr-session-options`, `gr-runtime-model`, `gr-backend-api`
+- `gr-translators` depends on `gr-core`, `gr-profiles`, `gr-runtime-model`, `gr-backend-api`
+- `gr-session` depends on `gr-core`, `gr-runtime-model`, `gr-backend-api`, `gr-planner`, `gr-translators`
+- `gr-host-bridge` depends on `gr-runtime-model`, `gr-session`
+- concrete backend crates depend on `gr-core`, `gr-runtime-model`, `gr-backend-api`
+- `gr-testkit` may depend on all runtime crates
+- `gr-cli` depends on public crates only
+
+## Phase index
+
+| Phase | Theme | Primary crates touched |
+| --- | --- | --- |
+| 0 | Workspace split + testing foundation | (all stub) + `gr-testkit` + `gr-cli` + `demo` |
+| 1 | Core domain model | `gr-core` |
+| 2 | Profiles + capability registry | `gr-profiles` |
+| 3 | Configuration + session options + runtime model | `gr-config`, `gr-session-options`, `gr-runtime-model` |
+| 4 | Backend API + fake providers | `gr-backend-api`, `gr-testkit` fakes |
+| 5 | Planner | `gr-planner` |
+| 6 | Translators (forward + reverse) | `gr-translators` |
+| 7 | Session engine + host bridge | `gr-session`, `gr-host-bridge` |
+| 8 | Linux `uinput` provider (compatibility tier) | `gr-provider-linux-uinput` |
+| 9 | Linux `UHID` provider (identity-aware tier) | `gr-provider-linux-uhid` |
+| 10 | Linux transport foundation | `gr-provider-linux-transport` |
+| 11 | First hardware-faithful target | `gr-provider-linux-transport` + translator additions |
+| 12 | Windows + macOS provider foundations | `gr-provider-windows-hid`, `gr-provider-macos-hid` |
+
+## Phase 0: Workspace split + testing foundation
 
 ### Goal
 
-Create the Rust workspace and baseline development infrastructure.
+Move from the current single-crate scaffold to the full workspace layout. Stand up the testing tooling at zero cost so every later phase can rely on it. End with `vgpd-demo` capable of running a phase gate.
+
+### Entry criteria
+
+- workspace exists (`Cargo.toml` with `[workspace]`, demo as a member) — already true after [PR #34](https://github.com/anderstvoss/virtualgamepad/pull/34)
+- pre-commit / pre-push hooks pass on `main`
+- `vgpd-demo info` runs
 
 ### Deliverables
 
-- workspace `Cargo.toml`
-- initial crate skeletons
-- linting and formatting setup
-- CI shell with placeholder jobs
-- baseline Rust development notes in the repo
+- Cargo workspace expanded with empty crates at the paths in the workspace layout above (each crate compiles, has a placeholder `lib.rs`, and is wired into the workspace `[workspace] members`)
+- `gr-testkit` skeleton with the public module structure from [TESTING_TOOLING_SPEC.md gr-testkit module layout](TESTING_TOOLING_SPEC.md#module-layout); empty types, fixture loader parses the envelope only
+- `gr-cli` skeleton with `gr-cli validate-fixture` and `gr-cli phase-gate <N> --auto` operational (no-op gates return success)
+- `vgpd-demo phase-gate <N>` subcommand that invokes `gr-cli phase-gate <N> --auto` and prints the manual checklist for Phase N (the checklist content is read from this plan file by section anchor)
+- workspace dev-dependencies added: `insta`, `proptest`, `assert_matches`, `rstest`, `serde_yaml`
 
-### Tasks
+### Iteration loop
 
-1. Create the Cargo workspace.
-2. Add `rustfmt` and `clippy` expectations.
-3. Add CI commands for:
-   - `cargo fmt --check`
-   - `cargo clippy --workspace --all-targets -- -D warnings`
-   - `cargo test --workspace`
-4. Create placeholder crates for:
-   - `gr-core`
-   - `gr-profiles`
-   - `gr-config`
-   - `gr-session-options`
-   - `gr-planner`
-   - `gr-backend-api`
-   - `gr-translators`
-   - `gr-session`
-   - `gr-host-bridge`
-   - `gr-testkit`
-5. Establish crate dependency direction rules.
+This phase is mostly plumbing. The loop runs once for the workspace split, then once for each tool stub.
 
-### Exit criteria
+- design pass: confirm crate names, module layouts, binary names against the implementation spec
+- contract tests: each new crate ships with at least one trivial `#[test] fn smoke()` so empty crates still register in the workspace test suite
+- implementation: minimum code per stub
+- demo wiring: `vgpd-demo phase-gate` reads the gate from this file
+- refactor: not applicable
+- gate-prep: validate that the gate runner displays Phase 0's gate correctly
 
-- workspace builds
-- empty test suite passes
-- lint and formatting checks pass
+### Testing tooling additions
 
-## Phase 1: Core domain model
+- workspace dev-deps in `Cargo.toml`
+- `gr-testkit` skeleton + envelope-only fixture loader
+- `gr-cli validate-fixture` accepting the envelope
+- `vgpd-demo phase-gate <N>` driver
+
+### Exit gate
+
+Run `vgpd-demo phase-gate 0` and complete the checklist.
+
+Automated portion:
+
+- [ ] `cargo build --workspace --all-features` succeeds
+- [ ] `cargo test --workspace --all-features` passes (every empty crate's smoke test runs)
+- [ ] `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean
+- [ ] `gr-cli phase-gate 0 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo phase-gate 0` prints Phase 0's checklist as defined here (proves the gate-runner can read this file)
+- [ ] 2. `cargo metadata --format-version 1 | jq '.workspace_members[]'` lists every crate from the workspace layout (proves no crate is silently missing)
+- [ ] 3. `gr-cli validate-fixture docs/spec/implementation/fixtures/envelope-only.yaml` accepts a minimal v1 envelope (you author this sample as part of this phase)
+- [ ] 4. `gr-cli validate-fixture docs/spec/implementation/fixtures/envelope-bad-version.yaml` rejects with a clear error mentioning the version field
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 0 gate passed"`
+
+## Phase 1: Core domain model (`gr-core`)
 
 ### Goal
 
-Implement the canonical value types used by every other crate.
+Establish the primitive types every other crate depends on. No backend code, no Linux-specific code.
+
+### Entry criteria
+
+- Phase 0 gate signed off
+- `gr-core` skeleton crate exists with smoke test
 
 ### Deliverables
 
-- `ProfileInputFrame`
-- typed input and output semantic function enums
-- capability types
-- profile identity structs
-- fidelity-tier enums with human-readable labels
-- backend-family and backend-level enums
-- shared error and diagnostic types
+- `ProfileId`, `SessionId`, `BackendId`, `VendorId`, `ProductId`, `SequenceId` newtypes
+- `Timestamp` type
+- fidelity-tier enum (`Compatibility`, `IdentityAware`, `HardwareFaithful`) with human-name parsing
+- backend-level enum (`Evdev`, `Hid`, `Transport`)
+- backend-family enum (`LinuxUinput`, `LinuxUhid`, `LinuxTransportUsb`, `LinuxTransportBluetooth`, `WindowsHid`, `MacosHid`)
+- semantic input/output function enums
+- capability-category enums
+- shared error categories (`thiserror`-backed)
+- `ProfileInputPayload` enum with `#[non_exhaustive]` and one variant per built-in profile (payload structs stubbed) per [`ProfileInputPayload` section](RUST_IMPLEMENTATION_SPEC.md#profileinputpayload)
+- `ProfileInputFrame` and `ProfileInputDelta` types
 
-### Tasks
+### Iteration loop
 
-1. Define normalized button and axis types.
-2. Define touch and motion types.
-3. Define `SequenceId`.
-4. Define fidelity tiers:
-   - `Compatibility`
-   - `IdentityAware`
-   - `HardwareFaithful`
-5. Define backend levels:
-   - `Evdev`
-   - `Hid`
-   - `Transport`
-6. Define backend families:
-   - `LinuxUinput`
-   - `LinuxUhid`
-   - `TransportUsb`
-   - `TransportBluetooth`
-7. Define shared structured error categories.
-8. Implement per-profile input validation policy.
+- design pass: review enum shapes against the implementation spec; resolve any gaps via spec edits, not ad-hoc additions
+- contract tests:
+  - `proptest` strategies for every enum + newtype
+  - serde round-trip property tests (YAML and JSON)
+  - parse-from-human-name tests for fidelity tiers
+- implementation: derive `Serialize`, `Deserialize`, `Clone`, `Debug`, `Eq`, `Hash` where appropriate; forbid unsafe at crate root
+- demo wiring: `vgpd-demo show-types` prints every enum's variants
+- refactor: collapse any duplication between variant payloads
+- gate-prep: prepare a fixture sample exercising each `ProfileInputPayload` variant
 
-### Tests
+### Testing tooling additions
 
-- default state tests
-- bounds and normalization tests
-- sequence and timestamp behavior tests
-- serde round-trip tests if serde is used
+- `gr_testkit::proptest_strategies` for every `gr-core` type
+- `gr_testkit::builders::*_input()` builders begin to exist (stub payloads accepted)
+- snapshot tests for the canonical YAML representations of each enum
 
-### Exit criteria
+### Exit gate
 
-- all core types compile
-- profile-input policy is explicit
-- no Linux-specific code exists in this phase
+Run `vgpd-demo phase-gate 1` and complete the checklist.
 
-## Phase 2: Profile and capability system
+Automated portion:
+
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean
+- [ ] property tests run with `proptest` default budget without failures
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo show-types` prints every fidelity tier, backend level, backend family, and capability category — visually confirm the names match the spec
+- [ ] 2. `gr-cli validate-fixture crates/gr-core/fixtures/payload-dualsense-neutral.yaml` accepts; payload structure looks reasonable to a human
+- [ ] 3. Author a custom fixture under `tests/fixtures/` representing an Xbox 360 neutral payload; `gr-cli validate-fixture <path>` accepts it; load it from a test in `crates/gr-core/tests/`
+- [ ] 4. Review `crates/gr-core/snapshots/` — every snapshot reads cleanly and matches expectations
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 1 gate passed"`
+
+## Phase 2: Profiles + capability registry (`gr-profiles`)
 
 ### Goal
 
-Implement built-in profiles and capability declarations as typed Rust data.
+Bring in the built-in profile set and the capability query API. The planner and translators in later phases consume this data; no backend code yet.
+
+### Entry criteria
+
+- Phase 1 gate signed off
 
 ### Deliverables
 
-- `ControllerProfile`
-- `ControllerCapabilities`
-- built-in profile registry
-- required and supported function lists
-- backend descriptor metadata per level
+- `ControllerProfile` struct with fields per [the implementation spec](RUST_IMPLEMENTATION_SPEC.md#gr-profiles)
+- built-in profiles: generic gamepad, Xbox 360, DualSense, Steam Controller (the four named in the prior plan; additional profiles can be added later, additively)
+- `CapabilityRegistry` query API folded into `gr-profiles` (no separate crate, per Decision 2 in the spec-review fixes)
+- per-profile input contracts (which fields are required / optional, value ranges)
+- descriptor templates per supported fidelity level (placeholders for HID/transport; real bytes ship in later phases when the relevant providers are implemented)
+- declared supported / required input and output functions per profile
 
-### Tasks
+### Iteration loop
 
-1. Implement capability item types for input and output.
-2. Define capability groups:
-   - buttons
-   - axes
-   - pads
-   - motion sensors
-   - microphones
-   - speakers
-   - rumble
-   - haptics
-   - lighting
-   - audio
-   - trigger effects
-   - display
-   - force feedback
-   - misc
-3. Add built-in profiles for:
-   - generic Linux gamepad
-   - Xbox 360
-   - DualSense
-   - Steam Controller 2026
-4. Publish:
-   - supported input functions
-   - supported output functions
-   - required input functions
-   - required output functions
-   - supported fidelity levels
-   - descriptor metadata per level
+- design pass: walk through each built-in profile against public sources (Linux kernel drivers, SDL gamecontroller mappings, public descriptors) — see [DEVICE_SPEC_VALIDATION_PLAN.md evidence ladder](../validation/DEVICE_SPEC_VALIDATION_PLAN.md#evidence-ladder)
+- contract tests:
+  - per-profile capability presence tests
+  - capability-to-function consistency tests
+  - duplicate-capability prevention tests
+  - declared-but-unused capability tests
+- implementation: encode profiles as static data; capability registry indexes by `ProfileId`
+- demo wiring: `vgpd-demo list-profiles`, `vgpd-demo show-capabilities <profile>`
+- refactor: factor common capability shapes (e.g. stick + trigger groupings) into reusable definitions
+- gate-prep: produce one capability-coverage report per profile
 
-### Important rule
+### Testing tooling additions
 
-- profiles may describe transport or HID requirements
-- profiles may not hard-code one concrete runtime backend choice
+- `gr-cli list-profiles`, `gr-cli show-capabilities`, `gr-cli capability-coverage`
+- snapshot tests for capability dumps per profile
+- fixture format extended with profile-tagged input frames per the four built-in profiles
 
-### Tests
+### Exit gate
 
-This phase must implement the explicit output capability tests described in [TEST_PLAN.md](../validation/TEST_PLAN.md).
+Automated portion:
 
-Required tests:
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] `gr-cli capability-coverage` exits 0 (no declared-but-unsupported gaps)
+- [ ] `gr-cli phase-gate 2 --auto` exits 0
 
-- per-profile capability presence tests
-- per-profile output capability correctness tests
-- per-profile capability-to-function consistency tests
-- duplicate-capability prevention tests
+Manual portion:
 
-### Exit criteria
+- [ ] 1. `vgpd-demo list-profiles` shows all four built-in profiles with stable display names
+- [ ] 2. `vgpd-demo show-capabilities dualsense` lists rumble, trigger effects, lighting, touchpad, motion, audio (discrete commands), microphone (audio sink, not declared as command); cross-check against the [DualSense documentation in fidelity guide](../specs/FIDELITY_GUIDE.md#tier-2-identity-aware)
+- [ ] 3. `vgpd-demo show-capabilities xbox-360` lists analog sticks, triggers, d-pad, primary buttons, guide button, force feedback — no DualSense-specific outputs leak in
+- [ ] 4. Author a stripped-down ad-hoc profile fixture under `tests/fixtures/` (using `gr_testkit::builders::ad_hoc_profile`) and verify the registry rejects loading it without the required fields
+- [ ] 5. Review `crates/gr-profiles/snapshots/` — capability dumps look correct to a human
 
-- capability registry answers deterministic queries
-- every built-in profile has explicit tests
-- output-device capabilities are covered explicitly
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 2 gate passed"`
 
-## Phase 3: Configuration system
+## Phase 3: Configuration + session options + runtime model (`gr-config`, `gr-session-options`, `gr-runtime-model`)
 
 ### Goal
 
-Implement configuration parsing and validation as the source of session intent.
+Ship the three crates that together hold session intent: parse it, compile it, and carry the runtime types through the rest of the system. They build together because they are tightly coupled and reviewing them separately produces churn.
+
+### Entry criteria
+
+- Phase 2 gate signed off
 
 ### Deliverables
 
-- session config parsing
-- validation reports
-- normalized config structures
+- `gr-config`: YAML schema (per [Configuration spec](../specs/CONFIGURATION_SPEC.md)), serde models, four-pass validator, structured `ConfigValidationReport`
+- `gr-session-options`: compile `SessionConfig` into `CompiledSessionOptions`; provider hints, reverse delivery policy, backpressure policy
+- `gr-runtime-model`: type definitions for `SessionRequest`, `SessionPlan` (skeleton — populated by the planner in Phase 5), `ControllerOutputCommand`, `PreparedTranslationContext`, status / diagnostics snapshots, `ReverseEventDeliveryPolicy`, `BackpressurePolicy`
+- unknown-config-field policy implemented per [Configuration spec — unknown config fields](../specs/CONFIGURATION_SPEC.md#unknown-config-fields)
 
-### Tasks
+### Iteration loop
 
-1. Model config file types with serde.
-2. Implement fidelity-tier parsing from:
-   - `compatibility`
-   - `identity-aware`
-   - `hardware-faithful`
-3. Implement session-policy validation against declared profile input contracts.
-4. Implement target semantic function validation against profile data.
-5. Implement output-handling validation for callback, channel, log-only, pass-through, and ignore modes.
-6. Validate reverse-output delivery and backpressure policy.
-7. Normalize parsed config into strongly typed internal config.
-8. Add optional schema export if useful.
+- design pass: review the YAML shape against the configuration spec; sanity-check unknown-field handling
+- contract tests:
+  - valid + invalid config fixtures (one each per validator pass)
+  - serde round-trip property tests for `SessionConfig` and `CompiledSessionOptions`
+  - delivery- and backpressure-policy compilation tests
+  - unknown-field policy behavior tests
+- implementation: serde derives + a hand-written validator for cross-field invariants
+- demo wiring: `vgpd-demo validate-config <path>` (delegates to `gr-cli validate-config`), with friendly error formatting
+- refactor: consolidate field-validation error variants
+- gate-prep: assemble a starter sample-configs directory under `samples/`
 
-### Tests
+### Testing tooling additions
 
-- valid config fixtures
-- invalid schema fixtures
-- unsupported function fixtures
-- invalid output-handling fixtures
-- unsupported provider and fidelity fixtures
+- `gr-cli validate-config`, `vgpd-demo validate-config`
+- fixture loader for `kind: input-frame` fully wired (uses Phase 1's payloads + Phase 2's contracts)
+- snapshot tests for the compiled session-options shape per representative config
 
-### Exit criteria
+### Exit gate
 
-- config validation is deterministic
-- session policy semantics are test-covered
-- normalized config is ready for session-option compilation
+Automated portion:
 
-## Phase 4: Session options compiler
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] `gr-cli validate-config` returns 0 for every sample under `samples/configs/*.yaml`
+- [ ] `gr-cli phase-gate 3 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo validate-config samples/configs/dualsense-identity.yaml` accepts and prints a structured summary
+- [ ] 2. `vgpd-demo validate-config samples/configs/broken-mode.yaml` rejects with a clear, source-located error
+- [ ] 3. Author a custom config that selects xbox-360 at `compatibility`, references an unknown provider, and sets `validation.rejectUnsupportedProviderPreference: false`; verify the validator accepts it with a warning, not an error
+- [ ] 4. Same custom config with `validation.rejectUnsupportedProviderPreference: true`; verify rejection
+- [ ] 5. Author a custom config with an unknown top-level section; verify rejection
+- [ ] 6. Author a custom config with an unknown key inside `session`; verify warning (default) and rejection when `validation.rejectUnknownConfigFields: true`
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 3 gate passed"`
+
+## Phase 4: Backend API + fake providers (`gr-backend-api`, `gr-testkit` fakes)
 
 ### Goal
 
-Compile session configuration into validated session options before runtime session start without introducing a universal remapping layer.
+Lock down the trait shapes that providers must implement and ship a configurable fake. Until this phase ends, no provider can begin; once it does, the next four phases can be built almost entirely against the fake.
+
+### Entry criteria
+
+- Phase 3 gate signed off
 
 ### Deliverables
 
-- input validation policy
-- provider hints
-- reverse delivery policy
-- backpressure policy
-- compiled session options
+- `gr-backend-api`:
+  - `BackendFactory` trait per the implementation spec
+  - `BackendSession` trait — sync, `&mut self`, non-blocking, returning `BackendError::WouldBlock` where applicable
+  - `BackendFrame`, `BackendReverseEvent`, `BackendDiagnostics`, `BackendOpenContext`, `BackendRealizationRequest`, `BackendSupportReport`, `EventReadiness` (with cfg-gated `ReadinessHandle`)
+- `gr-testkit::fakes`:
+  - configurable `FakeBackendFactory` and `FakeBackendSession`
+  - `FakeFailure` enum per [TESTING_TOOLING_SPEC.md failure injection](TESTING_TOOLING_SPEC.md#failure-injection)
+  - `EventReadiness` flapping support
+  - per-session capture of written frames
+- backend trace recorder + replayer (records anything implementing `BackendSession`; replays from a `backend-trace` fixture)
 
-### Tasks
+### Iteration loop
 
-1. Compile input validation settings for the selected profile contract.
-2. Compile provider and host-platform hints for planner use.
-3. Compile reverse output delivery mode and queue policy.
-4. Validate unsupported-capability policy.
-5. Expose `CompiledSessionOptions` as immutable runtime data.
-6. Keep optional mapping, transform, or adaptation helpers outside the core device-session runtime.
-7. Require any helper output to be exact profile-shaped input before `send_input` or `send_input_delta`.
+- design pass: validate the trait shapes against the existing implementation spec; if any shape needs to change, fix the spec, not the plan
+- contract tests:
+  - `BackendFactory::can_realize` returns sensible support reports for every combination of fidelity × profile family × inventory permutation we can express
+  - `BackendSession::drain_reverse_events` accepts any `&mut dyn Extend<BackendReverseEvent>` (test with `Vec`, `SmallVec`, custom collector)
+  - non-blocking contract test: every fake method either returns immediately or returns `WouldBlock`
+  - readiness round-trip via the cfg-gated handle on the build target
+- implementation: traits + concrete fakes + recorder + replayer
+- demo wiring: `vgpd-demo simulate-session <scenario>` running against a built-in fake (no planner yet — session is hand-constructed)
+- refactor: simplify the fake builder; assertion helpers in `gr-testkit` start to bloom here
+- gate-prep: author a `backend-trace` fixture by recording a fake session and replay it back
 
-### Tests
+### Testing tooling additions
 
-- direct session-policy validation tests
-- input validation policy tests
-- provider-hint tests
-- reverse delivery policy tests
-- backpressure policy tests
-- helper-boundary tests proving core translators do not depend on semantic mappings
+- `BackendFactory` / `BackendSession` traits (also part of the deliverable above)
+- `gr-testkit::fakes` full surface
+- recorder + replayer
+- `kind: backend-trace` fixture loader
 
-### Exit criteria
+### Exit gate
 
-- compiled session options are deterministic
-- translators consume exact profile-shaped input and prepared context only
-- the per-frame path is ready to operate without config parsing, semantic remapping, or repeated capability lookup
+Automated portion:
 
-## Phase 5: Planner and negotiation
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] property tests pass with default `proptest` budget
+- [ ] `gr-cli phase-gate 4 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml` runs end-to-end; output shows input written, fake reverse rumble event delivered, command emitted
+- [ ] 2. Inject `FakeFailure::SendWouldBlock` via a fixture; verify the session re-arms via readiness and recovers (visible in the demo's verbose output)
+- [ ] 3. Record a fake session via `gr-cli simulate-session --record trace.yaml`; replay it via `gr-cli replay-trace trace.yaml`; outputs are identical
+- [ ] 4. Author a custom `backend-trace` fixture interleaving a feature-report request and a malformed output report; replay it and verify the malformed event is logged but does not crash
+- [ ] 5. Review `crates/gr-testkit/snapshots/` — assertion-helper failure messages are human-readable
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 4 gate passed"`
+
+## Phase 5: Planner (`gr-planner`)
 
 ### Goal
 
-Implement runtime negotiation across profile requirements, compiled session options, and available backend inventory.
+Implement runtime negotiation: from a session request + compiled options + backend inventory to a `SessionPlan`, including degradation and rejection.
+
+### Entry criteria
+
+- Phase 4 gate signed off
+- Built-in profiles in `gr-profiles` declare the capabilities the planner reasons over
+- `gr-testkit` fakes can model arbitrary backend inventories
 
 ### Deliverables
 
-- `BackendInventory`
-- `SessionPlan`
-- degradation analysis
-- unsupported-capability analysis
+- `gr-planner` with fidelity negotiation, backend-family selection, provider selection, degradation, unsupported-capability analysis, rejection reasons
+- planner output: full `SessionPlan` per [the spec](RUST_IMPLEMENTATION_SPEC.md#sessionplan)
+- planner accepts hints (provider preference, backend preference, host platform) without bypassing validation
 
-### Tasks
+### Iteration loop
 
-1. Implement planner input model:
-   - target profile
-   - requested fidelity tier
-   - compiled session options
-   - backend inventory
-   - host policy
-2. Implement selected backend-level logic.
-3. Implement backend-family selection from actual inventory.
-4. Implement capability negotiation.
-5. Implement degradation and warning generation.
-6. Implement session-admissibility decision.
-7. Ensure planner output is inspectable and serializable for diagnostics.
-8. Ensure planner output is cacheable and session-local after creation.
+- design pass: confirm planner inputs match the spec; identify any decision the planner needs to make that has no spec rule yet
+- contract tests:
+  - per-profile fidelity plan tests (Compatibility / IdentityAware / HardwareFaithful)
+  - degradation tests (request HF, only Hid available → degrade to IA + record reasons)
+  - rejection tests (`identity-aware` requested but provider lacks reverse output)
+  - planner stability tests (same inputs → same plan; immutable after creation)
+  - snapshot tests for representative plans
+- implementation: a planner that's *readable* — each rule visible in a `PlannerRule` step or a clearly named function
+- demo wiring: `vgpd-demo plan-session <profile> --goal <tier> --inventory <fixture>`
+- refactor: extract reusable rule combinators
+- gate-prep: ensure every documented degradation example from the [FIDELITY_GUIDE](../specs/FIDELITY_GUIDE.md#degradation-policy) has a planner test backing it
 
-### Tests
+### Testing tooling additions
 
-- per-profile fidelity plan tests
-- degraded plan tests
-- impossible plan rejection tests
-- enabled capability set tests
-- unsupported capability set tests
-- backend-family selection tests
+- `gr-cli plan-session`, `vgpd-demo plan-session`
+- `kind: plan-snapshot` fixtures wired in
+- `gr-testkit::builders::session_request` matures
 
-### Exit criteria
+### Exit gate
 
-- planner behavior matches [FIDELITY_GUIDE.md](../specs/FIDELITY_GUIDE.md)
-- profile requirements are cleanly separated from deployment environment
-- degraded states are explicit and test-covered
+Automated portion:
 
-## Phase 6: Backend API and fake backends
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean (plan snapshots reviewed)
+- [ ] all planner property tests pass
+- [ ] `gr-cli phase-gate 5 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo plan-session dualsense --goal identity-aware --inventory samples/inventories/linux-uhid-only.yaml` produces an IA plan with `selected_backend_family: LinuxUhid` and no degradation
+- [ ] 2. Same profile, `--goal hardware-faithful`, same inventory; produces a degraded plan with reasons `[TransportNotRealizable]`
+- [ ] 3. Same profile, `--goal hardware-faithful`, an inventory with no providers; planner returns a structured rejection
+- [ ] 4. `vgpd-demo plan-session xbox-360 --goal compatibility --inventory samples/inventories/linux-uinput-only.yaml` produces a compatibility plan with `selected_backend_family: LinuxUinput`
+- [ ] 5. Author a custom `plan-snapshot` fixture for an unusual edge case (e.g. Steam Controller at `identity-aware` with a fake that declares only LEDs); verify the snapshot test passes
+- [ ] 6. Review `crates/gr-planner/snapshots/` — the YAML rationale strings read like a human wrote them, not a debug derive
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 5 gate passed"`
+
+## Phase 6: Translators (`gr-translators`)
 
 ### Goal
 
-Define backend contracts and create fake per-session backends for most integration testing.
+Implement forward translators (profile input → backend frames) and reverse translators (backend reverse events → `ControllerOutputCommand`). Per the architectural rule, HID and transport translators are profile-family-specific; evdev translators may be shared where semantically valid.
+
+### Entry criteria
+
+- Phase 5 gate signed off
 
 ### Deliverables
 
-- backend-factory traits
-- backend-session traits
-- frame enums
-- reverse-event enums
-- fake backend inventory
-- fake backend factories and sessions
+- forward translators:
+  - `GenericEvdevTranslator`
+  - `XboxStyleEvdevTranslator` (covers Xbox 360 + similar layouts)
+  - `DualSenseEvdevTranslator` (only if identity-specific evdev shaping diverges materially — likely needed for trigger / touchpad)
+  - `DualSenseUsbHidTranslator`
+  - `SteamControllerHidTranslator`
+- reverse translators:
+  - `DualSenseHidReverseTranslator` (rumble, LEDs, trigger effects, mode commands, audio command discrete events)
+  - `SteamControllerReverseTranslator` (LEDs, lighting commands per the family)
+- `TranslatorRegistry` + `PreparedTranslationContext` produced from `SessionPlan`
+- descriptor compatibility contract per [the implementation spec](RUST_IMPLEMENTATION_SPEC.md#descriptor-compatibility-contract): every HID profile has translator + descriptor template + reverse translator, all asserted consistent
 
-### Tasks
+### Iteration loop
 
-1. Define backend factory trait.
-2. Define backend session trait.
-3. Define backend-open descriptor and diagnostics types.
-4. Define frame enums:
-   - evdev frame
-   - HID frame
-   - transport frame
-5. Define backend reverse event enums.
-6. Implement fake backend factories with:
-   - support-report behavior
-   - session creation
-   - controllable failure injection
-7. Implement fake backend sessions with:
-   - frame capture
-   - injected reverse events
-   - session id tracking
-   - close semantics
-   - bounded queue behavior
-   - coalescing policy tests where applicable
+- design pass: per profile family, walk the input contract and output capability list against translator coverage
+- contract tests:
+  - per-target input translation tests
+  - descriptor / report compatibility tests (translator output never violates the descriptor)
+  - reverse translation tests via canned reverse-event fixtures
+  - reverse translator coverage property test (never emits a function the profile didn't declare)
+- implementation: translators take a `PreparedTranslationContext` and a frame, return a backend frame; no per-frame allocation in the hot path
+- demo wiring: `vgpd-demo replay-trace <path>` exercising forward + reverse translators
+- refactor: factor common bit-fiddling helpers (e.g. signed 8-bit stick encoding)
+- gate-prep: prepare per-profile-family golden traces for the gate
 
-### Tests
+### Testing tooling additions
 
-- fake backend open/close tests
-- wrong-frame rejection tests
-- reverse-event injection tests
-- session isolation tests
-- failure-path tests
-- bounded queue behavior tests
+- `kind: reverse-event` fixtures fully wired
+- backend trace replay drives translator tests directly
+- per-translator capability coverage tested via `gr-cli capability-coverage`
 
-### Exit criteria
+### Exit gate
 
-- session crate can be developed against fake backends only
-- backend instances are clearly session-scoped in tests
+Automated portion:
 
-## Phase 7: Translator system
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] property test: reverse translators never emit semantic outputs for undeclared capabilities — passes for every profile
+- [ ] `gr-cli capability-coverage` exits 0
+- [ ] `gr-cli phase-gate 6 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-buttons-roundtrip.yaml` shows every button mapped correctly between profile input and HID report bytes
+- [ ] 2. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml` decodes the host rumble request into an `OutputCommand::Rumble` with sensible payload
+- [ ] 3. Same exercise on `xbox-360` (evdev) and `steam-controller` (HID)
+- [ ] 4. Author a custom reverse-event fixture for a Steam Controller LED change; the demo decodes it to `OutputCommand::Lighting`
+- [ ] 5. Review snapshots — translator outputs are stable across runs
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 6 gate passed"`
+
+## Phase 7: Session engine + host bridge (`gr-session`, `gr-host-bridge`)
 
 ### Goal
 
-Implement forward and reverse translators with the correct profile-family boundaries.
+Glue planner + translators + backend together inside a session runtime that scales to many concurrent sessions. End-to-end forward and reverse flow works against the fake backend.
+
+### Entry criteria
+
+- Phase 6 gate signed off
 
 ### Deliverables
 
-- translator registry
-- generic evdev translator path
-- profile-family-specific HID translators
-- reverse translators for HID and transport-capable paths
+- `gr-session`:
+  - `VirtualControllerManager` with explicit `with_backends` registration (per [Provider registration](RUST_IMPLEMENTATION_SPEC.md#provider-registration))
+  - `VirtualControllerSessionHandle` with `send_input`, `send_input_delta`, `subscribe_outputs`
+  - per-session input + reverse queues with the bounded / coalescing policies from the spec
+  - session actor per active session; shared worker pool
+  - readiness-aware reverse event scheduling
+- `gr-host-bridge`:
+  - callback adapter
+  - bounded-channel adapter
+  - stream/observable adapter
+  - delivery worker decoupled from session actor (per [Reverse-event delivery threading](RUST_IMPLEMENTATION_SPEC.md#reverse-event-delivery-threading))
+- audio split: `audio_sink()` and `audio_source()` return `Option<...>` per the [audio contract](RUST_IMPLEMENTATION_SPEC.md#audio-stream-contract)
+- diagnostics: per-session and manager-wide telemetry snapshots
 
-### Tasks
+### Iteration loop
 
-1. Define forward and reverse translator traits.
-2. Implement evdev translation path using exact profile-shaped input.
-3. Implement `DualSenseHidTranslator`.
-4. Implement `SteamControllerHidTranslator`.
-5. Implement corresponding reverse translators for:
-   - rumble
-   - LEDs
-   - trigger effects
-   - mode commands
-6. Add translator compatibility checks against profile descriptor metadata.
+- design pass: validate the actor + worker pool model against the high-session-count scaling claim
+- contract tests:
+  - session lifecycle state machine tests
+  - queue coalescing tests (latest-state-wins, counter increments)
+  - bounded reverse-event queue + drop policy tests
+  - slow-consumer isolation tests (one slow callback never stalls another session)
+  - re-entrancy: callbacks attempting to call back into the session handle must not deadlock (documented as undefined behavior, but tests confirm the typical patterns)
+  - `session-scenario` fixtures drive end-to-end runs
+- implementation: minimum runtime that satisfies the tests; prefer `tokio` per the spec recommendation
+- demo wiring: `vgpd-demo simulate-session <scenario>` now spins up the full session engine; `vgpd-demo many-sessions <count>` exercises concurrent sessions against fake backends
+- refactor: extract reusable session-state types
+- gate-prep: assemble the multi-session stress scenario
 
-### Important rule
+### Testing tooling additions
 
-- do not treat HID reports as one generic 64-byte format for all profiles
-- treat descriptor/report compatibility as a contract, not an implementation detail
+- `kind: session-scenario` fully wired
+- `vgpd-demo many-sessions` for scale demonstration
+- `gr-cli simulate-session --concurrency <N>`
+- diagnostics dumps as fixtures for snapshot tests
 
-### Tests
+### Exit gate
 
-- neutral-state frame tests
-- per-target profile-input translation tests
-- descriptor/report compatibility tests
-- reverse translation tests
+Automated portion:
 
-### Exit criteria
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] 100-session concurrent test passes on the Linux CI runner without exceeding the documented latency planning target
+- [ ] `gr-cli phase-gate 7 --auto` exits 0
 
-- HID behavior is profile-family-specific where required
-- reverse translators exist for identity-aware targets
+Manual portion:
 
-## Phase 8: Session engine
+- [ ] 1. `vgpd-demo simulate-session samples/scenarios/dualsense-coalesce.yaml` runs and shows coalesced frames in the diagnostics dump
+- [ ] 2. `vgpd-demo many-sessions 32` spins up 32 concurrent fake sessions; diagnostics show no cross-session contention; one session can be killed without affecting others
+- [ ] 3. `vgpd-demo simulate-session samples/scenarios/slow-consumer.yaml` keeps other sessions running while the slow callback backs up
+- [ ] 4. Author a custom session-scenario fixture exercising a deliberate provider panic via `FakeFailure::ProviderPanic`; the manager isolates the failure and continues running other sessions
+- [ ] 5. `vgpd-demo simulate-session samples/scenarios/dualsense-audio-mode.yaml` exercises the discrete audio command path; `audio_sink()` returns `None` for the fake (no PCM provider yet)
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 7 gate passed"`
+
+## Phase 8: Linux `uinput` provider — compatibility tier (`gr-provider-linux-uinput`)
 
 ### Goal
 
-Implement the host-facing session runtime around session-scoped backends and compiled plans.
+First real Linux provider. Compatibility-tier emulation: host-visible Linux gamepad via `uinput`. Reverse path is EV_FF only (per the [uinput reverse-path note](../specs/ARCHITECTURE_SPEC.md#linux-uinput-provider)).
+
+### Entry criteria
+
+- Phase 7 gate signed off
+- A developer host running Linux with permission to open `/dev/uinput` (most modern distros require either CAP_SYS_ADMIN or a udev rule)
 
 ### Deliverables
 
-- `GamepadEmulationManager`
-- `GamepadEmulationSession`
-- session lifecycle state machine
-- reverse-output dispatch
-- telemetry sink abstraction
+- `gr-provider-linux-uinput` crate (cfg-gated `target_os = "linux"`)
+- `LinuxUinputBackendFactory` and `LinuxUinputBackendSession`
+- evdev device creation, capability declaration from profile, button + axis + sync emission
+- EV_FF effect upload receipt mapped to `OutputCommand::Rumble`
+- unsafe code isolated to one module with documented invariants
+- file descriptors wrapped in RAII
 
-### Tasks
+### Iteration loop
 
-1. Implement manager initialization with backend inventory.
-2. Implement profile and capability queries.
-3. Implement session creation from config plus planner output.
-4. Implement per-session backend ownership.
-5. Implement state update API.
-6. Implement reverse event polling or dispatch loop.
-7. Implement lifecycle transitions:
-   - created
-   - starting
-   - active
-   - paused
-   - stopping
-   - stopped
-   - failed
-8. Implement session switch and rebuild flow.
-9. Implement telemetry sink abstraction.
+- design pass: validate `uinput`-specific data flow; map capability declarations to `UI_SET_*` ioctls
+- contract tests:
+  - against fake writer (no kernel): descriptor construction, ioctl sequencing, event batching
+  - against real kernel (gated on Linux runner): device appears, capabilities query matches, events flow
+- implementation: typed wrapper over `libc::ioctl` and `nix` where helpful; no `unsafe` outside the wrapper module
+- demo wiring: `vgpd-demo run-uinput-smoke <profile>` creates a virtual pad and dumps its `/dev/input/event*` enumeration
+- refactor: factor a small `LinuxKernelIoctl` shim that fakes can substitute for tests
+- gate-prep: prepare a step-by-step manual checklist for plugging the device into common host software
 
-### Concurrency recommendation
+### Testing tooling additions
 
-Use an actor-like session model.
+- Tier B (privileged Linux) test runner per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#tier-b-privileged-linux-runner)
+- `gr-cli run-uinput-smoke` (records evidence into `support-report` output)
 
-Recommended shape:
+### Exit gate
 
-- one logical session actor per active session
-- ordered inbound state update queue
-- separate reverse-event loop or polling cycle
-- shared runtime workers rather than one dedicated OS thread per session by default
-- state coalescing when a newer input snapshot supersedes an older queued snapshot
+Automated portion:
 
-If async is adopted:
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] Linux-gated integration tests pass on the CI Linux matrix entry
+- [ ] `gr-cli phase-gate 8 --auto` exits 0
 
-- keep async localized to session and backend layers
-- isolate backend-specific blocking calls carefully
+Manual portion:
 
-If synchronous first:
+- [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad` creates a device; `evtest` (or `jstest`) finds it under `/dev/input/`
+- [ ] 2. `evtest` shows the expected buttons and axes; press emitted events match
+- [ ] 3. `vgpd-demo run-uinput-smoke xbox-360` produces a device recognized as a controller by SDL (verify with `sdl2-test` or `jstest-gtk`)
+- [ ] 4. Launch a native Linux SDL game or `jstest-gtk`, send inputs from `vgpd-demo` (use a scripted scenario fixture); inputs land in the game
+- [ ] 5. Trigger an EV_FF rumble from `fftest` or a game; the session emits `OutputCommand::Rumble` (visible in demo verbose output)
+- [ ] 6. Kill the demo; verify the device is removed cleanly (no zombie `event*` entries)
 
-- keep the public API sync
-- hide optional async behind feature flags later
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"`
 
-### Tests
-
-- start/update/stop integration tests
-- reconfiguration tests
-- session switch tests
-- reverse event dispatch tests
-- failure recovery tests
-
-### Exit criteria
-
-- full end-to-end flow works with fake backends
-- every active backend instance belongs to exactly one session
-- the scheduling model is compatible with many concurrent virtual devices
-
-## Phase 9: Linux `uinput` compatibility provider
+## Phase 9: Linux `UHID` provider — identity-aware tier (`gr-provider-linux-uhid`)
 
 ### Goal
 
-Deliver the first real Linux backend for `compatibility` fidelity.
+First identity-aware provider. Host software inspecting HID identity recognizes the virtual device. Reverse path covers output reports + feature reports + the full set of declared capability functions for one profile.
+
+### Entry criteria
+
+- Phase 8 gate signed off
+- Real-hardware evidence available for at least one identity-aware target (descriptor + representative input + reverse reports per [DEVICE_SPEC_VALIDATION_PLAN.md](../validation/DEVICE_SPEC_VALIDATION_PLAN.md))
 
 ### Deliverables
 
-- `gr-provider-linux-uinput`
-- `LinuxUinputBackendFactory`
-- `LinuxUinputBackendSession`
+- `gr-provider-linux-uhid` crate (cfg-gated)
+- `LinuxUhidBackendFactory` and `LinuxUhidBackendSession`
+- UHID device lifecycle, descriptor provisioning, HID input report write path, output and feature report receive paths
+- one identity-aware target implemented end-to-end (recommend DualSense — most public evidence available)
+- reverse translator integration produces normalized `OutputCommand`s for that target's declared output capabilities
 
-### Tasks
+### Iteration loop
 
-1. Implement Linux `uinput` device creation.
-2. Implement capability declaration from profile data.
-3. Implement evdev event emission:
-   - buttons
-   - axes
-   - sync reports
-4. Implement device identity metadata:
-   - name
-   - bus type
-   - vendor id
-   - product id
-5. Add optional force-feedback support hooks even if initially partial.
-6. Add developer diagnostics for emitted events.
-7. Add reusable event-buffer strategy where practical.
+- design pass: walk the chosen target's descriptor + report layout against captured fixtures
+- contract tests:
+  - against fake writer: descriptor validation, input report bytes, reverse report parsing
+  - against real kernel (Linux runner): UHID device appears with the right identity metadata; hidraw can read descriptor and reports; output and feature reports reach the backend
+- implementation: small unsafe surface for the UHID character device interface; one module
+- demo wiring: `vgpd-demo run-uhid-smoke <profile>` brings up the device and prints what the host sees
+- refactor: factor descriptor encoding helpers (most descriptors share grammar fragments)
+- gate-prep: prepare a manual checklist driving the device against Steam / a real game
 
-### Rust implementation notes
+### Testing tooling additions
 
-- keep all unsafe code tightly isolated
-- wrap file descriptors in RAII types
-- keep kernel interaction in one module tree
+- `gr-cli run-uhid-smoke`, `gr-cli compare-real-device`
+- Tier C (real-hardware) fixture replay against the chosen target's captured traces
+- `support-report` output evolves to per-profile evidence per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report)
 
-### Tests
+### Exit gate
 
-- descriptor construction tests
-- fake writer tests for event batches
-- Linux integration tests gated behind environment checks
+Automated portion:
 
-### Exit criteria
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] Linux-gated UHID integration tests pass
+- [ ] `gr-cli compare-real-device` matches captured trace within documented tolerance
+- [ ] `gr-cli phase-gate 9 --auto` exits 0
 
-- `compatibility` tier works for the generic gamepad and Xbox-style layout
-- this tier is documented as host-visible gamepad behavior, not physical-device identity
+Manual portion:
 
-## Phase 10: Linux `UHID` identity-aware provider
+- [ ] 1. `vgpd-demo run-uhid-smoke dualsense` brings up a HID device; `hidraw` enumeration shows DualSense vendor/product ids
+- [ ] 2. `lsusb` (where the host expects USB) or `bluetoothctl` shows the expected device identity
+- [ ] 3. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
+- [ ] 4. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
+- [ ] 5. Rumble from a game generates `OutputCommand::Rumble`
+- [ ] 6. Steam (if installed) recognizes the controller in Steam Input
+- [ ] 7. Author a custom session-scenario fixture exercising a Steam Input mode change; the reverse translator handles it
+- [ ] 8. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"`
+
+## Phase 10: Linux transport foundation (`gr-provider-linux-transport`)
 
 ### Goal
 
-Deliver `identity-aware` fidelity for targets that need HID identity and reverse report handling.
+Build the transport-tier scaffolding: enumeration, control flow, packet state machines. No specific transport-faithful target yet; the goal is to prove the architecture admits transport providers without disturbing earlier layers.
+
+### Entry criteria
+
+- Phase 9 gate signed off
 
 ### Deliverables
 
-- `gr-provider-linux-uhid`
-- `LinuxUhidBackendFactory`
-- `LinuxUhidBackendSession`
-- reverse event receive path
+- `gr-provider-linux-transport` crate (cfg-gated)
+- generic transport backend factory and session traits sitting on top of `gr-backend-api`
+- enumeration and protocol state-machine abstractions
+- USB and Bluetooth packet models
+- skeletal profile-family-specific transport translators (registered but not yet realizing real protocols)
 
-### Tasks
+### Iteration loop
 
-1. Implement UHID device lifecycle.
-2. Implement descriptor provisioning API.
-3. Implement HID input report writer.
-4. Implement reverse output report receiver.
-5. Implement feature report handling.
-6. Integrate reverse translators for:
-   - rumble
-   - LEDs
-   - trigger effects
-   - mode commands
-7. Add telemetry for descriptor, input-report, and reverse-event failures.
-8. Add bounded reverse-event queue handling and backpressure policy.
+- design pass: confirm transport contracts integrate cleanly with the existing planner + session engine (no upward leak of transport-specific types)
+- contract tests:
+  - transport state machine accepts captured enumeration traces (canned)
+  - planner admissibility tests for transport-tier requests
+  - reverse packet contract tests
+- implementation: state machines + packet models without committing to any specific OS-level USB/BT gadget API (those land in Phase 11)
+- demo wiring: `vgpd-demo plan-session --goal hardware-faithful` against a fake transport inventory plans successfully; `vgpd-demo replay-trace` on a transport-trace fixture exercises the state machine
+- refactor: pull common bus-state representations into a shared type
+- gate-prep: prepare a transport-trace fixture for the chosen Phase 11 target
 
-### Scope guard
+### Testing tooling additions
 
-This phase should focus on descriptor correctness, input reports, and reverse-path structure before trying to emulate every advanced feature at full richness.
+- `kind: backend-trace` extended to USB + Bluetooth-shaped trace steps
+- transport-state-machine snapshot tests
+- `gr-cli replay-trace` handles transport traces
 
-### Tests
+### Exit gate
 
-- descriptor validation tests
-- HID input report translation tests
-- reverse output command translation tests
-- integration tests with fake UHID shims where useful
+Automated portion:
 
-### Exit criteria
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] transport state machine round-trip tests pass on canned fixtures
+- [ ] `gr-cli phase-gate 10 --auto` exits 0
 
-- one real identity-aware target works end to end
-- HID descriptor and report identity are validated for the implemented profile
-- reverse output commands are observed and normalized correctly
-- output and feature report handling is present before claiming `identity-aware` support
+Manual portion:
 
-## Phase 11: Host output bridge
+- [ ] 1. `vgpd-demo plan-session dualsense --goal hardware-faithful --inventory samples/inventories/linux-transport-stub.yaml` produces a plan with `selected_backend_family: LinuxTransportUsb` (or Bluetooth) and no realization yet
+- [ ] 2. `vgpd-demo replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` plays the captured enumeration steps through the state machine; final state matches the documented "ready" state
+- [ ] 3. Author a custom transport-trace fixture omitting a mandatory startup step; replay reports the specific missing state transition
+- [ ] 4. Confirm `gr-provider-linux-transport` is `cfg(target_os = "linux")`; `cargo check --target x86_64-pc-windows-msvc -p gr-planner` succeeds (planner stays portable)
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 10 gate passed"`
+
+## Phase 11: First hardware-faithful target
 
 ### Goal
 
-Make reverse-path features first-class and host-usable.
+Land one real hardware-faithful profile end-to-end. Real enumeration, real packet handling, observed by a host that did not accept the lower-tier emulation. The target profile is the same one chosen in Phase 9 (recommend DualSense USB) for maximum reuse of evidence and fixtures.
+
+### Entry criteria
+
+- Phase 10 gate signed off
+- Real-hardware traces available for the chosen target's connect, idle, active input, reverse command, disconnect (per [DEVICE_SPEC_VALIDATION_PLAN.md step 6](../validation/DEVICE_SPEC_VALIDATION_PLAN.md#step-6-capture-transport-behavior-only-when-required))
 
 ### Deliverables
 
-- typed controller output commands
-- callback and channel bridges
-- optional physical-controller forwarding abstraction
+- USB protocol state machine for the chosen target
+- transport-level descriptor / control flow
+- input + reverse packet handling
+- timing-sensitive or handshake-sensitive logic where required
+- end-to-end real-host validation evidence captured
 
-### Tasks
+### Iteration loop
 
-1. Define typed controller output commands.
-2. Implement callback sink support.
-3. Implement channel or queue sink support.
-4. Add optional bridge abstraction for forwarding reverse commands to a real physical controller.
-5. Implement policy for ignored or unsupported reverse commands.
-6. Implement bounded delivery behavior so one slow consumer cannot stall all sessions.
+- design pass: walk the real-device trace; identify mandatory state transitions, timing windows, handshake exchanges
+- contract tests:
+  - per-step trace replay against the state machine
+  - timing-sensitive logic isolated and unit-tested
+  - reverse packet handling per declared capability
+- implementation: real protocol code; unsafe contained to one module; aggressive use of `#[track_caller]` on protocol-violating invariants
+- demo wiring: `vgpd-demo run-transport-smoke <profile>` brings up the virtual device against the target's expected transport
+- refactor: keep transport complexity inside the provider crate; nothing leaks upward
+- gate-prep: produce a side-by-side trace comparison (real vs virtual)
 
-### Tests
+### Testing tooling additions
 
-- callback delivery tests
-- channel-delivery tests
-- unsupported reverse command policy tests
-- slow-consumer isolation tests
+- `gr-cli compare-real-device --layer transport`
+- transport-trace recorder upgraded to capture timing intervals
+- Tier C real-hardware comparison workflow per [HEADLESS_TEST_STRATEGY.md tier C](../validation/HEADLESS_TEST_STRATEGY.md#tier-c-real-hardware-capture-runner)
 
-### Exit criteria
+### Exit gate
 
-- reverse-path handling is no longer backend-private
-- host applications can consume output commands deterministically
+Automated portion:
 
-## Phase 12: Linux transport provider foundation
+- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo insta test --check` clean
+- [ ] real-device comparison passes within documented tolerance
+- [ ] `gr-cli phase-gate 11 --auto` exits 0
+
+Manual portion:
+
+- [ ] 1. `vgpd-demo run-transport-smoke dualsense` brings up the virtual device; the host enumerates it identically to a real DualSense (`lsusb -v` diff shows only allowed differences such as serial number)
+- [ ] 2. A target host or game that rejected the UHID-tier emulation now accepts the transport-tier device
+- [ ] 3. Reverse-path features (rumble, lighting, trigger effects) behave correctly under the real host
+- [ ] 4. `support-report --profile dualsense --tier hardware-faithful` shows: transport enumeration ✓, control flow ✓, packet handling ✓, reverse packets ✓, real-host recognition ✓
+- [ ] 5. Differences between real and virtual traces are documented (as `notes:` in the comparison report) and the user signs off that each difference is safe
+- [ ] 6. Disconnect / reconnect cycle is clean (no orphan kernel resources)
+
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 11 gate passed"`
+
+## Phase 12: Windows + macOS provider foundations
 
 ### Goal
 
-Introduce the minimum architecture needed for `hardware-faithful` targets without destabilizing earlier layers.
+Prove the Linux-first runtime can admit Windows and macOS providers without architectural rewrites. Both providers ship as inventory + diagnostics + deployment-requirement reporting only; no realization yet.
 
-Transport work must not begin until sessions, planning, exact profile input contracts, and reverse-path contracts are stable in fake, `uinput`, and `UHID` paths.
+### Entry criteria
 
-### Deliverables
-
-- transport backend trait implementations
-- enumeration and session state-machine interfaces
-- packet models
-- skeletal profile-family-specific transport translators
-
-### Tasks
-
-1. Define transport backend session shapes.
-2. Define enumeration and protocol state-machine traits.
-3. Define transport packet models.
-4. Implement early packet send and reverse packet receive paths.
-5. Add skeletal profile-family-specific transport translators for:
-   - Xbox 360 USB
-   - DualSense USB
-   - DualSense Bluetooth
-
-### Tests
-
-- packet model tests
-- transport planner admissibility tests
-- reverse packet contract tests
-
-### Exit criteria
-
-- transport is architecturally integrated even if not yet fully faithful
-
-## Phase 13: Linux hardware-faithful transport implementations
-
-### Goal
-
-Implement real transport behavior only after the earlier contracts are proven.
+- Phase 11 gate signed off
 
 ### Deliverables
 
-- concrete USB and Bluetooth protocol state machines
-- descriptor and enumeration handling
-- transport-level input and reverse output packet handling
+- `gr-provider-windows-hid` (cfg-gated `target_os = "windows"`): inventory entry, deployment-requirement modeling, `BackendSupportReport`s
+- `gr-provider-macos-hid` (cfg-gated `target_os = "macos"`): inventory entry, entitlement / system-extension prerequisite modeling, `BackendSupportReport`s
+- planner accepts, degrades, or rejects Windows / macOS requests explicitly
+- documentation of what each platform's full implementation will require (linked from each provider crate's README)
 
-### Tasks
+### Iteration loop
 
-1. Capture and model real enumeration behavior.
-2. Implement packet encoding and decoding.
-3. Implement transport timing and handshake-sensitive logic where required.
-4. Implement reverse packet handling and translation.
-5. Validate target behavior against real hosts where possible.
+- design pass: confirm `HostPlatform::Windows` and `HostPlatform::Macos` planner inventory entries integrate cleanly
+- contract tests:
+  - provider selection: a Windows-only inventory selects the Windows provider
+  - degradation: a profile requesting transport-tier on macOS receives a degraded plan with reasons
+  - deployment requirements surface in the plan
+- implementation: skeletal provider crates with `can_realize` returning structured "not yet realized" reports
+- demo wiring: `vgpd-demo plan-session ... --host-platform windows` and `--host-platform macos` succeed against synthetic inventories
+- refactor: nothing platform-specific in core crates (verified by `cargo check` cross-builds)
+- gate-prep: cross-build all core crates against Windows and macOS targets
 
-### Tests
+### Testing tooling additions
 
-- enumeration tests
-- descriptor tests
-- packet tests
-- timing-sensitive validation where practical
+- cross-build CI matrix entries verify the core crates and provider stubs compile on all three targets
+- planner-inventory fixtures expanded with Windows and macOS shapes
 
-### Exit criteria
+### Exit gate
 
-- at least one `hardware-faithful` target passes real transport validation
-- USB, Bluetooth, or another modeled bus has validated enumeration and control-flow behavior
-- reverse packet handling is translated into typed host-visible output commands
+Automated portion:
 
-## Milestones
+- [ ] `cargo test --workspace --all-features` clean (Linux runner)
+- [ ] cross-build: `cargo check --target x86_64-pc-windows-msvc --workspace --features provider-windows-hid` clean
+- [ ] cross-build: `cargo check --target x86_64-apple-darwin --workspace --features provider-macos-hid` clean
+- [ ] `cargo insta test --check` clean
+- [ ] `gr-cli phase-gate 12 --auto` exits 0
 
-### Milestone 1: Spec/runtime model with fake backend contracts
+Manual portion:
 
-Success means:
+- [ ] 1. `vgpd-demo plan-session dualsense --goal identity-aware --host-platform windows --inventory samples/inventories/windows-hid-stub.yaml` plans the Windows provider with deployment-requirement annotations
+- [ ] 2. Same against `--host-platform macos`; the plan surfaces entitlement / system-extension prerequisites
+- [ ] 3. `vgpd-demo plan-session dualsense --goal hardware-faithful --host-platform macos --inventory samples/inventories/macos-hid-stub.yaml` degrades or rejects with explicit reasoning
+- [ ] 4. Confirm no core crate references `windows`, `winapi`, `core-foundation`, etc. (provider details stay in their crates): `rg 'extern crate (windows|winapi|core_foundation|objc)' crates/{gr-core,gr-profiles,gr-config,gr-session-options,gr-runtime-model,gr-backend-api,gr-planner,gr-translators,gr-session,gr-host-bridge}` returns nothing
+- [ ] 5. Each provider crate's README documents the realization roadmap
 
-- full planning and session-option system with fake backends
-- explicit session lifecycle
-- fake backend contracts for session lifecycle, planner output, and reverse-event delivery
-- reverse-path translation working in simulation
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 12 gate passed"`
 
-### Milestone 2: Real Linux compatibility backend
+## After Phase 12
 
-Success means:
+The library is "functional" by the project's working definition: architecture is ready for full device-emulation buildout, even though only one hardware-faithful target is implemented. The demo program graduates to its GUI / controller-visualizer phase per [demo/README.md](../../../demo/README.md).
 
-- `uinput` backend works for `compatibility`
-- host software sees a usable Linux virtual gamepad
-- this milestone does not claim physical-device identity
-- session and diagnostics model remains unchanged from fake backend testing
-
-### Milestone 3: First real identity-aware target
-
-Success means:
-
-- one HID target works through `UHID`
-- descriptor and input-report validation pass
-- output and feature reports are observed and normalized into host-visible commands
-
-### Milestone 4: First hardware-faithful target
-
-Success means:
-
-- transport path works with the same session and planning architecture
-- transport enumeration and control-flow validation pass for one target
-- reverse transport packets are handled and normalized
-- transport complexity remains isolated from core crates
-
-## Planned post-Linux platform phases
-
-These phases are architectural commitments and planned implementation paths, not immediate delivery promises.
-
-### Phase 14: Windows provider foundation
-
-Goal:
-
-- prove that the Linux-first runtime can admit a Windows provider without architectural rewrites
-
-Deliverables:
-
-- `gr-provider-windows-hid`
-- `HostPlatform::Windows` planner inventory entries
-- provider support-report contracts for deployment prerequisites
-- planner diagnostics for unavailable or uninstalled Windows providers
-
-Tasks:
-
-1. Define Windows provider inventory and diagnostics types.
-2. Model driver-backed install requirements in `BackendSupportReport` and `SessionPlan`.
-3. Add provider-selection tests proving Windows can be negotiated without changing translator or session contracts.
-4. Keep realization code skeletal until the provider boundary is validated.
-
-Exit criteria:
-
-- planner can accept, degrade, or reject Windows requests explicitly
-- no Linux-specific assumptions remain in runtime-model or planner crates
-
-### Phase 15: macOS provider foundation
-
-Goal:
-
-- prove that the Linux-first runtime can admit macOS providers with explicit entitlement and install constraints
-
-Deliverables:
-
-- `gr-provider-macos-hid`
-- `HostPlatform::Macos` planner inventory entries
-- provider support-report contracts for entitlement and install prerequisites
-- planner diagnostics for unsupported or unavailable macOS realizations
-
-Tasks:
-
-1. Define macOS provider inventory and diagnostics types.
-2. Model entitlement, system-extension, or similar prerequisites in `BackendSupportReport` and `SessionPlan`.
-3. Add provider-selection tests proving macOS can be negotiated without changing translator or session contracts.
-4. Keep realization code skeletal until the provider boundary is validated.
-
-Exit criteria:
-
-- planner can accept, degrade, or reject macOS requests explicitly
-- deployment prerequisites are visible without leaking platform APIs into core crates
+Subsequent work — adding profiles, adding hardware-faithful targets, implementing the Windows and macOS providers in full — follows the same phase / gate model but is scheduled as separate v1.x or v2 efforts.
 
 ## Risk areas
 
-## Risk: backend complexity leaks into core types
+### Backend complexity leaks into core types
 
 Mitigation:
 
 - keep `gr-backend-api` narrow
-- forbid Linux-specific dependencies in `gr-core`, `gr-profiles`, `gr-config`, `gr-session-options`, and `gr-planner`
-- review backend-related API additions carefully
+- forbid platform-specific dependencies in `gr-core`, `gr-profiles`, `gr-config`, `gr-session-options`, `gr-planner`
+- gate 12's manual check #4 is a fast verifier
 
-## Risk: profiles become deployment policy
-
-Mitigation:
-
-- keep actual backend selection inside `gr-planner`
-- let profiles describe requirements and supported levels only
-- test planner behavior against varying backend inventories
-
-## Risk: HID abstraction becomes too generic
+### Profiles become deployment policy
 
 Mitigation:
 
-- keep profile-family-specific HID translators
-- require descriptor/report compatibility tests
-- avoid one universal HID packet model when the devices diverge materially
+- backend selection lives in `gr-planner`, never in `gr-profiles`
+- planner tests against varying inventories
+- snapshot tests catch silent shape drift
 
-## Risk: reverse path slips behind forward path
-
-Mitigation:
-
-- require reverse translator interfaces before claiming `identity-aware` support
-- require reverse-path integration tests before claiming support
-- reject or explicitly degrade `identity-aware` plans when output or feature report handling is missing
-
-## Risk: premature async complexity
+### HID abstraction becomes too generic
 
 Mitigation:
 
-- keep core, profile, config, session-options, and planning crates runtime-agnostic
-- introduce async only in session and backend layers if it proves useful
+- profile-family-specific translators required at gate 6
+- descriptor / report compatibility tests
+- no universal HID packet model
 
-## Risk: per-session execution model does not scale
+### Reverse path slips behind forward path
 
 Mitigation:
 
-- keep per-session isolation logical rather than thread-per-device
-- use shared workers or async scheduling by default
-- compile session options before activation
-- use bounded queues and latest-state coalescing
-- measure queue depth, drop/coalesce counts, and end-to-end latency
+- reverse translator interfaces required before any `identity-aware` claim
+- reverse-path integration tests required before gate 9 passes
+- `gr-cli capability-coverage` non-zero on missing reverse coverage
 
-## Recommended implementation order
+### Premature async complexity
 
-1. `gr-core`
-2. `gr-profiles`
-3. `gr-config`
-4. `gr-session-options`
-5. `gr-runtime-model`
-6. `gr-backend-api`
-7. `gr-planner`
-8. fake backends in `gr-testkit`
-9. `gr-translators`
-10. `gr-session`
-11. `gr-host-bridge`
-12. `gr-provider-linux-uinput`
-13. `gr-provider-linux-uhid`
-14. host output bridge integration
-15. `gr-provider-linux-transport`
-16. `gr-provider-windows-hid`
-17. `gr-provider-macos-hid`
+Mitigation:
+
+- core, profile, config, session-options, planner crates stay runtime-agnostic
+- async lives in `gr-session` and provider crates only
+
+### Per-session execution model does not scale
+
+Mitigation:
+
+- session isolation logical (one task per session), not thread-per-device
+- shared workers / async scheduling
+- bounded queues + latest-state coalescing
+- the 100-session concurrent test at gate 7 is the canary
+
+### Manual gates become rubber stamps
+
+Mitigation:
+
+- automated portion of each gate must remain meaningful (CI keeps `gr-cli phase-gate --auto` honest)
+- manual checklists are scoped to things that *only* a human can verify: ergonomics, real-hardware behavior, output readability
+- gate sign-off commit is part of the PR description for the next phase
 
 ## Final guidance
 
-If there is a single rule to preserve while implementing this in Rust, it is this:
+The most important single rule for the buildout:
 
-keep profile definition, session-option compilation, planning, translation, and backend realization as separate layers, and make every concrete device instance belong to an explicit session.
+**keep profile definition, session-option compilation, planning, translation, backend realization, and host bridging as separate layers, and let every concrete device instance belong to one explicit session.**
+
+The testing tooling, gates, and within-phase loop exist to defend that separation while the codebase grows.

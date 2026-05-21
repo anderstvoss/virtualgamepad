@@ -11,8 +11,9 @@ This directory is the source-of-truth spec package for the `virtualgamepad` temp
 ## Implementation
 
 - [Gamepad Emulation Framework](implementation/IMPLEMENTATION_FRAMEWORK.md): language-agnostic module model
-- [Rust Implementation Plan](implementation/RUST_IMPLEMENTATION_PLAN.md): phased sequencing for the Rust buildout
+- [Rust Implementation Plan](implementation/RUST_IMPLEMENTATION_PLAN.md): phased sequencing with manual gates between phases
 - [Rust Implementation Specification](implementation/RUST_IMPLEMENTATION_SPEC.md): authoritative crate ownership, runtime contracts, and acceptance criteria
+- [Testing Tooling Specification](implementation/TESTING_TOOLING_SPEC.md): `gr-testkit`, fixture format, snapshot/property strategies, CLI surfaces
 
 ## Validation
 
