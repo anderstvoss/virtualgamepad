@@ -1,0 +1,12 @@
+[package]
+name = "gr-provider-macos-hid"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "macOS HID provider foundation for virtualgamepad."
+
+[lints]
+workspace = true

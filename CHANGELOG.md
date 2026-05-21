@@ -11,8 +11,12 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 - Companion demo binary under `demo/` (`virtual_gamepad_demo`) that
   grows from a CLI scaffold into a future GUI controller visualizer
-  alongside the library. The repo is now a Cargo workspace with the
-  library at the root and the demo as a member.
+  alongside the library.
+
+- Phase 0 workspace split scaffold with placeholder crates under
+  `crates/`, a `gr-testkit` fixture-envelope loader, a `gr-cli`
+  validation/phase-gate skeleton, and `vgpd-demo phase-gate <N>`
+  reading the manual checklist from the implementation plan.
 
 ### Changed
 
@@ -22,6 +26,13 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 ### Deprecated
 
 ### Removed
+
+- The single-crate `virtual_gamepad` package at the repository root.
+  Its slot is now occupied by `crates/gr-core/` (initially a placeholder
+  with a smoke test), and the workspace root `Cargo.toml` is a pure
+  workspace manifest. A facade crate may be reintroduced later to
+  re-export from the `gr-*` crates if a single import surface proves
+  useful.
 
 ### Fixed
 

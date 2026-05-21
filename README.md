@@ -3,7 +3,7 @@
 Rust library for creating virtual gamepad devices that emulate
 physical hardware at varying accuracy levels.
 
-> **Status:** early WIP. The crate is a scaffold; the public API will
+> **Status:** early WIP. The workspace is in Phase 0 scaffold mode; the public API will
 > land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
 > tracked changes, and [docs/spec/](docs/spec/) for the architecture,
 > implementation, and validation spec the buildout follows. A
@@ -83,10 +83,11 @@ change.
 ## Demo program
 
 The repo ships a separate demo binary under [`demo/`](demo/) that grows
-with the library. To run the current CLI scaffold:
+with the library. To run the current Phase 0 scaffold:
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
+cargo run -p virtual_gamepad_demo -- phase-gate 0
 ```
 
 See [demo/README.md](demo/README.md) for the planned growth phases and

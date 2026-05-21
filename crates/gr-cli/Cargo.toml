@@ -1,0 +1,21 @@
+[package]
+name = "gr-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Internal and CI tooling for virtualgamepad."
+
+[[bin]]
+name = "gr-cli"
+path = "src/bin/gr-cli.rs"
+
+[dependencies]
+clap.workspace = true
+gr-testkit = { path = "../gr-testkit", version = "0.1" }
+serde_yaml.workspace = true
+
+[lints]
+workspace = true

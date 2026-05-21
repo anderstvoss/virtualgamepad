@@ -1,0 +1,7 @@
+fixture: virtualgamepad/v1
+kind: input-frame
+id: envelope-only
+profile_id: placeholder-profile
+notes: |
+  Minimal Phase 0 fixture envelope sample.
+payload: {}
