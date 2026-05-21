@@ -314,9 +314,9 @@ Automated portion:
 Manual portion:
 
 - [ ] 1. `vgpd-demo list-profiles` shows all four built-in profiles with stable display names
-- [ ] 2. `vgpd-demo show-capabilities dualsense` lists rumble, trigger effects, lighting, touchpad, motion, audio (discrete commands), microphone (audio sink, not declared as command); in the stick entries, confirm the YAML explicitly shows the shared range applies to both axes rather than leaving that implicit. Cross-check against the [DualSense documentation in fidelity guide](../specs/FIDELITY_GUIDE.md#tier-2-identity-aware)
-- [ ] 3. `vgpd-demo show-capabilities xbox360` lists analog sticks, triggers, d-pad, primary buttons, guide button, force feedback, lighting, and player indicators — no DualSense-specific outputs leak in
-- [ ] 4. Run `cargo test -p gr-profiles invalid_profiles_fail_with_field_specific_errors`. Confirm it reports 1 passing targeted test with the remainder filtered out, and that the asserted rejection points to a specific missing field
+- [ ] 2. `vgpd-demo show-capabilities dualsense` lists touch surface, accelerometer, gyroscope, rumble, haptics, lighting, player indicators, trigger effects, and audio. In the stick entries, confirm the YAML explicitly shows the shared range applies to both axes rather than leaving that implicit. Cross-check against the [DualSense documentation in fidelity guide](../specs/FIDELITY_GUIDE.md#dualsense-profile_id-dualsense)
+- [ ] 3. `vgpd-demo show-capabilities xbox360` lists analog sticks, triggers, d-pad, face buttons, shoulders, stick clicks, system buttons, rumble, lighting, and player indicators, with no DualSense-specific outputs such as trigger effects, audio, or haptics
+- [ ] 4. Run `cargo test -p gr-profiles invalid_profiles_fail_with_field_specific_errors`. Confirm it reports 6 passing parametrized cases with the remainder filtered out, and that each case points to one specific missing field (`display_name`, `supported_fidelity`, `input_contract.required_fields`, `capabilities.input`, `identity.vendor_id`, `identity.product_id`)
 - [ ] 5. Review `crates/gr-profiles/src/snapshots/` — capability dumps look correct to a human
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 2 gate passed"`
