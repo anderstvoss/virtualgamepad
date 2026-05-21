@@ -23,11 +23,18 @@ enum Command {
     ShowTypes,
     /// Run the automated portion of a phase gate and print the manual checklist.
     PhaseGate { phase: u8 },
+    /// List the built-in controller profiles (Phase 2 deliverable).
+    ListProfiles,
+    /// Print declared capabilities for a built-in profile (Phase 2 deliverable).
+    ShowCapabilities {
+        /// Profile identifier (e.g. `dualsense`, `xbox360`).
+        profile_id: String,
+    },
 }
 
 fn main() {
     let cli = Cli::parse();
-    let result = match cli.command {
+    let result: Result<(), String> = match cli.command {
         Command::Info => {
             print_info();
             Ok(())
@@ -36,7 +43,21 @@ fn main() {
             print_show_types();
             Ok(())
         }
-        Command::PhaseGate { phase } => phase_gate::run(phase),
+        Command::PhaseGate { phase } => phase_gate::run(phase).map_err(|e| e.to_string()),
+        Command::ListProfiles => match gr_cli::list_profiles() {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
+        Command::ShowCapabilities { profile_id } => match gr_cli::show_capabilities(&profile_id) {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
     };
 
     if let Err(error) = result {
