@@ -224,7 +224,6 @@ dependencies = [
  "clap",
  "gr-core",
  "gr-profiles",
- "gr-testkit",
  "insta",
  "serde",
  "serde_yaml",

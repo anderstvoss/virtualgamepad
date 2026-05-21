@@ -16,7 +16,6 @@ path = "src/bin/gr-cli.rs"
 clap.workspace = true
 gr-core = { path = "../gr-core", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }
-gr-testkit = { path = "../gr-testkit", version = "0.1" }
 serde.workspace = true
 serde_yaml.workspace = true
 

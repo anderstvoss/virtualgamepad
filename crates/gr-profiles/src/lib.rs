@@ -24,12 +24,15 @@ pub struct ControllerProfile {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
-#[serde(rename_all = "kebab-case")]
 #[non_exhaustive]
 pub enum ProfileFamily {
+    #[serde(rename = "generic-gamepad")]
     GenericGamepad,
+    #[serde(rename = "xbox360")]
     Xbox360,
+    #[serde(rename = "dualsense")]
     DualSense,
+    #[serde(rename = "steam-controller")]
     SteamController,
 }
 
@@ -1219,6 +1222,26 @@ mod tests {
         assert_eq!(profiles[1].display_name, "Xbox 360");
         assert_eq!(profiles[2].display_name, "DualSense");
         assert_eq!(profiles[3].display_name, "Steam Controller");
+    }
+
+    #[test]
+    fn profile_family_serialization_uses_spec_names() {
+        assert_eq!(
+            serde_yaml::to_string(&ProfileFamily::GenericGamepad).expect("yaml"),
+            "generic-gamepad\n"
+        );
+        assert_eq!(
+            serde_yaml::to_string(&ProfileFamily::Xbox360).expect("yaml"),
+            "xbox360\n"
+        );
+        assert_eq!(
+            serde_yaml::to_string(&ProfileFamily::DualSense).expect("yaml"),
+            "dualsense\n"
+        );
+        assert_eq!(
+            serde_yaml::to_string(&ProfileFamily::SteamController).expect("yaml"),
+            "steam-controller\n"
+        );
     }
 
     #[test]

@@ -1,12 +1,15 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
-use gr_core::SemanticInputFunction;
+use gr_core::{
+    CoreError, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame,
+    ProfileInputPayload, SemanticInputFunction, SequenceId, Timestamp,
+};
 use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, RegistryError,
     SemanticRef, registry,
 };
-use gr_testkit::fixtures::{FixtureDocument, FixtureError, load_fixture};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_yaml::Value;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -55,7 +58,7 @@ const PHASE_2_COMMANDS: &[&[&str]] = &[
 /// parsed, or the fixture envelope is invalid.
 pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
     let path = path.as_ref();
-    let fixture = load_fixture(path).map_err(|source| CliError::Fixture {
+    let fixture = load_fixture_summary(path).map_err(|source| CliError::Fixture {
         path: path.to_path_buf(),
         source,
     })?;
@@ -246,6 +249,91 @@ impl fmt::Display for CliError {
 
 impl std::error::Error for CliError {}
 
+const FIXTURE_SCHEMA_VERSION: &str = "virtualgamepad/v1";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct FixtureEnvelope {
+    fixture: String,
+    kind: String,
+    id: String,
+    #[serde(default)]
+    profile_id: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    payload: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FixtureDocument {
+    Envelope(FixtureEnvelope),
+    InputFrame(InputFrameFixture),
+    InputDelta(InputDeltaFixture),
+}
+
+#[derive(Debug)]
+pub enum FixtureError {
+    Io(std::io::Error),
+    Parse(serde_yaml::Error),
+    UnsupportedVersion { actual: String },
+    MissingProfileId,
+    UnsupportedKind { kind: String },
+    ProfilePayloadMismatch { source: CoreError },
+}
+
+impl fmt::Display for FixtureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Io(error) => write!(f, "failed to read fixture: {error}"),
+            Self::Parse(error) => write!(f, "failed to parse fixture YAML: {error}"),
+            Self::UnsupportedVersion { actual } => write!(
+                f,
+                "unsupported fixture version in `fixture` field: expected `{FIXTURE_SCHEMA_VERSION}`, got `{actual}`"
+            ),
+            Self::MissingProfileId => {
+                write!(
+                    f,
+                    "fixture kind `input-frame` requires a `profile_id` field"
+                )
+            }
+            Self::UnsupportedKind { kind } => {
+                write!(f, "unsupported fixture kind `{kind}`")
+            }
+            Self::ProfilePayloadMismatch { source } => source.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for FixtureError {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawInputFramePayload {
+    timestamp: Timestamp,
+    sequence: SequenceId,
+    #[serde(flatten)]
+    payload: ProfileInputPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InputFrameFixture {
+    envelope: FixtureEnvelope,
+    frame: ProfileInputFrame,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct RawInputDeltaPayload {
+    timestamp: Timestamp,
+    sequence: SequenceId,
+    #[serde(flatten)]
+    payload: ProfileInputDeltaPayload,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InputDeltaFixture {
+    envelope: FixtureEnvelope,
+    delta: ProfileInputDelta,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct ProfileListEntry {
     profile_id: String,
@@ -398,6 +486,70 @@ fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
         serde_yaml::Value::Mapping(_) => "mapping",
         serde_yaml::Value::Tagged(_) => "tagged",
     }
+}
+
+fn load_fixture_summary(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureError> {
+    let contents = std::fs::read_to_string(path).map_err(FixtureError::Io)?;
+    let envelope: FixtureEnvelope = serde_yaml::from_str(&contents).map_err(FixtureError::Parse)?;
+    if envelope.fixture != FIXTURE_SCHEMA_VERSION {
+        return Err(FixtureError::UnsupportedVersion {
+            actual: envelope.fixture.clone(),
+        });
+    }
+    match envelope.kind.as_str() {
+        "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
+        "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
+        "backend-trace" | "reverse-event" | "plan-snapshot" | "session-scenario" => {
+            Ok(FixtureDocument::Envelope(envelope))
+        }
+        other => Err(FixtureError::UnsupportedKind {
+            kind: other.to_owned(),
+        }),
+    }
+}
+
+fn decode_input_frame(envelope: FixtureEnvelope) -> Result<InputFrameFixture, FixtureError> {
+    let profile_id = envelope
+        .profile_id
+        .clone()
+        .ok_or(FixtureError::MissingProfileId)?;
+    let payload = serde_yaml::from_value::<RawInputFramePayload>(envelope.payload.clone())
+        .map_err(FixtureError::Parse)?;
+    let frame = ProfileInputFrame {
+        profile_id: ProfileId::from(profile_id),
+        timestamp: payload.timestamp,
+        sequence: payload.sequence,
+        payload: payload.payload,
+    };
+    frame.validate().map_err(|source| match source {
+        CoreError::ProfilePayloadMismatch { .. } | CoreError::UnknownHumanName { .. } => {
+            FixtureError::ProfilePayloadMismatch { source }
+        }
+    })?;
+
+    Ok(InputFrameFixture { envelope, frame })
+}
+
+fn decode_input_delta(envelope: FixtureEnvelope) -> Result<InputDeltaFixture, FixtureError> {
+    let profile_id = envelope
+        .profile_id
+        .clone()
+        .ok_or(FixtureError::MissingProfileId)?;
+    let payload = serde_yaml::from_value::<RawInputDeltaPayload>(envelope.payload.clone())
+        .map_err(FixtureError::Parse)?;
+    let delta = ProfileInputDelta {
+        profile_id: ProfileId::from(profile_id),
+        timestamp: payload.timestamp,
+        sequence: payload.sequence,
+        payload: payload.payload,
+    };
+    delta.validate().map_err(|source| match source {
+        CoreError::ProfilePayloadMismatch { .. } | CoreError::UnknownHumanName { .. } => {
+            FixtureError::ProfilePayloadMismatch { source }
+        }
+    })?;
+
+    Ok(InputDeltaFixture { envelope, delta })
 }
 
 fn collect_profile_gaps(
