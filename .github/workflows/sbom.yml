@@ -71,14 +71,25 @@ jobs:
       - name: Generate SBOM
         run: |
           cargo cyclonedx --format json --override-filename bom
-          # Produces ./bom.json at the workspace root for a single
-          # crate; for workspaces it would also emit per-package files.
-          ls -la bom.json
+          # cargo-cyclonedx writes one bom.json per workspace member next to
+          # its Cargo.toml. Collect them under sbom/<crate>.bom.json for upload.
+          mkdir -p sbom
+          shopt -s nullglob
+          boms=(crates/*/bom.json demo/bom.json)
+          if [ "${#boms[@]}" -eq 0 ]; then
+            echo "No bom.json files were produced by cargo-cyclonedx" >&2
+            exit 1
+          fi
+          for f in "${boms[@]}"; do
+            crate="$(basename "$(dirname "$f")")"
+            cp "$f" "sbom/${crate}.bom.json"
+          done
+          ls -la sbom/
 
       - name: Upload SBOM as workflow artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: sbom-cyclonedx-${{ github.sha }}
-          path: bom.json
+          path: sbom/
           if-no-files-found: error
           retention-days: 90
