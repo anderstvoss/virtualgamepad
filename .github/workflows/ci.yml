@@ -307,12 +307,16 @@ jobs:
           # compare from api.github.com, license/advisory lookups via
           # the same host, and action assets from
           # objects.githubusercontent.com (plus blob/CDN fallbacks).
-          # Matching the broader allowlist the other Linux jobs use
-          # so the fetch path doesn't silently break on minor action
-          # updates.
+          # It also calls api.deps.dev for dependency metadata and
+          # api.securityscorecards.dev for OSSF Scorecard scoring on
+          # each package (see src/scorecard.ts in the action). Both
+          # are required or the action fails with a generic
+          # "fetch failed".
           egress-policy: block
           allowed-endpoints: >
+            api.deps.dev:443
             api.github.com:443
+            api.securityscorecards.dev:443
             github.com:443
             codeload.github.com:443
             objects.githubusercontent.com:443
