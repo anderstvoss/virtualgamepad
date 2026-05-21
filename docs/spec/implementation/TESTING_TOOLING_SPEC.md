@@ -425,7 +425,7 @@ Commands:
 | `gr-cli replay-trace <path>` | Replay a `backend-trace` fixture through a translator pair; emit decoded outputs |
 | `gr-cli capability-coverage [--profile <id>]` | Cross-check declared capabilities against translator coverage; exit non-zero on gap |
 | `gr-cli support-report [--profile <id>]` | Generate the support-claim evidence report described in [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report) |
-| `gr-cli phase-gate <N> --auto` | Run the deterministic portion of Phase N's gate; exit 0 / non-zero |
+| `vgpd-demo phase-gate <N>` | Run the deterministic portion of Phase N's gate (via the `gr_cli::run_phase_gate_auto` library entry point); exit 0 / non-zero |
 
 Output formats: `--format yaml` (default) and `--format json`. All commands accept `--profile <id>` filters where applicable.
 
@@ -512,7 +512,7 @@ Automated portion (must pass before manual review):
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean
 - [ ] `cargo insta test --check` clean (no stale snapshots)
-- [ ] `gr-cli phase-gate <N> --auto` exits 0
+- [ ] `vgpd-demo phase-gate <N>` exits 0
 
 Manual portion:
 
