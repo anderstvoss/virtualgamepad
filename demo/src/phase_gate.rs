@@ -200,6 +200,9 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .find(|check| check.command_display == "cargo test --workspace --all-features")
             .map(|check| check.success);
     }
+    if item.contains("`vgpd-demo phase-gate 2` exits 0") {
+        return Some(report.all_passed());
+    }
 
     if let Some(command_display) = first_backticked_segment(item) {
         return report
@@ -253,6 +256,21 @@ mod tests {
             gate.automated
                 .iter()
                 .any(|line| line.contains("property tests run with `proptest` default budget"))
+        );
+    }
+
+    #[test]
+    fn phase_two_checklist_extracts() {
+        let gate = load_gate(2).expect("phase 2 gate");
+        assert!(
+            gate.automated
+                .iter()
+                .any(|line| line.contains("capability-coverage"))
+        );
+        assert!(
+            gate.manual
+                .iter()
+                .any(|line| line.contains("show-capabilities dualsense"))
         );
     }
 

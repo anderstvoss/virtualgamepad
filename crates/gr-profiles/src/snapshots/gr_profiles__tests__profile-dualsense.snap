@@ -1,0 +1,213 @@
+---
+source: crates/gr-profiles/src/lib.rs
+expression: "serde_yaml::to_string(profile).expect(\"yaml\")"
+---
+profile_id: dualsense
+display_name: DualSense
+profile_family: dual-sense
+identity:
+  vendor_id: 1356
+  product_id: 3302
+  version: 256
+  transport_hints:
+  - usb
+  - bluetooth
+capabilities:
+  input:
+  - category: button
+    semantic: !input face-bottom
+    optionality: required
+  - category: button
+    semantic: !input face-right
+    optionality: required
+  - category: button
+    semantic: !input face-left
+    optionality: required
+  - category: button
+    semantic: !input face-top
+    optionality: required
+  - category: button
+    semantic: !input left-shoulder
+    optionality: required
+  - category: button
+    semantic: !input right-shoulder
+    optionality: required
+  - category: button
+    semantic: !input left-stick-button
+    optionality: required
+  - category: button
+    semantic: !input right-stick-button
+    optionality: required
+  - category: system
+    semantic: !input menu-primary
+    optionality: required
+  - category: system
+    semantic: !input menu-secondary
+    optionality: required
+  - category: system
+    semantic: !input guide
+    optionality: required
+  - category: button
+    semantic: !input touch-click
+    optionality: required
+  - category: button
+    semantic: !input dpad
+    optionality: required
+  - category: stick
+    semantic: !input left-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: stick
+    semantic: !input right-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: trigger
+    semantic: !input left-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - category: trigger
+    semantic: !input right-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - category: touch-surface
+    semantic: !input touch-surface
+    optionality: required
+  - category: motion-sensor
+    semantic: !input accelerometer
+    optionality: optional
+  - category: motion-sensor
+    semantic: !input gyroscope
+    optionality: optional
+  output:
+  - category: haptic
+    semantic: !output rumble
+    optionality: required
+  - category: haptic
+    semantic: !output haptics
+    optionality: optional
+  - category: lighting
+    semantic: !output lighting
+    optionality: required
+  - category: lighting
+    semantic: !output player-indicators
+    optionality: required
+  - category: trigger
+    semantic: !output trigger-effect
+    optionality: required
+  - category: audio
+    semantic: !output audio
+    optionality: optional
+supported_fidelity:
+- compatibility
+- identity-aware
+- hardware-faithful
+input_contract:
+  required_fields:
+  - buttons.face.cross
+  - buttons.face.circle
+  - buttons.face.square
+  - buttons.face.triangle
+  - buttons.shoulders.l1
+  - buttons.shoulders.r1
+  - buttons.stick_clicks.l3
+  - buttons.stick_clicks.r3
+  - buttons.system.create
+  - buttons.system.options
+  - buttons.system.ps
+  - buttons.system.touchpad_click
+  - dpad.up
+  - dpad.down
+  - dpad.left
+  - dpad.right
+  - sticks.left_x
+  - sticks.left_y
+  - sticks.right_x
+  - sticks.right_y
+  - triggers.l2
+  - triggers.r2
+  - touchpad.contact_1.active
+  - touchpad.contact_1.x
+  - touchpad.contact_1.y
+  - touchpad.contact_2.active
+  - touchpad.contact_2.x
+  - touchpad.contact_2.y
+  optional_fields: []
+  ranges:
+  - field: sticks.left_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: triggers.l2
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - field: triggers.r2
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - field: touchpad.contact_1.x
+    range:
+      kind: u16
+      min: 0
+      max: 1920
+  - field: touchpad.contact_1.y
+    range:
+      kind: u16
+      min: 0
+      max: 1080
+  - field: touchpad.contact_2.x
+    range:
+      kind: u16
+      min: 0
+      max: 1920
+  - field: touchpad.contact_2.y
+    range:
+      kind: u16
+      min: 0
+      max: 1080
+  delta_support: sparse-partial
+descriptor_templates:
+- fidelity: compatibility
+  descriptor: []
+- fidelity: identity-aware
+  descriptor: []
+- fidelity: hardware-faithful
+  descriptor: []
+reverse_command_support:
+  supported:
+  - !semantic rumble
+  - !semantic haptics
+  - !semantic lighting
+  - !semantic player-indicators
+  - !semantic trigger-effect
+  - !semantic audio

@@ -63,7 +63,13 @@ fn main() {
         },
         Command::CapabilityCoverage => match gr_cli::capability_coverage() {
             Ok(report) => {
-                println!("gaps: {}", report.gaps.len());
+                match serde_yaml::to_string(&report) {
+                    Ok(output) => print!("{output}"),
+                    Err(error) => {
+                        eprintln!("failed to serialize yaml output: {error}");
+                        std::process::exit(1);
+                    }
+                }
                 if !report.all_covered() {
                     std::process::exit(1);
                 }

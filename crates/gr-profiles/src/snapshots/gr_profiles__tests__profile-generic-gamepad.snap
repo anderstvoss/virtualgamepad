@@ -1,0 +1,142 @@
+---
+source: crates/gr-profiles/src/lib.rs
+expression: "serde_yaml::to_string(profile).expect(\"yaml\")"
+---
+profile_id: generic-gamepad
+display_name: Generic gamepad
+profile_family: generic-gamepad
+identity:
+  vendor_id: 1
+  product_id: 1
+  version: null
+  transport_hints: []
+capabilities:
+  input:
+  - category: button
+    semantic: !input face-bottom
+    optionality: required
+  - category: button
+    semantic: !input face-right
+    optionality: required
+  - category: button
+    semantic: !input face-left
+    optionality: required
+  - category: button
+    semantic: !input face-top
+    optionality: required
+  - category: button
+    semantic: !input left-shoulder
+    optionality: required
+  - category: button
+    semantic: !input right-shoulder
+    optionality: required
+  - category: button
+    semantic: !input left-stick-button
+    optionality: required
+  - category: button
+    semantic: !input right-stick-button
+    optionality: required
+  - category: system
+    semantic: !input menu-primary
+    optionality: required
+  - category: system
+    semantic: !input menu-secondary
+    optionality: required
+  - category: system
+    semantic: !input guide
+    optionality: required
+  - category: button
+    semantic: !input dpad
+    optionality: required
+  - category: stick
+    semantic: !input left-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: stick
+    semantic: !input right-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: trigger
+    semantic: !input left-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - category: trigger
+    semantic: !input right-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  output: []
+supported_fidelity:
+- compatibility
+input_contract:
+  required_fields:
+  - buttons.south
+  - buttons.east
+  - buttons.west
+  - buttons.north
+  - buttons.left_shoulder
+  - buttons.right_shoulder
+  - buttons.left_stick_button
+  - buttons.right_stick_button
+  - buttons.menu_primary
+  - buttons.menu_secondary
+  - buttons.guide
+  - dpad.up
+  - dpad.down
+  - dpad.left
+  - dpad.right
+  - sticks.left_x
+  - sticks.left_y
+  - sticks.right_x
+  - sticks.right_y
+  - triggers.left_trigger
+  - triggers.right_trigger
+  optional_fields: []
+  ranges:
+  - field: sticks.left_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: triggers.left_trigger
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - field: triggers.right_trigger
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  delta_support: sparse-partial
+descriptor_templates:
+- fidelity: compatibility
+  descriptor: []
+reverse_command_support:
+  supported: []

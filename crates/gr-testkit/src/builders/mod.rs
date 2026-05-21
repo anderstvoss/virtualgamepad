@@ -4,6 +4,7 @@ use gr_core::{
     Dpad, DpadDelta, DualSenseDelta, DualSenseInput, GenericGamepadDelta, GenericGamepadInput,
     SteamControllerDelta, SteamControllerInput, Xbox360Delta, Xbox360Input,
 };
+use gr_profiles::{ControllerProfile, registry};
 
 #[must_use]
 pub fn dpad() -> Dpad {
@@ -112,36 +113,21 @@ impl GenericGamepadInputBuilder {
 }
 
 /// Builder for ad-hoc test profiles.
-///
-/// Phase 2 deliverable. Returns a placeholder `AdHocProfile` value
-/// until the canonical `ControllerProfile` struct lands in `gr-profiles`,
-/// at which point this builder will be renamed `ControllerProfileBuilder`
-/// per [`TESTING_TOOLING_SPEC.md`](../../../../docs/spec/implementation/TESTING_TOOLING_SPEC.md).
 #[must_use]
-pub fn ad_hoc_profile(id: &str) -> AdHocProfileBuilder {
-    AdHocProfileBuilder {
+pub fn ad_hoc_profile(id: &str) -> ControllerProfileBuilder {
+    ControllerProfileBuilder {
         id: id.to_string(),
         missing_required_fields: Vec::new(),
     }
 }
 
-/// Placeholder profile value returned by [`AdHocProfileBuilder::build`].
-///
-/// Holds only the data needed to exercise the ad-hoc-rejection path of
-/// the registry; will gain real `ControllerProfile` fields in Phase 2.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AdHocProfile {
-    pub id: String,
-    pub missing_required_fields: Vec<String>,
-}
-
 #[derive(Debug, Clone)]
-pub struct AdHocProfileBuilder {
+pub struct ControllerProfileBuilder {
     id: String,
     missing_required_fields: Vec<String>,
 }
 
-impl AdHocProfileBuilder {
+impl ControllerProfileBuilder {
     /// Declare that a required profile field is intentionally missing,
     /// so a Phase-2 registry-loading test can assert the registry rejects
     /// the profile.
@@ -151,12 +137,44 @@ impl AdHocProfileBuilder {
         self
     }
 
+    /// Build the ad-hoc profile value used by tests.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the built-in `generic-gamepad` seed profile is not
+    /// available in the closed Phase 2 registry.
     #[must_use]
-    pub fn build(self) -> AdHocProfile {
-        AdHocProfile {
-            id: self.id,
-            missing_required_fields: self.missing_required_fields,
+    pub fn build(self) -> ControllerProfile {
+        let mut profile = registry()
+            .profile_by_str("generic-gamepad")
+            .expect("generic gamepad profile")
+            .clone();
+        profile.profile_id = self.id.as_str().into();
+        profile.display_name = "Ad hoc test profile";
+
+        for field in &self.missing_required_fields {
+            match field.as_str() {
+                "display_name" => profile.display_name = "",
+                "identity" | "identity.vendor_id" => {
+                    profile.identity.vendor_id = 0u16.into();
+                }
+                "identity.product_id" => {
+                    profile.identity.product_id = 0u16.into();
+                }
+                "supported_fidelity" => {
+                    profile.supported_fidelity = &[];
+                }
+                "capabilities.input" => {
+                    profile.capabilities.input = &[];
+                }
+                "input_contract.required_fields" => {
+                    profile.input_contract.required_fields = &[];
+                }
+                _ => {}
+            }
         }
+
+        profile
     }
 }
 
@@ -171,10 +189,8 @@ mod tests {
             .missing_required_field("identity")
             .build();
 
-        assert_eq!(profile.id, "invalid-test");
-        assert_eq!(
-            profile.missing_required_fields,
-            vec!["display_name".to_string(), "identity".to_string()]
-        );
+        assert_eq!(profile.profile_id.as_ref(), "invalid-test");
+        assert!(profile.display_name.is_empty());
+        assert_eq!(profile.identity.vendor_id.get(), 0);
     }
 }

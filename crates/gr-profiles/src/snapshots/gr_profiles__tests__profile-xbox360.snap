@@ -1,0 +1,153 @@
+---
+source: crates/gr-profiles/src/lib.rs
+expression: "serde_yaml::to_string(profile).expect(\"yaml\")"
+---
+profile_id: xbox360
+display_name: Xbox 360
+profile_family: xbox360
+identity:
+  vendor_id: 1118
+  product_id: 654
+  version: null
+  transport_hints:
+  - usb
+capabilities:
+  input:
+  - category: button
+    semantic: !input face-bottom
+    optionality: required
+  - category: button
+    semantic: !input face-right
+    optionality: required
+  - category: button
+    semantic: !input face-left
+    optionality: required
+  - category: button
+    semantic: !input face-top
+    optionality: required
+  - category: button
+    semantic: !input left-shoulder
+    optionality: required
+  - category: button
+    semantic: !input right-shoulder
+    optionality: required
+  - category: button
+    semantic: !input left-stick-button
+    optionality: required
+  - category: button
+    semantic: !input right-stick-button
+    optionality: required
+  - category: system
+    semantic: !input menu-primary
+    optionality: required
+  - category: system
+    semantic: !input menu-secondary
+    optionality: required
+  - category: system
+    semantic: !input guide
+    optionality: required
+  - category: button
+    semantic: !input dpad
+    optionality: required
+  - category: stick
+    semantic: !input left-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: stick
+    semantic: !input right-stick
+    optionality: required
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - category: trigger
+    semantic: !input left-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - category: trigger
+    semantic: !input right-trigger
+    optionality: required
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  output:
+  - category: haptic
+    semantic: !output rumble
+    optionality: required
+supported_fidelity:
+- compatibility
+- identity-aware
+- hardware-faithful
+input_contract:
+  required_fields:
+  - buttons.face.a
+  - buttons.face.b
+  - buttons.face.x
+  - buttons.face.y
+  - buttons.shoulders.lb
+  - buttons.shoulders.rb
+  - buttons.stick_clicks.ls
+  - buttons.stick_clicks.rs
+  - buttons.system.start
+  - buttons.system.back
+  - buttons.system.guide
+  - dpad.up
+  - dpad.down
+  - dpad.left
+  - dpad.right
+  - sticks.left_x
+  - sticks.left_y
+  - sticks.right_x
+  - sticks.right_y
+  - triggers.lt
+  - triggers.rt
+  optional_fields: []
+  ranges:
+  - field: sticks.left_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.left_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: sticks.right_y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: triggers.lt
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  - field: triggers.rt
+    range:
+      kind: u16
+      min: 0
+      max: 65535
+  delta_support: sparse-partial
+descriptor_templates:
+- fidelity: compatibility
+  descriptor: []
+- fidelity: identity-aware
+  descriptor: []
+- fidelity: hardware-faithful
+  descriptor: []
+reverse_command_support:
+  supported:
+  - !semantic rumble

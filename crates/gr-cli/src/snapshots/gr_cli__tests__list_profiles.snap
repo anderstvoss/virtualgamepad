@@ -1,0 +1,30 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+- profile_id: generic-gamepad
+  display_name: Generic gamepad
+  profile_family: generic-gamepad
+  supported_fidelity:
+  - compatibility
+- profile_id: xbox360
+  display_name: Xbox 360
+  profile_family: xbox360
+  supported_fidelity:
+  - compatibility
+  - identity-aware
+  - hardware-faithful
+- profile_id: dualsense
+  display_name: DualSense
+  profile_family: dualsense
+  supported_fidelity:
+  - compatibility
+  - identity-aware
+  - hardware-faithful
+- profile_id: steam-controller
+  display_name: Steam Controller
+  profile_family: steam-controller
+  supported_fidelity:
+  - compatibility
+  - identity-aware
+  - hardware-faithful

@@ -1,0 +1,9 @@
+---
+source: crates/gr-profiles/src/lib.rs
+assertion_line: 1296
+expression: "serde_yaml::to_string(&registry().profiles().iter().map(|profile|\nprofile.profile_id.as_ref()).collect::<Vec<_>>()).expect(\"yaml\")"
+---
+- generic-gamepad
+- xbox360
+- dualsense
+- steam-controller

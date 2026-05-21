@@ -300,11 +300,15 @@ Bring in the built-in profile set and the capability query API. The planner and 
 
 ### Exit gate
 
+Step-by-step reviewer guide:
+
+- [Phase 2 Manual Gate](manual-gates/phase-2.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
-- [ ] `gr-cli capability-coverage` exits 0 (no declared-but-unsupported gaps)
+- [ ] `cargo run -p gr-cli -- capability-coverage` exits 0 (no declared-but-unsupported gaps)
 - [ ] `vgpd-demo phase-gate 2` exits 0
 
 Manual portion:
@@ -313,7 +317,7 @@ Manual portion:
 - [ ] 2. `vgpd-demo show-capabilities dualsense` lists rumble, trigger effects, lighting, touchpad, motion, audio (discrete commands), microphone (audio sink, not declared as command); cross-check against the [DualSense documentation in fidelity guide](../specs/FIDELITY_GUIDE.md#tier-2-identity-aware)
 - [ ] 3. `vgpd-demo show-capabilities xbox360` lists analog sticks, triggers, d-pad, primary buttons, guide button, force feedback — no DualSense-specific outputs leak in
 - [ ] 4. Author a stripped-down ad-hoc profile fixture under `tests/fixtures/` (using `gr_testkit::builders::ad_hoc_profile`) and verify the registry rejects loading it without the required fields
-- [ ] 5. Review `crates/gr-profiles/snapshots/` — capability dumps look correct to a human
+- [ ] 5. Review `crates/gr-profiles/src/snapshots/` — capability dumps look correct to a human
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 2 gate passed"`
 
