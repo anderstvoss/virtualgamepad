@@ -10,7 +10,7 @@ It is intended to do three things:
 
 Related documents:
 
-- [README.md](../../README.md)
+- [README.md](../../../README.md)
 - [IMPLEMENTATION_FRAMEWORK.md](../implementation/IMPLEMENTATION_FRAMEWORK.md)
 - [CONFIGURATION_SPEC.md](../specs/CONFIGURATION_SPEC.md)
 - [FIDELITY_GUIDE.md](../specs/FIDELITY_GUIDE.md)
@@ -371,13 +371,12 @@ Required design changes:
 - `compatibility` sessions may use a gameplay-input-centric realization model
 - `identity-aware` sessions must use an explicit descriptor/report model with reverse report and feature report handling
 - `hardware-faithful` sessions must use a transport-session model with enumeration, control flow, protocol state, and reverse packet handling
-- richer tiers must be allowed to own additional state that lower tiers do not need, including feature negotiation, startup handshakes, timing state, and attached-function state
+- richer tiers must be allowed to own additional state that lower tiers do not need, including feature negotiation, startup handshakes, and timing state
 - the public host-facing API should remain stable even when the internal prepared session model differs by tier
 
 Future-proofing rule:
 
-- the architecture must allow attachable or nested device functions such as expansion ports, audio functions, touch surfaces, or other accessory endpoints without rewriting lower-tier session APIs
-- attached-function support may be dormant in early implementations, but the runtime model must leave room for per-session subchannels, profile-specific reverse commands, and transport- or HID-level side functions
+- the architecture must allow nested device functions such as expansion ports, audio functions, or accessory endpoints to be added later inside the `hardware-faithful` prepared session model without rewriting lower-tier session APIs (deferred from v1)
 
 ### Resolution 8: define a reverse-command normalization policy
 
@@ -386,7 +385,7 @@ The runtime needs a stable policy for deciding which reverse behaviors become sh
 Normalization rules:
 
 - normalize a reverse command only when the behavior, payload meaning, and host-side handling are materially equivalent across multiple profile families
-- keep a command profile-specific when its semantics depend on descriptor shape, transport state, attached functions, device modes, or vendor-specific interpretation
+- keep a command profile-specific when its semantics depend on descriptor shape, transport state, device modes, or vendor-specific interpretation
 - allow a translator to emit both normalized and profile-specific commands from the same underlying event stream when that preserves ergonomics without hiding fidelity
 - never coerce an unfamiliar device-specific command into a misleading generic semantic command just to fit the shared API
 
@@ -402,54 +401,15 @@ Examples:
 - rumble, basic lighting, trigger effects, and simple audio mode changes are good normalization candidates
 - accessory traffic, expansion-port commands, startup feature negotiation, and vendor-defined side channels should remain profile-specific unless real cross-family equivalence is proven
 
-### Resolution 9: define attached-function capability modeling
+### Resolution 9 (deferred): attached-function capability modeling
 
-Profiles that expose side functions, accessory channels, or nested device functions need explicit capability declarations rather than hidden translator knowledge.
+Attached-function modeling (expansion ports, accessory channels, nested device functions) is deferred from v1. The architectural slot is reserved inside the `hardware-faithful` prepared-session state — see the transport-tier isolation rule below — but `ControllerProfile`, `SessionPlan`, and `ControllerOutputCommand` do not carry attached-function fields in v1.
 
-Required design changes:
-
-- `ControllerProfile` must be able to declare attached functions and their capability groups
-- attached functions must have stable identifiers, capability summaries, and routing metadata
-- the planner must be able to report when an attached function is unsupported at the selected fidelity tier or provider
-- reverse-command payloads and backend reverse events must be able to reference attached-function identifiers directly
-
-Scope rule:
-
-- attached-function modeling should be explicit enough to support future cases such as expansion ports, audio accessories, touch surfaces, or profile-family-specific side channels
-- it should not require every profile to simulate subdevices when the profile family does not expose them
-
-Profile schema example:
-
-```yaml
-profileId: "xbox-360"
-family: "xbox"
-supportedFidelityTiers:
-  - "compatibility"
-  - "identity-aware"
-  - "hardware-faithful"
-attachedFunctions:
-  - attachedFunctionId: "expansion-port-1"
-    family: "expansion-port"
-    capabilitySummary:
-      - "headset-audio"
-      - "accessory-control"
-    supportedFidelityTiers:
-      - "hardware-faithful"
-    routingHints:
-      transportChannel: "expansion-port-1"
-    reverseCommandSupport:
-      - "ProfileSpecific"
-      - "AttachedFunction"
-    forwardInputSupport: []
-```
-
-Planner rule:
-
-- if a profile declares attached functions, the planner must report support, degradation, or rejection for each required attached function rather than only for the parent profile
+When a second profile family demands attached functions, they can be re-introduced additively (the runtime enums are `#[non_exhaustive]`) without breaking the lower-tier surface.
 
 Transport-tier isolation rule:
 
-- attached-function routing, transport channels, endpoint state, and handshake-sensitive behavior belong to `hardware-faithful` prepared-session state unless a lower tier explicitly realizes them
+- routing for accessory channels, transport endpoint state, and handshake-sensitive behavior belongs to `hardware-faithful` prepared-session state when it is realized
 - `identity-aware` tiers may model report-level side functions only when those functions are truly expressed at the HID layer
 - `compatibility` tiers must not inherit transport-session concepts merely to preserve internal symmetry
 
@@ -531,8 +491,9 @@ Responsibility:
 - expose structured input and output capability metadata
 - answer capability queries for host and planner use
 
-Rules:
+Implementation rule:
 
+- in the Rust implementation, `CapabilityRegistry` is a query API owned by `gr-profiles` over the registered profile set; it is not a separate crate
 - capability declarations are part of the contract surface
 - capability metadata must stay consistent with profile requirements and translators
 
@@ -712,8 +673,8 @@ Stability rules:
 
 Provider support-report rule:
 
-- backend providers must report support at the level of concrete capabilities, reverse-path coverage, and attached-function routing, not only at the level of coarse backend family
-- provider support reports must distinguish forward input support, reverse output support, feature report support, attached-function support, and timing- or handshake-sensitive support where applicable
+- backend providers must report support at the level of concrete capabilities and reverse-path coverage, not only at the level of coarse backend family
+- provider support reports must distinguish forward input support, reverse output support, feature report support, and timing- or handshake-sensitive support where applicable
 - planners must treat unknown provider capability state as insufficient for a support claim, not as optimistic success
 
 ### 14. `TelemetrySink`
@@ -756,7 +717,6 @@ Required sections:
 - identity metadata
 - transport hints
 - capabilities
-- attached functions
 - supported fidelity levels
 - required semantic input functions
 - supported semantic output functions
@@ -767,25 +727,7 @@ Profile rule:
 
 - a profile may describe what is needed for a level, but not the specific runtime backend instance to use
 - a profile may declare gamepad-adjacent non-gamepad functions when they belong to the same host-visible device identity and reverse-path model
-
-### Attached-function capability model
-
-Each attached function declaration should include:
-
-- `attachedFunctionId`
-- `family`
-- `capabilitySummary`
-- `supportedFidelityTiers`
-- `routingHints`
-- `reverseCommandSupport`
-- `forwardInputSupport` where applicable
-
-Rules:
-
-- attached functions must be optional at the profile level unless the device identity requires them
-- unsupported attached functions must appear in plan diagnostics rather than disappearing silently
-- attached functions must not force the main profile input contract to become a universal schema
-- attached functions must not introduce transport-specific state into lower-tier profile input contracts
+- attached-function capability modeling (accessory channels, expansion ports) is deferred from v1; see Resolution 9 above
 
 ### `SessionRequest`
 
@@ -852,7 +794,7 @@ Required interpretation rules:
 
 - commands should use normalized `function` values for common cross-device behaviors where that improves host ergonomics
 - commands must also be able to represent profile-specific or transport-specific behavior that does not map cleanly to a shared function enum
-- command payloads must be able to reference attached functions or accessory channels when the profile family supports them
+- v1 omits attached-function / accessory-channel references in command payloads; see Resolution 9 above for the deferred re-introduction path
 
 ### Reverse-command normalization policy
 
@@ -958,6 +900,10 @@ Limits:
 
 - no native HID identity
 - reverse-path is limited compared to HID or transport
+
+Reverse-path note:
+
+- `uinput`'s only reverse channel is force-feedback (`EV_FF`) effect uploads received via `read` on the same fd; rumble may be surfaced this way, but lighting, trigger effects, audio, and feature reports are structurally unavailable at this tier. The compatibility tier's reverse-path surface is therefore strictly smaller than UHID's.
 
 ### Linux `UHID` provider
 

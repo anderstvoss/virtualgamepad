@@ -7,7 +7,7 @@ It is intended to guide a real build-out from a greenfield workspace to a produc
 This plan assumes:
 
 - the host program can produce controller input appropriate to the selected target profile
-- the framework should ship primarily as an embeddable Rust library
+- the library should ship primarily as an embeddable Rust crate set
 - Linux is the first concrete platform target
 - Windows and macOS must be accounted for in the architecture and planner even before their providers are implemented
 - fidelity tiers will be implemented incrementally
@@ -489,11 +489,16 @@ Required fields:
 
 Optional fields:
 
+- host platform preference
 - backend preference
-- strictness policy
+- provider preference
 - host metadata
 
+Strictness lives inside `session_config.validation`, not on the request.
+
 ### `SessionPlan`
+
+`SessionPlan` is defined authoritatively in [RUST_IMPLEMENTATION_SPEC.md](../implementation/RUST_IMPLEMENTATION_SPEC.md#sessionplan). The field list below is reproduced for reference; the spec is the source of truth.
 
 Required fields:
 
@@ -502,12 +507,16 @@ Required fields:
 - `requested_goal`
 - `requested_fidelity_tier`
 - `selected_level`
+- `target_host_platform`
 - `selected_backend_family`
-- `validated_input_shape`
-- `enabled_capabilities`
-- `unsupported_capabilities`
+- `selected_provider_id`
+- `selected_translator_family`
+- `capability_result`
+- `degradation`
 - `warnings`
-- `rationale`
+- `deployment_requirements`
+- `backend_open_context`
+- `session_options`
 
 ### `BackendFactory`
 
@@ -548,12 +557,14 @@ trait BackendSession {
     fn session_id(&self) -> SessionId;
     fn open(&mut self) -> Result<(), BackendError>;
     fn send(&mut self, frame: BackendFrame) -> Result<(), BackendError>;
-    fn drain_reverse_events(&mut self, out: &mut SmallVec<[BackendReverseEvent; 4]>) -> Result<(), BackendError>;
+    fn drain_reverse_events(&mut self, out: &mut dyn Extend<BackendReverseEvent>) -> Result<(), BackendError>;
     fn readiness(&self) -> EventReadiness;
     fn diagnostics(&self) -> BackendDiagnostics;
     fn close(&mut self) -> Result<(), BackendError>;
 }
 ```
+
+`send` and `drain_reverse_events` are non-blocking; see the backend blocking contract in [RUST_IMPLEMENTATION_SPEC.md](../implementation/RUST_IMPLEMENTATION_SPEC.md#backend-blocking-contract).
 
 ### `ForwardTranslator`
 

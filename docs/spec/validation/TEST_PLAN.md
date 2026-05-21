@@ -1,10 +1,10 @@
 # Test Plan
 
-This document defines a formal, language-agnostic test plan for the gamepad emulation framework.
+This document defines a formal, language-agnostic test plan for the gamepad emulation library.
 
 The purpose of the test plan is to ensure:
 
-- the framework behaves correctly as a reusable subsystem inside a larger program
+- the library behaves correctly as a reusable subsystem inside a larger program
 - profile-specific input contracts are validated correctly
 - fidelity-tier planning is correct
 - capability definitions are accurate and complete
@@ -78,7 +78,7 @@ Most development should be possible in headless remote environments. Real-hardwa
 
 This area must be explicitly tested.
 
-Capability definitions of the output devices are part of the framework contract and should not be treated as documentation-only metadata.
+Capability definitions of the output devices are part of the library contract and should not be treated as documentation-only metadata.
 
 ### Scope
 
@@ -425,7 +425,7 @@ Verify:
 
 ### Priority 0
 
-These tests should exist before the framework is considered usable.
+These tests should exist before the library is considered usable.
 
 - profile-input validation
 - capability definition tests
@@ -453,7 +453,7 @@ These tests should exist before the framework is considered usable.
 
 ## Acceptance criteria
 
-The framework should not be considered complete unless:
+The library should not be considered complete unless:
 
 - all public interfaces have success-path tests
 - all validation rules have failure-path tests

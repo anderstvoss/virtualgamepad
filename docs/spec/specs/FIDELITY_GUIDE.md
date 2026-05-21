@@ -65,6 +65,10 @@ Make software see a usable controller with the expected gameplay inputs.
 - full reverse-path behavior
 - extensible accessory or side-channel behavior beyond what the selected compatibility provider can expose
 
+### Reverse-path note for Linux `uinput`
+
+`uinput`'s only reverse channel is force-feedback (`EV_FF`) effect uploads received via `read` on the same fd. Rumble may be exposed through this channel, but lighting, trigger effects, audio, and feature reports are structurally unavailable at this tier. Reverse-path surface at `compatibility` is strictly smaller than at `identity-aware`.
+
 ### Creation procedure
 
 1. define the target’s required gameplay functions
@@ -214,7 +218,7 @@ Behave like the real hardware on the transport, not just inside the OS input sta
 - provide transport-level descriptors and endpoints
 - implement transport packet behavior
 - support protocol-specific timing and state transitions
-- route attached-function or accessory traffic where the real device exposes it
+- (v2) route attached-function or accessory traffic where the real device exposes it; deferred from v1
 
 ### Best for
 
@@ -260,7 +264,7 @@ Suggested checks:
 - do control requests or equivalent protocol requests succeed?
 - do applications that rejected lower tiers now accept the device?
 - do reverse-path features behave correctly?
-- do attached-function or accessory commands reach the correct per-device channel when the profile claims them?
+- (v2 only) if the profile declares attached-function or accessory channels, do those commands reach the correct per-device channel? — not exercised in v1
 
 ### Reverse-engineering guidance
 
@@ -286,7 +290,7 @@ Recommended method:
 
 ## Degradation policy
 
-The framework should never silently pretend a higher tier is complete when it is not.
+The library should never silently pretend a higher tier is complete when it is not.
 
 Recommended behavior:
 

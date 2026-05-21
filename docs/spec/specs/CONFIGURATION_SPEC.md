@@ -8,6 +8,10 @@ This document defines the recommended configuration format for describing:
 - how reverse-path outputs are surfaced back to the host
 - which validation and delivery policies should be enforced
 
+## Document format
+
+Configuration documents are YAML. `gr-config` parses them via `serde_yaml`. JSON is accepted as a strict subset for tools that prefer it (since YAML is a superset of JSON, the same parser handles both).
+
 The most important rule is:
 
 configuration must stay session-oriented and narrow.
@@ -31,7 +35,7 @@ It should not try to be a universal semantic remapping language between unrelate
 
 ## Configuration layers
 
-The framework should treat configuration as four layers.
+The library should treat configuration as four layers.
 
 ### `session`
 
@@ -229,6 +233,12 @@ Validate:
 - output-handling mode is fully specified
 - unsupported-capability policy is valid
 
+### Unknown config fields
+
+- unknown top-level sections are rejected
+- unknown fields inside known sections are warned by default and rejected when `validation.rejectUnknownConfigFields: true`
+- the default is warn so additive spec changes do not break existing configs; hosts that want strict forward-compatibility opt in
+
 ## Unsupported-capability policy
 
 Some requested capabilities will not be realizable in every environment.
@@ -260,7 +270,10 @@ Configurations should explicitly answer:
 - should out-of-range values be rejected or clamped?
 - are reverse outputs ignored, logged, bridged, or dispatched to callbacks?
 - should unsupported capabilities fail startup or only produce degradation reports?
-- should provider preferences be treated as strict requirements or soft hints?
+
+## Provider preference rule
+
+Provider preferences are hints. The planner may reject a request when the preferred provider is unavailable, but it must never bypass capability validation to honor a preference. Strict failure when a preferred provider is missing is expressed via `validation.rejectUnsupportedProviderPreference: true`; otherwise the planner is free to fall back to an admissible provider and record the substitution in the session plan.
 
 ## Final recommendation
 

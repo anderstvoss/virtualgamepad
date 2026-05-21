@@ -94,6 +94,10 @@ Responsibility:
 - describe what each target controller supports in both directions
 - expose a structured query interface for host logic
 
+Implementation note:
+
+- in the Rust implementation this is owned by `gr-profiles` as a query API over the registered profile set, not a separate crate or module
+
 Consumes:
 
 - target profile definitions

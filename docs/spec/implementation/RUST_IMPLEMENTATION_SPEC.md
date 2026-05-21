@@ -16,6 +16,10 @@ Related documents:
 - [FIDELITY_GUIDE.md](../specs/FIDELITY_GUIDE.md)
 - [TEST_PLAN.md](../validation/TEST_PLAN.md)
 
+## Versioning and stability
+
+The library is pre-1.0. Minor versions may break the public API. All workspace crates are versioned in lockstep and released together. Profile additions are additive; profile removals require a minor-version bump and a clear deprecation note in the changelog. Provider-crate additions are additive. The `#[non_exhaustive]` markers on `OutputFunctionRef`, `OutputPayload`, `ProfileInputPayload`, and similar reserve room for additive variant additions without bumping.
+
 ## Purpose
 
 The Rust implementation is a Linux-prioritized standalone library with explicit cross-platform planning boundaries that:
@@ -101,7 +105,7 @@ Resolution:
 
 - the planner still negotiates one public `SessionPlan`
 - session preparation may produce tier-specific prepared state behind stable public handles
-- `hardware-faithful` sessions may own richer transport and attached-function state than `identity-aware` sessions
+- `hardware-faithful` sessions may own richer transport state (and, in a future version, attached-function state) than `identity-aware` sessions
 - `identity-aware` sessions may own richer report and feature state than `compatibility` sessions
 
 ### Decision 6: reverse commands need both normalized and profile-specific forms
@@ -112,22 +116,17 @@ Resolution:
 
 - `ControllerOutputCommand` remains the common host-facing container
 - shared functions such as rumble, LEDs, trigger effects, and audio use normalized function and payload variants where feasible
-- profile-specific commands and attached-function traffic must have typed escape hatches rather than being dropped or coerced into misleading generic enums
+- profile-specific commands must have typed escape hatches rather than being dropped or coerced into misleading generic enums
 
-### Decision 7: attached functions need first-class profile and runtime modeling
+### Decision 7 (deferred): attached-function modeling
 
-Future support for features such as expansion ports, side channels, or accessory-specific commands should not require reshaping the main session contracts later.
+Attached-function modeling (expansion ports, accessory channels, side channels) is deferred from v1. Re-introduction is intended to be additive — `OutputFunctionRef`, `OutputPayload`, and `PreparedSessionModel` are all `#[non_exhaustive]` or extensible enums.
 
-Resolution:
+Isolation rule (still load-bearing for v1):
 
-- `gr-profiles` must be able to declare attached functions with stable identifiers and capability summaries
-- `gr-runtime-model` must be able to carry attached-function identifiers through plan, reverse-command, and diagnostics paths
-- `gr-planner` must report unsupported attached functions explicitly
-
-Isolation rule:
-
-- transport channels, endpoint state, handshake-sensitive state, and attached-function routing belong to `PreparedTransportSession` unless a lower tier explicitly realizes them
+- transport channels, endpoint state, and handshake-sensitive state belong to `PreparedTransportSession` unless a lower tier explicitly realizes them
 - lower-tier prepared session models must not carry dormant transport state merely for structural symmetry
+- when attached-function support is re-introduced, its routing data is also confined to `PreparedTransportSession`
 
 ### Decision 8: production goals require explicit hot-path and failure-isolation rules
 
@@ -141,7 +140,7 @@ Resolution:
 
 Provider-reporting rule:
 
-- backend support reporting must be capability-granular enough for the planner to reason about reverse-path coverage, feature-report coverage, and attached-function support
+- backend support reporting must be capability-granular enough for the planner to reason about reverse-path coverage and feature-report coverage
 - unknown capability coverage must be treated as unsupported for support-claim purposes
 
 ## Final crate layout
@@ -171,6 +170,17 @@ virtualgamepad/
     gr-cli/
 ```
 
+## Build configuration
+
+Provider crates are platform-gated; core crates are not.
+
+- `gr-provider-linux-uinput`, `gr-provider-linux-uhid`, `gr-provider-linux-transport` are `#[cfg(target_os = "linux")]` at the crate root; depending on them on non-Linux is a compile error by design
+- `gr-provider-windows-hid` is `#[cfg(target_os = "windows")]`
+- `gr-provider-macos-hid` is `#[cfg(target_os = "macos")]`
+- workspace-level features control which provider crates are built: `provider-linux-uinput`, `provider-linux-uhid`, `provider-linux-transport`, `provider-windows-hid`, `provider-macos-hid`; defaults enable only providers matching the host target
+- the core set — `gr-core`, `gr-profiles`, `gr-config`, `gr-session-options`, `gr-runtime-model`, `gr-backend-api`, `gr-planner`, `gr-translators`, `gr-session`, `gr-host-bridge` — must build cleanly on Linux, macOS, and Windows with no `cfg(target_os = …)` paths inside them
+- `gr-testkit` and `gr-cli` follow the core-set rule
+
 ## Crate ownership matrix
 
 ### `gr-core`
@@ -198,11 +208,15 @@ Owns:
 
 - built-in profile definitions
 - capability declarations
-- attached-function declarations
+- the `CapabilityRegistry` query API over the registered profile set
 - supported function sets
 - required function sets
 - descriptor metadata templates
 - profile-family classification
+
+Profile extension rule:
+
+- v1 ships a closed built-in registry. A public `ProfileRegistry::register_external` API is a v2 concern and is intentionally not designed yet. Hosts that need custom profiles before v2 fork `gr-profiles`.
 
 ### `gr-config`
 
@@ -228,6 +242,10 @@ Owns:
 - reverse delivery policy compilation
 - backpressure policy compilation
 
+Ownership rule:
+
+- this crate **compiles** policy values into `CompiledSessionOptions`; the type definitions for `ReverseEventDeliveryPolicy` and `BackpressurePolicy` live in `gr-runtime-model`
+
 Produces:
 
 - `CompiledSessionOptions`
@@ -241,7 +259,7 @@ Rules:
 
 ### `gr-runtime-model`
 
-Owns:
+Owns the **type definitions** for cross-cutting runtime contracts:
 
 - `SessionRequest`
 - `SessionPlan`
@@ -249,12 +267,10 @@ Owns:
 - `PreparedTranslationContext`
 - `ControllerOutputCommand`
 - prepared reverse-command payload types
-- attached-function and accessory identifiers
-- attached-function capability snapshots
 - `SessionStatusSnapshot`
 - `SessionDiagnosticsSnapshot`
-- `ReverseEventDeliveryPolicy`
-- `BackpressurePolicy`
+- `ReverseEventDeliveryPolicy` (type definition only; compilation lives in `gr-session-options`)
+- `BackpressurePolicy` (type definition only; compilation lives in `gr-session-options`)
 
 Reason:
 
@@ -365,7 +381,7 @@ Owns:
 - `gr-profiles` depends on `gr-core`
 - `gr-config` depends on `gr-core`
 - `gr-session-options` depends on `gr-core`, `gr-config`, and `gr-profiles`
-- `gr-runtime-model` depends on `gr-core` and `gr-session-options`
+- `gr-runtime-model` depends on `gr-core` and `gr-session-options` because `SessionPlan` carries `Arc<CompiledSessionOptions>`. Hosts that want runtime types without configuration types depend on `gr-runtime-model` directly; the config-only types are not re-exported from it.
 - `gr-backend-api` depends on `gr-core` and `gr-runtime-model`
 - `gr-planner` depends on `gr-core`, `gr-profiles`, `gr-session-options`, `gr-runtime-model`, and `gr-backend-api`
 - `gr-translators` depends on `gr-core`, `gr-profiles`, `gr-runtime-model`, and `gr-backend-api`
@@ -392,7 +408,26 @@ Rules:
 
 - every frame is tied to exactly one target profile
 - `payload` must match that profile's concrete input contract
-- the runtime does not reinterpret one profile payload as another profile's semantic shape
+- the runtime never re-interprets one variant as another; translators are dispatched off the discriminant only
+
+### `ProfileInputPayload`
+
+```rust
+#[non_exhaustive]
+pub enum ProfileInputPayload {
+    GenericGamepad(GenericGamepadInput),
+    Xbox360(Xbox360Input),
+    DualSense(DualSenseInput),
+    SteamController(SteamControllerInput),
+}
+```
+
+Rules:
+
+- closed enum over built-in profile families; per-variant payload structs preserve profile-specific shape
+- `#[non_exhaustive]` so additive profile additions are non-breaking
+- chosen for static dispatch, zero heap on the hot path, and uniform storage in `VirtualControllerManager`'s session registry
+- out-of-tree profile registration is intentionally not designed yet; see the `gr-profiles` profile-extension note
 
 ### `ProfileInputDelta`
 
@@ -420,7 +455,6 @@ pub struct SessionRequest {
     pub host_platform_preference: Option<HostPlatformPreference>,
     pub backend_preference: Option<BackendPreference>,
     pub provider_preference: Option<ProviderPreference>,
-    pub strictness: StrictnessPolicy,
     pub host_metadata: SessionHostMetadata,
 }
 ```
@@ -430,6 +464,7 @@ Rules:
 - this is the only input accepted by session creation
 - no ad hoc planner-only side channels
 - host-platform and provider preferences are hints, never permission to bypass planner validation
+- strictness is sourced exclusively from `config.validation`; there is no separate `strictness` field on `SessionRequest`
 
 ### `CompiledSessionOptions`
 
@@ -498,7 +533,7 @@ Purpose:
 
 - remove repeated lookup work from the per-frame path
 - let translators operate with concrete prepared data
-- let reverse translators route both normalized commands and attached-function commands without repeated registry lookup
+- let reverse translators route both normalized and profile-specific commands without repeated registry lookup
 
 ### Tier-specific prepared session state
 
@@ -516,7 +551,7 @@ Rules:
 
 - `PreparedCompatibilitySession` should stay minimal and focused on gameplay-input realization
 - `PreparedIdentitySession` should own descriptor/report state, feature negotiation state where needed, and reverse report routing data
-- `PreparedTransportSession` should own transport state machines, control-flow state, timing-sensitive state where needed, and attached-function routing data
+- `PreparedTransportSession` should own transport state machines, control-flow state, and timing-sensitive state where needed; this is also where attached-function routing data will live when re-introduced
 - later tiers may add state that lower tiers do not carry, but lower tiers must not be forced to simulate transport concerns they do not realize
 - session preparation should front-load as much lookup and capability routing work as practical so steady-state dispatch remains low-latency
 
@@ -540,17 +575,18 @@ Rules:
 - audio events use typed payload variants rather than unstructured blobs when feasible
 - common reverse-path outputs should use normalized function references and payloads
 - profile-specific commands must be representable without pretending they are one of the normalized common functions
-- payloads must be able to identify an attached function or accessory channel when the profile family exposes one
+- v1 payloads do not carry attached-function references; this is intentionally deferred
 
 ```rust
+#[non_exhaustive]
 pub enum OutputFunctionRef {
     Semantic(SemanticOutputFunction),
     ProfileSpecific(ProfileSpecificOutputFunctionId),
-    AttachedFunction(AttachedFunctionId),
 }
 ```
 
 ```rust
+#[non_exhaustive]
 pub enum OutputPayload {
     Rumble(RumblePayload),
     Lighting(LightingPayload),
@@ -558,16 +594,38 @@ pub enum OutputPayload {
     Audio(AudioPayload),
     FeatureRequest(FeatureRequestPayload),
     ProfileSpecific(ProfileSpecificOutputPayload),
-    AttachedFunction(AttachedFunctionPayload),
 }
 ```
+
+`#[non_exhaustive]` reserves room for additive future variants — most notably the deferred `AttachedFunction` variants — without requiring a breaking change.
 
 Normalization policy rules:
 
 - add a new normalized semantic output only when at least two profile families share materially equivalent behavior and host-side meaning
-- otherwise prefer `ProfileSpecific` or `AttachedFunction` payloads over expanding the normalized enum surface
+- otherwise prefer `ProfileSpecific` payloads over expanding the normalized enum surface
 - profile-specific payloads must still be typed enough for routing, logging, replay, and bridge integration
 - adding a new normalized semantic output should require a short rationale naming the profile families and host-side meaning being unified
+
+### Audio stream contract
+
+`OutputPayload::Audio` carries discrete audio events only — mode changes, mute toggle, route selection, gain change. It does not carry PCM frames.
+
+Continuous audio (controller speaker output, controller microphone input) flows over a separate per-session sink:
+
+```rust
+impl VirtualControllerSessionHandle {
+    pub fn audio_sink(&self) -> Option<AudioStreamSink>;
+    pub fn audio_source(&self) -> Option<AudioStreamSource>;
+}
+```
+
+Rules:
+
+- `audio_sink` returns `Some` only for profiles that declare a speaker capability **and** for sessions whose selected provider can realize PCM output at the chosen fidelity tier; otherwise `None`
+- `audio_source` returns `Some` only for profiles that declare a microphone capability with realizable provider support; otherwise `None`
+- the `identity-aware` tier may claim audio mode commands (`OutputPayload::Audio`) without claiming PCM stream support; declaring PCM stream support requires that the provider actually realizes it
+- the discrete-command path and the stream path are independent and have independent backpressure policies
+- absent audio capabilities the methods return `None` so the host does not branch on backend support out of band
 
 ## Backend API contracts
 
@@ -589,7 +647,7 @@ Rules:
 
 - every event must carry session id, profile id where known, timestamp, event kind, target function or capability where known, and typed payload
 - backend reverse events are untrusted until reverse-translated and validated against declared output capabilities
-- backend reverse events must be able to identify profile-specific channels, report ids, endpoints, or attached functions when the selected tier exposes them
+- backend reverse events must be able to identify profile-specific channels, report ids, or endpoints when the selected tier exposes them
 - providers should preserve raw discriminators such as report ids, endpoint ids, or transport channel ids when those are needed for stable reverse translation
 
 ### `BackendFactory`
@@ -611,7 +669,6 @@ Notes:
 
 - `BackendRealizationRequest` is intentionally smaller than full `SessionPlan`
 - planner should not need translator internals to ask support questions
-- support reporting should include attached-function availability where it materially affects profile behavior
 - support reporting should not collapse partial reverse-path support into a generic supported/unsupported boolean when that would hide implementation gaps
 
 ### `BackendSession`
@@ -623,7 +680,7 @@ pub trait BackendSession: Send {
     fn send(&mut self, frame: BackendFrame) -> Result<(), BackendError>;
     fn drain_reverse_events(
         &mut self,
-        out: &mut SmallVec<[BackendReverseEvent; 4]>,
+        out: &mut dyn Extend<BackendReverseEvent>,
     ) -> Result<(), BackendError>;
     fn readiness(&self) -> EventReadiness;
     fn diagnostics(&self) -> BackendDiagnostics;
@@ -637,14 +694,47 @@ Why `drain_reverse_events` instead of `try_recv_reverse_event`:
 - allows bounded batched draining
 - works better with shared schedulers
 
+Why `&mut dyn Extend<BackendReverseEvent>` instead of a concrete `SmallVec`:
+
+- backends do not dictate the container choice or stack-buffer size
+- the session runtime supplies a reusable per-session sink (typically a `SmallVec`) it owns across calls; backends only push into it
+
+### Backend blocking contract
+
+`send` and `drain_reverse_events` must be non-blocking. The session runtime never wraps backend calls in `spawn_blocking` and a backend that blocks is a contract violation.
+
+Provider requirements:
+
+- file descriptors must be opened `O_NONBLOCK` (or the platform equivalent); on Windows providers must use overlapped I/O or equivalent non-blocking primitives
+- when a call would block, the backend returns `BackendError::WouldBlock` and the session re-arms via `readiness()` before retrying
+- `open` and `close` are allowed to perform short bounded blocking work (device creation, teardown) because they are control-plane operations, not steady-state dispatch
+
+v1 deliberately ships a sync trait only. An `async` variant of `BackendSession` may be added later as an additive trait if a provider proves it cannot meet the non-blocking contract; until then, all providers must.
+
 ### `EventReadiness`
 
-`EventReadiness` should support at least:
+`EventReadiness` must remain cross-platform. The handle variant is split so `gr-backend-api` itself builds on all targets:
 
-- `AlwaysPoll`
-- `ReadableFd(RawFd)`
-- `UserEventToken(u64)`
-- `NoReverseEvents`
+```rust
+pub enum EventReadiness {
+    AlwaysPoll,
+    NoReverseEvents,
+    Readable(ReadinessHandle),
+    UserEventToken(u64),
+}
+
+#[cfg(unix)]
+pub struct ReadinessHandle(pub std::os::fd::RawFd);
+
+#[cfg(windows)]
+pub struct ReadinessHandle(pub std::os::windows::io::RawHandle);
+```
+
+Rules:
+
+- the session runtime is responsible for cfg-gated readiness integration (for example `mio` on unix, IOCP on Windows)
+- `gr-backend-api` must compile on Linux, macOS, and Windows; no platform-specific dependency may leak in through this type
+- providers that cannot expose a readiness primitive return `AlwaysPoll` or `NoReverseEvents`
 
 This allows the session runtime to avoid naive N-session polling where possible.
 
@@ -718,6 +808,25 @@ pub struct VirtualControllerSessionHandle { /* ... */ }
 - own one bounded output queue or sink adapter
 - own one session-local telemetry accumulator
 - keep steady-state input-to-write latency low by avoiding control-plane work on the hot path
+
+### Provider registration
+
+Providers are registered explicitly by the host program. There is no automatic discovery, plugin loader, or `inventory`-style registry in v1.
+
+- each `gr-provider-*` crate exposes a public `factory()` constructor returning an `Arc<dyn BackendFactory>`
+- the host composes the desired set and passes them via `VirtualControllerManager::with_backends`
+- `VirtualControllerManager::new` returns a manager with an empty backend inventory; callers can register lazily later if needed
+
+This keeps platform-specific dependencies out of the manager's own dependency graph and makes provider composition fully explicit in the host's `Cargo.toml`.
+
+### Reverse-event delivery threading
+
+`SessionOutputSubscription` callbacks and channel sinks are filled by a delivery worker that is decoupled from the session actor.
+
+- callback subscriptions: the callback runs on the delivery worker, never on the session actor and never on the caller's thread
+- channel subscriptions: the delivery worker pushes into the channel; the consumer's thread is the consumer's concern
+- the bounded reverse-event queue between the session actor and the delivery worker is what guarantees slow-consumer isolation; the session actor never waits on the delivery worker
+- callbacks must not call back into the originating `VirtualControllerSessionHandle` synchronously; doing so risks deadlock and is documented as undefined behavior at the API level (this is a contract, not enforced at compile time)
 
 ## Queue and backpressure policy
 
@@ -921,8 +1030,6 @@ Examples of required assertions:
 - optional feature reports are declared consistently
 - reverse output functions map to declared profile capabilities
 - reverse translators do not emit commands for undeclared output capabilities
-- attached-function routing metadata is internally consistent for profiles that declare it
-- attached-function commands are rejected, degraded, or surfaced explicitly when the selected provider cannot realize them
 
 ## Error taxonomy
 
@@ -1055,6 +1162,10 @@ The recommended order is:
 15. `gr-provider-windows-hid`
 16. `gr-provider-macos-hid`
 17. `gr-cli`
+
+## Performance acceptance targets
+
+Steady-state input-to-backend-write latency target: p99 < 2 ms with 16 concurrent active sessions on Linux with `uinput`/`UHID` providers, measured against the fake-backend baseline before real hardware. This is a planning target; acceptance numbers will be refined after Milestone 2 measurements expose real cost. The hot-path rules and queue-bound rules in this document are what the implementation uses to hit it.
 
 ## Acceptance criteria
 
