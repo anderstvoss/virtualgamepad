@@ -36,6 +36,26 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 - `vgpd-demo` now exposes `show-types`, and `gr-cli phase-gate 1 --auto`
   runs the automated Phase 1 checks including snapshot verification.
 
+- DualSense `ProfileInputPayload` / `ProfileInputDeltaPayload` variants
+  now serialize with the on-wire tag `dualsense` (matching the
+  `ProfileId` convention) instead of serde's auto-kebab `dual-sense`.
+
+- The d-pad fields shared by `GenericGamepadInput`, `Xbox360Input`, and
+  `DualSenseInput` are now factored into a `Dpad` substruct, surfaced
+  in fixtures and snapshots as a single nested `dpad:` map.
+
+- `ProfileInputDeltaPayload` variants are now sparse per-profile delta
+  structs (`*Delta`) with `Option<T>` fields and a shared `DpadDelta`,
+  so a delta carries only the changed fields rather than mirroring a
+  full snapshot.
+
+- Phase 1 `canonical_yaml_snapshots_are_human_readable` now emits one
+  snapshot per variant for every Phase 1 enum (`FidelityTier`,
+  `BackendLevel`, `BackendFamily`, `CapabilityCategory`).
+
+- Phase 1 manual gate expanded with sparse-delta authoring, d-pad
+  nesting visibility, and per-variant snapshot coverage items.
+
 ### Deprecated
 
 ### Removed
