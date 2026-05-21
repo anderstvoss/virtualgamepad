@@ -18,10 +18,23 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   validation/phase-gate skeleton, and `vgpd-demo phase-gate <N>`
   reading the manual checklist from the implementation plan.
 
+- Phase 1 `gr-core` domain model with serializable identifier
+  newtypes, fidelity/backend enums, semantic function and capability
+  enums, stub built-in profile payloads, and canonical input frame
+  types.
+
+- Phase 1 fixtures and snapshots, including checked-in neutral
+  DualSense and Xbox 360 input-frame samples, `gr-testkit`
+  profile-input builders, and snapshot/property coverage for the new
+  `gr-core` types.
+
 ### Changed
 
 - Top-level README adds an explicit project-goals section covering
   both the library and the demo program.
+
+- `vgpd-demo` now exposes `show-types`, and `gr-cli phase-gate 1 --auto`
+  runs the automated Phase 1 checks including snapshot verification.
 
 ### Deprecated
 

@@ -8,7 +8,8 @@ The demo's growth tracks the library's growth, one phase at a time, per the [Rus
 
 The demo grows in lockstep with library phases. Highlights:
 
-- **Phase 0 (CLI scaffold + gate runner)** — present: a minimal [`clap`](https://docs.rs/clap)-based CLI, plus the `phase-gate <N>` driver that reads the gate checklist out of the implementation plan.
+- **Phase 0 (CLI scaffold + gate runner)** — shipped: a minimal [`clap`](https://docs.rs/clap)-based CLI, plus the `phase-gate <N>` driver that reads the gate checklist out of the implementation plan.
+- **Phase 1 (core domain model gate)** — shipped: `show-types` prints the canonical fidelity/backend/capability names that reviewers confirm during the gate, and those names are snapshot-tested for stability.
 - **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
 - **Phases 4–7 (runtime gates)** — adds `simulate-session`, `replay-trace`, `plan-session`, `many-sessions`. The demo can drive end-to-end fake-backend sessions and surface diagnostics to a human.
 - **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. The demo brings up real virtual devices on Linux and prints what host software sees.
@@ -37,7 +38,9 @@ Selection happens when the demo actually needs a GUI.
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
+cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- phase-gate 0
+cargo run -p virtual_gamepad_demo -- phase-gate 1
 ```
 
 Add `--help` to any subcommand for usage details.

@@ -237,6 +237,10 @@ Establish the primitive types every other crate depends on. No backend code, no 
 
 Run `vgpd-demo phase-gate 1` and complete the checklist.
 
+Step-by-step reviewer guide:
+
+- [Phase 1 Manual Gate](manual-gates/phase-1.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
@@ -246,10 +250,11 @@ Automated portion:
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo show-types` prints every fidelity tier, backend level, backend family, and capability category — visually confirm the names match the spec
-- [ ] 2. `gr-cli validate-fixture crates/gr-core/fixtures/payload-dualsense-neutral.yaml` accepts; payload structure looks reasonable to a human
-- [ ] 3. Author a custom fixture under `tests/fixtures/` representing an Xbox 360 neutral payload; `gr-cli validate-fixture <path>` accepts it; load it from a test in `crates/gr-core/tests/`
-- [ ] 4. Review `crates/gr-core/snapshots/` — every snapshot reads cleanly and matches expectations
+- [ ] 1. Run `cargo run -p virtual_gamepad_demo -- show-types`. Confirm the output order is stable and the names shown for fidelity tiers, backend levels, backend families, and capability categories are the exact spec-facing names you would want in docs, fixtures, and review output.
+- [ ] 2. Run `cargo run -p gr-cli -- validate-fixture crates/gr-core/fixtures/payload-dualsense-neutral.yaml`. Confirm the fixture is accepted, the reported `profile_id` and `payload_type` are both `dualsense`, and the YAML file itself looks straightforward for a non-Rust contributor to copy and edit.
+- [ ] 3. Copy `crates/gr-core/fixtures/payload-dualsense-neutral.yaml` to `tests/fixtures/xbox360-neutral.yaml`, adjust it to an Xbox 360 neutral payload, then run `cargo run -p gr-cli -- validate-fixture tests/fixtures/xbox360-neutral.yaml`. Confirm this succeeds without parser changes and that `cargo test -p gr-core workspace_xbox360_fixture_loads_as_profile_input_frame` passes against that exact file.
+- [ ] 4. Run `cargo insta test --check`, then review `crates/gr-core/snapshots/`. Confirm the serialized values use canonical public names, payload variants are easy to tell apart by eye, and there is no noisy debug-only formatting.
+- [ ] 5. Run `cargo test -p gr-core`. Confirm the test list covers fidelity-tier parse/display behavior, serde round-trips, fixture loading, and property tests so the manual checks above are backed by executable tests rather than one-off demo output.
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 1 gate passed"`
 

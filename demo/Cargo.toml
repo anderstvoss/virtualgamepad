@@ -16,6 +16,10 @@ path = "src/main.rs"
 [dependencies]
 clap.workspace = true
 gr-cli = { path = "../crates/gr-cli", version = "0.1" }
+gr-core = { path = "../crates/gr-core", version = "0.1" }
+
+[dev-dependencies]
+insta.workspace = true
 
 [lints]
 workspace = true

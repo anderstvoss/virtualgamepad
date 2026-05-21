@@ -7,4 +7,5 @@ mod reverse_event;
 mod schema;
 mod session_scenario;
 
-pub use schema::{FixtureEnvelope, FixtureError, load_fixture};
+pub use input_frame::{InputFrameFixture, decode_input_frame};
+pub use schema::{FixtureDocument, FixtureEnvelope, FixtureError, load_fixture};

@@ -1,0 +1,34 @@
+fixture: virtualgamepad/v1
+kind: input-frame
+id: xbox360-neutral
+profile_id: xbox360
+notes: |
+  Neutral Xbox 360 payload authored from the checked-in DualSense fixture shape.
+payload:
+  timestamp: 0
+  sequence: 0
+  profile: xbox360
+  fields:
+    a: released
+    b: released
+    x: released
+    y: released
+    dpad_up: released
+    dpad_down: released
+    dpad_left: released
+    dpad_right: released
+    left_bumper: released
+    right_bumper: released
+    left_stick_button: released
+    right_stick_button: released
+    start: released
+    back: released
+    guide: released
+    left_stick:
+      x: 0
+      y: 0
+    right_stick:
+      x: 0
+      y: 0
+    left_trigger: 0
+    right_trigger: 0

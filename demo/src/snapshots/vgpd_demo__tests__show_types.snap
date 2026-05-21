@@ -1,0 +1,32 @@
+---
+source: demo/src/main.rs
+expression: "gr_core::render_type_catalog()"
+---
+fidelity-tiers
+compatibility
+identity-aware
+hardware-faithful
+
+backend-levels
+evdev
+hid
+transport
+
+backend-families
+linux-uinput
+linux-uhid
+linux-transport-usb
+linux-transport-bluetooth
+windows-hid
+macos-hid
+
+capability-categories
+button
+stick
+trigger
+motion-sensor
+touch-surface
+haptic
+lighting
+audio
+system

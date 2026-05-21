@@ -9,8 +9,15 @@ authors.workspace = true
 description = "Testing tooling and fixtures for virtualgamepad."
 
 [dependencies]
+gr-core = { path = "../gr-core", version = "0.1" }
+proptest.workspace = true
 serde.workspace = true
 serde_yaml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

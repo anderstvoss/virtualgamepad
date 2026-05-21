@@ -1,0 +1,34 @@
+---
+source: crates/gr-core/src/lib.rs
+expression: "serde_yaml::to_string(&ProfileInputFrame\n{\n    profile_id: ProfileId::from(\"dualsense\"), timestamp: Timestamp::new(0),\n    sequence: SequenceId::new(0), payload:\n    ProfileInputPayload::DualSense(DualSenseInput::neutral()),\n}).expect(\"yaml\")"
+---
+profile_id: dualsense
+timestamp: 0
+sequence: 0
+payload:
+  profile: dual-sense
+  fields:
+    cross: released
+    circle: released
+    square: released
+    triangle: released
+    dpad_up: released
+    dpad_down: released
+    dpad_left: released
+    dpad_right: released
+    l1: released
+    r1: released
+    l3: released
+    r3: released
+    create: released
+    options: released
+    ps: released
+    touchpad_click: released
+    left_stick:
+      x: 0
+      y: 0
+    right_stick:
+      x: 0
+      y: 0
+    l2: 0
+    r2: 0

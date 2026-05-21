@@ -1,0 +1,5 @@
+---
+source: crates/gr-core/src/lib.rs
+expression: "serde_yaml::to_string(&CapabilityCategory::MotionSensor).expect(\"yaml\")"
+---
+motion-sensor
