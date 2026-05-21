@@ -1,6 +1,6 @@
 use gr_core::{
-    ButtonState, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame,
-    ProfileInputPayload, SequenceId, Timestamp,
+    ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload,
+    SequenceId, Timestamp,
 };
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
@@ -66,16 +66,22 @@ fn workspace_dualsense_sparse_delta_decodes_only_set_fields() {
         panic!("expected dualsense delta variant");
     };
     // Only the documented fields should be Some; everything else None.
-    assert_eq!(decoded.l2, Some(66));
-    assert!(decoded.r2.is_none());
-    assert!(decoded.cross.is_none());
-    assert!(decoded.circle.is_none());
-    assert!(decoded.left_stick.is_none());
+    let triggers = decoded.triggers.expect("trigger delta present");
+    assert_eq!(triggers.l2, Some(66));
+    assert!(triggers.r2.is_none());
+    assert!(decoded.buttons.is_none());
+    assert!(decoded.sticks.is_none());
     let dpad = decoded.dpad.expect("dpad delta present");
-    assert_eq!(dpad.left, Some(ButtonState::Pressed));
+    assert_eq!(dpad.left, Some(true));
     assert!(dpad.up.is_none());
     assert!(dpad.down.is_none());
     assert!(dpad.right.is_none());
+    let touchpad = decoded.touchpad.expect("touchpad delta present");
+    let contact_1 = touchpad.contact_1.expect("contact_1 delta present");
+    assert_eq!(contact_1.active, Some(true));
+    assert_eq!(contact_1.x, Some(830));
+    assert_eq!(contact_1.y, Some(412));
+    assert!(touchpad.contact_2.is_none());
 }
 
 #[test]

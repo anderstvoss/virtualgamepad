@@ -6,7 +6,9 @@ use serde_yaml::Value;
 use std::fmt;
 use std::path::Path;
 
-use super::input_frame::{InputFrameFixture, decode_input_frame};
+use super::input_frame::{
+    InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,
+};
 
 pub const FIXTURE_SCHEMA_VERSION: &str = "virtualgamepad/v1";
 
@@ -27,6 +29,7 @@ pub struct FixtureEnvelope {
 pub enum FixtureDocument {
     Envelope(FixtureEnvelope),
     InputFrame(InputFrameFixture),
+    InputDelta(InputDeltaFixture),
 }
 
 #[derive(Debug)]
@@ -81,6 +84,7 @@ pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureEr
     }
     match envelope.kind.as_str() {
         "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
+        "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
         "backend-trace" | "reverse-event" | "plan-snapshot" | "session-scenario" => {
             Ok(FixtureDocument::Envelope(envelope))
         }

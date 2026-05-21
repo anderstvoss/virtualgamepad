@@ -392,233 +392,875 @@ impl fmt::Display for CapabilityCategory {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ButtonState {
-    Released,
-    Pressed,
-}
-
-impl ButtonState {
-    #[must_use]
-    pub const fn released() -> Self {
-        Self::Released
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct StickPosition {
-    pub x: i16,
-    pub y: i16,
-}
-
-impl StickPosition {
-    #[must_use]
-    pub const fn neutral() -> Self {
-        Self { x: 0, y: 0 }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Dpad {
-    pub up: ButtonState,
-    pub down: ButtonState,
-    pub left: ButtonState,
-    pub right: ButtonState,
+    pub up: bool,
+    pub down: bool,
+    pub left: bool,
+    pub right: bool,
 }
 
 impl Dpad {
     #[must_use]
     pub const fn neutral() -> Self {
         Self {
-            up: ButtonState::Released,
-            down: ButtonState::Released,
-            left: ButtonState::Released,
-            right: ButtonState::Released,
+            up: false,
+            down: false,
+            left: false,
+            right: false,
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DpadDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub up: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub down: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right: Option<bool>,
+}
+
+impl DpadDelta {
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            up: None,
+            down: None,
+            left: None,
+            right: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TwinStickAxes {
+    pub left_x: i16,
+    pub left_y: i16,
+    pub right_x: i16,
+    pub right_y: i16,
+}
+
+impl TwinStickAxes {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            left_x: 0,
+            left_y: 0,
+            right_x: 0,
+            right_y: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TwinStickAxesDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_y: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_y: Option<i16>,
+}
+
+impl TwinStickAxesDelta {
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            left_x: None,
+            left_y: None,
+            right_x: None,
+            right_y: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct GenericGamepadButtons {
+    pub south: bool,
+    pub east: bool,
+    pub west: bool,
+    pub north: bool,
+    pub left_shoulder: bool,
+    pub right_shoulder: bool,
+    pub left_stick_button: bool,
+    pub right_stick_button: bool,
+    pub menu_primary: bool,
+    pub menu_secondary: bool,
+    pub guide: bool,
+}
+
+impl GenericGamepadButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            south: false,
+            east: false,
+            west: false,
+            north: false,
+            left_shoulder: false,
+            right_shoulder: false,
+            left_stick_button: false,
+            right_stick_button: false,
+            menu_primary: false,
+            menu_secondary: false,
+            guide: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GenericGamepadButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub south: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub east: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub west: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub north: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_shoulder: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_shoulder: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_button: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick_button: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_primary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_secondary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guide: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct GenericGamepadTriggers {
+    pub left_trigger: u16,
+    pub right_trigger: u16,
+}
+
+impl GenericGamepadTriggers {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            left_trigger: 0,
+            right_trigger: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GenericGamepadTriggersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_trigger: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_trigger: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GenericGamepadInput {
-    pub south: ButtonState,
-    pub east: ButtonState,
-    pub west: ButtonState,
-    pub north: ButtonState,
+    pub buttons: GenericGamepadButtons,
     pub dpad: Dpad,
-    pub left_shoulder: ButtonState,
-    pub right_shoulder: ButtonState,
-    pub left_stick_button: ButtonState,
-    pub right_stick_button: ButtonState,
-    pub menu_primary: ButtonState,
-    pub menu_secondary: ButtonState,
-    pub guide: ButtonState,
-    pub left_stick: StickPosition,
-    pub right_stick: StickPosition,
-    pub left_trigger: u16,
-    pub right_trigger: u16,
+    pub sticks: TwinStickAxes,
+    pub triggers: GenericGamepadTriggers,
 }
 
 impl GenericGamepadInput {
     #[must_use]
-    pub fn neutral() -> Self {
+    pub const fn neutral() -> Self {
         Self {
-            south: ButtonState::Released,
-            east: ButtonState::Released,
-            west: ButtonState::Released,
-            north: ButtonState::Released,
+            buttons: GenericGamepadButtons::neutral(),
             dpad: Dpad::neutral(),
-            left_shoulder: ButtonState::Released,
-            right_shoulder: ButtonState::Released,
-            left_stick_button: ButtonState::Released,
-            right_stick_button: ButtonState::Released,
-            menu_primary: ButtonState::Released,
-            menu_secondary: ButtonState::Released,
-            guide: ButtonState::Released,
-            left_stick: StickPosition::neutral(),
-            right_stick: StickPosition::neutral(),
-            left_trigger: 0,
-            right_trigger: 0,
+            sticks: TwinStickAxes::neutral(),
+            triggers: GenericGamepadTriggers::neutral(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GenericGamepadDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<GenericGamepadButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sticks: Option<TwinStickAxesDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<GenericGamepadTriggersDelta>,
+}
+
+impl GenericGamepadDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct Xbox360FaceButtons {
+    pub a: bool,
+    pub b: bool,
+    pub x: bool,
+    pub y: bool,
+}
+
+impl Xbox360FaceButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            a: false,
+            b: false,
+            x: false,
+            y: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360FaceButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub b: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Xbox360Shoulders {
+    pub lb: bool,
+    pub rb: bool,
+}
+
+impl Xbox360Shoulders {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            lb: false,
+            rb: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360ShouldersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lb: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rb: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Xbox360StickClicks {
+    pub ls: bool,
+    pub rs: bool,
+}
+
+impl Xbox360StickClicks {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            ls: false,
+            rs: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360StickClicksDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ls: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rs: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Xbox360SystemButtons {
+    pub start: bool,
+    pub back: bool,
+    pub guide: bool,
+}
+
+impl Xbox360SystemButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            start: false,
+            back: false,
+            guide: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360SystemButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub back: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guide: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Xbox360Buttons {
+    pub face: Xbox360FaceButtons,
+    pub shoulders: Xbox360Shoulders,
+    pub stick_clicks: Xbox360StickClicks,
+    pub system: Xbox360SystemButtons,
+}
+
+impl Xbox360Buttons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            face: Xbox360FaceButtons::neutral(),
+            shoulders: Xbox360Shoulders::neutral(),
+            stick_clicks: Xbox360StickClicks::neutral(),
+            system: Xbox360SystemButtons::neutral(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360ButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face: Option<Xbox360FaceButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shoulders: Option<Xbox360ShouldersDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stick_clicks: Option<Xbox360StickClicksDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<Xbox360SystemButtonsDelta>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Xbox360Triggers {
+    pub lt: u16,
+    pub rt: u16,
+}
+
+impl Xbox360Triggers {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self { lt: 0, rt: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360TriggersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lt: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rt: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Xbox360Input {
-    pub a: ButtonState,
-    pub b: ButtonState,
-    pub x: ButtonState,
-    pub y: ButtonState,
+    pub buttons: Xbox360Buttons,
     pub dpad: Dpad,
-    pub left_bumper: ButtonState,
-    pub right_bumper: ButtonState,
-    pub left_stick_button: ButtonState,
-    pub right_stick_button: ButtonState,
-    pub start: ButtonState,
-    pub back: ButtonState,
-    pub guide: ButtonState,
-    pub left_stick: StickPosition,
-    pub right_stick: StickPosition,
-    pub left_trigger: u16,
-    pub right_trigger: u16,
+    pub sticks: TwinStickAxes,
+    pub triggers: Xbox360Triggers,
 }
 
 impl Xbox360Input {
     #[must_use]
-    pub fn neutral() -> Self {
+    pub const fn neutral() -> Self {
         Self {
-            a: ButtonState::Released,
-            b: ButtonState::Released,
-            x: ButtonState::Released,
-            y: ButtonState::Released,
+            buttons: Xbox360Buttons::neutral(),
             dpad: Dpad::neutral(),
-            left_bumper: ButtonState::Released,
-            right_bumper: ButtonState::Released,
-            left_stick_button: ButtonState::Released,
-            right_stick_button: ButtonState::Released,
-            start: ButtonState::Released,
-            back: ButtonState::Released,
-            guide: ButtonState::Released,
-            left_stick: StickPosition::neutral(),
-            right_stick: StickPosition::neutral(),
-            left_trigger: 0,
-            right_trigger: 0,
+            sticks: TwinStickAxes::neutral(),
+            triggers: Xbox360Triggers::neutral(),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct DualSenseInput {
-    pub cross: ButtonState,
-    pub circle: ButtonState,
-    pub square: ButtonState,
-    pub triangle: ButtonState,
-    pub dpad: Dpad,
-    pub l1: ButtonState,
-    pub r1: ButtonState,
-    pub l3: ButtonState,
-    pub r3: ButtonState,
-    pub create: ButtonState,
-    pub options: ButtonState,
-    pub ps: ButtonState,
-    pub touchpad_click: ButtonState,
-    pub left_stick: StickPosition,
-    pub right_stick: StickPosition,
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360Delta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<Xbox360ButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sticks: Option<TwinStickAxesDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<Xbox360TriggersDelta>,
+}
+
+impl Xbox360Delta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct DualSenseFaceButtons {
+    pub cross: bool,
+    pub circle: bool,
+    pub square: bool,
+    pub triangle: bool,
+}
+
+impl DualSenseFaceButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            cross: false,
+            circle: false,
+            square: false,
+            triangle: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseFaceButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub circle: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub square: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triangle: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseShoulders {
+    pub l1: bool,
+    pub r1: bool,
+}
+
+impl DualSenseShoulders {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            l1: false,
+            r1: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseShouldersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l1: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r1: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseStickClicks {
+    pub l3: bool,
+    pub r3: bool,
+}
+
+impl DualSenseStickClicks {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            l3: false,
+            r3: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseStickClicksDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l3: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r3: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct DualSenseSystemButtons {
+    pub create: bool,
+    pub options: bool,
+    pub ps: bool,
+    pub touchpad_click: bool,
+}
+
+impl DualSenseSystemButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            create: false,
+            options: false,
+            ps: false,
+            touchpad_click: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseSystemButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ps: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub touchpad_click: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseButtons {
+    pub face: DualSenseFaceButtons,
+    pub shoulders: DualSenseShoulders,
+    pub stick_clicks: DualSenseStickClicks,
+    pub system: DualSenseSystemButtons,
+}
+
+impl DualSenseButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            face: DualSenseFaceButtons::neutral(),
+            shoulders: DualSenseShoulders::neutral(),
+            stick_clicks: DualSenseStickClicks::neutral(),
+            system: DualSenseSystemButtons::neutral(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub face: Option<DualSenseFaceButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shoulders: Option<DualSenseShouldersDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stick_clicks: Option<DualSenseStickClicksDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system: Option<DualSenseSystemButtonsDelta>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseTriggers {
     pub l2: u16,
     pub r2: u16,
 }
 
-impl DualSenseInput {
+impl DualSenseTriggers {
     #[must_use]
-    pub fn neutral() -> Self {
+    pub const fn neutral() -> Self {
+        Self { l2: 0, r2: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseTriggersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l2: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r2: Option<u16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseTouchContact {
+    pub active: bool,
+    pub x: u16,
+    pub y: u16,
+}
+
+impl DualSenseTouchContact {
+    #[must_use]
+    pub const fn neutral() -> Self {
         Self {
-            cross: ButtonState::Released,
-            circle: ButtonState::Released,
-            square: ButtonState::Released,
-            triangle: ButtonState::Released,
-            dpad: Dpad::neutral(),
-            l1: ButtonState::Released,
-            r1: ButtonState::Released,
-            l3: ButtonState::Released,
-            r3: ButtonState::Released,
-            create: ButtonState::Released,
-            options: ButtonState::Released,
-            ps: ButtonState::Released,
-            touchpad_click: ButtonState::Released,
-            left_stick: StickPosition::neutral(),
-            right_stick: StickPosition::neutral(),
-            l2: 0,
-            r2: 0,
+            active: false,
+            x: 0,
+            y: 0,
         }
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseTouchContactDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<u16>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseTouchpad {
+    pub contact_1: DualSenseTouchContact,
+    pub contact_2: DualSenseTouchContact,
+}
+
+impl DualSenseTouchpad {
+    pub const WIDTH: u16 = 1920;
+    pub const HEIGHT: u16 = 1080;
+
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            contact_1: DualSenseTouchContact::neutral(),
+            contact_2: DualSenseTouchContact::neutral(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseTouchpadDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_1: Option<DualSenseTouchContactDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact_2: Option<DualSenseTouchContactDelta>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseInput {
+    pub buttons: DualSenseButtons,
+    pub dpad: Dpad,
+    pub sticks: TwinStickAxes,
+    pub triggers: DualSenseTriggers,
+    pub touchpad: DualSenseTouchpad,
+}
+
+impl DualSenseInput {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            buttons: DualSenseButtons::neutral(),
+            dpad: Dpad::neutral(),
+            sticks: TwinStickAxes::neutral(),
+            triggers: DualSenseTriggers::neutral(),
+            touchpad: DualSenseTouchpad::neutral(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<DualSenseButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sticks: Option<TwinStickAxesDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<DualSenseTriggersDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub touchpad: Option<DualSenseTouchpadDelta>,
+}
+
+impl DualSenseDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct SteamControllerButtons {
+    pub a: bool,
+    pub b: bool,
+    pub x: bool,
+    pub y: bool,
+    pub left_grip: bool,
+    pub right_grip: bool,
+    pub lb: bool,
+    pub rb: bool,
+    pub menu_primary: bool,
+    pub menu_secondary: bool,
+    pub steam: bool,
+    pub left_pad_click: bool,
+    pub right_pad_click: bool,
+    pub left_stick_click: bool,
+}
+
+impl SteamControllerButtons {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            a: false,
+            b: false,
+            x: false,
+            y: false,
+            left_grip: false,
+            right_grip: false,
+            lb: false,
+            rb: false,
+            menu_primary: false,
+            menu_secondary: false,
+            steam: false,
+            left_pad_click: false,
+            right_pad_click: false,
+            left_stick_click: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamControllerButtonsDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub b: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_grip: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_grip: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lb: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rb: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_primary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_secondary: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steam: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_pad_click: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_pad_click: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_click: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SteamControllerSticks {
+    pub left_pad_x: i16,
+    pub left_pad_y: i16,
+    pub right_pad_x: i16,
+    pub right_pad_y: i16,
+    pub left_stick_x: i16,
+    pub left_stick_y: i16,
+}
+
+impl SteamControllerSticks {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            left_pad_x: 0,
+            left_pad_y: 0,
+            right_pad_x: 0,
+            right_pad_y: 0,
+            left_stick_x: 0,
+            left_stick_y: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamControllerSticksDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_pad_x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_pad_y: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_pad_x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_pad_y: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_y: Option<i16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct SteamControllerTriggers {
+    pub lt: u16,
+    pub rt: u16,
+}
+
+impl SteamControllerTriggers {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self { lt: 0, rt: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamControllerTriggersDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lt: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rt: Option<u16>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SteamControllerInput {
-    pub a: ButtonState,
-    pub b: ButtonState,
-    pub x: ButtonState,
-    pub y: ButtonState,
-    pub left_grip: ButtonState,
-    pub right_grip: ButtonState,
-    pub left_bumper: ButtonState,
-    pub right_bumper: ButtonState,
-    pub menu_primary: ButtonState,
-    pub menu_secondary: ButtonState,
-    pub steam: ButtonState,
-    pub left_pad_click: ButtonState,
-    pub right_pad_click: ButtonState,
-    pub left_stick_click: ButtonState,
-    pub left_pad: StickPosition,
-    pub right_pad: StickPosition,
-    pub left_stick: StickPosition,
-    pub left_trigger: u16,
-    pub right_trigger: u16,
+    pub buttons: SteamControllerButtons,
+    pub sticks: SteamControllerSticks,
+    pub triggers: SteamControllerTriggers,
 }
 
 impl SteamControllerInput {
     #[must_use]
-    pub fn neutral() -> Self {
+    pub const fn neutral() -> Self {
         Self {
-            a: ButtonState::Released,
-            b: ButtonState::Released,
-            x: ButtonState::Released,
-            y: ButtonState::Released,
-            left_grip: ButtonState::Released,
-            right_grip: ButtonState::Released,
-            left_bumper: ButtonState::Released,
-            right_bumper: ButtonState::Released,
-            menu_primary: ButtonState::Released,
-            menu_secondary: ButtonState::Released,
-            steam: ButtonState::Released,
-            left_pad_click: ButtonState::Released,
-            right_pad_click: ButtonState::Released,
-            left_stick_click: ButtonState::Released,
-            left_pad: StickPosition::neutral(),
-            right_pad: StickPosition::neutral(),
-            left_stick: StickPosition::neutral(),
-            left_trigger: 0,
-            right_trigger: 0,
+            buttons: SteamControllerButtons::neutral(),
+            sticks: SteamControllerSticks::neutral(),
+            triggers: SteamControllerTriggers::neutral(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamControllerDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub buttons: Option<SteamControllerButtonsDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sticks: Option<SteamControllerSticksDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triggers: Option<SteamControllerTriggersDelta>,
+}
+
+impl SteamControllerDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
     }
 }
 
@@ -672,220 +1314,6 @@ impl ProfileInputPayload {
                 payload_variant: expected,
             })
         }
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DpadDelta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub up: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub down: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right: Option<ButtonState>,
-}
-
-impl DpadDelta {
-    #[must_use]
-    pub const fn empty() -> Self {
-        Self {
-            up: None,
-            down: None,
-            left: None,
-            right: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn is_empty(&self) -> bool {
-        self.up.is_none() && self.down.is_none() && self.left.is_none() && self.right.is_none()
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GenericGamepadDelta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub south: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub east: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub west: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub north: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dpad: Option<DpadDelta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_shoulder: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_shoulder: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick_button: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_stick_button: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub menu_primary: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub menu_secondary: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub guide: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_trigger: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_trigger: Option<u16>,
-}
-
-impl GenericGamepadDelta {
-    #[must_use]
-    pub fn empty() -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Xbox360Delta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub a: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub b: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub x: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub y: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dpad: Option<DpadDelta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_bumper: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_bumper: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick_button: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_stick_button: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub start: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub back: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub guide: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_trigger: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_trigger: Option<u16>,
-}
-
-impl Xbox360Delta {
-    #[must_use]
-    pub fn empty() -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DualSenseDelta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cross: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub circle: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub square: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub triangle: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dpad: Option<DpadDelta>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub l1: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r1: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub l3: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r3: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub create: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub options: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ps: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub touchpad_click: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub l2: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub r2: Option<u16>,
-}
-
-impl DualSenseDelta {
-    #[must_use]
-    pub fn empty() -> Self {
-        Self::default()
-    }
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SteamControllerDelta {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub a: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub b: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub x: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub y: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_grip: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_grip: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_bumper: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_bumper: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub menu_primary: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub menu_secondary: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub steam: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_pad_click: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_pad_click: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick_click: Option<ButtonState>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_pad: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_pad: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_stick: Option<StickPosition>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub left_trigger: Option<u16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub right_trigger: Option<u16>,
-}
-
-impl SteamControllerDelta {
-    #[must_use]
-    pub fn empty() -> Self {
-        Self::default()
     }
 }
 
@@ -1046,23 +1474,15 @@ mod tests {
         ]
     }
 
-    fn arb_button_state() -> impl Strategy<Value = ButtonState> {
-        prop_oneof![Just(ButtonState::Released), Just(ButtonState::Pressed),]
-    }
-
     fn arb_dpad() -> impl Strategy<Value = Dpad> {
-        (
-            arb_button_state(),
-            arb_button_state(),
-            arb_button_state(),
-            arb_button_state(),
-        )
-            .prop_map(|(up, down, left, right)| Dpad {
+        (any::<bool>(), any::<bool>(), any::<bool>(), any::<bool>()).prop_map(
+            |(up, down, left, right)| Dpad {
                 up,
                 down,
                 left,
                 right,
-            })
+            },
+        )
     }
 
     fn arb_capability_category() -> impl Strategy<Value = CapabilityCategory> {
@@ -1187,6 +1607,31 @@ mod tests {
     }
 
     #[test]
+    fn dualsense_touchpad_round_trip() {
+        let frame = ProfileInputFrame {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(1),
+            sequence: SequenceId::new(2),
+            payload: ProfileInputPayload::DualSense(DualSenseInput {
+                touchpad: DualSenseTouchpad {
+                    contact_1: DualSenseTouchContact {
+                        active: true,
+                        x: 830,
+                        y: 412,
+                    },
+                    contact_2: DualSenseTouchContact::neutral(),
+                },
+                ..DualSenseInput::neutral()
+            }),
+        };
+        let yaml = serde_yaml::to_string(&frame).expect("serialize frame");
+        assert!(yaml.contains("touchpad:"));
+        assert!(yaml.contains("active: true"));
+        let decoded: ProfileInputFrame = serde_yaml::from_str(&yaml).expect("decode frame");
+        assert_eq!(decoded, frame);
+    }
+
+    #[test]
     fn empty_dualsense_delta_yaml_round_trip() {
         let delta = ProfileInputDelta {
             profile_id: ProfileId::from("dualsense"),
@@ -1206,10 +1651,21 @@ mod tests {
         payload.dpad = Some(DpadDelta {
             up: None,
             down: None,
-            left: Some(ButtonState::Pressed),
+            left: Some(true),
             right: None,
         });
-        payload.l2 = Some(0x42);
+        payload.triggers = Some(DualSenseTriggersDelta {
+            l2: Some(0x42),
+            r2: None,
+        });
+        payload.touchpad = Some(DualSenseTouchpadDelta {
+            contact_1: Some(DualSenseTouchContactDelta {
+                active: Some(true),
+                x: Some(830),
+                y: Some(412),
+            }),
+            contact_2: None,
+        });
         let delta = ProfileInputDelta {
             profile_id: ProfileId::from("dualsense"),
             timestamp: Timestamp::new(7),
@@ -1217,21 +1673,30 @@ mod tests {
             payload: ProfileInputDeltaPayload::DualSense(payload),
         };
         let yaml = serde_yaml::to_string(&delta).expect("serialize sparse delta");
-        // Sparse: should only mention the fields we actually set.
         assert!(yaml.contains("l2: 66"));
-        assert!(yaml.contains("left: pressed"));
+        assert!(yaml.contains("left: true"));
+        assert!(yaml.contains("x: 830"));
         assert!(!yaml.contains("r2:"));
         assert!(!yaml.contains("cross:"));
         let decoded: ProfileInputDelta = serde_yaml::from_str(&yaml).expect("decode sparse delta");
         let ProfileInputDeltaPayload::DualSense(decoded_payload) = decoded.payload else {
             panic!("expected dualsense delta");
         };
-        assert!(decoded_payload.r2.is_none());
-        assert!(decoded_payload.cross.is_none());
-        assert_eq!(decoded_payload.l2, Some(0x42));
+        assert!(decoded_payload.buttons.is_none());
+        let triggers = decoded_payload.triggers.expect("trigger change is present");
+        assert_eq!(triggers.l2, Some(0x42));
+        assert!(triggers.r2.is_none());
         let dpad = decoded_payload.dpad.expect("dpad change is present");
-        assert_eq!(dpad.left, Some(ButtonState::Pressed));
+        assert_eq!(dpad.left, Some(true));
         assert!(dpad.up.is_none());
+        let touchpad = decoded_payload
+            .touchpad
+            .expect("touchpad change is present");
+        let contact_1 = touchpad.contact_1.expect("first contact changed");
+        assert_eq!(contact_1.active, Some(true));
+        assert_eq!(contact_1.x, Some(830));
+        assert_eq!(contact_1.y, Some(412));
+        assert!(touchpad.contact_2.is_none());
     }
 
     #[test]

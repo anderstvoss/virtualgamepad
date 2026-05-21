@@ -9,27 +9,32 @@ payload:
   sequence: 0
   profile: xbox360
   fields:
-    a: released
-    b: released
-    x: released
-    y: released
+    buttons:
+      face:
+        a: false
+        b: false
+        x: false
+        y: false
+      shoulders:
+        lb: false
+        rb: false
+      stick_clicks:
+        ls: false
+        rs: false
+      system:
+        start: false
+        back: false
+        guide: false
     dpad:
-      up: released
-      down: released
-      left: released
-      right: released
-    left_bumper: released
-    right_bumper: released
-    left_stick_button: released
-    right_stick_button: released
-    start: released
-    back: released
-    guide: released
-    left_stick:
-      x: 0
-      y: 0
-    right_stick:
-      x: 0
-      y: 0
-    left_trigger: 0
-    right_trigger: 0
+      up: false
+      down: false
+      left: false
+      right: false
+    sticks:
+      left_x: 0
+      left_y: 0
+      right_x: 0
+      right_y: 0
+    triggers:
+      lt: 0
+      rt: 0

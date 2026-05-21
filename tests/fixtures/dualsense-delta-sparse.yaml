@@ -3,14 +3,20 @@ kind: input-delta
 id: dualsense-delta-sparse
 profile_id: dualsense
 notes: |
-  Sparse Phase 1 DualSense delta: only the d-pad left button and the
-  L2 analog trigger have changed since the previous frame. Used as the
-  gate exercise for the sparse-delta authoring workflow.
+  Sparse Phase 1 DualSense delta: only the d-pad left input, the L2
+  analog trigger, and the first touch contact have changed since the
+  previous frame. Used as the gate exercise for sparse-delta authoring.
 payload:
   timestamp: 100
   sequence: 4
   profile: dualsense
   fields:
     dpad:
-      left: pressed
-    l2: 66
+      left: true
+    triggers:
+      l2: 66
+    touchpad:
+      contact_1:
+        active: true
+        x: 830
+        y: 412

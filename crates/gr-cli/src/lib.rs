@@ -65,6 +65,14 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
             fixture.frame.profile_id,
             fixture.frame.payload.variant_name(),
         )),
+        FixtureDocument::InputDelta(fixture) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\npayload_type: {}",
+            fixture.envelope.fixture,
+            fixture.envelope.kind,
+            fixture.envelope.id,
+            fixture.delta.profile_id,
+            fixture.delta.payload.variant_name(),
+        )),
     }
 }
 

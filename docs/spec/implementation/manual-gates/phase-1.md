@@ -60,8 +60,8 @@ cargo run -p virtual_gamepad_demo -- show-types
 ## Check 2: built-in DualSense fixture acceptance and authoring ergonomics
 
 Goal: confirm the checked-in sample fixture validates cleanly, the
-public-facing names are consistent, and the YAML looks easy for a
-human to edit.
+public-facing names are consistent, the digital/analog split is obvious,
+and the YAML looks easy for a human to edit.
 
 ### Steps
 
@@ -89,10 +89,18 @@ cargo run -p gr-cli -- validate-fixture crates/gr-core/fixtures/payload-dualsens
    fields at the payload level.
 8. Confirm a non-Rust contributor could reasonably copy this file and
    edit it without understanding internal implementation details.
-9. Confirm the neutral values are obvious at a glance:
-   - buttons use `released`
-   - sticks are centered at `0`
-   - triggers are `0`
+9. Confirm digital values are visually distinct from analog ones:
+   - `buttons.face.*`, `buttons.shoulders.*`, `buttons.stick_clicks.*`,
+     `buttons.system.*`, `dpad.*`, and `touchpad.contact_*.active` use
+     `true` / `false`
+   - `sticks.*`, `triggers.*`, and `touchpad.contact_*.(x|y)` use numbers
+10. Confirm the DualSense touchpad is present as two named contacts:
+   - `touchpad.contact_1`
+   - `touchpad.contact_2`
+11. Note for review that the DualSense touch surface is modeled as
+    absolute multitouch X/Y contacts here; the current Linux evidence
+    uses a 1920x1080 coordinate space, but those ranges belong to the
+    profile contract layer rather than the payload file itself.
 
 ### What to record
 
@@ -115,26 +123,30 @@ YAML only, with no parser or Rust-code changes.
    template rather than requiring a different authoring workflow.
 5. Confirm the Xbox 360 fixture also uses the nested `dpad:` map
    (same `up`/`down`/`left`/`right` keys as the DualSense sample) —
-   the shared `Dpad` substruct should look identical across profiles.
-6. Run:
+   the shared `dpad` shape should look identical across profiles.
+6. Confirm the Xbox 360 fixture uses:
+   - booleans for digital inputs
+   - numeric values for `sticks.*` and `triggers.lt` / `triggers.rt`
+   - `lb` / `rb` / `ls` / `rs` naming rather than the older long-form names
+7. Run:
 
 ```bash
 cargo run -p gr-cli -- validate-fixture tests/fixtures/xbox360-neutral.yaml
 ```
 
-7. Confirm the command succeeds.
-8. Confirm the output reports:
+8. Confirm the command succeeds.
+9. Confirm the output reports:
    - `kind: input-frame`
    - `profile_id: xbox360`
    - `payload_type: xbox360`
-9. Run the fixture-loading test that uses that exact file:
+10. Run the fixture-loading test that uses that exact file:
 
 ```bash
 cargo test -p gr-core workspace_xbox360_fixture_loads_as_profile_input_frame
 ```
 
-10. Confirm the test passes.
-11. Review the Xbox 360 fixture contents and confirm the neutral shape
+11. Confirm the test passes.
+12. Review the Xbox 360 fixture contents and confirm the neutral shape
     is still easy to infer by eye.
 
 ### What to record
@@ -156,10 +168,11 @@ usable from YAML alone.
 1. Open `tests/fixtures/dualsense-delta-sparse.yaml`.
 2. Read it top to bottom and confirm only the fields that should be
    "changed" appear:
-   - `dpad.left: pressed` (a single key inside the `dpad:` map)
-   - `l2: 66`
+   - `dpad.left: true`
+   - `triggers.l2: 66`
+   - `touchpad.contact_1.active/x/y`
    - nothing else under `fields:`
-3. Confirm there is no `cross:`, `right_stick:`, `r2:`, or any other
+3. Confirm there is no `cross:`, `sticks.right_x:`, `triggers.r2:`, or any other
    field the author did not deliberately set — absent fields must
    stay absent in the YAML, not appear with default values.
 4. Run:
@@ -175,11 +188,12 @@ cargo run -p gr-cli -- validate-fixture tests/fixtures/dualsense-delta-sparse.ya
 cargo test -p gr-core workspace_dualsense_sparse_delta_decodes_only_set_fields
 ```
 
-7. Confirm the test passes. It asserts only `dpad.left` and `l2`
-   decode as `Some` on the resulting delta; everything else is `None`.
+7. Confirm the test passes. It asserts only `dpad.left`,
+   `triggers.l2`, and the first touch contact decode as `Some` on the
+   resulting delta; everything else is `None`.
 8. As an authoring exercise, copy the fixture to a new file (for
    example `tests/fixtures/dualsense-delta-experiment.yaml`), change
-   only the value of `dpad.left` from `pressed` to `released`, save,
+   only the value of `dpad.left` from `true` to `false`, save,
    and run `cargo run -p gr-cli -- validate-fixture` against the new
    path. Confirm it accepts and that the workflow remains pure-YAML
    with no parser changes.
@@ -225,9 +239,10 @@ cargo insta test --check
    are easy to tell apart at a glance.
 6. Open `gr_core__tests__dualsense-neutral-payload.snap`. Confirm:
    - the on-wire payload tag reads `profile: dualsense` (no hyphen);
-   - the `dpad` block reads as a single nested map with four
-     `released` entries — not four flat `dpad_*` fields. This proves
-     the structural refactor reached the wire.
+   - the `dpad` block reads as a single nested map with four boolean
+     entries — not four flat `dpad_*` fields;
+   - the `touchpad` block exists with `contact_1` and `contact_2`;
+   - digital and analog sections are visually easy to distinguish.
 7. Confirm each snapshot is concise enough to read comfortably in code
    review.
 8. Confirm there is no debug-only noise such as Rust type wrappers or
@@ -262,6 +277,7 @@ cargo test -p gr-core
    - fixture loading for **both** frame and delta fixtures
    - sparse-delta absence-of-fields (e.g.
      `sparse_dualsense_delta_only_carries_set_fields`)
+   - DualSense touchpad round-trip behavior
    - profile-id-vs-payload mismatch behavior for both frame and delta
      (e.g. `payload_variant_must_match_profile_id` and
      `delta_payload_variant_must_match_profile_id`)
