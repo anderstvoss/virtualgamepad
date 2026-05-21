@@ -2,7 +2,7 @@
 source: crates/gr-core/src/lib.rs
 expression: "serde_yaml::to_string(&ProfileInputPayload::DualSense(DualSenseInput::neutral())).expect(\"yaml\")"
 ---
-profile: dual-sense
+profile: dualsense
 fields:
   cross: released
   circle: released

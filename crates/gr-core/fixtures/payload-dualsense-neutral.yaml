@@ -7,7 +7,7 @@ notes: |
 payload:
   timestamp: 0
   sequence: 0
-  profile: dual-sense
+  profile: dualsense
   fields:
     cross: released
     circle: released

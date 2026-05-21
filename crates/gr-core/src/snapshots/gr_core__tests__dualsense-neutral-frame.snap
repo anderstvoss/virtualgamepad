@@ -6,7 +6,7 @@ profile_id: dualsense
 timestamp: 0
 sequence: 0
 payload:
-  profile: dual-sense
+  profile: dualsense
   fields:
     cross: released
     circle: released

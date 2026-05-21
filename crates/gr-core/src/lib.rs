@@ -626,6 +626,7 @@ impl SteamControllerInput {
 pub enum ProfileInputPayload {
     GenericGamepad(GenericGamepadInput),
     Xbox360(Xbox360Input),
+    #[serde(rename = "dualsense")]
     DualSense(DualSenseInput),
     SteamController(SteamControllerInput),
 }
@@ -678,6 +679,7 @@ impl ProfileInputPayload {
 pub enum ProfileInputDeltaPayload {
     GenericGamepad(GenericGamepadInput),
     Xbox360(Xbox360Input),
+    #[serde(rename = "dualsense")]
     DualSense(DualSenseInput),
     SteamController(SteamControllerInput),
 }
