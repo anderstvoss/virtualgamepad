@@ -1,10 +1,38 @@
 //! Minimal profile-input builders for test authors.
 
-use gr_core::{Dpad, DualSenseInput, GenericGamepadInput, SteamControllerInput, Xbox360Input};
+use gr_core::{
+    Dpad, DpadDelta, DualSenseDelta, DualSenseInput, GenericGamepadDelta, GenericGamepadInput,
+    SteamControllerDelta, SteamControllerInput, Xbox360Delta, Xbox360Input,
+};
 
 #[must_use]
 pub fn dpad() -> Dpad {
     Dpad::neutral()
+}
+
+#[must_use]
+pub fn dpad_delta() -> DpadDelta {
+    DpadDelta::empty()
+}
+
+#[must_use]
+pub fn generic_gamepad_delta() -> GenericGamepadDelta {
+    GenericGamepadDelta::empty()
+}
+
+#[must_use]
+pub fn xbox360_delta() -> Xbox360Delta {
+    Xbox360Delta::empty()
+}
+
+#[must_use]
+pub fn dualsense_delta() -> DualSenseDelta {
+    DualSenseDelta::empty()
+}
+
+#[must_use]
+pub fn steam_controller_delta() -> SteamControllerDelta {
+    SteamControllerDelta::empty()
 }
 
 #[must_use]

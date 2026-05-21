@@ -675,15 +675,260 @@ impl ProfileInputPayload {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DpadDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub up: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub down: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right: Option<ButtonState>,
+}
+
+impl DpadDelta {
+    #[must_use]
+    pub const fn empty() -> Self {
+        Self {
+            up: None,
+            down: None,
+            left: None,
+            right: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.up.is_none() && self.down.is_none() && self.left.is_none() && self.right.is_none()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GenericGamepadDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub south: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub east: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub west: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub north: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_shoulder: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_shoulder: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_button: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick_button: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_primary: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_secondary: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guide: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_trigger: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_trigger: Option<u16>,
+}
+
+impl GenericGamepadDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Xbox360Delta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub b: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_bumper: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_bumper: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_button: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick_button: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub back: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guide: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_trigger: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_trigger: Option<u16>,
+}
+
+impl Xbox360Delta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cross: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub circle: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub square: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub triangle: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpad: Option<DpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l1: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r1: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l3: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r3: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ps: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub touchpad_click: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l2: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub r2: Option<u16>,
+}
+
+impl DualSenseDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SteamControllerDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub a: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub b: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_grip: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_grip: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_bumper: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_bumper: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_primary: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub menu_secondary: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub steam: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_pad_click: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_pad_click: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick_click: Option<ButtonState>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_pad: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_pad: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_stick: Option<StickPosition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub left_trigger: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub right_trigger: Option<u16>,
+}
+
+impl SteamControllerDelta {
+    #[must_use]
+    pub fn empty() -> Self {
+        Self::default()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "profile", content = "fields")]
 #[non_exhaustive]
 pub enum ProfileInputDeltaPayload {
-    GenericGamepad(GenericGamepadInput),
-    Xbox360(Xbox360Input),
+    GenericGamepad(GenericGamepadDelta),
+    Xbox360(Xbox360Delta),
     #[serde(rename = "dualsense")]
-    DualSense(DualSenseInput),
-    SteamController(SteamControllerInput),
+    DualSense(DualSenseDelta),
+    SteamController(SteamControllerDelta),
+}
+
+impl ProfileInputDeltaPayload {
+    #[must_use]
+    pub const fn variant_name(&self) -> &'static str {
+        match self {
+            Self::GenericGamepad(_) => "generic-gamepad",
+            Self::Xbox360(_) => "xbox360",
+            Self::DualSense(_) => "dualsense",
+            Self::SteamController(_) => "steam-controller",
+        }
+    }
+
+    /// Validate that the given profile id matches this delta variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::ProfilePayloadMismatch`] when the supplied
+    /// `profile_id` does not correspond to the delta's built-in
+    /// profile family.
+    pub fn validate_profile_id(&self, profile_id: &ProfileId) -> Result<(), CoreError> {
+        let expected = self.variant_name();
+        if expected == profile_id.as_ref() {
+            Ok(())
+        } else {
+            Err(CoreError::ProfilePayloadMismatch {
+                profile_id: profile_id.clone(),
+                payload_variant: expected,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -712,6 +957,18 @@ pub struct ProfileInputDelta {
     pub timestamp: Timestamp,
     pub sequence: SequenceId,
     pub payload: ProfileInputDeltaPayload,
+}
+
+impl ProfileInputDelta {
+    /// Validate the delta's profile id against its payload variant.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::ProfilePayloadMismatch`] when the payload
+    /// variant and `profile_id` disagree.
+    pub fn validate(&self) -> Result<(), CoreError> {
+        self.payload.validate_profile_id(&self.profile_id)
+    }
 }
 
 #[must_use]
@@ -919,6 +1176,69 @@ mod tests {
         let json = serde_json::to_string(&frame).expect("serialize frame");
         let decoded: ProfileInputFrame = serde_json::from_str(&json).expect("decode frame");
         assert_eq!(decoded, frame);
+    }
+
+    #[test]
+    fn empty_dualsense_delta_yaml_round_trip() {
+        let delta = ProfileInputDelta {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(0),
+            sequence: SequenceId::new(0),
+            payload: ProfileInputDeltaPayload::DualSense(DualSenseDelta::empty()),
+        };
+        let yaml = serde_yaml::to_string(&delta).expect("serialize delta");
+        let decoded: ProfileInputDelta = serde_yaml::from_str(&yaml).expect("decode delta");
+        assert_eq!(decoded, delta);
+        delta.validate().expect("delta validates");
+    }
+
+    #[test]
+    fn sparse_dualsense_delta_only_carries_set_fields() {
+        let mut payload = DualSenseDelta::empty();
+        payload.dpad = Some(DpadDelta {
+            up: None,
+            down: None,
+            left: Some(ButtonState::Pressed),
+            right: None,
+        });
+        payload.l2 = Some(0x42);
+        let delta = ProfileInputDelta {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(7),
+            sequence: SequenceId::new(11),
+            payload: ProfileInputDeltaPayload::DualSense(payload),
+        };
+        let yaml = serde_yaml::to_string(&delta).expect("serialize sparse delta");
+        // Sparse: should only mention the fields we actually set.
+        assert!(yaml.contains("l2: 66"));
+        assert!(yaml.contains("left: pressed"));
+        assert!(!yaml.contains("r2:"));
+        assert!(!yaml.contains("cross:"));
+        let decoded: ProfileInputDelta = serde_yaml::from_str(&yaml).expect("decode sparse delta");
+        let ProfileInputDeltaPayload::DualSense(decoded_payload) = decoded.payload else {
+            panic!("expected dualsense delta");
+        };
+        assert!(decoded_payload.r2.is_none());
+        assert!(decoded_payload.cross.is_none());
+        assert_eq!(decoded_payload.l2, Some(0x42));
+        let dpad = decoded_payload.dpad.expect("dpad change is present");
+        assert_eq!(dpad.left, Some(ButtonState::Pressed));
+        assert!(dpad.up.is_none());
+    }
+
+    #[test]
+    fn delta_payload_variant_must_match_profile_id() {
+        let delta = ProfileInputDelta {
+            profile_id: ProfileId::from("xbox360"),
+            timestamp: Timestamp::new(0),
+            sequence: SequenceId::new(0),
+            payload: ProfileInputDeltaPayload::DualSense(DualSenseDelta::empty()),
+        };
+        let error = delta.validate().expect_err("mismatch should fail");
+        assert_eq!(
+            error.to_string(),
+            "profile id `xbox360` does not match payload variant `dualsense`"
+        );
     }
 
     proptest! {
