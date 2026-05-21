@@ -5,7 +5,8 @@ physical hardware at varying accuracy levels.
 
 > **Status:** early WIP. The crate is a scaffold; the public API will
 > land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
-> tracked changes.
+> tracked changes, and [docs/spec/](docs/spec/) for the architecture,
+> implementation, and validation spec the buildout follows.
 
 ## License
 
