@@ -27,6 +27,13 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Removed
 
+- The single-crate `virtual_gamepad` package at the repository root.
+  Its slot is now occupied by `crates/gr-core/` (initially a placeholder
+  with a smoke test), and the workspace root `Cargo.toml` is a pure
+  workspace manifest. A facade crate may be reintroduced later to
+  re-export from the `gr-*` crates if a single import surface proves
+  useful.
+
 ### Fixed
 
 ### Security
