@@ -1,0 +1,12 @@
+[package]
+name = "gr-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Configuration models for virtualgamepad."
+
+[lints]
+workspace = true

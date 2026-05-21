@@ -11,8 +11,12 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 - Companion demo binary under `demo/` (`virtual_gamepad_demo`) that
   grows from a CLI scaffold into a future GUI controller visualizer
-  alongside the library. The repo is now a Cargo workspace with the
-  library at the root and the demo as a member.
+  alongside the library.
+
+- Phase 0 workspace split scaffold with placeholder crates under
+  `crates/`, a `gr-testkit` fixture-envelope loader, a `gr-cli`
+  validation/phase-gate skeleton, and `vgpd-demo phase-gate <N>`
+  reading the manual checklist from the implementation plan.
 
 ### Changed
 
