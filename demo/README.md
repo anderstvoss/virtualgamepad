@@ -2,15 +2,20 @@
 
 A companion program for the [`virtualgamepad`](../README.md) library. The demo is **not** intended to be embedded into real library users — it exists to drive hands-on testing and visualization as the library is built out.
 
-The demo's growth tracks the library's growth.
+The demo's growth tracks the library's growth, one phase at a time, per the [Rust implementation plan](../docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md). Each phase ends with a manual gate the user runs via `vgpd-demo phase-gate <N>`.
 
 ## Growth phases
 
-1. **CLI scaffold** (now) — a minimal [`clap`](https://docs.rs/clap)-based binary that prints diagnostic info. No real library use yet; the library exposes no public API.
-2. **Diagnostic CLI** — once `gr-core`, `gr-profiles`, and `gr-planner` exist, the demo grows subcommands for listing profiles, inspecting capabilities, and printing planner output. These mirror the developer CLI commands described in [the Rust implementation plan](../docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md#gr-cli) but live separately from `gr-cli` because the demo is for human-facing exploration, not internal diagnostics.
-3. **Simulator** — once `gr-session` and a fake backend exist, the demo can spin up a session against the fake backend and play canned input sequences. Useful for reverse-event replay and headless testing.
-4. **TUI (optional)** — a terminal-based controller view as a stepping stone if the GUI work needs to wait.
-5. **GUI with controller visualizer** — the end state. Real-time visualization of forward input being submitted, reverse commands coming back, planner output, and live diagnostics. Lands once the library is "functional" — meaning the architecture is ready for full device-emulation buildout, regardless of how many device profiles are actually implemented.
+The demo grows in lockstep with library phases. Highlights:
+
+- **Phase 0 (CLI scaffold + gate runner)** — present: a minimal [`clap`](https://docs.rs/clap)-based CLI, plus the `phase-gate <N>` driver that reads the gate checklist out of the implementation plan.
+- **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
+- **Phases 4–7 (runtime gates)** — adds `simulate-session`, `replay-trace`, `plan-session`, `many-sessions`. The demo can drive end-to-end fake-backend sessions and surface diagnostics to a human.
+- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. The demo brings up real virtual devices on Linux and prints what host software sees.
+- **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
+- **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
+
+The split between `vgpd-demo` (this binary, human-facing) and `gr-cli` (internal/CI, scriptable) is specified in [TESTING_TOOLING_SPEC.md](../docs/spec/implementation/TESTING_TOOLING_SPEC.md#cli-surfaces). The two share backing libraries; `vgpd-demo` is the one humans run at phase gates.
 
 ## GUI framework
 
