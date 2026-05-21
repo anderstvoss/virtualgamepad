@@ -1,11 +1,14 @@
 # Rust build artifacts
-/target
-/target/
+target/
 
 # Local environment files
 .env
 .env.*
 !.env.example
+
+# Agent and harness files
+.claude/
+.codex/
 
 # Secrets and credentials
 *.pem
