@@ -123,6 +123,20 @@ pub fn show_capabilities(profile_id: &str) -> Result<String, CliError> {
 
 /// Cross-check declared capabilities against Phase 2 registry rules.
 ///
+/// At Phase 2, this runs `CapabilityRegistry::validate_profile_contract`
+/// against every built-in profile and reports any contract violations
+/// (missing required fields, duplicate capabilities, wrong semantic
+/// kind, reverse-support mismatches). Built-in profiles are already
+/// internally consistent by construction in `gr-profiles`, so for the
+/// v1 closed registry the gap set is empty by design — this gate check
+/// guards against regressions in the validator itself, which is
+/// exercised directly by the `validator_catches_*` tests in
+/// `gr-profiles`.
+///
+/// Translator-coverage gaps (a declared capability with no realizing
+/// forward or reverse translator) become populated when `gr-translators`
+/// lands in Phase 6.
+///
 /// # Errors
 ///
 /// This operation is purely in-memory and only fails if the report

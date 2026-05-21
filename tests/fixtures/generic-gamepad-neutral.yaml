@@ -1,0 +1,37 @@
+fixture: virtualgamepad/v1
+kind: input-frame
+id: generic-gamepad-neutral
+profile_id: generic-gamepad
+notes: |
+  Neutral Generic gamepad payload completing the per-profile fixture
+  deliverable for Phase 2.
+payload:
+  timestamp: 0
+  sequence: 0
+  profile: generic-gamepad
+  fields:
+    buttons:
+      south: false
+      east: false
+      west: false
+      north: false
+      left_shoulder: false
+      right_shoulder: false
+      left_stick_button: false
+      right_stick_button: false
+      menu_primary: false
+      menu_secondary: false
+      guide: false
+    dpad:
+      up: false
+      down: false
+      left: false
+      right: false
+    sticks:
+      left_x: 0
+      left_y: 0
+      right_x: 0
+      right_y: 0
+    triggers:
+      left_trigger: 0
+      right_trigger: 0

@@ -60,6 +60,15 @@ pub struct CapabilityItem {
     pub range: Option<ValueRange>,
 }
 
+/// A category-typed reference to either a semantic input function or a
+/// semantic output function.
+///
+/// The serde representation uses external tags (`!input face-bottom`,
+/// `!output rumble`) so capability dumps stay unambiguous when the input
+/// and output namespaces share a semantic word (for example, `rumble`
+/// appears in both namespaces with different meaning). The cost is one
+/// extra token per line in YAML output; the alternative — a flat
+/// kebab-case scalar — would silently collide between input and output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SemanticRef {
@@ -148,6 +157,18 @@ pub enum OutputFunctionRef {
     Semantic(SemanticOutputFunction),
 }
 
+/// Query handle for the built-in profile + capability registry.
+///
+/// v1 ships a closed built-in registry per
+/// [RUST_IMPLEMENTATION_SPEC.md profile-extension rule](https://github.com/anderstvoss/virtualgamepad/blob/main/docs/spec/implementation/RUST_IMPLEMENTATION_SPEC.md#gr-profiles).
+/// A public `register_external` API is intentionally a v2 concern, so
+/// the registry is exposed as a zero-sized handle: query methods
+/// (`profiles`, `profile_by_str`, `validate_profile_contract`) can grow
+/// without changing call sites, and a future v2 can add registration
+/// methods without breaking the v1 read-only surface.
+///
+/// Built-in profile data lives in [`static@BUILTIN_PROFILES`]; obtain
+/// the handle via the [`registry`] constructor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CapabilityRegistry;
 
@@ -225,6 +246,12 @@ impl CapabilityRegistry {
     }
 }
 
+/// Return the closed v1 [`CapabilityRegistry`] singleton.
+///
+/// This is the only supported entry point for accessing the built-in
+/// profile inventory; consumers should not depend on `CapabilityRegistry`
+/// having a public constructor, since v2 may replace the unit-struct
+/// facade with a richer handle without breaking this call site.
 #[must_use]
 pub const fn registry() -> CapabilityRegistry {
     CapabilityRegistry
@@ -1193,6 +1220,7 @@ fn capability_key(capability: CapabilityItem) -> String {
 mod tests {
     use super::*;
     use insta::assert_snapshot;
+    use rstest::rstest;
 
     #[test]
     fn smoke() {}
@@ -1324,6 +1352,30 @@ mod tests {
     }
 
     #[test]
+    fn non_dualsense_profiles_do_not_declare_dualsense_specific_outputs() {
+        let forbidden = [
+            SemanticOutputFunction::TriggerEffect,
+            SemanticOutputFunction::Audio,
+            SemanticOutputFunction::Haptics,
+        ];
+        for profile in registry().profiles() {
+            if profile.profile_id.as_ref() == "dualsense" {
+                continue;
+            }
+            for capability in profile.capabilities.output {
+                let SemanticRef::Output(output) = capability.semantic else {
+                    continue;
+                };
+                assert!(
+                    !forbidden.contains(&output),
+                    "{} declared dualsense-specific output `{output}`",
+                    profile.profile_id
+                );
+            }
+        }
+    }
+
+    #[test]
     fn every_built_in_profile_has_analog_ranges() {
         for profile in registry().profiles() {
             assert!(
@@ -1334,19 +1386,150 @@ mod tests {
         }
     }
 
-    #[test]
-    fn invalid_profiles_fail_with_field_specific_errors() {
+    #[rstest]
+    #[case::display_name("display_name", |p: &mut ControllerProfile| p.display_name = "")]
+    #[case::supported_fidelity(
+        "supported_fidelity",
+        |p: &mut ControllerProfile| p.supported_fidelity = &[]
+    )]
+    #[case::input_contract_required_fields(
+        "input_contract.required_fields",
+        |p: &mut ControllerProfile| p.input_contract.required_fields = &[]
+    )]
+    #[case::capabilities_input(
+        "capabilities.input",
+        |p: &mut ControllerProfile| p.capabilities.input = &[]
+    )]
+    #[case::identity_vendor_id(
+        "identity.vendor_id",
+        |p: &mut ControllerProfile| p.identity.vendor_id = VendorId::new(0)
+    )]
+    #[case::identity_product_id(
+        "identity.product_id",
+        |p: &mut ControllerProfile| p.identity.product_id = ProductId::new(0)
+    )]
+    fn invalid_profiles_fail_with_field_specific_errors(
+        #[case] expected_field: &'static str,
+        #[case] mutate: fn(&mut ControllerProfile),
+    ) {
         let mut profile = generic_gamepad_profile();
         profile.profile_id = ProfileId::from("invalid-test");
-        profile.display_name = "";
+        mutate(&mut profile);
 
         let error = registry()
             .validate_profile_contract(&profile)
             .expect_err("invalid profile should fail");
-        assert_eq!(
-            error.to_string(),
-            "profile `invalid-test` is missing required field `display_name`"
-        );
+
+        match error {
+            RegistryError::MissingRequiredField { field, .. } => {
+                assert_eq!(field, expected_field);
+            }
+            other => panic!("expected MissingRequiredField, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn empty_profile_id_fails_validation() {
+        let mut profile = generic_gamepad_profile();
+        profile.profile_id = ProfileId::from("");
+
+        let error = registry()
+            .validate_profile_contract(&profile)
+            .expect_err("empty profile_id should fail");
+        assert!(matches!(
+            error,
+            RegistryError::MissingRequiredField {
+                field: "profile_id",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn validator_catches_duplicate_capability() {
+        let dup = CapabilityItem {
+            category: CapabilityCategory::Button,
+            semantic: SemanticRef::Input(SemanticInputFunction::FaceBottom),
+            optionality: Optionality::Required,
+            range: None,
+        };
+        let mut profile = generic_gamepad_profile();
+        profile.profile_id = ProfileId::from("dup-test");
+        profile.capabilities = ControllerCapabilities {
+            input: Box::leak(Box::new([dup, dup])),
+            output: &[],
+        };
+        let error = registry()
+            .validate_profile_contract(&profile)
+            .expect_err("duplicate input capability");
+        assert!(matches!(
+            error,
+            RegistryError::DuplicateCapability { slice: "input", .. }
+        ));
+    }
+
+    #[test]
+    fn validator_catches_wrong_semantic_kind_in_input_slice() {
+        let bad = CapabilityItem {
+            category: CapabilityCategory::Haptic,
+            semantic: SemanticRef::Output(SemanticOutputFunction::Rumble),
+            optionality: Optionality::Required,
+            range: None,
+        };
+        let mut profile = generic_gamepad_profile();
+        profile.profile_id = ProfileId::from("wrong-kind-test");
+        profile.capabilities = ControllerCapabilities {
+            input: Box::leak(Box::new([bad])),
+            output: &[],
+        };
+        let error = registry()
+            .validate_profile_contract(&profile)
+            .expect_err("wrong semantic kind in input slice");
+        assert!(matches!(
+            error,
+            RegistryError::WrongSemanticKind { slice: "input", .. }
+        ));
+    }
+
+    #[test]
+    fn validator_catches_output_capability_without_reverse_support() {
+        let output = CapabilityItem {
+            category: CapabilityCategory::Haptic,
+            semantic: SemanticRef::Output(SemanticOutputFunction::Rumble),
+            optionality: Optionality::Required,
+            range: None,
+        };
+        let mut profile = generic_gamepad_profile();
+        profile.profile_id = ProfileId::from("missing-reverse-test");
+        profile.capabilities = ControllerCapabilities {
+            input: profile.capabilities.input,
+            output: Box::leak(Box::new([output])),
+        };
+        let error = registry()
+            .validate_profile_contract(&profile)
+            .expect_err("output without reverse support");
+        assert!(matches!(
+            error,
+            RegistryError::OutputCapabilityMissingReverseSupport { .. }
+        ));
+    }
+
+    #[test]
+    fn validator_catches_reverse_support_without_output_capability() {
+        let mut profile = generic_gamepad_profile();
+        profile.profile_id = ProfileId::from("orphan-reverse-test");
+        profile.reverse_command_support = ReverseCommandSupport {
+            supported: Box::leak(Box::new([OutputFunctionRef::Semantic(
+                SemanticOutputFunction::Rumble,
+            )])),
+        };
+        let error = registry()
+            .validate_profile_contract(&profile)
+            .expect_err("orphan reverse-support entry");
+        assert!(matches!(
+            error,
+            RegistryError::ReverseSupportMissingOutputCapability { .. }
+        ));
     }
 
     #[test]

@@ -1,0 +1,37 @@
+fixture: virtualgamepad/v1
+kind: input-frame
+id: steam-controller-neutral
+profile_id: steam-controller
+notes: |
+  Neutral Steam Controller payload completing the per-profile fixture
+  deliverable for Phase 2.
+payload:
+  timestamp: 0
+  sequence: 0
+  profile: steam-controller
+  fields:
+    buttons:
+      a: false
+      b: false
+      x: false
+      y: false
+      left_grip: false
+      right_grip: false
+      lb: false
+      rb: false
+      menu_primary: false
+      menu_secondary: false
+      steam: false
+      left_pad_click: false
+      right_pad_click: false
+      left_stick_click: false
+    sticks:
+      left_pad_x: 0
+      left_pad_y: 0
+      right_pad_x: 0
+      right_pad_y: 0
+      left_stick_x: 0
+      left_stick_y: 0
+    triggers:
+      lt: 0
+      rt: 0

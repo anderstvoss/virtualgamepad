@@ -128,12 +128,16 @@ Goal: confirm the registry rejects incomplete profiles with field-specific error
 cargo test -p gr-profiles invalid_profiles_fail_with_field_specific_errors
 ```
 
-2. Confirm the command reports **1 passed** and the remaining
+2. Confirm the command reports **6 passed** (one case per required
+   field covered by the parametrized `rstest`) and the remaining
    `gr-profiles` tests as **filtered out**. This is expected because the
-   command intentionally runs one targeted test rather than the full
-   crate suite.
-3. Confirm the passing test asserts that the failure is tied to one
-   concrete missing field, not a generic "invalid profile" message.
+   command intentionally runs one targeted, table-driven test rather
+   than the full crate suite.
+3. Confirm each passing case asserts that the failure is tied to one
+   concrete missing field (`display_name`, `supported_fidelity`,
+   `input_contract.required_fields`, `capabilities.input`,
+   `identity.vendor_id`, `identity.product_id`), not a generic "invalid
+   profile" message.
 
 ### What to record
 
