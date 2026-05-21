@@ -206,6 +206,60 @@ Recommended method:
 5. build a field map
 6. validate each field independently before combining them
 
+### Profile-specific capability summaries (informational)
+
+These tables are **non-normative reviewer aids**. The normative source for what a profile claims is the `ControllerProfile` struct in `gr-profiles` plus the per-profile capability snapshots produced by `vgpd-demo show-capabilities <profile_id>`. Tables here exist so manual gate checklists have a doc anchor to read against before Phase 2 lands those snapshots.
+
+#### DualSense (`profile_id: dualsense`)
+
+Input capabilities:
+
+- face buttons: `cross`, `circle`, `square`, `triangle`
+- shoulder buttons: `l1`, `r1`
+- stick clicks: `l3`, `r3`
+- system buttons: `create`, `options`, `ps`, `touchpad_click`
+- d-pad: `up`, `down`, `left`, `right` (directional booleans)
+- twin analog sticks: `left_x`, `left_y`, `right_x`, `right_y`
+- analog triggers: `l2`, `r2`
+- touchpad: two absolute multi-touch contacts (`contact_1`, `contact_2`) each with `active`, `x`, `y`
+- motion: gyroscope (3-axis) + accelerometer (3-axis)
+- microphone (PCM source, separate session sink)
+
+Output capabilities:
+
+- rumble (dual-rotor)
+- adaptive trigger effects (per trigger)
+- RGB lightbar
+- player-indicator LEDs
+- audio mode commands (discrete: mute, route, gain) via `OutputPayload::Audio`
+- PCM speaker (separate session sink, not a discrete command)
+- haptic feedback through the high-resolution motor path where the provider realizes it
+
+Reverse-path note:
+
+- declaring `audio mode commands` at `identity-aware` does not by itself declare PCM speaker / microphone realization; those are gated separately on provider support per [audio stream contract](../implementation/RUST_IMPLEMENTATION_SPEC.md#audio-stream-contract).
+
+#### Xbox 360 (`profile_id: xbox360`)
+
+Input capabilities:
+
+- face buttons: `a`, `b`, `x`, `y`
+- shoulder buttons: `lb`, `rb`
+- stick clicks: `ls`, `rs`
+- system buttons: `start`, `back`, `guide`
+- d-pad: `up`, `down`, `left`, `right`
+- twin analog sticks: `left_x`, `left_y`, `right_x`, `right_y`
+- analog triggers: `lt`, `rt`
+
+Output capabilities:
+
+- rumble (dual-rotor force feedback)
+
+Notes:
+
+- no touchpad, no motion sensors, no PCM audio, no lightbar
+- a Phase 2+ manual gate that lists DualSense-specific outputs against Xbox 360 indicates capability leakage
+
 ## Tier 3: `hardware-faithful`
 
 ### Goal

@@ -149,8 +149,8 @@ Move from the current single-crate scaffold to the full workspace layout. Stand 
 
 - Cargo workspace expanded with empty crates at the paths in the workspace layout above (each crate compiles, has a placeholder `lib.rs`, and is wired into the workspace `[workspace] members`)
 - `gr-testkit` skeleton with the public module structure from [TESTING_TOOLING_SPEC.md gr-testkit module layout](TESTING_TOOLING_SPEC.md#module-layout); empty types, fixture loader parses the envelope only
-- `gr-cli` skeleton with `gr-cli validate-fixture` and `gr-cli phase-gate <N> --auto` operational (no-op gates return success)
-- `vgpd-demo phase-gate <N>` subcommand that invokes `gr-cli phase-gate <N> --auto` and prints the manual checklist for Phase N (the checklist content is read from this plan file by section anchor)
+- `gr-cli` skeleton with `gr-cli validate-fixture` operational; the automated portion of each phase gate is exposed as a library entry point (`gr_cli::run_phase_gate_auto`) consumed by the demo (no-op gates return success)
+- `vgpd-demo phase-gate <N>` subcommand that runs the automated checks for Phase N via `gr_cli::run_phase_gate_auto` and prints the manual checklist (the checklist content is read from this plan file by section anchor)
 - workspace dev-dependencies added: `insta`, `proptest`, `assert_matches`, `rstest`, `serde_yaml`
 
 ### Iteration loop
@@ -180,7 +180,7 @@ Automated portion:
 - [ ] `cargo build --workspace --all-features` succeeds
 - [ ] `cargo test --workspace --all-features` passes (every empty crate's smoke test runs)
 - [ ] `cargo clippy --workspace --all-targets --all-features -- -D warnings` clean
-- [ ] `gr-cli phase-gate 0 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 0` exits 0
 
 Manual portion:
 
@@ -272,9 +272,9 @@ Bring in the built-in profile set and the capability query API. The planner and 
 
 ### Deliverables
 
-- `ControllerProfile` struct with fields per [the implementation spec](RUST_IMPLEMENTATION_SPEC.md#gr-profiles)
+- `ControllerProfile` struct with fields per [the implementation spec](RUST_IMPLEMENTATION_SPEC.md#controllerprofile)
 - built-in profiles: generic gamepad, Xbox 360, DualSense, Steam Controller (the four named in the prior plan; additional profiles can be added later, additively)
-- `CapabilityRegistry` query API folded into `gr-profiles` (no separate crate, per Decision 2 in the spec-review fixes)
+- `CapabilityRegistry` query API folded into `gr-profiles` (no separate crate; see [IMPLEMENTATION_FRAMEWORK.md — CapabilityRegistry](IMPLEMENTATION_FRAMEWORK.md#capabilityregistry) implementation note)
 - per-profile input contracts (which fields are required / optional, value ranges)
 - descriptor templates per supported fidelity level (placeholders for HID/transport; real bytes ship in later phases when the relevant providers are implemented)
 - declared supported / required input and output functions per profile
@@ -305,13 +305,13 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] `gr-cli capability-coverage` exits 0 (no declared-but-unsupported gaps)
-- [ ] `gr-cli phase-gate 2 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 2` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo list-profiles` shows all four built-in profiles with stable display names
 - [ ] 2. `vgpd-demo show-capabilities dualsense` lists rumble, trigger effects, lighting, touchpad, motion, audio (discrete commands), microphone (audio sink, not declared as command); cross-check against the [DualSense documentation in fidelity guide](../specs/FIDELITY_GUIDE.md#tier-2-identity-aware)
-- [ ] 3. `vgpd-demo show-capabilities xbox-360` lists analog sticks, triggers, d-pad, primary buttons, guide button, force feedback — no DualSense-specific outputs leak in
+- [ ] 3. `vgpd-demo show-capabilities xbox360` lists analog sticks, triggers, d-pad, primary buttons, guide button, force feedback — no DualSense-specific outputs leak in
 - [ ] 4. Author a stripped-down ad-hoc profile fixture under `tests/fixtures/` (using `gr_testkit::builders::ad_hoc_profile`) and verify the registry rejects loading it without the required fields
 - [ ] 5. Review `crates/gr-profiles/snapshots/` — capability dumps look correct to a human
 
@@ -360,13 +360,13 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] `gr-cli validate-config` returns 0 for every sample under `samples/configs/*.yaml`
-- [ ] `gr-cli phase-gate 3 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 3` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo validate-config samples/configs/dualsense-identity.yaml` accepts and prints a structured summary
 - [ ] 2. `vgpd-demo validate-config samples/configs/broken-mode.yaml` rejects with a clear, source-located error
-- [ ] 3. Author a custom config that selects xbox-360 at `compatibility`, references an unknown provider, and sets `validation.rejectUnsupportedProviderPreference: false`; verify the validator accepts it with a warning, not an error
+- [ ] 3. Author a custom config that selects xbox360 at `compatibility`, references an unknown provider, and sets `validation.rejectUnsupportedProviderPreference: false`; verify the validator accepts it with a warning, not an error
 - [ ] 4. Same custom config with `validation.rejectUnsupportedProviderPreference: true`; verify rejection
 - [ ] 5. Author a custom config with an unknown top-level section; verify rejection
 - [ ] 6. Author a custom config with an unknown key inside `session`; verify warning (default) and rejection when `validation.rejectUnknownConfigFields: true`
@@ -423,7 +423,7 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] property tests pass with default `proptest` budget
-- [ ] `gr-cli phase-gate 4 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 4` exits 0
 
 Manual portion:
 
@@ -480,14 +480,14 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean (plan snapshots reviewed)
 - [ ] all planner property tests pass
-- [ ] `gr-cli phase-gate 5 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 5` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo plan-session dualsense --goal identity-aware --inventory samples/inventories/linux-uhid-only.yaml` produces an IA plan with `selected_backend_family: LinuxUhid` and no degradation
 - [ ] 2. Same profile, `--goal hardware-faithful`, same inventory; produces a degraded plan with reasons `[TransportNotRealizable]`
 - [ ] 3. Same profile, `--goal hardware-faithful`, an inventory with no providers; planner returns a structured rejection
-- [ ] 4. `vgpd-demo plan-session xbox-360 --goal compatibility --inventory samples/inventories/linux-uinput-only.yaml` produces a compatibility plan with `selected_backend_family: LinuxUinput`
+- [ ] 4. `vgpd-demo plan-session xbox360 --goal compatibility --inventory samples/inventories/linux-uinput-only.yaml` produces a compatibility plan with `selected_backend_family: LinuxUinput`
 - [ ] 5. Author a custom `plan-snapshot` fixture for an unusual edge case (e.g. Steam Controller at `identity-aware` with a fake that declares only LEDs); verify the snapshot test passes
 - [ ] 6. Review `crates/gr-planner/snapshots/` — the YAML rationale strings read like a human wrote them, not a debug derive
 
@@ -544,13 +544,13 @@ Automated portion:
 - [ ] `cargo insta test --check` clean
 - [ ] property test: reverse translators never emit semantic outputs for undeclared capabilities — passes for every profile
 - [ ] `gr-cli capability-coverage` exits 0
-- [ ] `gr-cli phase-gate 6 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 6` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-buttons-roundtrip.yaml` shows every button mapped correctly between profile input and HID report bytes
 - [ ] 2. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml` decodes the host rumble request into an `OutputCommand::Rumble` with sensible payload
-- [ ] 3. Same exercise on `xbox-360` (evdev) and `steam-controller` (HID)
+- [ ] 3. Same exercise on `xbox360` (evdev) and `steam-controller` (HID)
 - [ ] 4. Author a custom reverse-event fixture for a Steam Controller LED change; the demo decodes it to `OutputCommand::Lighting`
 - [ ] 5. Review snapshots — translator outputs are stable across runs
 
@@ -611,7 +611,7 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] 100-session concurrent test passes on the Linux CI runner without exceeding the documented latency planning target
-- [ ] `gr-cli phase-gate 7 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 7` exits 0
 
 Manual portion:
 
@@ -666,13 +666,13 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] Linux-gated integration tests pass on the CI Linux matrix entry
-- [ ] `gr-cli phase-gate 8 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 8` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad` creates a device; `evtest` (or `jstest`) finds it under `/dev/input/`
 - [ ] 2. `evtest` shows the expected buttons and axes; press emitted events match
-- [ ] 3. `vgpd-demo run-uinput-smoke xbox-360` produces a device recognized as a controller by SDL (verify with `sdl2-test` or `jstest-gtk`)
+- [ ] 3. `vgpd-demo run-uinput-smoke xbox360` produces a device recognized as a controller by SDL (verify with `sdl2-test` or `jstest-gtk`)
 - [ ] 4. Launch a native Linux SDL game or `jstest-gtk`, send inputs from `vgpd-demo` (use a scripted scenario fixture); inputs land in the game
 - [ ] 5. Trigger an EV_FF rumble from `fftest` or a game; the session emits `OutputCommand::Rumble` (visible in demo verbose output)
 - [ ] 6. Kill the demo; verify the device is removed cleanly (no zombie `event*` entries)
@@ -723,7 +723,7 @@ Automated portion:
 - [ ] `cargo insta test --check` clean
 - [ ] Linux-gated UHID integration tests pass
 - [ ] `gr-cli compare-real-device` matches captured trace within documented tolerance
-- [ ] `gr-cli phase-gate 9 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 9` exits 0
 
 Manual portion:
 
@@ -781,7 +781,7 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] transport state machine round-trip tests pass on canned fixtures
-- [ ] `gr-cli phase-gate 10 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 10` exits 0
 
 Manual portion:
 
@@ -836,7 +836,7 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] real-device comparison passes within documented tolerance
-- [ ] `gr-cli phase-gate 11 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 11` exits 0
 
 Manual portion:
 
@@ -891,7 +891,7 @@ Automated portion:
 - [ ] cross-build: `cargo check --target x86_64-pc-windows-msvc --workspace --features provider-windows-hid` clean
 - [ ] cross-build: `cargo check --target x86_64-apple-darwin --workspace --features provider-macos-hid` clean
 - [ ] `cargo insta test --check` clean
-- [ ] `gr-cli phase-gate 12 --auto` exits 0
+- [ ] `vgpd-demo phase-gate 12` exits 0
 
 Manual portion:
 
@@ -963,7 +963,7 @@ Mitigation:
 
 Mitigation:
 
-- automated portion of each gate must remain meaningful (CI keeps `gr-cli phase-gate --auto` honest)
+- automated portion of each gate must remain meaningful (CI keeps `vgpd-demo phase-gate` honest)
 - manual checklists are scoped to things that *only* a human can verify: ergonomics, real-hardware behavior, output readability
 - gate sign-off commit is part of the PR description for the next phase
 

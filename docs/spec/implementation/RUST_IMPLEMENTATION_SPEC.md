@@ -218,6 +218,35 @@ Profile extension rule:
 
 - v1 ships a closed built-in registry. A public `ProfileRegistry::register_external` API is a v2 concern and is intentionally not designed yet. Hosts that need custom profiles before v2 fork `gr-profiles`.
 
+### Profile identifier convention
+
+`ProfileId` is a `gr-core` newtype around a lowercase ASCII string. Built-in profiles ship with stable, deliberately-chosen identifiers:
+
+| Profile          | `ProfileId`         | Rust type tag       | `display_name`      |
+| ---------------- | ------------------- | ------------------- | ------------------- |
+| Xbox 360         | `xbox360`           | `Xbox360`           | `Xbox 360`          |
+| DualSense        | `dualsense`         | `DualSense`         | `DualSense`         |
+| Steam Controller | `steam-controller`  | `SteamController`   | `Steam Controller`  |
+| Generic gamepad  | `generic-gamepad`   | `GenericGamepad`    | `Generic gamepad`   |
+
+Format rules:
+
+- lowercase ASCII; the alphabet is `[a-z0-9-]`
+- kebab-case when the name has multiple distinct word components (`steam-controller`, `generic-gamepad`)
+- collapse to one token when the identifier reads naturally as a compact brand+model (`xbox360`, `dualsense`)
+- new identifiers introduced after v1 follow the same rule; the working assumption is kebab-case unless the model token is itself compact and unambiguous
+
+Stability rules:
+
+- a shipped `profile_id` is permanent; aliases are not designed for v1
+- renaming a profile is a breaking change and requires a new identifier alongside removal of the old one in a major-version bump
+- additions to the built-in set are append-only
+
+Name distinctions:
+
+- `display_name: &'static str` — the human label for the device *family*, e.g. `"Xbox 360"`. Used in `show-capabilities`, snapshots, config validation messages, and any docs surface. Lives on `ControllerProfile`.
+- per-session `name: String` — the per-instance label the host application assigns to a live session, e.g. `"Xbox 360 Controller 1"`. Lives on the session handle, not on the profile. Out of scope for `gr-profiles`; flagged here so `display_name` is not conflated with it.
+
 ### `gr-config`
 
 Owns:
@@ -392,6 +421,81 @@ Owns:
 - `gr-cli` depends only on public runtime crates
 
 ## Canonical runtime types
+
+### `ControllerProfile`
+
+```rust
+pub struct ControllerProfile {
+    pub profile_id: ProfileId,
+    pub display_name: &'static str,
+    pub profile_family: ProfileFamily,
+    pub identity: ProfileIdentity,
+    pub capabilities: ControllerCapabilities,
+    pub supported_fidelity: &'static [FidelityTier],
+    pub input_contract: ProfileInputContract,
+    pub descriptor_templates: &'static [DescriptorTemplate],
+    pub reverse_command_support: ReverseCommandSupport,
+}
+```
+
+Accompanying types (defined in `gr-profiles`):
+
+```rust
+#[non_exhaustive]
+pub enum ProfileFamily {
+    GenericGamepad,
+    Xbox360,
+    DualSense,
+    SteamController,
+}
+
+#[non_exhaustive]
+pub struct ProfileIdentity {
+    pub vendor_id: VendorId,
+    pub product_id: ProductId,
+    pub version: Option<u16>,
+    pub transport_hints: &'static [TransportHint],
+}
+
+pub struct ControllerCapabilities {
+    pub input: &'static [CapabilityItem],
+    pub output: &'static [CapabilityItem],
+}
+
+pub struct CapabilityItem {
+    pub category: CapabilityCategory,
+    pub semantic: SemanticRef,
+    pub optionality: Optionality,
+    pub range: Option<ValueRange>,
+}
+
+pub struct ProfileInputContract {
+    pub required_fields: &'static [InputFieldRef],
+    pub optional_fields: &'static [InputFieldRef],
+    pub ranges: &'static [InputFieldRange],
+    pub delta_support: DeltaSupportRule,
+}
+
+pub struct DescriptorTemplate {
+    pub fidelity: FidelityTier,
+    pub descriptor: DescriptorBytes, // placeholder until real bytes ship
+}
+
+#[non_exhaustive]
+pub struct ReverseCommandSupport {
+    pub supported: &'static [OutputFunctionRef],
+}
+```
+
+Rules:
+
+- all `ControllerProfile` fields are `'static` so the v1 closed registry can hold profiles in `static` data without `Arc`
+- `descriptor_templates` is the only field with realization-tier specificity; everything else is profile-intrinsic
+- `#[non_exhaustive]` on `ProfileFamily`, `ProfileIdentity`, and `ReverseCommandSupport` so additive growth (new families, new identity fields, new normalized output functions) is non-breaking
+- the profile set is append-only; renaming a `profile_id` is a breaking change (see [profile identifier convention](#profile-identifier-convention))
+- `ProfileInputContract` is the planner-facing source of truth for what an inbound frame is allowed to look like; it lives next to the payload shape so the planner can validate frames before they reach translators
+- `CapabilityItem::semantic` references `SemanticInputFunction` / `SemanticOutputFunction` from `gr-core` (input vs output disambiguated by the containing slice)
+- a profile that declares an output capability under `capabilities.output` must also list the corresponding `OutputFunctionRef` under `reverse_command_support.supported`; the contract test in `gr-profiles` enforces this
 
 ### `ProfileInputFrame`
 
