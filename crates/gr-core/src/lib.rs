@@ -418,16 +418,33 @@ impl StickPosition {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Dpad {
+    pub up: ButtonState,
+    pub down: ButtonState,
+    pub left: ButtonState,
+    pub right: ButtonState,
+}
+
+impl Dpad {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            up: ButtonState::Released,
+            down: ButtonState::Released,
+            left: ButtonState::Released,
+            right: ButtonState::Released,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct GenericGamepadInput {
     pub south: ButtonState,
     pub east: ButtonState,
     pub west: ButtonState,
     pub north: ButtonState,
-    pub dpad_up: ButtonState,
-    pub dpad_down: ButtonState,
-    pub dpad_left: ButtonState,
-    pub dpad_right: ButtonState,
+    pub dpad: Dpad,
     pub left_shoulder: ButtonState,
     pub right_shoulder: ButtonState,
     pub left_stick_button: ButtonState,
@@ -449,10 +466,7 @@ impl GenericGamepadInput {
             east: ButtonState::Released,
             west: ButtonState::Released,
             north: ButtonState::Released,
-            dpad_up: ButtonState::Released,
-            dpad_down: ButtonState::Released,
-            dpad_left: ButtonState::Released,
-            dpad_right: ButtonState::Released,
+            dpad: Dpad::neutral(),
             left_shoulder: ButtonState::Released,
             right_shoulder: ButtonState::Released,
             left_stick_button: ButtonState::Released,
@@ -474,10 +488,7 @@ pub struct Xbox360Input {
     pub b: ButtonState,
     pub x: ButtonState,
     pub y: ButtonState,
-    pub dpad_up: ButtonState,
-    pub dpad_down: ButtonState,
-    pub dpad_left: ButtonState,
-    pub dpad_right: ButtonState,
+    pub dpad: Dpad,
     pub left_bumper: ButtonState,
     pub right_bumper: ButtonState,
     pub left_stick_button: ButtonState,
@@ -499,10 +510,7 @@ impl Xbox360Input {
             b: ButtonState::Released,
             x: ButtonState::Released,
             y: ButtonState::Released,
-            dpad_up: ButtonState::Released,
-            dpad_down: ButtonState::Released,
-            dpad_left: ButtonState::Released,
-            dpad_right: ButtonState::Released,
+            dpad: Dpad::neutral(),
             left_bumper: ButtonState::Released,
             right_bumper: ButtonState::Released,
             left_stick_button: ButtonState::Released,
@@ -524,10 +532,7 @@ pub struct DualSenseInput {
     pub circle: ButtonState,
     pub square: ButtonState,
     pub triangle: ButtonState,
-    pub dpad_up: ButtonState,
-    pub dpad_down: ButtonState,
-    pub dpad_left: ButtonState,
-    pub dpad_right: ButtonState,
+    pub dpad: Dpad,
     pub l1: ButtonState,
     pub r1: ButtonState,
     pub l3: ButtonState,
@@ -550,10 +555,7 @@ impl DualSenseInput {
             circle: ButtonState::Released,
             square: ButtonState::Released,
             triangle: ButtonState::Released,
-            dpad_up: ButtonState::Released,
-            dpad_down: ButtonState::Released,
-            dpad_left: ButtonState::Released,
-            dpad_right: ButtonState::Released,
+            dpad: Dpad::neutral(),
             l1: ButtonState::Released,
             r1: ButtonState::Released,
             l3: ButtonState::Released,
@@ -787,6 +789,25 @@ mod tests {
         ]
     }
 
+    fn arb_button_state() -> impl Strategy<Value = ButtonState> {
+        prop_oneof![Just(ButtonState::Released), Just(ButtonState::Pressed),]
+    }
+
+    fn arb_dpad() -> impl Strategy<Value = Dpad> {
+        (
+            arb_button_state(),
+            arb_button_state(),
+            arb_button_state(),
+            arb_button_state(),
+        )
+            .prop_map(|(up, down, left, right)| Dpad {
+                up,
+                down,
+                left,
+                right,
+            })
+    }
+
     fn arb_capability_category() -> impl Strategy<Value = CapabilityCategory> {
         prop_oneof![
             Just(CapabilityCategory::Button),
@@ -945,5 +966,18 @@ mod tests {
             prop_assert_eq!(decoded, value);
         }
 
+        #[test]
+        fn dpad_yaml_round_trip(value in arb_dpad()) {
+            let yaml = serde_yaml::to_string(&value)?;
+            let decoded: Dpad = serde_yaml::from_str(&yaml)?;
+            prop_assert_eq!(decoded, value);
+        }
+
+        #[test]
+        fn dpad_json_round_trip(value in arb_dpad()) {
+            let json = serde_json::to_string(&value)?;
+            let decoded: Dpad = serde_json::from_str(&json)?;
+            prop_assert_eq!(decoded, value);
+        }
     }
 }

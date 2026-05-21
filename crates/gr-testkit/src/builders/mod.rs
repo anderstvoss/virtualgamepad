@@ -1,6 +1,11 @@
 //! Minimal profile-input builders for test authors.
 
-use gr_core::{DualSenseInput, GenericGamepadInput, SteamControllerInput, Xbox360Input};
+use gr_core::{Dpad, DualSenseInput, GenericGamepadInput, SteamControllerInput, Xbox360Input};
+
+#[must_use]
+pub fn dpad() -> Dpad {
+    Dpad::neutral()
+}
 
 #[must_use]
 pub fn dualsense_input() -> DualSenseInputBuilder {

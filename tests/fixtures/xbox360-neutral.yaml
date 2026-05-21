@@ -13,10 +13,11 @@ payload:
     b: released
     x: released
     y: released
-    dpad_up: released
-    dpad_down: released
-    dpad_left: released
-    dpad_right: released
+    dpad:
+      up: released
+      down: released
+      left: released
+      right: released
     left_bumper: released
     right_bumper: released
     left_stick_button: released

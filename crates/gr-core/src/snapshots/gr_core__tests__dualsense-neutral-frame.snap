@@ -12,10 +12,11 @@ payload:
     circle: released
     square: released
     triangle: released
-    dpad_up: released
-    dpad_down: released
-    dpad_left: released
-    dpad_right: released
+    dpad:
+      up: released
+      down: released
+      left: released
+      right: released
     l1: released
     r1: released
     l3: released
