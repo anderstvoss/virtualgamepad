@@ -237,6 +237,10 @@ Establish the primitive types every other crate depends on. No backend code, no 
 
 Run `vgpd-demo phase-gate 1` and complete the checklist.
 
+Step-by-step reviewer guide:
+
+- [Phase 1 Manual Gate](manual-gates/phase-1.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
@@ -246,10 +250,13 @@ Automated portion:
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo show-types` prints every fidelity tier, backend level, backend family, and capability category — visually confirm the names match the spec
-- [ ] 2. `gr-cli validate-fixture crates/gr-core/fixtures/payload-dualsense-neutral.yaml` accepts; payload structure looks reasonable to a human
-- [ ] 3. Author a custom fixture under `tests/fixtures/` representing an Xbox 360 neutral payload; `gr-cli validate-fixture <path>` accepts it; load it from a test in `crates/gr-core/tests/`
-- [ ] 4. Review `crates/gr-core/snapshots/` — every snapshot reads cleanly and matches expectations
+- [ ] 1. Run `cargo run -p virtual_gamepad_demo -- show-types`. Confirm the output order is stable and the names shown for fidelity tiers, backend levels, backend families, and capability categories are the exact spec-facing names you would want in docs, fixtures, and review output.
+- [ ] 2. Run `cargo run -p gr-cli -- validate-fixture crates/gr-core/fixtures/payload-dualsense-neutral.yaml`. Confirm the fixture is accepted; confirm the demo's `profile_id`, the YAML's inner `profile` tag, and the reported `payload_type` are **all the literal word `dualsense`** with no hyphen. In the YAML, confirm booleans represent digital inputs (`buttons`, `dpad`, `touchpad.*.active`) while numbers represent analog inputs (`sticks`, `triggers`, `touchpad.*.(x|y)`).
+- [ ] 3. Copy `crates/gr-core/fixtures/payload-dualsense-neutral.yaml` to `tests/fixtures/xbox360-neutral.yaml`, adjust it to an Xbox 360 neutral payload (same boolean/numeric split, using `lb`/`rb`/`ls`/`rs` and `lt`/`rt`), then run `cargo run -p gr-cli -- validate-fixture tests/fixtures/xbox360-neutral.yaml`. Confirm this succeeds without parser changes and that `cargo test -p gr-core workspace_xbox360_fixture_loads_as_profile_input_frame` passes against that exact file.
+- [ ] 4. Author a sparse `ProfileInputDelta` fixture for DualSense under `tests/fixtures/` with only `dpad.left`, `triggers.l2`, and a single touch contact set (start from `tests/fixtures/dualsense-delta-sparse.yaml` if you want a working reference). Run `cargo run -p gr-cli -- validate-fixture <path>`; confirm acceptance. Then run `cargo test -p gr-core workspace_dualsense_sparse_delta_decodes_only_set_fields` and confirm only the named fields decode as `Some` — proves a "delta" really means sparse, not a relabelled full snapshot.
+- [ ] 5. Open `crates/gr-core/src/snapshots/gr_core__tests__dualsense-neutral-payload.snap`. Confirm the payload clearly separates digital booleans from analog numeric sections and includes a `touchpad` block with `contact_1` and `contact_2`. Keep in mind that lower-level implementations may later realize the `dpad` block as hat axes even though the Phase 1 payload remains directional booleans.
+- [ ] 6. Run `cargo insta test --check`, then review `crates/gr-core/src/snapshots/`. Confirm every variant of every Phase 1 enum (`FidelityTier`, `BackendLevel`, `BackendFamily`, `CapabilityCategory`) has a corresponding `*-<variant>.snap` file — cross-check `ls crates/gr-core/src/snapshots/ | grep -c <enum-prefix>` against each enum's `ALL.len()` (3, 3, 6, 9). Names should be canonical and payload variants visually distinguishable.
+- [ ] 7. Run `cargo test -p gr-core`. Confirm the test list covers fidelity-tier parse/display behavior, serde round-trips for frames *and* deltas, fixture loading for both frames and deltas, sparse-delta absence-of-fields, and property tests — so the manual checks above are backed by executable tests rather than one-off demo output.
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 1 gate passed"`
 

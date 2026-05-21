@@ -1,6 +1,6 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
-use gr_testkit::fixtures::{FixtureError, load_fixture};
+use gr_testkit::fixtures::{FixtureDocument, FixtureError, load_fixture};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -8,6 +8,21 @@ use std::process::Command;
 const PHASE_0_COMMANDS: &[&[&str]] = &[
     &["cargo", "build", "--workspace", "--all-features"],
     &["cargo", "test", "--workspace", "--all-features"],
+    &[
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--",
+        "-D",
+        "warnings",
+    ],
+];
+
+const PHASE_1_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
     &[
         "cargo",
         "clippy",
@@ -33,14 +48,32 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
         source,
     })?;
 
-    Ok(format!(
-        "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\npayload_type: {}",
-        fixture.fixture,
-        fixture.kind,
-        fixture.id,
-        fixture.profile_id.as_deref().unwrap_or("<none>"),
-        yaml_value_kind(&fixture.payload),
-    ))
+    match fixture {
+        FixtureDocument::Envelope(fixture) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\npayload_type: {}",
+            fixture.fixture,
+            fixture.kind,
+            fixture.id,
+            fixture.profile_id.as_deref().unwrap_or("<none>"),
+            yaml_value_kind(&fixture.payload),
+        )),
+        FixtureDocument::InputFrame(fixture) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\npayload_type: {}",
+            fixture.envelope.fixture,
+            fixture.envelope.kind,
+            fixture.envelope.id,
+            fixture.frame.profile_id,
+            fixture.frame.payload.variant_name(),
+        )),
+        FixtureDocument::InputDelta(fixture) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\npayload_type: {}",
+            fixture.envelope.fixture,
+            fixture.envelope.kind,
+            fixture.envelope.id,
+            fixture.delta.profile_id,
+            fixture.delta.payload.variant_name(),
+        )),
+    }
 }
 
 /// Execute the deterministic automated portion of a phase gate.
@@ -171,7 +204,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        1..=12 => Err(CliError::UnimplementedPhase { phase }),
+        1 => Ok(PHASE_1_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        2..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -229,7 +266,11 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PHASE_0_COMMANDS, phase_gate_commands, repo_root, repo_root_from};
+    use super::{
+        PHASE_0_COMMANDS, PHASE_1_COMMANDS, phase_gate_commands, repo_root, repo_root_from,
+        validate_fixture,
+    };
+    use insta::assert_snapshot;
     use std::path::Path;
 
     #[test]
@@ -252,11 +293,26 @@ mod tests {
 
     #[test]
     fn unimplemented_phase_errors_clearly() {
-        let error = phase_gate_commands(1).expect_err("phase 1 should be unimplemented");
+        let error = phase_gate_commands(2).expect_err("phase 2 should be unimplemented");
         assert_eq!(
             error.to_string(),
-            "automated gate not implemented for phase `1` yet"
+            "automated gate not implemented for phase `2` yet"
         );
+    }
+
+    #[test]
+    fn phase_one_commands_match_expected_order() {
+        let commands = phase_gate_commands(1).expect("phase 1 commands");
+        let expected = PHASE_1_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
     }
 
     #[test]
@@ -302,5 +358,42 @@ mod tests {
                 "phase 0 automated section is missing {command}"
             );
         }
+    }
+
+    #[test]
+    fn phase_one_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_one = plan
+            .split("## Phase 1:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 2:").next())
+            .expect("phase 1 section");
+        let automated = phase_one
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        let actual_commands = PHASE_1_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+            .collect::<Vec<_>>();
+
+        for command in actual_commands {
+            assert!(
+                automated.contains(&command),
+                "phase 1 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_fixture_summary_for_dualsense_fixture_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let fixture_path = repo_root.join("crates/gr-core/fixtures/payload-dualsense-neutral.yaml");
+        let summary = validate_fixture(fixture_path).expect("fixture should validate");
+        assert_snapshot!("validate_fixture_dualsense", summary);
     }
 }

@@ -14,6 +14,7 @@ This directory is the source-of-truth spec package for the `virtualgamepad` temp
 - [Rust Implementation Plan](implementation/RUST_IMPLEMENTATION_PLAN.md): phased sequencing with manual gates between phases
 - [Rust Implementation Specification](implementation/RUST_IMPLEMENTATION_SPEC.md): authoritative crate ownership, runtime contracts, and acceptance criteria
 - [Testing Tooling Specification](implementation/TESTING_TOOLING_SPEC.md): `gr-testkit`, fixture format, snapshot/property strategies, CLI surfaces
+- [Manual Gate Guides](implementation/manual-gates/README.md): step-by-step reviewer instructions for phase-gate manual checks
 
 ## Validation
 

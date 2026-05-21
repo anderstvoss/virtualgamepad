@@ -1,9 +1,14 @@
 //! Shared envelope parsing for fixture documents.
 
+use gr_core::CoreError;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fmt;
 use std::path::Path;
+
+use super::input_frame::{
+    InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,
+};
 
 pub const FIXTURE_SCHEMA_VERSION: &str = "virtualgamepad/v1";
 
@@ -20,11 +25,21 @@ pub struct FixtureEnvelope {
     pub payload: Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FixtureDocument {
+    Envelope(FixtureEnvelope),
+    InputFrame(InputFrameFixture),
+    InputDelta(InputDeltaFixture),
+}
+
 #[derive(Debug)]
 pub enum FixtureError {
     Io(std::io::Error),
     Parse(serde_yaml::Error),
     UnsupportedVersion { actual: String },
+    MissingProfileId,
+    UnsupportedKind { kind: String },
+    ProfilePayloadMismatch { source: CoreError },
 }
 
 impl fmt::Display for FixtureError {
@@ -36,19 +51,30 @@ impl fmt::Display for FixtureError {
                 f,
                 "unsupported fixture version in `fixture` field: expected `{FIXTURE_SCHEMA_VERSION}`, got `{actual}`"
             ),
+            Self::MissingProfileId => {
+                write!(
+                    f,
+                    "fixture kind `input-frame` requires a `profile_id` field"
+                )
+            }
+            Self::UnsupportedKind { kind } => {
+                write!(f, "unsupported fixture kind `{kind}`")
+            }
+            Self::ProfilePayloadMismatch { source } => source.fmt(f),
         }
     }
 }
 
 impl std::error::Error for FixtureError {}
 
-/// Load and validate a fixture envelope from disk.
+/// Load and validate a typed fixture document from disk.
 ///
 /// # Errors
 ///
 /// Returns an error if the file cannot be read, the YAML is malformed,
-/// or the `fixture` version does not match `virtualgamepad/v1`.
-pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureEnvelope, FixtureError> {
+/// the `fixture` version does not match `virtualgamepad/v1`, or the
+/// fixture kind cannot be decoded.
+pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureError> {
     let contents = std::fs::read_to_string(path).map_err(FixtureError::Io)?;
     let envelope: FixtureEnvelope = serde_yaml::from_str(&contents).map_err(FixtureError::Parse)?;
     if envelope.fixture != FIXTURE_SCHEMA_VERSION {
@@ -56,5 +82,14 @@ pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureEnvelope, FixtureEr
             actual: envelope.fixture.clone(),
         });
     }
-    Ok(envelope)
+    match envelope.kind.as_str() {
+        "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
+        "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
+        "backend-trace" | "reverse-event" | "plan-snapshot" | "session-scenario" => {
+            Ok(FixtureDocument::Envelope(envelope))
+        }
+        other => Err(FixtureError::UnsupportedKind {
+            kind: other.to_owned(),
+        }),
+    }
 }

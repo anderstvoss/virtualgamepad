@@ -1,0 +1,50 @@
+fixture: virtualgamepad/v1
+kind: input-frame
+id: dualsense-neutral
+profile_id: dualsense
+notes: |
+  Neutral DualSense payload for Phase 1 fixture validation.
+payload:
+  timestamp: 0
+  sequence: 0
+  profile: dualsense
+  fields:
+    buttons:
+      face:
+        cross: false
+        circle: false
+        square: false
+        triangle: false
+      shoulders:
+        l1: false
+        r1: false
+      stick_clicks:
+        l3: false
+        r3: false
+      system:
+        create: false
+        options: false
+        ps: false
+        touchpad_click: false
+    dpad:
+      up: false
+      down: false
+      left: false
+      right: false
+    sticks:
+      left_x: 0
+      left_y: 0
+      right_x: 0
+      right_y: 0
+    triggers:
+      l2: 0
+      r2: 0
+    touchpad:
+      contact_1:
+        active: false
+        x: 0
+        y: 0
+      contact_2:
+        active: false
+        x: 0
+        y: 0

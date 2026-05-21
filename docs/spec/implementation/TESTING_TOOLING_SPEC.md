@@ -237,18 +237,47 @@ profile_id: dualsense
 payload:
   timestamp: 0
   sequence: 0
+  profile: dualsense
   fields:
     buttons:
-      cross: pressed
-      circle: released
-      triangle: released
-      square: released
+      face:
+        cross: true
+        circle: false
+        triangle: false
+        square: false
+      shoulders:
+        l1: false
+        r1: false
+      stick_clicks:
+        l3: false
+        r3: false
+      system:
+        create: false
+        options: false
+        ps: false
+        touchpad_click: false
+    dpad:
+      up: false
+      down: false
+      left: false
+      right: false
     sticks:
-      left: { x: 0, y: 0 }
-      right: { x: 0, y: 0 }
+      left_x: 0
+      left_y: 0
+      right_x: 0
+      right_y: 0
     triggers:
       l2: 0
       r2: 0
+    touchpad:
+      contact_1:
+        active: false
+        x: 0
+        y: 0
+      contact_2:
+        active: false
+        x: 0
+        y: 0
 ```
 
 Loaders validate the `fields` payload against the profile's published input contract. Unknown fields fail loading; out-of-range values fail loading.

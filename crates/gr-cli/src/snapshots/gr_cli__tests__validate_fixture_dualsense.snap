@@ -1,0 +1,9 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: summary
+---
+fixture: virtualgamepad/v1
+kind: input-frame
+id: dualsense-neutral
+profile_id: dualsense
+payload_type: dualsense

@@ -1,0 +1,22 @@
+fixture: virtualgamepad/v1
+kind: input-delta
+id: dualsense-delta-sparse
+profile_id: dualsense
+notes: |
+  Sparse Phase 1 DualSense delta: only the d-pad left input, the L2
+  analog trigger, and the first touch contact have changed since the
+  previous frame. Used as the gate exercise for sparse-delta authoring.
+payload:
+  timestamp: 100
+  sequence: 4
+  profile: dualsense
+  fields:
+    dpad:
+      left: true
+    triggers:
+      l2: 66
+    touchpad:
+      contact_1:
+        active: true
+        x: 830
+        y: 412

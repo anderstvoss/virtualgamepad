@@ -16,7 +16,7 @@ pub fn run(phase: u8) -> Result<(), PhaseGateError> {
         "=".repeat(9 + phase.to_string().len() + gate.title.len())
     );
     println!("Automated checks:");
-    render_automated_checks(&report);
+    render_automated_checks(&gate, &report);
     println!();
     if !report.all_passed() {
         println!("Manual review should wait until the automated checks are green.");
@@ -40,6 +40,7 @@ pub fn run(phase: u8) -> Result<(), PhaseGateError> {
 #[derive(Debug)]
 struct GateSection {
     title: String,
+    automated: Vec<String>,
     manual: Vec<String>,
     sign_off: String,
 }
@@ -113,6 +114,7 @@ fn load_gate(phase: u8) -> Result<GateSection, PhaseGateError> {
     };
 
     let gate_lines = &phase_lines[exit_gate_start + 1..];
+    let automated = collect_checklist(gate_lines, "Automated portion:", "Manual portion:");
     let manual = collect_checklist(gate_lines, "Manual portion:", "Sign-off:");
     let Some(sign_off) = gate_lines
         .iter()
@@ -123,6 +125,7 @@ fn load_gate(phase: u8) -> Result<GateSection, PhaseGateError> {
 
     Ok(GateSection {
         title,
+        automated,
         manual,
         sign_off,
     })
@@ -149,22 +152,30 @@ fn collect_checklist(lines: &[&str], start_marker: &str, end_marker: &str) -> Ve
         .collect()
 }
 
-fn render_automated_checks(report: &PhaseGateReport) {
-    for check in &report.checks {
-        let mark = if check.success { "✓" } else { "✗" };
-        let exit_suffix = if check.success {
-            String::new()
+fn render_automated_checks(gate: &GateSection, report: &PhaseGateReport) {
+    for item in &gate.automated {
+        let status = automated_item_status(item, report);
+        let mark = if status.unwrap_or(false) {
+            "✓"
         } else {
-            format!(
+            "✗"
+        };
+        println!("  {mark} {item}");
+    }
+
+    for check in &report.checks {
+        if !check.success {
+            let exit_suffix = format!(
                 " (exit code {})",
                 check
                     .exit_code
                     .map_or_else(|| "launch error".to_string(), |code| code.to_string())
-            )
-        };
-        println!("  {mark} {}{exit_suffix}", check.command_display);
+            );
+            println!(
+                "    command failure: {}{exit_suffix}",
+                check.command_display
+            );
 
-        if !check.success {
             if !check.stderr.trim().is_empty() {
                 println!("    stderr:");
                 for line in check.stderr.lines() {
@@ -181,13 +192,41 @@ fn render_automated_checks(report: &PhaseGateReport) {
     }
 }
 
+fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
+    if item.contains("property tests run with `proptest` default budget") {
+        return report
+            .checks
+            .iter()
+            .find(|check| check.command_display == "cargo test --workspace --all-features")
+            .map(|check| check.success);
+    }
+
+    if let Some(command_display) = first_backticked_segment(item) {
+        return report
+            .checks
+            .iter()
+            .find(|check| check.command_display == command_display)
+            .map(|check| check.success);
+    }
+
+    None
+}
+
+fn first_backticked_segment(line: &str) -> Option<String> {
+    let start = line.find('`')?;
+    let rest = &line[start + 1..];
+    let end = rest.find('`')?;
+    Some(rest[..end].to_string())
+}
+
 fn plan_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(PLAN_PATH)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::load_gate;
+    use super::{automated_item_status, load_gate};
+    use gr_cli::{PhaseGateCheckResult, PhaseGateReport};
 
     #[test]
     fn phase_zero_manual_checklist_extracts() {
@@ -204,5 +243,36 @@ mod tests {
             gate.sign_off,
             "`git commit --allow-empty -m \"chore(phase-gate): Phase 0 gate passed\"`"
         );
+    }
+
+    #[test]
+    fn phase_one_automated_checklist_extracts_proptest_line() {
+        let gate = load_gate(1).expect("phase 1 gate");
+        assert_eq!(gate.automated.len(), 4);
+        assert!(
+            gate.automated
+                .iter()
+                .any(|line| line.contains("property tests run with `proptest` default budget"))
+        );
+    }
+
+    #[test]
+    fn proptest_gate_line_tracks_workspace_test_status() {
+        let report = PhaseGateReport {
+            phase: 1,
+            checks: vec![PhaseGateCheckResult {
+                command_display: "cargo test --workspace --all-features".to_string(),
+                success: true,
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            }],
+        };
+
+        let status = automated_item_status(
+            "- [ ] property tests run with `proptest` default budget without failures",
+            &report,
+        );
+        assert_eq!(status, Some(true));
     }
 }
