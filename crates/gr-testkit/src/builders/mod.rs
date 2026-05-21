@@ -110,3 +110,71 @@ impl GenericGamepadInputBuilder {
         self.inner
     }
 }
+
+/// Builder for ad-hoc test profiles.
+///
+/// Phase 2 deliverable. Returns a placeholder `AdHocProfile` value
+/// until the canonical `ControllerProfile` struct lands in `gr-profiles`,
+/// at which point this builder will be renamed `ControllerProfileBuilder`
+/// per [`TESTING_TOOLING_SPEC.md`](../../../../docs/spec/implementation/TESTING_TOOLING_SPEC.md).
+#[must_use]
+pub fn ad_hoc_profile(id: &str) -> AdHocProfileBuilder {
+    AdHocProfileBuilder {
+        id: id.to_string(),
+        missing_required_fields: Vec::new(),
+    }
+}
+
+/// Placeholder profile value returned by [`AdHocProfileBuilder::build`].
+///
+/// Holds only the data needed to exercise the ad-hoc-rejection path of
+/// the registry; will gain real `ControllerProfile` fields in Phase 2.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdHocProfile {
+    pub id: String,
+    pub missing_required_fields: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AdHocProfileBuilder {
+    id: String,
+    missing_required_fields: Vec<String>,
+}
+
+impl AdHocProfileBuilder {
+    /// Declare that a required profile field is intentionally missing,
+    /// so a Phase-2 registry-loading test can assert the registry rejects
+    /// the profile.
+    #[must_use]
+    pub fn missing_required_field(mut self, field: &'static str) -> Self {
+        self.missing_required_fields.push(field.to_string());
+        self
+    }
+
+    #[must_use]
+    pub fn build(self) -> AdHocProfile {
+        AdHocProfile {
+            id: self.id,
+            missing_required_fields: self.missing_required_fields,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ad_hoc_profile;
+
+    #[test]
+    fn ad_hoc_profile_records_id_and_missing_fields() {
+        let profile = ad_hoc_profile("invalid-test")
+            .missing_required_field("display_name")
+            .missing_required_field("identity")
+            .build();
+
+        assert_eq!(profile.id, "invalid-test");
+        assert_eq!(
+            profile.missing_required_fields,
+            vec!["display_name".to_string(), "identity".to_string()]
+        );
+    }
+}

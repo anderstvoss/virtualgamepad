@@ -16,6 +16,15 @@ enum Command {
     ValidateFixture { path: PathBuf },
     /// Run the automated portion of a phase gate.
     PhaseGate(PhaseGateArgs),
+    /// List the built-in controller profiles (Phase 2).
+    ListProfiles,
+    /// Print declared capabilities for a built-in profile (Phase 2).
+    ShowCapabilities {
+        /// Profile identifier (e.g. `dualsense`, `xbox360`).
+        profile_id: String,
+    },
+    /// Cross-check declared capabilities against translator coverage (Phase 2).
+    CapabilityCoverage,
 }
 
 #[derive(Args, Debug)]
@@ -38,6 +47,32 @@ fn main() {
             }
         },
         Command::PhaseGate(args) => run_phase_gate(&args),
+        Command::ListProfiles => match gr_cli::list_profiles() {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::ShowCapabilities { profile_id } => match gr_cli::show_capabilities(&profile_id) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::CapabilityCoverage => match gr_cli::capability_coverage() {
+            Ok(report) => {
+                println!("gaps: {}", report.gaps.len());
+                if !report.all_covered() {
+                    std::process::exit(1);
+                }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
     }
 }
 

@@ -76,6 +76,70 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
     }
 }
 
+/// List the built-in controller profiles.
+///
+/// # Errors
+///
+/// Phase 2 deliverable. Currently returns `CliError::Unimplemented`
+/// for `feature = "list-profiles"` and `phase = 2`.
+pub fn list_profiles() -> Result<String, CliError> {
+    Err(CliError::Unimplemented {
+        feature: "list-profiles",
+        phase: 2,
+    })
+}
+
+/// Print the declared capabilities of a built-in profile by id.
+///
+/// # Errors
+///
+/// Phase 2 deliverable. Currently returns `CliError::Unimplemented`
+/// for `feature = "show-capabilities"` and `phase = 2`.
+pub fn show_capabilities(profile_id: &str) -> Result<String, CliError> {
+    let _ = profile_id;
+    Err(CliError::Unimplemented {
+        feature: "show-capabilities",
+        phase: 2,
+    })
+}
+
+/// Cross-check declared capabilities against translator coverage.
+///
+/// # Errors
+///
+/// Phase 2 deliverable. Currently returns `CliError::Unimplemented`
+/// for `feature = "capability-coverage"` and `phase = 2`.
+pub fn capability_coverage() -> Result<CapabilityCoverageReport, CliError> {
+    Err(CliError::Unimplemented {
+        feature: "capability-coverage",
+        phase: 2,
+    })
+}
+
+/// Coverage report produced by [`capability_coverage`].
+///
+/// Empty `gaps` indicates every declared capability is realized by at
+/// least one translator. Phase 2 populates the body.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CapabilityCoverageReport {
+    pub gaps: Vec<CapabilityGap>,
+}
+
+impl CapabilityCoverageReport {
+    #[must_use]
+    pub fn all_covered(&self) -> bool {
+        self.gaps.is_empty()
+    }
+}
+
+/// A declared capability with no realizing translator coverage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapabilityGap {
+    pub profile_id: String,
+    pub capability: String,
+    pub reason: String,
+}
+
 /// Execute the deterministic automated portion of a phase gate.
 ///
 /// # Errors
@@ -127,6 +191,10 @@ pub enum CliError {
     UnimplementedPhase {
         phase: u8,
     },
+    Unimplemented {
+        feature: &'static str,
+        phase: u8,
+    },
     WorkspaceRootNotFound {
         start: PathBuf,
     },
@@ -146,6 +214,10 @@ impl fmt::Display for CliError {
             Self::UnimplementedPhase { phase } => {
                 write!(f, "automated gate not implemented for phase `{phase}` yet")
             }
+            Self::Unimplemented { feature, phase } => write!(
+                f,
+                "`{feature}` is a Phase {phase} deliverable and is not implemented yet"
+            ),
             Self::WorkspaceRootNotFound { start } => write!(
                 f,
                 "could not locate workspace root from `{}`",
@@ -267,8 +339,8 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PHASE_0_COMMANDS, PHASE_1_COMMANDS, phase_gate_commands, repo_root, repo_root_from,
-        validate_fixture,
+        CliError, PHASE_0_COMMANDS, PHASE_1_COMMANDS, capability_coverage, list_profiles,
+        phase_gate_commands, repo_root, repo_root_from, show_capabilities, validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -298,6 +370,47 @@ mod tests {
             error.to_string(),
             "automated gate not implemented for phase `2` yet"
         );
+    }
+
+    #[test]
+    fn list_profiles_is_phase_2_stub() {
+        let error = list_profiles().expect_err("list-profiles is a Phase 2 stub");
+        assert!(matches!(
+            error,
+            CliError::Unimplemented {
+                feature: "list-profiles",
+                phase: 2,
+            }
+        ));
+        assert_eq!(
+            error.to_string(),
+            "`list-profiles` is a Phase 2 deliverable and is not implemented yet"
+        );
+    }
+
+    #[test]
+    fn show_capabilities_is_phase_2_stub() {
+        let error =
+            show_capabilities("dualsense").expect_err("show-capabilities is a Phase 2 stub");
+        assert!(matches!(
+            error,
+            CliError::Unimplemented {
+                feature: "show-capabilities",
+                phase: 2,
+            }
+        ));
+    }
+
+    #[test]
+    fn capability_coverage_is_phase_2_stub() {
+        let error = capability_coverage().expect_err("capability-coverage is a Phase 2 stub");
+        assert!(matches!(
+            error,
+            CliError::Unimplemented {
+                feature: "capability-coverage",
+                phase: 2,
+            }
+        ));
     }
 
     #[test]
