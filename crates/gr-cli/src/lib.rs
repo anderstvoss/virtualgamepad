@@ -999,6 +999,7 @@ mod tests {
         let rendered = error.to_string();
         assert!(rendered.contains("configuration validation failed"));
         assert!(rendered.contains("outputHandling.callbackNamespace"));
+        assert!(rendered.contains("outputHandling.mode is `callback`"));
     }
 
     #[test]

@@ -64,8 +64,9 @@ cargo run -p virtual_gamepad_demo -- validate-config samples/configs/broken-mode
 
 2. Confirm the command exits non-zero.
 3. Confirm the output points to
-   `outputHandling.callbackNamespace` and explains why the config is
-   invalid.
+   `outputHandling.callbackNamespace` and explicitly explains that the
+   config is invalid because `outputHandling.mode` is `callback` while
+   the required callback namespace is missing.
 
 ### What to record
 
@@ -99,6 +100,11 @@ is requested.
 
 Goal: confirm additive config drift warns by default and can be made
 strict when requested.
+
+Important distinction: this check is controlled by
+`validation.rejectUnknownConfigFields`, not by
+`validation.rejectUnsupportedProviderPreference`. Provider-preference
+strictness belongs to Check 3.
 
 ### Steps
 

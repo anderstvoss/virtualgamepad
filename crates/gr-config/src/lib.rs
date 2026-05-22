@@ -400,7 +400,7 @@ fn validate_semantics(config: &SessionConfig, diagnostics: &mut Vec<ConfigDiagno
     {
         diagnostics.push(error(
             "outputHandling.callbackNamespace",
-            "callback mode requires a callbackNamespace",
+            "outputHandling.mode is `callback`, so `outputHandling.callbackNamespace` must be set",
         ));
     }
 
@@ -541,6 +541,11 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.path == "outputHandling.callbackNamespace")
         );
+        assert!(report.errors.iter().any(|diagnostic| {
+            diagnostic
+                .message
+                .contains("outputHandling.mode is `callback`")
+        }));
     }
 
     #[test]
@@ -578,6 +583,7 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.path == "session.unexpectedHint")
         );
+        assert!(report.warnings.is_empty());
     }
 
     #[test]
