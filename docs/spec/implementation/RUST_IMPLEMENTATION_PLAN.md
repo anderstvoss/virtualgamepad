@@ -393,23 +393,23 @@ Lock down the trait shapes that providers must implement and ship a configurable
 
 ### Deliverables
 
-- `gr-backend-api`:
-  - `BackendFactory` trait per the implementation spec
-  - `BackendSession` trait — sync, `&mut self`, non-blocking, returning `BackendError::WouldBlock` where applicable
-  - `BackendFrame`, `BackendReverseEvent`, `BackendDiagnostics`, `BackendOpenContext`, `BackendRealizationRequest`, `BackendSupportReport`, `EventReadiness` (with cfg-gated `ReadinessHandle`)
+`gr-backend-api` trait + type vocabulary already shipped in the Phase 4 prep PR (#44): `BackendFactory`, `BackendSession`, `BackendReverseEventSink`, `BackendFrame` (+ `EvdevEvent`), `BackendReverseEvent` (+ `Kind`/`Target`/`Payload`), `BackendDiagnostics` (+ `BackendState`), `BackendOpenContext`, `BackendRealizationRequest`, `BackendSupportReport` (+ `SupportLevel`/`UnsupportedOutputFunction`), `BackendInventoryEntry`, `BackendError`, `EventReadiness` (with cfg-gated `ReadinessHandle`). Phase 4 itself implements behavior against those shapes:
+
 - `gr-testkit::fakes`:
   - configurable `FakeBackendFactory` and `FakeBackendSession`
   - `FakeFailure` enum per [TESTING_TOOLING_SPEC.md failure injection](TESTING_TOOLING_SPEC.md#failure-injection)
   - `EventReadiness` flapping support
   - per-session capture of written frames
 - backend trace recorder + replayer (records anything implementing `BackendSession`; replays from a `backend-trace` fixture)
+- `kind: backend-trace` fixture loader in `gr-testkit::fixtures`
+- demo + CLI wiring: `vgpd-demo simulate-session <scenario>` and `gr-cli simulate-session --record` / `replay-trace`
 
 ### Iteration loop
 
 - design pass: validate the trait shapes against the existing implementation spec; if any shape needs to change, fix the spec, not the plan
 - contract tests:
   - `BackendFactory::can_realize` returns sensible support reports for every combination of fidelity × profile family × inventory permutation we can express
-  - `BackendSession::drain_reverse_events` accepts any `&mut dyn Extend<BackendReverseEvent>` (test with `Vec`, `SmallVec`, custom collector)
+  - `BackendSession::drain_reverse_events` accepts any `&mut dyn BackendReverseEventSink` (test with `Vec`, `SmallVec`, custom collector via the blanket `Extend<BackendReverseEvent>` impl)
   - non-blocking contract test: every fake method either returns immediately or returns `WouldBlock`
   - readiness round-trip via the cfg-gated handle on the build target
 - implementation: traits + concrete fakes + recorder + replayer
