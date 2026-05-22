@@ -16,6 +16,8 @@ use gr_core::{
     SequenceId, SessionId, Timestamp,
 };
 use gr_runtime_model::{EmulationGoal, HostPlatform, ProfileSpecificOutputFunctionId};
+
+pub use gr_runtime_model::BackendOpenContext;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -162,14 +164,10 @@ pub enum BackendState {
 // Open + realization
 // --------------------------------------------------------------------
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct BackendOpenContext {
-    pub session_id: SessionId,
-    pub profile_id: ProfileId,
-    pub fidelity_tier: FidelityTier,
-    pub backend_level: BackendLevel,
-    pub host_platform: HostPlatform,
-}
+// `BackendOpenContext` is defined in `gr-runtime-model` so it can sit on
+// `SessionPlan` without creating a circular crate dependency. The
+// re-export at the top of this module keeps the import path stable for
+// providers.
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendRealizationRequest {

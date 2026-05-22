@@ -301,7 +301,7 @@ Loaders carry raw `bytes` through unmodified so reverse translators can be exerc
 
 ### `kind: plan-snapshot`
 
-A golden plan output for snapshot regression.
+A golden record of a planner outcome — either a successful (possibly degraded) `SessionPlan` or a structured `PlanRejection`. The payload is a tagged `PlanOutcome` enum so exactly one of the two arms is present.
 
 ```yaml
 fixture: virtualgamepad/v1
@@ -309,21 +309,70 @@ kind: plan-snapshot
 id: dualsense-hardware-faithful-uhid-degrades
 profile_id: dualsense
 payload:
-  request:
-    goal: HardwareFaithful
-    backend_preference: Hid
-  expected_plan:
-    selected_level: Hid
-    target_host_platform: Linux
-    selected_backend_family: LinuxUhid
-    degradation:
-      from: HardwareFaithful
-      to: IdentityAware
-      reasons: [TransportNotRealizable]
-    unsupported_capabilities: [TriggerEffect, Audio]
+  outcome: plan
+  session_id: 7
+  profile_id: dualsense
+  requested_goal: hardware-faithful
+  requested_fidelity_tier: identity-aware
+  selected_level: hid
+  target_host_platform: linux
+  selected_backend_family: linux-uhid
+  selected_provider_id: linux-uhid
+  selected_translator_family: dualsense
+  degradation:
+    degraded: true
+    reasons:
+      - kind: transport-not-realizable
+  backend_open_context:
+    session_id: 7
+    profile_id: dualsense
+    fidelity_tier: identity-aware
+    backend_level: hid
+    host_platform: linux
+  session_options: { ... }
 ```
 
-Plan snapshots are also used by `insta` for the canonical text snapshot — the YAML fixture stores the *expectation* in a human-author-friendly format that the test compares against the live plan.
+A rejection fixture looks like:
+
+```yaml
+fixture: virtualgamepad/v1
+kind: plan-snapshot
+id: dualsense-hardware-faithful-empty-rejects
+profile_id: dualsense
+payload:
+  outcome: rejection
+  profile_id: dualsense
+  requested_goal: hardware-faithful
+  requested_fidelity_tier: hardware-faithful
+  reasons:
+    - kind: no-backend-supports-profile
+  considered_backends: []
+```
+
+Plan snapshots are loaded by `gr-testkit::fixtures::decode_plan_snapshot` and consumed both by `insta`-driven planner tests and by reviewer-facing tooling that compares a live plan against the recorded expectation.
+
+### `kind: backend-inventory`
+
+A list of `BackendInventoryEntry` values that the planner can be tested against. The Phase 5 manual gate drives `vgpd-demo plan-session ... --inventory <path>` from these.
+
+```yaml
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: linux-uhid-only
+notes: |
+  Single Linux UHID backend at the Hid level. Sufficient for
+  identity-aware sessions; lacks transport-tier realization.
+payload:
+  entries:
+    - backend_id: linux-uhid
+      family: linux-uhid
+      level: hid
+      host_platform: linux
+      supported_fidelity_tiers:
+        - identity-aware
+```
+
+Canonical inventories ship under `samples/inventories/` and are referenced by the [FIDELITY_GUIDE canonical planner cases](../specs/FIDELITY_GUIDE.md#canonical-planner-cases).
 
 ### `kind: backend-trace`
 

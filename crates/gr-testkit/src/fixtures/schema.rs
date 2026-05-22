@@ -7,8 +7,10 @@ use std::fmt;
 use std::path::Path;
 
 use super::{
+    backend_inventory::{BackendInventoryFixture, decode_backend_inventory},
     backend_trace::{BackendTraceFixture, decode_backend_trace},
     input_frame::{InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame},
+    plan_snapshot::{PlanSnapshotFixture, decode_plan_snapshot},
     session_scenario::{SessionScenarioFixture, decode_session_scenario},
 };
 
@@ -34,6 +36,8 @@ pub enum FixtureDocument {
     InputDelta(InputDeltaFixture),
     BackendTrace(BackendTraceFixture),
     SessionScenario(SessionScenarioFixture),
+    PlanSnapshot(PlanSnapshotFixture),
+    BackendInventory(BackendInventoryFixture),
 }
 
 #[derive(Debug)]
@@ -93,7 +97,11 @@ pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureEr
         "session-scenario" => {
             decode_session_scenario(envelope).map(FixtureDocument::SessionScenario)
         }
-        "reverse-event" | "plan-snapshot" => Ok(FixtureDocument::Envelope(envelope)),
+        "plan-snapshot" => decode_plan_snapshot(envelope).map(FixtureDocument::PlanSnapshot),
+        "backend-inventory" => {
+            decode_backend_inventory(envelope).map(FixtureDocument::BackendInventory)
+        }
+        "reverse-event" => Ok(FixtureDocument::Envelope(envelope)),
         other => Err(FixtureError::UnsupportedKind {
             kind: other.to_owned(),
         }),

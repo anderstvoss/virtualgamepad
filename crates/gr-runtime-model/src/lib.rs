@@ -161,7 +161,49 @@ pub struct CapabilityNegotiationResult {
 pub struct DegradationReport {
     pub degraded: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub reasons: Vec<String>,
+    pub reasons: Vec<DegradationReason>,
+}
+
+/// Canonical reasons a [`SessionPlan`] can be downgraded from the
+/// requested fidelity tier. The set is `#[non_exhaustive]` so the
+/// planner can add new variants without a breaking change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "kind")]
+#[non_exhaustive]
+pub enum DegradationReason {
+    /// `hardware-faithful` was requested but no transport-level backend
+    /// can realize the profile; degraded to `identity-aware` or lower.
+    TransportNotRealizable,
+    /// `identity-aware` was requested but the selected backend cannot
+    /// carry the reverse output path (HID output / feature reports);
+    /// degraded to `compatibility`.
+    ReversePathUnavailable,
+    /// The selected backend supports the profile but not at the
+    /// requested fidelity tier; degraded to the closest available tier.
+    BackendDoesNotSupportFidelity {
+        requested: FidelityTier,
+        available: FidelityTier,
+    },
+    /// `provider_preference` named a provider that could not be honored
+    /// (absent from inventory or `can_realize` returned `None`); the
+    /// planner fell through to default selection.
+    ProviderHintIgnored {
+        preferred: ProviderId,
+        reason: String,
+    },
+    /// `backend_preference` named a backend family that could not be
+    /// honored; the planner fell through to default selection.
+    BackendFamilyHintIgnored {
+        preferred: BackendFamily,
+        reason: String,
+    },
+    /// A declared profile output capability is not realizable by the
+    /// selected backend; commands for this function will be dropped or
+    /// stubbed per `unsupported_capability_policy`.
+    UnsupportedOutputCapability {
+        function: SemanticOutputFunction,
+        reason: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,25 +218,33 @@ pub struct DeploymentRequirements {
     pub requirements: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+/// Lean context the planner hands to a backend factory so it can
+/// realize a session.
+///
+/// Defined here so [`SessionPlan`] can carry it without `gr-runtime-model`
+/// depending on `gr-backend-api`. `gr-backend-api` re-exports the type
+/// from this crate so providers continue to import it from their natural
+/// namespace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackendOpenContext {
+    pub session_id: SessionId,
+    pub profile_id: ProfileId,
+    pub fidelity_tier: FidelityTier,
+    pub backend_level: BackendLevel,
+    pub host_platform: HostPlatform,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionPlan {
-    pub session_id: Option<SessionId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub profile_id: Option<ProfileId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_goal: Option<EmulationGoal>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requested_fidelity_tier: Option<FidelityTier>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_level: Option<BackendLevel>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target_host_platform: Option<HostPlatform>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_backend_family: Option<BackendFamily>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_provider_id: Option<ProviderId>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub selected_translator_family: Option<TranslatorFamily>,
+    pub session_id: SessionId,
+    pub profile_id: ProfileId,
+    pub requested_goal: EmulationGoal,
+    pub requested_fidelity_tier: FidelityTier,
+    pub selected_level: BackendLevel,
+    pub target_host_platform: HostPlatform,
+    pub selected_backend_family: BackendFamily,
+    pub selected_provider_id: ProviderId,
+    pub selected_translator_family: TranslatorFamily,
     #[serde(default)]
     pub capability_result: CapabilityNegotiationResult,
     #[serde(default)]
@@ -203,8 +253,43 @@ pub struct SessionPlan {
     pub warnings: Vec<PlannerWarning>,
     #[serde(default)]
     pub deployment_requirements: DeploymentRequirements,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_options: Option<SessionOptionsSnapshot>,
+    pub backend_open_context: BackendOpenContext,
+    pub session_options: SessionOptionsSnapshot,
+}
+
+/// Structured planner rejection: returned when no backend can realize
+/// the request at any tier. A rejection is mutually exclusive with a
+/// (possibly degraded) [`SessionPlan`] for a given input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanRejection {
+    pub profile_id: ProfileId,
+    pub requested_goal: EmulationGoal,
+    pub requested_fidelity_tier: FidelityTier,
+    pub reasons: Vec<PlanRejectionReason>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub considered_backends: Vec<gr_core::BackendId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "kind")]
+#[non_exhaustive]
+pub enum PlanRejectionReason {
+    /// No backend in the inventory declares support for the profile at
+    /// any fidelity tier.
+    NoBackendSupportsProfile,
+    /// At least one backend supports the profile, but none at the
+    /// requested fidelity tier and no acceptable degradation path
+    /// exists.
+    NoBackendSupportsFidelity { requested: FidelityTier },
+    /// `host_platform_preference` does not match any factory's host
+    /// platform — host platform is a binding constraint, not a hint.
+    NoBackendSupportsHost { requested: HostPlatform },
+    /// The selected fidelity tier requires bidirectional support that
+    /// the available backends cannot provide and the
+    /// `unsupported_capability_policy` is `Reject`.
+    BidirectionalSupportRequired {
+        missing: Vec<SemanticOutputFunction>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -357,22 +442,39 @@ pub struct SessionDiagnosticsSnapshot {
 #[cfg(test)]
 mod tests {
     use super::{
-        AudioCommand, BackpressurePolicy, ControllerOutputCommand, EmulationGoal,
-        OutputCommandType, OutputFunctionRef, OutputPayload, ReverseEventDeliveryPolicy,
-        RumblePayload, SessionLifecycleState, SessionOptionsSnapshot, SessionPlan,
-        SessionStatusSnapshot,
+        AudioCommand, BackendOpenContext, BackpressurePolicy, CapabilityNegotiationResult,
+        ControllerOutputCommand, DegradationReport, DeploymentRequirements, EmulationGoal,
+        HostPlatform, OutputCommandType, OutputFunctionRef, OutputPayload, PlanRejection,
+        PlanRejectionReason, ReverseEventDeliveryPolicy, RumblePayload, SessionLifecycleState,
+        SessionOptionsSnapshot, SessionPlan, SessionStatusSnapshot, TranslatorFamily,
     };
-    use gr_core::{FidelityTier, ProfileId, SessionId, Timestamp};
+    use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId, SessionId, Timestamp};
     use insta::assert_snapshot;
 
     #[test]
     fn session_plan_yaml_is_stable() {
         let plan = SessionPlan {
-            session_id: Some(SessionId::new(7)),
-            profile_id: Some(ProfileId::from("dualsense")),
-            requested_goal: Some(EmulationGoal::IdentityAware),
-            requested_fidelity_tier: Some(FidelityTier::IdentityAware),
-            session_options: Some(SessionOptionsSnapshot {
+            session_id: SessionId::new(7),
+            profile_id: ProfileId::from("dualsense"),
+            requested_goal: EmulationGoal::IdentityAware,
+            requested_fidelity_tier: FidelityTier::IdentityAware,
+            selected_level: BackendLevel::Hid,
+            target_host_platform: HostPlatform::Linux,
+            selected_backend_family: BackendFamily::LinuxUhid,
+            selected_provider_id: "linux-uhid".into(),
+            selected_translator_family: TranslatorFamily::DualSense,
+            capability_result: CapabilityNegotiationResult::default(),
+            degradation: DegradationReport::default(),
+            warnings: Vec::new(),
+            deployment_requirements: DeploymentRequirements::default(),
+            backend_open_context: BackendOpenContext {
+                session_id: SessionId::new(7),
+                profile_id: ProfileId::from("dualsense"),
+                fidelity_tier: FidelityTier::IdentityAware,
+                backend_level: BackendLevel::Hid,
+                host_platform: HostPlatform::Linux,
+            },
+            session_options: SessionOptionsSnapshot {
                 accepted_update_kinds: vec!["frame".to_string(), "delta".to_string()],
                 unknown_field_policy: "reject".to_string(),
                 range_validation_policy: "reject".to_string(),
@@ -388,13 +490,28 @@ mod tests {
                     log_dropped_outputs: true,
                     max_queue_depth: Some(8),
                 },
-            }),
-            ..SessionPlan::default()
+            },
         };
 
         assert_snapshot!(
             "session_plan",
             serde_yaml::to_string(&plan).expect("session plan yaml")
+        );
+    }
+
+    #[test]
+    fn plan_rejection_yaml_is_stable() {
+        let rejection = PlanRejection {
+            profile_id: ProfileId::from("dualsense"),
+            requested_goal: EmulationGoal::HardwareFaithful,
+            requested_fidelity_tier: FidelityTier::HardwareFaithful,
+            reasons: vec![PlanRejectionReason::NoBackendSupportsProfile],
+            considered_backends: vec![gr_core::BackendId::from("fake-uhid")],
+        };
+
+        assert_snapshot!(
+            "plan_rejection",
+            serde_yaml::to_string(&rejection).expect("plan rejection yaml")
         );
     }
 
