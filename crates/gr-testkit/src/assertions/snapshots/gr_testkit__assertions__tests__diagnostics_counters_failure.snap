@@ -1,0 +1,7 @@
+---
+source: crates/gr-testkit/src/assertions/mod.rs
+expression: message
+---
+assert_diagnostics_counters failed
+  frames_sent:            expected=1 actual=0
+  reverse_events_drained: expected=1 actual=1

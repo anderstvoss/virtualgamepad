@@ -4,7 +4,7 @@ use super::schema::{FixtureEnvelope, FixtureError};
 use gr_backend_api::{BackendError, BackendFrame, BackendReverseEvent, EvdevEvent};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TraceDirection {
     Outbound,
@@ -12,7 +12,7 @@ pub enum TraceDirection {
     Error,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TraceOperation {
     Open,

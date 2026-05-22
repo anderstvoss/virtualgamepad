@@ -445,7 +445,7 @@ Manual portion:
 - [ ] 2. Inject `FakeFailure::SendWouldBlock` via a fixture; verify the session re-arms via readiness and recovers (visible in the demo's verbose output)
 - [ ] 3. Record a fake session via `gr-cli simulate-session --record trace.yaml`; replay it via `gr-cli replay-trace trace.yaml`; outputs are identical
 - [ ] 4. Author a custom `backend-trace` fixture interleaving a feature-report request and a malformed output report; replay it and verify the malformed event is logged but does not crash
-- [ ] 5. Review `crates/gr-testkit/snapshots/` — assertion-helper failure messages are human-readable
+- [ ] 5. Review `crates/gr-testkit/src/assertions/snapshots/` — assertion-helper failure messages are human-readable and stable (`assert_captured_frames`, `assert_trace_directions`, `assert_diagnostics_counters`)
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 4 gate passed"`
 

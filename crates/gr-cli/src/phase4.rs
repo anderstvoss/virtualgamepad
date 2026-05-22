@@ -226,7 +226,7 @@ fn render_trace(trace_id: &str, trace: &BackendTrace) -> String {
             output,
             "{}. {} {}",
             index + 1,
-            describe_direction(&step.direction),
+            describe_direction(step.direction),
             describe_trace_payload(&step.payload)
         )
         .expect("write");
@@ -234,7 +234,7 @@ fn render_trace(trace_id: &str, trace: &BackendTrace) -> String {
     output
 }
 
-fn describe_direction(direction: &TraceDirection) -> &'static str {
+fn describe_direction(direction: TraceDirection) -> &'static str {
     match direction {
         TraceDirection::Outbound => "outbound",
         TraceDirection::Inbound => "inbound",

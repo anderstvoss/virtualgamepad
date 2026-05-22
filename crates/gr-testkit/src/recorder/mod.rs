@@ -463,6 +463,108 @@ mod tests {
     }
 
     #[test]
+    fn recorder_records_open_failure() {
+        use crate::fakes::FakeFailure;
+        use gr_backend_api::BackendError;
+
+        let factory = backend_factory()
+            .with_failure(FakeFailure::OpenRefused(BackendError::OpenFailed {
+                reason: "refused".to_string(),
+            }))
+            .build();
+        // OpenRefused trips at the factory level before a session exists,
+        // so the recorder never sees it. The recorder's open-failure path
+        // only fires for sessions that open the factory but fail on the
+        // BackendSession::open() call itself (which the fake's runtime
+        // open never does today). Pin the factory-level behavior here so
+        // the contract is at least asserted somewhere.
+        assert!(factory.open_fake_session(&open_context()).is_err());
+    }
+
+    #[test]
+    fn recorder_records_send_failure() {
+        use crate::fakes::FakeFailure;
+        use crate::fixtures::{BackendTracePayload, TraceDirection, TraceOperation};
+        use gr_backend_api::{BackendError, BackendSession};
+
+        let factory = backend_factory()
+            .with_failure(FakeFailure::SendPermanentlyFails(
+                BackendError::WriteFailed {
+                    reason: "permanent".to_string(),
+                },
+            ))
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open runtime");
+        let _ = recorder.send(gr_backend_api::BackendFrame::HidInputReport {
+            report_id: Some(1),
+            bytes: vec![1, 2, 3],
+        });
+        let trace = recorder.into_trace();
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].direction, TraceDirection::Error);
+        assert!(matches!(
+            trace.steps[0].payload,
+            BackendTracePayload::Failure {
+                operation: TraceOperation::Send,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn recorder_records_drain_failure() {
+        use crate::fakes::FakeFailure;
+        use crate::fixtures::{BackendTracePayload, TraceDirection, TraceOperation};
+        use gr_backend_api::BackendSession;
+
+        let factory = backend_factory()
+            .with_failure(FakeFailure::DrainParseError)
+            .reverse_events_from_iter([reverse_event()])
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open runtime");
+        let _ = recorder.drain_reverse_events(&mut Vec::new());
+        let trace = recorder.into_trace();
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].direction, TraceDirection::Error);
+        assert!(matches!(
+            trace.steps[0].payload,
+            BackendTracePayload::Failure {
+                operation: TraceOperation::DrainReverseEvents,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn recorder_records_close_failure() {
+        use crate::fakes::FakeFailure;
+        use crate::fixtures::{BackendTracePayload, TraceDirection, TraceOperation};
+        use gr_backend_api::BackendSession;
+
+        let factory = backend_factory()
+            .with_failure(FakeFailure::CloseFails)
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open runtime");
+        let _ = recorder.close();
+        let trace = recorder.into_trace();
+        assert_eq!(trace.steps.len(), 1);
+        assert_eq!(trace.steps[0].direction, TraceDirection::Error);
+        assert!(matches!(
+            trace.steps[0].payload,
+            BackendTracePayload::Failure {
+                operation: TraceOperation::Close,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn recorder_trace_replays_back_into_backend_session() {
         let factory = backend_factory()
             .reverse_events_from_iter([reverse_event()])

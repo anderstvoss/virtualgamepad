@@ -118,19 +118,25 @@ cargo run -p gr-cli -- replay-trace crates/gr-testkit/fixtures/community/fake-tr
 ## Check 5: plan/doc/guide consistency
 
 Goal: confirm the new runtime review surface is described consistently
-across the plan, this guide, and the demo help text.
+across the plan, this guide, the demo help text, and the assertion
+helper failure messages.
 
 ### Steps
 
 1. Run `cargo run -p virtual_gamepad_demo -- --help`.
 2. Confirm `simulate-session` and `replay-trace` are listed.
-3. Review:
+3. Review `crates/gr-testkit/src/assertions/snapshots/` — assertion-helper
+   failure messages are human-readable and stable (one snapshot per
+   helper: `assert_captured_frames`, `assert_trace_directions`,
+   `assert_diagnostics_counters`).
+4. Review:
    - `docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md`
    - `docs/spec/implementation/manual-gates/phase-4.md`
    - `demo/README.md`
-4. Confirm the Phase 4 commands and fixture paths align across those
+5. Confirm the Phase 4 commands and fixture paths align across those
    surfaces.
 
 ### What to record
 
 - Any wording or command drift between the docs and the implementation
+- Any assertion-helper message that would confuse a reviewer reading it cold

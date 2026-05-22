@@ -728,6 +728,50 @@ mod tests {
     }
 
     #[test]
+    fn open_refused_returns_configured_error() {
+        let factory = backend_factory()
+            .with_failure(FakeFailure::OpenRefused(BackendError::OpenFailed {
+                reason: "refused for test".to_string(),
+            }))
+            .build();
+        let error = factory
+            .open_fake_session(&open_context())
+            .expect_err("open should be refused");
+        let BackendError::OpenFailed { reason } = error else {
+            panic!("expected OpenFailed, got {error:?}");
+        };
+        assert_eq!(reason, "refused for test");
+    }
+
+    #[test]
+    fn send_permanently_fails_returns_error_every_call() {
+        let factory = backend_factory()
+            .with_failure(FakeFailure::SendPermanentlyFails(
+                BackendError::WriteFailed {
+                    reason: "permanent".to_string(),
+                },
+            ))
+            .build();
+        let mut session = factory.open_fake_session(&open_context()).expect("open");
+        session.open().expect("open runtime");
+        let frame = BackendFrame::HidInputReport {
+            report_id: Some(1),
+            bytes: vec![1, 2, 3],
+        };
+        for attempt in 0..3 {
+            let error = session
+                .send(frame.clone())
+                .expect_err("send should always fail");
+            assert!(
+                matches!(error, BackendError::WriteFailed { ref reason } if reason == "permanent"),
+                "attempt {attempt}: unexpected error {error:?}"
+            );
+        }
+        // No frame should have been captured because every send failed.
+        assert!(session.captured_frames().is_empty());
+    }
+
+    #[test]
     fn drain_parse_error_is_reported_once() {
         let factory = backend_factory()
             .with_failure(FakeFailure::DrainParseError)
