@@ -734,7 +734,89 @@ Rules:
 
 ## Backend API contracts
 
+### Common type vocabulary
+
+The trait definitions in this section depend on the data types defined below. All types live in `gr-backend-api`, derive `Debug + Clone + PartialEq + Eq + Serialize + Deserialize` unless otherwise noted, and are `#[non_exhaustive]` where listed so additive variants do not break providers.
+
+### `BackendError`
+
+```rust
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BackendError {
+    WouldBlock,
+    OpenFailed { reason: String },
+    WriteFailed { reason: String },
+    CloseFailed { reason: String },
+    ReverseEventParseFailed { reason: String },
+    SessionClosed,
+    Unsupported { reason: String },
+}
+```
+
+Rules:
+
+- `WouldBlock` is the only variant the session runtime treats as recoverable on the steady-state hot path; the session must re-arm via `readiness()` before retrying
+- variants must map cleanly onto the machine-readable causes enumerated in [Error taxonomy](#error-taxonomy); new variants require updating that list
+- providers must not coerce structurally distinct failures into the same variant
+
+### `BackendFrame`
+
+```rust
+#[non_exhaustive]
+pub enum BackendFrame {
+    HidInputReport { report_id: Option<u8>, bytes: Vec<u8> },
+    HidFeatureReport { report_id: u8, bytes: Vec<u8> },
+    TransportPacket { endpoint_id: u8, bytes: Vec<u8> },
+    EvdevEvents { events: Vec<EvdevEvent> },
+}
+
+pub struct EvdevEvent {
+    pub event_type: u16,  // serde-renamed to `type` in fixtures
+    pub code: u16,
+    pub value: i32,
+}
+```
+
+Rules:
+
+- variants correspond one-to-one with `BackendLevel` (Evdev, Hid, Transport); a translator emits the variant matching the selected level
+- `HidInputReport::report_id = None` represents the single-report HID convention
+- providers must reject `BackendFrame` variants outside their advertised level (returning `BackendError::Unsupported`) rather than silently coercing
+
 ### `BackendReverseEvent`
+
+```rust
+pub struct BackendReverseEvent {
+    pub session_id: SessionId,
+    pub profile_id: Option<ProfileId>,
+    pub timestamp: Timestamp,
+    pub sequence: SequenceId,
+    pub kind: BackendReverseEventKind,
+    pub target: Option<BackendReverseTarget>,
+    pub payload: BackendReversePayload,
+}
+
+#[non_exhaustive]
+pub enum BackendReverseEventKind {
+    HidOutputReport, HidFeatureReport, TransportPacket, EvdevEvent,
+}
+
+#[non_exhaustive]
+pub enum BackendReverseTarget {
+    SemanticOutput(SemanticOutputFunction),
+    ProfileSpecificOutput(ProfileSpecificOutputFunctionId),
+    ReportId(u8),
+    EndpointId(u8),
+}
+
+#[non_exhaustive]
+pub enum BackendReversePayload {
+    Hid { report_id: Option<u8>, bytes: Vec<u8> },
+    Transport { endpoint_id: u8, bytes: Vec<u8> },
+    Evdev { events: Vec<EvdevEvent> },
+}
+```
 
 Backend reverse events represent host-to-device traffic observed at the selected emulation layer.
 
@@ -750,10 +832,111 @@ Examples:
 
 Rules:
 
-- every event must carry session id, profile id where known, timestamp, event kind, target function or capability where known, and typed payload
+- every event must carry session id, profile id where known, timestamp, sequence id (for diagnostic ordering), event kind, target function or capability where known, and typed payload
 - backend reverse events are untrusted until reverse-translated and validated against declared output capabilities
 - backend reverse events must be able to identify profile-specific channels, report ids, or endpoints when the selected tier exposes them
 - providers should preserve raw discriminators such as report ids, endpoint ids, or transport channel ids when those are needed for stable reverse translation
+
+### `BackendDiagnostics`
+
+```rust
+pub struct BackendDiagnostics {
+    pub backend_id: BackendId,
+    pub family: BackendFamily,
+    pub state: BackendState,
+    pub frames_sent: u64,
+    pub reverse_events_drained: u64,
+    pub write_failures: u64,
+    pub last_error: Option<String>,
+    pub vendor_counters: BTreeMap<String, u64>,
+}
+
+pub enum BackendState { NotOpen, Open, Closed, Failed }
+```
+
+Rules:
+
+- snapshot-friendly: `BackendSession::diagnostics()` returns by value and must not allocate on the hot path beyond cloning `last_error` and `vendor_counters`
+- counters align with the per-session telemetry surface in [Telemetry requirements](#telemetry-requirements)
+- `vendor_counters` is the escape hatch for provider-specific metrics that do not warrant a normalized counter
+
+### `BackendOpenContext`
+
+```rust
+pub struct BackendOpenContext {
+    pub session_id: SessionId,
+    pub profile_id: ProfileId,
+    pub fidelity_tier: FidelityTier,
+    pub backend_level: BackendLevel,
+    pub host_platform: HostPlatform,
+}
+```
+
+Rules:
+
+- intentionally lean: descriptor templates, compiled session options, and translator context reach the backend via sibling fields on `SessionPlan` (`session_options`, `backend_open_context`) or via the provider's own configuration — `BackendOpenContext` carries only the identity a backend needs to open
+- `gr-backend-api` must not gain a dependency on `gr-session-options` or `gr-translators` through this type
+- a backend that opens successfully must record the context for its own diagnostics
+
+### `BackendRealizationRequest`
+
+```rust
+pub struct BackendRealizationRequest {
+    pub profile_id: ProfileId,
+    pub requested_goal: EmulationGoal,
+    pub requested_fidelity_tier: FidelityTier,
+    pub host_platform: HostPlatform,
+    pub required_output_functions: Vec<SemanticOutputFunction>,
+}
+```
+
+Rules:
+
+- intentionally smaller than a full `SessionPlan`; the planner should not need translator internals to ask support questions
+- `required_output_functions` lists semantic outputs the host has indicated are needed; the support report explains how the backend covers them
+
+### `BackendSupportReport`
+
+```rust
+pub struct BackendSupportReport {
+    pub forward_support: SupportLevel,
+    pub reverse_support: SupportLevel,
+    pub supported_output_functions: Vec<SemanticOutputFunction>,
+    pub unsupported_output_functions: Vec<UnsupportedOutputFunction>,
+    pub notes: Vec<String>,
+}
+
+pub enum SupportLevel { Full, Partial, None }
+
+pub struct UnsupportedOutputFunction {
+    pub function: SemanticOutputFunction,
+    pub reason: String,
+}
+```
+
+Rules:
+
+- forward and reverse support are reported independently; a generic supported/unsupported boolean would hide implementation gaps
+- `unsupported_output_functions[].reason` must be human-readable and machine-stable enough for the planner to log
+- `notes` is free-form provider commentary (e.g. "requires kernel 5.14+", "RGB requires firmware ≥ 0.7")
+
+### `BackendInventoryEntry`
+
+```rust
+pub struct BackendInventoryEntry {
+    pub backend_id: BackendId,
+    pub family: BackendFamily,
+    pub level: BackendLevel,
+    pub host_platform: HostPlatform,
+    pub supported_fidelity_tiers: Vec<FidelityTier>,
+    pub notes: Vec<String>,
+}
+```
+
+Rules:
+
+- the manager builds its inventory from these entries at composition time
+- entries are static for the lifetime of a `BackendFactory` instance; dynamic capability negotiation belongs in `can_realize` / `BackendSupportReport`
 
 ### `BackendFactory`
 
@@ -785,11 +968,24 @@ pub trait BackendSession: Send {
     fn send(&mut self, frame: BackendFrame) -> Result<(), BackendError>;
     fn drain_reverse_events(
         &mut self,
-        out: &mut dyn Extend<BackendReverseEvent>,
+        out: &mut dyn BackendReverseEventSink,
     ) -> Result<(), BackendError>;
     fn readiness(&self) -> EventReadiness;
     fn diagnostics(&self) -> BackendDiagnostics;
     fn close(&mut self) -> Result<(), BackendError>;
+}
+
+pub trait BackendReverseEventSink {
+    fn push(&mut self, event: BackendReverseEvent);
+}
+
+impl<T> BackendReverseEventSink for T
+where
+    T: Extend<BackendReverseEvent>,
+{
+    fn push(&mut self, event: BackendReverseEvent) {
+        self.extend(std::iter::once(event));
+    }
 }
 ```
 
@@ -799,10 +995,11 @@ Why `drain_reverse_events` instead of `try_recv_reverse_event`:
 - allows bounded batched draining
 - works better with shared schedulers
 
-Why `&mut dyn Extend<BackendReverseEvent>` instead of a concrete `SmallVec`:
+Why `&mut dyn BackendReverseEventSink` instead of `&mut dyn Extend<BackendReverseEvent>` or a concrete `SmallVec`:
 
 - backends do not dictate the container choice or stack-buffer size
-- the session runtime supplies a reusable per-session sink (typically a `SmallVec`) it owns across calls; backends only push into it
+- `Extend` is not dyn-compatible (it has a generic method); a one-method sink trait is, so the session runtime can supply a reusable per-session collector behind a `&mut dyn` reference
+- a blanket impl over any `Extend<BackendReverseEvent>` means `Vec`, `SmallVec`, and bespoke collectors all satisfy the sink without ceremony at the call site
 
 ### Backend blocking contract
 
@@ -840,6 +1037,8 @@ Rules:
 - the session runtime is responsible for cfg-gated readiness integration (for example `mio` on unix, IOCP on Windows)
 - `gr-backend-api` must compile on Linux, macOS, and Windows; no platform-specific dependency may leak in through this type
 - providers that cannot expose a readiness primitive return `AlwaysPoll` or `NoReverseEvents`
+- `EventReadiness` and `ReadinessHandle` deliberately do **not** derive `Serialize` / `Deserialize`: a raw FD or `HANDLE` is a runtime resource handle, not fixture content, and round-tripping one through YAML would be a category error
+- a `#[cfg(not(any(unix, windows)))]` `ReadinessHandle(u64)` fallback exists so the crate continues to build on exotic targets used for documentation builds and tooling
 
 This allows the session runtime to avoid naive N-session polling where possible.
 

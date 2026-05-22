@@ -273,6 +273,14 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 [[package]]
 name = "gr-backend-api"
 version = "0.1.0"
+dependencies = [
+ "gr-core",
+ "gr-runtime-model",
+ "insta",
+ "serde",
+ "serde_yaml",
+ "thiserror",
+]
 
 [[package]]
 name = "gr-cli"
@@ -384,8 +392,11 @@ dependencies = [
 name = "gr-testkit"
 version = "0.1.0"
 dependencies = [
+ "gr-backend-api",
  "gr-core",
  "gr-profiles",
+ "gr-runtime-model",
+ "gr-session-options",
  "insta",
  "proptest",
  "serde",
