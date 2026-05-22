@@ -14,3 +14,5 @@ Files in this directory:
   review, and registry-consistency checks for `gr-profiles`
 - [Phase 3 Manual Gate](phase-3.md): config validation, session-option
   compilation, and reviewer-facing policy checks for Phase 3
+- [Phase 4 Manual Gate](phase-4.md): fake backend sessions, trace
+  record/replay, and runtime gate review for Phase 4

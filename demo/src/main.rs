@@ -32,6 +32,10 @@ enum Command {
     },
     /// Validate a session config file (Phase 3 deliverable).
     ValidateConfig { path: std::path::PathBuf },
+    /// Run a fake backend session scenario (Phase 4 deliverable).
+    SimulateSession { path: std::path::PathBuf },
+    /// Render a backend trace fixture (Phase 4 deliverable).
+    ReplayTrace { path: std::path::PathBuf },
 }
 
 fn main() {
@@ -67,6 +71,20 @@ fn main() {
             }
             Err(error) => Err(error.to_string()),
         },
+        Command::SimulateSession { path } => match gr_cli::simulate_session(path, None) {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
+        Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
     };
 
     if let Err(error) = result {
@@ -79,8 +97,10 @@ fn print_info() {
     println!("vgpd-demo {}", env!("CARGO_PKG_VERSION"));
     println!("companion demo for the virtualgamepad workspace");
     println!();
-    println!("library status: through Phase 2 profiles and capability registry");
-    println!("demo status:    gate runner, type catalog, profile review, and config validation");
+    println!("library status: through Phase 4 fake backend and trace tooling");
+    println!(
+        "demo status:    gate runner, profile review, config validation, simulate-session, replay-trace"
+    );
 }
 
 fn print_show_types() {
@@ -135,6 +155,32 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::ValidateConfig { path } if path == std::path::Path::new("samples/configs/dualsense-identity.yaml")
+        ));
+    }
+
+    #[test]
+    fn simulate_session_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "simulate-session",
+            "crates/gr-testkit/fixtures/community/fake-session-rumble.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::SimulateSession { path } if path == std::path::Path::new("crates/gr-testkit/fixtures/community/fake-session-rumble.yaml")
+        ));
+    }
+
+    #[test]
+    fn replay_trace_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "replay-trace",
+            "crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::ReplayTrace { path } if path == std::path::Path::new("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml")
         ));
     }
 }

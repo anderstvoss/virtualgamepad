@@ -1,0 +1,11 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+scenario: fake-session-rumble
+session: profile=dualsense backend=fake-dualsense family=linux-uhid
+open: ok
+send: hid-input-report report_id=0x01 bytes=[01 02 03]
+reverse: hid-output-report target=semantic-output:rumble report_id=0x05 bytes=[11 22]
+close: ok
+trace_steps: 2

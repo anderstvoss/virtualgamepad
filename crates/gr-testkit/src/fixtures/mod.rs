@@ -7,7 +7,15 @@ mod reverse_event;
 mod schema;
 mod session_scenario;
 
+pub use backend_trace::{
+    BackendTrace, BackendTraceFixture, BackendTracePayload, BackendTraceStep, TraceDirection,
+    TraceOperation, decode_backend_trace,
+};
 pub use input_frame::{
     InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,
 };
 pub use schema::{FixtureDocument, FixtureEnvelope, FixtureError, load_fixture};
+pub use session_scenario::{
+    ScenarioBackend, ScenarioFailure, ScenarioStep, SessionScenario, SessionScenarioFixture,
+    decode_session_scenario,
+};

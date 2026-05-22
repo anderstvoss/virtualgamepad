@@ -426,10 +426,16 @@ Lock down the trait shapes that providers must implement and ship a configurable
 
 ### Exit gate
 
+Step-by-step reviewer guide:
+
+- [Phase 4 Manual Gate](manual-gates/phase-4.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
+- [ ] `cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml` exits 0
+- [ ] `cargo run -p gr-cli -- replay-trace crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml` exits 0
 - [ ] property tests pass with default `proptest` budget
 - [ ] `vgpd-demo phase-gate 4` exits 0
 
