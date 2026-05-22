@@ -19,14 +19,6 @@ pub fn simulate_session(
     let path = scenario_path.as_ref();
     let scenario = load_scenario(path)?;
     let factory = build_factory(&scenario);
-    let mut session = record(
-        factory
-            .open_fake_session(&scenario.scenario.session)
-            .map_err(|source| CliError::BackendOperation {
-                context: "open fake session",
-                source,
-            })?,
-    );
 
     let mut output = String::new();
     writeln!(output, "scenario: {}", scenario.envelope.id).expect("write");
@@ -39,12 +31,19 @@ pub fn simulate_session(
     )
     .expect("write");
 
-    session
-        .open()
-        .map_err(|source| CliError::BackendOperation {
-            context: "open session",
-            source,
-        })?;
+    let inner = match factory.open_fake_session(&scenario.scenario.session) {
+        Ok(inner) => inner,
+        Err(source) => {
+            writeln!(output, "open: error: {source}").expect("write");
+            return Err(CliError::Simulation { message: output });
+        }
+    };
+    let mut session = record(inner);
+
+    if let Err(source) = session.open() {
+        writeln!(output, "open: error: {source}").expect("write");
+        return Err(CliError::Simulation { message: output });
+    }
     writeln!(output, "open: ok").expect("write");
 
     for step in &scenario.scenario.steps {
@@ -123,6 +122,14 @@ fn build_factory(scenario: &SessionScenarioFixture) -> FakeBackendFactory {
             ScenarioFailure::DrainParseError => FakeFailure::DrainParseError,
             ScenarioFailure::CloseFails => FakeFailure::CloseFails,
             ScenarioFailure::EventReadinessFlapping => FakeFailure::EventReadinessFlapping,
+            ScenarioFailure::OpenRefused => FakeFailure::OpenRefused(BackendError::OpenFailed {
+                reason: "scenario open-refused".to_string(),
+            }),
+            ScenarioFailure::SendPermanentlyFails => {
+                FakeFailure::SendPermanentlyFails(BackendError::WriteFailed {
+                    reason: "scenario send-permanently-fails".to_string(),
+                })
+            }
         });
     }
     builder.build()

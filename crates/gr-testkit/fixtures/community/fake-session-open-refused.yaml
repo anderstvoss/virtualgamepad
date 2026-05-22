@@ -1,0 +1,29 @@
+fixture: virtualgamepad/v1
+kind: session-scenario
+id: fake-session-open-refused
+profile_id: dualsense
+notes: |
+  Phase 4 fatal-open scenario: the fake backend refuses the initial open
+  call. The simulate-session surface should print the scenario header,
+  the open error line, and exit non-zero without attempting send/drain.
+payload:
+  session:
+    session_id: 9
+    profile_id: dualsense
+    fidelity_tier: identity-aware
+    backend_level: hid
+    host_platform: linux
+  backend:
+    backend_id: fake-dualsense-refused
+    family: linux-uhid
+    host_platform: linux
+    supported_fidelity_tiers:
+      - identity-aware
+    failures:
+      - open-refused
+  steps:
+    - kind: send
+      frame:
+        kind: hid-input-report
+        report_id: 1
+        bytes: [1, 2, 3]

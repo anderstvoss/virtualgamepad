@@ -40,6 +40,8 @@ pub enum ScenarioFailure {
     DrainParseError,
     CloseFails,
     EventReadinessFlapping,
+    OpenRefused,
+    SendPermanentlyFails,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

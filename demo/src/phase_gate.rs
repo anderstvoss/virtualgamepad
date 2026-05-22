@@ -193,7 +193,7 @@ fn render_automated_checks(gate: &GateSection, report: &PhaseGateReport) {
 }
 
 fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
-    if item.contains("property tests run with `proptest` default budget") {
+    if item.contains("`proptest`") && !item.contains("`cargo") {
         return report
             .checks
             .iter()
@@ -304,6 +304,26 @@ mod tests {
 
         let status = automated_item_status(
             "- [ ] property tests run with `proptest` default budget without failures",
+            &report,
+        );
+        assert_eq!(status, Some(true));
+    }
+
+    #[test]
+    fn phase_four_proptest_wording_also_tracks_workspace_test_status() {
+        let report = PhaseGateReport {
+            phase: 4,
+            checks: vec![PhaseGateCheckResult {
+                command_display: "cargo test --workspace --all-features".to_string(),
+                success: true,
+                exit_code: Some(0),
+                stdout: String::new(),
+                stderr: String::new(),
+            }],
+        };
+
+        let status = automated_item_status(
+            "- [ ] property tests pass with default `proptest` budget",
             &report,
         );
         assert_eq!(status, Some(true));
