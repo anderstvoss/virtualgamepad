@@ -1,4 +1,23 @@
 //! Backend trace recorder and replayer.
+//!
+//! # Order contract
+//!
+//! [`ReplayBackendSession`] reproduces the recorded operation order. Every
+//! call advances a cursor over the trace steps:
+//!
+//! - [`BackendSession::send`] consumes the next step, which must be a
+//!   forward frame matching the incoming `BackendFrame`. If the next
+//!   recorded step is a reverse event, drain reverse events first.
+//! - [`BackendSession::drain_reverse_events`] consumes the leading
+//!   contiguous run of reverse-event (and drain-failure) steps, then
+//!   stops. If nothing is ready it returns `WouldBlock`.
+//!
+//! Callers that need to introspect the trace can call
+//! [`ReplayBackendSession::peek_next_step`].
+//!
+//! The recorder also captures the wrapped session's `backend_id` and
+//! `family` into the [`BackendTrace`] envelope so replay diagnostics
+//! report the original backend's identity instead of replay defaults.
 
 use std::collections::VecDeque;
 
@@ -32,7 +51,12 @@ pub struct TraceRecorder<B: BackendSession> {
 impl<B: BackendSession> TraceRecorder<B> {
     #[must_use]
     pub fn into_trace(self) -> BackendTrace {
-        BackendTrace { steps: self.steps }
+        let diagnostics = self.inner.diagnostics();
+        BackendTrace {
+            backend_id: Some(diagnostics.backend_id),
+            family: Some(diagnostics.family),
+            steps: self.steps,
+        }
     }
 
     #[must_use]
@@ -146,6 +170,14 @@ impl ReplayBackend {
     pub fn session(self, session_id: SessionId) -> ReplayBackendSession {
         ReplayBackendSession {
             session_id,
+            backend_id: self
+                .trace
+                .backend_id
+                .unwrap_or_else(|| gr_core::BackendId::from("replay-backend")),
+            family: self
+                .trace
+                .family
+                .unwrap_or(gr_core::BackendFamily::LinuxUhid),
             remaining: self.trace.steps.into(),
             diagnostics: ReplayDiagnostics::default(),
             closed: false,
@@ -156,9 +188,21 @@ impl ReplayBackend {
 #[derive(Debug, Clone)]
 pub struct ReplayBackendSession {
     session_id: SessionId,
+    backend_id: gr_core::BackendId,
+    family: gr_core::BackendFamily,
     remaining: VecDeque<BackendTraceStep>,
     diagnostics: ReplayDiagnostics,
     closed: bool,
+}
+
+impl ReplayBackendSession {
+    /// Peek at the next recorded step without consuming it. Useful for
+    /// drivers that need to dispatch send vs. drain in the order the
+    /// trace was recorded.
+    #[must_use]
+    pub fn peek_next_step(&self) -> Option<&BackendTraceStep> {
+        self.remaining.front()
+    }
 }
 
 impl BackendSession for ReplayBackendSession {
@@ -181,8 +225,17 @@ impl BackendSession for ReplayBackendSession {
                     operation: TraceOperation::Send,
                     error,
                 } => Err(BackendError::WriteFailed { reason: error }),
+                BackendTracePayload::Unsupported { frame_kind } => Err(BackendError::Unsupported {
+                    reason: format!(
+                        "recorded trace step is unsupported frame variant `{frame_kind}`"
+                    ),
+                }),
                 other => Err(BackendError::WriteFailed {
-                    reason: format!("replay step mismatch for send: {other:?}"),
+                    reason: format!(
+                        "replay expected next operation to be `{}`, got send({}); drain reverse events first if the trace interleaves them",
+                        other.kind_label(),
+                        BackendTracePayload::from_frame(frame).kind_label()
+                    ),
                 }),
             },
             None => Err(BackendError::WouldBlock),
@@ -244,8 +297,8 @@ impl BackendSession for ReplayBackendSession {
 
     fn diagnostics(&self) -> BackendDiagnostics {
         BackendDiagnostics {
-            backend_id: "replay-backend".into(),
-            family: gr_core::BackendFamily::LinuxUhid,
+            backend_id: self.backend_id.clone(),
+            family: self.family,
             state: if self.closed {
                 gr_backend_api::BackendState::Closed
             } else {
@@ -310,6 +363,103 @@ mod tests {
                 bytes: vec![0x10, 0x20],
             },
         }
+    }
+
+    #[test]
+    fn replay_send_mismatch_names_expected_step_kind() {
+        use gr_backend_api::BackendError;
+
+        let factory = backend_factory()
+            .reverse_events_from_iter([reverse_event()])
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open");
+        let mut drained = Vec::new();
+        recorder
+            .drain_reverse_events(&mut drained)
+            .expect("drain reverse");
+        recorder
+            .send(gr_backend_api::BackendFrame::HidInputReport {
+                report_id: Some(1),
+                bytes: vec![1, 2, 3],
+            })
+            .expect("send");
+        let trace = recorder.into_trace();
+
+        let mut session = replay(trace).session(SessionId::from(9));
+        session.open().expect("open replay");
+        let error = session
+            .send(gr_backend_api::BackendFrame::HidInputReport {
+                report_id: Some(1),
+                bytes: vec![1, 2, 3],
+            })
+            .expect_err("send before drain should error");
+        let BackendError::WriteFailed { reason } = error else {
+            panic!("expected WriteFailed, got {error:?}");
+        };
+        assert!(
+            reason.contains("`reverse-event`"),
+            "reason should name the recorded next step: {reason}"
+        );
+        assert!(
+            reason.contains("drain reverse events first"),
+            "reason should hint at remediation: {reason}"
+        );
+    }
+
+    #[test]
+    fn replay_peek_exposes_next_step() {
+        let factory = backend_factory()
+            .reverse_events_from_iter([reverse_event()])
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open");
+        recorder
+            .send(gr_backend_api::BackendFrame::HidInputReport {
+                report_id: Some(1),
+                bytes: vec![1, 2, 3],
+            })
+            .expect("send");
+        let trace = recorder.into_trace();
+
+        let session = replay(trace).session(SessionId::from(9));
+        let next = session.peek_next_step().expect("peek next");
+        assert_eq!(
+            next.payload.kind_label(),
+            "hid-input-report",
+            "peek should reveal the recorded outbound step"
+        );
+    }
+
+    #[test]
+    fn replay_diagnostics_carry_recorded_backend_identity() {
+        let factory = backend_factory()
+            .backend_id("fake-dualsense-recorder")
+            .family(gr_core::BackendFamily::LinuxUhid)
+            .reverse_events_from_iter([reverse_event()])
+            .build();
+        let inner = factory.open_fake_session(&open_context()).expect("open");
+        let mut recorder = record(inner);
+        recorder.open().expect("open");
+        recorder
+            .send(gr_backend_api::BackendFrame::HidInputReport {
+                report_id: Some(1),
+                bytes: vec![1, 2, 3],
+            })
+            .expect("send");
+        let trace = recorder.into_trace();
+        assert_eq!(
+            trace.backend_id.as_ref().map(AsRef::as_ref),
+            Some("fake-dualsense-recorder")
+        );
+
+        let mut session = replay(trace).session(SessionId::from(9));
+        session.open().expect("open replay");
+        let diagnostics = session.diagnostics();
+        assert_eq!(diagnostics.backend_id.as_ref(), "fake-dualsense-recorder");
+        assert_eq!(diagnostics.family, gr_core::BackendFamily::LinuxUhid);
     }
 
     #[test]

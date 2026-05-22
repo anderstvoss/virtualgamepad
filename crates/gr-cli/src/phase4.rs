@@ -270,6 +270,9 @@ fn describe_trace_payload(payload: &BackendTracePayload) -> String {
         BackendTracePayload::Failure { operation, error } => {
             format!("{} error={error}", serde_name(operation))
         }
+        BackendTracePayload::Unsupported { frame_kind } => {
+            format!("unsupported-frame kind={frame_kind}")
+        }
     }
 }
 

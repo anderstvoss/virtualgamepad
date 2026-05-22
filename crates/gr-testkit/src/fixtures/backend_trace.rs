@@ -21,8 +21,13 @@ pub enum TraceOperation {
     Close,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct BackendTrace {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_id: Option<gr_core::BackendId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<gr_core::BackendFamily>,
+    #[serde(default)]
     pub steps: Vec<BackendTraceStep>,
 }
 
@@ -65,6 +70,13 @@ pub enum BackendTracePayload {
         operation: TraceOperation,
         error: String,
     },
+    /// A `BackendFrame` variant that the trace encoder did not recognize.
+    /// Recorders emit this when a forward frame is added to `BackendFrame`
+    /// without the trace encoder being updated; replay surfaces it as a
+    /// `BackendError::Unsupported`.
+    Unsupported {
+        frame_kind: String,
+    },
 }
 
 impl BackendTracePayload {
@@ -81,9 +93,12 @@ impl BackendTracePayload {
                 Self::TransportPacket { endpoint_id, bytes }
             }
             BackendFrame::EvdevEvents { events } => Self::EvdevEvents { events },
-            _ => Self::Failure {
-                operation: TraceOperation::Send,
-                error: "unsupported backend frame variant in trace encoder".to_string(),
+            other => Self::Unsupported {
+                frame_kind: format!("{other:?}")
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("unknown")
+                    .to_string(),
             },
         }
     }
@@ -106,7 +121,22 @@ impl BackendTracePayload {
             Self::EvdevEvents { events } => Some(BackendFrame::EvdevEvents {
                 events: events.clone(),
             }),
-            Self::ReverseEvent { .. } | Self::Failure { .. } => None,
+            Self::ReverseEvent { .. } | Self::Failure { .. } | Self::Unsupported { .. } => None,
+        }
+    }
+
+    /// Stable display label for the trace step kind. Useful in error
+    /// messages and human-readable trace renderers.
+    #[must_use]
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            Self::HidInputReport { .. } => "hid-input-report",
+            Self::HidFeatureReport { .. } => "hid-feature-report",
+            Self::TransportPacket { .. } => "transport-packet",
+            Self::EvdevEvents { .. } => "evdev-events",
+            Self::ReverseEvent { .. } => "reverse-event",
+            Self::Failure { .. } => "failure",
+            Self::Unsupported { .. } => "unsupported-frame",
         }
     }
 
@@ -139,4 +169,43 @@ pub fn decode_backend_trace(
     let trace = serde_yaml::from_value::<BackendTrace>(envelope.payload.clone())
         .map_err(FixtureError::Parse)?;
     Ok(BackendTraceFixture { envelope, trace })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BackendTrace, BackendTracePayload, BackendTraceStep, TraceDirection};
+
+    #[test]
+    fn unsupported_payload_round_trips_through_yaml() {
+        let payload = BackendTracePayload::Unsupported {
+            frame_kind: "FuturisticReport".to_string(),
+        };
+        let yaml = serde_yaml::to_string(&payload).expect("yaml");
+        let decoded: BackendTracePayload = serde_yaml::from_str(&yaml).expect("decode");
+        assert_eq!(payload, decoded);
+        assert_eq!(payload.kind_label(), "unsupported-frame");
+        assert!(payload.as_frame().is_none());
+    }
+
+    #[test]
+    fn trace_decodes_without_backend_identity_for_back_compat() {
+        let yaml = r"
+steps:
+  - direction: outbound
+    kind: hid-input-report
+    report_id: 1
+    bytes: [1, 2, 3]
+";
+        let trace: BackendTrace = serde_yaml::from_str(yaml).expect("decode");
+        assert!(trace.backend_id.is_none());
+        assert!(trace.family.is_none());
+        assert_eq!(trace.steps.len(), 1);
+        assert!(matches!(
+            trace.steps[0],
+            BackendTraceStep {
+                direction: TraceDirection::Outbound,
+                payload: BackendTracePayload::HidInputReport { .. },
+            }
+        ));
+    }
 }
