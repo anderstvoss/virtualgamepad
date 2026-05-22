@@ -200,6 +200,7 @@ mod tests {
         UnsupportedCapabilityPolicy, ValidationSection, load_and_validate_file,
     };
     use gr_core::{BackendLevel, FidelityTier, ProfileId};
+    use gr_runtime_model::{BackpressurePolicy, ReverseEventDeliveryPolicy};
     use insta::assert_snapshot;
     use std::path::PathBuf;
 
@@ -207,6 +208,43 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../gr-config/fixtures")
             .join(name)
+    }
+
+    fn base_config() -> SessionConfig {
+        SessionConfig {
+            session: SessionSection {
+                session_id: None,
+                profile_id: ProfileId::from("dualsense"),
+                fidelity_tier: FidelityTier::IdentityAware,
+                host_platform_preference: Some(HostPlatformPreference::Linux),
+                backend_preference: Some(BackendLevel::Hid),
+                provider_preference: Some("linux-uhid".to_string()),
+            },
+            input: InputSection {
+                accepted_update_kinds: vec![AcceptedUpdateKind::Frame],
+                reject_unknown_fields: true,
+                reject_out_of_range_values: true,
+                coerce_integer_like_values: false,
+                allow_missing_optional_fields: true,
+                require_monotonic_sequence: false,
+            },
+            output_handling: OutputHandlingSection {
+                mode: OutputHandlingMode::Callback,
+                callback_namespace: Some("virtualGamepad".to_string()),
+                state_field_prefix: None,
+                backpressure_policy: ConfigBackpressurePolicy::DropOldest,
+                log_dropped_outputs: true,
+                max_queue_depth: Some(8),
+                bridge_capabilities: vec!["leftRumble".to_string()],
+            },
+            validation: ValidationSection {
+                require_supported_profile: true,
+                reject_unsupported_fidelity: true,
+                reject_unsupported_provider_preference: true,
+                reject_unknown_config_fields: false,
+                unsupported_capability_policy: UnsupportedCapabilityPolicy::Report,
+            },
+        }
     }
 
     #[test]
@@ -237,41 +275,140 @@ mod tests {
 
     #[test]
     fn empty_update_kinds_is_rejected() {
-        let config = SessionConfig {
-            session: SessionSection {
-                session_id: None,
-                profile_id: ProfileId::from("dualsense"),
-                fidelity_tier: FidelityTier::IdentityAware,
-                host_platform_preference: Some(HostPlatformPreference::Linux),
-                backend_preference: Some(BackendLevel::Hid),
-                provider_preference: Some("linux-uhid".to_string()),
-            },
-            input: InputSection {
-                accepted_update_kinds: Vec::<AcceptedUpdateKind>::new(),
-                reject_unknown_fields: true,
-                reject_out_of_range_values: true,
-                coerce_integer_like_values: false,
-                allow_missing_optional_fields: true,
-                require_monotonic_sequence: false,
-            },
-            output_handling: OutputHandlingSection {
-                mode: OutputHandlingMode::Callback,
-                callback_namespace: Some("virtualGamepad".to_string()),
-                state_field_prefix: None,
-                backpressure_policy: ConfigBackpressurePolicy::DropOldest,
-                log_dropped_outputs: true,
-                max_queue_depth: Some(8),
-                bridge_capabilities: vec!["leftRumble".to_string()],
-            },
-            validation: ValidationSection {
-                require_supported_profile: true,
-                reject_unsupported_fidelity: true,
-                reject_unsupported_provider_preference: true,
-                reject_unknown_config_fields: false,
-                unsupported_capability_policy: UnsupportedCapabilityPolicy::Report,
-            },
-        };
+        let mut config = base_config();
+        config.input.accepted_update_kinds.clear();
         let error = compile_session_options(&config).expect_err("compile should fail");
         assert!(matches!(error, CompileError::EmptyAcceptedUpdateKinds));
+    }
+
+    #[test]
+    fn delivery_callback_carries_namespace() {
+        let mut config = base_config();
+        config.output_handling.mode = OutputHandlingMode::Callback;
+        config.output_handling.callback_namespace = Some("myApp".to_string());
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.delivery_policy,
+            ReverseEventDeliveryPolicy::Callback {
+                callback_namespace: "myApp".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn delivery_callback_defaults_namespace_when_missing() {
+        let mut config = base_config();
+        config.output_handling.mode = OutputHandlingMode::Callback;
+        config.output_handling.callback_namespace = None;
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.delivery_policy,
+            ReverseEventDeliveryPolicy::Callback {
+                callback_namespace: "virtualGamepad".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn delivery_channel_carries_prefix() {
+        let mut config = base_config();
+        config.output_handling.mode = OutputHandlingMode::Channel;
+        config.output_handling.callback_namespace = None;
+        config.output_handling.state_field_prefix = Some("vg".to_string());
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.delivery_policy,
+            ReverseEventDeliveryPolicy::Channel {
+                state_field_prefix: Some("vg".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn delivery_channel_allows_no_prefix() {
+        let mut config = base_config();
+        config.output_handling.mode = OutputHandlingMode::Channel;
+        config.output_handling.callback_namespace = None;
+        config.output_handling.state_field_prefix = None;
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.delivery_policy,
+            ReverseEventDeliveryPolicy::Channel {
+                state_field_prefix: None,
+            }
+        );
+    }
+
+    #[test]
+    fn delivery_log_only_pass_through_and_ignore_round_trip() {
+        let cases = [
+            (
+                OutputHandlingMode::LogOnly,
+                ReverseEventDeliveryPolicy::LogOnly,
+            ),
+            (
+                OutputHandlingMode::PassThroughToPhysicalDevice,
+                ReverseEventDeliveryPolicy::PassThroughToPhysicalDevice,
+            ),
+            (
+                OutputHandlingMode::Ignore,
+                ReverseEventDeliveryPolicy::Ignore,
+            ),
+        ];
+        for (mode, expected) in cases {
+            let mut config = base_config();
+            config.output_handling.mode = mode;
+            config.output_handling.callback_namespace = None;
+            let compiled = compile_session_options(&config).expect("compile options");
+            assert_eq!(compiled.delivery_policy, expected, "mode = {mode:?}");
+        }
+    }
+
+    #[test]
+    fn backpressure_drop_newest_propagates_params() {
+        let mut config = base_config();
+        config.output_handling.backpressure_policy = ConfigBackpressurePolicy::DropNewest;
+        config.output_handling.log_dropped_outputs = true;
+        config.output_handling.max_queue_depth = Some(16);
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.backpressure_policy,
+            BackpressurePolicy::DropNewest {
+                log_dropped_outputs: true,
+                max_queue_depth: Some(16),
+            }
+        );
+    }
+
+    #[test]
+    fn backpressure_drop_oldest_propagates_params() {
+        let mut config = base_config();
+        config.output_handling.backpressure_policy = ConfigBackpressurePolicy::DropOldest;
+        config.output_handling.log_dropped_outputs = false;
+        config.output_handling.max_queue_depth = None;
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.backpressure_policy,
+            BackpressurePolicy::DropOldest {
+                log_dropped_outputs: false,
+                max_queue_depth: None,
+            }
+        );
+    }
+
+    #[test]
+    fn backpressure_block_producer_propagates_params() {
+        let mut config = base_config();
+        config.output_handling.backpressure_policy = ConfigBackpressurePolicy::BlockProducer;
+        config.output_handling.log_dropped_outputs = true;
+        config.output_handling.max_queue_depth = Some(4);
+        let compiled = compile_session_options(&config).expect("compile options");
+        assert_eq!(
+            compiled.backpressure_policy,
+            BackpressurePolicy::BlockProducer {
+                log_dropped_outputs: true,
+                max_queue_depth: Some(4),
+            }
+        );
     }
 }
