@@ -330,6 +330,16 @@ version = "0.1.0"
 [[package]]
 name = "gr-planner"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-config",
+ "gr-core",
+ "gr-profiles",
+ "gr-runtime-model",
+ "gr-session-options",
+ "serde",
+ "thiserror",
+]
 
 [[package]]
 name = "gr-profiles"

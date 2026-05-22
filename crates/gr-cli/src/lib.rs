@@ -655,9 +655,8 @@ fn load_fixture_summary(path: impl AsRef<Path>) -> Result<FixtureDocument, Fixtu
     match envelope.kind.as_str() {
         "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
         "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
-        "backend-trace" | "reverse-event" | "plan-snapshot" | "session-scenario" => {
-            Ok(FixtureDocument::Envelope(envelope))
-        }
+        "backend-trace" | "backend-inventory" | "reverse-event" | "plan-snapshot"
+        | "session-scenario" => Ok(FixtureDocument::Envelope(envelope)),
         other => Err(FixtureError::UnsupportedKind {
             kind: other.to_owned(),
         }),

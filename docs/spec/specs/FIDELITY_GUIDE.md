@@ -355,6 +355,22 @@ Recommended behavior:
 - if `identity-aware` is requested but output or feature reports are stubbed, degrade or reject according to policy
 - if `compatibility` is requested, it is acceptable to drop unsupported reverse features as long as this is explicit
 
+### Canonical planner cases
+
+These five cases are the charter that `gr-planner` tests and the Phase 5 manual gate are expected to back. Each maps a `(profile, goal, inventory)` triple to the expected planner outcome.
+
+| Case | Profile | Goal | Inventory | Outcome |
+|---|---|---|---|---|
+| 1 | `dualsense` | `identity-aware` | [linux-uhid-only](../../../samples/inventories/linux-uhid-only.yaml) | `Ok(plan)` with `selected_backend_family: LinuxUhid`, `selected_level: Hid`, `degradation.degraded == false` |
+| 2 | `dualsense` | `hardware-faithful` | [linux-uhid-only](../../../samples/inventories/linux-uhid-only.yaml) | `Ok(plan)` with `requested_fidelity_tier: IdentityAware`, `degradation.degraded == true`, `reasons == [TransportNotRealizable]` |
+| 3 | `dualsense` | `hardware-faithful` | empty inventory | `Err(PlanRejection { reasons: [NoBackendSupportsProfile], .. })` |
+| 4 | `xbox360` | `compatibility` | [linux-uinput-only](../../../samples/inventories/linux-uinput-only.yaml) | `Ok(plan)` with `selected_backend_family: LinuxUinput`, `selected_level: Evdev`, no degradation |
+| 5 | `dualsense` | `identity-aware` | [linux-uinput-only](../../../samples/inventories/linux-uinput-only.yaml) | `Ok(plan)` with `requested_fidelity_tier: Compatibility`, `degradation.degraded == true`, `reasons == [ReversePathUnavailable]` (uinput cannot carry HID output reports) |
+
+`DegradationReason` and `PlanRejectionReason` are typed enums in `gr-runtime-model`; the planner emits them directly so tests can match on `kind` rather than string contents.
+
+Cases 1-4 back the [Phase 5 manual gate items 1-4](../implementation/RUST_IMPLEMENTATION_PLAN.md#phase-5-planner-gr-planner). Case 5 is the canonical tie-breaking example (`dualsense` is a HID-tier profile but the inventory only exposes the lower evdev tier).
+
 ## Open-source implementation guidance
 
 Use open-source implementations when:

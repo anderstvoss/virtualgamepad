@@ -1,0 +1,15 @@
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: linux-uinput-only
+notes: |
+  Phase 5 planner inventory: a single Linux uinput backend at the Evdev
+  level. Supports compatibility-tier sessions for any profile; cannot
+  carry HID reports so identity-aware requests degrade to compatibility.
+payload:
+  entries:
+    - backend_id: linux-uinput
+      family: linux-uinput
+      level: evdev
+      host_platform: linux
+      supported_fidelity_tiers:
+        - compatibility

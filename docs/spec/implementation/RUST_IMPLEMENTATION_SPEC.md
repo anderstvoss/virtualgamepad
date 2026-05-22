@@ -604,9 +604,13 @@ pub struct SessionPlan {
     pub warnings: Vec<PlannerWarning>,
     pub deployment_requirements: DeploymentRequirements,
     pub backend_open_context: BackendOpenContext,
-    pub session_options: Arc<CompiledSessionOptions>,
+    pub session_options: SessionOptionsSnapshot,
 }
 ```
+
+`BackendOpenContext` is defined in `gr-runtime-model` (re-exported by `gr-backend-api`) so `SessionPlan` can own it without `gr-runtime-model` taking a dependency on `gr-backend-api`.
+
+`session_options` carries the serializable snapshot rather than the live `Arc<CompiledSessionOptions>`. The live shareable form is held by the session actor at runtime; the snapshot on the plan is for diagnostics, `plan-snapshot` fixtures, and trace replay.
 
 Rules:
 
@@ -615,7 +619,87 @@ Rules:
 - safe to snapshot for diagnostics
 - must make deployment prerequisites inspectable before any provider is opened
 - for `identity-aware` and `hardware-faithful`, must identify the selected backend provider, forward translator, reverse translator, enabled output capabilities, unsupported output capabilities, and degradation status
-- must reject or explicitly degrade plans where requested bidirectional behavior cannot be realized
+- must reject or explicitly degrade plans where requested bidirectional behavior cannot be realized; rejection uses [`PlanRejection`](#planrejection)
+
+### `DegradationReason`
+
+```rust
+#[non_exhaustive]
+pub enum DegradationReason {
+    TransportNotRealizable,
+    ReversePathUnavailable,
+    BackendDoesNotSupportFidelity { requested: FidelityTier, available: FidelityTier },
+    ProviderHintIgnored { preferred: ProviderId, reason: String },
+    BackendFamilyHintIgnored { preferred: BackendFamily, reason: String },
+    UnsupportedOutputCapability { function: SemanticOutputFunction, reason: String },
+}
+```
+
+Rules:
+
+- canonical reason set for `DegradationReport.reasons`; the planner emits these instead of free-text strings so consumers can match on `kind`
+- variants are `#[non_exhaustive]`; new degradation reasons may be added without a breaking change
+- free-form `reason: String` fields inside variants are reserved for context that does not fit a canonical code (e.g. "linux-uhid does not support transport-tier descriptors yet")
+
+### `PlanRejection`
+
+```rust
+pub struct PlanRejection {
+    pub profile_id: ProfileId,
+    pub requested_goal: EmulationGoal,
+    pub requested_fidelity_tier: FidelityTier,
+    pub reasons: Vec<PlanRejectionReason>,
+    pub considered_backends: Vec<BackendId>,
+}
+
+#[non_exhaustive]
+pub enum PlanRejectionReason {
+    NoBackendSupportsProfile,
+    NoBackendSupportsFidelity { requested: FidelityTier },
+    NoBackendSupportsHost { requested: HostPlatform },
+    BidirectionalSupportRequired { missing: Vec<SemanticOutputFunction> },
+}
+```
+
+Rules:
+
+- returned from `gr-planner::plan_session` as the `Err` variant when no [`SessionPlan`] can be produced at any tier
+- `considered_backends` records which inventory entries the planner queried; useful for diagnosing why a rejection occurred
+- a `PlanRejection` and a `SessionPlan` are mutually exclusive for a given input
+
+### Planner output contract
+
+The planner's signature is:
+
+```rust
+fn plan_session(
+    request: &SessionRequest,
+    session_options: &CompiledSessionOptions,
+    inventory: &[BackendInventoryEntry],
+    factories: &[Arc<dyn BackendFactory>],
+) -> Result<SessionPlan, PlanRejection>;
+```
+
+Rules:
+
+- a successful `Ok(plan)` may still carry degradation; degradation is **not** rejection
+- rejection is reserved for cases where no plan is possible at any tier given the inventory and hints
+- a plan and a rejection are mutually exclusive for a given input
+- the planner does not own factories; `factories` is a borrowed view so the manager retains ownership
+
+### Planner hint policy
+
+Hints on `SessionRequest` (`provider_preference`, `backend_preference`, `host_platform_preference`) shape selection but never bypass validation. Per-hint behavior:
+
+- **`provider_preference`**: if the named provider is absent from the inventory or its `can_realize` returns `SupportLevel::None`, the planner falls through to default selection and records `DegradationReason::ProviderHintIgnored { preferred, reason }`. The hint never causes rejection on its own.
+- **`backend_preference`**: if no factory matches the preferred `BackendLevel`, falls through to default selection and records `BackendFamilyHintIgnored`.
+- **`host_platform_preference`**: must match exactly. A mismatch is a **rejection** (`PlanRejectionReason::NoBackendSupportsHost`), not a degradation — host platform is the binding constraint that gates which factories are even considered.
+
+Tie-breaking when multiple backends satisfy the same family at the same level:
+
+1. backend matching `provider_preference` (if any)
+2. higher `BackendLevel` (Transport > Hid > Evdev — closer to hardware-faithful)
+3. first in inventory order
 
 ### `PreparedTranslationContext`
 
@@ -893,7 +977,7 @@ pub struct BackendRealizationRequest {
 Rules:
 
 - intentionally smaller than a full `SessionPlan`; the planner should not need translator internals to ask support questions
-- `required_output_functions` lists semantic outputs the host has indicated are needed; the support report explains how the backend covers them
+- `required_output_functions` lists semantic outputs the host has indicated are needed; the support report explains how the backend covers them. The planner populates this with every `SemanticOutput` capability the profile declares — host-level opt-out (selectively disabling capabilities) is a future concern. At plan time the planner asks about all declared outputs so the support report is complete.
 
 ### `BackendSupportReport`
 

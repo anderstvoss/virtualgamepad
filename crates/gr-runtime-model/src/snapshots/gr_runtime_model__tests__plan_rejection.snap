@@ -1,0 +1,11 @@
+---
+source: crates/gr-runtime-model/src/lib.rs
+expression: "serde_yaml::to_string(&rejection).expect(\"plan rejection yaml\")"
+---
+profile_id: dualsense
+requested_goal: hardware-faithful
+requested_fidelity_tier: hardware-faithful
+reasons:
+- kind: no-backend-supports-profile
+considered_backends:
+- fake-uhid

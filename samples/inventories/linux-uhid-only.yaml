@@ -1,0 +1,15 @@
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: linux-uhid-only
+notes: |
+  Phase 5 planner inventory: a single Linux UHID backend exposed at the
+  Hid level. Sufficient for identity-aware sessions; lacks transport-tier
+  realization so hardware-faithful requests degrade.
+payload:
+  entries:
+    - backend_id: linux-uhid
+      family: linux-uhid
+      level: hid
+      host_platform: linux
+      supported_fidelity_tiers:
+        - identity-aware

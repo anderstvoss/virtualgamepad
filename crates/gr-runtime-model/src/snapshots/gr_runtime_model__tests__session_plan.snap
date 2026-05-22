@@ -1,16 +1,26 @@
 ---
 source: crates/gr-runtime-model/src/lib.rs
-assertion_line: 394
 expression: "serde_yaml::to_string(&plan).expect(\"session plan yaml\")"
 ---
 session_id: 7
 profile_id: dualsense
 requested_goal: identity-aware
 requested_fidelity_tier: identity-aware
+selected_level: hid
+target_host_platform: linux
+selected_backend_family: linux-uhid
+selected_provider_id: linux-uhid
+selected_translator_family: dual-sense
 capability_result: {}
 degradation:
   degraded: false
 deployment_requirements: {}
+backend_open_context:
+  session_id: 7
+  profile_id: dualsense
+  fidelity_tier: identity-aware
+  backend_level: hid
+  host_platform: linux
 session_options:
   accepted_update_kinds:
   - frame

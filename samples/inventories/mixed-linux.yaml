@@ -1,0 +1,21 @@
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: mixed-linux
+notes: |
+  Phase 5 planner inventory: both Linux uinput and UHID backends present
+  on the same host. Drives the planner's tie-breaking rule (higher
+  BackendLevel preferred when no hint disambiguates).
+payload:
+  entries:
+    - backend_id: linux-uinput
+      family: linux-uinput
+      level: evdev
+      host_platform: linux
+      supported_fidelity_tiers:
+        - compatibility
+    - backend_id: linux-uhid
+      family: linux-uhid
+      level: hid
+      host_platform: linux
+      supported_fidelity_tiers:
+        - identity-aware
