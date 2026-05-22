@@ -39,6 +39,7 @@ Selection happens when the demo actually needs a GUI.
 ```bash
 cargo run -p virtual_gamepad_demo -- info
 cargo run -p virtual_gamepad_demo -- show-types
+cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
 cargo run -p virtual_gamepad_demo -- phase-gate 0
 cargo run -p virtual_gamepad_demo -- phase-gate 1
 ```

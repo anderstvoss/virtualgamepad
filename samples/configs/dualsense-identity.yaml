@@ -1,0 +1,31 @@
+session:
+  profileId: dualsense
+  fidelityTier: identity-aware
+  hostPlatformPreference: linux
+  backendPreference: hid
+  providerPreference: linux-uhid
+
+input:
+  acceptedUpdateKinds:
+    - frame
+    - delta
+  rejectUnknownFields: true
+  rejectOutOfRangeValues: true
+  allowMissingOptionalFields: true
+
+outputHandling:
+  mode: callback
+  callbackNamespace: virtualGamepad
+  backpressurePolicy: drop-oldest
+  logDroppedOutputs: true
+  maxQueueDepth: 8
+  bridgeCapabilities:
+    - leftRumble
+    - rightRumble
+    - playerLightBar
+
+validation:
+  requireSupportedProfile: true
+  rejectUnsupportedFidelity: true
+  rejectUnsupportedProviderPreference: true
+  unsupportedCapabilityPolicy: report

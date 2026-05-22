@@ -1,0 +1,24 @@
+session:
+  profileId: dualsense
+  fidelityTier: identity-aware
+  hostPlatformPreference: linux
+  backendPreference: hid
+  providerPreference: linux-uhid
+
+input:
+  acceptedUpdateKinds:
+    - frame
+  rejectUnknownFields: true
+  rejectOutOfRangeValues: true
+  allowMissingOptionalFields: true
+
+outputHandling:
+  mode: callback
+  backpressurePolicy: drop-oldest
+  logDroppedOutputs: true
+
+validation:
+  requireSupportedProfile: true
+  rejectUnsupportedFidelity: true
+  rejectUnsupportedProviderPreference: true
+  unsupportedCapabilityPolicy: report

@@ -8,5 +8,16 @@ repository.workspace = true
 authors.workspace = true
 description = "Configuration models for virtualgamepad."
 
+[dependencies]
+gr-core = { path = "../gr-core", version = "0.1" }
+gr-profiles = { path = "../gr-profiles", version = "0.1" }
+serde.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+serde_json.workspace = true
+
 [lints]
 workspace = true

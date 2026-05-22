@@ -200,7 +200,7 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .find(|check| check.command_display == "cargo test --workspace --all-features")
             .map(|check| check.success);
     }
-    if item.contains("`vgpd-demo phase-gate 2` exits 0") {
+    if item.contains("`vgpd-demo phase-gate ") && item.contains("` exits 0") {
         return Some(report.all_passed());
     }
 
@@ -271,6 +271,21 @@ mod tests {
             gate.manual
                 .iter()
                 .any(|line| line.contains("show-capabilities dualsense"))
+        );
+    }
+
+    #[test]
+    fn phase_three_checklist_extracts() {
+        let gate = load_gate(3).expect("phase 3 gate");
+        assert!(
+            gate.automated.iter().any(
+                |line| line.contains("validate-config samples/configs/dualsense-identity.yaml")
+            )
+        );
+        assert!(
+            gate.manual
+                .iter()
+                .any(|line| line.contains("broken-mode.yaml"))
         );
     }
 
