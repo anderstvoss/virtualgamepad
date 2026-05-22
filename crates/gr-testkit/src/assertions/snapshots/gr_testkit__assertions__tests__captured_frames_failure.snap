@@ -1,0 +1,9 @@
+---
+source: crates/gr-testkit/src/assertions/mod.rs
+expression: message
+---
+assert_captured_frames failed
+  expected len: 2
+  actual len:   1
+  [0]   expected="hid-input-report" actual="hid-input-report"
+  [1] * expected="hid-input-report" actual=<missing>

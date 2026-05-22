@@ -1,5 +1,7 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
+mod phase4;
+
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
     CoreError, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame,
@@ -65,6 +67,30 @@ const PHASE_3_COMMANDS: &[&[&str]] = &[
         "samples/configs/dualsense-identity.yaml",
     ],
 ];
+
+/// Run a Phase 4 fake-backend-backed session scenario.
+///
+/// # Errors
+///
+/// Returns an error if the scenario fixture cannot be loaded, the
+/// fake backend fails unexpectedly, or the optional trace output
+/// cannot be written.
+pub fn simulate_session(
+    scenario_path: impl AsRef<Path>,
+    record_path: Option<&Path>,
+) -> Result<String, CliError> {
+    phase4::simulate_session(scenario_path, record_path)
+}
+
+/// Render a backend trace fixture in a stable human-readable format.
+///
+/// # Errors
+///
+/// Returns an error if the fixture cannot be loaded or is not a
+/// `backend-trace` document.
+pub fn replay_trace(path: impl AsRef<Path>) -> Result<String, CliError> {
+    phase4::replay_trace(path)
+}
 
 /// Validate a fixture path and summarize the decoded envelope.
 ///
@@ -308,6 +334,17 @@ pub enum CliError {
         command_display: String,
         source: std::io::Error,
     },
+    BackendOperation {
+        context: &'static str,
+        source: gr_backend_api::BackendError,
+    },
+    WriteFile {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    Simulation {
+        message: String,
+    },
 }
 
 impl fmt::Display for CliError {
@@ -346,6 +383,13 @@ impl fmt::Display for CliError {
                 command_display,
                 source,
             } => write!(f, "failed to launch `{command_display}`: {source}"),
+            Self::BackendOperation { context, source } => {
+                write!(f, "{context}: {source}")
+            }
+            Self::WriteFile { path, source } => {
+                write!(f, "failed to write {}: {source}", path.display())
+            }
+            Self::Simulation { message } => write!(f, "{message}"),
         }
     }
 }
@@ -802,7 +846,8 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        4..=12 => Err(CliError::UnimplementedPhase { phase }),
+        4 => phase4::phase_four_commands(),
+        5..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -862,8 +907,8 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS,
-        capability_coverage, list_profiles, phase_gate_commands, repo_root, repo_root_from,
-        show_capabilities, validate_config, validate_fixture,
+        capability_coverage, list_profiles, phase_gate_commands, replay_trace, repo_root,
+        repo_root_from, show_capabilities, simulate_session, validate_config, validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -932,11 +977,12 @@ mod tests {
     }
 
     #[test]
-    fn unimplemented_phase_errors_clearly() {
-        let error = phase_gate_commands(4).expect_err("phase 4 should be unimplemented");
+    fn phase_four_commands_match_expected_order() {
+        let commands = phase_gate_commands(4).expect("phase 4 commands");
+        assert_eq!(commands.len(), 4);
         assert_eq!(
-            error.to_string(),
-            "automated gate not implemented for phase `4` yet"
+            commands[0].join(" "),
+            "cargo test --workspace --all-features"
         );
     }
 
@@ -1127,10 +1173,55 @@ mod tests {
     }
 
     #[test]
+    fn phase_four_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_four = plan
+            .split("## Phase 4:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 5:").next())
+            .expect("phase 4 section");
+        let automated = phase_four
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in phase_gate_commands(4)
+            .expect("phase 4 commands")
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 4 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_fixture_summary_for_dualsense_fixture_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let fixture_path = repo_root.join("crates/gr-core/fixtures/payload-dualsense-neutral.yaml");
         let summary = validate_fixture(fixture_path).expect("fixture should validate");
         assert_snapshot!("validate_fixture_dualsense", summary);
+    }
+
+    #[test]
+    fn simulate_session_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let scenario =
+            repo_root.join("crates/gr-testkit/fixtures/community/fake-session-rumble.yaml");
+        let output = simulate_session(&scenario, None::<&std::path::Path>).expect("scenario");
+        assert_snapshot!("simulate_session_fake_rumble", output);
+    }
+
+    #[test]
+    fn replay_trace_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let trace = repo_root.join("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml");
+        let output = replay_trace(trace).expect("trace");
+        assert_snapshot!("replay_trace_fake_rumble", output);
     }
 }

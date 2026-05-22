@@ -16,6 +16,14 @@ enum Command {
     ValidateConfig { path: PathBuf },
     /// Validate a fixture file and print the decoded envelope.
     ValidateFixture { path: PathBuf },
+    /// Run a fake-backend-backed Phase 4 session scenario.
+    SimulateSession {
+        path: PathBuf,
+        #[arg(long)]
+        record: Option<PathBuf>,
+    },
+    /// Render a backend trace fixture.
+    ReplayTrace { path: PathBuf },
     /// Run the automated portion of a phase gate.
     PhaseGate(PhaseGateArgs),
     /// List the built-in controller profiles (Phase 2).
@@ -49,6 +57,22 @@ fn main() {
             }
         },
         Command::ValidateFixture { path } => match gr_cli::validate_fixture(path) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::SimulateSession { path, record } => {
+            match gr_cli::simulate_session(path, record.as_deref()) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
             Ok(output) => println!("{output}"),
             Err(error) => {
                 eprintln!("{error}");

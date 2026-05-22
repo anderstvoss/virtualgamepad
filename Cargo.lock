@@ -287,10 +287,12 @@ name = "gr-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "gr-backend-api",
  "gr-config",
  "gr-core",
  "gr-profiles",
  "gr-session-options",
+ "gr-testkit",
  "insta",
  "serde",
  "serde_yaml",

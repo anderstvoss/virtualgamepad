@@ -393,23 +393,23 @@ Lock down the trait shapes that providers must implement and ship a configurable
 
 ### Deliverables
 
-- `gr-backend-api`:
-  - `BackendFactory` trait per the implementation spec
-  - `BackendSession` trait — sync, `&mut self`, non-blocking, returning `BackendError::WouldBlock` where applicable
-  - `BackendFrame`, `BackendReverseEvent`, `BackendDiagnostics`, `BackendOpenContext`, `BackendRealizationRequest`, `BackendSupportReport`, `EventReadiness` (with cfg-gated `ReadinessHandle`)
+`gr-backend-api` trait + type vocabulary already shipped in the Phase 4 prep PR (#44): `BackendFactory`, `BackendSession`, `BackendReverseEventSink`, `BackendFrame` (+ `EvdevEvent`), `BackendReverseEvent` (+ `Kind`/`Target`/`Payload`), `BackendDiagnostics` (+ `BackendState`), `BackendOpenContext`, `BackendRealizationRequest`, `BackendSupportReport` (+ `SupportLevel`/`UnsupportedOutputFunction`), `BackendInventoryEntry`, `BackendError`, `EventReadiness` (with cfg-gated `ReadinessHandle`). Phase 4 itself implements behavior against those shapes:
+
 - `gr-testkit::fakes`:
   - configurable `FakeBackendFactory` and `FakeBackendSession`
   - `FakeFailure` enum per [TESTING_TOOLING_SPEC.md failure injection](TESTING_TOOLING_SPEC.md#failure-injection)
   - `EventReadiness` flapping support
   - per-session capture of written frames
 - backend trace recorder + replayer (records anything implementing `BackendSession`; replays from a `backend-trace` fixture)
+- `kind: backend-trace` fixture loader in `gr-testkit::fixtures`
+- demo + CLI wiring: `vgpd-demo simulate-session <scenario>` and `gr-cli simulate-session --record` / `replay-trace`
 
 ### Iteration loop
 
 - design pass: validate the trait shapes against the existing implementation spec; if any shape needs to change, fix the spec, not the plan
 - contract tests:
   - `BackendFactory::can_realize` returns sensible support reports for every combination of fidelity × profile family × inventory permutation we can express
-  - `BackendSession::drain_reverse_events` accepts any `&mut dyn Extend<BackendReverseEvent>` (test with `Vec`, `SmallVec`, custom collector)
+  - `BackendSession::drain_reverse_events` accepts any `&mut dyn BackendReverseEventSink` (test with `Vec`, `SmallVec`, custom collector via the blanket `Extend<BackendReverseEvent>` impl)
   - non-blocking contract test: every fake method either returns immediately or returns `WouldBlock`
   - readiness round-trip via the cfg-gated handle on the build target
 - implementation: traits + concrete fakes + recorder + replayer
@@ -426,10 +426,16 @@ Lock down the trait shapes that providers must implement and ship a configurable
 
 ### Exit gate
 
+Step-by-step reviewer guide:
+
+- [Phase 4 Manual Gate](manual-gates/phase-4.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
+- [ ] `cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml` exits 0
+- [ ] `cargo run -p gr-cli -- replay-trace crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml` exits 0
 - [ ] property tests pass with default `proptest` budget
 - [ ] `vgpd-demo phase-gate 4` exits 0
 
@@ -439,7 +445,7 @@ Manual portion:
 - [ ] 2. Inject `FakeFailure::SendWouldBlock` via a fixture; verify the session re-arms via readiness and recovers (visible in the demo's verbose output)
 - [ ] 3. Record a fake session via `gr-cli simulate-session --record trace.yaml`; replay it via `gr-cli replay-trace trace.yaml`; outputs are identical
 - [ ] 4. Author a custom `backend-trace` fixture interleaving a feature-report request and a malformed output report; replay it and verify the malformed event is logged but does not crash
-- [ ] 5. Review `crates/gr-testkit/snapshots/` — assertion-helper failure messages are human-readable
+- [ ] 5. Review `crates/gr-testkit/src/assertions/snapshots/` — assertion-helper failure messages are human-readable and stable (`assert_captured_frames`, `assert_trace_directions`, `assert_diagnostics_counters`)
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 4 gate passed"`
 

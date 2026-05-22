@@ -1,0 +1,7 @@
+---
+source: crates/gr-testkit/src/assertions/mod.rs
+expression: message
+---
+assert_trace_directions failed
+  expected: [Outbound, Inbound]
+  actual:   [Outbound]

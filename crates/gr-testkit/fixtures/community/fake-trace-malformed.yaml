@@ -1,0 +1,17 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: fake-trace-malformed
+profile_id: dualsense
+notes: |
+  Phase 4 malformed trace for manual replay inspection. The failure step
+  models a malformed reverse report without crashing the replay surface.
+payload:
+  steps:
+    - direction: outbound
+      kind: hid-feature-report
+      report_id: 163
+      bytes: [1, 99]
+    - direction: error
+      kind: failure
+      operation: drain-reverse-events
+      error: malformed output report payload

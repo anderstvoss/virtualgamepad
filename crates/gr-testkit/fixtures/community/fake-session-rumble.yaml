@@ -1,0 +1,42 @@
+fixture: virtualgamepad/v1
+kind: session-scenario
+id: fake-session-rumble
+profile_id: dualsense
+notes: |
+  Phase 4 fake backend scenario: send one HID input report, then drain
+  one reverse rumble event from the fake session.
+payload:
+  session:
+    session_id: 7
+    profile_id: dualsense
+    fidelity_tier: identity-aware
+    backend_level: hid
+    host_platform: linux
+  backend:
+    backend_id: fake-dualsense
+    family: linux-uhid
+    host_platform: linux
+    supported_fidelity_tiers:
+      - identity-aware
+    supported_output_functions:
+      - rumble
+    reverse_events:
+      - session_id: 7
+        profile_id: dualsense
+        timestamp: 12
+        sequence: 3
+        kind: hid-output-report
+        target:
+          kind: semantic-output
+          value: rumble
+        payload:
+          kind: hid
+          report_id: 5
+          bytes: [17, 34]
+  steps:
+    - kind: send
+      frame:
+        kind: hid-input-report
+        report_id: 1
+        bytes: [1, 2, 3]
+    - kind: drain-reverse

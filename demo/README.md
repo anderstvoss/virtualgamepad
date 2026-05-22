@@ -11,7 +11,8 @@ The demo grows in lockstep with library phases. Highlights:
 - **Phase 0 (CLI scaffold + gate runner)** — shipped: a minimal [`clap`](https://docs.rs/clap)-based CLI, plus the `phase-gate <N>` driver that reads the gate checklist out of the implementation plan.
 - **Phase 1 (core domain model gate)** — shipped: `show-types` prints the canonical fidelity/backend/capability names that reviewers confirm during the gate, and those names are snapshot-tested for stability.
 - **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
-- **Phases 4–7 (runtime gates)** — adds `simulate-session`, `replay-trace`, `plan-session`, `many-sessions`. The demo can drive end-to-end fake-backend sessions and surface diagnostics to a human.
+- **Phase 4 (runtime fake gate)** — shipped: `simulate-session` and `replay-trace` exercise fake backend sessions and recorded trace review.
+- **Phases 5–7 (runtime gates)** — adds `plan-session` and `many-sessions` on top of the Phase 4 runtime surface.
 - **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. The demo brings up real virtual devices on Linux and prints what host software sees.
 - **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
 - **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
@@ -40,6 +41,7 @@ Selection happens when the demo actually needs a GUI.
 cargo run -p virtual_gamepad_demo -- info
 cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
+cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
 cargo run -p virtual_gamepad_demo -- phase-gate 0
 cargo run -p virtual_gamepad_demo -- phase-gate 1
 ```

@@ -1,0 +1,7 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+trace: fake-trace-rumble
+1. outbound hid-input-report report_id=0x01 bytes=[01 02 03]
+2. inbound hid-output-report target=semantic-output:rumble report_id=0x05 bytes=[11 22]
