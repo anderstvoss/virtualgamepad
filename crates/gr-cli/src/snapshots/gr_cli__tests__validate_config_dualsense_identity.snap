@@ -1,0 +1,57 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 972
+expression: output
+---
+path: dualsense-identity.yaml
+config:
+  session:
+    profileId: dualsense
+    fidelityTier: identity-aware
+    hostPlatformPreference: linux
+    backendPreference: hid
+    providerPreference: linux-uhid
+  input:
+    acceptedUpdateKinds:
+    - frame
+    - delta
+    rejectUnknownFields: true
+    rejectOutOfRangeValues: true
+    coerceIntegerLikeValues: false
+    allowMissingOptionalFields: true
+    requireMonotonicSequence: false
+  outputHandling:
+    mode: callback
+    callbackNamespace: virtualGamepad
+    backpressurePolicy: drop-oldest
+    logDroppedOutputs: true
+    maxQueueDepth: 8
+    bridgeCapabilities:
+    - leftRumble
+    - rightRumble
+    - playerLightBar
+  validation:
+    requireSupportedProfile: true
+    rejectUnsupportedFidelity: true
+    rejectUnsupportedProviderPreference: true
+    rejectUnknownConfigFields: false
+    unsupportedCapabilityPolicy: report
+compiled_session_options:
+  input_validation_policy:
+    accepted_update_kinds:
+    - frame
+    - delta
+    unknown_field_policy: reject
+    range_validation_policy: reject
+    coerce_integer_like_values: false
+    allow_missing_optional_fields: true
+    require_monotonic_sequence: false
+  provider_hints:
+    host_platform_preference: linux
+    preferred_provider: linux-uhid
+    reject_unsupported_provider_preference: true
+  delivery_policy: !callback
+    callback_namespace: virtualGamepad
+  backpressure_policy: !drop-oldest
+    log_dropped_outputs: true
+    max_queue_depth: 8

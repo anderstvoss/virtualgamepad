@@ -1,0 +1,10 @@
+---
+source: crates/gr-runtime-model/src/lib.rs
+assertion_line: 429
+expression: "serde_yaml::to_string(&status).expect(\"status yaml\")"
+---
+state: running
+session_id: 1
+profile_id: xbox360
+warnings:
+- degraded to compatibility

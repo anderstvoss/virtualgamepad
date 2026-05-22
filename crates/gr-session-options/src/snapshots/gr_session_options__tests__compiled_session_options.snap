@@ -1,0 +1,23 @@
+---
+source: crates/gr-session-options/src/lib.rs
+assertion_line: 211
+expression: "serde_yaml::to_string(&compiled).expect(\"yaml\")"
+---
+input_validation_policy:
+  accepted_update_kinds:
+  - frame
+  - delta
+  unknown_field_policy: reject
+  range_validation_policy: reject
+  coerce_integer_like_values: false
+  allow_missing_optional_fields: true
+  require_monotonic_sequence: false
+provider_hints:
+  host_platform_preference: linux
+  preferred_provider: linux-uhid
+  reject_unsupported_provider_preference: true
+delivery_policy: !callback
+  callback_namespace: virtualGamepad
+backpressure_policy: !drop-oldest
+  log_dropped_outputs: true
+  max_queue_depth: 8

@@ -1,5 +1,6 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
+use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
     CoreError, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame,
     ProfileInputPayload, SemanticInputFunction, SequenceId, Timestamp,
@@ -8,6 +9,7 @@ use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, RegistryError,
     SemanticRef, registry,
 };
+use gr_session_options::compile_session_options;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fmt;
@@ -50,6 +52,20 @@ const PHASE_2_COMMANDS: &[&[&str]] = &[
     &["cargo", "run", "-p", "gr-cli", "--", "capability-coverage"],
 ];
 
+const PHASE_3_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "gr-cli",
+        "--",
+        "validate-config",
+        "samples/configs/dualsense-identity.yaml",
+    ],
+];
+
 /// Validate a fixture path and summarize the decoded envelope.
 ///
 /// # Errors
@@ -89,6 +105,52 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
             fixture.delta.payload.variant_name(),
         )),
     }
+}
+
+/// Validate a config path and summarize the structured result.
+///
+/// # Errors
+///
+/// Returns an error if the path cannot be read, the YAML cannot be
+/// parsed, or validation produced errors.
+pub fn validate_config(path: impl AsRef<Path>) -> Result<String, CliError> {
+    let path = path.as_ref();
+    let report =
+        gr_config::load_and_validate_file(path).map_err(|source| CliError::ConfigLoad {
+            path: path.to_path_buf(),
+            source,
+        })?;
+
+    if !report.is_ok() {
+        return Err(CliError::ConfigValidation {
+            path: path.to_path_buf(),
+            report: Box::new(report),
+        });
+    }
+
+    let config = report
+        .config
+        .as_ref()
+        .ok_or_else(|| CliError::ConfigValidation {
+            path: path.to_path_buf(),
+            report: Box::new(report.clone()),
+        })?;
+    let compiled =
+        compile_session_options(config).map_err(|source| CliError::CompileSessionOptions {
+            path: path.to_path_buf(),
+            source: source.to_string(),
+        })?;
+
+    let output = ValidatedConfigSummary {
+        path: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map_or_else(|| path.display().to_string(), ToString::to_string),
+        warnings: report.warnings,
+        config: config.clone(),
+        compiled_session_options: compiled,
+    };
+    serde_yaml::to_string(&output).map_err(CliError::SerializeYaml)
 }
 
 /// List the built-in controller profiles.
@@ -226,6 +288,18 @@ pub enum CliError {
     UnknownProfile {
         profile_id: String,
     },
+    ConfigLoad {
+        path: PathBuf,
+        source: ConfigLoadError,
+    },
+    ConfigValidation {
+        path: PathBuf,
+        report: Box<ConfigValidationReport>,
+    },
+    CompileSessionOptions {
+        path: PathBuf,
+        source: String,
+    },
     SerializeYaml(serde_yaml::Error),
     WorkspaceRootNotFound {
         start: PathBuf,
@@ -247,6 +321,21 @@ impl fmt::Display for CliError {
                 write!(f, "automated gate not implemented for phase `{phase}` yet")
             }
             Self::UnknownProfile { profile_id } => write!(f, "unknown profile `{profile_id}`"),
+            Self::ConfigLoad { path, source } => {
+                write!(f, "{}: {source}", path.display())
+            }
+            Self::ConfigValidation { path, report } => {
+                writeln!(f, "{}: configuration validation failed", path.display())?;
+                let yaml = serde_yaml::to_string(report).map_err(|_| fmt::Error)?;
+                write!(f, "{yaml}")
+            }
+            Self::CompileSessionOptions { path, source } => {
+                write!(
+                    f,
+                    "{}: failed to compile session options: {source}",
+                    path.display()
+                )
+            }
             Self::SerializeYaml(source) => write!(f, "failed to serialize yaml output: {source}"),
             Self::WorkspaceRootNotFound { start } => write!(
                 f,
@@ -469,6 +558,15 @@ impl From<CapabilityItem> for CapabilitySummaryItem {
 struct DescriptorTemplateSummary {
     fidelity: String,
     descriptor_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ValidatedConfigSummary {
+    path: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<gr_config::ConfigDiagnostic>,
+    config: gr_config::SessionConfig,
+    compiled_session_options: gr_session_options::CompiledSessionOptions,
 }
 
 impl From<&gr_profiles::DescriptorTemplate> for DescriptorTemplateSummary {
@@ -700,7 +798,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        3..=12 => Err(CliError::UnimplementedPhase { phase }),
+        3 => Ok(PHASE_3_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        4..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -759,8 +861,9 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, capability_coverage, list_profiles,
-        phase_gate_commands, repo_root, repo_root_from, show_capabilities, validate_fixture,
+        PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS,
+        capability_coverage, list_profiles, phase_gate_commands, repo_root, repo_root_from,
+        show_capabilities, validate_config, validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -814,11 +917,26 @@ mod tests {
     }
 
     #[test]
+    fn phase_three_commands_match_expected_order() {
+        let commands = phase_gate_commands(3).expect("phase 3 commands");
+        let expected = PHASE_3_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
+    }
+
+    #[test]
     fn unimplemented_phase_errors_clearly() {
-        let error = phase_gate_commands(3).expect_err("phase 3 should be unimplemented");
+        let error = phase_gate_commands(4).expect_err("phase 4 should be unimplemented");
         assert_eq!(
             error.to_string(),
-            "automated gate not implemented for phase `3` yet"
+            "automated gate not implemented for phase `4` yet"
         );
     }
 
@@ -863,6 +981,25 @@ mod tests {
             "capability_coverage",
             serde_yaml::to_string(&report).expect("yaml")
         );
+    }
+
+    #[test]
+    fn validate_config_success_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let config_path = repo_root.join("samples/configs/dualsense-identity.yaml");
+        let output = validate_config(config_path).expect("config should validate");
+        assert_snapshot!("validate_config_dualsense_identity", output);
+    }
+
+    #[test]
+    fn validate_config_returns_structured_validation_error() {
+        let repo_root = repo_root().expect("workspace root");
+        let config_path = repo_root.join("samples/configs/broken-mode.yaml");
+        let error = validate_config(config_path).expect_err("config should fail");
+        let rendered = error.to_string();
+        assert!(rendered.contains("configuration validation failed"));
+        assert!(rendered.contains("outputHandling.callbackNamespace"));
+        assert!(rendered.contains("outputHandling.mode is `callback`"));
     }
 
     #[test]
@@ -958,6 +1095,33 @@ mod tests {
             assert!(
                 automated.contains(&command),
                 "phase 2 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn phase_three_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_three = plan
+            .split("## Phase 3:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 4:").next())
+            .expect("phase 3 section");
+        let automated = phase_three
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_3_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 3 automated section is missing {command}"
             );
         }
     }

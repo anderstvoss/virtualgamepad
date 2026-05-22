@@ -12,6 +12,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Parse and validate a session config file (Phase 3).
+    ValidateConfig { path: PathBuf },
     /// Validate a fixture file and print the decoded envelope.
     ValidateFixture { path: PathBuf },
     /// Run the automated portion of a phase gate.
@@ -39,6 +41,13 @@ struct PhaseGateArgs {
 fn main() {
     let cli = Cli::parse();
     match cli.command {
+        Command::ValidateConfig { path } => match gr_cli::validate_config(path) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
         Command::ValidateFixture { path } => match gr_cli::validate_fixture(path) {
             Ok(output) => println!("{output}"),
             Err(error) => {

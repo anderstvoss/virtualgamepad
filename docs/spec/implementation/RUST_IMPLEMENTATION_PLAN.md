@@ -359,11 +359,15 @@ Ship the three crates that together hold session intent: parse it, compile it, a
 
 ### Exit gate
 
+Step-by-step reviewer guide:
+
+- [Phase 3 Manual Gate](manual-gates/phase-3.md)
+
 Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
-- [ ] `gr-cli validate-config` returns 0 for every sample under `samples/configs/*.yaml`
+- [ ] `cargo run -p gr-cli -- validate-config samples/configs/dualsense-identity.yaml` exits 0
 - [ ] `vgpd-demo phase-gate 3` exits 0
 
 Manual portion:

@@ -279,8 +279,10 @@ name = "gr-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "gr-config",
  "gr-core",
  "gr-profiles",
+ "gr-session-options",
  "insta",
  "serde",
  "serde_yaml",
@@ -289,6 +291,15 @@ dependencies = [
 [[package]]
 name = "gr-config"
 version = "0.1.0"
+dependencies = [
+ "gr-core",
+ "gr-profiles",
+ "insta",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+]
 
 [[package]]
 name = "gr-core"
@@ -345,6 +356,12 @@ version = "0.1.0"
 [[package]]
 name = "gr-runtime-model"
 version = "0.1.0"
+dependencies = [
+ "gr-core",
+ "insta",
+ "serde",
+ "serde_yaml",
+]
 
 [[package]]
 name = "gr-session"
@@ -353,6 +370,15 @@ version = "0.1.0"
 [[package]]
 name = "gr-session-options"
 version = "0.1.0"
+dependencies = [
+ "gr-config",
+ "gr-core",
+ "gr-runtime-model",
+ "insta",
+ "serde",
+ "serde_yaml",
+ "thiserror",
+]
 
 [[package]]
 name = "gr-testkit"

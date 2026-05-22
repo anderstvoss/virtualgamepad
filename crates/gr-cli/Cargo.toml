@@ -14,8 +14,10 @@ path = "src/bin/gr-cli.rs"
 
 [dependencies]
 clap.workspace = true
+gr-config = { path = "../gr-config", version = "0.1" }
 gr-core = { path = "../gr-core", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }
+gr-session-options = { path = "../gr-session-options", version = "0.1" }
 serde.workspace = true
 serde_yaml.workspace = true
 

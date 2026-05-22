@@ -1,0 +1,37 @@
+---
+source: crates/gr-config/src/lib.rs
+assertion_line: 470
+expression: "serde_yaml::to_string(&report).expect(\"yaml\")"
+---
+config:
+  session:
+    profileId: dualsense
+    fidelityTier: identity-aware
+    hostPlatformPreference: linux
+    backendPreference: hid
+    providerPreference: linux-uhid
+  input:
+    acceptedUpdateKinds:
+    - frame
+    - delta
+    rejectUnknownFields: true
+    rejectOutOfRangeValues: true
+    coerceIntegerLikeValues: false
+    allowMissingOptionalFields: true
+    requireMonotonicSequence: false
+  outputHandling:
+    mode: callback
+    callbackNamespace: virtualGamepad
+    backpressurePolicy: drop-oldest
+    logDroppedOutputs: true
+    maxQueueDepth: 8
+    bridgeCapabilities:
+    - leftRumble
+    - rightRumble
+    - playerLightBar
+  validation:
+    requireSupportedProfile: true
+    rejectUnsupportedFidelity: true
+    rejectUnsupportedProviderPreference: true
+    rejectUnknownConfigFields: false
+    unsupportedCapabilityPolicy: report

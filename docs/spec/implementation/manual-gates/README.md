@@ -12,3 +12,5 @@ Files in this directory:
   manual-to-automation checks for `gr-core`
 - [Phase 2 Manual Gate](phase-2.md): profile registry, capability
   review, and registry-consistency checks for `gr-profiles`
+- [Phase 3 Manual Gate](phase-3.md): config validation, session-option
+  compilation, and reviewer-facing policy checks for Phase 3

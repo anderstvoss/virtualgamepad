@@ -1,0 +1,13 @@
+---
+source: crates/gr-runtime-model/src/lib.rs
+assertion_line: 414
+expression: "serde_yaml::to_string(&command).expect(\"command yaml\")"
+---
+session_id: 9
+profile_id: dualsense
+timestamp: 123
+command_type: notification
+function: !Semantic audio
+payload: !Audio
+  action: mute-toggle
+  target: speaker

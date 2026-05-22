@@ -8,5 +8,13 @@ repository.workspace = true
 authors.workspace = true
 description = "Runtime models for virtualgamepad."
 
+[dependencies]
+gr-core = { path = "../gr-core", version = "0.1" }
+serde.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
+serde_yaml.workspace = true
+
 [lints]
 workspace = true
