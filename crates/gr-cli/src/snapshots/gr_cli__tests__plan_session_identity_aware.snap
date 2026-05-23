@@ -1,8 +1,10 @@
 ---
-source: crates/gr-runtime-model/src/lib.rs
-expression: "serde_yaml::to_string(&plan).expect(\"session plan yaml\")"
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1485
+expression: output
 ---
-session_id: 7
+outcome: plan
+session_id: 1
 profile_id: dualsense
 requested_goal: identity-aware
 requested_fidelity_tier: identity-aware
@@ -11,12 +13,19 @@ target_host_platform: linux
 selected_backend_family: linux-uhid
 selected_provider_id: linux-uhid
 selected_translator_family: dual-sense
-capability_result: {}
+capability_result:
+  enabled_capabilities:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
 degradation:
   degraded: false
 deployment_requirements: {}
 backend_open_context:
-  session_id: 7
+  session_id: 1
   profile_id: dualsense
   fidelity_tier: identity-aware
   backend_level: hid
@@ -24,13 +33,11 @@ backend_open_context:
 session_options:
   accepted_update_kinds:
   - frame
-  - delta
   unknown_field_policy: reject
   range_validation_policy: reject
   coerce_integer_like_values: false
   allow_missing_optional_fields: true
   require_monotonic_sequence: false
-  preferred_provider: linux-uhid
   reject_unsupported_provider_preference: true
   unsupported_capability_policy: report
   delivery_policy: !callback

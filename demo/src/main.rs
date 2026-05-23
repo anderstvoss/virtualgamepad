@@ -36,6 +36,20 @@ enum Command {
     SimulateSession { path: std::path::PathBuf },
     /// Render a backend trace fixture (Phase 4 deliverable).
     ReplayTrace { path: std::path::PathBuf },
+    /// Plan a session from a profile id and backend inventory fixture (Phase 5 deliverable).
+    PlanSession {
+        profile_id: String,
+        #[arg(long)]
+        goal: String,
+        #[arg(long)]
+        inventory: std::path::PathBuf,
+        #[arg(long)]
+        host_platform: Option<String>,
+        #[arg(long)]
+        backend_preference: Option<String>,
+        #[arg(long)]
+        provider_preference: Option<String>,
+    },
 }
 
 fn main() {
@@ -85,6 +99,27 @@ fn main() {
             }
             Err(error) => Err(error.to_string()),
         },
+        Command::PlanSession {
+            profile_id,
+            goal,
+            inventory,
+            host_platform,
+            backend_preference,
+            provider_preference,
+        } => match gr_cli::plan_session(
+            &profile_id,
+            &goal,
+            inventory,
+            host_platform.as_deref(),
+            backend_preference.as_deref(),
+            provider_preference.as_deref(),
+        ) {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
     };
 
     if let Err(error) = result {
@@ -97,9 +132,9 @@ fn print_info() {
     println!("vgpd-demo {}", env!("CARGO_PKG_VERSION"));
     println!("companion demo for the virtualgamepad workspace");
     println!();
-    println!("library status: through Phase 4 fake backend and trace tooling");
+    println!("library status: through Phase 5 planner and trace tooling");
     println!(
-        "demo status:    gate runner, profile review, config validation, simulate-session, replay-trace"
+        "demo status:    gate runner, profile review, config validation, simulate-session, replay-trace, plan-session"
     );
 }
 
@@ -181,6 +216,26 @@ mod tests {
         assert!(matches!(
             cli.command,
             Command::ReplayTrace { path } if path == std::path::Path::new("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml")
+        ));
+    }
+
+    #[test]
+    fn plan_session_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "plan-session",
+            "dualsense",
+            "--goal",
+            "identity-aware",
+            "--inventory",
+            "samples/inventories/linux-uhid-only.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::PlanSession { profile_id, goal, inventory, .. }
+                if profile_id == "dualsense"
+                    && goal == "identity-aware"
+                    && inventory == std::path::Path::new("samples/inventories/linux-uhid-only.yaml")
         ));
     }
 }

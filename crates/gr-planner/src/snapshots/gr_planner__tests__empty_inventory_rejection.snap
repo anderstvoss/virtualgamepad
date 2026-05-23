@@ -1,0 +1,10 @@
+---
+source: crates/gr-planner/src/lib.rs
+assertion_line: 642
+expression: "serde_yaml::to_string(&rejection).expect(\"yaml\")"
+---
+profile_id: dualsense
+requested_goal: identity-aware
+requested_fidelity_tier: identity-aware
+reasons:
+- kind: no-backend-supports-profile

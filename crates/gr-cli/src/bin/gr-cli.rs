@@ -24,6 +24,20 @@ enum Command {
     },
     /// Render a backend trace fixture.
     ReplayTrace { path: PathBuf },
+    /// Plan a session from a profile id and backend inventory fixture.
+    PlanSession {
+        profile_id: String,
+        #[arg(long)]
+        goal: String,
+        #[arg(long)]
+        inventory: PathBuf,
+        #[arg(long)]
+        host_platform: Option<String>,
+        #[arg(long)]
+        backend_preference: Option<String>,
+        #[arg(long)]
+        provider_preference: Option<String>,
+    },
     /// Run the automated portion of a phase gate.
     PhaseGate(PhaseGateArgs),
     /// List the built-in controller profiles (Phase 2).
@@ -73,6 +87,27 @@ fn main() {
             }
         }
         Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::PlanSession {
+            profile_id,
+            goal,
+            inventory,
+            host_platform,
+            backend_preference,
+            provider_preference,
+        } => match gr_cli::plan_session(
+            &profile_id,
+            &goal,
+            inventory,
+            host_platform.as_deref(),
+            backend_preference.as_deref(),
+            provider_preference.as_deref(),
+        ) {
             Ok(output) => println!("{output}"),
             Err(error) => {
                 eprintln!("{error}");

@@ -130,6 +130,7 @@ pub struct SessionOptionsSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_provider: Option<ProviderId>,
     pub reject_unsupported_provider_preference: bool,
+    pub unsupported_capability_policy: String,
     pub delivery_policy: ReverseEventDeliveryPolicy,
     pub backpressure_policy: BackpressurePolicy,
 }
@@ -483,6 +484,7 @@ mod tests {
                 require_monotonic_sequence: false,
                 preferred_provider: Some("linux-uhid".into()),
                 reject_unsupported_provider_preference: true,
+                unsupported_capability_policy: "report".to_string(),
                 delivery_policy: ReverseEventDeliveryPolicy::Callback {
                     callback_namespace: "virtualGamepad".to_string(),
                 },

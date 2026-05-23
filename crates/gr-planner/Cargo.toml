@@ -18,5 +18,11 @@ gr-session-options = { path = "../gr-session-options", version = "0.1" }
 serde.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+gr-testkit = { path = "../gr-testkit", version = "0.1" }
+insta.workspace = true
+proptest.workspace = true
+serde_yaml.workspace = true
+
 [lints]
 workspace = true

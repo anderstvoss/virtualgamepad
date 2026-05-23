@@ -13,6 +13,7 @@ allow_missing_optional_fields: true
 require_monotonic_sequence: false
 preferred_provider: linux-uhid
 reject_unsupported_provider_preference: true
+unsupported_capability_policy: report
 delivery_policy: !callback
   callback_namespace: virtualGamepad
 backpressure_policy: !drop-oldest

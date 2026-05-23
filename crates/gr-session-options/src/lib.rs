@@ -4,7 +4,7 @@
 
 use gr_config::{
     AcceptedUpdateKind, ConfigBackpressurePolicy, HostPlatformPreference, OutputHandlingMode,
-    SessionConfig,
+    SessionConfig, UnsupportedCapabilityPolicy,
 };
 use gr_runtime_model::{
     BackpressurePolicy, HostPlatform, ProviderId, ReverseEventDeliveryPolicy,
@@ -17,6 +17,7 @@ use thiserror::Error;
 pub struct CompiledSessionOptions {
     pub input_validation_policy: InputValidationPolicy,
     pub provider_hints: ProviderHints,
+    pub unsupported_capability_policy: UnsupportedCapabilityPolicy,
     pub delivery_policy: ReverseEventDeliveryPolicy,
     pub backpressure_policy: BackpressurePolicy,
 }
@@ -105,6 +106,7 @@ pub fn compile_session_options(
                 .validation
                 .reject_unsupported_provider_preference,
         },
+        unsupported_capability_policy: config.validation.unsupported_capability_policy,
         delivery_policy: delivery_policy_from_config(config),
         backpressure_policy: backpressure_policy_from_config(config),
     })
@@ -133,6 +135,7 @@ impl CompiledSessionOptions {
             reject_unsupported_provider_preference: self
                 .provider_hints
                 .reject_unsupported_provider_preference,
+            unsupported_capability_policy: serde_name(&self.unsupported_capability_policy),
             delivery_policy: self.delivery_policy.clone(),
             backpressure_policy: self.backpressure_policy.clone(),
         }

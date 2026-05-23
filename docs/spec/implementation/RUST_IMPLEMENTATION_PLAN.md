@@ -493,7 +493,7 @@ Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean (plan snapshots reviewed)
-- [ ] all planner property tests pass
+- [ ] `cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --inventory samples/inventories/linux-uhid-only.yaml` exits 0
 - [ ] `vgpd-demo phase-gate 5` exits 0
 
 Manual portion:

@@ -1,0 +1,11 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1501
+expression: output
+---
+outcome: rejection
+profile_id: dualsense
+requested_goal: hardware-faithful
+requested_fidelity_tier: hardware-faithful
+reasons:
+- kind: no-backend-supports-profile
