@@ -50,6 +50,7 @@ compiled_session_options:
     host_platform_preference: linux
     preferred_provider: linux-uhid
     reject_unsupported_provider_preference: true
+  unsupported_capability_policy: report
   delivery_policy: !callback
     callback_namespace: virtualGamepad
   backpressure_policy: !drop-oldest

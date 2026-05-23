@@ -1,0 +1,13 @@
+---
+source: crates/gr-planner/src/lib.rs
+assertion_line: 642
+expression: "serde_yaml::to_string(&rejection).expect(\"yaml\")"
+---
+profile_id: dualsense
+requested_goal: identity-aware
+requested_fidelity_tier: identity-aware
+reasons:
+- kind: no-backend-supports-profile
+  requested_backend_level: hid
+  available_backends: []
+  reason: 'requested hid-tier planning for profile `dualsense` but no providers were available in inventory; available backends: none'

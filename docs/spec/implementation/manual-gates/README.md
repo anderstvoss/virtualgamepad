@@ -16,3 +16,5 @@ Files in this directory:
   compilation, and reviewer-facing policy checks for Phase 3
 - [Phase 4 Manual Gate](phase-4.md): fake backend sessions, trace
   record/replay, and runtime gate review for Phase 4
+- [Phase 5 Manual Gate](phase-5.md): planner selection, degradation,
+  rejection, and plan-snapshot review for Phase 5

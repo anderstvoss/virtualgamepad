@@ -1,0 +1,14 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1501
+expression: output
+---
+outcome: rejection
+profile_id: dualsense
+requested_goal: hardware-faithful
+requested_fidelity_tier: hardware-faithful
+reasons:
+- kind: no-backend-supports-profile
+  requested_backend_level: transport
+  available_backends: []
+  reason: 'requested transport-tier planning for profile `dualsense` but no providers were available in inventory; available backends: none'

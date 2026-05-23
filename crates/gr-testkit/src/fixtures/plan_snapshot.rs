@@ -54,6 +54,9 @@ requested_goal: hardware-faithful
 requested_fidelity_tier: hardware-faithful
 reasons:
   - kind: no-backend-supports-profile
+    requested_backend_level: transport
+    available_backends: []
+    reason: no providers were available
 considered_backends: []
 ",
         )
@@ -77,7 +80,11 @@ considered_backends: []
         assert_eq!(rejection.requested_goal, EmulationGoal::HardwareFaithful);
         assert!(matches!(
             rejection.reasons.as_slice(),
-            [PlanRejectionReason::NoBackendSupportsProfile]
+            [PlanRejectionReason::NoBackendSupportsProfile {
+                requested_backend_level: gr_core::BackendLevel::Transport,
+                available_backends,
+                ..
+            }] if available_backends.is_empty()
         ));
     }
 }

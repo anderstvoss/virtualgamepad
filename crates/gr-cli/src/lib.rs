@@ -4,19 +4,32 @@ mod phase4;
 
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
-    CoreError, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame,
-    ProfileInputPayload, SemanticInputFunction, SequenceId, Timestamp,
+    BackendLevel, CoreError, FidelityTier, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload,
+    ProfileInputFrame, ProfileInputPayload, SemanticInputFunction, SequenceId, Timestamp,
 };
+use gr_planner::plan_session as plan_runtime_session;
 use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, RegistryError,
     SemanticRef, registry,
 };
-use gr_session_options::compile_session_options;
+use gr_runtime_model::{
+    BackpressurePolicy, EmulationGoal, HostPlatform, ReverseEventDeliveryPolicy,
+    SessionHostMetadata, SessionRequest,
+};
+use gr_session_options::{
+    CompiledSessionOptions, InputValidationPolicy, ProviderHints, RangeValidationPolicy,
+    UnknownFieldPolicy, compile_session_options,
+};
+use gr_testkit::{
+    fakes::backend_factory,
+    fixtures::{FixtureDocument as TestkitFixtureDocument, PlanOutcome, load_fixture},
+};
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 const PHASE_0_COMMANDS: &[&[&str]] = &[
     &["cargo", "build", "--workspace", "--all-features"],
@@ -65,6 +78,24 @@ const PHASE_3_COMMANDS: &[&[&str]] = &[
         "--",
         "validate-config",
         "samples/configs/dualsense-identity.yaml",
+    ],
+];
+
+const PHASE_5_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "virtual_gamepad_demo",
+        "--",
+        "plan-session",
+        "dualsense",
+        "--goal",
+        "identity-aware",
+        "--inventory",
+        "samples/inventories/linux-uhid-only.yaml",
     ],
 ];
 
@@ -177,6 +208,59 @@ pub fn validate_config(path: impl AsRef<Path>) -> Result<String, CliError> {
         compiled_session_options: compiled,
     };
     serde_yaml::to_string(&output).map_err(CliError::SerializeYaml)
+}
+
+/// Plan a session from a profile id and backend-inventory fixture.
+///
+/// # Errors
+///
+/// Returns an error if the inventory fixture cannot be loaded, the
+/// planner rejects the request, or the structured YAML output cannot be
+/// serialized.
+pub fn plan_session(
+    profile_id: &str,
+    goal: &str,
+    inventory_path: impl AsRef<Path>,
+    host_platform: Option<&str>,
+    backend_preference: Option<&str>,
+    provider_preference: Option<&str>,
+    session_id: Option<u64>,
+) -> Result<String, CliError> {
+    let requested_fidelity_tier = parse_fidelity_tier(goal)?;
+    let target_host = host_platform.map(parse_host_platform).transpose()?;
+    let backend_preference = backend_preference.map(parse_backend_level).transpose()?;
+    let provider_preference = provider_preference.map(gr_runtime_model::ProviderId::from);
+    let inventory_path = inventory_path.as_ref();
+    let document = load_fixture(inventory_path).map_err(|source| CliError::Simulation {
+        message: format!("{}: {source}", inventory_path.display()),
+    })?;
+    let TestkitFixtureDocument::BackendInventory(fixture) = document else {
+        return Err(CliError::FixtureKind {
+            path: inventory_path.to_path_buf(),
+            expected: "backend-inventory",
+        });
+    };
+
+    let inventory = fixture.inventory.entries.clone();
+    let factories = planner_factories(&inventory, profile_id);
+    let request = SessionRequest {
+        session_id: gr_core::SessionId::new(session_id.unwrap_or(1)),
+        profile_id: ProfileId::from(profile_id),
+        goal: EmulationGoal::from(requested_fidelity_tier),
+        requested_fidelity_tier,
+        host_platform_preference: target_host,
+        backend_preference,
+        provider_preference,
+        host_metadata: SessionHostMetadata::default(),
+    };
+    let compiled_options =
+        compiled_planner_options(target_host, request.provider_preference.clone());
+    let outcome = match plan_runtime_session(&request, &compiled_options, &inventory, &factories) {
+        Ok(plan) => PlanOutcome::Plan(Box::new(plan)),
+        Err(rejection) => PlanOutcome::Rejection(rejection),
+    };
+
+    serde_yaml::to_string(&outcome).map_err(CliError::SerializeYaml)
 }
 
 /// List the built-in controller profiles.
@@ -305,6 +389,10 @@ pub enum CliError {
         path: PathBuf,
         source: FixtureError,
     },
+    FixtureKind {
+        path: PathBuf,
+        expected: &'static str,
+    },
     UnknownPhase {
         phase: u8,
     },
@@ -325,6 +413,10 @@ pub enum CliError {
     CompileSessionOptions {
         path: PathBuf,
         source: String,
+    },
+    InvalidArgument {
+        argument: &'static str,
+        value: String,
     },
     SerializeYaml(serde_yaml::Error),
     WorkspaceRootNotFound {
@@ -351,6 +443,9 @@ impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Fixture { path, source } => write!(f, "{}: {source}", path.display()),
+            Self::FixtureKind { path, expected } => {
+                write!(f, "{}: expected `{expected}` fixture", path.display())
+            }
             Self::UnknownPhase { phase } => {
                 write!(f, "unknown phase `{phase}`; expected a value from 0 to 12")
             }
@@ -372,6 +467,9 @@ impl fmt::Display for CliError {
                     "{}: failed to compile session options: {source}",
                     path.display()
                 )
+            }
+            Self::InvalidArgument { argument, value } => {
+                write!(f, "invalid `{argument}` value `{value}`")
             }
             Self::SerializeYaml(source) => write!(f, "failed to serialize yaml output: {source}"),
             Self::WorkspaceRootNotFound { start } => write!(
@@ -707,6 +805,107 @@ fn decode_input_delta(envelope: FixtureEnvelope) -> Result<InputDeltaFixture, Fi
     Ok(InputDeltaFixture { envelope, delta })
 }
 
+fn compiled_planner_options(
+    host_platform: Option<HostPlatform>,
+    preferred_provider: Option<gr_runtime_model::ProviderId>,
+) -> CompiledSessionOptions {
+    CompiledSessionOptions {
+        input_validation_policy: InputValidationPolicy {
+            accepted_update_kinds: vec![gr_config::AcceptedUpdateKind::Frame],
+            unknown_field_policy: UnknownFieldPolicy::Reject,
+            range_validation_policy: RangeValidationPolicy::Reject,
+            coerce_integer_like_values: false,
+            allow_missing_optional_fields: true,
+            require_monotonic_sequence: false,
+        },
+        provider_hints: ProviderHints {
+            host_platform_preference: host_platform,
+            preferred_provider,
+            reject_unsupported_provider_preference: true,
+        },
+        unsupported_capability_policy: gr_config::UnsupportedCapabilityPolicy::Report,
+        delivery_policy: ReverseEventDeliveryPolicy::Callback {
+            callback_namespace: "virtualGamepad".to_string(),
+        },
+        backpressure_policy: BackpressurePolicy::DropOldest {
+            log_dropped_outputs: true,
+            max_queue_depth: Some(8),
+        },
+    }
+}
+
+fn planner_factories(
+    inventory: &[gr_backend_api::BackendInventoryEntry],
+    profile_id: &str,
+) -> Vec<Arc<dyn gr_backend_api::BackendFactory>> {
+    let outputs = registry()
+        .profile_by_str(profile_id)
+        .map(|profile| {
+            profile
+                .reverse_command_support
+                .supported
+                .iter()
+                .filter_map(|function| match function {
+                    OutputFunctionRef::Semantic(output) => Some(*output),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    inventory
+        .iter()
+        .map(|entry| {
+            let mut builder = backend_factory()
+                .backend_id(entry.backend_id.as_ref())
+                .family(entry.family)
+                .level(entry.level)
+                .platform(entry.host_platform)
+                .supported_fidelity_tiers(entry.supported_fidelity_tiers.clone());
+            for note in &entry.notes {
+                builder = builder.note(note.clone());
+            }
+            if entry.level != BackendLevel::Evdev {
+                for output in &outputs {
+                    builder = builder.declares_reverse_output(*output);
+                }
+            }
+            Arc::new(builder.build()) as Arc<dyn gr_backend_api::BackendFactory>
+        })
+        .collect()
+}
+
+fn parse_fidelity_tier(value: &str) -> Result<FidelityTier, CliError> {
+    value.parse().map_err(|_| CliError::InvalidArgument {
+        argument: "goal",
+        value: value.to_string(),
+    })
+}
+
+fn parse_backend_level(value: &str) -> Result<BackendLevel, CliError> {
+    match value {
+        "evdev" => Ok(BackendLevel::Evdev),
+        "hid" => Ok(BackendLevel::Hid),
+        "transport" => Ok(BackendLevel::Transport),
+        _ => Err(CliError::InvalidArgument {
+            argument: "backend-preference",
+            value: value.to_string(),
+        }),
+    }
+}
+
+fn parse_host_platform(value: &str) -> Result<HostPlatform, CliError> {
+    match value {
+        "linux" => Ok(HostPlatform::Linux),
+        "windows" => Ok(HostPlatform::Windows),
+        "macos" => Ok(HostPlatform::Macos),
+        _ => Err(CliError::InvalidArgument {
+            argument: "host-platform",
+            value: value.to_string(),
+        }),
+    }
+}
+
 fn collect_profile_gaps(
     registry: CapabilityRegistry,
     profile: &ControllerProfile,
@@ -846,7 +1045,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
         4 => phase4::phase_four_commands(),
-        5..=12 => Err(CliError::UnimplementedPhase { phase }),
+        5 => Ok(PHASE_5_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        6..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -905,9 +1108,10 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS,
-        capability_coverage, list_profiles, phase_gate_commands, replay_trace, repo_root,
-        repo_root_from, show_capabilities, simulate_session, validate_config, validate_fixture,
+        PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
+        capability_coverage, list_profiles, phase_gate_commands, plan_session, replay_trace,
+        repo_root, repo_root_from, show_capabilities, simulate_session, validate_config,
+        validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -983,6 +1187,21 @@ mod tests {
             commands[0].join(" "),
             "cargo test --workspace --all-features"
         );
+    }
+
+    #[test]
+    fn phase_five_commands_match_expected_order() {
+        let commands = phase_gate_commands(5).expect("phase 5 commands");
+        let expected = PHASE_5_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
     }
 
     #[test]
@@ -1200,6 +1419,33 @@ mod tests {
     }
 
     #[test]
+    fn phase_five_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_five = plan
+            .split("## Phase 5:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 6:").next())
+            .expect("phase 5 section");
+        let automated = phase_five
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_5_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 5 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_fixture_summary_for_dualsense_fixture_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let fixture_path = repo_root.join("crates/gr-core/fixtures/payload-dualsense-neutral.yaml");
@@ -1222,5 +1468,49 @@ mod tests {
         let trace = repo_root.join("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml");
         let output = replay_trace(trace).expect("trace");
         assert_snapshot!("replay_trace_fake_rumble", output);
+    }
+
+    #[test]
+    fn plan_session_output_is_stable() {
+        // Pin `--host-platform linux` so the snapshot is deterministic
+        // across CI runners. The planner falls back to the runtime host
+        // when no preference is given, which would make the test
+        // OS-dependent (macOS / Windows runners would not match any
+        // Linux backend in the inventory and produce a rejection
+        // instead of a plan).
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/linux-uhid-only.yaml");
+        let output = plan_session(
+            "dualsense",
+            "identity-aware",
+            inventory,
+            Some("linux"),
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
+        assert_snapshot!("plan_session_identity_aware", output);
+    }
+
+    #[test]
+    fn plan_session_rejection_output_is_stable() {
+        // Empty inventory is OS-independent (no backends at any
+        // platform), so the rejection is stable regardless of the
+        // runner. Explicit host_platform omitted on purpose to
+        // exercise the no-hint branch.
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/empty.yaml");
+        let output = plan_session(
+            "dualsense",
+            "hardware-faithful",
+            inventory,
+            None,
+            None,
+            None,
+            Some(1),
+        )
+        .expect("rejection");
+        assert_snapshot!("plan_session_rejection", output);
     }
 }

@@ -7,5 +7,9 @@ requested_goal: hardware-faithful
 requested_fidelity_tier: hardware-faithful
 reasons:
 - kind: no-backend-supports-profile
+  requested_backend_level: transport
+  available_backends:
+  - fake-uhid
+  reason: inventory exposes only hid-tier providers
 considered_backends:
 - fake-uhid

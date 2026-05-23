@@ -553,12 +553,13 @@ Rules:
 
 ```rust
 pub struct SessionRequest {
+    pub session_id: SessionId,
     pub profile_id: ProfileId,
     pub goal: EmulationGoal,
-    pub config: SessionConfig,
-    pub host_platform_preference: Option<HostPlatformPreference>,
-    pub backend_preference: Option<BackendPreference>,
-    pub provider_preference: Option<ProviderPreference>,
+    pub requested_fidelity_tier: FidelityTier,
+    pub host_platform_preference: Option<HostPlatform>,
+    pub backend_preference: Option<BackendLevel>,
+    pub provider_preference: Option<ProviderId>,
     pub host_metadata: SessionHostMetadata,
 }
 ```
@@ -567,6 +568,7 @@ Rules:
 
 - this is the only input accepted by session creation
 - no ad hoc planner-only side channels
+- `session_id` is assigned by the manager before the planner is invoked; the planner mirrors it onto `SessionPlan.session_id` and `SessionPlan.backend_open_context.session_id`. The planner does not invent ids.
 - host-platform and provider preferences are hints, never permission to bypass planner validation
 - strictness is sourced exclusively from `config.validation`; there is no separate `strictness` field on `SessionRequest`
 
@@ -626,11 +628,15 @@ Rules:
 ```rust
 #[non_exhaustive]
 pub enum DegradationReason {
-    TransportNotRealizable,
+    TransportNotRealizable {
+        requested_backend_level: BackendLevel,
+        available_backend_levels: Vec<BackendLevel>,
+        reason: String,
+    },
     ReversePathUnavailable,
     BackendDoesNotSupportFidelity { requested: FidelityTier, available: FidelityTier },
     ProviderHintIgnored { preferred: ProviderId, reason: String },
-    BackendFamilyHintIgnored { preferred: BackendFamily, reason: String },
+    BackendLevelHintIgnored { preferred: BackendLevel, reason: String },
     UnsupportedOutputCapability { function: SemanticOutputFunction, reason: String },
 }
 ```
@@ -654,7 +660,11 @@ pub struct PlanRejection {
 
 #[non_exhaustive]
 pub enum PlanRejectionReason {
-    NoBackendSupportsProfile,
+    NoBackendSupportsProfile {
+        requested_backend_level: BackendLevel,
+        available_backends: Vec<BackendId>,
+        reason: String,
+    },
     NoBackendSupportsFidelity { requested: FidelityTier },
     NoBackendSupportsHost { requested: HostPlatform },
     BidirectionalSupportRequired { missing: Vec<SemanticOutputFunction> },
@@ -692,7 +702,7 @@ Rules:
 Hints on `SessionRequest` (`provider_preference`, `backend_preference`, `host_platform_preference`) shape selection but never bypass validation. Per-hint behavior:
 
 - **`provider_preference`**: if the named provider is absent from the inventory or its `can_realize` returns `SupportLevel::None`, the planner falls through to default selection and records `DegradationReason::ProviderHintIgnored { preferred, reason }`. The hint never causes rejection on its own.
-- **`backend_preference`**: if no factory matches the preferred `BackendLevel`, falls through to default selection and records `BackendFamilyHintIgnored`.
+- **`backend_preference`**: if no factory matches the preferred `BackendLevel`, falls through to default selection and records `DegradationReason::BackendLevelHintIgnored { preferred: BackendLevel, reason }`.
 - **`host_platform_preference`**: must match exactly. A mismatch is a **rejection** (`PlanRejectionReason::NoBackendSupportsHost`), not a degradation — host platform is the binding constraint that gates which factories are even considered.
 
 Tie-breaking when multiple backends satisfy the same family at the same level:

@@ -290,7 +290,9 @@ dependencies = [
  "gr-backend-api",
  "gr-config",
  "gr-core",
+ "gr-planner",
  "gr-profiles",
+ "gr-runtime-model",
  "gr-session-options",
  "gr-testkit",
  "insta",
@@ -337,7 +339,11 @@ dependencies = [
  "gr-profiles",
  "gr-runtime-model",
  "gr-session-options",
+ "gr-testkit",
+ "insta",
+ "proptest",
  "serde",
+ "serde_yaml",
  "thiserror",
 ]
 

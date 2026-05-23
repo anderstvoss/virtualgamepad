@@ -1,0 +1,18 @@
+fixture: virtualgamepad/v1
+kind: plan-snapshot
+id: plan-dualsense-empty-rejection
+profile_id: dualsense
+notes: |
+  Canonical Phase 5 planner rejection snapshot: no providers available
+  for a hardware-faithful DualSense request.
+payload:
+  outcome: rejection
+  profile_id: dualsense
+  requested_goal: hardware-faithful
+  requested_fidelity_tier: hardware-faithful
+  reasons:
+    - kind: no-backend-supports-profile
+      requested_backend_level: transport
+      available_backends: []
+      reason: "requested transport-tier planning for profile `dualsense` but no providers were available in inventory; available backends: none"
+  considered_backends: []

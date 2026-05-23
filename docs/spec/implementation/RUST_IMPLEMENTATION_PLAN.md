@@ -493,14 +493,14 @@ Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean (plan snapshots reviewed)
-- [ ] all planner property tests pass
+- [ ] `cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --inventory samples/inventories/linux-uhid-only.yaml` exits 0
 - [ ] `vgpd-demo phase-gate 5` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo plan-session dualsense --goal identity-aware --inventory samples/inventories/linux-uhid-only.yaml` produces an IA plan with `selected_backend_family: LinuxUhid` and no degradation
-- [ ] 2. Same profile, `--goal hardware-faithful`, same inventory; produces a degraded plan with reasons `[TransportNotRealizable]`
-- [ ] 3. Same profile, `--goal hardware-faithful`, an inventory with no providers; planner returns a structured rejection
+- [ ] 2. Same profile, `--goal hardware-faithful`, same inventory; produces a degraded plan whose `transport-not-realizable` reason names the requested transport level, the available lower-tier levels, and the concrete cause
+- [ ] 3. Same profile, `--goal hardware-faithful`, an inventory with no providers; planner returns a structured rejection whose `no-backend-supports-profile` reason includes the requested backend level and the available backend list
 - [ ] 4. `vgpd-demo plan-session xbox360 --goal compatibility --inventory samples/inventories/linux-uinput-only.yaml` produces a compatibility plan with `selected_backend_family: LinuxUinput`
 - [ ] 5. Author a custom `plan-snapshot` fixture for an unusual edge case (e.g. Steam Controller at `identity-aware` with a fake that declares only LEDs); verify the snapshot test passes
 - [ ] 6. Review `crates/gr-planner/snapshots/` — the YAML rationale strings read like a human wrote them, not a debug derive
