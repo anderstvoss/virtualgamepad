@@ -553,6 +553,7 @@ Rules:
 
 ```rust
 pub struct SessionRequest {
+    pub session_id: SessionId,
     pub profile_id: ProfileId,
     pub goal: EmulationGoal,
     pub requested_fidelity_tier: FidelityTier,
@@ -567,6 +568,7 @@ Rules:
 
 - this is the only input accepted by session creation
 - no ad hoc planner-only side channels
+- `session_id` is assigned by the manager before the planner is invoked; the planner mirrors it onto `SessionPlan.session_id` and `SessionPlan.backend_open_context.session_id`. The planner does not invent ids.
 - host-platform and provider preferences are hints, never permission to bypass planner validation
 - strictness is sourced exclusively from `config.validation`; there is no separate `strictness` field on `SessionRequest`
 

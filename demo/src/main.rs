@@ -49,6 +49,11 @@ enum Command {
         backend_preference: Option<String>,
         #[arg(long)]
         provider_preference: Option<String>,
+        /// Session id stamped on the resulting plan. Defaults to 1
+        /// for snapshot stability; production callers assign per-session
+        /// ids via the manager.
+        #[arg(long)]
+        session_id: Option<u64>,
     },
 }
 
@@ -106,6 +111,7 @@ fn main() {
             host_platform,
             backend_preference,
             provider_preference,
+            session_id,
         } => match gr_cli::plan_session(
             &profile_id,
             &goal,
@@ -113,6 +119,7 @@ fn main() {
             host_platform.as_deref(),
             backend_preference.as_deref(),
             provider_preference.as_deref(),
+            session_id,
         ) {
             Ok(output) => {
                 println!("{output}");

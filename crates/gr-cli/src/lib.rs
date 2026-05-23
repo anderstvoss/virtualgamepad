@@ -224,6 +224,7 @@ pub fn plan_session(
     host_platform: Option<&str>,
     backend_preference: Option<&str>,
     provider_preference: Option<&str>,
+    session_id: Option<u64>,
 ) -> Result<String, CliError> {
     let requested_fidelity_tier = parse_fidelity_tier(goal)?;
     let target_host = host_platform.map(parse_host_platform).transpose()?;
@@ -243,6 +244,7 @@ pub fn plan_session(
     let inventory = fixture.inventory.entries.clone();
     let factories = planner_factories(&inventory, profile_id);
     let request = SessionRequest {
+        session_id: gr_core::SessionId::new(session_id.unwrap_or(1)),
         profile_id: ProfileId::from(profile_id),
         goal: EmulationGoal::from(requested_fidelity_tier),
         requested_fidelity_tier,
@@ -1472,8 +1474,16 @@ mod tests {
     fn plan_session_output_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let inventory = repo_root.join("samples/inventories/linux-uhid-only.yaml");
-        let output =
-            plan_session("dualsense", "identity-aware", inventory, None, None, None).expect("plan");
+        let output = plan_session(
+            "dualsense",
+            "identity-aware",
+            inventory,
+            None,
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
         assert_snapshot!("plan_session_identity_aware", output);
     }
 
@@ -1488,6 +1498,7 @@ mod tests {
             None,
             None,
             None,
+            Some(1),
         )
         .expect("rejection");
         assert_snapshot!("plan_session_rejection", output);

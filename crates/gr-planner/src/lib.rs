@@ -5,6 +5,16 @@
 //! The planner takes a [`SessionRequest`], compiled session options,
 //! and a backend inventory, then returns either a runtime-ready
 //! [`SessionPlan`] or a structured [`PlanRejection`].
+//!
+//! # Session id ownership
+//!
+//! The planner is a pure function of its inputs. `session_id` is
+//! assigned by the caller (the session manager in Phase 7+) on the
+//! incoming [`SessionRequest`] and mirrored by the planner onto
+//! [`SessionPlan::session_id`] and
+//! [`SessionPlan::backend_open_context`]. The planner does not invent
+//! session ids — that would break determinism (the existing
+//! `same_inputs_produce_same_plan` proptest enforces this).
 
 use std::sync::Arc;
 
@@ -13,7 +23,7 @@ use gr_backend_api::{
     SupportLevel,
 };
 use gr_config::UnsupportedCapabilityPolicy;
-use gr_core::{BackendLevel, FidelityTier, SemanticOutputFunction, SessionId};
+use gr_core::{BackendLevel, FidelityTier, SemanticOutputFunction};
 use gr_profiles::{OutputFunctionRef, ProfileFamily, registry};
 use gr_runtime_model::{
     BackendOpenContext, CapabilityNegotiationResult, DegradationReason, DegradationReport,
@@ -239,14 +249,21 @@ pub fn plan_session(
         });
     }
 
-    for function in &selected.missing_output_functions {
-        degradation_reasons.push(DegradationReason::UnsupportedOutputCapability {
-            function: *function,
-            reason: format!(
-                "selected backend `{}` does not realize `{function}`",
-                selected.entry.backend_id
-            ),
-        });
+    // Emit per-output typed degradation reasons only when a tier
+    // change has already happened. At compatibility-on-compatibility,
+    // missing outputs are expected (the tier doesn't promise reverse
+    // support); they're surfaced via
+    // `capability_result.unsupported_capabilities` instead.
+    if selected_tier != request.requested_fidelity_tier {
+        for function in &selected.missing_output_functions {
+            degradation_reasons.push(DegradationReason::UnsupportedOutputCapability {
+                function: *function,
+                reason: format!(
+                    "selected backend `{}` does not realize `{function}`",
+                    selected.entry.backend_id
+                ),
+            });
+        }
     }
 
     let capability_result = capability_result(
@@ -264,7 +281,7 @@ pub fn plan_session(
             .collect(),
     };
     let selected_provider_id = provider_id_from_entry(selected.entry);
-    let session_id = SessionId::new(1);
+    let session_id = request.session_id;
 
     Ok(SessionPlan {
         session_id,
@@ -505,7 +522,7 @@ mod tests {
         OutputHandlingSection, SessionConfig, SessionSection, UnsupportedCapabilityPolicy,
         ValidationSection,
     };
-    use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId};
+    use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId, SessionId};
     use gr_runtime_model::{
         DegradationReason, EmulationGoal, HostPlatform, PlanRejectionReason, SessionHostMetadata,
         SessionRequest,
@@ -518,6 +535,7 @@ mod tests {
 
     fn base_request() -> SessionRequest {
         SessionRequest {
+            session_id: SessionId::new(1),
             profile_id: ProfileId::from("dualsense"),
             goal: EmulationGoal::IdentityAware,
             requested_fidelity_tier: FidelityTier::IdentityAware,
@@ -754,6 +772,110 @@ mod tests {
 
         let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
         assert_eq!(plan.warnings[0].code, "provider-hint-ignored");
+    }
+
+    #[test]
+    fn xbox360_compatibility_on_uinput_no_degradation() {
+        let mut request = base_request();
+        request.profile_id = ProfileId::from("xbox360");
+        request.goal = EmulationGoal::Compatibility;
+        request.requested_fidelity_tier = FidelityTier::Compatibility;
+        let options = compiled_options();
+        let factories = vec![fake_factory(
+            "linux-uinput",
+            BackendFamily::LinuxUinput,
+            BackendLevel::Evdev,
+            vec![FidelityTier::Compatibility],
+            &[],
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert_eq!(plan.selected_backend_family, BackendFamily::LinuxUinput);
+        assert_eq!(plan.selected_level, BackendLevel::Evdev);
+        assert_eq!(plan.requested_fidelity_tier, FidelityTier::Compatibility);
+        assert!(
+            !plan.degradation.degraded,
+            "xbox360 compatibility on uinput should not degrade; got {:?}",
+            plan.degradation.reasons
+        );
+    }
+
+    #[test]
+    fn missing_outputs_under_reject_policy_rejects() {
+        let request = base_request();
+        let mut config = base_config();
+        config.validation.unsupported_capability_policy = UnsupportedCapabilityPolicy::Reject;
+        let options = compile_session_options(&config).expect("compile");
+        // Fake declares IA but advertises no outputs; reject policy means
+        // the planner should refuse to degrade to compatibility.
+        let factories = vec![fake_factory(
+            "linux-uhid",
+            BackendFamily::LinuxUhid,
+            BackendLevel::Hid,
+            vec![FidelityTier::IdentityAware, FidelityTier::Compatibility],
+            &[],
+        )];
+        let inventory = inventory_from(&factories);
+
+        let rejection = plan_session(&request, &options, &inventory, &factories)
+            .expect_err("reject policy should fail");
+        assert!(
+            rejection.reasons.iter().any(|reason| matches!(
+                reason,
+                PlanRejectionReason::BidirectionalSupportRequired { .. }
+            )),
+            "expected BidirectionalSupportRequired; got {:?}",
+            rejection.reasons
+        );
+    }
+
+    #[test]
+    fn backend_notes_populate_deployment_requirements() {
+        let request = base_request();
+        let options = compiled_options();
+        let mut builder = backend_factory()
+            .backend_id("linux-uhid")
+            .family(BackendFamily::LinuxUhid)
+            .level(BackendLevel::Hid)
+            .platform(HostPlatform::Linux)
+            .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+            .note("requires kernel 5.14+");
+        for output in dualsense_outputs() {
+            builder = builder.declares_reverse_output(output);
+        }
+        let factory: Arc<dyn BackendFactory> = Arc::new(builder.build());
+        let factories = vec![factory.clone()];
+        let inventory = vec![factory.inventory_entry()];
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert!(
+            plan.deployment_requirements
+                .requirements
+                .iter()
+                .any(|requirement| requirement == "requires kernel 5.14+"),
+            "expected backend note on deployment_requirements; got {:?}",
+            plan.deployment_requirements.requirements
+        );
+    }
+
+    #[test]
+    fn session_id_is_propagated_to_plan_and_open_context() {
+        let mut request = base_request();
+        request.session_id = SessionId::new(42);
+        let options = compiled_options();
+        let factories = vec![fake_factory(
+            "linux-uhid",
+            BackendFamily::LinuxUhid,
+            BackendLevel::Hid,
+            vec![FidelityTier::IdentityAware],
+            &dualsense_outputs(),
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert_eq!(plan.session_id, SessionId::new(42));
+        assert_eq!(plan.backend_open_context.session_id, SessionId::new(42));
     }
 
     #[test]

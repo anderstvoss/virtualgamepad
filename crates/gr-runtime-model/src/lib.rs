@@ -137,6 +137,7 @@ pub struct SessionOptionsSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionRequest {
+    pub session_id: SessionId,
     pub profile_id: ProfileId,
     pub goal: EmulationGoal,
     pub requested_fidelity_tier: FidelityTier,
