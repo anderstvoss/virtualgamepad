@@ -308,13 +308,6 @@ pub enum PlanRejectionReason {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct DescriptorTemplateSummary {
-    pub fidelity: Option<FidelityTier>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub descriptor_len: Option<usize>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct TranslationConstants {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub values: BTreeMap<String, String>,
@@ -336,8 +329,14 @@ pub struct PreparedTranslationContext {
     pub level: Option<BackendLevel>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_options: Option<SessionOptionsSnapshot>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub descriptor_template: Option<DescriptorTemplateSummary>,
+    /// Live reference to the descriptor bytes the translator must
+    /// honor. Sourced from `gr-profiles` static data. Marked
+    /// `#[serde(skip)]` because a `&'static` reference cannot be
+    /// deserialized — the descriptor bytes live in static memory, not
+    /// in fixtures. Phase 6 translators read bytes via this reference;
+    /// fixture round-tripping is not supported for this field.
+    #[serde(skip)]
+    pub descriptor_template: Option<&'static gr_profiles::DescriptorTemplate>,
     #[serde(default)]
     pub translation_constants: TranslationConstants,
 }

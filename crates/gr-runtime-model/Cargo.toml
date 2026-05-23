@@ -10,6 +10,7 @@ description = "Runtime models for virtualgamepad."
 
 [dependencies]
 gr-core = { path = "../gr-core", version = "0.1" }
+gr-profiles = { path = "../gr-profiles", version = "0.1" }
 serde.workspace = true
 
 [dev-dependencies]
