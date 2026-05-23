@@ -384,6 +384,7 @@ name = "gr-runtime-model"
 version = "0.1.0"
 dependencies = [
  "gr-core",
+ "gr-profiles",
  "insta",
  "serde",
  "serde_yaml",
@@ -426,6 +427,15 @@ dependencies = [
 [[package]]
 name = "gr-translators"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-profiles",
+ "gr-runtime-model",
+ "serde",
+ "smallvec",
+ "thiserror",
+]
 
 [[package]]
 name = "hashbrown"
@@ -846,6 +856,12 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "smallvec"
+version = "1.15.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "strsim"

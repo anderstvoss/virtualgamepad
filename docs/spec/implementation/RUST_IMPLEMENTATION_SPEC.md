@@ -715,14 +715,16 @@ Tie-breaking when multiple backends satisfy the same family at the same level:
 
 ```rust
 pub struct PreparedTranslationContext {
-    pub session_id: SessionId,
-    pub profile_family: ProfileFamily,
-    pub host_platform: HostPlatform,
-    pub backend_family: BackendFamily,
-    pub provider_id: ProviderId,
-    pub level: BackendLevel,
-    pub session_options: Arc<CompiledSessionOptions>,
-    pub descriptor_template: Arc<DescriptorTemplate>,
+    pub session_id: Option<SessionId>,
+    pub profile_family: Option<String>,
+    pub host_platform: Option<HostPlatform>,
+    pub backend_family: Option<BackendFamily>,
+    pub provider_id: Option<ProviderId>,
+    pub level: Option<BackendLevel>,
+    pub session_options: Option<SessionOptionsSnapshot>,
+    /// Live reference into `gr-profiles` static data; `#[serde(skip)]`
+    /// because `&'static` references are not deserializable.
+    pub descriptor_template: Option<&'static gr_profiles::DescriptorTemplate>,
     pub translation_constants: TranslationConstants,
 }
 ```
@@ -730,8 +732,10 @@ pub struct PreparedTranslationContext {
 Purpose:
 
 - remove repeated lookup work from the per-frame path
-- let translators operate with concrete prepared data
+- let translators operate with concrete prepared data, including the live descriptor bytes via `descriptor_template`
 - let reverse translators route both normalized and profile-specific commands without repeated registry lookup
+
+The Optional fields are an artifact of the Phase 3 skeleton stage; Phase 6's `prepared_translation_context(plan, registry)` (see [Translator contracts](#translator-contracts)) populates them all and Phase 7's session runtime consumes the result by reference for the lifetime of the session.
 
 ### Tier-specific prepared session state
 
@@ -1175,6 +1179,85 @@ Notes:
 
 - reverse translation is batched and allocation-aware
 - reverse translators may emit a mix of normalized commands and profile-specific commands in the same batch
+
+### `TranslationError` and `TranslationScratch`
+
+```rust
+#[non_exhaustive]
+pub enum TranslationError {
+    NoTranslatorRegistered { family: TranslatorFamily, level: BackendLevel },
+    InvalidInput { reason: String },
+    InvalidReverseEvent { reason: String },
+    DescriptorUnavailable,
+    DescriptorViolation { reason: String },
+}
+
+pub struct TranslationScratch {
+    pub bytes: Vec<u8>,
+}
+```
+
+Rules:
+
+- both types live in `gr-translators`
+- `TranslationError` is `#[non_exhaustive]` so additive variants do not require an API bump
+- `TranslationScratch::clear()` empties the buffer without releasing its allocation, so the session actor's per-call reset is allocation-free in steady state
+- `NoTranslatorRegistered` is the only variant the planner can encounter during context construction; the rest are emitted by `translate()` / `translate_reverse()` on the hot path
+
+### `TranslatorRegistry`
+
+```rust
+pub struct TranslatorRegistry { /* zero-sized facade */ }
+
+impl TranslatorRegistry {
+    pub const fn new() -> Self;
+    pub fn forward(&self, family: TranslatorFamily, level: BackendLevel)
+        -> Option<&'static dyn ForwardTranslator>;
+    pub fn reverse(&self, family: TranslatorFamily)
+        -> Option<&'static dyn ReverseTranslator>;
+}
+```
+
+Rules:
+
+- closed v1: mirrors the `gr-profiles::CapabilityRegistry` pattern. The registry is a zero-sized facade over `&'static` data populated at compile time with the per-family translator implementations
+- lookup is `(family, level)` for forward translators because the same family may have distinct evdev / HID / transport translators (e.g. `DualSense` family at `Hid` level uses `DualSenseUsbHidTranslator`, at `Evdev` level uses a generic evdev translator)
+- reverse translators are keyed on family alone because reverse events arrive already classified by `BackendReverseTarget` (semantic vs. report-id vs. endpoint) and the translator dispatches internally
+- no runtime registration; plugin-style extension is intentionally deferred
+
+### `PreparedTranslationContext` construction
+
+```rust
+pub fn prepared_translation_context(
+    plan: &SessionPlan,
+    registry: &TranslatorRegistry,
+) -> Result<PreparedTranslationContext, TranslationError>;
+```
+
+Rules:
+
+- canonical construction path; lives in `gr-translators`
+- the manager (Phase 7+) calls this once at session startup; the result is shared by reference within the session for the session's lifetime
+- populates `descriptor_template` from the `gr-profiles` static descriptor data matching the plan's selected profile + fidelity tier
+- returns `TranslationError::NoTranslatorRegistered` when the plan names a `(family, level)` pair the closed registry does not cover
+- returns `TranslationError::DescriptorUnavailable` when the plan's fidelity tier has no descriptor template in the profile's `descriptor_templates` list
+
+### Translator semantics
+
+Translators are **descriptor-driven**. Per-profile byte and bit mappings are defined by the live `gr_profiles::DescriptorTemplate` referenced from `PreparedTranslationContext.descriptor_template`, not duplicated in this document. To change a mapping, update the descriptor; translator code follows the descriptor's layout.
+
+This document therefore does not enumerate every "Xbox button A → HID byte N bit M" mapping. Such mappings are implementation details verified by translator round-trip tests against the descriptor.
+
+### `capability-coverage` translator gap detection
+
+Beyond the Phase 2 registry self-consistency rules, `gr-cli capability-coverage` (post-Phase-6) must additionally verify, for every built-in profile:
+
+- every declared `OutputFunctionRef::Semantic` has a `ReverseTranslator` registered for the profile's family
+- every profile that declares an `Hid` or `Transport` level descriptor template has both a `ForwardTranslator` for `(family, level)` and a `ReverseTranslator` for `family`
+- the registered forward translator's family matches the descriptor template's family (no cross-family mismatches)
+- the registered reverse translator's family matches the same
+
+These checks turn the deferred "translator-coverage gap detection" from Phase 2 into hard rules. The Phase 6 PR implements the assertions; this section is the spec they must match.
 
 ## Session runtime model
 

@@ -519,6 +519,8 @@ Implement forward translators (profile input → backend frames) and reverse tra
 
 ### Deliverables
 
+Trait + registry + error types (`ForwardTranslator`, `ReverseTranslator`, `TranslatorRegistry`, `TranslationError`, `TranslationScratch`) already shipped in the Phase 6 prep PR. `PreparedTranslationContext.descriptor_template` already carries a live `&'static gr_profiles::DescriptorTemplate` reference. Phase 6 implements behavior against those shapes:
+
 - forward translators:
   - `GenericEvdevTranslator`
   - `XboxStyleEvdevTranslator` (covers Xbox 360 + similar layouts)
@@ -528,8 +530,11 @@ Implement forward translators (profile input → backend frames) and reverse tra
 - reverse translators:
   - `DualSenseHidReverseTranslator` (rumble, LEDs, trigger effects, mode commands, audio command discrete events)
   - `SteamControllerReverseTranslator` (LEDs, lighting commands per the family)
-- `TranslatorRegistry` + `PreparedTranslationContext` produced from `SessionPlan`
-- descriptor compatibility contract per [the implementation spec](RUST_IMPLEMENTATION_SPEC.md#descriptor-compatibility-contract): every HID profile has translator + descriptor template + reverse translator, all asserted consistent
+- `TranslatorRegistry` populated with `&'static dyn` references to the per-family implementations
+- `prepared_translation_context(plan, registry)` body — currently `unimplemented!()` from prep
+- real HID descriptor bytes for DualSense, Xbox 360, Steam Controller at `identity-aware` tier (Phase 2 shipped `EMPTY_DESCRIPTOR` placeholders; Phase 6 replaces them with bytes from public/community device specs)
+- `gr-cli capability-coverage` translator-gap detection per the spec rules at [Translator contracts](RUST_IMPLEMENTATION_SPEC.md#capability-coverage-translator-gap-detection)
+- descriptor compatibility contract: every HID profile has translator + descriptor template + reverse translator, all asserted consistent by the extended `capability-coverage`
 
 ### Iteration loop
 
