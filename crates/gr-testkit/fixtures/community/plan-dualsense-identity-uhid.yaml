@@ -5,6 +5,15 @@ profile_id: dualsense
 notes: |
   Canonical Phase 5 planner snapshot: DualSense identity-aware request
   against a Linux UHID-only inventory.
+
+  delivery_policy and backpressure_policy use the mapping form
+  (`callback: { ... }`) rather than YAML bang-tag form (`!callback ...`)
+  because serde_yaml 0.9 can serialize externally-tagged enums to
+  bang-tag form but cannot deserialize bang-tag form. Switching the
+  enums to internally-tagged (`#[serde(tag = "kind")]`) so the live
+  serializer also produces the mapping form is the proper fix, but
+  ripples through every snapshot in the workspace; tracked as a
+  follow-up.
 payload:
   outcome: plan
   session_id: 1

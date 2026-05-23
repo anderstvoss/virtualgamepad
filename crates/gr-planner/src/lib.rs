@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn hardware_faithful_degrades_to_hid() {
+    fn hardware_faithful_degrades_to_identity_aware() {
         let mut request = base_request();
         request.goal = EmulationGoal::HardwareFaithful;
         request.requested_fidelity_tier = FidelityTier::HardwareFaithful;
