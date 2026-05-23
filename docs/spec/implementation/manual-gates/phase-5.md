@@ -55,6 +55,10 @@ Confirm:
 - `requested_fidelity_tier: identity-aware`
 - `degradation.degraded: true`
 - `degradation.reasons` contains `transport-not-realizable`
+- that reason includes `requested_backend_level: transport`
+- that reason includes the lower-tier levels that were available in inventory
+- that reason includes the concrete available backend ids, such as `linux-uhid`
+- that reason string explains the concrete cause rather than only naming the enum kind
 
 What to record:
 
@@ -77,6 +81,8 @@ Confirm:
 
 - `outcome: rejection`
 - `reasons` includes `no-backend-supports-profile`
+- that reason includes the requested backend level implied by the goal
+- that reason includes `available_backends`, with `[]` for the empty-inventory case
 - output is structured YAML, not an ad hoc error string
 
 What to record:

@@ -628,7 +628,11 @@ Rules:
 ```rust
 #[non_exhaustive]
 pub enum DegradationReason {
-    TransportNotRealizable,
+    TransportNotRealizable {
+        requested_backend_level: BackendLevel,
+        available_backend_levels: Vec<BackendLevel>,
+        reason: String,
+    },
     ReversePathUnavailable,
     BackendDoesNotSupportFidelity { requested: FidelityTier, available: FidelityTier },
     ProviderHintIgnored { preferred: ProviderId, reason: String },
@@ -656,7 +660,11 @@ pub struct PlanRejection {
 
 #[non_exhaustive]
 pub enum PlanRejectionReason {
-    NoBackendSupportsProfile,
+    NoBackendSupportsProfile {
+        requested_backend_level: BackendLevel,
+        available_backends: Vec<BackendId>,
+        reason: String,
+    },
     NoBackendSupportsFidelity { requested: FidelityTier },
     NoBackendSupportsHost { requested: HostPlatform },
     BidirectionalSupportRequired { missing: Vec<SemanticOutputFunction> },

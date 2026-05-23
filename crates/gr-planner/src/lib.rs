@@ -23,7 +23,7 @@ use gr_backend_api::{
     SupportLevel,
 };
 use gr_config::UnsupportedCapabilityPolicy;
-use gr_core::{BackendLevel, FidelityTier, SemanticOutputFunction};
+use gr_core::{BackendId, BackendLevel, FidelityTier, SemanticOutputFunction};
 use gr_profiles::{OutputFunctionRef, ProfileFamily, registry};
 use gr_runtime_model::{
     BackendOpenContext, CapabilityNegotiationResult, DegradationReason, DegradationReport,
@@ -53,7 +53,14 @@ pub fn plan_session(
             profile_id: request.profile_id.clone(),
             requested_goal: request.goal,
             requested_fidelity_tier: request.requested_fidelity_tier,
-            reasons: vec![PlanRejectionReason::NoBackendSupportsProfile],
+            reasons: vec![no_backend_supports_profile_reason(
+                request.requested_fidelity_tier,
+                inventory,
+                format!(
+                    "profile `{}` is not registered, so no backend can be selected",
+                    request.profile_id
+                ),
+            )],
             considered_backends: inventory
                 .iter()
                 .map(|entry| entry.backend_id.clone())
@@ -84,7 +91,15 @@ pub fn plan_session(
 
     if host_candidates.is_empty() {
         let reasons = if inventory.is_empty() {
-            vec![PlanRejectionReason::NoBackendSupportsProfile]
+            vec![no_backend_supports_profile_reason(
+                request.requested_fidelity_tier,
+                inventory,
+                format!(
+                    "requested {}-tier planning for profile `{}` but no providers were available in inventory",
+                    requested_backend_level(request.requested_fidelity_tier),
+                    request.profile_id
+                ),
+            )]
         } else if request.host_platform_preference.is_some()
             || session_options
                 .provider_hints
@@ -95,7 +110,14 @@ pub fn plan_session(
                 requested: target_host,
             }]
         } else {
-            vec![PlanRejectionReason::NoBackendSupportsProfile]
+            vec![no_backend_supports_profile_reason(
+                request.requested_fidelity_tier,
+                inventory,
+                format!(
+                    "inventory providers exist, but none target host platform `{:?}` for profile `{}`",
+                    target_host, request.profile_id
+                ),
+            )]
         };
         return Err(PlanRejection {
             profile_id: request.profile_id.clone(),
@@ -164,7 +186,15 @@ pub fn plan_session(
             });
         }
         if reasons.is_empty() {
-            reasons.push(PlanRejectionReason::NoBackendSupportsProfile);
+            reasons.push(no_backend_supports_profile_reason(
+                request.requested_fidelity_tier,
+                inventory,
+                format!(
+                    "requested {}-tier planning for profile `{}` but available backends could not realize it",
+                    requested_backend_level(request.requested_fidelity_tier),
+                    request.profile_id
+                ),
+            ));
         }
         return Err(PlanRejection {
             profile_id: request.profile_id.clone(),
@@ -182,7 +212,14 @@ pub fn plan_session(
             profile_id: request.profile_id.clone(),
             requested_goal: request.goal,
             requested_fidelity_tier: request.requested_fidelity_tier,
-            reasons: vec![PlanRejectionReason::NoBackendSupportsProfile],
+            reasons: vec![no_backend_supports_profile_reason(
+                request.requested_fidelity_tier,
+                inventory,
+                format!(
+                    "planner found no realizable backend candidate for profile `{}`",
+                    request.profile_id
+                ),
+            )],
             considered_backends: inventory
                 .iter()
                 .map(|entry| entry.backend_id.clone())
@@ -209,8 +246,12 @@ pub fn plan_session(
         });
     }
 
-    let mut degradation_reasons =
-        degrade_reasons(request.requested_fidelity_tier, selected_tier).to_vec();
+    let mut degradation_reasons = degrade_reasons(
+        request.requested_fidelity_tier,
+        selected_tier,
+        host_candidate_levels(&host_candidates),
+        host_candidate_backend_ids(&host_candidates),
+    );
     let mut warnings = Vec::new();
 
     if let Some(preferred) = preferred_provider.clone() {
@@ -453,22 +494,118 @@ fn provider_id_from_entry(entry: &BackendInventoryEntry) -> ProviderId {
     ProviderId::from(entry.backend_id.as_ref())
 }
 
+fn requested_backend_level(requested: FidelityTier) -> BackendLevel {
+    match requested {
+        FidelityTier::Compatibility => BackendLevel::Evdev,
+        FidelityTier::IdentityAware => BackendLevel::Hid,
+        FidelityTier::HardwareFaithful => BackendLevel::Transport,
+    }
+}
+
+fn available_backend_ids(inventory: &[BackendInventoryEntry]) -> Vec<BackendId> {
+    inventory
+        .iter()
+        .map(|entry| entry.backend_id.clone())
+        .collect()
+}
+
+fn host_candidate_levels(host_candidates: &[CandidateSeed<'_>]) -> Vec<BackendLevel> {
+    dedup_backend_levels(
+        host_candidates
+            .iter()
+            .map(|candidate| candidate.entry.level)
+            .collect(),
+    )
+}
+
+fn host_candidate_backend_ids(host_candidates: &[CandidateSeed<'_>]) -> Vec<BackendId> {
+    let mut deduped = Vec::new();
+    for backend_id in host_candidates
+        .iter()
+        .map(|candidate| candidate.entry.backend_id.clone())
+    {
+        if !deduped.contains(&backend_id) {
+            deduped.push(backend_id);
+        }
+    }
+    deduped
+}
+
+fn no_backend_supports_profile_reason(
+    requested_fidelity_tier: FidelityTier,
+    inventory: &[BackendInventoryEntry],
+    reason: impl Into<String>,
+) -> PlanRejectionReason {
+    let reason = reason.into();
+    let available_backends = available_backend_ids(inventory);
+    let available_backend_text = if available_backends.is_empty() {
+        "none".to_string()
+    } else {
+        available_backends
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    PlanRejectionReason::NoBackendSupportsProfile {
+        requested_backend_level: requested_backend_level(requested_fidelity_tier),
+        available_backends,
+        reason: format!("{reason}; available backends: {available_backend_text}"),
+    }
+}
+
+fn transport_not_realizable_reason(
+    available_backend_levels: Vec<BackendLevel>,
+    available_backends: Vec<BackendId>,
+) -> DegradationReason {
+    let available_levels = render_backend_levels(&available_backend_levels);
+    let available_backends_text = if available_backends.is_empty() {
+        "none".to_string()
+    } else {
+        available_backends
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let reason = if available_backend_levels.is_empty() {
+        format!(
+            "no transport backend is available because no host-matching backends were available; available backends: {available_backends_text}"
+        )
+    } else {
+        format!(
+            "no transport backend is available; inventory exposes only {available_levels}-tier backends; available backends: {available_backends_text}"
+        )
+    };
+    DegradationReason::TransportNotRealizable {
+        requested_backend_level: BackendLevel::Transport,
+        available_backend_levels,
+        available_backends,
+        reason,
+    }
+}
+
 fn degrade_reasons(
     requested: FidelityTier,
     selected: FidelityTier,
-) -> &'static [DegradationReason] {
+    available_backend_levels: Vec<BackendLevel>,
+    available_backends: Vec<BackendId>,
+) -> Vec<DegradationReason> {
     match (requested, selected) {
         (FidelityTier::HardwareFaithful, FidelityTier::IdentityAware) => {
-            &[DegradationReason::TransportNotRealizable]
+            vec![transport_not_realizable_reason(
+                available_backend_levels,
+                available_backends,
+            )]
         }
         (FidelityTier::IdentityAware, FidelityTier::Compatibility) => {
-            &[DegradationReason::ReversePathUnavailable]
+            vec![DegradationReason::ReversePathUnavailable]
         }
-        (FidelityTier::HardwareFaithful, FidelityTier::Compatibility) => &[
-            DegradationReason::TransportNotRealizable,
+        (FidelityTier::HardwareFaithful, FidelityTier::Compatibility) => vec![
+            transport_not_realizable_reason(available_backend_levels, available_backends),
             DegradationReason::ReversePathUnavailable,
         ],
-        _ => &[],
+        _ => Vec::new(),
     }
 }
 
@@ -501,6 +638,24 @@ fn dedup_output_functions(functions: Vec<SemanticOutputFunction>) -> Vec<Semanti
         }
     }
     deduped
+}
+
+fn dedup_backend_levels(levels: Vec<BackendLevel>) -> Vec<BackendLevel> {
+    let mut deduped = Vec::new();
+    for level in levels {
+        if !deduped.contains(&level) {
+            deduped.push(level);
+        }
+    }
+    deduped
+}
+
+fn render_backend_levels(levels: &[BackendLevel]) -> String {
+    levels
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn translator_family(profile_family: ProfileFamily) -> TranslatorFamily {
@@ -670,7 +825,15 @@ mod tests {
         assert_eq!(plan.requested_fidelity_tier, FidelityTier::IdentityAware);
         assert!(matches!(
             plan.degradation.reasons.as_slice(),
-            [DegradationReason::TransportNotRealizable]
+            [DegradationReason::TransportNotRealizable {
+                requested_backend_level: BackendLevel::Transport,
+                available_backend_levels,
+                available_backends,
+                reason,
+            }] if available_backend_levels == &vec![BackendLevel::Hid]
+                && available_backends == &vec![gr_core::BackendId::from("linux-uhid")]
+                && reason.contains("no transport backend is available")
+                && reason.contains("available backends: linux-uhid")
         ));
         assert_snapshot!(
             "hardware_faithful_degrades_to_identity_aware",
@@ -712,7 +875,12 @@ mod tests {
         let rejection = plan_session(&request, &options, &[], &[]).expect_err("rejection");
         assert!(matches!(
             rejection.reasons.as_slice(),
-            [PlanRejectionReason::NoBackendSupportsProfile]
+            [PlanRejectionReason::NoBackendSupportsProfile {
+                requested_backend_level: BackendLevel::Hid,
+                available_backends,
+                reason,
+            }] if available_backends.is_empty()
+                && reason.contains("no providers were available")
         ));
         assert_snapshot!(
             "empty_inventory_rejection",
@@ -947,6 +1115,33 @@ mod tests {
             "expected at least one UnsupportedOutputCapability reason; got {:?}",
             plan.degradation.reasons
         );
+    }
+
+    #[test]
+    fn non_empty_inventory_rejection_lists_available_backends() {
+        let mut request = base_request();
+        request.profile_id = ProfileId::from("unknown-profile");
+        let options = compiled_options();
+        let factories = vec![fake_factory(
+            "linux-uinput",
+            BackendFamily::LinuxUinput,
+            BackendLevel::Evdev,
+            vec![FidelityTier::Compatibility],
+            &[],
+        )];
+        let inventory = inventory_from(&factories);
+
+        let rejection = plan_session(&request, &options, &inventory, &factories)
+            .expect_err("non-empty inventory should still reject");
+        assert!(matches!(
+            rejection.reasons.as_slice(),
+            [PlanRejectionReason::NoBackendSupportsProfile {
+                requested_backend_level: BackendLevel::Hid,
+                available_backends,
+                reason,
+            }] if available_backends == &vec![gr_core::BackendId::from("linux-uinput")]
+                && reason.contains("available backends: linux-uinput")
+        ));
     }
 
     #[test]

@@ -24,6 +24,12 @@ degradation:
   degraded: true
   reasons:
   - kind: transport-not-realizable
+    requested_backend_level: transport
+    available_backend_levels:
+    - hid
+    available_backends:
+    - linux-uhid
+    reason: 'no transport backend is available; inventory exposes only hid-tier backends; available backends: linux-uhid'
 deployment_requirements: {}
 backend_open_context:
   session_id: 1

@@ -175,7 +175,13 @@ pub struct DegradationReport {
 pub enum DegradationReason {
     /// `hardware-faithful` was requested but no transport-level backend
     /// can realize the profile; degraded to `identity-aware` or lower.
-    TransportNotRealizable,
+    TransportNotRealizable {
+        requested_backend_level: BackendLevel,
+        available_backend_levels: Vec<BackendLevel>,
+        #[serde(default)]
+        available_backends: Vec<gr_core::BackendId>,
+        reason: String,
+    },
     /// `identity-aware` was requested but the selected backend cannot
     /// carry the reverse output path (HID output / feature reports);
     /// degraded to `compatibility`.
@@ -280,7 +286,12 @@ pub struct PlanRejection {
 pub enum PlanRejectionReason {
     /// No backend in the inventory declares support for the profile at
     /// any fidelity tier.
-    NoBackendSupportsProfile,
+    NoBackendSupportsProfile {
+        requested_backend_level: BackendLevel,
+        #[serde(default)]
+        available_backends: Vec<gr_core::BackendId>,
+        reason: String,
+    },
     /// At least one backend supports the profile, but none at the
     /// requested fidelity tier and no acceptable degradation path
     /// exists.
@@ -510,7 +521,11 @@ mod tests {
             profile_id: ProfileId::from("dualsense"),
             requested_goal: EmulationGoal::HardwareFaithful,
             requested_fidelity_tier: FidelityTier::HardwareFaithful,
-            reasons: vec![PlanRejectionReason::NoBackendSupportsProfile],
+            reasons: vec![PlanRejectionReason::NoBackendSupportsProfile {
+                requested_backend_level: BackendLevel::Transport,
+                available_backends: vec![gr_core::BackendId::from("fake-uhid")],
+                reason: "inventory exposes only hid-tier providers".to_string(),
+            }],
             considered_backends: vec![gr_core::BackendId::from("fake-uhid")],
         };
 
