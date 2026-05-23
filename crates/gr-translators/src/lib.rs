@@ -456,7 +456,6 @@ impl ReverseTranslator for XboxStyleReverseTranslator {
         TranslatorFamily::XboxStyle
     }
 
-    #[allow(clippy::collapsible_match)]
     fn translate_reverse(
         &self,
         event: &BackendReverseEvent,
@@ -497,56 +496,49 @@ impl ReverseTranslator for XboxStyleReverseTranslator {
             }
         };
         let profile_id = event_profile_id(event, ctx);
-        match event.target.as_ref() {
-            Some(BackendReverseTarget::SemanticOutput(SemanticOutputFunction::Lighting)) => {
-                if bytes.len() >= 3 {
-                    out.push(output_command(
-                        event,
-                        profile_id,
-                        SemanticOutputFunction::Lighting,
-                        OutputPayload::Lighting(LightingPayload {
-                            red: None,
-                            green: None,
-                            blue: None,
-                            player_index: Some(bytes[0] & 0x0f),
-                        }),
-                    ));
-                    return Ok(());
-                }
+        if event_target_is(event, SemanticOutputFunction::Lighting) {
+            if bytes.len() >= 3 {
+                out.push(output_command(
+                    event,
+                    profile_id,
+                    SemanticOutputFunction::Lighting,
+                    OutputPayload::Lighting(LightingPayload {
+                        red: None,
+                        green: None,
+                        blue: None,
+                        player_index: Some(bytes[0] & 0x0f),
+                    }),
+                ));
+                return Ok(());
             }
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::PlayerIndicators,
-            )) => {
-                if !bytes.is_empty() {
-                    out.push(output_command(
-                        event,
-                        profile_id,
-                        SemanticOutputFunction::PlayerIndicators,
-                        OutputPayload::Lighting(LightingPayload {
-                            red: None,
-                            green: None,
-                            blue: None,
-                            player_index: Some(bytes[0] & 0x0f),
-                        }),
-                    ));
-                    return Ok(());
-                }
+        } else if event_target_is(event, SemanticOutputFunction::PlayerIndicators) {
+            if !bytes.is_empty() {
+                out.push(output_command(
+                    event,
+                    profile_id,
+                    SemanticOutputFunction::PlayerIndicators,
+                    OutputPayload::Lighting(LightingPayload {
+                        red: None,
+                        green: None,
+                        blue: None,
+                        player_index: Some(bytes[0] & 0x0f),
+                    }),
+                ));
+                return Ok(());
             }
-            Some(BackendReverseTarget::SemanticOutput(SemanticOutputFunction::Rumble)) | None => {
-                if bytes.len() >= 2 {
-                    out.push(output_command(
-                        event,
-                        profile_id,
-                        SemanticOutputFunction::Rumble,
-                        OutputPayload::Rumble(RumblePayload {
-                            strong: scale_u8_to_u16(bytes[0]),
-                            weak: scale_u8_to_u16(bytes[1]),
-                        }),
-                    ));
-                    return Ok(());
-                }
-            }
-            _ => {}
+        } else if event_target_is_or_unspecified(event, SemanticOutputFunction::Rumble)
+            && bytes.len() >= 2
+        {
+            out.push(output_command(
+                event,
+                profile_id,
+                SemanticOutputFunction::Rumble,
+                OutputPayload::Rumble(RumblePayload {
+                    strong: scale_u8_to_u16(bytes[0]),
+                    weak: scale_u8_to_u16(bytes[1]),
+                }),
+            ));
+            return Ok(());
         }
         Err(TranslationError::InvalidReverseEvent {
             reason: "xbox-style reverse event did not contain any recognized output command"
@@ -563,7 +555,6 @@ impl ReverseTranslator for DualSenseHidReverseTranslator {
         TranslatorFamily::DualSense
     }
 
-    #[allow(clippy::collapsible_if, clippy::too_many_lines)]
     fn translate_reverse(
         &self,
         event: &BackendReverseEvent,
@@ -576,113 +567,18 @@ impl ReverseTranslator for DualSenseHidReverseTranslator {
             });
         };
         let profile_id = event_profile_id(event, ctx);
-        let target = event.target.as_ref();
 
-        if matches!(
-            target,
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::Rumble | SemanticOutputFunction::Haptics
-            ))
-        ) || target.is_none()
+        for command in [
+            decode_dualsense_rumble(event, &profile_id, bytes),
+            decode_dualsense_lighting(event, &profile_id, bytes),
+            decode_dualsense_player_indicators(event, &profile_id, bytes),
+            decode_dualsense_trigger_effect(event, &profile_id, bytes),
+            decode_dualsense_audio(event, &profile_id, bytes),
+        ]
+        .into_iter()
+        .flatten()
         {
-            if bytes.len() > 4 && (bytes[3] != 0 || bytes[4] != 0) {
-                out.push(output_command(
-                    event,
-                    profile_id.clone(),
-                    SemanticOutputFunction::Rumble,
-                    OutputPayload::Rumble(RumblePayload {
-                        strong: scale_u8_to_u16(bytes[4]),
-                        weak: scale_u8_to_u16(bytes[3]),
-                    }),
-                ));
-            }
-        }
-
-        if matches!(
-            target,
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::Lighting
-            ))
-        ) || target.is_none()
-        {
-            if bytes.len() > 47 && (bytes[45] != 0 || bytes[46] != 0 || bytes[47] != 0) {
-                out.push(output_command(
-                    event,
-                    profile_id.clone(),
-                    SemanticOutputFunction::Lighting,
-                    OutputPayload::Lighting(LightingPayload {
-                        red: Some(bytes[45]),
-                        green: Some(bytes[46]),
-                        blue: Some(bytes[47]),
-                        player_index: None,
-                    }),
-                ));
-            }
-        }
-
-        if matches!(
-            target,
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::PlayerIndicators
-            ))
-        ) || target.is_none()
-        {
-            if bytes.len() > 44 && bytes[44] != 0 {
-                out.push(output_command(
-                    event,
-                    profile_id.clone(),
-                    SemanticOutputFunction::PlayerIndicators,
-                    OutputPayload::Lighting(LightingPayload {
-                        red: None,
-                        green: None,
-                        blue: None,
-                        player_index: Some(bytes[44] & 0x0f),
-                    }),
-                ));
-            }
-        }
-
-        if matches!(
-            target,
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::TriggerEffect
-            ))
-        ) || target.is_none()
-        {
-            if bytes.len() > 13 && bytes[11] != 0 {
-                let mut parameters = BTreeMap::new();
-                parameters.insert("left-strength".to_string(), format!("{}", bytes[12]));
-                parameters.insert("right-strength".to_string(), format!("{}", bytes[13]));
-                out.push(output_command(
-                    event,
-                    profile_id.clone(),
-                    SemanticOutputFunction::TriggerEffect,
-                    OutputPayload::TriggerEffect(TriggerEffectPayload {
-                        mode: format!("0x{:02x}", bytes[11]),
-                        parameters,
-                    }),
-                ));
-            }
-        }
-
-        if matches!(
-            target,
-            Some(BackendReverseTarget::SemanticOutput(
-                SemanticOutputFunction::Audio
-            ))
-        ) || target.is_none()
-        {
-            if bytes.len() > 9 && bytes[9] != 0 {
-                out.push(output_command(
-                    event,
-                    profile_id,
-                    SemanticOutputFunction::Audio,
-                    OutputPayload::Audio(AudioCommand {
-                        action: "speaker-update".to_string(),
-                        target: Some("speaker".to_string()),
-                    }),
-                ));
-            }
+            out.push(command);
         }
 
         if out.is_empty() {
@@ -695,6 +591,130 @@ impl ReverseTranslator for DualSenseHidReverseTranslator {
     }
 }
 
+fn decode_dualsense_rumble(
+    event: &BackendReverseEvent,
+    profile_id: &ProfileId,
+    bytes: &[u8],
+) -> Option<ControllerOutputCommand> {
+    // Rumble and Haptics share the same output byte positions on
+    // DualSense; either explicit target accepts the decode, and an
+    // unspecified target falls through.
+    let target = event.target.as_ref();
+    let accepts = matches!(
+        target,
+        Some(BackendReverseTarget::SemanticOutput(
+            SemanticOutputFunction::Rumble | SemanticOutputFunction::Haptics
+        ))
+    ) || target.is_none();
+    if !accepts || bytes.len() <= 4 || (bytes[3] == 0 && bytes[4] == 0) {
+        return None;
+    }
+    Some(output_command(
+        event,
+        profile_id.clone(),
+        SemanticOutputFunction::Rumble,
+        OutputPayload::Rumble(RumblePayload {
+            strong: scale_u8_to_u16(bytes[4]),
+            weak: scale_u8_to_u16(bytes[3]),
+        }),
+    ))
+}
+
+fn decode_dualsense_lighting(
+    event: &BackendReverseEvent,
+    profile_id: &ProfileId,
+    bytes: &[u8],
+) -> Option<ControllerOutputCommand> {
+    if !event_target_is_or_unspecified(event, SemanticOutputFunction::Lighting)
+        || bytes.len() <= 47
+        || (bytes[45] == 0 && bytes[46] == 0 && bytes[47] == 0)
+    {
+        return None;
+    }
+    Some(output_command(
+        event,
+        profile_id.clone(),
+        SemanticOutputFunction::Lighting,
+        OutputPayload::Lighting(LightingPayload {
+            red: Some(bytes[45]),
+            green: Some(bytes[46]),
+            blue: Some(bytes[47]),
+            player_index: None,
+        }),
+    ))
+}
+
+fn decode_dualsense_player_indicators(
+    event: &BackendReverseEvent,
+    profile_id: &ProfileId,
+    bytes: &[u8],
+) -> Option<ControllerOutputCommand> {
+    if !event_target_is_or_unspecified(event, SemanticOutputFunction::PlayerIndicators)
+        || bytes.len() <= 44
+        || bytes[44] == 0
+    {
+        return None;
+    }
+    Some(output_command(
+        event,
+        profile_id.clone(),
+        SemanticOutputFunction::PlayerIndicators,
+        OutputPayload::Lighting(LightingPayload {
+            red: None,
+            green: None,
+            blue: None,
+            player_index: Some(bytes[44] & 0x0f),
+        }),
+    ))
+}
+
+fn decode_dualsense_trigger_effect(
+    event: &BackendReverseEvent,
+    profile_id: &ProfileId,
+    bytes: &[u8],
+) -> Option<ControllerOutputCommand> {
+    if !event_target_is_or_unspecified(event, SemanticOutputFunction::TriggerEffect)
+        || bytes.len() <= 13
+        || bytes[11] == 0
+    {
+        return None;
+    }
+    let mut parameters = BTreeMap::new();
+    parameters.insert("left-strength".to_string(), format!("{}", bytes[12]));
+    parameters.insert("right-strength".to_string(), format!("{}", bytes[13]));
+    Some(output_command(
+        event,
+        profile_id.clone(),
+        SemanticOutputFunction::TriggerEffect,
+        OutputPayload::TriggerEffect(TriggerEffectPayload {
+            mode: format!("0x{:02x}", bytes[11]),
+            parameters,
+        }),
+    ))
+}
+
+fn decode_dualsense_audio(
+    event: &BackendReverseEvent,
+    profile_id: &ProfileId,
+    bytes: &[u8],
+) -> Option<ControllerOutputCommand> {
+    if !event_target_is_or_unspecified(event, SemanticOutputFunction::Audio)
+        || bytes.len() <= 9
+        || bytes[9] == 0
+    {
+        return None;
+    }
+    Some(output_command(
+        event,
+        profile_id.clone(),
+        SemanticOutputFunction::Audio,
+        OutputPayload::Audio(AudioCommand {
+            action: "speaker-update".to_string(),
+            target: Some("speaker".to_string()),
+        }),
+    ))
+}
+
 #[derive(Debug)]
 struct SteamControllerReverseTranslator;
 
@@ -703,7 +723,6 @@ impl ReverseTranslator for SteamControllerReverseTranslator {
         TranslatorFamily::SteamController
     }
 
-    #[allow(clippy::collapsible_match)]
     fn translate_reverse(
         &self,
         event: &BackendReverseEvent,
@@ -716,39 +735,35 @@ impl ReverseTranslator for SteamControllerReverseTranslator {
             });
         };
         let profile_id = event_profile_id(event, ctx);
-        match event.target.as_ref() {
-            Some(BackendReverseTarget::SemanticOutput(SemanticOutputFunction::Lighting)) | None => {
-                if bytes.len() >= 4 {
-                    out.push(output_command(
-                        event,
-                        profile_id.clone(),
-                        SemanticOutputFunction::Lighting,
-                        OutputPayload::Lighting(LightingPayload {
-                            red: Some(bytes[0]),
-                            green: Some(bytes[1]),
-                            blue: Some(bytes[2]),
-                            player_index: None,
-                        }),
-                    ));
-                }
-            }
-            _ => {}
+
+        if event_target_is_or_unspecified(event, SemanticOutputFunction::Lighting)
+            && bytes.len() >= 4
+        {
+            out.push(output_command(
+                event,
+                profile_id.clone(),
+                SemanticOutputFunction::Lighting,
+                OutputPayload::Lighting(LightingPayload {
+                    red: Some(bytes[0]),
+                    green: Some(bytes[1]),
+                    blue: Some(bytes[2]),
+                    player_index: None,
+                }),
+            ));
         }
-        match event.target.as_ref() {
-            Some(BackendReverseTarget::SemanticOutput(SemanticOutputFunction::Rumble)) | None => {
-                if bytes.len() >= 6 && (bytes[4] != 0 || bytes[5] != 0) {
-                    out.push(output_command(
-                        event,
-                        profile_id,
-                        SemanticOutputFunction::Rumble,
-                        OutputPayload::Rumble(RumblePayload {
-                            strong: scale_u8_to_u16(bytes[5]),
-                            weak: scale_u8_to_u16(bytes[4]),
-                        }),
-                    ));
-                }
-            }
-            _ => {}
+        if event_target_is_or_unspecified(event, SemanticOutputFunction::Rumble)
+            && bytes.len() >= 6
+            && (bytes[4] != 0 || bytes[5] != 0)
+        {
+            out.push(output_command(
+                event,
+                profile_id,
+                SemanticOutputFunction::Rumble,
+                OutputPayload::Rumble(RumblePayload {
+                    strong: scale_u8_to_u16(bytes[5]),
+                    weak: scale_u8_to_u16(bytes[4]),
+                }),
+            ));
         }
 
         if out.is_empty() {
@@ -916,6 +931,27 @@ fn event_profile_id(event: &BackendReverseEvent, ctx: &PreparedTranslationContex
     event.profile_id.clone().unwrap_or_else(|| {
         ProfileId::from(ctx.profile_family.as_deref().unwrap_or("unknown-profile"))
     })
+}
+
+/// Returns true if the event's `target` names exactly `expected` as a
+/// `SemanticOutput`. Used by reverse translators to gate per-output
+/// decode paths when the host has narrowed the target.
+fn event_target_is(event: &BackendReverseEvent, expected: SemanticOutputFunction) -> bool {
+    matches!(
+        event.target.as_ref(),
+        Some(BackendReverseTarget::SemanticOutput(function)) if *function == expected
+    )
+}
+
+/// Returns true if the event's `target` is `None` (host did not narrow)
+/// or if it names exactly `expected` as a `SemanticOutput`. Used by
+/// reverse translators that decode multiple output sections from one
+/// event payload and should fall through when the target is broad.
+fn event_target_is_or_unspecified(
+    event: &BackendReverseEvent,
+    expected: SemanticOutputFunction,
+) -> bool {
+    event.target.is_none() || event_target_is(event, expected)
 }
 
 fn output_command(

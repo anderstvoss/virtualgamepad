@@ -325,6 +325,14 @@ const STEAM_CONTROLLER_DESCRIPTOR: DescriptorBytes = DescriptorBytes(&[
     0x26, 0xff, 0xff, 0x75, 0x10, 0x95, 0x02, 0x05, 0x02, 0x09, 0xc5, 0x09, 0xc4, 0x81, 0x02, 0x85,
     0x02, 0x06, 0x00, 0xff, 0x09, 0x23, 0x75, 0x08, 0x95, 0x08, 0x91, 0x02, 0xc0,
 ]);
+// Each `*_DESCRIPTORS_ALL` const reuses the same descriptor bytes
+// across all three fidelity tiers because a device's HID descriptor
+// identifies the family and report structure, not the fidelity tier
+// the host has selected. Compatibility-tier sessions go through evdev
+// and do not consult these bytes, but having them present keeps the
+// per-tier registry shape uniform and lets a future tier (e.g. a
+// hardware-faithful transport refinement) reuse the same bytes
+// without a separate const.
 const XBOX360_DESCRIPTORS_ALL: &[DescriptorTemplate] = &[
     DescriptorTemplate {
         fidelity: FidelityTier::Compatibility,
