@@ -1370,6 +1370,27 @@ mod tests {
         }
     }
 
+    /// Read the profile registry to produce the list of semantic
+    /// output functions a profile declares as reverse-supported.
+    /// Sourcing the allowed list from the registry means the property
+    /// test follows the profile contract automatically: if a profile
+    /// adds or removes a reverse output, the test reflects it without
+    /// a separate edit here.
+    fn declared_semantic_outputs(profile_id: &str) -> Vec<SemanticOutputFunction> {
+        use gr_profiles::{OutputFunctionRef, registry};
+        registry()
+            .profile_by_str(profile_id)
+            .expect("registered profile")
+            .reverse_command_support
+            .supported
+            .iter()
+            .filter_map(|function| match function {
+                OutputFunctionRef::Semantic(output) => Some(*output),
+                _ => None,
+            })
+            .collect()
+    }
+
     proptest! {
         #[test]
         fn reverse_translators_never_emit_undeclared_outputs_dualsense(bytes in proptest::collection::vec(any::<u8>(), 0..64)) {
@@ -1388,14 +1409,7 @@ mod tests {
             };
             let mut out = SmallVec::<[_; 4]>::new();
             let _ = translator.translate_reverse(&event, &ctx, &mut out);
-            assert_declared_outputs(&out, &[
-                SemanticOutputFunction::Rumble,
-                SemanticOutputFunction::Haptics,
-                SemanticOutputFunction::Lighting,
-                SemanticOutputFunction::PlayerIndicators,
-                SemanticOutputFunction::TriggerEffect,
-                SemanticOutputFunction::Audio,
-            ]);
+            assert_declared_outputs(&out, &declared_semantic_outputs("dualsense"));
         }
 
         #[test]
@@ -1417,10 +1431,7 @@ mod tests {
             };
             let mut out = SmallVec::<[_; 4]>::new();
             let _ = translator.translate_reverse(&event, &ctx, &mut out);
-            assert_declared_outputs(&out, &[
-                SemanticOutputFunction::Rumble,
-                SemanticOutputFunction::Lighting,
-            ]);
+            assert_declared_outputs(&out, &declared_semantic_outputs("steam-controller"));
         }
 
         #[test]
@@ -1454,11 +1465,7 @@ mod tests {
             };
             let mut out = SmallVec::<[_; 4]>::new();
             let _ = translator.translate_reverse(&event, &ctx, &mut out);
-            assert_declared_outputs(&out, &[
-                SemanticOutputFunction::Rumble,
-                SemanticOutputFunction::Lighting,
-                SemanticOutputFunction::PlayerIndicators,
-            ]);
+            assert_declared_outputs(&out, &declared_semantic_outputs("xbox360"));
         }
     }
 
