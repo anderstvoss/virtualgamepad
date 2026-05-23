@@ -555,10 +555,10 @@ Rules:
 pub struct SessionRequest {
     pub profile_id: ProfileId,
     pub goal: EmulationGoal,
-    pub config: SessionConfig,
-    pub host_platform_preference: Option<HostPlatformPreference>,
-    pub backend_preference: Option<BackendPreference>,
-    pub provider_preference: Option<ProviderPreference>,
+    pub requested_fidelity_tier: FidelityTier,
+    pub host_platform_preference: Option<HostPlatform>,
+    pub backend_preference: Option<BackendLevel>,
+    pub provider_preference: Option<ProviderId>,
     pub host_metadata: SessionHostMetadata,
 }
 ```
@@ -630,7 +630,7 @@ pub enum DegradationReason {
     ReversePathUnavailable,
     BackendDoesNotSupportFidelity { requested: FidelityTier, available: FidelityTier },
     ProviderHintIgnored { preferred: ProviderId, reason: String },
-    BackendFamilyHintIgnored { preferred: BackendFamily, reason: String },
+    BackendLevelHintIgnored { preferred: BackendLevel, reason: String },
     UnsupportedOutputCapability { function: SemanticOutputFunction, reason: String },
 }
 ```
@@ -692,7 +692,7 @@ Rules:
 Hints on `SessionRequest` (`provider_preference`, `backend_preference`, `host_platform_preference`) shape selection but never bypass validation. Per-hint behavior:
 
 - **`provider_preference`**: if the named provider is absent from the inventory or its `can_realize` returns `SupportLevel::None`, the planner falls through to default selection and records `DegradationReason::ProviderHintIgnored { preferred, reason }`. The hint never causes rejection on its own.
-- **`backend_preference`**: if no factory matches the preferred `BackendLevel`, falls through to default selection and records `BackendFamilyHintIgnored`.
+- **`backend_preference`**: if no factory matches the preferred `BackendLevel`, falls through to default selection and records `DegradationReason::BackendLevelHintIgnored { preferred: BackendLevel, reason }`.
 - **`host_platform_preference`**: must match exactly. A mismatch is a **rejection** (`PlanRejectionReason::NoBackendSupportsHost`), not a degradation — host platform is the binding constraint that gates which factories are even considered.
 
 Tie-breaking when multiple backends satisfy the same family at the same level:

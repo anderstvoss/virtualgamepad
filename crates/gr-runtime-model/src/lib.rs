@@ -192,10 +192,12 @@ pub enum DegradationReason {
         preferred: ProviderId,
         reason: String,
     },
-    /// `backend_preference` named a backend family that could not be
-    /// honored; the planner fell through to default selection.
-    BackendFamilyHintIgnored {
-        preferred: BackendFamily,
+    /// `backend_preference` named a backend level that could not be
+    /// honored; the planner fell through to default selection. The
+    /// variant carries `BackendLevel` because
+    /// `SessionRequest.backend_preference` is `Option<BackendLevel>`.
+    BackendLevelHintIgnored {
+        preferred: BackendLevel,
         reason: String,
     },
     /// A declared profile output capability is not realizable by the

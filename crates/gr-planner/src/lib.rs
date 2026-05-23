@@ -225,11 +225,26 @@ pub fn plan_session(
     if let Some(preferred_level) = request.backend_preference
         && preferred_level != selected.entry.level
     {
+        let reason = format!(
+            "preferred backend level `{preferred_level}` was unavailable for the selected plan; using `{}`",
+            selected.entry.level
+        );
+        degradation_reasons.push(DegradationReason::BackendLevelHintIgnored {
+            preferred: preferred_level,
+            reason: reason.clone(),
+        });
         warnings.push(PlannerWarning {
             code: "backend-preference-ignored".to_string(),
-            message: format!(
-                "preferred backend level `{preferred_level}` was unavailable for the selected plan; using `{}`",
-                selected.entry.level
+            message: reason,
+        });
+    }
+
+    for function in &selected.missing_output_functions {
+        degradation_reasons.push(DegradationReason::UnsupportedOutputCapability {
+            function: *function,
+            reason: format!(
+                "selected backend `{}` does not realize `{function}`",
+                selected.entry.backend_id
             ),
         });
     }
@@ -656,10 +671,15 @@ mod tests {
         let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
         assert_eq!(plan.selected_level, BackendLevel::Evdev);
         assert_eq!(plan.requested_fidelity_tier, FidelityTier::Compatibility);
-        assert!(matches!(
-            plan.degradation.reasons.as_slice(),
-            [DegradationReason::ReversePathUnavailable]
-        ));
+        assert!(plan.degradation.degraded);
+        assert!(
+            plan.degradation
+                .reasons
+                .iter()
+                .any(|reason| matches!(reason, DegradationReason::ReversePathUnavailable)),
+            "expected ReversePathUnavailable in {:?}",
+            plan.degradation.reasons
+        );
     }
 
     #[test]
@@ -734,6 +754,72 @@ mod tests {
 
         let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
         assert_eq!(plan.warnings[0].code, "provider-hint-ignored");
+    }
+
+    #[test]
+    fn backend_level_hint_falls_through_with_degradation_reason() {
+        let mut request = base_request();
+        request.backend_preference = Some(BackendLevel::Evdev);
+        let options = compiled_options();
+        let factories = vec![fake_factory(
+            "linux-uhid",
+            BackendFamily::LinuxUhid,
+            BackendLevel::Hid,
+            vec![FidelityTier::IdentityAware],
+            &dualsense_outputs(),
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert!(plan.degradation.degraded);
+        assert!(plan.degradation.reasons.iter().any(|reason| matches!(
+            reason,
+            DegradationReason::BackendLevelHintIgnored {
+                preferred: BackendLevel::Evdev,
+                ..
+            }
+        )));
+        assert!(
+            plan.warnings
+                .iter()
+                .any(|warning| warning.code == "backend-preference-ignored")
+        );
+    }
+
+    #[test]
+    fn unsupported_outputs_emit_typed_degradation_reasons() {
+        let request = base_request();
+        let options = compiled_options();
+        // Fake factory declares the profile but advertises NO outputs;
+        // the planner should still produce a compatibility plan (uhid is
+        // willing to forward) but flag each missing output as a typed
+        // degradation reason.
+        let factories = vec![fake_factory(
+            "linux-uhid",
+            BackendFamily::LinuxUhid,
+            BackendLevel::Hid,
+            vec![FidelityTier::Compatibility],
+            &[],
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        let missing_capability_reasons = plan
+            .degradation
+            .reasons
+            .iter()
+            .filter(|reason| {
+                matches!(
+                    reason,
+                    DegradationReason::UnsupportedOutputCapability { .. }
+                )
+            })
+            .count();
+        assert!(
+            missing_capability_reasons >= 1,
+            "expected at least one UnsupportedOutputCapability reason; got {:?}",
+            plan.degradation.reasons
+        );
     }
 
     #[test]
