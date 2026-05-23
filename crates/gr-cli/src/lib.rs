@@ -1472,13 +1472,19 @@ mod tests {
 
     #[test]
     fn plan_session_output_is_stable() {
+        // Pin `--host-platform linux` so the snapshot is deterministic
+        // across CI runners. The planner falls back to the runtime host
+        // when no preference is given, which would make the test
+        // OS-dependent (macOS / Windows runners would not match any
+        // Linux backend in the inventory and produce a rejection
+        // instead of a plan).
         let repo_root = repo_root().expect("workspace root");
         let inventory = repo_root.join("samples/inventories/linux-uhid-only.yaml");
         let output = plan_session(
             "dualsense",
             "identity-aware",
             inventory,
-            None,
+            Some("linux"),
             None,
             None,
             Some(1),
@@ -1489,6 +1495,10 @@ mod tests {
 
     #[test]
     fn plan_session_rejection_output_is_stable() {
+        // Empty inventory is OS-independent (no backends at any
+        // platform), so the rejection is stable regardless of the
+        // runner. Explicit host_platform omitted on purpose to
+        // exercise the no-hint branch.
         let repo_root = repo_root().expect("workspace root");
         let inventory = repo_root.join("samples/inventories/empty.yaml");
         let output = plan_session(

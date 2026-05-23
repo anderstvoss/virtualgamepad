@@ -534,12 +534,17 @@ mod tests {
     use std::sync::Arc;
 
     fn base_request() -> SessionRequest {
+        // Pin host_platform_preference: Some(Linux) so tests are
+        // deterministic across CI runners. The planner's no-hint
+        // fallback uses the runtime host, which would make tests
+        // OS-dependent (factories are built with HostPlatform::Linux,
+        // so a macOS or Windows runner would see no candidates).
         SessionRequest {
             session_id: SessionId::new(1),
             profile_id: ProfileId::from("dualsense"),
             goal: EmulationGoal::IdentityAware,
             requested_fidelity_tier: FidelityTier::IdentityAware,
-            host_platform_preference: None,
+            host_platform_preference: Some(HostPlatform::Linux),
             backend_preference: None,
             provider_preference: None,
             host_metadata: SessionHostMetadata::default(),
