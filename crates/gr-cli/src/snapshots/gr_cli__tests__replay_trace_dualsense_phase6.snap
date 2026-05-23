@@ -1,0 +1,6 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+trace: dualsense-rumble-from-host
+1. inbound hid-output-report target=none report_id=0x02 bytes=[00 00 00 0a 14 00 00 00 00 01 00 07 1e 28 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 64 6e 78] => Semantic(Rumble):Rumble(RumblePayload { strong: 5140, weak: 2570 }) | Semantic(Lighting):Lighting(LightingPayload { red: Some(100), green: Some(110), blue: Some(120), player_index: None }) | Semantic(PlayerIndicators):Lighting(LightingPayload { red: None, green: None, blue: None, player_index: Some(3) }) | Semantic(TriggerEffect):TriggerEffect(TriggerEffectPayload { mode: "0x07", parameters: {"left-strength": "30", "right-strength": "40"} }) | Semantic(Audio):Audio(AudioCommand { action: "speaker-update", target: Some("speaker") })

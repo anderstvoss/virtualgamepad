@@ -164,8 +164,8 @@ input_contract:
   delta_support: sparse-partial
 descriptor_templates:
 - fidelity: compatibility
-  descriptor_len: 0
+  descriptor_len: 188
 - fidelity: identity-aware
-  descriptor_len: 0
+  descriptor_len: 188
 - fidelity: hardware-faithful
-  descriptor_len: 0
+  descriptor_len: 188

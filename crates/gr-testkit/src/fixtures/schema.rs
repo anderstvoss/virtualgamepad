@@ -11,6 +11,7 @@ use super::{
     backend_trace::{BackendTraceFixture, decode_backend_trace},
     input_frame::{InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame},
     plan_snapshot::{PlanSnapshotFixture, decode_plan_snapshot},
+    reverse_event::{ReverseEventFixture, decode_reverse_event},
     session_scenario::{SessionScenarioFixture, decode_session_scenario},
 };
 
@@ -35,6 +36,7 @@ pub enum FixtureDocument {
     InputFrame(InputFrameFixture),
     InputDelta(InputDeltaFixture),
     BackendTrace(BackendTraceFixture),
+    ReverseEvent(ReverseEventFixture),
     SessionScenario(SessionScenarioFixture),
     PlanSnapshot(PlanSnapshotFixture),
     BackendInventory(BackendInventoryFixture),
@@ -101,7 +103,7 @@ pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureEr
         "backend-inventory" => {
             decode_backend_inventory(envelope).map(FixtureDocument::BackendInventory)
         }
-        "reverse-event" => Ok(FixtureDocument::Envelope(envelope)),
+        "reverse-event" => decode_reverse_event(envelope).map(FixtureDocument::ReverseEvent),
         other => Err(FixtureError::UnsupportedKind {
             kind: other.to_owned(),
         }),

@@ -2,6 +2,7 @@
 
 mod phase4;
 
+use gr_backend_api::{BackendReverseEvent, BackendReversePayload, BackendReverseTarget};
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
     BackendLevel, CoreError, FidelityTier, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload,
@@ -9,8 +10,8 @@ use gr_core::{
 };
 use gr_planner::plan_session as plan_runtime_session;
 use gr_profiles::{
-    CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, RegistryError,
-    SemanticRef, registry,
+    CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
+    RegistryError, SemanticRef, registry,
 };
 use gr_runtime_model::{
     BackpressurePolicy, EmulationGoal, HostPlatform, ReverseEventDeliveryPolicy,
@@ -24,6 +25,7 @@ use gr_testkit::{
     fakes::backend_factory,
     fixtures::{FixtureDocument as TestkitFixtureDocument, PlanOutcome, load_fixture},
 };
+use gr_translators::TranslatorRegistry;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fmt;
@@ -99,6 +101,12 @@ const PHASE_5_COMMANDS: &[&[&str]] = &[
     ],
 ];
 
+const PHASE_6_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+    &["cargo", "run", "-p", "gr-cli", "--", "capability-coverage"],
+];
+
 /// Run a Phase 4 fake-backend-backed session scenario.
 ///
 /// # Errors
@@ -160,6 +168,24 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
             fixture.envelope.id,
             fixture.delta.profile_id,
             fixture.delta.payload.variant_name(),
+        )),
+        FixtureDocument::ReverseEvent(fixture) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\nreverse_kind: {}\ntarget: {}\npayload_kind: {}",
+            fixture.envelope.fixture,
+            fixture.envelope.kind,
+            fixture.envelope.id,
+            fixture
+                .event
+                .profile_id
+                .as_ref()
+                .map_or("<none>".to_string(), ToString::to_string),
+            serde_name(&fixture.event.kind),
+            fixture
+                .event
+                .target
+                .as_ref()
+                .map_or("<none>".to_string(), describe_reverse_target),
+            reverse_payload_kind(&fixture.event.payload),
         )),
     }
 }
@@ -514,6 +540,7 @@ enum FixtureDocument {
     Envelope(FixtureEnvelope),
     InputFrame(InputFrameFixture),
     InputDelta(InputDeltaFixture),
+    ReverseEvent(ReverseEventFixture),
 }
 
 #[derive(Debug)]
@@ -577,6 +604,12 @@ struct RawInputDeltaPayload {
 struct InputDeltaFixture {
     envelope: FixtureEnvelope,
     delta: ProfileInputDelta,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReverseEventFixture {
+    envelope: FixtureEnvelope,
+    event: BackendReverseEvent,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -742,6 +775,31 @@ fn yaml_value_kind(value: &serde_yaml::Value) -> &'static str {
     }
 }
 
+fn reverse_payload_kind(payload: &BackendReversePayload) -> &'static str {
+    match payload {
+        BackendReversePayload::Hid { .. } => "hid",
+        BackendReversePayload::Transport { .. } => "transport",
+        BackendReversePayload::Evdev { .. } => "evdev",
+        _ => "unknown",
+    }
+}
+
+fn describe_reverse_target(target: &BackendReverseTarget) -> String {
+    match target {
+        BackendReverseTarget::SemanticOutput(function) => {
+            format!("semantic-output:{function}")
+        }
+        BackendReverseTarget::ProfileSpecificOutput(function) => {
+            format!("profile-specific-output:{}", serde_name(function))
+        }
+        BackendReverseTarget::ReportId(report_id) => format!("report-id:{report_id}"),
+        BackendReverseTarget::EndpointId(endpoint_id) => {
+            format!("endpoint-id:{endpoint_id}")
+        }
+        _ => "unknown".to_string(),
+    }
+}
+
 fn load_fixture_summary(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureError> {
     let contents = std::fs::read_to_string(path).map_err(FixtureError::Io)?;
     let envelope: FixtureEnvelope = serde_yaml::from_str(&contents).map_err(FixtureError::Parse)?;
@@ -753,8 +811,10 @@ fn load_fixture_summary(path: impl AsRef<Path>) -> Result<FixtureDocument, Fixtu
     match envelope.kind.as_str() {
         "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
         "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
-        "backend-trace" | "backend-inventory" | "reverse-event" | "plan-snapshot"
-        | "session-scenario" => Ok(FixtureDocument::Envelope(envelope)),
+        "reverse-event" => decode_reverse_event(envelope).map(FixtureDocument::ReverseEvent),
+        "backend-trace" | "backend-inventory" | "plan-snapshot" | "session-scenario" => {
+            Ok(FixtureDocument::Envelope(envelope))
+        }
         other => Err(FixtureError::UnsupportedKind {
             kind: other.to_owned(),
         }),
@@ -803,6 +863,12 @@ fn decode_input_delta(envelope: FixtureEnvelope) -> Result<InputDeltaFixture, Fi
     })?;
 
     Ok(InputDeltaFixture { envelope, delta })
+}
+
+fn decode_reverse_event(envelope: FixtureEnvelope) -> Result<ReverseEventFixture, FixtureError> {
+    let event = serde_yaml::from_value::<BackendReverseEvent>(envelope.payload.clone())
+        .map_err(FixtureError::Parse)?;
+    Ok(ReverseEventFixture { envelope, event })
 }
 
 fn compiled_planner_options(
@@ -911,6 +977,7 @@ fn collect_profile_gaps(
     profile: &ControllerProfile,
 ) -> Vec<CapabilityGap> {
     let mut gaps = Vec::new();
+    let translators = TranslatorRegistry::new();
 
     if let Err(error) = registry.validate_profile_contract(profile) {
         gaps.push(capability_gap(profile, "registry", &error));
@@ -953,7 +1020,86 @@ fn collect_profile_gaps(
         }
     }
 
+    let translator_family = translator_family_for(profile.profile_family);
+    if profile
+        .capabilities
+        .output
+        .iter()
+        .any(|capability| matches!(capability.semantic, SemanticRef::Output(_)))
+        && translators.reverse(translator_family).is_none()
+    {
+        for capability in profile.capabilities.output {
+            let SemanticRef::Output(output) = capability.semantic else {
+                continue;
+            };
+            gaps.push(CapabilityGap {
+                profile_id: profile.profile_id.to_string(),
+                capability: output.to_string(),
+                reason: "declared output capability has no reverse translator coverage".to_string(),
+            });
+        }
+    }
+
+    let expected_level = expected_forward_level(profile.profile_family);
+    if translators
+        .forward(translator_family, expected_level)
+        .is_none()
+    {
+        gaps.push(CapabilityGap {
+            profile_id: profile.profile_id.to_string(),
+            capability: format!("forward-translator:{expected_level}"),
+            reason: "built-in profile has no registered forward translator for its execution level"
+                .to_string(),
+        });
+    }
+
+    let has_real_descriptor = profile
+        .descriptor_templates
+        .iter()
+        .any(|template| !template.descriptor.0.is_empty());
+    if has_real_descriptor && expected_level == BackendLevel::Hid {
+        let Some(forward) = translators.forward(translator_family, expected_level) else {
+            return gaps;
+        };
+        if forward.family() != translator_family {
+            gaps.push(CapabilityGap {
+                profile_id: profile.profile_id.to_string(),
+                capability: "descriptor-family".to_string(),
+                reason: "descriptor-backed profile resolved to a cross-family forward translator"
+                    .to_string(),
+            });
+        }
+        if let Some(reverse) = translators.reverse(translator_family) {
+            if reverse.family() != translator_family {
+                gaps.push(CapabilityGap {
+                    profile_id: profile.profile_id.to_string(),
+                    capability: "reverse-translator-family".to_string(),
+                    reason:
+                        "descriptor-backed profile resolved to a cross-family reverse translator"
+                            .to_string(),
+                });
+            }
+        }
+    }
+
     gaps
+}
+
+fn translator_family_for(profile_family: ProfileFamily) -> gr_runtime_model::TranslatorFamily {
+    match profile_family {
+        ProfileFamily::GenericGamepad => gr_runtime_model::TranslatorFamily::GenericGamepad,
+        ProfileFamily::Xbox360 => gr_runtime_model::TranslatorFamily::XboxStyle,
+        ProfileFamily::DualSense => gr_runtime_model::TranslatorFamily::DualSense,
+        ProfileFamily::SteamController => gr_runtime_model::TranslatorFamily::SteamController,
+        _ => gr_runtime_model::TranslatorFamily::Unresolved,
+    }
+}
+
+fn expected_forward_level(profile_family: ProfileFamily) -> BackendLevel {
+    match profile_family {
+        ProfileFamily::DualSense | ProfileFamily::SteamController => BackendLevel::Hid,
+        _ => BackendLevel::Evdev,
+    }
 }
 
 fn capability_gap(
@@ -1049,7 +1195,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        6..=12 => Err(CliError::UnimplementedPhase { phase }),
+        6 => Ok(PHASE_6_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        7..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -1109,9 +1259,9 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
-        capability_coverage, list_profiles, phase_gate_commands, plan_session, replay_trace,
-        repo_root, repo_root_from, show_capabilities, simulate_session, validate_config,
-        validate_fixture,
+        PHASE_6_COMMANDS, capability_coverage, list_profiles, phase_gate_commands, plan_session,
+        replay_trace, repo_root, repo_root_from, show_capabilities, simulate_session,
+        validate_config, validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -1446,11 +1596,47 @@ mod tests {
     }
 
     #[test]
+    fn phase_six_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_six = plan
+            .split("## Phase 6:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 7:").next())
+            .expect("phase 6 section");
+        let automated = phase_six
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_6_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 6 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
     fn validate_fixture_summary_for_dualsense_fixture_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let fixture_path = repo_root.join("crates/gr-core/fixtures/payload-dualsense-neutral.yaml");
         let summary = validate_fixture(fixture_path).expect("fixture should validate");
         assert_snapshot!("validate_fixture_dualsense", summary);
+    }
+
+    #[test]
+    fn validate_fixture_summary_for_reverse_event_fixture_is_typed() {
+        let repo_root = repo_root().expect("workspace root");
+        let fixture_path =
+            repo_root.join("crates/gr-testkit/fixtures/community/dualsense-rumble-standalone.yaml");
+        let summary = validate_fixture(fixture_path).expect("fixture should validate");
+        assert_snapshot!("validate_fixture_reverse_event", summary);
     }
 
     #[test]
@@ -1468,6 +1654,15 @@ mod tests {
         let trace = repo_root.join("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml");
         let output = replay_trace(trace).expect("trace");
         assert_snapshot!("replay_trace_fake_rumble", output);
+    }
+
+    #[test]
+    fn replay_trace_phase6_dualsense_fixture_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let trace =
+            repo_root.join("crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml");
+        let output = replay_trace(trace).expect("trace");
+        assert_snapshot!("replay_trace_dualsense_phase6", output);
     }
 
     #[test]

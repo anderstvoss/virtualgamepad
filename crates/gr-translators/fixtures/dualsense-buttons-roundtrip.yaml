@@ -1,0 +1,77 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: dualsense-buttons-roundtrip
+profile_id: dualsense
+notes: |
+  Phase 6 manual-review fixture: outbound DualSense HID input report with
+  visible face-button and dpad state so replay-trace can render a decoded
+  summary alongside the raw bytes.
+payload:
+  steps:
+    - direction: outbound
+      kind: hid-input-report
+      report_id: 1
+      bytes:
+        - 127
+        - 127
+        - 127
+        - 127
+        - 4
+        - 8
+        - 0
+        - 160
+        - 1
+        - 2
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 232
+        - 3
+        - 32
+        - 129
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0
+        - 0

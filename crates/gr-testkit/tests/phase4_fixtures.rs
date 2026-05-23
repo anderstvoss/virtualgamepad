@@ -66,3 +66,23 @@ fn plan_snapshot_plan_fixture_decodes_with_expected_shape() {
     assert!(!plan.degradation.degraded);
     assert!(!plan.capability_result.enabled_capabilities.is_empty());
 }
+
+#[test]
+fn standalone_reverse_event_fixture_decodes_through_testkit_loader() {
+    let document = load_fixture(fixture_path(
+        "fixtures/community/dualsense-rumble-standalone.yaml",
+    ))
+    .expect("reverse-event decodes");
+    let FixtureDocument::ReverseEvent(fixture) = document else {
+        panic!("expected reverse-event document");
+    };
+    assert_eq!(fixture.envelope.id, "dualsense-rumble-standalone");
+    assert_eq!(
+        fixture
+            .event
+            .profile_id
+            .as_ref()
+            .map(gr_core::ProfileId::as_ref),
+        Some("dualsense")
+    );
+}

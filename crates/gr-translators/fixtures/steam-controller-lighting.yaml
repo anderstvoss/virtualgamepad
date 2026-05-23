@@ -1,0 +1,47 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: steam-controller-lighting
+profile_id: steam-controller
+notes: |
+  Phase 6 manual-review fixture: outbound Steam Controller HID input report
+  plus inbound lighting update so replay-trace renders both the raw bytes and
+  the decoded lighting command.
+payload:
+  steps:
+    - direction: outbound
+      kind: hid-input-report
+      report_id: 1
+      bytes:
+        - 1
+        - 4
+        - 11
+        - 0
+        - 234
+        - 255
+        - 33
+        - 0
+        - 212
+        - 255
+        - 55
+        - 0
+        - 190
+        - 255
+        - 77
+        - 0
+        - 88
+        - 0
+    - direction: inbound
+      kind: reverse-event
+      event:
+        session_id: 9
+        profile_id: steam-controller
+        timestamp: 22
+        sequence: 5
+        kind: hid-output-report
+        target:
+          kind: semantic-output
+          value: lighting
+        payload:
+          kind: hid
+          report_id: 2
+          bytes: [1, 2, 3, 0, 0, 0]

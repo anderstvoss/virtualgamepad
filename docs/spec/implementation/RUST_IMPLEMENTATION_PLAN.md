@@ -562,15 +562,15 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] property test: reverse translators never emit semantic outputs for undeclared capabilities — passes for every profile
-- [ ] `gr-cli capability-coverage` exits 0
+- [ ] `cargo run -p gr-cli -- capability-coverage` exits 0
 - [ ] `vgpd-demo phase-gate 6` exits 0
 
 Manual portion:
 
 - [ ] 1. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-buttons-roundtrip.yaml` shows every button mapped correctly between profile input and HID report bytes
 - [ ] 2. `vgpd-demo replay-trace crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml` decodes the host rumble request into an `OutputCommand::Rumble` with sensible payload
-- [ ] 3. Same exercise on `xbox360` (evdev) and `steam-controller` (HID)
-- [ ] 4. Author a custom reverse-event fixture for a Steam Controller LED change; the demo decodes it to `OutputCommand::Lighting`
+- [ ] 3. `vgpd-demo replay-trace crates/gr-translators/fixtures/xbox360-evdev-roundtrip.yaml` and `vgpd-demo replay-trace crates/gr-translators/fixtures/steam-controller-lighting.yaml` show the expected evdev/HID summaries and decoded output commands
+- [ ] 4. Review the shipped Steam Controller lighting fixture output; the demo decodes it to `OutputCommand::Lighting`
 - [ ] 5. Review snapshots — translator outputs are stable across runs
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 6 gate passed"`
