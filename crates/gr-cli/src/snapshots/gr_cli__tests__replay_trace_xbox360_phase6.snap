@@ -1,0 +1,7 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1673
+expression: output
+---
+trace: xbox360-evdev-roundtrip
+1. outbound evdev-events count=4 => xbox360 a=true dpad_x=1 left_x=1200 rt=20

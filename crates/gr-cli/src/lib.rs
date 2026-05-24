@@ -1666,6 +1666,14 @@ mod tests {
     }
 
     #[test]
+    fn replay_trace_phase6_xbox_evdev_fixture_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let trace = repo_root.join("crates/gr-translators/fixtures/xbox360-evdev-roundtrip.yaml");
+        let output = replay_trace(trace).expect("trace");
+        assert_snapshot!("replay_trace_xbox360_phase6", output);
+    }
+
+    #[test]
     fn plan_session_output_is_stable() {
         // Pin `--host-platform linux` so the snapshot is deterministic
         // across CI runners. The planner falls back to the runtime host

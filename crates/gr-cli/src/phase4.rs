@@ -320,12 +320,75 @@ fn describe_decoded_step(
     ctx: Option<&PreparedTranslationContext>,
 ) -> Option<String> {
     match payload {
+        BackendTracePayload::EvdevEvents { events } => describe_evdev_summary(ctx?, events),
         BackendTracePayload::HidInputReport { report_id, bytes } => {
             describe_hid_input_summary(ctx?, *report_id, bytes)
         }
         BackendTracePayload::ReverseEvent { event } => describe_reverse_event_summary(ctx?, event),
         _ => None,
     }
+}
+
+fn describe_evdev_summary(
+    ctx: &PreparedTranslationContext,
+    events: &[gr_backend_api::EvdevEvent],
+) -> Option<String> {
+    match ctx.profile_family.as_deref()? {
+        "xbox360" => describe_xbox_evdev_summary(events),
+        "generic-gamepad" => describe_generic_evdev_summary(events),
+        _ => None,
+    }
+}
+
+fn describe_xbox_evdev_summary(events: &[gr_backend_api::EvdevEvent]) -> Option<String> {
+    let mut parts = Vec::new();
+    for event in events {
+        match (event.event_type, event.code) {
+            (1, 304) => parts.push(format!("a={}", event.value != 0)),
+            (1, 305) => parts.push(format!("b={}", event.value != 0)),
+            (1, 307) => parts.push(format!("x={}", event.value != 0)),
+            (1, 308) => parts.push(format!("y={}", event.value != 0)),
+            (1, 310) => parts.push(format!("lb={}", event.value != 0)),
+            (1, 311) => parts.push(format!("rb={}", event.value != 0)),
+            (1, 317) => parts.push(format!("ls={}", event.value != 0)),
+            (1, 318) => parts.push(format!("rs={}", event.value != 0)),
+            (1, 315) => parts.push(format!("start={}", event.value != 0)),
+            (1, 314) => parts.push(format!("back={}", event.value != 0)),
+            (1, 316) => parts.push(format!("guide={}", event.value != 0)),
+            (3, 16) => parts.push(format!("dpad_x={}", event.value)),
+            (3, 17) => parts.push(format!("dpad_y={}", event.value)),
+            (3, 0) => parts.push(format!("left_x={}", event.value)),
+            (3, 1) => parts.push(format!("left_y={}", event.value)),
+            (3, 3) => parts.push(format!("right_x={}", event.value)),
+            (3, 4) => parts.push(format!("right_y={}", event.value)),
+            (3, 2) => parts.push(format!("lt={}", event.value)),
+            (3, 5) => parts.push(format!("rt={}", event.value)),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| format!("xbox360 {}", parts.join(" ")))
+}
+
+fn describe_generic_evdev_summary(events: &[gr_backend_api::EvdevEvent]) -> Option<String> {
+    let mut parts = Vec::new();
+    for event in events {
+        match (event.event_type, event.code) {
+            (1, 304) => parts.push(format!("south={}", event.value != 0)),
+            (1, 305) => parts.push(format!("east={}", event.value != 0)),
+            (1, 307) => parts.push(format!("west={}", event.value != 0)),
+            (1, 308) => parts.push(format!("north={}", event.value != 0)),
+            (3, 16) => parts.push(format!("dpad_x={}", event.value)),
+            (3, 17) => parts.push(format!("dpad_y={}", event.value)),
+            (3, 0) => parts.push(format!("left_x={}", event.value)),
+            (3, 1) => parts.push(format!("left_y={}", event.value)),
+            (3, 3) => parts.push(format!("right_x={}", event.value)),
+            (3, 4) => parts.push(format!("right_y={}", event.value)),
+            (3, 2) => parts.push(format!("lt={}", event.value)),
+            (3, 5) => parts.push(format!("rt={}", event.value)),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| format!("generic-gamepad {}", parts.join(" ")))
 }
 
 fn describe_hid_input_summary(
