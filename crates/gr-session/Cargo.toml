@@ -8,5 +8,19 @@ repository.workspace = true
 authors.workspace = true
 description = "Session runtime for virtualgamepad."
 
+[dependencies]
+gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
+gr-config = { path = "../gr-config", version = "0.1" }
+gr-core = { path = "../gr-core", version = "0.1" }
+gr-host-bridge = { path = "../gr-host-bridge", version = "0.1" }
+gr-planner = { path = "../gr-planner", version = "0.1" }
+gr-runtime-model = { path = "../gr-runtime-model", version = "0.1" }
+gr-session-options = { path = "../gr-session-options", version = "0.1" }
+gr-translators = { path = "../gr-translators", version = "0.1" }
+serde.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
 [lints]
 workspace = true
