@@ -1428,10 +1428,61 @@ The public API should optimize for direct library use rather than over-abstracti
 
 ```rust
 impl VirtualControllerManager {
-    pub fn new(config: ManagerConfig) -> Result<Self, ManagerError>;
+    pub fn new(config: ManagerConfig) -> Self;
     pub fn with_backends(config: ManagerConfig, backends: Vec<Arc<dyn BackendFactory>>) -> Result<Self, ManagerError>;
 }
 ```
+
+### `ManagerConfig`
+
+```rust
+#[non_exhaustive]
+pub struct ManagerConfig {
+    pub session_input_queue_depth: usize,    // default 8
+    pub session_reverse_queue_depth: usize,  // default 32
+    pub worker_pool_size: Option<usize>,     // None = tokio runtime default
+}
+```
+
+Rules:
+
+- defaults match the input + reverse queue depth defaults in [Queue and backpressure policy](#queue-and-backpressure-policy)
+- `worker_pool_size: None` defers to the tokio runtime default (typically `num_cpus`); explicit values pin the shared worker pool
+- `#[non_exhaustive]` so later phases can add fields (e.g. delivery-worker tuning, telemetry toggles) without breaking host crates
+
+### `ManagerError` and `SessionError`
+
+```rust
+#[non_exhaustive]
+pub enum ManagerError {
+    NoBackendsRegistered,
+    PlanRejected(PlanRejection),
+    BackendOpenFailed { backend_id: BackendId, source: BackendError },
+    TranslatorContextFailed(TranslationError),
+    SessionAlreadyActive { session_id: SessionId },
+}
+
+#[non_exhaustive]
+pub enum SessionError {
+    SessionClosed,
+    SubscriptionClosed,
+    AudioNotAvailable,
+}
+
+#[non_exhaustive]
+pub enum SessionSendError {
+    QueueFull,
+    SessionClosed,
+    InvalidInput { reason: String },
+}
+```
+
+Rules:
+
+- all three are `#[non_exhaustive]`; new variants land additively
+- `ManagerError::BackendOpenFailed.source` carries the underlying `BackendError` via `#[source]` so error chains traverse cleanly
+- `ManagerError::TranslatorContextFailed` implements `From<TranslationError>` so the manager's `create_session` body can use `?`
+- `SessionSendError::QueueFull` is distinct from `SessionClosed`: the caller should back off and retry on `QueueFull`, treat `SessionClosed` as terminal
 
 ### Session lifecycle
 
@@ -1456,18 +1507,62 @@ impl VirtualControllerSessionHandle {
 ### Reverse output
 
 ```rust
+pub trait OutputSink: Send {
+    fn deliver(&mut self, command: ControllerOutputCommand);
+}
+
+pub struct SessionOutputSubscription { /* opaque handle */ }
+
+impl SessionOutputSubscription {
+    pub fn unsubscribe(self);
+}
+
 impl VirtualControllerSessionHandle {
-    pub fn subscribe_outputs(&self) -> SessionOutputSubscription;
+    pub fn subscribe_outputs(
+        &self,
+        sink: Box<dyn OutputSink>,
+    ) -> Result<SessionOutputSubscription, SessionError>;
 }
 ```
 
-`SessionOutputSubscription` may be:
+Rules:
 
-- callback-based
-- channel-based
-- stream-like
+- the host provides the sink (callback adapter, channel adapter, stream adapter, or custom), the manager returns an opaque subscription handle
+- `OutputSink::deliver` is invoked on the dedicated delivery worker — never on the session actor or the host's submission thread — so a slow sink in one session cannot stall the actor or other sessions
+- `gr-host-bridge` provides convenience adapters: `CallbackSink<F>` (closure), channel + stream adapters land alongside the Phase 7 delivery worker
+- dropping the subscription handle, or calling `unsubscribe`, detaches the sink on the next delivery-worker tick
+- a sink that panics is contained within the delivery worker; the session continues, the panic is recorded in `SessionDiagnosticsSnapshot.last_error`, and the subscription is detached
 
-The internal model should support all three.
+### Audio stream surface
+
+```rust
+impl VirtualControllerSessionHandle {
+    pub fn audio_sink(&self) -> Option<Box<dyn AudioStreamSink>>;
+    pub fn audio_source(&self) -> Option<Box<dyn AudioStreamSource>>;
+}
+
+pub trait AudioStreamSink: Send {
+    fn push_samples(&mut self, samples: &[i16]) -> Result<usize, AudioStreamError>;
+    fn sample_rate_hz(&self) -> u32;
+    fn channels(&self) -> u8;
+}
+
+pub trait AudioStreamSource: Send {
+    fn pull_samples(&mut self, out: &mut [i16]) -> Result<usize, AudioStreamError>;
+    fn sample_rate_hz(&self) -> u32;
+    fn channels(&self) -> u8;
+}
+
+#[non_exhaustive]
+pub enum AudioStreamError { Closed, Backpressure }
+```
+
+Rules:
+
+- both methods return `None` for profile + provider combinations that do not realize PCM output / input at the chosen tier (see [Audio stream contract](#audio-stream-contract))
+- traits live in `gr-host-bridge` so the audio surface is reusable by future host integrations
+- `push_samples` / `pull_samples` return the count actually transferred; short returns signal backpressure without requiring the caller to interpret an enum
+- `AudioStreamError::Backpressure` is recoverable — caller should back off; `Closed` is terminal — caller should drop the handle
 
 ## Concrete translator families
 
@@ -1553,6 +1648,29 @@ Each active session must expose:
 - average and p95 translation latency
 - queue depth high-water marks
 - backend diagnostics snapshot
+
+### Counter naming convention
+
+Per-session counters surface through `SessionDiagnosticsSnapshot.counters: BTreeMap<String, u64>` ([`gr_runtime_model`](#gr-runtime-model)). The canonical key names — pinned in [`gr_session::counter_keys`](#gr-session) — are:
+
+| Key                              | Meaning                                                                |
+|----------------------------------|------------------------------------------------------------------------|
+| `frames.received`                | Host-submitted input frames accepted into the session queue            |
+| `frames.coalesced`               | Frames dropped because a fresher state arrived (latest-state-wins)     |
+| `frames.written`                 | Frames successfully written to the backend session                     |
+| `write_failures`                 | Backend `send` calls returning a non-`WouldBlock` error                |
+| `reverse_events.received`        | Reverse events drained from the backend                                |
+| `reverse_events.emitted`         | `ControllerOutputCommand` values delivered to the session's sink       |
+| `reverse_events.dropped`         | Reverse events dropped per the configured `BackpressurePolicy`         |
+| `queue_depth.input.hwm`          | High-water mark of input queue depth                                   |
+| `queue_depth.reverse.hwm`        | High-water mark of reverse-event queue depth                           |
+| `translation.latency_p95_us`     | p95 forward-translation latency in microseconds (recent steady state)  |
+
+Rules:
+
+- the key set is the canonical surface; additive keys may appear, but renames are breaking and need a deprecation cycle
+- units are part of the key suffix where ambiguous (`_us` for microseconds, `_hwm` for high-water marks)
+- counters are monotonic u64 for the session's lifetime; high-water marks are non-decreasing within the session
 
 Manager-wide telemetry must expose:
 

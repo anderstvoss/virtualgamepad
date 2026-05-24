@@ -8,5 +8,11 @@ repository.workspace = true
 authors.workspace = true
 description = "Host bridge helpers for virtualgamepad."
 
+[dependencies]
+gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
+gr-runtime-model = { path = "../gr-runtime-model", version = "0.1" }
+thiserror.workspace = true
+tokio.workspace = true
+
 [lints]
 workspace = true
