@@ -1395,4 +1395,108 @@ mod tests {
             .expect_err("provider panic should surface");
         assert!(matches!(error, ManagerError::BackendOpenFailed { .. }));
     }
+
+    #[test]
+    fn manager_drops_without_close_does_not_hang() {
+        let start = std::time::Instant::now();
+        {
+            let manager = VirtualControllerManager::with_backends(
+                ManagerConfig::default(),
+                vec![fake_backend()],
+            )
+            .expect("manager");
+            let _session = manager
+                .create_session(dualsense_request(20))
+                .expect("session");
+            // Intentionally do not call close_session: the manager's
+            // Drop impl must drain in-flight sessions before the tokio
+            // runtime is dropped.
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "manager drop took too long: {elapsed:?}",
+        );
+    }
+
+    #[test]
+    fn delivery_worker_detaches_panicking_subscriber() {
+        let manager = VirtualControllerManager::with_backends(
+            ManagerConfig::default(),
+            vec![fake_backend_with_reverse_event(21)],
+        )
+        .expect("manager");
+        let session = manager
+            .create_session(dualsense_request(21))
+            .expect("session");
+
+        let healthy_hits = Arc::new(Mutex::new(0_u32));
+        let healthy_clone = healthy_hits.clone();
+        let _healthy_sub = session
+            .subscribe_outputs(Box::new(CallbackSink::new(move |_| {
+                *healthy_clone.lock().expect("healthy hits") += 1;
+            })))
+            .expect("subscribe healthy");
+
+        let panic_calls = Arc::new(Mutex::new(0_u32));
+        let panic_clone = panic_calls.clone();
+        let _panic_sub = session
+            .subscribe_outputs(Box::new(CallbackSink::new(move |_| {
+                *panic_clone.lock().expect("panic calls") += 1;
+                panic!("test sink panic");
+            })))
+            .expect("subscribe panicking");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if *healthy_hits.lock().expect("healthy hits") >= 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "healthy subscriber never received output"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        manager.close_session(SessionId::new(21)).expect("close");
+
+        let healthy = *healthy_hits.lock().expect("healthy hits");
+        let panicked = *panic_calls.lock().expect("panic calls");
+        assert!(healthy >= 1, "healthy subscriber was not delivered to");
+        assert!(panicked >= 1, "panicking subscriber was never invoked");
+    }
+
+    fn fake_backend_with_reverse_event(session_id: u64) -> Arc<dyn BackendFactory> {
+        use gr_backend_api::{BackendReversePayload, BackendReverseTarget};
+        Arc::new(
+            backend_factory()
+                .backend_id("fake-backend")
+                .family(BackendFamily::LinuxUhid)
+                .level(BackendLevel::Hid)
+                .platform(HostPlatform::Linux)
+                .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+                .declares_reverse_output(SemanticOutputFunction::Rumble)
+                .declares_reverse_output(SemanticOutputFunction::Haptics)
+                .declares_reverse_output(SemanticOutputFunction::Lighting)
+                .declares_reverse_output(SemanticOutputFunction::PlayerIndicators)
+                .declares_reverse_output(SemanticOutputFunction::TriggerEffect)
+                .declares_reverse_output(SemanticOutputFunction::Audio)
+                .reverse_events_from_iter(vec![gr_backend_api::BackendReverseEvent {
+                    session_id: SessionId::new(session_id),
+                    profile_id: Some(ProfileId::from("dualsense")),
+                    timestamp: Timestamp::new(0),
+                    sequence: SequenceId::new(0),
+                    kind: gr_backend_api::BackendReverseEventKind::HidOutputReport,
+                    target: Some(BackendReverseTarget::SemanticOutput(
+                        SemanticOutputFunction::Audio,
+                    )),
+                    payload: BackendReversePayload::Hid {
+                        report_id: Some(5),
+                        bytes: vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    },
+                }])
+                .build(),
+        )
+    }
 }

@@ -1703,6 +1703,23 @@ mod tests {
     }
 
     #[test]
+    fn many_sessions_runs_through_n_sessions() {
+        let output = super::many_sessions(4).expect("many sessions");
+        assert!(
+            output.starts_with("many_sessions: 4\n"),
+            "header missing: {output:?}"
+        );
+        let session_lines = output
+            .lines()
+            .filter(|line| line.starts_with("- session "))
+            .count();
+        assert_eq!(
+            session_lines, 4,
+            "expected 4 session status lines:\n{output}"
+        );
+    }
+
+    #[test]
     fn replay_trace_phase6_xbox_evdev_fixture_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let trace = repo_root.join("crates/gr-translators/fixtures/xbox360-evdev-roundtrip.yaml");
