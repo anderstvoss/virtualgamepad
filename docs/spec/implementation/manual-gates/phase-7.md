@@ -78,6 +78,25 @@ cargo run -p virtual_gamepad_demo -- simulate-session samples/scenarios/dualsens
    - at least one delivered output command
    - `audio_sink: none`
 
+## Check 5: provider panic isolation
+
+Goal: confirm that a provider failing to open is isolated by the session
+manager (no process crash, no hang) and the error surfaces cleanly to the
+caller.
+
+### Steps
+
+1. Run:
+
+```bash
+cargo run -p virtual_gamepad_demo -- simulate-session samples/scenarios/provider-panic.yaml
+```
+
+2. Confirm:
+   - the command exits non-zero
+   - stderr contains an error message that includes `simulated provider panic`
+   - the process exits within a couple of seconds without panicking
+
 ## Sign-off
 
 When all checks pass:

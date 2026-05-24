@@ -2,7 +2,7 @@
 
 //! Session runtime for `virtualgamepad`.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -760,9 +760,10 @@ impl BoundedInputQueue {
             return Err(SessionSendError::QueueFull);
         }
         if inner.queue.len() >= inner.capacity {
-            inner.queue.pop_back();
+            let coalesced = inner.queue.len() as u64;
+            inner.queue.clear();
             inner.queue.push_back(frame);
-            shared.increment_counter(counter_keys::FRAMES_COALESCED, 1);
+            shared.increment_counter(counter_keys::FRAMES_COALESCED, coalesced);
         } else {
             inner.queue.push_back(frame);
         }
@@ -880,7 +881,13 @@ impl BoundedReverseQueue {
 #[derive(Default)]
 struct SubscriptionRegistry {
     next_id: AtomicU64,
-    sinks: Mutex<Vec<SubscriptionEntry>>,
+    state: Mutex<SubscriptionState>,
+}
+
+#[derive(Default)]
+struct SubscriptionState {
+    sinks: Vec<SubscriptionEntry>,
+    pending_removals: HashSet<u64>,
 }
 
 struct SubscriptionEntry {
@@ -891,24 +898,28 @@ struct SubscriptionEntry {
 impl SubscriptionRegistry {
     fn insert(&self, sink: Box<dyn OutputSink>) -> u64 {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
-        self.sinks
+        self.state
             .lock()
             .expect("subscriptions")
+            .sinks
             .push(SubscriptionEntry { id, sink });
         id
     }
 
     fn remove(&self, subscription_id: u64) {
-        self.sinks
-            .lock()
-            .expect("subscriptions")
-            .retain(|entry| entry.id != subscription_id);
+        let mut state = self.state.lock().expect("subscriptions");
+        state.sinks.retain(|entry| entry.id != subscription_id);
+        state.pending_removals.insert(subscription_id);
     }
 
     fn deliver_all(&self, command: &ControllerOutputCommand, shared: &SessionShared) {
-        let mut sinks = self.sinks.lock().expect("subscriptions");
-        let mut failed = Vec::new();
-        for entry in sinks.iter_mut() {
+        let mut taken: Vec<SubscriptionEntry> = {
+            let mut state = self.state.lock().expect("subscriptions");
+            std::mem::take(&mut state.sinks)
+        };
+
+        let mut failed: Vec<u64> = Vec::new();
+        for entry in &mut taken {
             let result = catch_unwind(AssertUnwindSafe(|| entry.sink.deliver(command.clone())));
             if result.is_err() {
                 failed.push(entry.id);
@@ -917,9 +928,17 @@ impl SubscriptionRegistry {
                 shared.increment_counter(counter_keys::REVERSE_EVENTS_EMITTED, 1);
             }
         }
-        if !failed.is_empty() {
-            sinks.retain(|entry| !failed.contains(&entry.id));
+
+        let mut state = self.state.lock().expect("subscriptions");
+        let added = std::mem::take(&mut state.sinks);
+        for entry in taken {
+            if failed.contains(&entry.id) || state.pending_removals.contains(&entry.id) {
+                continue;
+            }
+            state.sinks.push(entry);
         }
+        state.sinks.extend(added);
+        state.pending_removals.clear();
     }
 }
 
