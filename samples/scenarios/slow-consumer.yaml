@@ -5,6 +5,7 @@ profile_id: dualsense
 notes: |
   Phase 7 runtime scenario: inject multiple rumble reverse events and
   assert the runtime emits output commands without failing the session.
+  DualSense rumble magnitudes live at HID output report bytes 3 and 4.
 payload:
   session:
     session_id: 32
@@ -68,7 +69,7 @@ payload:
         payload:
           kind: hid
           report_id: 5
-          bytes: [0, 200, 100, 0, 0, 0, 0, 0, 0, 1]
+          bytes: [0, 0, 0, 200, 100, 0, 0, 0, 0, 1]
     - kind: sleep-ms
       millis: 50
     - kind: assert-output-count
