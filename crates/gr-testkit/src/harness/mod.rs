@@ -1,7 +1,10 @@
 //! Fake-backend-backed runtime harness.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+const ASSERT_POLL_TIMEOUT: Duration = Duration::from_millis(500);
+const ASSERT_POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 use gr_backend_api::BackendReverseEvent;
 use gr_core::{ProfileId, ProfileInputDelta, ProfileInputFrame};
@@ -43,6 +46,13 @@ pub struct SessionHarness {
     fake: Arc<FakeBackendFactory>,
     outputs: Arc<Mutex<Vec<gr_runtime_model::ControllerOutputCommand>>>,
     _subscription: gr_session::SessionOutputSubscription,
+}
+
+#[derive(Debug, Clone)]
+pub struct HarnessFinal {
+    pub diagnostics: SessionDiagnosticsSnapshot,
+    pub frames_written: usize,
+    pub outputs: Vec<gr_runtime_model::ControllerOutputCommand>,
 }
 
 impl SessionHarness {
@@ -161,10 +171,27 @@ impl SessionHarness {
     /// # Errors
     ///
     /// Returns [`HarnessError`] when manager shutdown fails.
-    pub fn close(self) -> Result<(), HarnessError> {
+    ///
+    /// # Panics
+    ///
+    /// Panics if the output-capture mutex has been poisoned or the
+    /// archived diagnostics record is missing.
+    pub fn close(self) -> Result<HarnessFinal, HarnessError> {
+        let session_id = self.session.session_id();
         self.manager
-            .close_session(self.session.session_id())
-            .map_err(HarnessError::Manager)
+            .close_session(session_id)
+            .map_err(HarnessError::Manager)?;
+        let diagnostics = self
+            .manager
+            .diagnostics(session_id)
+            .expect("archived diagnostics after close");
+        let frames_written = self.fake.captured_frames(session_id).len();
+        let outputs = std::mem::take(&mut *self.outputs.lock().expect("outputs"));
+        Ok(HarnessFinal {
+            diagnostics,
+            frames_written,
+            outputs,
+        })
     }
 
     /// Execute a runtime scenario against this harness.
@@ -182,11 +209,9 @@ impl SessionHarness {
             match step {
                 RuntimeScenarioStep::SendInput { frame } => {
                     self.send(frame.clone()).map_err(HarnessError::Send)?;
-                    std::thread::sleep(Duration::from_millis(20));
                 }
                 RuntimeScenarioStep::SendInputDelta { delta } => {
                     self.send_delta(delta.clone()).map_err(HarnessError::Send)?;
-                    std::thread::sleep(Duration::from_millis(20));
                 }
                 RuntimeScenarioStep::InjectReverse { event } => self.inject_reverse(event.clone()),
                 RuntimeScenarioStep::SleepMs { millis } => {
@@ -194,46 +219,86 @@ impl SessionHarness {
                 }
                 RuntimeScenarioStep::CloseSession => {}
                 RuntimeScenarioStep::AssertFramesWritten { at_least } => {
-                    if self.captured_frames().len() < *at_least {
-                        return Err(HarnessError::Scenario(format!(
-                            "expected at least {at_least} written frames"
-                        )));
-                    }
+                    self.poll_assert(
+                        || self.captured_frames().len() >= *at_least,
+                        || {
+                            format!(
+                                "expected at least {at_least} written frames, got {}",
+                                self.captured_frames().len()
+                            )
+                        },
+                    )?;
                 }
                 RuntimeScenarioStep::AssertCounter { key, at_least } => {
-                    let diagnostics = self.diagnostics();
-                    let actual = diagnostics.counters.get(key).copied().unwrap_or_default();
-                    if actual < *at_least {
-                        return Err(HarnessError::Scenario(format!(
-                            "expected counter `{key}` >= {at_least}, got {actual}"
-                        )));
-                    }
+                    self.poll_assert(
+                        || {
+                            self.diagnostics()
+                                .counters
+                                .get(key)
+                                .copied()
+                                .unwrap_or_default()
+                                >= *at_least
+                        },
+                        || {
+                            let actual = self
+                                .diagnostics()
+                                .counters
+                                .get(key)
+                                .copied()
+                                .unwrap_or_default();
+                            format!("expected counter `{key}` >= {at_least}, got {actual}")
+                        },
+                    )?;
                 }
                 RuntimeScenarioStep::AssertOutputCount { at_least } => {
-                    let actual = self.outputs.lock().expect("outputs").len();
-                    if actual < *at_least {
-                        return Err(HarnessError::Scenario(format!(
-                            "expected at least {at_least} output commands, got {actual}"
-                        )));
-                    }
+                    self.poll_assert(
+                        || self.outputs.lock().expect("outputs").len() >= *at_least,
+                        || {
+                            let actual = self.outputs.lock().expect("outputs").len();
+                            format!("expected at least {at_least} output commands, got {actual}")
+                        },
+                    )?;
                 }
                 RuntimeScenarioStep::AssertSessionState { state } => {
-                    let actual = self
-                        .manager
-                        .session_status(self.session.session_id())
-                        .ok_or_else(|| {
-                            HarnessError::Scenario("missing session status".to_string())
-                        })?
-                        .state;
-                    if &actual != state {
-                        return Err(HarnessError::Scenario(format!(
-                            "expected session state {state:?}, got {actual:?}"
-                        )));
-                    }
+                    self.poll_assert(
+                        || {
+                            self.manager
+                                .session_status(self.session.session_id())
+                                .is_some_and(|status| status.state == *state)
+                        },
+                        || {
+                            let actual = self
+                                .manager
+                                .session_status(self.session.session_id())
+                                .map_or_else(
+                                    || "missing".to_string(),
+                                    |status| format!("{:?}", status.state),
+                                );
+                            format!("expected session state {state:?}, got {actual}")
+                        },
+                    )?;
                 }
             }
         }
         Ok(())
+    }
+
+    #[allow(clippy::unused_self)]
+    fn poll_assert<F, M>(&self, mut check: F, message: M) -> Result<(), HarnessError>
+    where
+        F: FnMut() -> bool,
+        M: Fn() -> String,
+    {
+        let deadline = Instant::now() + ASSERT_POLL_TIMEOUT;
+        loop {
+            if check() {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(HarnessError::Scenario(message()));
+            }
+            std::thread::sleep(ASSERT_POLL_INTERVAL);
+        }
     }
 }
 

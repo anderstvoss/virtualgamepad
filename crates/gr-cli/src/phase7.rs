@@ -4,10 +4,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use gr_backend_api::{BackendError, BackendFactory};
-use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId, SessionId, Timestamp};
-use gr_runtime_model::{EmulationGoal, HostPlatform, SessionHostMetadata, SessionRequest};
+use gr_core::{
+    BackendFamily, BackendLevel, FidelityTier, SemanticOutputFunction, SessionId, Timestamp,
+};
+use gr_runtime_model::HostPlatform;
 use gr_session::{ManagerConfig, VirtualControllerManager};
 use gr_testkit::{
+    builders::session_request,
     fakes::{FakeBackendFactory, FakeFailure, backend_factory},
     fixtures::{
         FixtureDocument, RuntimeSessionScenario, ScenarioFailure, SessionScenarioDocument,
@@ -39,15 +42,7 @@ pub fn simulate_runtime_session(path: &Path) -> Result<String, CliError> {
 pub fn many_sessions(count: usize) -> Result<String, CliError> {
     let manager = VirtualControllerManager::with_backends(
         ManagerConfig::default(),
-        vec![Arc::new(
-            backend_factory()
-                .backend_id("fake-backend")
-                .family(BackendFamily::LinuxUhid)
-                .level(BackendLevel::Hid)
-                .platform(HostPlatform::Linux)
-                .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
-                .build(),
-        ) as Arc<dyn BackendFactory>],
+        vec![Arc::new(dualsense_fake_factory()) as Arc<dyn BackendFactory>],
     )
     .map_err(|error| CliError::Simulation {
         message: error.to_string(),
@@ -56,16 +51,12 @@ pub fn many_sessions(count: usize) -> Result<String, CliError> {
     let mut sessions = Vec::new();
     for index in 0..count {
         let session_id = SessionId::new(index as u64 + 1);
-        let request = SessionRequest {
-            session_id,
-            profile_id: ProfileId::from("dualsense"),
-            goal: EmulationGoal::IdentityAware,
-            requested_fidelity_tier: FidelityTier::IdentityAware,
-            host_platform_preference: Some(HostPlatform::Linux),
-            backend_preference: Some(BackendLevel::Hid),
-            provider_preference: Some("fake-backend".into()),
-            host_metadata: SessionHostMetadata::default(),
-        };
+        let request = session_request("dualsense")
+            .session_id(session_id)
+            .host_platform(HostPlatform::Linux)
+            .backend_preference(BackendLevel::Hid)
+            .provider_preference("fake-backend")
+            .build();
         let session = manager
             .create_session(request)
             .map_err(|error| CliError::Simulation {
@@ -73,7 +64,7 @@ pub fn many_sessions(count: usize) -> Result<String, CliError> {
             })?;
         session
             .send_input(gr_core::ProfileInputFrame {
-                profile_id: ProfileId::from("dualsense"),
+                profile_id: gr_core::ProfileId::from("dualsense"),
                 timestamp: Timestamp::new(index as u64),
                 sequence: gr_core::SequenceId::new(index as u64 + 1),
                 payload: gr_core::ProfileInputPayload::DualSense(gr_core::DualSenseInput::neutral()),
@@ -85,22 +76,36 @@ pub fn many_sessions(count: usize) -> Result<String, CliError> {
     }
 
     std::thread::sleep(Duration::from_millis(50));
-    if let Some(session_id) = sessions.first().copied() {
-        let _ = manager.close_session(session_id);
-    }
 
     let mut output = String::new();
     writeln!(output, "many_sessions: {count}").expect("write");
     for status in manager.session_status_snapshot() {
-        writeln!(
-            output,
-            "- session {} state={:?}",
-            status.session_id.map_or(0, gr_core::SessionId::get),
-            status.state
-        )
-        .expect("write");
+        let id_label = status
+            .session_id
+            .map_or_else(|| "?".to_string(), |id| id.to_string());
+        writeln!(output, "- session {id_label} state={:?}", status.state).expect("write");
+    }
+
+    for session_id in sessions {
+        let _ = manager.close_session(session_id);
     }
     Ok(output)
+}
+
+fn dualsense_fake_factory() -> FakeBackendFactory {
+    backend_factory()
+        .backend_id("fake-backend")
+        .family(BackendFamily::LinuxUhid)
+        .level(BackendLevel::Hid)
+        .platform(HostPlatform::Linux)
+        .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+        .declares_reverse_output(SemanticOutputFunction::Rumble)
+        .declares_reverse_output(SemanticOutputFunction::Haptics)
+        .declares_reverse_output(SemanticOutputFunction::Lighting)
+        .declares_reverse_output(SemanticOutputFunction::PlayerIndicators)
+        .declares_reverse_output(SemanticOutputFunction::TriggerEffect)
+        .declares_reverse_output(SemanticOutputFunction::Audio)
+        .build()
 }
 
 fn render_runtime_scenario(
@@ -117,28 +122,24 @@ fn render_runtime_scenario(
     writeln!(output, "scenario: {scenario_id}").expect("write");
     writeln!(output, "mode: runtime-session").expect("write");
 
-    harness
-        .run_scenario(runtime)
-        .map_err(|error| CliError::Simulation {
-            message: error.to_string(),
-        })?;
+    let scenario_result = harness.run_scenario(runtime);
+    let final_state = harness.close().map_err(|error| CliError::Simulation {
+        message: error.to_string(),
+    })?;
+    scenario_result.map_err(|error| CliError::Simulation {
+        message: error.to_string(),
+    })?;
 
-    let diagnostics = harness.diagnostics();
-    let outputs = harness.drain_commands();
-    writeln!(
-        output,
-        "frames_written: {}",
-        harness.captured_frames().len()
-    )
-    .expect("write");
-    writeln!(output, "outputs: {}", outputs.len()).expect("write");
+    writeln!(output, "frames_written: {}", final_state.frames_written).expect("write");
+    writeln!(output, "outputs: {}", final_state.outputs.len()).expect("write");
     writeln!(output, "audio_sink: none").expect("write");
     writeln!(
         output,
         "diagnostics:\n{}",
-        serde_yaml::to_string(&diagnostics).map_err(CliError::SerializeYaml)?
+        serde_yaml::to_string(&final_state.diagnostics).map_err(CliError::SerializeYaml)?
     )
     .expect("write");
+
     Ok(output)
 }
 

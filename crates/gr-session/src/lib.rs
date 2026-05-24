@@ -356,8 +356,8 @@ impl VirtualControllerManager {
             .ok_or(ManagerError::SessionNotFound { session_id })?;
 
         record.shared.set_state(SessionLifecycleState::Closing);
-        record.input_queue.close();
         record.shared.request_close();
+        record.input_queue.close();
 
         let actor_result = self.runtime.block_on(record.actor_handle);
         let _ = self.runtime.block_on(record.delivery_handle);
@@ -434,6 +434,21 @@ impl VirtualControllerManager {
             .values()
             .map(|record| record.shared.status_snapshot())
             .collect()
+    }
+}
+
+impl Drop for VirtualControllerManager {
+    fn drop(&mut self) {
+        let session_ids: Vec<SessionId> = self
+            .registry
+            .lock()
+            .expect("session registry")
+            .keys()
+            .copied()
+            .collect();
+        for session_id in session_ids {
+            let _ = self.close_session(session_id);
+        }
     }
 }
 
@@ -924,7 +939,6 @@ impl SessionActor {
         let mut scratch = TranslationScratch::new();
         let mut reverse_out = SmallVec::<[ControllerOutputCommand; 4]>::new();
         let mut reverse_in = Vec::<BackendReverseEvent>::new();
-        let mut ticker = tokio::time::interval(Duration::from_millis(5));
 
         loop {
             tokio::select! {
@@ -941,7 +955,7 @@ impl SessionActor {
                         }
                     }
                 }
-                _ = ticker.tick() => {
+                () = tokio::time::sleep(Duration::from_millis(5)) => {
                     self.poll_reverse(&mut reverse_in, &mut reverse_out).await;
                 }
             }
@@ -1123,9 +1137,7 @@ fn validate_monotonic_sequence(
 fn build_runtime(worker_pool_size: Option<usize>) -> Runtime {
     let mut builder = Builder::new_multi_thread();
     builder.enable_all();
-    if let Some(worker_pool_size) = worker_pool_size {
-        builder.worker_threads(worker_pool_size);
-    }
+    builder.worker_threads(worker_pool_size.unwrap_or(64));
     builder.build().expect("session runtime")
 }
 
