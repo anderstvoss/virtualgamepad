@@ -200,6 +200,16 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .find(|check| check.command_display == "cargo test --workspace --all-features")
             .map(|check| check.success);
     }
+    if item.contains("property test:")
+        && item.contains("undeclared capabilities")
+        && !item.contains("`cargo")
+    {
+        return report
+            .checks
+            .iter()
+            .find(|check| check.command_display == "cargo test --workspace --all-features")
+            .map(|check| check.success);
+    }
     if item.contains("`vgpd-demo phase-gate ") && item.contains("` exits 0") {
         return Some(report.all_passed());
     }

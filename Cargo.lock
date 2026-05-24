@@ -295,9 +295,11 @@ dependencies = [
  "gr-runtime-model",
  "gr-session-options",
  "gr-testkit",
+ "gr-translators",
  "insta",
  "serde",
  "serde_yaml",
+ "smallvec",
 ]
 
 [[package]]
@@ -432,6 +434,7 @@ dependencies = [
  "gr-core",
  "gr-profiles",
  "gr-runtime-model",
+ "proptest",
  "serde",
  "smallvec",
  "thiserror",

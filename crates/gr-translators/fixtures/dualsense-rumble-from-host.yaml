@@ -1,0 +1,70 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: dualsense-rumble-from-host
+profile_id: dualsense
+notes: |
+  Phase 6 manual-review fixture: inbound DualSense output report with rumble,
+  lighting, player-indicator, trigger-effect, and audio fields populated so
+  replay-trace renders decoded output commands.
+payload:
+  steps:
+    - direction: inbound
+      kind: reverse-event
+      event:
+        session_id: 7
+        profile_id: dualsense
+        timestamp: 12
+        sequence: 3
+        kind: hid-output-report
+        payload:
+          kind: hid
+          report_id: 2
+          bytes:
+            - 0
+            - 0
+            - 0
+            - 10
+            - 20
+            - 0
+            - 0
+            - 0
+            - 0
+            - 1
+            - 0
+            - 7
+            - 30
+            - 40
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 0
+            - 3
+            - 100
+            - 110
+            - 120

@@ -17,6 +17,7 @@ pub use input_frame::{
     InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,
 };
 pub use plan_snapshot::{PlanOutcome, PlanSnapshotFixture, decode_plan_snapshot};
+pub use reverse_event::{ReverseEventFixture, decode_reverse_event};
 pub use schema::{FixtureDocument, FixtureEnvelope, FixtureError, load_fixture};
 pub use session_scenario::{
     ScenarioBackend, ScenarioFailure, ScenarioStep, SessionScenario, SessionScenarioFixture,

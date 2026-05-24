@@ -1,0 +1,17 @@
+fixture: virtualgamepad/v1
+kind: reverse-event
+id: dualsense-rumble-standalone
+profile_id: dualsense
+payload:
+  session_id: 7
+  profile_id: dualsense
+  timestamp: 12
+  sequence: 3
+  kind: hid-output-report
+  target:
+    kind: semantic-output
+    value: rumble
+  payload:
+    kind: hid
+    report_id: 5
+    bytes: [10, 20]

@@ -1,0 +1,12 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1639
+expression: summary
+---
+fixture: virtualgamepad/v1
+kind: reverse-event
+id: dualsense-rumble-standalone
+profile_id: dualsense
+reverse_kind: hid-output-report
+target: semantic-output:rumble
+payload_kind: hid

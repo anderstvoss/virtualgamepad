@@ -2,12 +2,20 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use gr_backend_api::{BackendError, BackendReverseEvent, BackendSession, EventReadiness};
+use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId, SessionId};
+use gr_profiles::{ProfileFamily, registry};
+use gr_runtime_model::{
+    BackendOpenContext, BackpressurePolicy, CapabilityNegotiationResult, DegradationReport,
+    DeploymentRequirements, EmulationGoal, HostPlatform, PreparedTranslationContext,
+    ReverseEventDeliveryPolicy, SessionOptionsSnapshot, SessionPlan, TranslatorFamily,
+};
 use gr_testkit::fakes::{FakeBackendFactory, FakeFailure, backend_factory};
 use gr_testkit::fixtures::{
     BackendTrace, BackendTracePayload, FixtureDocument, ScenarioFailure, ScenarioStep,
     SessionScenarioFixture, TraceDirection, load_fixture,
 };
 use gr_testkit::recorder::record;
+use gr_translators::{TranslatorRegistry, prepared_translation_context};
 use serde::Serialize;
 
 use crate::{CliError, repo_root};
@@ -90,7 +98,11 @@ pub fn replay_trace(path: impl AsRef<Path>) -> Result<String, CliError> {
             message: format!("expected backend-trace fixture at {}", path.display()),
         });
     };
-    Ok(render_trace(&fixture.envelope.id, &fixture.trace))
+    Ok(render_trace(
+        &fixture.envelope.id,
+        &fixture.trace,
+        fixture.envelope.profile_id.as_deref(),
+    ))
 }
 
 fn load_scenario(path: &Path) -> Result<SessionScenarioFixture, CliError> {
@@ -218,16 +230,19 @@ fn drain_reverse(session: &mut impl BackendSession, output: &mut String) -> Resu
     }
 }
 
-fn render_trace(trace_id: &str, trace: &BackendTrace) -> String {
+fn render_trace(trace_id: &str, trace: &BackendTrace, profile_id: Option<&str>) -> String {
     let mut output = String::new();
+    let translation_ctx = profile_id.and_then(build_translation_context);
     writeln!(output, "trace: {trace_id}").expect("write");
     for (index, step) in trace.steps.iter().enumerate() {
+        let decoded = describe_decoded_step(&step.payload, translation_ctx.as_ref());
         writeln!(
             output,
-            "{}. {} {}",
+            "{}. {} {}{}",
             index + 1,
             describe_direction(step.direction),
-            describe_trace_payload(&step.payload)
+            describe_trace_payload(&step.payload),
+            decoded.map_or_else(String::new, |suffix| format!(" => {suffix}"))
         )
         .expect("write");
     }
@@ -300,6 +315,153 @@ fn describe_reverse_event(event: &BackendReverseEvent) -> String {
     }
 }
 
+fn describe_decoded_step(
+    payload: &BackendTracePayload,
+    ctx: Option<&PreparedTranslationContext>,
+) -> Option<String> {
+    match payload {
+        BackendTracePayload::EvdevEvents { events } => describe_evdev_summary(ctx?, events),
+        BackendTracePayload::HidInputReport { report_id, bytes } => {
+            describe_hid_input_summary(ctx?, *report_id, bytes)
+        }
+        BackendTracePayload::ReverseEvent { event } => describe_reverse_event_summary(ctx?, event),
+        _ => None,
+    }
+}
+
+fn describe_evdev_summary(
+    ctx: &PreparedTranslationContext,
+    events: &[gr_backend_api::EvdevEvent],
+) -> Option<String> {
+    match ctx.profile_family.as_deref()? {
+        "xbox360" => describe_xbox_evdev_summary(events),
+        "generic-gamepad" => describe_generic_evdev_summary(events),
+        _ => None,
+    }
+}
+
+fn describe_xbox_evdev_summary(events: &[gr_backend_api::EvdevEvent]) -> Option<String> {
+    let mut parts = Vec::new();
+    for event in events {
+        match (event.event_type, event.code) {
+            (1, 304) => parts.push(format!("a={}", event.value != 0)),
+            (1, 305) => parts.push(format!("b={}", event.value != 0)),
+            (1, 307) => parts.push(format!("x={}", event.value != 0)),
+            (1, 308) => parts.push(format!("y={}", event.value != 0)),
+            (1, 310) => parts.push(format!("lb={}", event.value != 0)),
+            (1, 311) => parts.push(format!("rb={}", event.value != 0)),
+            (1, 317) => parts.push(format!("ls={}", event.value != 0)),
+            (1, 318) => parts.push(format!("rs={}", event.value != 0)),
+            (1, 315) => parts.push(format!("start={}", event.value != 0)),
+            (1, 314) => parts.push(format!("back={}", event.value != 0)),
+            (1, 316) => parts.push(format!("guide={}", event.value != 0)),
+            (3, 16) => parts.push(format!("dpad_x={}", event.value)),
+            (3, 17) => parts.push(format!("dpad_y={}", event.value)),
+            (3, 0) => parts.push(format!("left_x={}", event.value)),
+            (3, 1) => parts.push(format!("left_y={}", event.value)),
+            (3, 3) => parts.push(format!("right_x={}", event.value)),
+            (3, 4) => parts.push(format!("right_y={}", event.value)),
+            (3, 2) => parts.push(format!("lt={}", event.value)),
+            (3, 5) => parts.push(format!("rt={}", event.value)),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| format!("xbox360 {}", parts.join(" ")))
+}
+
+fn describe_generic_evdev_summary(events: &[gr_backend_api::EvdevEvent]) -> Option<String> {
+    let mut parts = Vec::new();
+    for event in events {
+        match (event.event_type, event.code) {
+            (1, 304) => parts.push(format!("south={}", event.value != 0)),
+            (1, 305) => parts.push(format!("east={}", event.value != 0)),
+            (1, 307) => parts.push(format!("west={}", event.value != 0)),
+            (1, 308) => parts.push(format!("north={}", event.value != 0)),
+            (3, 16) => parts.push(format!("dpad_x={}", event.value)),
+            (3, 17) => parts.push(format!("dpad_y={}", event.value)),
+            (3, 0) => parts.push(format!("left_x={}", event.value)),
+            (3, 1) => parts.push(format!("left_y={}", event.value)),
+            (3, 3) => parts.push(format!("right_x={}", event.value)),
+            (3, 4) => parts.push(format!("right_y={}", event.value)),
+            (3, 2) => parts.push(format!("lt={}", event.value)),
+            (3, 5) => parts.push(format!("rt={}", event.value)),
+            _ => {}
+        }
+    }
+    (!parts.is_empty()).then(|| format!("generic-gamepad {}", parts.join(" ")))
+}
+
+fn describe_hid_input_summary(
+    ctx: &PreparedTranslationContext,
+    report_id: Option<u8>,
+    bytes: &[u8],
+) -> Option<String> {
+    match ctx.profile_family.as_deref()? {
+        "dualsense" if report_id == Some(0x01) && bytes.len() >= 10 => {
+            let mut parts = Vec::new();
+            if bytes[7] & 0x20 != 0 {
+                parts.push("cross");
+            }
+            if bytes[7] & 0x40 != 0 {
+                parts.push("circle");
+            }
+            if bytes[7] & 0x10 != 0 {
+                parts.push("square");
+            }
+            if bytes[7] & 0x80 != 0 {
+                parts.push("triangle");
+            }
+            let dpad = match bytes[7] & 0x0f {
+                0x00 => "up",
+                0x01 => "up-right",
+                0x02 => "right",
+                0x03 => "down-right",
+                0x04 => "down",
+                0x05 => "down-left",
+                0x06 => "left",
+                0x07 => "up-left",
+                _ => "neutral",
+            };
+            Some(format!(
+                "dualsense dpad={dpad} buttons={}",
+                if parts.is_empty() {
+                    "none".to_string()
+                } else {
+                    parts.join(",")
+                }
+            ))
+        }
+        "steam-controller" if report_id == Some(0x01) && bytes.len() >= 18 => Some(format!(
+            "steam-controller buttons=a:{} steam:{} lt:{} rt:{}",
+            (bytes[0] & 0x01) != 0,
+            (bytes[1] & 0x04) != 0,
+            u16::from_le_bytes([bytes[14], bytes[15]]),
+            u16::from_le_bytes([bytes[16], bytes[17]])
+        )),
+        _ => None,
+    }
+}
+
+fn describe_reverse_event_summary(
+    ctx: &PreparedTranslationContext,
+    event: &BackendReverseEvent,
+) -> Option<String> {
+    let translator = TranslatorRegistry::new().reverse(match ctx.profile_family.as_deref()? {
+        "xbox360" => TranslatorFamily::XboxStyle,
+        "dualsense" => TranslatorFamily::DualSense,
+        "steam-controller" => TranslatorFamily::SteamController,
+        _ => return None,
+    })?;
+    let mut out = smallvec::SmallVec::<[_; 4]>::new();
+    translator.translate_reverse(event, ctx, &mut out).ok()?;
+    Some(
+        out.iter()
+            .map(|command| format!("{:?}:{:?}", command.function, command.payload))
+            .collect::<Vec<_>>()
+            .join(" | "),
+    )
+}
+
 fn describe_target(target: &gr_backend_api::BackendReverseTarget) -> String {
     match target {
         gr_backend_api::BackendReverseTarget::SemanticOutput(function) => {
@@ -345,6 +507,78 @@ fn serde_name<T: Serialize>(value: &T) -> String {
         .ok()
         .and_then(|value| value.as_str().map(ToString::to_string))
         .unwrap_or_else(|| "<unknown>".to_string())
+}
+
+fn build_translation_context(profile_id: &str) -> Option<PreparedTranslationContext> {
+    let profile = registry().profile_by_str(profile_id)?;
+    let (translator_family, level, backend_family, fidelity) = match profile.profile_family {
+        ProfileFamily::GenericGamepad => (
+            TranslatorFamily::GenericGamepad,
+            BackendLevel::Evdev,
+            BackendFamily::LinuxUinput,
+            FidelityTier::Compatibility,
+        ),
+        ProfileFamily::Xbox360 => (
+            TranslatorFamily::XboxStyle,
+            BackendLevel::Evdev,
+            BackendFamily::LinuxUinput,
+            FidelityTier::Compatibility,
+        ),
+        ProfileFamily::DualSense => (
+            TranslatorFamily::DualSense,
+            BackendLevel::Hid,
+            BackendFamily::LinuxUhid,
+            FidelityTier::IdentityAware,
+        ),
+        ProfileFamily::SteamController => (
+            TranslatorFamily::SteamController,
+            BackendLevel::Hid,
+            BackendFamily::LinuxUhid,
+            FidelityTier::IdentityAware,
+        ),
+        _ => return None,
+    };
+    let plan = SessionPlan {
+        session_id: SessionId::new(1),
+        profile_id: ProfileId::from(profile_id),
+        requested_goal: EmulationGoal::from(fidelity),
+        requested_fidelity_tier: fidelity,
+        selected_level: level,
+        target_host_platform: HostPlatform::Linux,
+        selected_backend_family: backend_family,
+        selected_provider_id: "replay".into(),
+        selected_translator_family: translator_family,
+        capability_result: CapabilityNegotiationResult::default(),
+        degradation: DegradationReport::default(),
+        warnings: Vec::new(),
+        deployment_requirements: DeploymentRequirements::default(),
+        backend_open_context: BackendOpenContext {
+            session_id: SessionId::new(1),
+            profile_id: ProfileId::from(profile_id),
+            fidelity_tier: fidelity,
+            backend_level: level,
+            host_platform: HostPlatform::Linux,
+        },
+        session_options: SessionOptionsSnapshot {
+            accepted_update_kinds: vec!["frame".to_string()],
+            unknown_field_policy: "reject".to_string(),
+            range_validation_policy: "reject".to_string(),
+            coerce_integer_like_values: false,
+            allow_missing_optional_fields: true,
+            require_monotonic_sequence: false,
+            preferred_provider: None,
+            reject_unsupported_provider_preference: false,
+            unsupported_capability_policy: "report".to_string(),
+            delivery_policy: ReverseEventDeliveryPolicy::Callback {
+                callback_namespace: "virtualGamepad".to_string(),
+            },
+            backpressure_policy: BackpressurePolicy::DropOldest {
+                log_dropped_outputs: true,
+                max_queue_depth: Some(8),
+            },
+        },
+    };
+    prepared_translation_context(&plan, &TranslatorRegistry::new()).ok()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

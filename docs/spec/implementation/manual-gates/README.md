@@ -18,3 +18,6 @@ Files in this directory:
   record/replay, and runtime gate review for Phase 4
 - [Phase 5 Manual Gate](phase-5.md): planner selection, degradation,
   rejection, and plan-snapshot review for Phase 5
+- [Phase 6 Manual Gate](phase-6.md): translators, descriptor-backed
+  HID shaping, reverse-event decoding, and replay-trace reviewer
+  checks for Phase 6

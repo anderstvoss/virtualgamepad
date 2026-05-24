@@ -1,0 +1,24 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: xbox360-evdev-roundtrip
+profile_id: xbox360
+notes: |
+  Phase 6 manual-review fixture: representative Xbox 360 evdev events for a
+  face-button press, dpad-right, and trigger motion.
+payload:
+  steps:
+    - direction: outbound
+      kind: evdev-events
+      events:
+        - type: 1
+          code: 304
+          value: 1
+        - type: 3
+          code: 16
+          value: 1
+        - type: 3
+          code: 0
+          value: 1200
+        - type: 3
+          code: 5
+          value: 20
