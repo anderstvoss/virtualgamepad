@@ -1357,6 +1357,219 @@ impl ProfileInputDeltaPayload {
             })
         }
     }
+
+    /// Apply this delta to a compatible base payload, returning the
+    /// resulting full payload.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CoreError::ProfilePayloadMismatch`] when `base` and
+    /// `self` target different built-in profile families.
+    pub fn apply_to(&self, base: &ProfileInputPayload) -> Result<ProfileInputPayload, CoreError> {
+        match (self, base) {
+            (Self::GenericGamepad(delta), ProfileInputPayload::GenericGamepad(input)) => Ok(
+                ProfileInputPayload::GenericGamepad(apply_generic_gamepad_delta(input, delta)),
+            ),
+            (Self::Xbox360(delta), ProfileInputPayload::Xbox360(input)) => Ok(
+                ProfileInputPayload::Xbox360(apply_xbox360_delta(input, delta)),
+            ),
+            (Self::DualSense(delta), ProfileInputPayload::DualSense(input)) => Ok(
+                ProfileInputPayload::DualSense(apply_dualsense_delta(input, delta)),
+            ),
+            (Self::SteamController(delta), ProfileInputPayload::SteamController(input)) => Ok(
+                ProfileInputPayload::SteamController(apply_steam_controller_delta(input, delta)),
+            ),
+            _ => Err(CoreError::ProfilePayloadMismatch {
+                profile_id: ProfileId::from(base.variant_name()),
+                payload_variant: self.variant_name(),
+            }),
+        }
+    }
+}
+
+fn apply_bool<T: Copy>(target: &mut T, update: Option<T>) {
+    if let Some(value) = update {
+        *target = value;
+    }
+}
+
+fn apply_dpad(base: Dpad, delta: &DpadDelta) -> Dpad {
+    let mut next = base;
+    apply_bool(&mut next.up, delta.up);
+    apply_bool(&mut next.down, delta.down);
+    apply_bool(&mut next.left, delta.left);
+    apply_bool(&mut next.right, delta.right);
+    next
+}
+
+fn apply_twin_sticks(base: TwinStickAxes, delta: &TwinStickAxesDelta) -> TwinStickAxes {
+    let mut next = base;
+    apply_bool(&mut next.left_x, delta.left_x);
+    apply_bool(&mut next.left_y, delta.left_y);
+    apply_bool(&mut next.right_x, delta.right_x);
+    apply_bool(&mut next.right_y, delta.right_y);
+    next
+}
+
+fn apply_generic_gamepad_delta(
+    base: &GenericGamepadInput,
+    delta: &GenericGamepadDelta,
+) -> GenericGamepadInput {
+    let mut next = base.clone();
+    if let Some(buttons) = &delta.buttons {
+        apply_bool(&mut next.buttons.south, buttons.south);
+        apply_bool(&mut next.buttons.east, buttons.east);
+        apply_bool(&mut next.buttons.west, buttons.west);
+        apply_bool(&mut next.buttons.north, buttons.north);
+        apply_bool(&mut next.buttons.left_shoulder, buttons.left_shoulder);
+        apply_bool(&mut next.buttons.right_shoulder, buttons.right_shoulder);
+        apply_bool(
+            &mut next.buttons.left_stick_button,
+            buttons.left_stick_button,
+        );
+        apply_bool(
+            &mut next.buttons.right_stick_button,
+            buttons.right_stick_button,
+        );
+        apply_bool(&mut next.buttons.menu_primary, buttons.menu_primary);
+        apply_bool(&mut next.buttons.menu_secondary, buttons.menu_secondary);
+        apply_bool(&mut next.buttons.guide, buttons.guide);
+    }
+    if let Some(dpad) = &delta.dpad {
+        next.dpad = apply_dpad(next.dpad, dpad);
+    }
+    if let Some(sticks) = &delta.sticks {
+        next.sticks = apply_twin_sticks(next.sticks, sticks);
+    }
+    if let Some(triggers) = &delta.triggers {
+        apply_bool(&mut next.triggers.left_trigger, triggers.left_trigger);
+        apply_bool(&mut next.triggers.right_trigger, triggers.right_trigger);
+    }
+    next
+}
+
+fn apply_xbox360_delta(base: &Xbox360Input, delta: &Xbox360Delta) -> Xbox360Input {
+    let mut next = base.clone();
+    if let Some(buttons) = &delta.buttons {
+        if let Some(face) = &buttons.face {
+            apply_bool(&mut next.buttons.face.a, face.a);
+            apply_bool(&mut next.buttons.face.b, face.b);
+            apply_bool(&mut next.buttons.face.x, face.x);
+            apply_bool(&mut next.buttons.face.y, face.y);
+        }
+        if let Some(shoulders) = &buttons.shoulders {
+            apply_bool(&mut next.buttons.shoulders.lb, shoulders.lb);
+            apply_bool(&mut next.buttons.shoulders.rb, shoulders.rb);
+        }
+        if let Some(stick_clicks) = &buttons.stick_clicks {
+            apply_bool(&mut next.buttons.stick_clicks.ls, stick_clicks.ls);
+            apply_bool(&mut next.buttons.stick_clicks.rs, stick_clicks.rs);
+        }
+        if let Some(system) = &buttons.system {
+            apply_bool(&mut next.buttons.system.start, system.start);
+            apply_bool(&mut next.buttons.system.back, system.back);
+            apply_bool(&mut next.buttons.system.guide, system.guide);
+        }
+    }
+    if let Some(dpad) = &delta.dpad {
+        next.dpad = apply_dpad(next.dpad, dpad);
+    }
+    if let Some(sticks) = &delta.sticks {
+        next.sticks = apply_twin_sticks(next.sticks, sticks);
+    }
+    if let Some(triggers) = &delta.triggers {
+        apply_bool(&mut next.triggers.lt, triggers.lt);
+        apply_bool(&mut next.triggers.rt, triggers.rt);
+    }
+    next
+}
+
+fn apply_dualsense_delta(base: &DualSenseInput, delta: &DualSenseDelta) -> DualSenseInput {
+    let mut next = base.clone();
+    if let Some(buttons) = &delta.buttons {
+        if let Some(face) = &buttons.face {
+            apply_bool(&mut next.buttons.face.cross, face.cross);
+            apply_bool(&mut next.buttons.face.circle, face.circle);
+            apply_bool(&mut next.buttons.face.square, face.square);
+            apply_bool(&mut next.buttons.face.triangle, face.triangle);
+        }
+        if let Some(shoulders) = &buttons.shoulders {
+            apply_bool(&mut next.buttons.shoulders.l1, shoulders.l1);
+            apply_bool(&mut next.buttons.shoulders.r1, shoulders.r1);
+        }
+        if let Some(stick_clicks) = &buttons.stick_clicks {
+            apply_bool(&mut next.buttons.stick_clicks.l3, stick_clicks.l3);
+            apply_bool(&mut next.buttons.stick_clicks.r3, stick_clicks.r3);
+        }
+        if let Some(system) = &buttons.system {
+            apply_bool(&mut next.buttons.system.create, system.create);
+            apply_bool(&mut next.buttons.system.options, system.options);
+            apply_bool(&mut next.buttons.system.ps, system.ps);
+            apply_bool(
+                &mut next.buttons.system.touchpad_click,
+                system.touchpad_click,
+            );
+        }
+    }
+    if let Some(dpad) = &delta.dpad {
+        next.dpad = apply_dpad(next.dpad, dpad);
+    }
+    if let Some(sticks) = &delta.sticks {
+        next.sticks = apply_twin_sticks(next.sticks, sticks);
+    }
+    if let Some(triggers) = &delta.triggers {
+        apply_bool(&mut next.triggers.l2, triggers.l2);
+        apply_bool(&mut next.triggers.r2, triggers.r2);
+    }
+    if let Some(touchpad) = &delta.touchpad {
+        if let Some(contact) = &touchpad.contact_1 {
+            apply_bool(&mut next.touchpad.contact_1.active, contact.active);
+            apply_bool(&mut next.touchpad.contact_1.x, contact.x);
+            apply_bool(&mut next.touchpad.contact_1.y, contact.y);
+        }
+        if let Some(contact) = &touchpad.contact_2 {
+            apply_bool(&mut next.touchpad.contact_2.active, contact.active);
+            apply_bool(&mut next.touchpad.contact_2.x, contact.x);
+            apply_bool(&mut next.touchpad.contact_2.y, contact.y);
+        }
+    }
+    next
+}
+
+fn apply_steam_controller_delta(
+    base: &SteamControllerInput,
+    delta: &SteamControllerDelta,
+) -> SteamControllerInput {
+    let mut next = base.clone();
+    if let Some(buttons) = &delta.buttons {
+        apply_bool(&mut next.buttons.a, buttons.a);
+        apply_bool(&mut next.buttons.b, buttons.b);
+        apply_bool(&mut next.buttons.x, buttons.x);
+        apply_bool(&mut next.buttons.y, buttons.y);
+        apply_bool(&mut next.buttons.left_grip, buttons.left_grip);
+        apply_bool(&mut next.buttons.right_grip, buttons.right_grip);
+        apply_bool(&mut next.buttons.lb, buttons.lb);
+        apply_bool(&mut next.buttons.rb, buttons.rb);
+        apply_bool(&mut next.buttons.menu_primary, buttons.menu_primary);
+        apply_bool(&mut next.buttons.menu_secondary, buttons.menu_secondary);
+        apply_bool(&mut next.buttons.steam, buttons.steam);
+        apply_bool(&mut next.buttons.left_pad_click, buttons.left_pad_click);
+        apply_bool(&mut next.buttons.right_pad_click, buttons.right_pad_click);
+        apply_bool(&mut next.buttons.left_stick_click, buttons.left_stick_click);
+    }
+    if let Some(sticks) = &delta.sticks {
+        apply_bool(&mut next.sticks.left_pad_x, sticks.left_pad_x);
+        apply_bool(&mut next.sticks.left_pad_y, sticks.left_pad_y);
+        apply_bool(&mut next.sticks.right_pad_x, sticks.right_pad_x);
+        apply_bool(&mut next.sticks.right_pad_y, sticks.right_pad_y);
+        apply_bool(&mut next.sticks.left_stick_x, sticks.left_stick_x);
+        apply_bool(&mut next.sticks.left_stick_y, sticks.left_stick_y);
+    }
+    if let Some(triggers) = &delta.triggers {
+        apply_bool(&mut next.triggers.lt, triggers.lt);
+        apply_bool(&mut next.triggers.rt, triggers.rt);
+    }
+    next
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

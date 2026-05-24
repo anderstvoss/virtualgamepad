@@ -1,4 +1,6 @@
-use gr_testkit::fixtures::{FixtureDocument, PlanOutcome, TraceDirection, load_fixture};
+use gr_testkit::fixtures::{
+    FixtureDocument, PlanOutcome, SessionScenarioDocument, TraceDirection, load_fixture,
+};
 
 fn fixture_path(relative: &str) -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(relative)
@@ -27,7 +29,10 @@ fn session_scenario_fixture_decodes_through_testkit_loader() {
         panic!("expected session-scenario document");
     };
     assert_eq!(fixture.envelope.id, "fake-session-rumble");
-    assert_eq!(fixture.scenario.steps.len(), 2);
+    let SessionScenarioDocument::Legacy(scenario) = fixture.scenario else {
+        panic!("expected legacy scenario");
+    };
+    assert_eq!(scenario.steps.len(), 2);
 }
 
 #[test]

@@ -1,0 +1,77 @@
+fixture: virtualgamepad/v1
+kind: session-scenario
+id: slow-consumer
+profile_id: dualsense
+notes: |
+  Phase 7 runtime scenario: inject multiple rumble reverse events and
+  assert the runtime emits output commands without failing the session.
+payload:
+  session:
+    session_id: 32
+    profile_id: dualsense
+    fidelity_tier: identity-aware
+    backend_level: hid
+    host_platform: linux
+  backend:
+    backend_id: fake-backend
+    family: linux-uhid
+    host_platform: linux
+    supported_fidelity_tiers:
+      - identity-aware
+    supported_output_functions:
+      - rumble
+      - haptics
+      - lighting
+      - player-indicators
+      - trigger-effect
+      - audio
+  steps:
+    - kind: send-input
+      frame:
+        profile_id: dualsense
+        timestamp: 1
+        sequence: 1
+        payload:
+          profile: dualsense
+          fields:
+            buttons:
+              face: { cross: true, circle: false, square: false, triangle: false }
+              shoulders: { l1: false, r1: false }
+              stick_clicks: { l3: false, r3: false }
+              system: { create: false, options: false, ps: false, touchpad_click: false }
+            dpad: { up: false, down: false, left: false, right: false }
+            sticks: { left_x: 0, left_y: 0, right_x: 0, right_y: 0 }
+            triggers: { l2: 0, r2: 0 }
+            touchpad:
+              contact_1: { active: false, x: 0, y: 0 }
+              contact_2: { active: false, x: 0, y: 0 }
+    - kind: inject-reverse
+      event:
+        session_id: 32
+        profile_id: dualsense
+        timestamp: 10
+        sequence: 10
+        kind: hid-output-report
+        target: { kind: semantic-output, value: rumble }
+        payload:
+          kind: hid
+          report_id: 5
+          bytes: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+    - kind: inject-reverse
+      event:
+        session_id: 32
+        profile_id: dualsense
+        timestamp: 11
+        sequence: 11
+        kind: hid-output-report
+        target: { kind: semantic-output, value: rumble }
+        payload:
+          kind: hid
+          report_id: 5
+          bytes: [0, 200, 100, 0, 0, 0, 0, 0, 0, 1]
+    - kind: sleep-ms
+      millis: 50
+    - kind: assert-output-count
+      at_least: 1
+    - kind: assert-session-state
+      state: running

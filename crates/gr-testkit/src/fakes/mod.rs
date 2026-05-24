@@ -256,6 +256,24 @@ impl FakeBackendFactory {
             })
             .unwrap_or_default()
     }
+
+    /// Append a reverse event to the targeted fake session.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the fake session registry mutex is poisoned.
+    #[must_use]
+    pub fn inject_reverse_event(&self, session_id: SessionId, event: BackendReverseEvent) -> bool {
+        let sessions = self.sessions.lock().expect("fake sessions lock");
+        for shared in sessions.iter() {
+            let mut shared = shared.lock().expect("shared lock");
+            if shared.session_id == Some(session_id) {
+                shared.reverse_events.push_back(event);
+                return true;
+            }
+        }
+        false
+    }
 }
 
 impl BackendFactory for FakeBackendFactory {

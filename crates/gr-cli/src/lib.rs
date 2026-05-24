@@ -1,6 +1,7 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
 mod phase4;
+mod phase7;
 
 use gr_backend_api::{BackendReverseEvent, BackendReversePayload, BackendReverseTarget};
 use gr_config::{ConfigLoadError, ConfigValidationReport};
@@ -107,6 +108,11 @@ const PHASE_6_COMMANDS: &[&[&str]] = &[
     &["cargo", "run", "-p", "gr-cli", "--", "capability-coverage"],
 ];
 
+const PHASE_7_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+];
+
 /// Run a Phase 4 fake-backend-backed session scenario.
 ///
 /// # Errors
@@ -118,7 +124,34 @@ pub fn simulate_session(
     scenario_path: impl AsRef<Path>,
     record_path: Option<&Path>,
 ) -> Result<String, CliError> {
-    phase4::simulate_session(scenario_path, record_path)
+    let path = scenario_path.as_ref();
+    match load_fixture(path).map_err(|source| CliError::Simulation {
+        message: format!("{}: {source}", path.display()),
+    })? {
+        TestkitFixtureDocument::SessionScenario(fixture) => match fixture.scenario {
+            gr_testkit::fixtures::SessionScenarioDocument::Legacy(_) => {
+                phase4::simulate_session(path, record_path)
+            }
+            gr_testkit::fixtures::SessionScenarioDocument::Runtime(_) => {
+                phase7::simulate_runtime_session(path)
+            }
+        },
+        _ => Err(CliError::FixtureKind {
+            path: path.to_path_buf(),
+            expected: "session-scenario",
+        }),
+    }
+}
+
+/// Spin up many fake-backed runtime sessions and summarize their
+/// current states.
+///
+/// # Errors
+///
+/// Returns an error if runtime session creation or the many-session
+/// status collection fails.
+pub fn many_sessions(count: usize) -> Result<String, CliError> {
+    phase7::many_sessions(count)
 }
 
 /// Render a backend trace fixture in a stable human-readable format.
@@ -1199,7 +1232,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        7..=12 => Err(CliError::UnimplementedPhase { phase }),
+        7 => Ok(PHASE_7_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        8..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }

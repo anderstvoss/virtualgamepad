@@ -21,6 +21,8 @@ enum Command {
         path: PathBuf,
         #[arg(long)]
         record: Option<PathBuf>,
+        #[arg(long)]
+        concurrency: Option<usize>,
     },
     /// Render a backend trace fixture.
     ReplayTrace { path: PathBuf },
@@ -54,6 +56,8 @@ enum Command {
     },
     /// Cross-check declared capabilities against translator coverage (Phase 2).
     CapabilityCoverage,
+    /// Spin up many fake-backed sessions and print their status.
+    ManySessions { count: usize },
 }
 
 #[derive(Args, Debug)]
@@ -65,6 +69,7 @@ struct PhaseGateArgs {
     auto: bool,
 }
 
+#[allow(clippy::too_many_lines)]
 fn main() {
     let cli = Cli::parse();
     match cli.command {
@@ -82,15 +87,36 @@ fn main() {
                 std::process::exit(1);
             }
         },
-        Command::SimulateSession { path, record } => {
-            match gr_cli::simulate_session(path, record.as_deref()) {
-                Ok(output) => println!("{output}"),
-                Err(error) => {
-                    eprintln!("{error}");
-                    std::process::exit(1);
+        Command::SimulateSession {
+            path,
+            record,
+            concurrency,
+        } => {
+            if let Some(count) = concurrency {
+                match gr_cli::many_sessions(count) {
+                    Ok(output) => println!("{output}"),
+                    Err(error) => {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
+                }
+            } else {
+                match gr_cli::simulate_session(path, record.as_deref()) {
+                    Ok(output) => println!("{output}"),
+                    Err(error) => {
+                        eprintln!("{error}");
+                        std::process::exit(1);
+                    }
                 }
             }
         }
+        Command::ManySessions { count } => match gr_cli::many_sessions(count) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
         Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
             Ok(output) => println!("{output}"),
             Err(error) => {

@@ -20,6 +20,7 @@ pub use plan_snapshot::{PlanOutcome, PlanSnapshotFixture, decode_plan_snapshot};
 pub use reverse_event::{ReverseEventFixture, decode_reverse_event};
 pub use schema::{FixtureDocument, FixtureEnvelope, FixtureError, load_fixture};
 pub use session_scenario::{
-    ScenarioBackend, ScenarioFailure, ScenarioStep, SessionScenario, SessionScenarioFixture,
-    decode_session_scenario,
+    LegacyScenarioStep, LegacySessionScenario, RuntimeScenarioStep, RuntimeSessionConfig,
+    RuntimeSessionScenario, ScenarioBackend, ScenarioFailure, SessionScenarioDocument,
+    SessionScenarioFixture, decode_session_scenario,
 };

@@ -21,3 +21,6 @@ Files in this directory:
 - [Phase 6 Manual Gate](phase-6.md): translators, descriptor-backed
   HID shaping, reverse-event decoding, and replay-trace reviewer
   checks for Phase 6
+- [Phase 7 Manual Gate](phase-7.md): session runtime orchestration,
+  reverse-output delivery, diagnostics, and concurrent fake-session
+  review for Phase 7

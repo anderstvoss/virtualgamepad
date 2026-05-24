@@ -1,24 +1,79 @@
 #![forbid(unsafe_code)]
 
 //! Host bridge adapters for `virtualgamepad`.
-//!
-//! Phase 7 prep pins:
-//!
-//! - [`AudioStreamSink`] / [`AudioStreamSource`] traits for PCM
-//!   stream delivery (handles, not full PCM impl — Phase 7 lands the
-//!   discrete `OutputCommand::Audio` path; PCM streaming arrives with
-//!   the first audio-capable provider in a later phase).
-//! - [`AudioStreamError`] for the audio path.
-//! - [`DeliveryWorkerConfig`] for the delivery worker that decouples
-//!   callbacks from the session actor (see the spec section
-//!   "Reverse-event delivery threading").
-//!
-//! Phase 7 itself implements behavior: the callback / bounded-channel
-//! / stream adapters, the delivery-worker task, and the live audio
-//! handles returned from `VirtualControllerSessionHandle::audio_sink`
-//! / `audio_source`.
 
+use gr_runtime_model::ControllerOutputCommand;
 use thiserror::Error;
+use tokio::sync::mpsc;
+
+// --------------------------------------------------------------------
+// Reverse-output sinks
+// --------------------------------------------------------------------
+
+/// Sink interface implemented by host code that consumes
+/// [`ControllerOutputCommand`] values.
+pub trait OutputSink: Send {
+    fn deliver(&mut self, command: ControllerOutputCommand);
+}
+
+/// Convenience sink that wraps a closure.
+pub struct CallbackSink<F: FnMut(ControllerOutputCommand) + Send> {
+    callback: F,
+}
+
+impl<F: FnMut(ControllerOutputCommand) + Send> CallbackSink<F> {
+    #[must_use]
+    pub fn new(callback: F) -> Self {
+        Self { callback }
+    }
+}
+
+impl<F: FnMut(ControllerOutputCommand) + Send> OutputSink for CallbackSink<F> {
+    fn deliver(&mut self, command: ControllerOutputCommand) {
+        (self.callback)(command);
+    }
+}
+
+/// Output sink backed by a bounded Tokio channel.
+#[derive(Debug, Clone)]
+pub struct ChannelSink {
+    sender: mpsc::Sender<ControllerOutputCommand>,
+}
+
+impl OutputSink for ChannelSink {
+    fn deliver(&mut self, command: ControllerOutputCommand) {
+        let _ = self.sender.blocking_send(command);
+    }
+}
+
+/// Blocking-friendly wrapper around the receiving half of a bounded
+/// output-command channel.
+#[derive(Debug)]
+pub struct OutputCommandStream {
+    receiver: mpsc::Receiver<ControllerOutputCommand>,
+}
+
+impl OutputCommandStream {
+    pub fn recv(&mut self) -> Option<ControllerOutputCommand> {
+        self.receiver.blocking_recv()
+    }
+
+    /// Try to receive one queued command without blocking.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`tokio::sync::mpsc::error::TryRecvError`] when the
+    /// queue is empty or disconnected.
+    pub fn try_recv(&mut self) -> Result<ControllerOutputCommand, mpsc::error::TryRecvError> {
+        self.receiver.try_recv()
+    }
+}
+
+#[must_use]
+pub fn channel_bridge(capacity: usize) -> (ChannelSink, OutputCommandStream) {
+    let (sender, receiver) = mpsc::channel(capacity);
+    (ChannelSink { sender }, OutputCommandStream { receiver })
+}
 
 // --------------------------------------------------------------------
 // Audio stream traits
@@ -116,7 +171,14 @@ impl Default for DeliveryWorkerConfig {
 
 #[cfg(test)]
 mod tests {
-    use super::{AudioStreamError, DeliveryWorkerConfig};
+    use super::{
+        AudioStreamError, CallbackSink, DeliveryWorkerConfig, OutputCommandStream, OutputSink,
+        channel_bridge,
+    };
+    use gr_core::{ProfileId, SessionId, Timestamp};
+    use gr_runtime_model::{
+        ControllerOutputCommand, OutputCommandType, OutputFunctionRef, OutputPayload, RumblePayload,
+    };
 
     #[test]
     fn delivery_worker_config_default_matches_spec_default() {
@@ -131,5 +193,48 @@ mod tests {
                 .contains("back off")
         );
         assert!(AudioStreamError::Closed.to_string().contains("closed"));
+    }
+
+    #[test]
+    fn callback_sink_delivers_via_closure() {
+        let mut captured = Vec::new();
+        let mut sink = CallbackSink::new(|command: ControllerOutputCommand| {
+            if let OutputPayload::Rumble(payload) = command.payload {
+                captured.push(payload.strong);
+            }
+        });
+        sink.deliver(rumble_command(7));
+        assert_eq!(captured, vec![7]);
+    }
+
+    #[test]
+    fn channel_bridge_delivers_in_order() {
+        let (mut sink, mut stream) = channel_bridge(4);
+        sink.deliver(rumble_command(11));
+        sink.deliver(rumble_command(13));
+
+        let first = expect_rumble(&mut stream);
+        let second = expect_rumble(&mut stream);
+        assert_eq!(first, 11);
+        assert_eq!(second, 13);
+    }
+
+    fn expect_rumble(stream: &mut OutputCommandStream) -> u16 {
+        let command = stream.recv().expect("command");
+        let OutputPayload::Rumble(payload) = command.payload else {
+            panic!("expected rumble payload");
+        };
+        payload.strong
+    }
+
+    fn rumble_command(strong: u16) -> ControllerOutputCommand {
+        ControllerOutputCommand {
+            session_id: SessionId::new(1),
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(0),
+            command_type: OutputCommandType::StateUpdate,
+            function: OutputFunctionRef::Semantic(gr_core::SemanticOutputFunction::Rumble),
+            payload: OutputPayload::Rumble(RumblePayload { strong, weak: 0 }),
+        }
     }
 }
