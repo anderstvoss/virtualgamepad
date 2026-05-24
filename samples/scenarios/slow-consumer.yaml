@@ -3,9 +3,15 @@ kind: session-scenario
 id: slow-consumer
 profile_id: dualsense
 notes: |
-  Phase 7 runtime scenario: inject multiple rumble reverse events and
-  assert the runtime emits output commands without failing the session.
-  DualSense rumble magnitudes live at HID output report bytes 3 and 4.
+  Phase 7 runtime scenario: inject two rumble reverse events with distinct
+  strong/weak magnitudes and assert both reach the output sink while the
+  session stays Running. DualSense rumble magnitudes live at HID output
+  report bytes 3 (weak) and 4 (strong).
+
+  NOTE: the manual-gate "slow-consumer isolation" property (one slow
+  callback never stalls another session) is not yet exercised by this
+  fixture. Adding it requires a subscribe-slow scenario step and a
+  multi-session harness. Tracked as Phase 7 follow-up.
 payload:
   session:
     session_id: 32
@@ -57,7 +63,7 @@ payload:
         payload:
           kind: hid
           report_id: 5
-          bytes: [0, 0, 0, 0, 0, 0, 0, 0, 0, 1]
+          bytes: [0, 0, 0, 100, 50, 0, 0, 0, 0, 1]
     - kind: inject-reverse
       event:
         session_id: 32
@@ -73,6 +79,6 @@ payload:
     - kind: sleep-ms
       millis: 50
     - kind: assert-output-count
-      at_least: 1
+      at_least: 2
     - kind: assert-session-state
       state: running

@@ -45,10 +45,10 @@ cargo run -p virtual_gamepad_demo -- many-sessions 32
 2. Confirm the output lists multiple running sessions and does not fail
 when the first session is closed.
 
-## Check 3: reverse-output delivery
+## Check 3: reverse-output delivery for multiple events
 
-Goal: confirm reverse commands are delivered through the session runtime
-and surfaced in scenario output.
+Goal: confirm two distinct rumble reverse events both decode and reach
+the output sink, and that the session remains `running` throughout.
 
 ### Steps
 
@@ -58,8 +58,22 @@ and surfaced in scenario output.
 cargo run -p virtual_gamepad_demo -- simulate-session samples/scenarios/slow-consumer.yaml
 ```
 
-2. Confirm the output includes at least one delivered reverse command
-and the session remains in `running` state during the scenario.
+2. Confirm:
+   - the command exits 0
+   - `outputs:` reports at least 2 delivered output commands
+   - the diagnostics dump shows `reverse_events.received: 2`,
+     `reverse_events.emitted: 2`, no `last_error`
+   - the session state remains `running`
+
+### Known gap
+
+This check does not yet exercise the spec's slow-consumer isolation
+property — that a slow output callback on one session does not stall a
+sibling session. The bounded reverse-event queue + delivery-worker
+pattern is in place to provide that isolation, but no fixture exercises
+it end-to-end. Adding such a fixture requires a multi-session scenario
+plus a "subscribe slow" step in the harness; tracked as Phase 7
+follow-up.
 
 ## Check 4: discrete audio command path
 
