@@ -32,6 +32,13 @@ pub enum FakeFailure {
     DrainParseError,
     CloseFails,
     EventReadinessFlapping,
+    /// Simulates a provider task panic during session open. The fake
+    /// surfaces this as `BackendError::OpenFailed { reason:
+    /// "simulated provider panic" }`, which the Phase 7 manager must
+    /// catch and isolate so unrelated sessions keep running. See
+    /// `TESTING_TOOLING_SPEC.md` "Failure injection" for the canonical
+    /// definition.
+    ProviderPanic,
 }
 
 #[allow(clippy::struct_excessive_bools)]
@@ -164,6 +171,11 @@ impl FakeBackendFactoryBuilder {
             FakeFailure::DrainParseError => self.drain_parse_error_once = true,
             FakeFailure::CloseFails => self.close_error = true,
             FakeFailure::EventReadinessFlapping => self.flapping_readiness = true,
+            FakeFailure::ProviderPanic => {
+                self.open_error = Some(BackendError::OpenFailed {
+                    reason: "simulated provider panic".to_string(),
+                });
+            }
         }
         self
     }
@@ -741,6 +753,23 @@ mod tests {
             panic!("expected OpenFailed, got {error:?}");
         };
         assert_eq!(reason, "refused for test");
+    }
+
+    #[test]
+    fn provider_panic_surfaces_as_open_failed_for_isolation() {
+        let factory = backend_factory()
+            .with_failure(FakeFailure::ProviderPanic)
+            .build();
+        let error = factory
+            .open_fake_session(&open_context())
+            .expect_err("provider panic should surface as open failure");
+        let BackendError::OpenFailed { reason } = error else {
+            panic!("expected OpenFailed for isolated provider panic, got {error:?}");
+        };
+        assert!(
+            reason.contains("provider panic"),
+            "reason should name the simulated panic: {reason}"
+        );
     }
 
     #[test]

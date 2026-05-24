@@ -587,19 +587,22 @@ Glue planner + translators + backend together inside a session runtime that scal
 
 ### Deliverables
 
+Type + error surface (`ManagerConfig`, `ManagerError`, `SessionError`, `SessionSendError`, `OutputSink`, `SessionOutputSubscription`, `AudioStreamSink`, `AudioStreamSource`, `AudioStreamError`, `DeliveryWorkerConfig`, `counter_keys`) already shipped in the Phase 7 prep PR. `FakeFailure::ProviderPanic` also added in prep. Phase 7 itself implements behavior against those shapes:
+
 - `gr-session`:
-  - `VirtualControllerManager` with explicit `with_backends` registration (per [Provider registration](RUST_IMPLEMENTATION_SPEC.md#provider-registration))
-  - `VirtualControllerSessionHandle` with `send_input`, `send_input_delta`, `subscribe_outputs`
+  - `VirtualControllerManager::new` / `with_backends` / `create_session` / `close_session` bodies
+  - `VirtualControllerSessionHandle::send_input` / `send_input_delta` / `subscribe_outputs` bodies
   - per-session input + reverse queues with the bounded / coalescing policies from the spec
-  - session actor per active session; shared worker pool
+  - session actor per active session; shared worker pool (tokio)
   - readiness-aware reverse event scheduling
+  - per-session diagnostics counters populated using [`counter_keys`](RUST_IMPLEMENTATION_SPEC.md#counter-naming-convention)
 - `gr-host-bridge`:
-  - callback adapter
+  - callback adapter (`CallbackSink` prep-shipped; Phase 7 wires it through the delivery worker)
   - bounded-channel adapter
   - stream/observable adapter
   - delivery worker decoupled from session actor (per [Reverse-event delivery threading](RUST_IMPLEMENTATION_SPEC.md#reverse-event-delivery-threading))
-- audio split: `audio_sink()` and `audio_source()` return `Option<...>` per the [audio contract](RUST_IMPLEMENTATION_SPEC.md#audio-stream-contract)
-- diagnostics: per-session and manager-wide telemetry snapshots
+  - live `AudioStreamSink` / `AudioStreamSource` implementations for fake provider sessions that declare audio capability
+- diagnostics: per-session and manager-wide telemetry snapshots; counters populated under the spec's canonical key set
 
 ### Iteration loop
 
