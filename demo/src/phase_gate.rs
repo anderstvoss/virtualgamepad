@@ -222,6 +222,14 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .map(|check| check.success);
     }
 
+    if item.contains("Linux-gated integration tests pass") {
+        return report
+            .checks
+            .iter()
+            .find(|check| check.command_display == "cargo test --workspace --all-features")
+            .map(|check| check.success);
+    }
+
     if let Some(command_display) = first_backticked_segment(item) {
         return report
             .checks

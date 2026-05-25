@@ -50,14 +50,18 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # v2.8.1
 
-      - name: Check prep command surfaces
+      - name: Check phase 8 command surfaces
         run: |
+          cargo run -p virtual_gamepad_demo -- phase-gate 8
           cargo run -p gr-cli -- run-uinput-smoke generic-gamepad
           cargo run -p gr-cli -- support-report --profile generic-gamepad --tier compatibility
 
   privileged-linux:
     name: Privileged Linux provider validation
-    if: ${{ !github.event.repository.private }}
+    # Enable this once a self-hosted Linux runner with /dev/uinput
+    # access exists. Until then keep the job explicit but inert so the
+    # intended validation shape is visible in-repo.
+    if: false
     runs-on: [self-hosted, linux, uinput]
     timeout-minutes: 20
     needs: contract-surface
