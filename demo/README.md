@@ -43,8 +43,9 @@ cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
 cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
 cargo run -p virtual_gamepad_demo -- many-sessions 8
-cargo run -p virtual_gamepad_demo -- phase-gate 0
-cargo run -p virtual_gamepad_demo -- phase-gate 1
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
+cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
+cargo run -p virtual_gamepad_demo -- phase-gate 7
 ```
 
 Add `--help` to any subcommand for usage details.

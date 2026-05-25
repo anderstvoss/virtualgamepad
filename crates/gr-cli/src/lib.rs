@@ -3,17 +3,21 @@
 mod phase4;
 mod phase7;
 
-use gr_backend_api::{BackendReverseEvent, BackendReversePayload, BackendReverseTarget};
+use gr_backend_api::{
+    BackendFactory, BackendReverseEvent, BackendReversePayload, BackendReverseTarget,
+};
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
     BackendLevel, CoreError, FidelityTier, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload,
-    ProfileInputFrame, ProfileInputPayload, SemanticInputFunction, SequenceId, Timestamp,
+    ProfileInputFrame, ProfileInputPayload, SemanticInputFunction, SemanticOutputFunction,
+    SequenceId, Timestamp,
 };
 use gr_planner::plan_session as plan_runtime_session;
 use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
     RegistryError, SemanticRef, registry,
 };
+use gr_provider_linux_uinput::LinuxUinputBackendFactory;
 use gr_runtime_model::{
     BackpressurePolicy, EmulationGoal, HostPlatform, ReverseEventDeliveryPolicy,
     SessionHostMetadata, SessionRequest,
@@ -32,6 +36,7 @@ use serde_yaml::Value;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 use std::sync::Arc;
 
 const PHASE_0_COMMANDS: &[&[&str]] = &[
@@ -112,6 +117,53 @@ const PHASE_7_COMMANDS: &[&[&str]] = &[
     &["cargo", "test", "--workspace", "--all-features"],
     &["cargo", "insta", "test", "--check"],
 ];
+
+/// Render a prep-only Linux `uinput` smoke report for a built-in profile.
+///
+/// # Errors
+///
+/// Returns an error when the profile id is unknown or the report cannot
+/// be serialized.
+pub fn run_uinput_smoke(profile_id: &str) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    let factory = LinuxUinputBackendFactory::new();
+    let request = uinput_realization_request(profile, FidelityTier::Compatibility);
+    let report = factory.smoke_report(&profile.profile_id, &request);
+    serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+}
+
+/// Generate the initial support-claim evidence skeleton.
+///
+/// # Errors
+///
+/// Returns an error when a profile or fidelity tier argument is
+/// unknown, or the final report cannot be serialized.
+pub fn support_report(profile_id: Option<&str>, tier: Option<&str>) -> Result<String, CliError> {
+    let fidelity = match tier {
+        Some(value) => FidelityTier::from_str(value).map_err(|_| CliError::InvalidArgument {
+            argument: "tier",
+            value: value.to_string(),
+        })?,
+        None => FidelityTier::Compatibility,
+    };
+    let profiles = match profile_id {
+        Some(profile_id) => vec![lookup_profile(profile_id)?],
+        None => registry().profiles().iter().collect(),
+    };
+    let factory = LinuxUinputBackendFactory::new();
+    let profiles = profiles
+        .into_iter()
+        .map(|profile| build_support_report_entry(&factory, profile, fidelity))
+        .collect::<Vec<_>>();
+
+    let report = SupportReportBundle {
+        command: "gr-cli support-report",
+        requested_tier: fidelity.to_string(),
+        profiles,
+    };
+
+    serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+}
 
 /// Run a Phase 4 fake-backend-backed session scenario.
 ///
@@ -682,6 +734,41 @@ struct ProfileCapabilitySummary {
     descriptor_templates: Vec<DescriptorTemplateSummary>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SupportReportBundle {
+    command: &'static str,
+    requested_tier: String,
+    profiles: Vec<SupportReportEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SupportReportEntry {
+    profile_id: String,
+    display_name: &'static str,
+    provider: String,
+    backend_family: String,
+    forward_support: String,
+    reverse_support: String,
+    supported_output_functions: Vec<String>,
+    unsupported_output_functions: Vec<UnsupportedOutputSummary>,
+    evidence: Vec<SupportEvidenceItem>,
+    command_hint: String,
+    notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct UnsupportedOutputSummary {
+    function: String,
+    reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct SupportEvidenceItem {
+    check: &'static str,
+    status: &'static str,
+    detail: String,
+}
+
 impl From<&ControllerProfile> for ProfileCapabilitySummary {
     fn from(profile: &ControllerProfile) -> Self {
         Self {
@@ -1173,6 +1260,100 @@ fn capability_fields(capability: CapabilityItem) -> Vec<String> {
     }
 }
 
+fn lookup_profile(profile_id: &str) -> Result<&'static ControllerProfile, CliError> {
+    registry()
+        .profile_by_str(profile_id)
+        .ok_or_else(|| CliError::UnknownProfile {
+            profile_id: profile_id.to_string(),
+        })
+}
+
+fn uinput_realization_request(
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+) -> gr_backend_api::BackendRealizationRequest {
+    gr_backend_api::BackendRealizationRequest {
+        profile_id: profile.profile_id.clone(),
+        requested_goal: fidelity_tier.into(),
+        requested_fidelity_tier: fidelity_tier,
+        host_platform: HostPlatform::Linux,
+        required_output_functions: required_output_functions(profile),
+    }
+}
+
+fn required_output_functions(profile: &ControllerProfile) -> Vec<SemanticOutputFunction> {
+    profile
+        .reverse_command_support
+        .supported
+        .iter()
+        .filter_map(|output| match output {
+            OutputFunctionRef::Semantic(function) => Some(*function),
+            _ => None,
+        })
+        .collect()
+}
+
+fn build_support_report_entry(
+    factory: &LinuxUinputBackendFactory,
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+) -> SupportReportEntry {
+    let request = uinput_realization_request(profile, fidelity_tier);
+    let support = factory.can_realize(&request);
+    let smoke_report = factory.smoke_report(&profile.profile_id, &request);
+
+    SupportReportEntry {
+        profile_id: profile.profile_id.to_string(),
+        display_name: profile.display_name,
+        provider: factory.backend_id().to_string(),
+        backend_family: factory.family().to_string(),
+        forward_support: serde_name(&support.forward_support),
+        reverse_support: serde_name(&support.reverse_support),
+        supported_output_functions: support
+            .supported_output_functions
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        unsupported_output_functions: support
+            .unsupported_output_functions
+            .iter()
+            .map(|unsupported| UnsupportedOutputSummary {
+                function: unsupported.function.to_string(),
+                reason: unsupported.reason.clone(),
+            })
+            .collect(),
+        evidence: vec![
+            SupportEvidenceItem {
+                check: "command-surface",
+                status: "scaffolded",
+                detail: "run-uinput-smoke is available in gr-cli and vgpd-demo".to_string(),
+            },
+            SupportEvidenceItem {
+                check: "tier-b-runner",
+                status: "scaffolded",
+                detail: "privileged Linux workflow is wired for manual/nightly execution"
+                    .to_string(),
+            },
+            SupportEvidenceItem {
+                check: "device-creation",
+                status: "pending-linux-host",
+                detail: smoke_report
+                    .planned_ioctl_sequence
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "no ioctl sequence recorded".to_string()),
+            },
+            SupportEvidenceItem {
+                check: "reverse-path",
+                status: "pending-linux-host",
+                detail: smoke_report.reverse_path.clone(),
+            },
+        ],
+        command_hint: format!("gr-cli run-uinput-smoke {}", profile.profile_id),
+        notes: smoke_report.notes,
+    }
+}
+
 fn serde_name<T: Serialize>(value: &T) -> String {
     serde_yaml::to_value(value)
         .ok()
@@ -1297,8 +1478,8 @@ mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
         PHASE_6_COMMANDS, capability_coverage, list_profiles, phase_gate_commands, plan_session,
-        replay_trace, repo_root, repo_root_from, show_capabilities, simulate_session,
-        validate_config, validate_fixture,
+        replay_trace, repo_root, repo_root_from, run_uinput_smoke, show_capabilities,
+        simulate_session, support_report, validate_config, validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -1674,6 +1855,19 @@ mod tests {
             repo_root.join("crates/gr-testkit/fixtures/community/dualsense-rumble-standalone.yaml");
         let summary = validate_fixture(fixture_path).expect("fixture should validate");
         assert_snapshot!("validate_fixture_reverse_event", summary);
+    }
+
+    #[test]
+    fn run_uinput_smoke_output_is_stable() {
+        let output = run_uinput_smoke("generic-gamepad").expect("uinput smoke");
+        assert_snapshot!("run_uinput_smoke_generic_gamepad", output);
+    }
+
+    #[test]
+    fn support_report_output_is_stable() {
+        let output =
+            support_report(Some("generic-gamepad"), Some("compatibility")).expect("report");
+        assert_snapshot!("support_report_generic_gamepad_compatibility", output);
     }
 
     #[test]

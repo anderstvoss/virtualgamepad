@@ -292,6 +292,7 @@ dependencies = [
  "gr-core",
  "gr-planner",
  "gr-profiles",
+ "gr-provider-linux-uinput",
  "gr-runtime-model",
  "gr-session",
  "gr-session-options",
@@ -380,6 +381,12 @@ version = "0.1.0"
 [[package]]
 name = "gr-provider-linux-uinput"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-runtime-model",
+ "serde",
+]
 
 [[package]]
 name = "gr-provider-macos-hid"
@@ -1030,6 +1037,17 @@ dependencies = [
  "gr-cli",
  "gr-core",
  "insta",
+]
+
+[[package]]
+name = "virtualgamepad"
+version = "0.1.0"
+dependencies = [
+ "gr-provider-linux-transport",
+ "gr-provider-linux-uhid",
+ "gr-provider-linux-uinput",
+ "gr-provider-macos-hid",
+ "gr-provider-windows-hid",
 ]
 
 [[package]]

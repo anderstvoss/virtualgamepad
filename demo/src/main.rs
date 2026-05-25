@@ -36,6 +36,15 @@ enum Command {
     SimulateSession { path: std::path::PathBuf },
     /// Spin up many concurrent fake-backed runtime sessions.
     ManySessions { count: usize },
+    /// Render the prep-only Linux uinput smoke report for a profile.
+    RunUinputSmoke { profile_id: String },
+    /// Generate the initial support-claim evidence report.
+    SupportReport {
+        #[arg(long)]
+        profile: Option<String>,
+        #[arg(long)]
+        tier: Option<String>,
+    },
     /// Render a backend trace fixture (Phase 4 deliverable).
     ReplayTrace { path: std::path::PathBuf },
     /// Plan a session from a profile id and backend inventory fixture (Phase 5 deliverable).
@@ -106,6 +115,22 @@ fn main() {
             }
             Err(error) => Err(error.to_string()),
         },
+        Command::RunUinputSmoke { profile_id } => match gr_cli::run_uinput_smoke(&profile_id) {
+            Ok(output) => {
+                println!("{output}");
+                Ok(())
+            }
+            Err(error) => Err(error.to_string()),
+        },
+        Command::SupportReport { profile, tier } => {
+            match gr_cli::support_report(profile.as_deref(), tier.as_deref()) {
+                Ok(output) => {
+                    println!("{output}");
+                    Ok(())
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        }
         Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
             Ok(output) => {
                 println!("{output}");
@@ -150,7 +175,7 @@ fn print_info() {
     println!();
     println!("library status: through Phase 7 session runtime and trace tooling");
     println!(
-        "demo status:    gate runner, profile review, config validation, simulate-session, many-sessions, replay-trace, plan-session"
+        "demo status:    gate runner, profile review, config validation, simulate-session, many-sessions, run-uinput-smoke, support-report, replay-trace, plan-session"
     );
 }
 
@@ -259,5 +284,32 @@ mod tests {
     fn many_sessions_subcommand_parses() {
         let cli = Cli::parse_from(["vgpd-demo", "many-sessions", "4"]);
         assert!(matches!(cli.command, Command::ManySessions { count } if count == 4));
+    }
+
+    #[test]
+    fn run_uinput_smoke_subcommand_parses() {
+        let cli = Cli::parse_from(["vgpd-demo", "run-uinput-smoke", "generic-gamepad"]);
+        assert!(matches!(
+            cli.command,
+            Command::RunUinputSmoke { profile_id } if profile_id == "generic-gamepad"
+        ));
+    }
+
+    #[test]
+    fn support_report_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "support-report",
+            "--profile",
+            "xbox360",
+            "--tier",
+            "compatibility",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::SupportReport { profile, tier }
+                if profile.as_deref() == Some("xbox360")
+                    && tier.as_deref() == Some("compatibility")
+        ));
     }
 }

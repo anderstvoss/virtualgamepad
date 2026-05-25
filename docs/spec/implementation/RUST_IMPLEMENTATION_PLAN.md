@@ -676,10 +676,16 @@ First real Linux provider. Compatibility-tier emulation: host-visible Linux game
 - refactor: factor a small `LinuxKernelIoctl` shim that fakes can substitute for tests
 - gate-prep: prepare a step-by-step manual checklist for plugging the device into common host software
 
+Prep note:
+
+- the `docs/phase-8-prep` branch lands the contract surface early: `LinuxUinputBackendFactory`, `LinuxUinputBackendSession`, the `LinuxKernelIoctl` boundary, `gr-cli run-uinput-smoke`, `vgpd-demo run-uinput-smoke`, and the first `support-report` skeleton
+- real `/dev/uinput` I/O, capability ioctls, event writes, and EV_FF reads remain Phase 8 implementation work
+
 ### Testing tooling additions
 
 - Tier B (privileged Linux) test runner per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#tier-b-privileged-linux-runner)
 - `gr-cli run-uinput-smoke` (records evidence into `support-report` output)
+- `.github/workflows/provider-tier-b.yml` manual/nightly scaffold for privileged Linux provider validation
 
 ### Exit gate
 

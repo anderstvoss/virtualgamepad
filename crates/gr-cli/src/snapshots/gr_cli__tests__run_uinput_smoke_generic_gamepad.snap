@@ -1,0 +1,30 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1863
+expression: output
+---
+profile_id: generic-gamepad
+backend_id: linux-uinput
+backend_family: linux-uinput
+backend_level: evdev
+host_platform: linux
+requested_fidelity_tier: compatibility
+reverse_path: ev-ff-rumble-only
+planned_ioctl_sequence:
+- open /dev/uinput for profile `generic-gamepad`
+- declare evdev capability bits via UI_SET_* ioctls
+- create virtual device via UI_DEV_CREATE
+- poll EV_FF uploads on the uinput file descriptor
+support:
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  notes:
+  - phase 8 prep surface only; no /dev/uinput access yet
+  - compatibility tier reverse path is limited to EV_FF rumble
+notes:
+- phase 8 prep surface only; no /dev/uinput access yet
+- compatibility tier reverse path is limited to EV_FF rumble
+- 'kernel boundary: deferred-linux-kernel-ioctl'
+- 'future device name prefix: virtualgamepad'

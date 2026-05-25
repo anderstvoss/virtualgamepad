@@ -196,6 +196,11 @@ Recommended commands:
 - `compare-real-device`
 - `support-report`
 
+Current workflow scaffold:
+
+- `.github/workflows/provider-tier-b.yml` is the manual/nightly entry point for privileged Linux provider validation
+- the scaffold includes one ordinary Linux contract-surface job plus one self-hosted privileged job for future `/dev/uinput` and `UHID` validation
+
 ## Support evidence report
 
 Every profile/fidelity support claim should produce a report containing:

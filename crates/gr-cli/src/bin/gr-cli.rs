@@ -58,6 +58,15 @@ enum Command {
     CapabilityCoverage,
     /// Spin up many fake-backed sessions and print their status.
     ManySessions { count: usize },
+    /// Render the prep-only Linux uinput smoke report for a profile.
+    RunUinputSmoke { profile_id: String },
+    /// Generate the initial support-claim evidence report.
+    SupportReport {
+        #[arg(long)]
+        profile: Option<String>,
+        #[arg(long)]
+        tier: Option<String>,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -180,6 +189,22 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::RunUinputSmoke { profile_id } => match gr_cli::run_uinput_smoke(&profile_id) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::SupportReport { profile, tier } => {
+            match gr_cli::support_report(profile.as_deref(), tier.as_deref()) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 
@@ -200,5 +225,53 @@ fn run_phase_gate(args: &PhaseGateArgs) {
             eprintln!("{error}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Command};
+    use clap::Parser;
+    use std::path::Path;
+
+    #[test]
+    fn run_uinput_smoke_subcommand_parses() {
+        let cli = Cli::parse_from(["gr-cli", "run-uinput-smoke", "generic-gamepad"]);
+        assert!(matches!(
+            cli.command,
+            Command::RunUinputSmoke { profile_id } if profile_id == "generic-gamepad"
+        ));
+    }
+
+    #[test]
+    fn support_report_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "support-report",
+            "--profile",
+            "xbox360",
+            "--tier",
+            "compatibility",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::SupportReport { profile, tier }
+                if profile.as_deref() == Some("xbox360")
+                    && tier.as_deref() == Some("compatibility")
+        ));
+    }
+
+    #[test]
+    fn simulate_session_subcommand_still_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "simulate-session",
+            "crates/gr-testkit/fixtures/community/fake-session-rumble.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::SimulateSession { path, .. }
+                if path == Path::new("crates/gr-testkit/fixtures/community/fake-session-rumble.yaml")
+        ));
     }
 }

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! macOS HID provider foundation for `virtualgamepad`.
 
 #[cfg(test)]
