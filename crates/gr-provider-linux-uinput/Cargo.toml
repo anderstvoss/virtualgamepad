@@ -8,5 +8,18 @@ repository.workspace = true
 authors.workspace = true
 description = "Linux uinput provider for virtualgamepad."
 
-[lints]
-workspace = true
+[dependencies]
+gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
+gr-core = { path = "../gr-core", version = "0.1" }
+gr-profiles = { path = "../gr-profiles", version = "0.1" }
+gr-runtime-model = { path = "../gr-runtime-model", version = "0.1" }
+libc = "0.2"
+linux-raw-sys = { version = "0.12", features = ["ioctl"] }
+serde.workspace = true
+
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

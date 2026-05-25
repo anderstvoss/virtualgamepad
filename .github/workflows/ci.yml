@@ -110,7 +110,16 @@ jobs:
       - name: Read MSRV from Cargo.toml
         id: msrv
         run: |
-          MSRV=$(grep -m1 '^rust-version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          MSRV=$(
+            awk -F'"' '
+              $0 == "[workspace.package]" { in_workspace = 1; next }
+              /^\[/ && $0 != "[workspace.package]" { in_workspace = 0 }
+              in_workspace && $1 ~ /^rust-version[[:space:]]*=[[:space:]]*$/ { print $2; exit }
+            ' Cargo.toml
+          )
+          if [ -z "$MSRV" ]; then
+            MSRV=$(grep -m1 '^rust-version = "' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          fi
           if [ -z "$MSRV" ]; then
             echo "ERROR: could not parse rust-version from Cargo.toml" >&2
             exit 1

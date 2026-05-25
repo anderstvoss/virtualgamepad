@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Windows HID provider foundation for `virtualgamepad`.
 
 #[cfg(test)]

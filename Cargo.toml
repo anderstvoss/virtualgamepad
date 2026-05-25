@@ -1,3 +1,14 @@
+[package]
+name = "virtualgamepad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Workspace root package and provider feature host for virtualgamepad."
+publish = false
+
 [workspace]
 members = [
     "crates/gr-core",
@@ -32,6 +43,7 @@ authors = ["Anders Voss <anderstvoss@gmail.com>"]
 [workspace.dependencies]
 assert_matches = "1.5"
 clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
 insta = "1"
 proptest = "1"
 rstest = "0.25"
@@ -48,3 +60,31 @@ unsafe_code = "forbid"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+
+[features]
+default = [
+    "provider-linux-uinput",
+    "provider-linux-uhid",
+    "provider-linux-transport",
+    "provider-windows-hid",
+    "provider-macos-hid",
+]
+provider-linux-uinput = ["dep:gr-provider-linux-uinput"]
+provider-linux-uhid = ["dep:gr-provider-linux-uhid"]
+provider-linux-transport = ["dep:gr-provider-linux-transport"]
+provider-windows-hid = ["dep:gr-provider-windows-hid"]
+provider-macos-hid = ["dep:gr-provider-macos-hid"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gr-provider-linux-uinput = { path = "crates/gr-provider-linux-uinput", optional = true }
+gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", optional = true }
+gr-provider-linux-transport = { path = "crates/gr-provider-linux-transport", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+gr-provider-windows-hid = { path = "crates/gr-provider-windows-hid", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+gr-provider-macos-hid = { path = "crates/gr-provider-macos-hid", optional = true }
+
+[lints]
+workspace = true

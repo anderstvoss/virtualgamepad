@@ -28,6 +28,11 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   profile-input builders, and snapshot/property coverage for the new
   `gr-core` types.
 
+- Phase 8 prep scaffolding: a restored root `virtualgamepad` package
+  for provider feature flags, the `gr-provider-linux-uinput` contract
+  surface, `run-uinput-smoke` / `support-report` command surfaces, and
+  a Tier B provider workflow scaffold.
+
 ### Changed
 
 - Top-level README adds an explicit project-goals section covering
@@ -56,16 +61,13 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 - Phase 1 manual gate expanded with sparse-delta authoring, d-pad
   nesting visibility, and per-variant snapshot coverage items.
 
+- The repository root is once again a tiny `virtualgamepad` package so
+  provider feature flags and target-filtered optional provider
+  dependencies have a stable host surface.
+
 ### Deprecated
 
 ### Removed
-
-- The single-crate `virtual_gamepad` package at the repository root.
-  Its slot is now occupied by `crates/gr-core/` (initially a placeholder
-  with a smoke test), and the workspace root `Cargo.toml` is a pure
-  workspace manifest. A facade crate may be reintroduced later to
-  re-export from the `gr-*` crates if a single import surface proves
-  useful.
 
 ### Fixed
 
