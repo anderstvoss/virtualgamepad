@@ -3,8 +3,8 @@
 Rust library for creating virtual gamepad devices that emulate
 physical hardware at varying accuracy levels.
 
-> **Status:** early WIP. The workspace is through Phase 7 with Phase 8
-> prep scaffolding in progress; the public API will
+> **Status:** early WIP. The workspace is through Phase 8, including
+> the Linux `uinput` compatibility-tier provider surface; the public API will
 > land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
 > tracked changes, and [docs/spec/](docs/spec/) for the architecture,
 > implementation, and validation spec the buildout follows. A
@@ -64,9 +64,9 @@ Local gates (also run in CI on every PR):
 
 ```bash
 cargo fmt --all -- --check
-cargo check --all-targets --all-features
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 gitleaks detect
 ```
 
@@ -88,7 +88,7 @@ with the library. To run the current scaffold:
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
-cargo run -p virtual_gamepad_demo -- phase-gate 7
+cargo run -p virtual_gamepad_demo -- phase-gate 8
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
 cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
 ```

@@ -71,7 +71,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   msrv:
     name: MSRV (cargo check on rust-version)
@@ -138,7 +138,7 @@ jobs:
           key: msrv-${{ steps.msrv.outputs.msrv }}
 
       - name: cargo check at MSRV
-        run: cargo check --all-targets --all-features
+        run: cargo check --workspace --all-targets --all-features
 
   rust-test:
     name: Rust build and test (${{ matrix.os }})
@@ -185,10 +185,10 @@ jobs:
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Check build
-        run: cargo check --all-targets --all-features
+        run: cargo check --workspace --all-targets --all-features
 
       - name: Test
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
 
   policy:
     name: Policy checks (${{ matrix.os }})

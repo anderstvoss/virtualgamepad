@@ -51,9 +51,9 @@ Before completing a task, run:
 
 ```bash
 cargo fmt --all -- --check
-cargo check --all-targets --all-features
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-features
+cargo check --workspace --all-targets --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
 gitleaks detect
 ```
 
@@ -84,9 +84,9 @@ Tests added or modified:
 
 Validation:
 - cargo fmt --all -- --check: passed/failed/not run
-- cargo check --all-targets --all-features: passed/failed/not run
-- cargo clippy --all-targets --all-features -- -D warnings: passed/failed/not run
-- cargo test --all-features: passed/failed/not run
+- cargo check --workspace --all-targets --all-features: passed/failed/not run
+- cargo clippy --workspace --all-targets --all-features -- -D warnings: passed/failed/not run
+- cargo test --workspace --all-features: passed/failed/not run
 - gitleaks detect: passed/failed/not run
 
 New dependencies:

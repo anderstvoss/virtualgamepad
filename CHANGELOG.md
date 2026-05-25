@@ -71,6 +71,15 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Fixed
 
+- Full-repo validation commands in repo docs and CI now use explicit
+  `--workspace` flags so formatting, linting, build, and test checks
+  cover every crate instead of only the root package's default member
+  set.
+
+- `gr-cli`'s interactive Linux `uinput` smoke helpers are now clean
+  under the current pinned Clippy toolchain without changing runtime
+  behavior.
+
 ### Security
 
 [keep-a-changelog]: https://keepachangelog.com/en/1.1.0/

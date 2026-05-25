@@ -48,7 +48,7 @@ cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interact
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive --script exercise
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive
 cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
-cargo run -p virtual_gamepad_demo -- phase-gate 7
+cargo run -p virtual_gamepad_demo -- phase-gate 8
 ```
 
 Add `--help` to any subcommand for usage details.
