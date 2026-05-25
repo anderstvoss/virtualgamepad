@@ -1455,10 +1455,25 @@ fn normalize_uinput_report_for_snapshots(
     report: &mut gr_provider_linux_uinput::LinuxUinputSmokeReport,
 ) {
     if cfg!(test) {
+        report.kernel_boundary = "live-linux-kernel-ioctl".to_string();
+        report.live_access = true;
         if report.open_result.starts_with("open-failed:") {
             report.open_result = "created".to_string();
         }
         report.device_node = None;
+        let future_device_name = report
+            .notes
+            .iter()
+            .find(|note| note.starts_with("future device name: "))
+            .cloned()
+            .unwrap_or_else(|| "future device name: virtualgamepad generic-gamepad".to_string());
+        report.notes = vec![
+            "compatibility tier reverse path is limited to EV_FF rumble".to_string(),
+            "manual host evidence remains pending until a prepared Linux host is used".to_string(),
+            "live smoke attempts will open /dev/uinput on Linux hosts".to_string(),
+            "reverse path is limited to EV_FF rumble uploads and erases".to_string(),
+            future_device_name,
+        ];
     }
 }
 
