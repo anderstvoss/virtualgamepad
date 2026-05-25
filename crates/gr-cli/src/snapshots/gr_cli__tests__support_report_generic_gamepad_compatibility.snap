@@ -1,0 +1,37 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 1948
+expression: output
+---
+command: gr-cli support-report
+requested_tier: compatibility
+profiles:
+- profile_id: generic-gamepad
+  display_name: Generic gamepad
+  provider: linux-uinput
+  backend_family: linux-uinput
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  unsupported_output_functions: []
+  evidence:
+  - check: command-surface
+    status: implemented
+    detail: run-uinput-smoke and support-report are available in gr-cli and vgpd-demo
+  - check: tier-b-runner
+    status: scaffolded
+    detail: privileged Linux workflow is wired for manual/nightly execution
+  - check: device-creation
+    status: verified-on-host
+    detail: created
+  - check: reverse-path
+    status: not-declared
+    detail: ev-ff-rumble-only []
+  command_hint: gr-cli run-uinput-smoke generic-gamepad
+  notes:
+  - compatibility tier reverse path is limited to EV_FF rumble
+  - manual host evidence remains pending until a prepared Linux host is used
+  - live smoke attempts will open /dev/uinput on Linux hosts
+  - reverse path is limited to EV_FF rumble uploads and erases
+  - 'future device name: virtualgamepad generic-gamepad'

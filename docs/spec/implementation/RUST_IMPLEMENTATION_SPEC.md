@@ -174,10 +174,10 @@ virtualgamepad/
 
 Provider crates are platform-gated; core crates are not.
 
-- `gr-provider-linux-uinput`, `gr-provider-linux-uhid`, `gr-provider-linux-transport` are `#[cfg(target_os = "linux")]` at the crate root; depending on them on non-Linux is a compile error by design
-- `gr-provider-windows-hid` is `#[cfg(target_os = "windows")]`
-- `gr-provider-macos-hid` is `#[cfg(target_os = "macos")]`
-- workspace-level features control which provider crates are built: `provider-linux-uinput`, `provider-linux-uhid`, `provider-linux-transport`, `provider-windows-hid`, `provider-macos-hid`; defaults enable only providers matching the host target
+- `virtualgamepad` at the workspace root is a tiny package whose job is to host provider feature flags and target-filtered optional dependencies
+- `gr-provider-linux-uinput`, `gr-provider-linux-uhid`, `gr-provider-linux-transport` are Linux-targeted provider crates; `gr-provider-windows-hid` and `gr-provider-macos-hid` follow the same pattern for their native platforms
+- root-package feature flags control provider selection: `provider-linux-uinput`, `provider-linux-uhid`, `provider-linux-transport`, `provider-windows-hid`, `provider-macos-hid`
+- the default feature set includes every provider flag, but the dependency edges are target-filtered so a given host only resolves its native provider crates in practice
 - the core set — `gr-core`, `gr-profiles`, `gr-config`, `gr-session-options`, `gr-runtime-model`, `gr-backend-api`, `gr-planner`, `gr-translators`, `gr-session`, `gr-host-bridge` — must build cleanly on Linux, macOS, and Windows with no `cfg(target_os = …)` paths inside them
 - `gr-testkit` and `gr-cli` follow the core-set rule
 

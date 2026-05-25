@@ -465,23 +465,36 @@ impl ReverseTranslator for XboxStyleReverseTranslator {
         let bytes = match &event.payload {
             BackendReversePayload::Hid { bytes, .. } => bytes.as_slice(),
             BackendReversePayload::Evdev { events } => {
+                let mut strong = None;
+                let mut weak = None;
                 for event_item in events {
-                    if event_item.code == 0 {
-                        out.push(output_command(
-                            event,
-                            event_profile_id(event, ctx),
-                            SemanticOutputFunction::Rumble,
-                            OutputPayload::Rumble(RumblePayload {
-                                strong: u16::try_from(
-                                    event_item.value.clamp(0, i32::from(u16::MAX)),
-                                )
-                                .expect("clamped rumble value should fit into u16"),
-                                weak: u16::try_from(event_item.value.clamp(0, i32::from(u16::MAX)))
+                    match event_item.code {
+                        0 => {
+                            strong = Some(
+                                u16::try_from(event_item.value.clamp(0, i32::from(u16::MAX)))
                                     .expect("clamped rumble value should fit into u16"),
-                            }),
-                        ));
-                        return Ok(());
+                            );
+                        }
+                        1 => {
+                            weak = Some(
+                                u16::try_from(event_item.value.clamp(0, i32::from(u16::MAX)))
+                                    .expect("clamped rumble value should fit into u16"),
+                            );
+                        }
+                        _ => {}
                     }
+                }
+                if strong.is_some() || weak.is_some() {
+                    out.push(output_command(
+                        event,
+                        event_profile_id(event, ctx),
+                        SemanticOutputFunction::Rumble,
+                        OutputPayload::Rumble(RumblePayload {
+                            strong: strong.unwrap_or(weak.unwrap_or(0)),
+                            weak: weak.unwrap_or(strong.unwrap_or(0)),
+                        }),
+                    ));
+                    return Ok(());
                 }
                 return Err(TranslationError::InvalidReverseEvent {
                     reason: "xbox-style evdev reverse event did not contain a supported output"

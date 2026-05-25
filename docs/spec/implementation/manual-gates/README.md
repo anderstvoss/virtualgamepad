@@ -24,3 +24,5 @@ Files in this directory:
 - [Phase 7 Manual Gate](phase-7.md): session runtime orchestration,
   reverse-output delivery, diagnostics, and concurrent fake-session
   review for Phase 7
+- [Phase 8 Manual Gate](phase-8.md): Linux `uinput` device visibility,
+  evdev event flow, EV_FF rumble delivery, and teardown review

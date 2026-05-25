@@ -672,14 +672,20 @@ First real Linux provider. Compatibility-tier emulation: host-visible Linux game
   - against fake writer (no kernel): descriptor construction, ioctl sequencing, event batching
   - against real kernel (gated on Linux runner): device appears, capabilities query matches, events flow
 - implementation: typed wrapper over `libc::ioctl` and `nix` where helpful; no `unsafe` outside the wrapper module
-- demo wiring: `vgpd-demo run-uinput-smoke <profile>` creates a virtual pad and dumps its `/dev/input/event*` enumeration
+- demo wiring: `vgpd-demo run-uinput-smoke <profile>` is dual-mode. The default path remains a one-shot create/report/teardown probe for CI and report evidence, while `--interactive` keeps the session alive for host inspection and `--script exercise` replays representative input frames through the runtime
 - refactor: factor a small `LinuxKernelIoctl` shim that fakes can substitute for tests
 - gate-prep: prepare a step-by-step manual checklist for plugging the device into common host software
+
+Prep note:
+
+- the `docs/phase-8-prep` branch lands the contract surface early: `LinuxUinputBackendFactory`, `LinuxUinputBackendSession`, the `LinuxKernelIoctl` boundary, `gr-cli run-uinput-smoke`, `vgpd-demo run-uinput-smoke`, and the first `support-report` skeleton
+- real `/dev/uinput` I/O, capability ioctls, event writes, and EV_FF reads remain Phase 8 implementation work
 
 ### Testing tooling additions
 
 - Tier B (privileged Linux) test runner per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#tier-b-privileged-linux-runner)
 - `gr-cli run-uinput-smoke` (records evidence into `support-report` output)
+- `.github/workflows/provider-tier-b.yml` manual/nightly scaffold for privileged Linux provider validation
 
 ### Exit gate
 
@@ -692,14 +698,14 @@ Automated portion:
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad` creates a device; `evtest` (or `jstest`) finds it under `/dev/input/`
-- [ ] 2. `evtest` shows the expected buttons and axes; press emitted events match
-- [ ] 3. `vgpd-demo run-uinput-smoke xbox360` produces a device recognized as a controller by SDL (verify with `sdl2-test` or `jstest-gtk`)
-- [ ] 4. Launch a native Linux SDL game or `jstest-gtk`, send inputs from `vgpd-demo` (use a scripted scenario fixture); inputs land in the game
-- [ ] 5. Trigger an EV_FF rumble from `fftest` or a game; the session emits `OutputCommand::Rumble` (visible in demo verbose output)
-- [ ] 6. Kill the demo; verify the device is removed cleanly (no zombie `event*` entries)
+- [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad --interactive` exits 0, reports a created device, and keeps the session alive for host inspection.
+- [ ] 2. `vgpd-demo run-uinput-smoke generic-gamepad --interactive --script exercise` produces visible button, dpad, stick, and trigger activity in `evtest`, `jstest`, or equivalent host tooling.
+- [ ] 3. `vgpd-demo run-uinput-smoke xbox360 --interactive` exits 0, reports a created device, and declares `EV_FF` / `FF_RUMBLE` for the compatibility-tier rumble path.
+- [ ] 4. SDL, `jstest-gtk`, or equivalent host software recognizes the interactive Xbox-style device while the session remains open.
+- [ ] 5. Host-triggered rumble reaches the runtime and prints live strong/weak output lines while the interactive session is running.
+- [ ] 6. Stopping the interactive demo with Enter or Ctrl-C removes the `uinput` device cleanly and allows a fresh restart.
 
-Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"`
+Sign-off: create `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"` once the checks above have been completed on a prepared Linux host.
 
 ## Phase 9: Linux `UHID` provider — identity-aware tier (`gr-provider-linux-uhid`)
 
