@@ -488,7 +488,7 @@ fn write_device_name(target: &mut [c_char], name: &str) {
     let capacity = target.len().saturating_sub(1);
     let count = bytes.len().min(capacity);
     for (slot, byte) in target.iter_mut().zip(bytes.iter()).take(count) {
-        *slot = *byte as c_char;
+        *slot = c_char::from_ne_bytes([*byte]);
     }
 }
 
