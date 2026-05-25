@@ -1457,7 +1457,7 @@ fn normalize_uinput_report_for_snapshots(
     if cfg!(test) {
         report.kernel_boundary = "live-linux-kernel-ioctl".to_string();
         report.live_access = true;
-        if report.open_result.starts_with("open-failed:") {
+        if report.open_result != "created" {
             report.open_result = "created".to_string();
         }
         report.device_node = None;
