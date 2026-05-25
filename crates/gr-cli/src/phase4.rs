@@ -11,8 +11,8 @@ use gr_runtime_model::{
 };
 use gr_testkit::fakes::{FakeBackendFactory, FakeFailure, backend_factory};
 use gr_testkit::fixtures::{
-    BackendTrace, BackendTracePayload, FixtureDocument, ScenarioFailure, ScenarioStep,
-    SessionScenarioFixture, TraceDirection, load_fixture,
+    BackendTrace, BackendTracePayload, FixtureDocument, LegacyScenarioStep, ScenarioFailure,
+    SessionScenarioDocument, SessionScenarioFixture, TraceDirection, load_fixture,
 };
 use gr_testkit::recorder::record;
 use gr_translators::{TranslatorRegistry, prepared_translation_context};
@@ -26,6 +26,14 @@ pub fn simulate_session(
 ) -> Result<String, CliError> {
     let path = scenario_path.as_ref();
     let scenario = load_scenario(path)?;
+    let SessionScenarioDocument::Legacy(legacy) = &scenario.scenario else {
+        return Err(CliError::Simulation {
+            message: format!(
+                "{} is a runtime-oriented Phase 7 scenario; use the session runtime path",
+                path.display()
+            ),
+        });
+    };
     let factory = build_factory(&scenario);
 
     let mut output = String::new();
@@ -33,13 +41,13 @@ pub fn simulate_session(
     writeln!(
         output,
         "session: profile={} backend={} family={}",
-        scenario.scenario.session.profile_id,
-        scenario.scenario.backend.backend_id,
-        serde_name(&scenario.scenario.backend.family)
+        legacy.session.profile_id,
+        legacy.backend.backend_id,
+        serde_name(&legacy.backend.family)
     )
     .expect("write");
 
-    let inner = match factory.open_fake_session(&scenario.scenario.session) {
+    let inner = match factory.open_fake_session(&legacy.session) {
         Ok(inner) => inner,
         Err(source) => {
             writeln!(output, "open: error: {source}").expect("write");
@@ -54,12 +62,12 @@ pub fn simulate_session(
     }
     writeln!(output, "open: ok").expect("write");
 
-    for step in &scenario.scenario.steps {
+    for step in &legacy.steps {
         match step {
-            ScenarioStep::Send { frame } => {
+            LegacyScenarioStep::Send { frame } => {
                 send_with_rearm(&mut session, frame.clone(), &mut output)?;
             }
-            ScenarioStep::DrainReverse => drain_reverse(&mut session, &mut output)?,
+            LegacyScenarioStep::DrainReverse => drain_reverse(&mut session, &mut output)?,
         }
     }
 
@@ -118,18 +126,26 @@ fn load_scenario(path: &Path) -> Result<SessionScenarioFixture, CliError> {
 }
 
 fn build_factory(scenario: &SessionScenarioFixture) -> FakeBackendFactory {
+    let backend = match &scenario.scenario {
+        SessionScenarioDocument::Legacy(legacy) => &legacy.backend,
+        SessionScenarioDocument::Runtime(runtime) => &runtime.backend,
+    };
     let mut builder = backend_factory()
-        .backend_id(scenario.scenario.backend.backend_id.clone())
-        .family(scenario.scenario.backend.family)
-        .level(scenario.scenario.session.backend_level)
-        .platform(scenario.scenario.backend.host_platform)
-        .supported_fidelity_tiers(scenario.scenario.backend.supported_fidelity_tiers.clone())
-        .reverse_events_from_iter(scenario.scenario.backend.reverse_events.clone());
-    for function in &scenario.scenario.backend.supported_output_functions {
+        .backend_id(backend.backend_id.clone())
+        .family(backend.family)
+        .level(match &scenario.scenario {
+            SessionScenarioDocument::Legacy(legacy) => legacy.session.backend_level,
+            SessionScenarioDocument::Runtime(runtime) => runtime.session.backend_level,
+        })
+        .platform(backend.host_platform)
+        .supported_fidelity_tiers(backend.supported_fidelity_tiers.clone())
+        .reverse_events_from_iter(backend.reverse_events.clone());
+    for function in &backend.supported_output_functions {
         builder = builder.declares_reverse_output(*function);
     }
-    for failure in &scenario.scenario.backend.failures {
+    for failure in &backend.failures {
         builder = builder.with_failure(match failure {
+            ScenarioFailure::SlowSend => FakeFailure::SlowSend,
             ScenarioFailure::SendWouldBlock => FakeFailure::SendWouldBlock,
             ScenarioFailure::DrainParseError => FakeFailure::DrainParseError,
             ScenarioFailure::CloseFails => FakeFailure::CloseFails,
@@ -142,6 +158,7 @@ fn build_factory(scenario: &SessionScenarioFixture) -> FakeBackendFactory {
                     reason: "scenario send-permanently-fails".to_string(),
                 })
             }
+            ScenarioFailure::ProviderPanic => FakeFailure::ProviderPanic,
         });
     }
     builder.build()
@@ -593,11 +610,15 @@ struct RecordedTraceFixture {
 
 impl RecordedTraceFixture {
     fn from_scenario(scenario: &SessionScenarioFixture, trace: BackendTrace) -> Self {
+        let profile_id = match &scenario.scenario {
+            SessionScenarioDocument::Legacy(legacy) => legacy.session.profile_id.to_string(),
+            SessionScenarioDocument::Runtime(runtime) => runtime.session.profile_id.to_string(),
+        };
         Self {
             fixture: "virtualgamepad/v1".to_string(),
             kind: "backend-trace".to_string(),
             id: format!("{}-trace", scenario.envelope.id),
-            profile_id: Some(scenario.scenario.session.profile_id.to_string()),
+            profile_id: Some(profile_id),
             notes: Some(format!(
                 "Recorded from session-scenario `{}`",
                 scenario.envelope.id

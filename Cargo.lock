@@ -293,6 +293,7 @@ dependencies = [
  "gr-planner",
  "gr-profiles",
  "gr-runtime-model",
+ "gr-session",
  "gr-session-options",
  "gr-testkit",
  "gr-translators",
@@ -332,6 +333,7 @@ name = "gr-host-bridge"
 version = "0.1.0"
 dependencies = [
  "gr-backend-api",
+ "gr-core",
  "gr-runtime-model",
  "thiserror",
  "tokio",
@@ -409,6 +411,7 @@ dependencies = [
  "gr-planner",
  "gr-runtime-model",
  "gr-session-options",
+ "gr-testkit",
  "gr-translators",
  "serde",
  "smallvec",
@@ -435,8 +438,10 @@ version = "0.1.0"
 dependencies = [
  "gr-backend-api",
  "gr-core",
+ "gr-host-bridge",
  "gr-profiles",
  "gr-runtime-model",
+ "gr-session",
  "gr-session-options",
  "insta",
  "proptest",

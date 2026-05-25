@@ -1,6 +1,7 @@
 //! Shared implementation for the `gr-cli` binary and other tooling.
 
 mod phase4;
+mod phase7;
 
 use gr_backend_api::{BackendReverseEvent, BackendReversePayload, BackendReverseTarget};
 use gr_config::{ConfigLoadError, ConfigValidationReport};
@@ -107,6 +108,11 @@ const PHASE_6_COMMANDS: &[&[&str]] = &[
     &["cargo", "run", "-p", "gr-cli", "--", "capability-coverage"],
 ];
 
+const PHASE_7_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+];
+
 /// Run a Phase 4 fake-backend-backed session scenario.
 ///
 /// # Errors
@@ -118,7 +124,34 @@ pub fn simulate_session(
     scenario_path: impl AsRef<Path>,
     record_path: Option<&Path>,
 ) -> Result<String, CliError> {
-    phase4::simulate_session(scenario_path, record_path)
+    let path = scenario_path.as_ref();
+    match load_fixture(path).map_err(|source| CliError::Simulation {
+        message: format!("{}: {source}", path.display()),
+    })? {
+        TestkitFixtureDocument::SessionScenario(fixture) => match fixture.scenario {
+            gr_testkit::fixtures::SessionScenarioDocument::Legacy(_) => {
+                phase4::simulate_session(path, record_path)
+            }
+            gr_testkit::fixtures::SessionScenarioDocument::Runtime(_) => {
+                phase7::simulate_runtime_session(path)
+            }
+        },
+        _ => Err(CliError::FixtureKind {
+            path: path.to_path_buf(),
+            expected: "session-scenario",
+        }),
+    }
+}
+
+/// Spin up many fake-backed runtime sessions and summarize their
+/// current states.
+///
+/// # Errors
+///
+/// Returns an error if runtime session creation or the many-session
+/// status collection fails.
+pub fn many_sessions(count: usize) -> Result<String, CliError> {
+    phase7::many_sessions(count)
 }
 
 /// Render a backend trace fixture in a stable human-readable format.
@@ -1199,7 +1232,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        7..=12 => Err(CliError::UnimplementedPhase { phase }),
+        7 => Ok(PHASE_7_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        8..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -1649,6 +1686,31 @@ mod tests {
     }
 
     #[test]
+    fn simulate_session_dualsense_coalesce_runs_to_completion() {
+        // The coalesce semantic itself is covered by a deterministic
+        // unit test in gr-session (`bounded_input_queue_clears_stale_frames_on_overflow`).
+        // This integration test only proves the demo scenario runs to
+        // completion end-to-end without panicking; it intentionally does
+        // not snapshot or assert the counter values, which are
+        // race-sensitive across schedulers.
+        let repo_root = repo_root().expect("workspace root");
+        let scenario = repo_root.join("samples/scenarios/dualsense-coalesce.yaml");
+        let output = simulate_session(&scenario, None::<&std::path::Path>).expect("scenario");
+        assert!(
+            output.contains("scenario: dualsense-coalesce"),
+            "missing scenario header in output:\n{output}",
+        );
+        assert!(
+            output.contains("mode: runtime-session"),
+            "missing mode header in output:\n{output}",
+        );
+        assert!(
+            output.contains("frames.coalesced"),
+            "missing frames.coalesced counter in diagnostics:\n{output}",
+        );
+    }
+
+    #[test]
     fn replay_trace_output_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let trace = repo_root.join("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml");
@@ -1663,6 +1725,23 @@ mod tests {
             repo_root.join("crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml");
         let output = replay_trace(trace).expect("trace");
         assert_snapshot!("replay_trace_dualsense_phase6", output);
+    }
+
+    #[test]
+    fn many_sessions_runs_through_n_sessions() {
+        let output = super::many_sessions(4).expect("many sessions");
+        assert!(
+            output.starts_with("many_sessions: 4\n"),
+            "header missing: {output:?}"
+        );
+        let session_lines = output
+            .lines()
+            .filter(|line| line.starts_with("- session "))
+            .count();
+        assert_eq!(
+            session_lines, 4,
+            "expected 4 session status lines:\n{output}"
+        );
     }
 
     #[test]

@@ -1,60 +1,48 @@
 #![forbid(unsafe_code)]
 
 //! Session runtime for `virtualgamepad`.
-//!
-//! This crate hosts the [`VirtualControllerManager`] and per-session
-//! [`VirtualControllerSessionHandle`], plus the supporting error and
-//! configuration types that Phase 7 fills in. Trait + error + config
-//! shapes are pinned in the Phase 7 prep PR so downstream crates and
-//! host integrations can be written against a stable contract before
-//! the runtime body lands.
-//!
-//! # Telemetry counter naming convention
-//!
-//! [`gr_runtime_model::SessionDiagnosticsSnapshot`]'s
-//! `counters: BTreeMap<String, u64>` field is extensible. Phase 7
-//! populates it with the canonical keys documented in
-//! [`COUNTER_KEYS`]: `frames.received`, `frames.coalesced`,
-//! `frames.written`, `write_failures`, `reverse_events.received`,
-//! `reverse_events.emitted`, `reverse_events.dropped`,
-//! `queue_depth.input.hwm`, `queue_depth.reverse.hwm`,
-//! `translation.latency_p95_us`.
 
-use std::sync::Arc;
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
-use gr_backend_api::{BackendError, BackendFactory};
-use gr_core::{BackendId, SessionId};
-use gr_host_bridge::{AudioStreamSink, AudioStreamSource};
-use gr_runtime_model::{
-    ControllerOutputCommand, PlanRejection, SessionDiagnosticsSnapshot, SessionRequest,
-    SessionStatusSnapshot,
+use gr_backend_api::{
+    BackendDiagnostics, BackendError, BackendFactory, BackendReverseEvent, BackendSession,
+    EventReadiness,
 };
-use gr_translators::TranslationError;
+use gr_core::{BackendId, ProfileInputDelta, ProfileInputFrame, SessionId};
+use gr_host_bridge::{AudioStreamSink, AudioStreamSource, OutputSink};
+use gr_planner::plan_session;
+use gr_runtime_model::{
+    BackpressurePolicy, ControllerOutputCommand, PlanRejection, SessionDiagnosticsSnapshot,
+    SessionLifecycleState, SessionRequest, SessionStatusSnapshot,
+};
+use gr_session_options::{
+    CompiledSessionOptions, InputValidationPolicy, ProviderHints, RangeValidationPolicy,
+    UnknownFieldPolicy,
+};
+use gr_translators::{
+    ForwardTranslator, ReverseTranslator, TranslationError, TranslationScratch, TranslatorRegistry,
+    prepared_translation_context,
+};
+use smallvec::SmallVec;
 use thiserror::Error;
+use tokio::runtime::{Builder, Runtime};
+use tokio::task::JoinHandle;
 
 // --------------------------------------------------------------------
 // Configuration
 // --------------------------------------------------------------------
 
-/// Construction-time configuration for [`VirtualControllerManager`].
-///
-/// All fields have sensible defaults via [`ManagerConfig::default`].
-/// Phase 7 picks them up; later phases may add fields, so the struct
-/// is `#[non_exhaustive]` from the start to keep adds non-breaking.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ManagerConfig {
-    /// Bounded capacity of each session's input queue. Frames beyond
-    /// this depth are coalesced via the "latest state wins" rule with
-    /// a coalesce counter recorded in diagnostics. Default: 8.
     pub session_input_queue_depth: usize,
-    /// Bounded capacity of each session's reverse-event queue.
-    /// Overflow follows the session's configured
-    /// `BackpressurePolicy`. Default: 32.
     pub session_reverse_queue_depth: usize,
-    /// Optional override for the shared worker pool size. `None`
-    /// defers to the tokio runtime default (typically `num_cpus`).
     pub worker_pool_size: Option<usize>,
+    pub default_session_options: CompiledSessionOptions,
 }
 
 impl Default for ManagerConfig {
@@ -63,42 +51,24 @@ impl Default for ManagerConfig {
             session_input_queue_depth: 8,
             session_reverse_queue_depth: 32,
             worker_pool_size: None,
+            default_session_options: default_session_options(),
         }
     }
 }
 
-/// Canonical key strings for the counters Phase 7 populates on
-/// [`gr_runtime_model::SessionDiagnosticsSnapshot`].
 pub mod counter_keys {
-    /// Host-submitted input frames accepted into the session queue.
     pub const FRAMES_RECEIVED: &str = "frames.received";
-    /// Frames dropped because a fresher state arrived while the queue
-    /// was full ("latest state wins" coalescing).
     pub const FRAMES_COALESCED: &str = "frames.coalesced";
-    /// Frames successfully written to the backend session.
     pub const FRAMES_WRITTEN: &str = "frames.written";
-    /// Backend `send` calls that returned a non-`WouldBlock` error.
     pub const WRITE_FAILURES: &str = "write_failures";
-    /// Reverse events drained from the backend.
     pub const REVERSE_EVENTS_RECEIVED: &str = "reverse_events.received";
-    /// Reverse-translated `ControllerOutputCommand` values delivered
-    /// to the configured output sink.
     pub const REVERSE_EVENTS_EMITTED: &str = "reverse_events.emitted";
-    /// Reverse events dropped per the configured `BackpressurePolicy`.
     pub const REVERSE_EVENTS_DROPPED: &str = "reverse_events.dropped";
-    /// High-water mark of the input queue depth observed during the
-    /// session's lifetime.
     pub const INPUT_QUEUE_DEPTH_HWM: &str = "queue_depth.input.hwm";
-    /// High-water mark of the reverse-event queue depth observed
-    /// during the session's lifetime.
     pub const REVERSE_QUEUE_DEPTH_HWM: &str = "queue_depth.reverse.hwm";
-    /// p95 forward-translation latency in microseconds over the
-    /// session's recent steady-state window.
     pub const TRANSLATION_LATENCY_P95_US: &str = "translation.latency_p95_us";
 }
 
-/// All canonical counter keys as a single slice — useful for
-/// initializing a counter map or asserting coverage in tests.
 pub const COUNTER_KEYS: &[&str] = &[
     counter_keys::FRAMES_RECEIVED,
     counter_keys::FRAMES_COALESCED,
@@ -116,8 +86,6 @@ pub const COUNTER_KEYS: &[&str] = &[
 // Errors
 // --------------------------------------------------------------------
 
-/// Errors raised by [`VirtualControllerManager`] during session
-/// creation or registry queries.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ManagerError {
@@ -135,9 +103,10 @@ pub enum ManagerError {
     TranslatorContextFailed(#[from] TranslationError),
     #[error("session `{session_id}` is already active")]
     SessionAlreadyActive { session_id: SessionId },
+    #[error("session `{session_id}` is not active")]
+    SessionNotFound { session_id: SessionId },
 }
 
-/// Errors observable on a live [`VirtualControllerSessionHandle`].
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SessionError {
@@ -149,15 +118,9 @@ pub enum SessionError {
     AudioNotAvailable,
 }
 
-/// Errors specific to the input send path
-/// ([`VirtualControllerSessionHandle::send_input`] /
-/// [`VirtualControllerSessionHandle::send_input_delta`]).
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SessionSendError {
-    /// The session's input queue was full and the policy did not
-    /// permit coalescing — caller should back off or accept that the
-    /// frame was dropped.
     #[error("session input queue is full; frame would not coalesce")]
     QueueFull,
     #[error("session has been closed")]
@@ -170,231 +133,1130 @@ pub enum SessionSendError {
 // Output subscription
 // --------------------------------------------------------------------
 
-/// Sink interface implemented by host code that consumes
-/// [`ControllerOutputCommand`] values. The session runtime calls
-/// `deliver` on a dedicated delivery worker — never on the session
-/// actor or the host's submission thread — so a slow callback in one
-/// session cannot stall the actor or other sessions.
-pub trait OutputSink: Send {
-    /// Deliver one command to the host. Implementations should be
-    /// non-blocking and return promptly; the delivery worker drains a
-    /// bounded queue and any blocking will manifest as queue overflow
-    /// per the session's `BackpressurePolicy`.
-    fn deliver(&mut self, command: ControllerOutputCommand);
-}
-
-/// Convenience sink that wraps a closure. Useful for tests and
-/// lightweight integrations.
-pub struct CallbackSink<F: FnMut(ControllerOutputCommand) + Send> {
-    callback: F,
-}
-
-impl<F: FnMut(ControllerOutputCommand) + Send> CallbackSink<F> {
-    pub fn new(callback: F) -> Self {
-        Self { callback }
-    }
-}
-
-impl<F: FnMut(ControllerOutputCommand) + Send> OutputSink for CallbackSink<F> {
-    fn deliver(&mut self, command: ControllerOutputCommand) {
-        (self.callback)(command);
-    }
-}
-
-/// Handle returned by
-/// [`VirtualControllerSessionHandle::subscribe_outputs`]. Dropping it
-/// (or calling [`SessionOutputSubscription::unsubscribe`]) detaches
-/// the underlying sink from the session's delivery worker.
-#[derive(Debug)]
 pub struct SessionOutputSubscription {
-    _private: (),
+    shared: Arc<SubscriptionRegistry>,
+    subscription_id: u64,
+    active: bool,
 }
 
 impl SessionOutputSubscription {
-    /// Cancel the subscription. The underlying sink is dropped on the
-    /// next delivery-worker tick.
-    pub fn unsubscribe(self) {
-        // Phase 7 fills in: signal the delivery worker to remove this
-        // subscription from its sink list. Consuming `self` is the
-        // current signal — Phase 7 will replace this body.
-        let _ = self;
+    pub fn unsubscribe(mut self) {
+        if self.active {
+            self.shared.remove(self.subscription_id);
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for SessionOutputSubscription {
+    fn drop(&mut self) {
+        if self.active {
+            self.shared.remove(self.subscription_id);
+            self.active = false;
+        }
     }
 }
 
 // --------------------------------------------------------------------
-// Manager + session handle (stubs)
+// Manager + session handle
 // --------------------------------------------------------------------
 
-/// Top-level virtualgamepad runtime. Owns the backend inventory,
-/// session registry, and shared worker pool. Phase 7 implements the
-/// body; the prep PR pins the surface so host integrations can be
-/// written against the stable shape.
-#[derive(Debug)]
 pub struct VirtualControllerManager {
-    _private: (),
+    runtime: Arc<Runtime>,
+    config: ManagerConfig,
+    backends: Vec<Arc<dyn BackendFactory>>,
+    registry: Arc<Mutex<HashMap<SessionId, SessionRecord>>>,
+    archived: Arc<Mutex<HashMap<SessionId, ArchivedSession>>>,
+    translators: TranslatorRegistry,
+}
+
+#[allow(clippy::missing_fields_in_debug)]
+impl std::fmt::Debug for VirtualControllerManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtualControllerManager")
+            .field("backends", &self.backends.len())
+            .finish()
+    }
 }
 
 impl VirtualControllerManager {
-    /// Construct a manager with an empty backend inventory. Call
-    /// [`Self::with_backends`] to register factories before creating
-    /// sessions.
-    ///
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
     #[must_use]
-    pub fn new(_config: ManagerConfig) -> Self {
-        unimplemented!("Phase 7 manager construction")
+    pub fn new(config: ManagerConfig) -> Self {
+        Self {
+            runtime: Arc::new(build_runtime(config.worker_pool_size)),
+            config,
+            backends: Vec::new(),
+            registry: Arc::new(Mutex::new(HashMap::new())),
+            archived: Arc::new(Mutex::new(HashMap::new())),
+            translators: TranslatorRegistry::new(),
+        }
     }
 
-    /// Construct a manager with an initial backend inventory.
+    /// Construct a manager with an explicit backend inventory.
     ///
     /// # Errors
     ///
     /// Returns [`ManagerError::NoBackendsRegistered`] if `backends` is
     /// empty.
-    ///
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
     pub fn with_backends(
-        _config: ManagerConfig,
-        _backends: Vec<Arc<dyn BackendFactory>>,
+        config: ManagerConfig,
+        backends: Vec<Arc<dyn BackendFactory>>,
     ) -> Result<Self, ManagerError> {
-        unimplemented!("Phase 7 manager construction")
+        if backends.is_empty() {
+            return Err(ManagerError::NoBackendsRegistered);
+        }
+        let mut manager = Self::new(config);
+        manager.backends = backends;
+        Ok(manager)
     }
 
-    /// Plan + open a session for the given request. The manager calls
-    /// `gr_planner::plan_session`, constructs the prepared translation
-    /// context via `gr_translators::prepared_translation_context`,
-    /// opens the selected backend, and returns a live session handle.
+    /// Plan, open, and start a new session.
     ///
     /// # Errors
     ///
-    /// Returns [`ManagerError`] variants on planner rejection, backend
-    /// open failure, or translator-context failure.
+    /// Returns [`ManagerError`] when planning, translation-context
+    /// preparation, or backend opening fails.
     ///
     /// # Panics
     ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
+    /// Panics if an internal session-registry mutex has been poisoned.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn create_session(
         &self,
-        _request: SessionRequest,
+        request: SessionRequest,
     ) -> Result<VirtualControllerSessionHandle, ManagerError> {
-        unimplemented!("Phase 7 create_session")
+        if self.backends.is_empty() {
+            return Err(ManagerError::NoBackendsRegistered);
+        }
+
+        {
+            let registry = self.registry.lock().expect("session registry");
+            if registry.contains_key(&request.session_id) {
+                return Err(ManagerError::SessionAlreadyActive {
+                    session_id: request.session_id,
+                });
+            }
+        }
+
+        let inventory = self
+            .backends
+            .iter()
+            .map(|backend| backend.inventory_entry())
+            .collect::<Vec<_>>();
+
+        let plan = plan_session(
+            &request,
+            &self.config.default_session_options,
+            &inventory,
+            &self.backends,
+        )
+        .map_err(ManagerError::PlanRejected)?;
+        let translation_ctx = prepared_translation_context(&plan, &self.translators)?;
+        let backend = self
+            .backends
+            .iter()
+            .find(|factory| factory.backend_id().as_ref() == plan.selected_provider_id.0.as_str())
+            .ok_or_else(|| ManagerError::BackendOpenFailed {
+                backend_id: BackendId::from(plan.selected_provider_id.0.as_str()),
+                source: BackendError::OpenFailed {
+                    reason: "selected provider was not registered".to_string(),
+                },
+            })?;
+        let mut backend_session =
+            backend
+                .open_session(&plan.backend_open_context)
+                .map_err(|source| ManagerError::BackendOpenFailed {
+                    backend_id: backend.backend_id(),
+                    source,
+                })?;
+        backend_session
+            .open()
+            .map_err(|source| ManagerError::BackendOpenFailed {
+                backend_id: backend.backend_id(),
+                source,
+            })?;
+
+        let forward = self
+            .translators
+            .forward(plan.selected_translator_family, plan.selected_level)
+            .ok_or(TranslationError::NoTranslatorRegistered {
+                family: plan.selected_translator_family,
+                level: plan.selected_level,
+            })?;
+        let reverse = self.translators.reverse(plan.selected_translator_family);
+
+        let shared = Arc::new(SessionShared::with_options(
+            request.session_id,
+            request.profile_id.clone(),
+            self.config.default_session_options.clone(),
+        ));
+        let input_queue = Arc::new(BoundedInputQueue::new(
+            self.config.session_input_queue_depth,
+        ));
+        let reverse_queue = Arc::new(BoundedReverseQueue::new(
+            self.config.session_reverse_queue_depth,
+        ));
+        let subscriptions = Arc::new(SubscriptionRegistry::default());
+
+        shared.set_state(SessionLifecycleState::Running);
+
+        let actor = SessionActor {
+            shared: shared.clone(),
+            input_queue: input_queue.clone(),
+            reverse_queue: reverse_queue.clone(),
+            session_options: self.config.default_session_options.clone(),
+            translation_ctx,
+            forward,
+            reverse,
+            backend: backend_session,
+        };
+        let delivery = DeliveryWorker {
+            shared: shared.clone(),
+            reverse_queue: reverse_queue.clone(),
+            subscriptions: subscriptions.clone(),
+        };
+
+        let actor_handle = self.runtime.spawn(actor.run());
+        let delivery_handle = self.runtime.spawn(delivery.run());
+
+        self.registry.lock().expect("session registry").insert(
+            request.session_id,
+            SessionRecord {
+                shared: shared.clone(),
+                input_queue: input_queue.clone(),
+                actor_handle,
+                delivery_handle,
+            },
+        );
+
+        Ok(VirtualControllerSessionHandle {
+            session_id: request.session_id,
+            input_queue,
+            subscriptions,
+            shared,
+        })
     }
 
-    /// Returns a snapshot of every active session's status. Phase 7
-    /// implements; useful for the `vgpd-demo many-sessions`
-    /// diagnostics surface.
+    /// Close an active session and archive its final diagnostics.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ManagerError::SessionNotFound`] when the session is no
+    /// longer active.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internal session-registry mutex has been poisoned.
+    pub fn close_session(&self, session_id: SessionId) -> Result<(), ManagerError> {
+        let record = self
+            .registry
+            .lock()
+            .expect("session registry")
+            .remove(&session_id)
+            .ok_or(ManagerError::SessionNotFound { session_id })?;
+
+        record.shared.set_state(SessionLifecycleState::Closing);
+        record.shared.request_close();
+        record.input_queue.close();
+
+        let actor_result = self.runtime.block_on(record.actor_handle);
+        let _ = self.runtime.block_on(record.delivery_handle);
+        if let Err(error) = actor_result {
+            record
+                .shared
+                .set_last_error(format!("session actor join failure: {error}"));
+            record.shared.set_state(SessionLifecycleState::Failed);
+        }
+
+        let archived = ArchivedSession {
+            status: record.shared.status_snapshot(),
+            diagnostics: record.shared.diagnostics_snapshot(),
+        };
+        self.archived
+            .lock()
+            .expect("archived sessions")
+            .insert(session_id, archived);
+        Ok(())
+    }
+
     #[must_use]
+    /// Return the current or archived status for `session_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internal session-registry mutex has been poisoned.
+    pub fn session_status(&self, session_id: SessionId) -> Option<SessionStatusSnapshot> {
+        self.registry
+            .lock()
+            .expect("session registry")
+            .get(&session_id)
+            .map(|record| record.shared.status_snapshot())
+            .or_else(|| {
+                self.archived
+                    .lock()
+                    .expect("archived sessions")
+                    .get(&session_id)
+                    .map(|archived| archived.status.clone())
+            })
+    }
+
+    #[must_use]
+    /// Return the current or archived diagnostics for `session_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internal session-registry mutex has been poisoned.
+    pub fn diagnostics(&self, session_id: SessionId) -> Option<SessionDiagnosticsSnapshot> {
+        self.registry
+            .lock()
+            .expect("session registry")
+            .get(&session_id)
+            .map(|record| record.shared.diagnostics_snapshot())
+            .or_else(|| {
+                self.archived
+                    .lock()
+                    .expect("archived sessions")
+                    .get(&session_id)
+                    .map(|archived| archived.diagnostics.clone())
+            })
+    }
+
+    #[must_use]
+    /// Return status snapshots for all active sessions.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an internal session-registry mutex has been poisoned.
     pub fn session_status_snapshot(&self) -> Vec<SessionStatusSnapshot> {
-        Vec::new()
+        self.registry
+            .lock()
+            .expect("session registry")
+            .values()
+            .map(|record| record.shared.status_snapshot())
+            .collect()
     }
 }
 
-/// Live session handle returned by
-/// [`VirtualControllerManager::create_session`]. All methods are
-/// non-blocking unless documented otherwise.
-#[derive(Debug)]
+impl Drop for VirtualControllerManager {
+    fn drop(&mut self) {
+        let session_ids: Vec<SessionId> = self
+            .registry
+            .lock()
+            .expect("session registry")
+            .keys()
+            .copied()
+            .collect();
+        for session_id in session_ids {
+            let _ = self.close_session(session_id);
+        }
+    }
+}
+
 pub struct VirtualControllerSessionHandle {
-    _private: (),
+    session_id: SessionId,
+    input_queue: Arc<BoundedInputQueue>,
+    subscriptions: Arc<SubscriptionRegistry>,
+    shared: Arc<SessionShared>,
+}
+
+#[allow(clippy::missing_fields_in_debug)]
+impl std::fmt::Debug for VirtualControllerSessionHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VirtualControllerSessionHandle")
+            .field("session_id", &self.session_id)
+            .finish()
+    }
 }
 
 impl VirtualControllerSessionHandle {
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
     #[must_use]
     pub fn session_id(&self) -> SessionId {
-        unimplemented!("Phase 7 session_id")
+        self.session_id
     }
 
-    /// Submit a full input frame. Coalesces with any previously
-    /// queued frame per the input queue policy.
+    /// Submit a full profile-specific input frame.
     ///
     /// # Errors
     ///
-    /// Returns [`SessionSendError`] variants for queue-full,
-    /// session-closed, or invalid-input conditions.
-    ///
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
-    pub fn send_input(&self, _frame: gr_core::ProfileInputFrame) -> Result<(), SessionSendError> {
-        unimplemented!("Phase 7 send_input")
+    /// Returns [`SessionSendError`] if the session is closed or the
+    /// frame violates the compiled input policy.
+    pub fn send_input(&self, frame: ProfileInputFrame) -> Result<(), SessionSendError> {
+        if self.shared.is_closed() {
+            return Err(SessionSendError::SessionClosed);
+        }
+        frame
+            .validate()
+            .map_err(|error| SessionSendError::InvalidInput {
+                reason: error.to_string(),
+            })?;
+        validate_frame_policy(&self.shared, true, &frame)?;
+        self.shared.note_frame_submission(&frame);
+        self.input_queue.enqueue(frame, &self.shared)
     }
 
-    /// Submit a delta over the last frame.
+    /// Submit a delta update against the session's last accepted frame.
     ///
     /// # Errors
     ///
-    /// Returns [`SessionSendError`] variants for queue-full,
-    /// session-closed, or invalid-input conditions.
-    ///
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
-    pub fn send_input_delta(
-        &self,
-        _delta: gr_core::ProfileInputDelta,
-    ) -> Result<(), SessionSendError> {
-        unimplemented!("Phase 7 send_input_delta")
+    /// Returns [`SessionSendError`] if the session is closed, no
+    /// baseline frame exists, or the delta violates compiled input
+    /// policy.
+    pub fn send_input_delta(&self, delta: ProfileInputDelta) -> Result<(), SessionSendError> {
+        if self.shared.is_closed() {
+            return Err(SessionSendError::SessionClosed);
+        }
+        delta
+            .validate()
+            .map_err(|error| SessionSendError::InvalidInput {
+                reason: error.to_string(),
+            })?;
+        validate_delta_policy(&self.shared, &delta)?;
+        let frame = self.shared.materialize_delta(delta)?;
+        self.shared.note_frame_submission(&frame);
+        self.input_queue.enqueue(frame, &self.shared)
     }
 
-    /// Subscribe an [`OutputSink`] to receive reverse-translated
-    /// commands. Returns a subscription handle that detaches the sink
-    /// on drop.
+    /// Subscribe an output sink to reverse-translated commands.
     ///
     /// # Errors
     ///
     /// Returns [`SessionError::SessionClosed`] if the session has
-    /// already shut down.
-    ///
-    /// # Panics
-    ///
-    /// Phase 7 prep stub: panics via `unimplemented!()`.
+    /// already started shutting down.
     pub fn subscribe_outputs(
         &self,
-        _sink: Box<dyn OutputSink>,
+        sink: Box<dyn OutputSink>,
     ) -> Result<SessionOutputSubscription, SessionError> {
-        unimplemented!("Phase 7 subscribe_outputs")
+        if self.shared.is_closed() {
+            return Err(SessionError::SessionClosed);
+        }
+        let subscription_id = self.subscriptions.insert(sink);
+        Ok(SessionOutputSubscription {
+            shared: self.subscriptions.clone(),
+            subscription_id,
+            active: true,
+        })
     }
 
-    /// Returns the audio sink for this session, if the profile and
-    /// selected provider both realize PCM output. See the audio
-    /// stream contract in `RUST_IMPLEMENTATION_SPEC.md`.
     #[must_use]
     pub fn audio_sink(&self) -> Option<Box<dyn AudioStreamSink>> {
         None
     }
 
-    /// Returns the audio source for this session, if the profile and
-    /// selected provider both realize PCM input.
     #[must_use]
     pub fn audio_source(&self) -> Option<Box<dyn AudioStreamSource>> {
         None
     }
 
-    /// Returns a diagnostics snapshot for this session. The counters
-    /// map is populated using the keys in [`COUNTER_KEYS`].
     #[must_use]
     pub fn diagnostics_snapshot(&self) -> SessionDiagnosticsSnapshot {
-        SessionDiagnosticsSnapshot {
-            session_id: None,
-            last_error: None,
-            counters: std::collections::BTreeMap::new(),
+        self.shared.diagnostics_snapshot()
+    }
+}
+
+// --------------------------------------------------------------------
+// Internal state
+// --------------------------------------------------------------------
+
+struct SessionRecord {
+    shared: Arc<SessionShared>,
+    input_queue: Arc<BoundedInputQueue>,
+    actor_handle: JoinHandle<()>,
+    delivery_handle: JoinHandle<()>,
+}
+
+#[derive(Debug, Clone)]
+struct ArchivedSession {
+    status: SessionStatusSnapshot,
+    diagnostics: SessionDiagnosticsSnapshot,
+}
+
+struct SessionShared {
+    session_id: SessionId,
+    profile_id: gr_core::ProfileId,
+    session_options: CompiledSessionOptions,
+    state: Mutex<SessionState>,
+    close_requested: AtomicBool,
+}
+
+struct SessionState {
+    lifecycle: SessionLifecycleState,
+    last_error: Option<String>,
+    counters: BTreeMap<String, u64>,
+    last_payload: Option<gr_core::ProfileInputPayload>,
+    last_sequence: Option<gr_core::SequenceId>,
+    last_backend_diagnostics: Option<BackendDiagnostics>,
+}
+
+impl SessionShared {
+    fn new(session_id: SessionId, profile_id: gr_core::ProfileId) -> Self {
+        Self {
+            session_id,
+            profile_id,
+            session_options: default_session_options(),
+            state: Mutex::new(SessionState {
+                lifecycle: SessionLifecycleState::Created,
+                last_error: None,
+                counters: COUNTER_KEYS
+                    .iter()
+                    .map(|key| ((*key).to_string(), 0_u64))
+                    .collect(),
+                last_payload: None,
+                last_sequence: None,
+                last_backend_diagnostics: None,
+            }),
+            close_requested: AtomicBool::new(false),
         }
+    }
+
+    fn with_options(
+        session_id: SessionId,
+        profile_id: gr_core::ProfileId,
+        session_options: CompiledSessionOptions,
+    ) -> Self {
+        let mut shared = Self::new(session_id, profile_id);
+        shared.session_options = session_options;
+        shared
+    }
+
+    fn set_state(&self, lifecycle: SessionLifecycleState) {
+        self.state.lock().expect("session state").lifecycle = lifecycle;
+    }
+
+    fn request_close(&self) {
+        self.close_requested.store(true, Ordering::SeqCst);
+    }
+
+    fn close_requested(&self) -> bool {
+        self.close_requested.load(Ordering::SeqCst)
+    }
+
+    fn is_closed(&self) -> bool {
+        matches!(
+            self.state.lock().expect("session state").lifecycle,
+            SessionLifecycleState::Closing
+                | SessionLifecycleState::Closed
+                | SessionLifecycleState::Failed
+        )
+    }
+
+    fn increment_counter(&self, key: &str, amount: u64) {
+        let mut state = self.state.lock().expect("session state");
+        *state.counters.entry(key.to_string()).or_insert(0) += amount;
+    }
+
+    fn observe_hwm(&self, key: &str, depth: usize) {
+        let mut state = self.state.lock().expect("session state");
+        let counter = state.counters.entry(key.to_string()).or_insert(0);
+        *counter = (*counter).max(depth as u64);
+    }
+
+    fn set_last_error(&self, error: String) {
+        self.state.lock().expect("session state").last_error = Some(error);
+    }
+
+    fn note_frame_submission(&self, frame: &ProfileInputFrame) {
+        let mut state = self.state.lock().expect("session state");
+        state.last_payload = Some(frame.payload.clone());
+        state.last_sequence = Some(frame.sequence);
+        *state
+            .counters
+            .entry(counter_keys::FRAMES_RECEIVED.to_string())
+            .or_insert(0) += 1;
+    }
+
+    fn materialize_delta(
+        &self,
+        delta: ProfileInputDelta,
+    ) -> Result<ProfileInputFrame, SessionSendError> {
+        let base_payload = self
+            .state
+            .lock()
+            .expect("session state")
+            .last_payload
+            .clone()
+            .ok_or_else(|| SessionSendError::InvalidInput {
+                reason: "cannot apply delta before a baseline full frame has been submitted"
+                    .to_string(),
+            })?;
+        let payload = delta.payload.apply_to(&base_payload).map_err(|error| {
+            SessionSendError::InvalidInput {
+                reason: error.to_string(),
+            }
+        })?;
+        Ok(ProfileInputFrame {
+            profile_id: delta.profile_id,
+            timestamp: delta.timestamp,
+            sequence: delta.sequence,
+            payload,
+        })
+    }
+
+    fn note_backend_diagnostics(&self, diagnostics: BackendDiagnostics) {
+        self.state
+            .lock()
+            .expect("session state")
+            .last_backend_diagnostics = Some(diagnostics);
+    }
+
+    fn diagnostics_snapshot(&self) -> SessionDiagnosticsSnapshot {
+        let state = self.state.lock().expect("session state");
+        SessionDiagnosticsSnapshot {
+            session_id: Some(self.session_id),
+            last_error: state.last_error.clone(),
+            counters: state.counters.clone(),
+        }
+    }
+
+    fn status_snapshot(&self) -> SessionStatusSnapshot {
+        let state = self.state.lock().expect("session state");
+        let mut warnings = Vec::new();
+        if let Some(diagnostics) = &state.last_backend_diagnostics {
+            if let Some(error) = &diagnostics.last_error {
+                warnings.push(error.clone());
+            }
+        }
+        SessionStatusSnapshot {
+            state: state.lifecycle,
+            session_id: Some(self.session_id),
+            profile_id: Some(self.profile_id.clone()),
+            warnings,
+        }
+    }
+}
+
+struct BoundedInputQueue {
+    inner: Mutex<InputQueueState>,
+    notify: tokio::sync::Notify,
+}
+
+struct InputQueueState {
+    queue: VecDeque<ProfileInputFrame>,
+    capacity: usize,
+    closed: bool,
+}
+
+impl BoundedInputQueue {
+    fn new(capacity: usize) -> Self {
+        Self {
+            inner: Mutex::new(InputQueueState {
+                queue: VecDeque::new(),
+                capacity,
+                closed: false,
+            }),
+            notify: tokio::sync::Notify::new(),
+        }
+    }
+
+    fn enqueue(
+        &self,
+        frame: ProfileInputFrame,
+        shared: &SessionShared,
+    ) -> Result<(), SessionSendError> {
+        let mut inner = self.inner.lock().expect("input queue");
+        if inner.closed {
+            return Err(SessionSendError::SessionClosed);
+        }
+        if inner.capacity == 0 {
+            return Err(SessionSendError::QueueFull);
+        }
+        if inner.queue.len() >= inner.capacity {
+            let coalesced = inner.queue.len() as u64;
+            inner.queue.clear();
+            inner.queue.push_back(frame);
+            shared.increment_counter(counter_keys::FRAMES_COALESCED, coalesced);
+        } else {
+            inner.queue.push_back(frame);
+        }
+        shared.observe_hwm(counter_keys::INPUT_QUEUE_DEPTH_HWM, inner.queue.len());
+        drop(inner);
+        self.notify.notify_one();
+        Ok(())
+    }
+
+    fn pop_all(&self) -> Vec<ProfileInputFrame> {
+        let mut inner = self.inner.lock().expect("input queue");
+        inner.queue.drain(..).collect()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.inner.lock().expect("input queue").queue.is_empty()
+    }
+
+    fn close(&self) {
+        let mut inner = self.inner.lock().expect("input queue");
+        inner.closed = true;
+        drop(inner);
+        self.notify.notify_waiters();
+    }
+}
+
+struct BoundedReverseQueue {
+    inner: Mutex<ReverseQueueState>,
+    notify: tokio::sync::Notify,
+}
+
+struct ReverseQueueState {
+    queue: VecDeque<ControllerOutputCommand>,
+    capacity: usize,
+    closed: bool,
+}
+
+impl BoundedReverseQueue {
+    fn new(capacity: usize) -> Self {
+        Self {
+            inner: Mutex::new(ReverseQueueState {
+                queue: VecDeque::new(),
+                capacity,
+                closed: false,
+            }),
+            notify: tokio::sync::Notify::new(),
+        }
+    }
+
+    async fn enqueue(
+        &self,
+        command: ControllerOutputCommand,
+        policy: &BackpressurePolicy,
+        shared: &SessionShared,
+    ) {
+        loop {
+            let should_wait = {
+                let mut inner = self.inner.lock().expect("reverse queue");
+                if inner.closed {
+                    return;
+                }
+                if inner.capacity == 0 {
+                    shared.increment_counter(counter_keys::REVERSE_EVENTS_DROPPED, 1);
+                    return;
+                }
+                if inner.queue.len() < inner.capacity {
+                    inner.queue.push_back(command.clone());
+                    shared.observe_hwm(counter_keys::REVERSE_QUEUE_DEPTH_HWM, inner.queue.len());
+                    false
+                } else {
+                    match policy {
+                        BackpressurePolicy::DropNewest { .. } => {
+                            shared.increment_counter(counter_keys::REVERSE_EVENTS_DROPPED, 1);
+                            return;
+                        }
+                        BackpressurePolicy::DropOldest { .. } => {
+                            inner.queue.pop_front();
+                            inner.queue.push_back(command.clone());
+                            shared.increment_counter(counter_keys::REVERSE_EVENTS_DROPPED, 1);
+                            shared.observe_hwm(
+                                counter_keys::REVERSE_QUEUE_DEPTH_HWM,
+                                inner.queue.len(),
+                            );
+                            false
+                        }
+                        BackpressurePolicy::BlockProducer { .. } => true,
+                    }
+                }
+            };
+            if should_wait {
+                self.notify.notified().await;
+            } else {
+                self.notify.notify_one();
+                return;
+            }
+        }
+    }
+
+    fn pop_next(&self) -> Option<ControllerOutputCommand> {
+        let mut inner = self.inner.lock().expect("reverse queue");
+        let next = inner.queue.pop_front();
+        drop(inner);
+        self.notify.notify_one();
+        next
+    }
+
+    fn close(&self) {
+        let mut inner = self.inner.lock().expect("reverse queue");
+        inner.closed = true;
+        drop(inner);
+        self.notify.notify_waiters();
+    }
+}
+
+#[derive(Default)]
+struct SubscriptionRegistry {
+    next_id: AtomicU64,
+    state: Mutex<SubscriptionState>,
+}
+
+#[derive(Default)]
+struct SubscriptionState {
+    sinks: Vec<SubscriptionEntry>,
+    pending_removals: HashSet<u64>,
+}
+
+struct SubscriptionEntry {
+    id: u64,
+    sink: Box<dyn OutputSink>,
+}
+
+impl SubscriptionRegistry {
+    fn insert(&self, sink: Box<dyn OutputSink>) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst) + 1;
+        self.state
+            .lock()
+            .expect("subscriptions")
+            .sinks
+            .push(SubscriptionEntry { id, sink });
+        id
+    }
+
+    fn remove(&self, subscription_id: u64) {
+        let mut state = self.state.lock().expect("subscriptions");
+        state.sinks.retain(|entry| entry.id != subscription_id);
+        state.pending_removals.insert(subscription_id);
+    }
+
+    fn deliver_all(&self, command: &ControllerOutputCommand, shared: &SessionShared) {
+        let mut taken: Vec<SubscriptionEntry> = {
+            let mut state = self.state.lock().expect("subscriptions");
+            std::mem::take(&mut state.sinks)
+        };
+
+        let mut failed: Vec<u64> = Vec::new();
+        for entry in &mut taken {
+            let result = catch_unwind(AssertUnwindSafe(|| entry.sink.deliver(command.clone())));
+            if result.is_err() {
+                failed.push(entry.id);
+                shared.set_last_error("output sink panicked; detaching subscription".to_string());
+            } else {
+                shared.increment_counter(counter_keys::REVERSE_EVENTS_EMITTED, 1);
+            }
+        }
+
+        let mut state = self.state.lock().expect("subscriptions");
+        let added = std::mem::take(&mut state.sinks);
+        for entry in taken {
+            if failed.contains(&entry.id) || state.pending_removals.contains(&entry.id) {
+                continue;
+            }
+            state.sinks.push(entry);
+        }
+        state.sinks.extend(added);
+        state.pending_removals.clear();
+    }
+}
+
+struct SessionActor {
+    shared: Arc<SessionShared>,
+    input_queue: Arc<BoundedInputQueue>,
+    reverse_queue: Arc<BoundedReverseQueue>,
+    session_options: CompiledSessionOptions,
+    translation_ctx: gr_runtime_model::PreparedTranslationContext,
+    forward: &'static dyn ForwardTranslator,
+    reverse: Option<&'static dyn ReverseTranslator>,
+    backend: Box<dyn BackendSession>,
+}
+
+impl SessionActor {
+    async fn run(mut self) {
+        let mut scratch = TranslationScratch::new();
+        let mut reverse_out = SmallVec::<[ControllerOutputCommand; 4]>::new();
+        let mut reverse_in = Vec::<BackendReverseEvent>::new();
+
+        loop {
+            tokio::select! {
+                () = self.input_queue.notify.notified() => {
+                    let frames = self.input_queue.pop_all();
+                    for frame in frames {
+                        if let Err(error) = self.process_frame(frame, &mut scratch).await {
+                            self.shared.set_last_error(error.to_string());
+                            self.shared.increment_counter(counter_keys::WRITE_FAILURES, 1);
+                            self.shared.set_state(SessionLifecycleState::Failed);
+                            self.reverse_queue.close();
+                            let _ = self.backend.close();
+                            return;
+                        }
+                    }
+                }
+                () = tokio::time::sleep(Duration::from_millis(5)) => {
+                    self.poll_reverse(&mut reverse_in, &mut reverse_out).await;
+                }
+            }
+
+            if self.shared.close_requested() && self.input_queue.is_empty() {
+                break;
+            }
+        }
+
+        let diagnostics = self.backend.diagnostics();
+        self.shared.note_backend_diagnostics(diagnostics);
+        let _ = self.backend.close();
+        self.shared.set_state(SessionLifecycleState::Closed);
+        self.reverse_queue.close();
+    }
+
+    async fn process_frame(
+        &mut self,
+        frame: ProfileInputFrame,
+        scratch: &mut TranslationScratch,
+    ) -> Result<(), BackendError> {
+        scratch.clear();
+        let backend_frame = self
+            .forward
+            .translate(&frame, &self.translation_ctx, scratch)
+            .map_err(|error| BackendError::WriteFailed {
+                reason: error.to_string(),
+            })?;
+
+        loop {
+            match self.backend.send(backend_frame.clone()) {
+                Ok(()) => {
+                    self.shared
+                        .increment_counter(counter_keys::FRAMES_WRITTEN, 1);
+                    self.shared
+                        .note_backend_diagnostics(self.backend.diagnostics());
+                    return Ok(());
+                }
+                Err(BackendError::WouldBlock) => {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => {
+                    self.shared
+                        .note_backend_diagnostics(self.backend.diagnostics());
+                    return Err(error);
+                }
+            }
+        }
+    }
+
+    async fn poll_reverse(
+        &mut self,
+        reverse_in: &mut Vec<BackendReverseEvent>,
+        reverse_out: &mut SmallVec<[ControllerOutputCommand; 4]>,
+    ) {
+        if matches!(self.backend.readiness(), EventReadiness::NoReverseEvents) {
+            return;
+        }
+
+        reverse_in.clear();
+        match self.backend.drain_reverse_events(reverse_in) {
+            Ok(()) => {}
+            Err(BackendError::WouldBlock) => return,
+            Err(error) => {
+                self.shared.set_last_error(error.to_string());
+                self.shared
+                    .note_backend_diagnostics(self.backend.diagnostics());
+                return;
+            }
+        }
+
+        self.shared.increment_counter(
+            counter_keys::REVERSE_EVENTS_RECEIVED,
+            reverse_in.len() as u64,
+        );
+        self.shared
+            .note_backend_diagnostics(self.backend.diagnostics());
+
+        for event in reverse_in.iter() {
+            reverse_out.clear();
+            if let Some(reverse) = self.reverse {
+                if let Err(error) =
+                    reverse.translate_reverse(event, &self.translation_ctx, reverse_out)
+                {
+                    self.shared.set_last_error(error.to_string());
+                    continue;
+                }
+            }
+            for command in reverse_out.iter().cloned() {
+                self.reverse_queue
+                    .enqueue(
+                        command,
+                        &self.session_options.backpressure_policy,
+                        &self.shared,
+                    )
+                    .await;
+            }
+        }
+    }
+}
+
+struct DeliveryWorker {
+    shared: Arc<SessionShared>,
+    reverse_queue: Arc<BoundedReverseQueue>,
+    subscriptions: Arc<SubscriptionRegistry>,
+}
+
+impl DeliveryWorker {
+    async fn run(self) {
+        loop {
+            if let Some(command) = self.reverse_queue.pop_next() {
+                self.subscriptions.deliver_all(&command, &self.shared);
+            } else {
+                if self.shared.is_closed() {
+                    return;
+                }
+                self.reverse_queue.notify.notified().await;
+            }
+        }
+    }
+}
+
+fn validate_frame_policy(
+    shared: &SessionShared,
+    full_frame: bool,
+    frame: &ProfileInputFrame,
+) -> Result<(), SessionSendError> {
+    let policy = &shared.session_options.input_validation_policy;
+    if full_frame
+        && !policy
+            .accepted_update_kinds
+            .iter()
+            .any(|kind| matches!(kind, gr_config::AcceptedUpdateKind::Frame))
+    {
+        return Err(SessionSendError::InvalidInput {
+            reason: "compiled session options reject full-frame updates".to_string(),
+        });
+    }
+    validate_monotonic_sequence(shared, policy, frame.sequence)
+}
+
+fn validate_delta_policy(
+    shared: &SessionShared,
+    delta: &ProfileInputDelta,
+) -> Result<(), SessionSendError> {
+    let policy = &shared.session_options.input_validation_policy;
+    if !policy
+        .accepted_update_kinds
+        .iter()
+        .any(|kind| matches!(kind, gr_config::AcceptedUpdateKind::Delta))
+    {
+        return Err(SessionSendError::InvalidInput {
+            reason: "compiled session options reject delta updates".to_string(),
+        });
+    }
+    validate_monotonic_sequence(shared, policy, delta.sequence)
+}
+
+fn validate_monotonic_sequence(
+    shared: &SessionShared,
+    policy: &InputValidationPolicy,
+    sequence: gr_core::SequenceId,
+) -> Result<(), SessionSendError> {
+    if policy.require_monotonic_sequence
+        && shared
+            .state
+            .lock()
+            .expect("session state")
+            .last_sequence
+            .is_some_and(|last| sequence <= last)
+    {
+        return Err(SessionSendError::InvalidInput {
+            reason: format!("sequence {sequence} is not greater than the previous sequence"),
+        });
+    }
+    Ok(())
+}
+
+fn build_runtime(worker_pool_size: Option<usize>) -> Runtime {
+    let mut builder = Builder::new_multi_thread();
+    builder.enable_all();
+    builder.worker_threads(worker_pool_size.unwrap_or(64));
+    builder.build().expect("session runtime")
+}
+
+fn default_session_options() -> CompiledSessionOptions {
+    CompiledSessionOptions {
+        input_validation_policy: InputValidationPolicy {
+            accepted_update_kinds: vec![
+                gr_config::AcceptedUpdateKind::Frame,
+                gr_config::AcceptedUpdateKind::Delta,
+            ],
+            unknown_field_policy: UnknownFieldPolicy::Reject,
+            range_validation_policy: RangeValidationPolicy::Reject,
+            coerce_integer_like_values: false,
+            allow_missing_optional_fields: true,
+            require_monotonic_sequence: false,
+        },
+        provider_hints: ProviderHints {
+            host_platform_preference: None,
+            preferred_provider: None,
+            reject_unsupported_provider_preference: true,
+        },
+        unsupported_capability_policy: gr_config::UnsupportedCapabilityPolicy::Report,
+        delivery_policy: gr_runtime_model::ReverseEventDeliveryPolicy::Callback {
+            callback_namespace: "virtualGamepad".to_string(),
+        },
+        backpressure_policy: BackpressurePolicy::DropOldest {
+            log_dropped_outputs: true,
+            max_queue_depth: Some(8),
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        COUNTER_KEYS, CallbackSink, ManagerConfig, ManagerError, OutputSink, SessionError,
-        SessionSendError, counter_keys,
+        COUNTER_KEYS, ManagerConfig, ManagerError, SessionError, SessionSendError,
+        VirtualControllerManager, counter_keys,
     };
-    use gr_core::SessionId;
+    use gr_backend_api::BackendFactory;
+    use gr_core::{
+        BackendFamily, BackendLevel, DualSenseButtonsDelta, DualSenseDelta,
+        DualSenseFaceButtonsDelta, DualSenseInput, FidelityTier, ProfileId, ProfileInputDelta,
+        ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload, SemanticOutputFunction,
+        SequenceId, SessionId, Timestamp,
+    };
+    use gr_host_bridge::{CallbackSink, channel_bridge};
+    use gr_runtime_model::{
+        EmulationGoal, HostPlatform, SessionHostMetadata, SessionLifecycleState,
+    };
+    use gr_testkit::fakes::{FakeFailure, backend_factory};
+    use std::sync::{Arc, Mutex};
+
+    fn dualsense_request(session_id: u64) -> gr_runtime_model::SessionRequest {
+        gr_runtime_model::SessionRequest {
+            session_id: SessionId::new(session_id),
+            profile_id: ProfileId::from("dualsense"),
+            goal: EmulationGoal::IdentityAware,
+            requested_fidelity_tier: FidelityTier::IdentityAware,
+            host_platform_preference: Some(HostPlatform::Linux),
+            backend_preference: Some(BackendLevel::Hid),
+            provider_preference: Some("fake-backend".into()),
+            host_metadata: SessionHostMetadata::default(),
+        }
+    }
+
+    fn dualsense_delta(sequence: u64, cross: bool) -> ProfileInputDelta {
+        ProfileInputDelta {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(sequence),
+            sequence: SequenceId::new(sequence),
+            payload: ProfileInputDeltaPayload::DualSense(DualSenseDelta {
+                buttons: Some(DualSenseButtonsDelta {
+                    face: Some(DualSenseFaceButtonsDelta {
+                        cross: Some(cross),
+                        ..DualSenseFaceButtonsDelta::default()
+                    }),
+                    ..DualSenseButtonsDelta::default()
+                }),
+                ..DualSenseDelta::default()
+            }),
+        }
+    }
+
+    fn fake_backend() -> Arc<dyn BackendFactory> {
+        Arc::new(
+            backend_factory()
+                .backend_id("fake-backend")
+                .family(BackendFamily::LinuxUhid)
+                .level(BackendLevel::Hid)
+                .platform(HostPlatform::Linux)
+                .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+                .declares_reverse_output(SemanticOutputFunction::Rumble)
+                .declares_reverse_output(SemanticOutputFunction::Haptics)
+                .declares_reverse_output(SemanticOutputFunction::Lighting)
+                .declares_reverse_output(SemanticOutputFunction::PlayerIndicators)
+                .declares_reverse_output(SemanticOutputFunction::TriggerEffect)
+                .declares_reverse_output(SemanticOutputFunction::Audio)
+                .build(),
+        )
+    }
 
     #[test]
     fn manager_config_default_matches_spec_defaults() {
@@ -402,6 +1264,14 @@ mod tests {
         assert_eq!(config.session_input_queue_depth, 8);
         assert_eq!(config.session_reverse_queue_depth, 32);
         assert!(config.worker_pool_size.is_none());
+        assert_eq!(
+            config
+                .default_session_options
+                .snapshot()
+                .accepted_update_kinds
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -413,51 +1283,265 @@ mod tests {
     }
 
     #[test]
-    fn manager_error_display_is_human_readable() {
-        let error = ManagerError::NoBackendsRegistered;
-        assert!(error.to_string().contains("backend factories"));
-        let error = ManagerError::SessionAlreadyActive {
-            session_id: SessionId::new(7),
-        };
-        assert!(error.to_string().contains("session"));
+    fn manager_rejects_empty_inventory() {
+        let error = VirtualControllerManager::with_backends(ManagerConfig::default(), Vec::new())
+            .expect_err("should reject empty backends");
+        assert!(matches!(error, ManagerError::NoBackendsRegistered));
     }
 
     #[test]
-    fn session_send_error_distinguishes_queue_full_from_closed() {
-        assert_ne!(SessionSendError::QueueFull, SessionSendError::SessionClosed);
+    fn duplicate_session_id_is_rejected() {
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![fake_backend()])
+                .expect("manager");
+        let _session = manager
+            .create_session(dualsense_request(7))
+            .expect("session");
+        let error = manager
+            .create_session(dualsense_request(7))
+            .expect_err("duplicate should fail");
+        assert!(matches!(error, ManagerError::SessionAlreadyActive { .. }));
+        manager.close_session(SessionId::new(7)).expect("close");
     }
 
     #[test]
-    fn callback_sink_delivers_via_closure() {
-        use gr_core::{ProfileId, SessionId, Timestamp};
-        use gr_runtime_model::{
-            ControllerOutputCommand, OutputCommandType, OutputFunctionRef, OutputPayload,
-            RumblePayload,
-        };
+    fn send_input_delta_requires_baseline_frame() {
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![fake_backend()])
+                .expect("manager");
+        let session = manager
+            .create_session(dualsense_request(8))
+            .expect("session");
+        let error = session
+            .send_input_delta(dualsense_delta(1, true))
+            .expect_err("delta should fail");
+        assert!(matches!(error, SessionSendError::InvalidInput { .. }));
+        manager.close_session(SessionId::new(8)).expect("close");
+    }
 
-        let mut captured: Vec<u16> = Vec::new();
-        let mut sink = CallbackSink::new(|command: ControllerOutputCommand| {
-            if let OutputPayload::Rumble(payload) = command.payload {
-                captured.push(payload.strong);
-            }
-        });
-        sink.deliver(ControllerOutputCommand {
-            session_id: SessionId::new(1),
-            profile_id: ProfileId::from("dualsense"),
-            timestamp: Timestamp::new(0),
-            command_type: OutputCommandType::StateUpdate,
-            function: OutputFunctionRef::Semantic(gr_core::SemanticOutputFunction::Rumble),
-            payload: OutputPayload::Rumble(RumblePayload {
-                strong: 100,
-                weak: 50,
-            }),
-        });
-        assert_eq!(captured, vec![100]);
+    #[test]
+    fn close_session_archives_status_and_diagnostics() {
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![fake_backend()])
+                .expect("manager");
+        let session_id = SessionId::new(9);
+        let _session = manager
+            .create_session(dualsense_request(9))
+            .expect("session");
+        manager.close_session(session_id).expect("close");
+        let status = manager.session_status(session_id).expect("status");
+        assert!(matches!(
+            status.state,
+            SessionLifecycleState::Closed | SessionLifecycleState::Failed
+        ));
+        let diagnostics = manager.diagnostics(session_id).expect("diagnostics");
+        assert_eq!(diagnostics.session_id, Some(session_id));
+    }
+
+    #[test]
+    fn subscription_unsubscribe_detaches_sink() {
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![fake_backend()])
+                .expect("manager");
+        let session = manager
+            .create_session(dualsense_request(10))
+            .expect("session");
+        let hits = Arc::new(Mutex::new(0_u32));
+        let hits_clone = hits.clone();
+        let subscription = session
+            .subscribe_outputs(Box::new(CallbackSink::new(move |_| {
+                *hits_clone.lock().expect("hits") += 1;
+            })))
+            .expect("subscribe");
+        subscription.unsubscribe();
+        assert_eq!(*hits.lock().expect("hits"), 0);
+        manager.close_session(SessionId::new(10)).expect("close");
+    }
+
+    #[test]
+    fn channel_bridge_is_usable_for_output_subscription_surfaces() {
+        let (_sink, mut stream) = channel_bridge(2);
+        assert!(stream.try_recv().is_err());
     }
 
     #[test]
     fn session_error_audio_not_available_displays() {
         let error = SessionError::AudioNotAvailable;
         assert!(error.to_string().contains("audio"));
+    }
+
+    #[test]
+    fn provider_open_failure_is_isolated() {
+        let failing = Arc::new(
+            backend_factory()
+                .backend_id("fake-backend")
+                .family(BackendFamily::LinuxUhid)
+                .level(BackendLevel::Hid)
+                .platform(HostPlatform::Linux)
+                .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+                .declares_reverse_output(SemanticOutputFunction::Rumble)
+                .declares_reverse_output(SemanticOutputFunction::Haptics)
+                .declares_reverse_output(SemanticOutputFunction::Lighting)
+                .declares_reverse_output(SemanticOutputFunction::PlayerIndicators)
+                .declares_reverse_output(SemanticOutputFunction::TriggerEffect)
+                .declares_reverse_output(SemanticOutputFunction::Audio)
+                .with_failure(FakeFailure::ProviderPanic)
+                .build(),
+        ) as Arc<dyn BackendFactory>;
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![failing])
+                .expect("manager");
+        let error = manager
+            .create_session(dualsense_request(11))
+            .expect_err("provider panic should surface");
+        assert!(matches!(error, ManagerError::BackendOpenFailed { .. }));
+    }
+
+    #[test]
+    fn manager_drops_without_close_does_not_hang() {
+        let start = std::time::Instant::now();
+        {
+            let manager = VirtualControllerManager::with_backends(
+                ManagerConfig::default(),
+                vec![fake_backend()],
+            )
+            .expect("manager");
+            let _session = manager
+                .create_session(dualsense_request(20))
+                .expect("session");
+            // Intentionally do not call close_session: the manager's
+            // Drop impl must drain in-flight sessions before the tokio
+            // runtime is dropped.
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "manager drop took too long: {elapsed:?}",
+        );
+    }
+
+    #[test]
+    fn delivery_worker_detaches_panicking_subscriber() {
+        let manager = VirtualControllerManager::with_backends(
+            ManagerConfig::default(),
+            vec![fake_backend_with_reverse_event(21)],
+        )
+        .expect("manager");
+        let session = manager
+            .create_session(dualsense_request(21))
+            .expect("session");
+
+        let healthy_hits = Arc::new(Mutex::new(0_u32));
+        let healthy_clone = healthy_hits.clone();
+        let _healthy_sub = session
+            .subscribe_outputs(Box::new(CallbackSink::new(move |_| {
+                *healthy_clone.lock().expect("healthy hits") += 1;
+            })))
+            .expect("subscribe healthy");
+
+        let panic_calls = Arc::new(Mutex::new(0_u32));
+        let panic_clone = panic_calls.clone();
+        let _panic_sub = session
+            .subscribe_outputs(Box::new(CallbackSink::new(move |_| {
+                *panic_clone.lock().expect("panic calls") += 1;
+                panic!("test sink panic");
+            })))
+            .expect("subscribe panicking");
+
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if *healthy_hits.lock().expect("healthy hits") >= 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "healthy subscriber never received output"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+
+        manager.close_session(SessionId::new(21)).expect("close");
+
+        let healthy = *healthy_hits.lock().expect("healthy hits");
+        let panicked = *panic_calls.lock().expect("panic calls");
+        assert!(healthy >= 1, "healthy subscriber was not delivered to");
+        assert!(panicked >= 1, "panicking subscriber was never invoked");
+    }
+
+    #[test]
+    fn bounded_input_queue_clears_stale_frames_on_overflow() {
+        let shared = Arc::new(super::SessionShared::with_options(
+            SessionId::new(99),
+            ProfileId::from("dualsense"),
+            super::default_session_options(),
+        ));
+        let queue = super::BoundedInputQueue::new(4);
+
+        for sequence in 1..=6 {
+            let frame = ProfileInputFrame {
+                profile_id: ProfileId::from("dualsense"),
+                timestamp: Timestamp::new(sequence),
+                sequence: SequenceId::new(sequence),
+                payload: ProfileInputPayload::DualSense(DualSenseInput::neutral()),
+            };
+            queue.enqueue(frame, &shared).expect("enqueue");
+        }
+
+        let diagnostics = shared.diagnostics_snapshot();
+        // After 6 enqueues into capacity 4: the 5th enqueue finds the
+        // queue full and clears all 4 stale entries (latest-state-wins),
+        // counter += 4. The 6th enqueue pushes onto the now-1-deep
+        // queue, no further coalesce. So total coalesced == 4.
+        assert_eq!(
+            diagnostics
+                .counters
+                .get(super::counter_keys::FRAMES_COALESCED)
+                .copied()
+                .unwrap_or_default(),
+            4,
+            "expected frames.coalesced == 4 after clearing 4 stale frames once",
+        );
+        assert_eq!(
+            diagnostics
+                .counters
+                .get(super::counter_keys::INPUT_QUEUE_DEPTH_HWM)
+                .copied()
+                .unwrap_or_default(),
+            4,
+            "queue depth hwm should reach the configured capacity",
+        );
+    }
+
+    fn fake_backend_with_reverse_event(session_id: u64) -> Arc<dyn BackendFactory> {
+        use gr_backend_api::{BackendReversePayload, BackendReverseTarget};
+        Arc::new(
+            backend_factory()
+                .backend_id("fake-backend")
+                .family(BackendFamily::LinuxUhid)
+                .level(BackendLevel::Hid)
+                .platform(HostPlatform::Linux)
+                .supported_fidelity_tiers(vec![FidelityTier::IdentityAware])
+                .declares_reverse_output(SemanticOutputFunction::Rumble)
+                .declares_reverse_output(SemanticOutputFunction::Haptics)
+                .declares_reverse_output(SemanticOutputFunction::Lighting)
+                .declares_reverse_output(SemanticOutputFunction::PlayerIndicators)
+                .declares_reverse_output(SemanticOutputFunction::TriggerEffect)
+                .declares_reverse_output(SemanticOutputFunction::Audio)
+                .reverse_events_from_iter(vec![gr_backend_api::BackendReverseEvent {
+                    session_id: SessionId::new(session_id),
+                    profile_id: Some(ProfileId::from("dualsense")),
+                    timestamp: Timestamp::new(0),
+                    sequence: SequenceId::new(0),
+                    kind: gr_backend_api::BackendReverseEventKind::HidOutputReport,
+                    target: Some(BackendReverseTarget::SemanticOutput(
+                        SemanticOutputFunction::Audio,
+                    )),
+                    payload: BackendReversePayload::Hid {
+                        report_id: Some(5),
+                        bytes: vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    },
+                }])
+                .build(),
+        )
     }
 }
