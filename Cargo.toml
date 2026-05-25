@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Workspace root package and provider feature host for virtualgamepad."
+publish = false
 
 [workspace]
 members = [
