@@ -46,6 +46,7 @@ pub struct ScenarioBackend {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ScenarioFailure {
+    SlowSend,
     SendWouldBlock,
     DrainParseError,
     CloseFails,

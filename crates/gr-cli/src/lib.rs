@@ -1686,6 +1686,14 @@ mod tests {
     }
 
     #[test]
+    fn simulate_session_dualsense_coalesce_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let scenario = repo_root.join("samples/scenarios/dualsense-coalesce.yaml");
+        let output = simulate_session(&scenario, None::<&std::path::Path>).expect("scenario");
+        assert_snapshot!("simulate_session_dualsense_coalesce", output);
+    }
+
+    #[test]
     fn replay_trace_output_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let trace = repo_root.join("crates/gr-testkit/fixtures/community/fake-trace-rumble.yaml");

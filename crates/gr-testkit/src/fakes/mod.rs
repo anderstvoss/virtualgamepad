@@ -26,6 +26,10 @@ pub fn failing_backend(kind: FakeFailure) -> Arc<dyn BackendFactory> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FakeFailure {
+    /// Adds a small delay to each successful `send()` call so runtime
+    /// queue-backpressure scenarios can deterministically outrun the
+    /// backend worker.
+    SlowSend,
     OpenRefused(BackendError),
     SendWouldBlock,
     SendPermanentlyFails(BackendError),
@@ -57,6 +61,7 @@ pub struct FakeBackendFactoryBuilder {
     reverse_events: Vec<BackendReverseEvent>,
     open_error: Option<BackendError>,
     send_would_block_once: bool,
+    slow_send: bool,
     send_error: Option<BackendError>,
     drain_parse_error_once: bool,
     close_error: bool,
@@ -79,6 +84,7 @@ impl Default for FakeBackendFactoryBuilder {
             reverse_events: Vec::new(),
             open_error: None,
             send_would_block_once: false,
+            slow_send: false,
             send_error: None,
             drain_parse_error_once: false,
             close_error: false,
@@ -165,6 +171,7 @@ impl FakeBackendFactoryBuilder {
     #[must_use]
     pub fn with_failure(mut self, failure: FakeFailure) -> Self {
         match failure {
+            FakeFailure::SlowSend => self.slow_send = true,
             FakeFailure::OpenRefused(error) => self.open_error = Some(error),
             FakeFailure::SendWouldBlock => self.send_would_block_once = true,
             FakeFailure::SendPermanentlyFails(error) => self.send_error = Some(error),
@@ -223,6 +230,7 @@ impl FakeBackendFactory {
             self.config.family,
             self.config.reverse_events.clone(),
             self.config.send_would_block_once,
+            self.config.slow_send,
             self.config.send_error.clone(),
             self.config.drain_parse_error_once,
             self.config.close_error,
@@ -381,6 +389,7 @@ struct FakeBackendConfig {
     reverse_events: Vec<BackendReverseEvent>,
     open_error: Option<BackendError>,
     send_would_block_once: bool,
+    slow_send: bool,
     send_error: Option<BackendError>,
     drain_parse_error_once: bool,
     close_error: bool,
@@ -403,6 +412,7 @@ impl From<FakeBackendFactoryBuilder> for FakeBackendConfig {
             reverse_events: builder.reverse_events,
             open_error: builder.open_error,
             send_would_block_once: builder.send_would_block_once,
+            slow_send: builder.slow_send,
             send_error: builder.send_error,
             drain_parse_error_once: builder.drain_parse_error_once,
             close_error: builder.close_error,
@@ -461,6 +471,9 @@ impl BackendSession for FakeBackendSession {
             shared.last_error = Some(error.to_string());
             shared.state = BackendState::Failed;
             return Err(error);
+        }
+        if shared.slow_send {
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         shared.frames_sent += 1;
         shared.written_frames.push(frame);
@@ -554,6 +567,7 @@ struct FakeSessionShared {
     reverse_events: VecDeque<BackendReverseEvent>,
     written_frames: Vec<BackendFrame>,
     send_would_block_once: bool,
+    slow_send: bool,
     send_error: Option<BackendError>,
     drain_parse_error_once: bool,
     close_error: bool,
@@ -574,6 +588,7 @@ impl FakeSessionShared {
         family: BackendFamily,
         reverse_events: Vec<BackendReverseEvent>,
         send_would_block_once: bool,
+        slow_send: bool,
         send_error: Option<BackendError>,
         drain_parse_error_once: bool,
         close_error: bool,
@@ -586,6 +601,7 @@ impl FakeSessionShared {
             reverse_events: reverse_events.into(),
             written_frames: Vec::new(),
             send_would_block_once,
+            slow_send,
             send_error,
             drain_parse_error_once,
             close_error,

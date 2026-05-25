@@ -156,6 +156,7 @@ fn build_fake_backend(runtime: &RuntimeSessionScenario) -> FakeBackendFactory {
     }
     for failure in &runtime.backend.failures {
         builder = builder.with_failure(match failure {
+            ScenarioFailure::SlowSend => FakeFailure::SlowSend,
             ScenarioFailure::SendWouldBlock => FakeFailure::SendWouldBlock,
             ScenarioFailure::DrainParseError => FakeFailure::DrainParseError,
             ScenarioFailure::CloseFails => FakeFailure::CloseFails,

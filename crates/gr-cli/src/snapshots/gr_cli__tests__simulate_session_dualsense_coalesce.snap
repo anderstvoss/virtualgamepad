@@ -1,0 +1,22 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+scenario: dualsense-coalesce
+mode: runtime-session
+frames_written: 3
+outputs: 0
+audio_sink: none
+diagnostics:
+session_id: 31
+counters:
+  frames.coalesced: 8
+  frames.received: 11
+  frames.written: 3
+  queue_depth.input.hwm: 8
+  queue_depth.reverse.hwm: 0
+  reverse_events.dropped: 0
+  reverse_events.emitted: 0
+  reverse_events.received: 0
+  translation.latency_p95_us: 0
+  write_failures: 0
