@@ -1686,11 +1686,28 @@ mod tests {
     }
 
     #[test]
-    fn simulate_session_dualsense_coalesce_output_is_stable() {
+    fn simulate_session_dualsense_coalesce_runs_to_completion() {
+        // The coalesce semantic itself is covered by a deterministic
+        // unit test in gr-session (`bounded_input_queue_clears_stale_frames_on_overflow`).
+        // This integration test only proves the demo scenario runs to
+        // completion end-to-end without panicking; it intentionally does
+        // not snapshot or assert the counter values, which are
+        // race-sensitive across schedulers.
         let repo_root = repo_root().expect("workspace root");
         let scenario = repo_root.join("samples/scenarios/dualsense-coalesce.yaml");
         let output = simulate_session(&scenario, None::<&std::path::Path>).expect("scenario");
-        assert_snapshot!("simulate_session_dualsense_coalesce", output);
+        assert!(
+            output.contains("scenario: dualsense-coalesce"),
+            "missing scenario header in output:\n{output}",
+        );
+        assert!(
+            output.contains("mode: runtime-session"),
+            "missing mode header in output:\n{output}",
+        );
+        assert!(
+            output.contains("frames.coalesced"),
+            "missing frames.coalesced counter in diagnostics:\n{output}",
+        );
     }
 
     #[test]

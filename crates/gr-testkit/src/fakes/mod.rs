@@ -473,7 +473,7 @@ impl BackendSession for FakeBackendSession {
             return Err(error);
         }
         if shared.slow_send {
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
         shared.frames_sent += 1;
         shared.written_frames.push(frame);

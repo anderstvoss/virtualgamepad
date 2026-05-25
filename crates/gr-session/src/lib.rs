@@ -1198,8 +1198,9 @@ mod tests {
     use gr_backend_api::BackendFactory;
     use gr_core::{
         BackendFamily, BackendLevel, DualSenseButtonsDelta, DualSenseDelta,
-        DualSenseFaceButtonsDelta, FidelityTier, ProfileId, ProfileInputDelta,
-        ProfileInputDeltaPayload, SemanticOutputFunction, SequenceId, SessionId, Timestamp,
+        DualSenseFaceButtonsDelta, DualSenseInput, FidelityTier, ProfileId, ProfileInputDelta,
+        ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload, SemanticOutputFunction,
+        SequenceId, SessionId, Timestamp,
     };
     use gr_host_bridge::{CallbackSink, channel_bridge};
     use gr_runtime_model::{
@@ -1465,6 +1466,50 @@ mod tests {
         let panicked = *panic_calls.lock().expect("panic calls");
         assert!(healthy >= 1, "healthy subscriber was not delivered to");
         assert!(panicked >= 1, "panicking subscriber was never invoked");
+    }
+
+    #[test]
+    fn bounded_input_queue_clears_stale_frames_on_overflow() {
+        let shared = Arc::new(super::SessionShared::with_options(
+            SessionId::new(99),
+            ProfileId::from("dualsense"),
+            super::default_session_options(),
+        ));
+        let queue = super::BoundedInputQueue::new(4);
+
+        for sequence in 1..=6 {
+            let frame = ProfileInputFrame {
+                profile_id: ProfileId::from("dualsense"),
+                timestamp: Timestamp::new(sequence),
+                sequence: SequenceId::new(sequence),
+                payload: ProfileInputPayload::DualSense(DualSenseInput::neutral()),
+            };
+            queue.enqueue(frame, &shared).expect("enqueue");
+        }
+
+        let diagnostics = shared.diagnostics_snapshot();
+        // After 6 enqueues into capacity 4: the 5th enqueue finds the
+        // queue full and clears all 4 stale entries (latest-state-wins),
+        // counter += 4. The 6th enqueue pushes onto the now-1-deep
+        // queue, no further coalesce. So total coalesced == 4.
+        assert_eq!(
+            diagnostics
+                .counters
+                .get(super::counter_keys::FRAMES_COALESCED)
+                .copied()
+                .unwrap_or_default(),
+            4,
+            "expected frames.coalesced == 4 after clearing 4 stale frames once",
+        );
+        assert_eq!(
+            diagnostics
+                .counters
+                .get(super::counter_keys::INPUT_QUEUE_DEPTH_HWM)
+                .copied()
+                .unwrap_or_default(),
+            4,
+            "queue depth hwm should reach the configured capacity",
+        );
     }
 
     fn fake_backend_with_reverse_event(session_id: u64) -> Arc<dyn BackendFactory> {
