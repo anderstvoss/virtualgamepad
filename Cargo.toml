@@ -43,6 +43,7 @@ authors = ["Anders Voss <anderstvoss@gmail.com>"]
 [workspace.dependencies]
 assert_matches = "1.5"
 clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
 insta = "1"
 proptest = "1"
 rstest = "0.25"

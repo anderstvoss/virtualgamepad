@@ -14,9 +14,11 @@ path = "src/bin/gr-cli.rs"
 
 [dependencies]
 clap.workspace = true
+ctrlc.workspace = true
 gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
 gr-config = { path = "../gr-config", version = "0.1" }
 gr-core = { path = "../gr-core", version = "0.1" }
+gr-host-bridge = { path = "../gr-host-bridge", version = "0.1" }
 gr-planner = { path = "../gr-planner", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }
 gr-provider-linux-uinput = { path = "../gr-provider-linux-uinput", version = "0.1" }

@@ -4,16 +4,6 @@ This guide is the reviewer checklist for Phase 8
 (`gr-provider-linux-uinput`). It covers the first real Linux provider,
 host-visible evdev compatibility, and the EV_FF rumble reverse path.
 
-Current limitation: `run-uinput-smoke` is a one-shot probe command. It
-creates the device, prints a report, and then exits immediately, which
-tears the device down. That means the host-inspection portion of the
-gate is not yet feasible with the current demo surface alone. Treat the
-steps below as:
-
-- feasible today for report-based preflight verification
-- blocked for live `evtest` / `jstest` / SDL inspection until a
-  persistent or interactive Phase 8 demo surface lands
-
 Start with:
 
 ```bash
@@ -30,15 +20,15 @@ device and reports the expected capability surface.
 1. Run:
 
 ```bash
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive
 ```
 
 2. Confirm:
    - the command exits 0
    - the report identifies a created device
    - the report includes the expected button and axis capability summary
-   - note that `evtest` / `jstest` attachment is blocked by immediate
-     teardown after the command exits
+   - the interactive banner tells you how to stop the session
+   - the device stays alive long enough to attach host inspection tools
 
 ## Check 2: buttons and axes match expected events
 
@@ -47,12 +37,19 @@ and emitted presses land as matching host events.
 
 ### Steps
 
-1. Compare the smoke report capability summary against the expected
-   `generic-gamepad` controls.
-2. Record that live host verification is blocked with the current
-   one-shot command shape.
-3. Do not mark this check complete until a persistent or interactive
-   demo session exists.
+1. In another terminal, attach `evtest` or `jstest` to the created
+   device node.
+2. Run:
+
+```bash
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive --script exercise
+```
+
+3. Confirm:
+   - the device reports the expected `generic-gamepad` buttons and axes
+   - the scripted loop produces visible button, dpad, stick, and trigger
+     activity
+   - stopping the demo with Enter or Ctrl-C tears the session down cleanly
 
 ## Check 3: SDL recognizes the Xbox-style device
 
@@ -64,15 +61,15 @@ recognizes as a gamepad.
 1. Run:
 
 ```bash
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive
 ```
 
 2. Confirm:
    - the command exits 0
    - the report identifies a created device
    - the report declares `EV_FF` / `FF_RUMBLE`
-   - note that SDL / `jstest-gtk` verification is blocked by immediate
-     teardown after the command exits
+   - SDL, `jstest-gtk`, or another host consumer recognizes the device
+     while the session remains open
 
 ## Check 4: scripted inputs reach host software
 
@@ -81,10 +78,18 @@ path end to end.
 
 ### Steps
 
-1. Record that this check is blocked with the current one-shot demo
-   surface.
-2. Defer execution until a follow-up command can keep the device alive
-   and inject scripted inputs while the reviewer observes host software.
+1. Run:
+
+```bash
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive --script exercise
+```
+
+2. Confirm:
+   - host software receives the scripted inputs while the session stays
+     open
+   - the interactive status banner matches the observed profile and
+     device node
+   - the demo exits only when you press Enter or send Ctrl-C
 
 ## Check 5: EV_FF rumble surfaces as runtime output
 
@@ -93,10 +98,18 @@ Goal: confirm a host-triggered rumble request reaches the runtime as
 
 ### Steps
 
-1. Use the smoke report to confirm the Xbox-style profile declares
-   `EV_FF` and `FF_RUMBLE`.
-2. Record that live `fftest` / game-driven rumble verification is
-   blocked until a persistent demo command exists.
+1. Run:
+
+```bash
+cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive
+```
+
+2. In another terminal, trigger rumble with `fftest` or compatible host
+   software.
+3. Confirm:
+   - the profile declares `EV_FF` and `FF_RUMBLE`
+   - the demo prints live rumble output lines with strong/weak values
+   - the session remains healthy after the reverse-path event
 
 ## Check 6: teardown removes the device cleanly
 
@@ -105,19 +118,16 @@ leaving zombie `event*` nodes behind.
 
 ### Steps
 
-1. Observe that `run-uinput-smoke` exits immediately after reporting.
-2. Confirm:
-   - the command does not leave a long-lived device behind
-   - a persistent session is still required for meaningful manual host
-     inspection
+1. Start either interactive smoke command above.
+2. Stop it with Enter or Ctrl-C.
+3. Confirm:
+   - the session prints the shutdown summary
+   - the `uinput` device disappears after teardown
+   - restarting the command creates a fresh device successfully
 
 ## Sign-off
 
-Do not sign off this gate as fully passed until the blocked live-host
-checks above can actually be executed with a persistent or interactive
-demo surface.
-
-When that follow-up exists and all checks pass:
+When all checks pass:
 
 ```bash
 git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"

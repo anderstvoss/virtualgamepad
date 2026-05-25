@@ -672,7 +672,7 @@ First real Linux provider. Compatibility-tier emulation: host-visible Linux game
   - against fake writer (no kernel): descriptor construction, ioctl sequencing, event batching
   - against real kernel (gated on Linux runner): device appears, capabilities query matches, events flow
 - implementation: typed wrapper over `libc::ioctl` and `nix` where helpful; no `unsafe` outside the wrapper module
-- demo wiring: `vgpd-demo run-uinput-smoke <profile>` performs a one-shot create/report/teardown probe for a virtual pad and dumps its `/dev/input/event*` enumeration when available; a persistent interactive demo surface remains follow-up work for manual host inspection
+- demo wiring: `vgpd-demo run-uinput-smoke <profile>` is dual-mode. The default path remains a one-shot create/report/teardown probe for CI and report evidence, while `--interactive` keeps the session alive for host inspection and `--script exercise` replays representative input frames through the runtime
 - refactor: factor a small `LinuxKernelIoctl` shim that fakes can substitute for tests
 - gate-prep: prepare a step-by-step manual checklist for plugging the device into common host software
 
@@ -698,14 +698,14 @@ Automated portion:
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad` exits 0, reports a created device, and prints the expected capability summary for the generic-gamepad profile.
-- [ ] 2. Record that live `evtest` / `jstest` inspection is blocked with the current one-shot command shape because the device is torn down immediately after reporting.
-- [ ] 3. `vgpd-demo run-uinput-smoke xbox360` exits 0, reports a created device, and declares `EV_FF` / `FF_RUMBLE` for the compatibility-tier rumble path.
-- [ ] 4. Record that SDL / `jstest-gtk` recognition and scripted-input verification remain blocked until a persistent or interactive demo surface exists.
-- [ ] 5. Record that live `fftest` / game-driven rumble verification remains blocked until a persistent or interactive demo surface exists.
-- [ ] 6. Verify the current one-shot probe tears the device down immediately after reporting and does not itself provide a host-inspection window.
+- [ ] 1. `vgpd-demo run-uinput-smoke generic-gamepad --interactive` exits 0, reports a created device, and keeps the session alive for host inspection.
+- [ ] 2. `vgpd-demo run-uinput-smoke generic-gamepad --interactive --script exercise` produces visible button, dpad, stick, and trigger activity in `evtest`, `jstest`, or equivalent host tooling.
+- [ ] 3. `vgpd-demo run-uinput-smoke xbox360 --interactive` exits 0, reports a created device, and declares `EV_FF` / `FF_RUMBLE` for the compatibility-tier rumble path.
+- [ ] 4. SDL, `jstest-gtk`, or equivalent host software recognizes the interactive Xbox-style device while the session remains open.
+- [ ] 5. Host-triggered rumble reaches the runtime and prints live strong/weak output lines while the interactive session is running.
+- [ ] 6. Stopping the interactive demo with Enter or Ctrl-C removes the `uinput` device cleanly and allows a fresh restart.
 
-Sign-off: Do not create `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"` until a follow-up persistent or interactive Phase 8 demo command exists and the blocked live-host checks have been completed.
+Sign-off: create `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate passed"` once the checks above have been completed on a prepared Linux host.
 
 ## Phase 9: Linux `UHID` provider — identity-aware tier (`gr-provider-linux-uhid`)
 

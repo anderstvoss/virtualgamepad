@@ -58,8 +58,17 @@ enum Command {
     CapabilityCoverage,
     /// Spin up many fake-backed sessions and print their status.
     ManySessions { count: usize },
-    /// Run a one-shot Linux uinput smoke probe for a profile and print the report.
-    RunUinputSmoke { profile_id: String },
+    /// Run a Linux uinput smoke probe for a profile; use `--interactive`
+    /// to keep the device alive for host inspection.
+    RunUinputSmoke {
+        profile_id: String,
+        #[arg(long)]
+        interactive: bool,
+        #[arg(long, default_value = "none")]
+        script: String,
+        #[arg(long, default_value_t = 750)]
+        step_delay_ms: u64,
+    },
     /// Generate the initial support-claim evidence report.
     SupportReport {
         #[arg(long)]
@@ -189,7 +198,14 @@ fn main() {
                 std::process::exit(1);
             }
         },
-        Command::RunUinputSmoke { profile_id } => match gr_cli::run_uinput_smoke(&profile_id) {
+        Command::RunUinputSmoke {
+            profile_id,
+            interactive,
+            script,
+            step_delay_ms,
+        } => match gr_cli::parse_uinput_smoke_options(interactive, &script, step_delay_ms)
+            .and_then(|options| gr_cli::run_uinput_smoke(&profile_id, options))
+        {
             Ok(output) => println!("{output}"),
             Err(error) => {
                 eprintln!("{error}");
@@ -239,7 +255,41 @@ mod tests {
         let cli = Cli::parse_from(["gr-cli", "run-uinput-smoke", "generic-gamepad"]);
         assert!(matches!(
             cli.command,
-            Command::RunUinputSmoke { profile_id } if profile_id == "generic-gamepad"
+            Command::RunUinputSmoke {
+                profile_id,
+                interactive,
+                script,
+                step_delay_ms,
+            } if profile_id == "generic-gamepad"
+                && !interactive
+                && script == "none"
+                && step_delay_ms == 750
+        ));
+    }
+
+    #[test]
+    fn run_uinput_smoke_interactive_flags_parse() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "run-uinput-smoke",
+            "xbox360",
+            "--interactive",
+            "--script",
+            "exercise",
+            "--step-delay-ms",
+            "1200",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunUinputSmoke {
+                profile_id,
+                interactive,
+                script,
+                step_delay_ms,
+            } if profile_id == "xbox360"
+                && interactive
+                && script == "exercise"
+                && step_delay_ms == 1200
         ));
     }
 

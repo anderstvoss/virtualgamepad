@@ -8,10 +8,11 @@ use gr_backend_api::{
 };
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
-    BackendLevel, CoreError, FidelityTier, ProfileId, ProfileInputDelta, ProfileInputDeltaPayload,
-    ProfileInputFrame, ProfileInputPayload, SemanticInputFunction, SemanticOutputFunction,
-    SequenceId, Timestamp,
+    BackendLevel, CoreError, FidelityTier, GenericGamepadInput, ProfileId, ProfileInputDelta,
+    ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload, SemanticInputFunction,
+    SemanticOutputFunction, SequenceId, SessionId, Timestamp, Xbox360Input,
 };
+use gr_host_bridge::CallbackSink;
 use gr_planner::plan_session as plan_runtime_session;
 use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
@@ -19,9 +20,10 @@ use gr_profiles::{
 };
 use gr_provider_linux_uinput::LinuxUinputBackendFactory;
 use gr_runtime_model::{
-    BackpressurePolicy, EmulationGoal, HostPlatform, ReverseEventDeliveryPolicy,
-    SessionHostMetadata, SessionRequest,
+    BackpressurePolicy, ControllerOutputCommand, EmulationGoal, HostPlatform,
+    ReverseEventDeliveryPolicy, SessionHostMetadata, SessionRequest,
 };
+use gr_session::{ManagerConfig, SessionSendError, VirtualControllerManager};
 use gr_session_options::{
     CompiledSessionOptions, InputValidationPolicy, ProviderHints, RangeValidationPolicy,
     UnknownFieldPolicy, compile_session_options,
@@ -34,10 +36,14 @@ use gr_translators::TranslatorRegistry;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use std::fmt;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
+use std::thread;
+use std::time::Duration;
 
 const PHASE_0_COMMANDS: &[&[&str]] = &[
     &["cargo", "build", "--workspace", "--all-features"],
@@ -123,19 +129,77 @@ const PHASE_8_COMMANDS: &[&[&str]] = &[
     &["cargo", "insta", "test", "--check"],
 ];
 
+const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UinputScriptMode {
+    None,
+    Exercise,
+}
+
+impl Default for UinputScriptMode {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl fmt::Display for UinputScriptMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::None => f.write_str("none"),
+            Self::Exercise => f.write_str("exercise"),
+        }
+    }
+}
+
+impl FromStr for UinputScriptMode {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "none" => Ok(Self::None),
+            "exercise" => Ok(Self::Exercise),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UinputSmokeOptions {
+    pub interactive: bool,
+    pub script: UinputScriptMode,
+    pub step_delay_ms: u64,
+}
+
+impl Default for UinputSmokeOptions {
+    fn default() -> Self {
+        Self {
+            interactive: false,
+            script: UinputScriptMode::None,
+            step_delay_ms: DEFAULT_UINPUT_STEP_DELAY_MS,
+        }
+    }
+}
+
 /// Render a Linux `uinput` smoke report for a built-in profile.
 ///
 /// # Errors
 ///
 /// Returns an error when the profile id is unknown or the report cannot
 /// be serialized.
-pub fn run_uinput_smoke(profile_id: &str) -> Result<String, CliError> {
+pub fn run_uinput_smoke(profile_id: &str, options: UinputSmokeOptions) -> Result<String, CliError> {
     let profile = lookup_profile(profile_id)?;
-    let factory = LinuxUinputBackendFactory::new();
-    let request = uinput_realization_request(profile, FidelityTier::Compatibility);
-    let mut report = factory.smoke_report(&profile.profile_id, &request);
-    normalize_uinput_report_for_snapshots(&mut report);
-    serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+    validate_uinput_smoke_options(options)?;
+    if options.interactive {
+        run_interactive_uinput_smoke(profile, options)
+    } else {
+        let factory = LinuxUinputBackendFactory::new();
+        let request = uinput_realization_request(profile, FidelityTier::Compatibility);
+        let mut report = factory.smoke_report(&profile.profile_id, &request);
+        normalize_uinput_report_for_snapshots(&mut report);
+        serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+    }
 }
 
 /// Generate the initial support-claim evidence skeleton.
@@ -1254,6 +1318,14 @@ fn output_function_name(function: OutputFunctionRef) -> String {
     }
 }
 
+fn runtime_output_function_name(function: &gr_runtime_model::OutputFunctionRef) -> String {
+    match function {
+        gr_runtime_model::OutputFunctionRef::Semantic(semantic) => semantic.to_string(),
+        gr_runtime_model::OutputFunctionRef::ProfileSpecific(function) => function.0.clone(),
+        _ => "unknown".to_string(),
+    }
+}
+
 fn capability_fields(capability: CapabilityItem) -> Vec<String> {
     match capability.semantic {
         SemanticRef::Input(SemanticInputFunction::LeftStick) => {
@@ -1392,6 +1464,325 @@ fn normalize_uinput_report_for_snapshots(
     }
 }
 
+fn validate_uinput_smoke_options(options: UinputSmokeOptions) -> Result<(), CliError> {
+    if !options.interactive && options.script != UinputScriptMode::None {
+        return Err(CliError::InvalidArgument {
+            argument: "script",
+            value: options.script.to_string(),
+        });
+    }
+    Ok(())
+}
+
+pub fn parse_uinput_smoke_options(
+    interactive: bool,
+    script: &str,
+    step_delay_ms: u64,
+) -> Result<UinputSmokeOptions, CliError> {
+    let script = script.parse().map_err(|_| CliError::InvalidArgument {
+        argument: "script",
+        value: script.to_string(),
+    })?;
+    let options = UinputSmokeOptions {
+        interactive,
+        script,
+        step_delay_ms,
+    };
+    validate_uinput_smoke_options(options)?;
+    Ok(options)
+}
+
+fn run_interactive_uinput_smoke(
+    profile: &ControllerProfile,
+    options: UinputSmokeOptions,
+) -> Result<String, CliError> {
+    let factory = LinuxUinputBackendFactory::new();
+    let request = uinput_realization_request(profile, FidelityTier::Compatibility);
+    let report = factory.smoke_report(&profile.profile_id, &request);
+    let report_yaml = serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)?;
+    print!("{report_yaml}");
+    println!();
+    println!(
+        "{}",
+        render_interactive_uinput_banner(profile, options, &report)
+    );
+
+    let manager = VirtualControllerManager::with_backends(
+        ManagerConfig::default(),
+        vec![Arc::new(LinuxUinputBackendFactory::new()) as Arc<dyn BackendFactory>],
+    )
+    .map_err(|error| CliError::Simulation {
+        message: error.to_string(),
+    })?;
+
+    let session = Arc::new(
+        manager
+            .create_session(interactive_uinput_request(&profile.profile_id))
+            .map_err(|error| CliError::Simulation {
+                message: error.to_string(),
+            })?,
+    );
+    let _subscription = session
+        .subscribe_outputs(Box::new(CallbackSink::new(|command| {
+            println!("{}", format_interactive_output_command(&command));
+        })))
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    let running = Arc::new(AtomicBool::new(true));
+    let script_handle = if options.script == UinputScriptMode::Exercise {
+        let running = Arc::clone(&running);
+        let session = Arc::clone(&session);
+        let profile_id = profile.profile_id.clone();
+        Some(thread::spawn(move || {
+            run_exercise_script(session, &profile_id, options.step_delay_ms, running);
+        }))
+    } else {
+        None
+    };
+
+    let shutdown_reason = wait_for_interactive_shutdown();
+    running.store(false, Ordering::Relaxed);
+    if let Some(handle) = script_handle {
+        let _ = handle.join();
+    }
+
+    manager
+        .close_session(session.session_id())
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    let summary = render_interactive_shutdown_summary(
+        shutdown_reason,
+        options.script,
+        session.session_id(),
+        manager.diagnostics(session.session_id()),
+    );
+    Ok(summary)
+}
+
+fn interactive_uinput_request(profile_id: &ProfileId) -> SessionRequest {
+    SessionRequest {
+        session_id: SessionId::new(9001),
+        profile_id: profile_id.clone(),
+        goal: EmulationGoal::Compatibility,
+        requested_fidelity_tier: FidelityTier::Compatibility,
+        host_platform_preference: Some(HostPlatform::Linux),
+        backend_preference: Some(BackendLevel::Evdev),
+        provider_preference: Some(gr_runtime_model::ProviderId::from("linux-uinput")),
+        host_metadata: SessionHostMetadata::default(),
+    }
+}
+
+fn run_exercise_script(
+    session: Arc<gr_session::VirtualControllerSessionHandle>,
+    profile_id: &ProfileId,
+    step_delay_ms: u64,
+    running: Arc<AtomicBool>,
+) {
+    let mut sequence = 1_u64;
+    let delay = Duration::from_millis(step_delay_ms);
+    let frames = exercise_payloads(profile_id);
+    while running.load(Ordering::Relaxed) {
+        for payload in &frames {
+            if !running.load(Ordering::Relaxed) {
+                return;
+            }
+
+            let frame = ProfileInputFrame {
+                profile_id: profile_id.clone(),
+                timestamp: Timestamp::new(sequence),
+                sequence: SequenceId::new(sequence),
+                payload: payload.clone(),
+            };
+            if let Err(error) = session.send_input(frame) {
+                println!("{}", render_script_send_error(error));
+                return;
+            }
+            sequence = sequence.saturating_add(1);
+            thread::sleep(delay);
+        }
+    }
+}
+
+fn exercise_payloads(profile_id: &ProfileId) -> Vec<ProfileInputPayload> {
+    match profile_id.as_ref() {
+        "generic-gamepad" => generic_gamepad_exercise_payloads(),
+        "xbox360" => xbox360_exercise_payloads(),
+        _ => vec![
+            ProfileInputPayload::neutral_for_profile_id(profile_id).unwrap_or_else(|| {
+                ProfileInputPayload::GenericGamepad(GenericGamepadInput::neutral())
+            }),
+        ],
+    }
+}
+
+fn generic_gamepad_exercise_payloads() -> Vec<ProfileInputPayload> {
+    let neutral = GenericGamepadInput::neutral();
+
+    let mut south = neutral.clone();
+    south.buttons.south = true;
+
+    let mut east = neutral.clone();
+    east.buttons.east = true;
+
+    let mut dpad_left = neutral.clone();
+    dpad_left.dpad.left = true;
+
+    let mut left_stick = neutral.clone();
+    left_stick.sticks.left_x = i16::MAX;
+    left_stick.sticks.left_y = i16::MIN;
+
+    let mut right_stick = neutral.clone();
+    right_stick.sticks.right_x = i16::MIN;
+    right_stick.sticks.right_y = i16::MAX;
+
+    let mut triggers = neutral.clone();
+    triggers.triggers.left_trigger = u16::MAX / 2;
+    triggers.triggers.right_trigger = u16::MAX;
+
+    vec![
+        ProfileInputPayload::GenericGamepad(neutral),
+        ProfileInputPayload::GenericGamepad(south),
+        ProfileInputPayload::GenericGamepad(east),
+        ProfileInputPayload::GenericGamepad(dpad_left),
+        ProfileInputPayload::GenericGamepad(left_stick),
+        ProfileInputPayload::GenericGamepad(right_stick),
+        ProfileInputPayload::GenericGamepad(triggers),
+        ProfileInputPayload::GenericGamepad(GenericGamepadInput::neutral()),
+    ]
+}
+
+fn xbox360_exercise_payloads() -> Vec<ProfileInputPayload> {
+    let neutral = Xbox360Input::neutral();
+
+    let mut a = neutral.clone();
+    a.buttons.face.a = true;
+
+    let mut b = neutral.clone();
+    b.buttons.face.b = true;
+
+    let mut dpad_right = neutral.clone();
+    dpad_right.dpad.right = true;
+
+    let mut left_stick = neutral.clone();
+    left_stick.sticks.left_x = i16::MIN;
+    left_stick.sticks.left_y = i16::MAX;
+
+    let mut right_stick = neutral.clone();
+    right_stick.sticks.right_x = i16::MAX;
+    right_stick.sticks.right_y = i16::MIN;
+
+    let mut triggers = neutral.clone();
+    triggers.triggers.lt = u16::MAX / 2;
+    triggers.triggers.rt = u16::MAX;
+
+    vec![
+        ProfileInputPayload::Xbox360(neutral),
+        ProfileInputPayload::Xbox360(a),
+        ProfileInputPayload::Xbox360(b),
+        ProfileInputPayload::Xbox360(dpad_right),
+        ProfileInputPayload::Xbox360(left_stick),
+        ProfileInputPayload::Xbox360(right_stick),
+        ProfileInputPayload::Xbox360(triggers),
+        ProfileInputPayload::Xbox360(Xbox360Input::neutral()),
+    ]
+}
+
+fn wait_for_interactive_shutdown() -> InteractiveShutdownReason {
+    let (sender, receiver) = mpsc::channel();
+    let stdin_sender = sender.clone();
+    let _stdin_handle = thread::spawn(move || {
+        let mut buffer = String::new();
+        let _ = io::stdin().read_line(&mut buffer);
+        let _ = stdin_sender.send(InteractiveShutdownReason::Enter);
+    });
+
+    let signal_sender = sender.clone();
+    if let Err(error) = ctrlc::set_handler(move || {
+        let _ = signal_sender.send(InteractiveShutdownReason::CtrlC);
+    }) {
+        println!("note: ctrl-c handler unavailable ({error}); press Enter to stop");
+    }
+
+    receiver.recv().unwrap_or(InteractiveShutdownReason::Enter)
+}
+
+fn render_interactive_uinput_banner(
+    profile: &ControllerProfile,
+    options: UinputSmokeOptions,
+    report: &gr_provider_linux_uinput::LinuxUinputSmokeReport,
+) -> String {
+    let script_status = match options.script {
+        UinputScriptMode::None => "disabled".to_string(),
+        UinputScriptMode::Exercise => format!("exercise loop ({} ms steps)", options.step_delay_ms),
+    };
+    let node = report
+        .device_node
+        .as_deref()
+        .unwrap_or("discover via device name");
+
+    format!(
+        "interactive_uinput_session:\n  profile: {}\n  device_name: virtualgamepad {}\n  device_node: {}\n  script: {}\n  stop: press Enter or Ctrl-C\n  note: the live interactive session may create a fresh device instance after the probe above",
+        profile.profile_id,
+        profile.display_name.replace(' ', "-").to_lowercase(),
+        node,
+        script_status,
+    )
+}
+
+fn format_interactive_output_command(command: &ControllerOutputCommand) -> String {
+    match &command.payload {
+        gr_runtime_model::OutputPayload::Rumble(payload) => format!(
+            "output: rumble strong={} weak={} session_id={}",
+            payload.strong, payload.weak, command.session_id
+        ),
+        payload => format!(
+            "output: function={} payload={} session_id={}",
+            runtime_output_function_name(&command.function),
+            serde_name(payload),
+            command.session_id
+        ),
+    }
+}
+
+fn render_script_send_error(error: SessionSendError) -> String {
+    format!("script: stopped after send failure: {error}")
+}
+
+fn render_interactive_shutdown_summary(
+    reason: InteractiveShutdownReason,
+    script: UinputScriptMode,
+    session_id: SessionId,
+    diagnostics: Option<gr_runtime_model::SessionDiagnosticsSnapshot>,
+) -> String {
+    let frames_written = diagnostics
+        .as_ref()
+        .and_then(|snapshot| snapshot.counters.get("frames.written").copied())
+        .unwrap_or(0);
+    format!(
+        "interactive_uinput_session_closed:\n  reason: {}\n  session_id: {}\n  script: {}\n  frames_written: {}",
+        reason, session_id, script, frames_written
+    )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InteractiveShutdownReason {
+    Enter,
+    CtrlC,
+}
+
+impl fmt::Display for InteractiveShutdownReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Enter => f.write_str("enter"),
+            Self::CtrlC => f.write_str("ctrl-c"),
+        }
+    }
+}
+
 fn run_phase_gate_command(repo_root: &Path, command: &[String]) -> PhaseGateCheckResult {
     let command_display = command.join(" ");
     let output = Command::new(&command[0])
@@ -1512,16 +1903,92 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
-        PHASE_6_COMMANDS, PHASE_8_COMMANDS, capability_coverage, list_profiles,
-        phase_gate_commands, plan_session, replay_trace, repo_root, repo_root_from,
-        run_uinput_smoke, show_capabilities, simulate_session, support_report, validate_config,
-        validate_fixture,
+        PHASE_6_COMMANDS, PHASE_8_COMMANDS, UinputScriptMode, UinputSmokeOptions,
+        capability_coverage, format_interactive_output_command, list_profiles, lookup_profile,
+        parse_uinput_smoke_options, phase_gate_commands, plan_session,
+        render_interactive_shutdown_summary, render_interactive_uinput_banner, replay_trace,
+        repo_root, repo_root_from, run_uinput_smoke, show_capabilities, simulate_session,
+        support_report, uinput_realization_request, validate_config, validate_fixture,
+    };
+    use gr_core::{ProfileId, SessionId, Timestamp};
+    use gr_provider_linux_uinput::LinuxUinputBackendFactory;
+    use gr_runtime_model::{
+        ControllerOutputCommand, OutputCommandType, OutputFunctionRef as RuntimeOutputFunctionRef,
+        OutputPayload, RumblePayload,
     };
     use insta::assert_snapshot;
     use std::path::Path;
 
     #[test]
     fn smoke() {}
+
+    #[test]
+    fn uinput_smoke_options_default_values_are_stable() {
+        let options = UinputSmokeOptions::default();
+        assert!(!options.interactive);
+        assert_eq!(options.script, UinputScriptMode::None);
+        assert_eq!(options.step_delay_ms, 750);
+    }
+
+    #[test]
+    fn parse_uinput_smoke_options_rejects_script_without_interactive() {
+        let error = parse_uinput_smoke_options(false, "exercise", 750).expect_err("invalid");
+        assert_eq!(error.to_string(), "invalid `script` value `exercise`");
+    }
+
+    #[test]
+    fn interactive_banner_mentions_script_and_stop_hint() {
+        let profile = lookup_profile("generic-gamepad").expect("profile");
+        let report = LinuxUinputBackendFactory::new().smoke_report(
+            &profile.profile_id,
+            &uinput_realization_request(profile, gr_core::FidelityTier::Compatibility),
+        );
+        let banner = render_interactive_uinput_banner(
+            profile,
+            UinputSmokeOptions {
+                interactive: true,
+                script: UinputScriptMode::Exercise,
+                step_delay_ms: 1200,
+            },
+            &report,
+        );
+        assert!(banner.contains("exercise loop (1200 ms steps)"));
+        assert!(banner.contains("press Enter or Ctrl-C"));
+    }
+
+    #[test]
+    fn interactive_output_command_formats_rumble() {
+        let command = ControllerOutputCommand {
+            session_id: SessionId::new(42),
+            profile_id: ProfileId::from("xbox360"),
+            timestamp: Timestamp::new(7),
+            command_type: OutputCommandType::StateUpdate,
+            function: RuntimeOutputFunctionRef::Semantic(gr_core::SemanticOutputFunction::Rumble),
+            payload: OutputPayload::Rumble(RumblePayload {
+                strong: 30000,
+                weak: 12000,
+            }),
+        };
+
+        let rendered = format_interactive_output_command(&command);
+        assert_eq!(
+            rendered,
+            "output: rumble strong=30000 weak=12000 session_id=42"
+        );
+    }
+
+    #[test]
+    fn interactive_shutdown_summary_includes_reason_and_frames_written() {
+        let summary = render_interactive_shutdown_summary(
+            super::InteractiveShutdownReason::CtrlC,
+            UinputScriptMode::Exercise,
+            SessionId::new(9),
+            None,
+        );
+        assert!(summary.contains("reason: ctrl-c"));
+        assert!(summary.contains("session_id: 9"));
+        assert!(summary.contains("frames_written: 0"));
+    }
 
     #[test]
     fn phase_zero_commands_match_expected_order() {
@@ -1937,7 +2404,8 @@ mod tests {
 
     #[test]
     fn run_uinput_smoke_output_is_stable() {
-        let output = run_uinput_smoke("generic-gamepad").expect("uinput smoke");
+        let output = run_uinput_smoke("generic-gamepad", UinputSmokeOptions::default())
+            .expect("uinput smoke");
         assert_snapshot!("run_uinput_smoke_generic_gamepad", output);
     }
 
