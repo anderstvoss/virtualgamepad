@@ -118,7 +118,12 @@ const PHASE_7_COMMANDS: &[&[&str]] = &[
     &["cargo", "insta", "test", "--check"],
 ];
 
-/// Render a prep-only Linux `uinput` smoke report for a built-in profile.
+const PHASE_8_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+];
+
+/// Render a Linux `uinput` smoke report for a built-in profile.
 ///
 /// # Errors
 ///
@@ -128,7 +133,8 @@ pub fn run_uinput_smoke(profile_id: &str) -> Result<String, CliError> {
     let profile = lookup_profile(profile_id)?;
     let factory = LinuxUinputBackendFactory::new();
     let request = uinput_realization_request(profile, FidelityTier::Compatibility);
-    let report = factory.smoke_report(&profile.profile_id, &request);
+    let mut report = factory.smoke_report(&profile.profile_id, &request);
+    normalize_uinput_report_for_snapshots(&mut report);
     serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
 }
 
@@ -1300,7 +1306,8 @@ fn build_support_report_entry(
 ) -> SupportReportEntry {
     let request = uinput_realization_request(profile, fidelity_tier);
     let support = factory.can_realize(&request);
-    let smoke_report = factory.smoke_report(&profile.profile_id, &request);
+    let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
+    normalize_uinput_report_for_snapshots(&mut smoke_report);
 
     SupportReportEntry {
         profile_id: profile.profile_id.to_string(),
@@ -1325,8 +1332,9 @@ fn build_support_report_entry(
         evidence: vec![
             SupportEvidenceItem {
                 check: "command-surface",
-                status: "scaffolded",
-                detail: "run-uinput-smoke is available in gr-cli and vgpd-demo".to_string(),
+                status: "implemented",
+                detail: "run-uinput-smoke and support-report are available in gr-cli and vgpd-demo"
+                    .to_string(),
             },
             SupportEvidenceItem {
                 check: "tier-b-runner",
@@ -1336,17 +1344,32 @@ fn build_support_report_entry(
             },
             SupportEvidenceItem {
                 check: "device-creation",
-                status: "pending-linux-host",
-                detail: smoke_report
-                    .planned_ioctl_sequence
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "no ioctl sequence recorded".to_string()),
+                status: if smoke_report.open_result == "created" {
+                    "verified-on-host"
+                } else {
+                    "pending-linux-host"
+                },
+                detail: format!(
+                    "{}{}",
+                    smoke_report.open_result,
+                    smoke_report
+                        .device_node
+                        .as_ref()
+                        .map_or_else(String::new, |node| format!(" ({node})"),)
+                ),
             },
             SupportEvidenceItem {
                 check: "reverse-path",
-                status: "pending-linux-host",
-                detail: smoke_report.reverse_path.clone(),
+                status: if smoke_report.capability_summary.ff_effects.is_empty() {
+                    "not-declared"
+                } else {
+                    "implemented"
+                },
+                detail: format!(
+                    "{} [{}]",
+                    smoke_report.reverse_path,
+                    smoke_report.capability_summary.ff_effects.join(", ")
+                ),
             },
         ],
         command_hint: format!("gr-cli run-uinput-smoke {}", profile.profile_id),
@@ -1359,6 +1382,14 @@ fn serde_name<T: Serialize>(value: &T) -> String {
         .ok()
         .and_then(|value| value.as_str().map(ToString::to_string))
         .unwrap_or_else(|| "<unknown>".to_string())
+}
+
+fn normalize_uinput_report_for_snapshots(
+    report: &mut gr_provider_linux_uinput::LinuxUinputSmokeReport,
+) {
+    if cfg!(test) {
+        report.device_node = None;
+    }
 }
 
 fn run_phase_gate_command(repo_root: &Path, command: &[String]) -> PhaseGateCheckResult {
@@ -1417,7 +1448,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        8..=12 => Err(CliError::UnimplementedPhase { phase }),
+        8 => Ok(PHASE_8_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        9..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -1477,9 +1512,10 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
-        PHASE_6_COMMANDS, capability_coverage, list_profiles, phase_gate_commands, plan_session,
-        replay_trace, repo_root, repo_root_from, run_uinput_smoke, show_capabilities,
-        simulate_session, support_report, validate_config, validate_fixture,
+        PHASE_6_COMMANDS, PHASE_8_COMMANDS, capability_coverage, list_profiles,
+        phase_gate_commands, plan_session, replay_trace, repo_root, repo_root_from,
+        run_uinput_smoke, show_capabilities, simulate_session, support_report, validate_config,
+        validate_fixture,
     };
     use insta::assert_snapshot;
     use std::path::Path;
@@ -1836,6 +1872,48 @@ mod tests {
             assert!(
                 automated.contains(&command),
                 "phase 6 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn phase_eight_commands_match_expected_order() {
+        let commands = phase_gate_commands(8).expect("phase 8 commands");
+        let expected = PHASE_8_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
+    }
+
+    #[test]
+    fn phase_eight_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_eight = plan
+            .split("## Phase 8:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 9:").next())
+            .expect("phase 8 section");
+        let automated = phase_eight
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_8_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 8 automated section is missing {command}"
             );
         }
     }
