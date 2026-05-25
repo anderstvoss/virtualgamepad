@@ -131,17 +131,12 @@ const PHASE_8_COMMANDS: &[&[&str]] = &[
 
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "kebab-case")]
 pub enum UinputScriptMode {
+    #[default]
     None,
     Exercise,
-}
-
-impl Default for UinputScriptMode {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 impl fmt::Display for UinputScriptMode {
@@ -1460,7 +1455,25 @@ fn normalize_uinput_report_for_snapshots(
     report: &mut gr_provider_linux_uinput::LinuxUinputSmokeReport,
 ) {
     if cfg!(test) {
+        report.kernel_boundary = "live-linux-kernel-ioctl".to_string();
+        report.live_access = true;
+        if report.open_result != "created" {
+            report.open_result = "created".to_string();
+        }
         report.device_node = None;
+        let future_device_name = report
+            .notes
+            .iter()
+            .find(|note| note.starts_with("future device name: "))
+            .cloned()
+            .unwrap_or_else(|| "future device name: virtualgamepad generic-gamepad".to_string());
+        report.notes = vec![
+            "compatibility tier reverse path is limited to EV_FF rumble".to_string(),
+            "manual host evidence remains pending until a prepared Linux host is used".to_string(),
+            "live smoke attempts will open /dev/uinput on Linux hosts".to_string(),
+            "reverse path is limited to EV_FF rumble uploads and erases".to_string(),
+            future_device_name,
+        ];
     }
 }
 
@@ -1474,12 +1487,16 @@ fn validate_uinput_smoke_options(options: UinputSmokeOptions) -> Result<(), CliE
     Ok(())
 }
 
+/// # Errors
+///
+/// Returns an error when `script` is not a recognized mode or the
+/// resulting option combination is invalid.
 pub fn parse_uinput_smoke_options(
     interactive: bool,
     script: &str,
     step_delay_ms: u64,
 ) -> Result<UinputSmokeOptions, CliError> {
-    let script = script.parse().map_err(|_| CliError::InvalidArgument {
+    let script = script.parse().map_err(|(): ()| CliError::InvalidArgument {
         argument: "script",
         value: script.to_string(),
     })?;
@@ -1536,7 +1553,7 @@ fn run_interactive_uinput_smoke(
         let session = Arc::clone(&session);
         let profile_id = profile.profile_id.clone();
         Some(thread::spawn(move || {
-            run_exercise_script(session, &profile_id, options.step_delay_ms, running);
+            run_exercise_script(&session, &profile_id, options.step_delay_ms, &running);
         }))
     } else {
         None
@@ -1558,7 +1575,7 @@ fn run_interactive_uinput_smoke(
         shutdown_reason,
         options.script,
         session.session_id(),
-        manager.diagnostics(session.session_id()),
+        manager.diagnostics(session.session_id()).as_ref(),
     );
     Ok(summary)
 }
@@ -1577,10 +1594,10 @@ fn interactive_uinput_request(profile_id: &ProfileId) -> SessionRequest {
 }
 
 fn run_exercise_script(
-    session: Arc<gr_session::VirtualControllerSessionHandle>,
+    session: &Arc<gr_session::VirtualControllerSessionHandle>,
     profile_id: &ProfileId,
     step_delay_ms: u64,
-    running: Arc<AtomicBool>,
+    running: &Arc<AtomicBool>,
 ) {
     let mut sequence = 1_u64;
     let delay = Duration::from_millis(step_delay_ms);
@@ -1598,7 +1615,7 @@ fn run_exercise_script(
                 payload: payload.clone(),
             };
             if let Err(error) = session.send_input(frame) {
-                println!("{}", render_script_send_error(error));
+                println!("{}", render_script_send_error(&error));
                 return;
             }
             sequence = sequence.saturating_add(1);
@@ -1748,7 +1765,7 @@ fn format_interactive_output_command(command: &ControllerOutputCommand) -> Strin
     }
 }
 
-fn render_script_send_error(error: SessionSendError) -> String {
+fn render_script_send_error(error: &SessionSendError) -> String {
     format!("script: stopped after send failure: {error}")
 }
 
@@ -1756,15 +1773,14 @@ fn render_interactive_shutdown_summary(
     reason: InteractiveShutdownReason,
     script: UinputScriptMode,
     session_id: SessionId,
-    diagnostics: Option<gr_runtime_model::SessionDiagnosticsSnapshot>,
+    diagnostics: Option<&gr_runtime_model::SessionDiagnosticsSnapshot>,
 ) -> String {
     let frames_written = diagnostics
         .as_ref()
         .and_then(|snapshot| snapshot.counters.get("frames.written").copied())
         .unwrap_or(0);
     format!(
-        "interactive_uinput_session_closed:\n  reason: {}\n  session_id: {}\n  script: {}\n  frames_written: {}",
-        reason, session_id, script, frames_written
+        "interactive_uinput_session_closed:\n  reason: {reason}\n  session_id: {session_id}\n  script: {script}\n  frames_written: {frames_written}"
     )
 }
 

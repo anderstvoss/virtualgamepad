@@ -78,8 +78,14 @@ enum Command {
 }
 
 fn main() {
-    let cli = Cli::parse();
-    let result: Result<(), String> = match cli.command {
+    if let Err(error) = run() {
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<(), String> {
+    match Cli::parse().command {
         Command::Info => {
             print_info();
             Ok(())
@@ -88,72 +94,27 @@ fn main() {
             print_show_types();
             Ok(())
         }
-        Command::PhaseGate { phase } => phase_gate::run(phase).map_err(|e| e.to_string()),
-        Command::ListProfiles => match gr_cli::list_profiles() {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
-        Command::ShowCapabilities { profile_id } => match gr_cli::show_capabilities(&profile_id) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
-        Command::ValidateConfig { path } => match gr_cli::validate_config(path) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
-        Command::SimulateSession { path } => match gr_cli::simulate_session(path, None) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
-        Command::ManySessions { count } => match gr_cli::many_sessions(count) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
+        Command::PhaseGate { phase } => phase_gate::run(phase).map_err(|error| error.to_string()),
+        Command::ListProfiles => print_output(gr_cli::list_profiles()),
+        Command::ShowCapabilities { profile_id } => {
+            print_output(gr_cli::show_capabilities(&profile_id))
+        }
+        Command::ValidateConfig { path } => print_output(gr_cli::validate_config(path)),
+        Command::SimulateSession { path } => print_output(gr_cli::simulate_session(path, None)),
+        Command::ManySessions { count } => print_output(gr_cli::many_sessions(count)),
         Command::RunUinputSmoke {
             profile_id,
             interactive,
             script,
             step_delay_ms,
-        } => match gr_cli::parse_uinput_smoke_options(interactive, &script, step_delay_ms)
-            .and_then(|options| gr_cli::run_uinput_smoke(&profile_id, options))
-        {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
+        } => print_output(
+            gr_cli::parse_uinput_smoke_options(interactive, &script, step_delay_ms)
+                .and_then(|options| gr_cli::run_uinput_smoke(&profile_id, options)),
+        ),
         Command::SupportReport { profile, tier } => {
-            match gr_cli::support_report(profile.as_deref(), tier.as_deref()) {
-                Ok(output) => {
-                    println!("{output}");
-                    Ok(())
-                }
-                Err(error) => Err(error.to_string()),
-            }
+            print_output(gr_cli::support_report(profile.as_deref(), tier.as_deref()))
         }
-        Command::ReplayTrace { path } => match gr_cli::replay_trace(path) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
+        Command::ReplayTrace { path } => print_output(gr_cli::replay_trace(path)),
         Command::PlanSession {
             profile_id,
             goal,
@@ -162,7 +123,7 @@ fn main() {
             backend_preference,
             provider_preference,
             session_id,
-        } => match gr_cli::plan_session(
+        } => print_output(gr_cli::plan_session(
             &profile_id,
             &goal,
             inventory,
@@ -170,26 +131,21 @@ fn main() {
             backend_preference.as_deref(),
             provider_preference.as_deref(),
             session_id,
-        ) {
-            Ok(output) => {
-                println!("{output}");
-                Ok(())
-            }
-            Err(error) => Err(error.to_string()),
-        },
-    };
-
-    if let Err(error) = result {
-        eprintln!("{error}");
-        std::process::exit(1);
+        )),
     }
+}
+
+fn print_output(result: Result<String, impl ToString>) -> Result<(), String> {
+    let output = result.map_err(|error| error.to_string())?;
+    println!("{output}");
+    Ok(())
 }
 
 fn print_info() {
     println!("vgpd-demo {}", env!("CARGO_PKG_VERSION"));
     println!("companion demo for the virtualgamepad workspace");
     println!();
-    println!("library status: through Phase 7 session runtime and trace tooling");
+    println!("library status: through Phase 8 Linux uinput provider support");
     println!(
         "demo status:    gate runner, profile review, config validation, simulate-session, many-sessions, run-uinput-smoke, support-report, replay-trace, plan-session"
     );

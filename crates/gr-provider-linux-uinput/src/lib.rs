@@ -2,7 +2,14 @@
 
 #![allow(clippy::module_name_repetitions)]
 
+#[cfg(target_os = "linux")]
 mod kernel;
+
+#[cfg(not(target_os = "linux"))]
+mod kernel {
+    #[derive(Default)]
+    pub(crate) struct LiveLinuxKernelIoctl;
+}
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
