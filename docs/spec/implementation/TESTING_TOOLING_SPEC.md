@@ -473,7 +473,7 @@ Commands:
 | `gr-cli simulate-session <scenario>` | Run a `session-scenario` fixture against a fake backend; emit per-step trace |
 | `gr-cli replay-trace <path>` | Replay a `backend-trace` fixture through a translator pair; emit decoded outputs |
 | `gr-cli capability-coverage [--profile <id>]` | Cross-check declared capabilities against translator coverage; exit non-zero on gap |
-| `gr-cli run-uinput-smoke <profile>` | Emit the prep/validation smoke report for the Linux `uinput` provider, including planned ioctl sequencing and support notes |
+| `gr-cli run-uinput-smoke <profile>` | Emit the Linux `uinput` smoke report for a one-shot create/report/teardown probe; suitable for CI/report evidence, but not by itself a persistent manual host-inspection session |
 | `gr-cli support-report [--profile <id>] [--tier <tier>]` | Generate the support-claim evidence report described in [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report) |
 | `vgpd-demo phase-gate <N>` | Run the deterministic portion of Phase N's gate (via the `gr_cli::run_phase_gate_auto` library entry point); exit 0 / non-zero |
 
@@ -517,7 +517,7 @@ Snapshot-worthy outputs:
 - Descriptor templates (compact hex + decoded form)
 - Capability summaries per profile
 - Diagnostics snapshots after a canned scenario run
-- `run-uinput-smoke` outputs (Phase 8 prep: command surface + planned ioctl sequence; Phase 8 implementation: real device evidence)
+- `run-uinput-smoke` outputs (Phase 8 prep: command surface + planned ioctl sequence; Phase 8 implementation: real device evidence from a one-shot probe)
 - `support-report` outputs (per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md))
 
 Rules:

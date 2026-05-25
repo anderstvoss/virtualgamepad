@@ -36,7 +36,7 @@ enum Command {
     SimulateSession { path: std::path::PathBuf },
     /// Spin up many concurrent fake-backed runtime sessions.
     ManySessions { count: usize },
-    /// Render the prep-only Linux uinput smoke report for a profile.
+    /// Run a one-shot Linux uinput smoke probe for a profile and print the report.
     RunUinputSmoke { profile_id: String },
     /// Generate the initial support-claim evidence report.
     SupportReport {

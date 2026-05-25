@@ -13,7 +13,7 @@ The demo grows in lockstep with library phases. Highlights:
 - **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
 - **Phase 4 (runtime fake gate)** — shipped: `simulate-session` and `replay-trace` exercise fake backend sessions and recorded trace review.
 - **Phases 5–7 (runtime gates)** — adds `plan-session`, runtime-backed `simulate-session`, and `many-sessions` on top of the Phase 4 trace surface.
-- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. The demo brings up real virtual devices on Linux and prints what host software sees.
+- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. Today these are primarily one-shot probe/report commands: they bring up real virtual devices on Linux, print report evidence, and then exit. A persistent host-inspection surface is still follow-up work where a gate needs `evtest`, `jstest`, SDL, or game-driven manual validation.
 - **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
 - **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
 

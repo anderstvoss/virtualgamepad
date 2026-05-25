@@ -58,7 +58,7 @@ enum Command {
     CapabilityCoverage,
     /// Spin up many fake-backed sessions and print their status.
     ManySessions { count: usize },
-    /// Render the prep-only Linux uinput smoke report for a profile.
+    /// Run a one-shot Linux uinput smoke probe for a profile and print the report.
     RunUinputSmoke { profile_id: String },
     /// Generate the initial support-claim evidence report.
     SupportReport {
