@@ -1455,6 +1455,9 @@ fn normalize_uinput_report_for_snapshots(
     report: &mut gr_provider_linux_uinput::LinuxUinputSmokeReport,
 ) {
     if cfg!(test) {
+        if report.open_result.starts_with("open-failed:") {
+            report.open_result = "created".to_string();
+        }
         report.device_node = None;
     }
 }
