@@ -417,6 +417,11 @@ version = "0.1.0"
 [[package]]
 name = "gr-provider-linux-uhid"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-runtime-model",
+]
 
 [[package]]
 name = "gr-provider-linux-uinput"
