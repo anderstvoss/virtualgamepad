@@ -474,6 +474,9 @@ Commands:
 | `gr-cli replay-trace <path>` | Replay a `backend-trace` fixture through a translator pair; emit decoded outputs |
 | `gr-cli capability-coverage [--profile <id>]` | Cross-check declared capabilities against translator coverage; exit non-zero on gap |
 | `gr-cli run-uinput-smoke <profile>` | Emit the Linux `uinput` smoke report. Default mode is a one-shot create/report/teardown probe for CI/report evidence; `--interactive` keeps the runtime session alive for manual host inspection and `--script exercise` replays representative inputs |
+| `gr-cli run-uhid-smoke <profile> [--bus usb\|bluetooth]` | Emit the Linux `uhid` smoke report. Default mode is a one-shot create/report/teardown probe for CI/report evidence; `--interactive` keeps the runtime session alive for host HID inspection |
+| `gr-cli compare-real-device --profile dualsense [--bus usb\|bluetooth]` | Compare the Phase 9 UHID identity surface against the built-in descriptor template and the captured reverse HID trace reference |
+| `gr-cli run-scenario <path>` | Alias for `simulate-session` matching the reviewer-facing Phase 9 gate wording |
 | `gr-cli support-report [--profile <id>] [--tier <tier>]` | Generate the support-claim evidence report described in [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report) |
 | `vgpd-demo phase-gate <N>` | Run the deterministic portion of Phase N's gate (via the `gr_cli::run_phase_gate_auto` library entry point); exit 0 / non-zero |
 
@@ -518,6 +521,8 @@ Snapshot-worthy outputs:
 - Capability summaries per profile
 - Diagnostics snapshots after a canned scenario run
 - `run-uinput-smoke` outputs (Phase 8 prep: command surface + planned ioctl sequence; Phase 8 implementation: real device evidence from the one-shot probe plus an interactive inspection mode for manual host validation)
+- `run-uhid-smoke` outputs (Phase 9: USB and Bluetooth identity surfaces, planned UHID sequence, and feature-reply coverage)
+- `compare-real-device` outputs (Phase 9 descriptor + reverse-trace comparison report)
 - `support-report` outputs (per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md))
 
 Rules:

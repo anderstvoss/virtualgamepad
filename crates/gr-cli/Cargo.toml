@@ -21,6 +21,7 @@ gr-core = { path = "../gr-core", version = "0.1" }
 gr-host-bridge = { path = "../gr-host-bridge", version = "0.1" }
 gr-planner = { path = "../gr-planner", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }
+gr-provider-linux-uhid = { path = "../gr-provider-linux-uhid", version = "0.1" }
 gr-provider-linux-uinput = { path = "../gr-provider-linux-uinput", version = "0.1" }
 gr-runtime-model = { path = "../gr-runtime-model", version = "0.1" }
 gr-session = { path = "../gr-session", version = "0.1" }

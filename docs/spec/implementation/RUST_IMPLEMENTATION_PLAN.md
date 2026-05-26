@@ -740,6 +740,7 @@ First identity-aware provider. Host software inspecting HID identity recognizes 
 ### Testing tooling additions
 
 - `gr-cli run-uhid-smoke`, `gr-cli compare-real-device`
+- `gr-cli run-scenario` alias for reviewer-facing runtime scenario replay
 - Tier C (real-hardware) fixture replay against the chosen target's captured traces
 - `support-report` output evolves to per-profile evidence per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report)
 
@@ -750,19 +751,21 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] Linux-gated UHID integration tests pass
-- [ ] `gr-cli compare-real-device` matches captured trace within documented tolerance
+- [ ] `cargo run -p gr-cli -- compare-real-device --profile dualsense --bus usb` matches the built-in descriptor template and reverse-trace reference
+- [ ] `cargo run -p gr-cli -- compare-real-device --profile dualsense --bus bluetooth` matches the built-in descriptor template and reverse-trace reference
 - [ ] `vgpd-demo phase-gate 9` exits 0
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo run-uhid-smoke dualsense` brings up a HID device; `hidraw` enumeration shows DualSense vendor/product ids
-- [ ] 2. `lsusb` (where the host expects USB) or `bluetoothctl` shows the expected device identity
-- [ ] 3. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
-- [ ] 4. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
-- [ ] 5. Rumble from a game generates `OutputCommand::Rumble`
-- [ ] 6. Steam (if installed) recognizes the controller in Steam Input
-- [ ] 7. Author a custom session-scenario fixture exercising a Steam Input mode change; the reverse translator handles it
-- [ ] 8. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
+- [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus usb` brings up a HID device; `hidraw` enumeration shows DualSense USB vendor/product ids
+- [ ] 2. `vgpd-demo run-uhid-smoke dualsense --interactive --bus bluetooth` brings up a HID device; `hidraw` enumeration shows the Bluetooth identity surface
+- [ ] 3. `lsusb` (for USB) or `bluetoothctl` (for Bluetooth) shows the expected device identity
+- [ ] 4. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
+- [ ] 5. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
+- [ ] 6. Rumble from a game generates `OutputCommand::Rumble`
+- [ ] 7. Steam (if installed) recognizes the controller in Steam Input
+- [ ] 8. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
+- [ ] 9. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"`
 

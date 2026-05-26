@@ -332,6 +332,7 @@ dependencies = [
  "gr-host-bridge",
  "gr-planner",
  "gr-profiles",
+ "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
  "gr-runtime-model",
  "gr-session",
@@ -420,7 +421,10 @@ version = "0.1.0"
 dependencies = [
  "gr-backend-api",
  "gr-core",
+ "gr-profiles",
  "gr-runtime-model",
+ "libc",
+ "serde",
 ]
 
 [[package]]

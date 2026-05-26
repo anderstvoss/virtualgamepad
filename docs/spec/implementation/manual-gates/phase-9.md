@@ -31,17 +31,29 @@ and product identifiers and that `hidraw` enumerates it.
 
 ### Steps
 
-1. Run:
+1. Run the USB identity surface:
 
 ```bash
-cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense
+cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bus usb
 ```
 
 2. Confirm:
    - the command exits 0
    - the report identifies a created UHID device with a `/dev/hidraw*`
-     node and a DualSense vendor/product id pairing
+     node and the USB DualSense vendor/product id pairing (`0x054c`
+     / `0x0ce6`)
    - `ls /dev/hidraw*` shows the new node while the session is open
+
+3. Repeat for the Bluetooth identity surface:
+
+```bash
+cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bus bluetooth
+```
+
+4. Confirm:
+   - the command exits 0
+   - the report identifies the Bluetooth DualSense identity surface
+     (`0x054c` / `0x0df2`)
 
 ## Check 2: host identity surface matches DualSense
 
@@ -50,17 +62,20 @@ identity for the virtual device.
 
 ### Steps
 
-1. With the smoke session from Check 1 still running, run **one** of:
+1. With the USB smoke session from Check 1 still running, run:
 
 ```bash
 lsusb
+```
+
+2. With the Bluetooth smoke session still running, run:
+
+```bash
 bluetoothctl devices
 ```
 
-(depending on whether the host expects the device on USB or Bluetooth)
-
-2. Confirm:
-   - the listing shows the expected DualSense device identity
+3. Confirm:
+   - each listing shows the expected DualSense device identity
    - the identity strings match the captured-trace reference
 
 ## Check 3: SDL identifies the device as DualSense
@@ -70,7 +85,7 @@ mapping rather than treating the device as a generic gamepad.
 
 ### Steps
 
-1. With the smoke session from Check 1 still running, launch SDL's
+1. With either smoke session from Check 1 still running, launch SDL's
    `controllermap` or `jstest-gtk`.
 2. Confirm:
    - the host software identifies the device as DualSense
@@ -100,7 +115,7 @@ Goal: confirm host rumble requests reach the runtime as normalized
 
 ### Steps
 
-1. With the smoke session from Check 1 still running, trigger rumble
+1. With either smoke session from Check 1 still running, trigger rumble
    from the host (an in-game rumble scene, `fftest`, or equivalent
    tooling that targets the DualSense HID surface).
 2. Confirm:
@@ -114,7 +129,7 @@ controller (skip if Steam is not installed).
 
 ### Steps
 
-1. Launch Steam with the smoke session from Check 1 still running.
+1. Launch Steam with one of the interactive smoke sessions still running.
 2. Open Steam → Settings → Controller.
 3. Confirm:
    - Steam Input lists the virtual device as a DualSense controller
@@ -128,16 +143,13 @@ change end to end.
 
 ### Steps
 
-1. Author a session-scenario fixture at
-   `samples/scenarios/dualsense-steam-input-mode.yaml` that captures a
-   Steam Input mode-change exchange against the running smoke session.
-2. Replay it:
+1. Replay the built-in session-scenario fixture:
 
 ```bash
 cargo run -p gr-cli -- run-scenario samples/scenarios/dualsense-steam-input-mode.yaml
 ```
 
-3. Confirm:
+2. Confirm:
    - the reverse translator emits the expected normalized outputs
    - the scenario exits 0
 
