@@ -225,18 +225,33 @@ impl Default for UhidSmokeOptions {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct CompareRealDeviceReport {
     pub profile_id: ProfileId,
     pub bus_mode: UhidBusMode,
     pub provider: BackendId,
     pub descriptor_matches_profile_template: bool,
+    pub descriptor_head_matches_dualsense: bool,
     pub reverse_trace_matches_reference: bool,
     pub feature_reports_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_report_id: Option<u8>,
+    pub reference_report_id_matches_bus_output: bool,
     pub smoke_report: LinuxUhidSmokeReport,
     pub reference_trace: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
 }
+
+/// Canonical `DualSense` HID report-descriptor signature: Generic
+/// Desktop usage page, Game Pad usage, Application collection,
+/// Report ID 1.
+const DUALSENSE_DESCRIPTOR_HEAD: [u8; 8] = [
+    0x05, 0x01, // Usage Page (Generic Desktop)
+    0x09, 0x05, // Usage (Game Pad)
+    0xA1, 0x01, // Collection (Application)
+    0x85, 0x01, // Report ID (1)
+];
 
 /// Render a Linux `uinput` smoke report for a built-in profile.
 ///
@@ -300,11 +315,18 @@ pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<St
     let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
     normalize_uhid_report_for_snapshots(&mut smoke_report);
     let identity = smoke_report.identity.clone();
-    let descriptor_matches_profile_template = profile
+    let identity_descriptor = profile
         .descriptor_templates
         .iter()
-        .find(|template| template.fidelity == FidelityTier::IdentityAware)
+        .find(|template| template.fidelity == FidelityTier::IdentityAware);
+    let descriptor_matches_profile_template = identity_descriptor
         .is_some_and(|template| template.descriptor.0.len() == identity.descriptor_size);
+    let descriptor_head_matches_dualsense = identity_descriptor.is_some_and(|template| {
+        template
+            .descriptor
+            .0
+            .starts_with(&DUALSENSE_DESCRIPTOR_HEAD)
+    });
     let feature_reports_available = smoke_report
         .planned_kernel_sequence
         .iter()
@@ -313,26 +335,88 @@ pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<St
     let repo_root = repo_root()?;
     let reference_trace_path =
         repo_root.join("crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml");
-    let reference_trace = replay_trace(reference_trace_path)?;
-    let reverse_trace_matches_reference = reference_trace.contains("Semantic(Rumble)")
-        && reference_trace.contains("Semantic(TriggerEffect)")
-        && reference_trace.contains("Semantic(Audio)");
+    let reference_report_id = load_reference_report_id(&reference_trace_path)?;
+    let reference_report_id_matches_bus_output =
+        reference_report_id == Some(identity.output_report_id);
+    let reference_trace = replay_trace(&reference_trace_path)?;
+    // Substring checks against the exact payload values emitted by the
+    // Phase 6 reverse translator for the captured DualSense output report.
+    // These are stronger than presence-of-kind because they catch silent
+    // changes to the rumble/trigger/lighting decode paths.
+    let reverse_trace_matches_reference = reference_trace
+        .contains("Rumble(RumblePayload { strong: 5140, weak: 2570 })")
+        && reference_trace.contains("\"left-strength\": \"30\"")
+        && reference_trace.contains("\"right-strength\": \"40\"")
+        && reference_trace
+            .contains("LightingPayload { red: Some(100), green: Some(110), blue: Some(120)")
+        && reference_trace.contains("player_index: Some(3)")
+        && reference_trace.contains("AudioCommand { action: \"speaker-update\"");
+
+    let mut notes = vec![
+        "comparison uses the built-in DualSense descriptor template and the Phase 6 reverse HID fixture as the captured reference".to_string(),
+        "Bluetooth mode currently reuses the HID descriptor template while varying identity metadata and canned feature replies".to_string(),
+    ];
+    if bus_mode == UhidBusMode::Bluetooth {
+        notes.push(
+            "Bluetooth identity reuses the USB device_name string; SDL still recognizes via vid/pid"
+                .to_string(),
+        );
+    }
+    if !reference_report_id_matches_bus_output {
+        notes.push(format!(
+            "reference fixture report_id={:?} does not match the {} output report id 0x{:02x} (the captured trace is USB-shaped; a BT-shaped fixture lands when one is captured)",
+            reference_report_id, bus_mode, identity.output_report_id,
+        ));
+    }
 
     let report = CompareRealDeviceReport {
         profile_id: profile.profile_id.clone(),
         bus_mode,
         provider: factory.backend_id(),
         descriptor_matches_profile_template,
+        descriptor_head_matches_dualsense,
         reverse_trace_matches_reference,
         feature_reports_available,
+        reference_report_id,
+        reference_report_id_matches_bus_output,
         smoke_report,
         reference_trace,
-        notes: vec![
-            "comparison uses the built-in DualSense descriptor template and the Phase 6 reverse HID fixture as the captured reference".to_string(),
-            "Bluetooth mode currently reuses the HID descriptor template while varying identity metadata and canned feature replies".to_string(),
-        ],
+        notes,
     };
     serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+}
+
+/// Extract the `report_id` of the first `hid-output-report` step in a
+/// captured backend-trace fixture. Returns `None` when the fixture does
+/// not carry one (e.g. evdev-only traces).
+fn load_reference_report_id(path: &Path) -> Result<Option<u8>, CliError> {
+    let contents = std::fs::read_to_string(path).map_err(|error| CliError::Fixture {
+        path: path.to_path_buf(),
+        source: FixtureError::Io(error),
+    })?;
+    let value: serde_yaml::Value =
+        serde_yaml::from_str(&contents).map_err(|error| CliError::Fixture {
+            path: path.to_path_buf(),
+            source: FixtureError::Parse(error),
+        })?;
+    let steps = value
+        .get("payload")
+        .and_then(|payload| payload.get("steps"))
+        .and_then(|steps| steps.as_sequence());
+    let Some(steps) = steps else {
+        return Ok(None);
+    };
+    for step in steps {
+        let report_id = step
+            .get("event")
+            .and_then(|event| event.get("payload"))
+            .and_then(|payload| payload.get("report_id"))
+            .and_then(serde_yaml::Value::as_u64);
+        if let Some(report_id) = report_id {
+            return Ok(u8::try_from(report_id).ok());
+        }
+    }
+    Ok(None)
 }
 
 /// Generate the initial support-claim evidence skeleton.
@@ -1753,6 +1837,17 @@ fn normalize_uinput_report_for_snapshots(
     }
 }
 
+/// Force a known-stable shape on the `LinuxUhidSmokeReport` so that
+/// insta snapshots compare byte-for-byte across Linux hosts (with and
+/// without `/dev/uhid` access) and macOS dev machines.
+///
+/// The normalizer fires only under `cfg!(test)` — phase-gate
+/// invocations of `gr-cli compare-real-device` and `gr-cli
+/// run-uhid-smoke` are *not* normalized. Those callers produce
+/// host-dependent `kernel_boundary` / `live_access` / `open_result`
+/// values reflecting reality (the phase gate checks exit codes, not
+/// byte-stable output). The pattern matches the sibling
+/// `normalize_uinput_report_for_snapshots`.
 fn normalize_uhid_report_for_snapshots(report: &mut LinuxUhidSmokeReport) {
     if cfg!(test) {
         report.kernel_boundary = "live-linux-kernel-ioctl".to_string();
@@ -2955,6 +3050,12 @@ mod tests {
     fn compare_real_device_output_is_stable() {
         let output = compare_real_device("dualsense", UhidBusMode::Usb).expect("comparison");
         assert_snapshot!("compare_real_device_dualsense_usb", output);
+    }
+
+    #[test]
+    fn compare_real_device_bluetooth_output_is_stable() {
+        let output = compare_real_device("dualsense", UhidBusMode::Bluetooth).expect("comparison");
+        assert_snapshot!("compare_real_device_dualsense_bluetooth", output);
     }
 
     #[test]

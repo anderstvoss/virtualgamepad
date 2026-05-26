@@ -3,14 +3,14 @@ source: crates/gr-cli/src/lib.rs
 expression: output
 ---
 profile_id: dualsense
-bus_mode: usb
+bus_mode: bluetooth
 provider: linux-uhid
 descriptor_matches_profile_template: true
 descriptor_head_matches_dualsense: true
 reverse_trace_matches_reference: true
 feature_reports_available: true
 reference_report_id: 2
-reference_report_id_matches_bus_output: true
+reference_report_id_matches_bus_output: false
 smoke_report:
   profile_id: dualsense
   backend_id: linux-uhid
@@ -19,15 +19,15 @@ smoke_report:
   host_platform: linux
   requested_fidelity_tier: identity-aware
   identity:
-    bus_mode: usb
-    bus_label: usb
-    bus_type: 3
+    bus_mode: bluetooth
+    bus_label: bluetooth
+    bus_type: 5
     vendor_id: 1356
-    product_id: 3302
+    product_id: 3570
     version: 256
     device_name: Sony Interactive Entertainment DualSense Wireless Controller
-    input_report_id: 1
-    output_report_id: 2
+    input_report_id: 49
+    output_report_id: 49
     descriptor_size: 273
   reverse_path: hid-output-and-feature-reports
   kernel_boundary: live-linux-kernel-ioctl
@@ -35,9 +35,9 @@ smoke_report:
   open_result: created
   planned_kernel_sequence:
   - open /dev/uhid for profile `dualsense`
-  - UHID_CREATE2 Sony Interactive Entertainment DualSense Wireless Controller bus=usb vid=0x054c pid=0x0ce6
-  - UHID_INPUT2 report_id=0x01 bytes=64
-  - reverse output report_id=0x02 bytes=48
+  - UHID_CREATE2 Sony Interactive Entertainment DualSense Wireless Controller bus=bluetooth vid=0x054c pid=0x0df2
+  - UHID_INPUT2 report_id=0x31 bytes=78
+  - reverse output report_id=0x31 bytes=78
   - feature reply report_id=0x05
   - feature reply report_id=0x09
   - feature reply report_id=0x20
@@ -60,10 +60,12 @@ smoke_report:
   - bus-specific identity is factory-selected; runtime planning remains `linux-uhid`
   - live smoke attempts will open `/dev/uhid` on Linux hosts
   - feature requests receive provider-local canned replies for known DualSense report ids
-  - 'identity surface: usb vid=0x054c pid=0x0ce6'
+  - 'identity surface: bluetooth vid=0x054c pid=0x0df2'
 reference_trace: |
   trace: dualsense-rumble-from-host
   1. inbound hid-output-report target=none report_id=0x02 bytes=[00 00 00 0a 14 00 00 00 00 01 00 07 1e 28 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 03 64 6e 78] => Semantic(Rumble):Rumble(RumblePayload { strong: 5140, weak: 2570 }) | Semantic(Lighting):Lighting(LightingPayload { red: Some(100), green: Some(110), blue: Some(120), player_index: None }) | Semantic(PlayerIndicators):Lighting(LightingPayload { red: None, green: None, blue: None, player_index: Some(3) }) | Semantic(TriggerEffect):TriggerEffect(TriggerEffectPayload { mode: "0x07", parameters: {"left-strength": "30", "right-strength": "40"} }) | Semantic(Audio):Audio(AudioCommand { action: "speaker-update", target: Some("speaker") })
 notes:
 - comparison uses the built-in DualSense descriptor template and the Phase 6 reverse HID fixture as the captured reference
 - Bluetooth mode currently reuses the HID descriptor template while varying identity metadata and canned feature replies
+- Bluetooth identity reuses the USB device_name string; SDL still recognizes via vid/pid
+- reference fixture report_id=Some(2) does not match the bluetooth output report id 0x31 (the captured trace is USB-shaped; a BT-shaped fixture lands when one is captured)

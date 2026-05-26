@@ -757,15 +757,14 @@ Automated portion:
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus usb` brings up a HID device; `hidraw` enumeration shows DualSense USB vendor/product ids
-- [ ] 2. `vgpd-demo run-uhid-smoke dualsense --interactive --bus bluetooth` brings up a HID device; `hidraw` enumeration shows the Bluetooth identity surface
-- [ ] 3. `lsusb` (for USB) or `bluetoothctl` (for Bluetooth) shows the expected device identity
-- [ ] 4. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
-- [ ] 5. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
-- [ ] 6. Rumble from a game generates `OutputCommand::Rumble`
-- [ ] 7. Steam (if installed) recognizes the controller in Steam Input
-- [ ] 8. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
-- [ ] 9. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
+- [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus {usb,bluetooth}` each bring up a HID device; `hidraw` enumeration shows the DualSense USB (`0x054c`/`0x0ce6`) and Bluetooth (`0x054c`/`0x0df2`) identity surfaces
+- [ ] 2. `lsusb` (for USB) or `bluetoothctl` (for Bluetooth) shows the expected device identity
+- [ ] 3. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
+- [ ] 4. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
+- [ ] 5. Rumble from a game generates `OutputCommand::Rumble`
+- [ ] 6. Steam (if installed) recognizes the controller in Steam Input
+- [ ] 7. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
+- [ ] 8. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"`
 

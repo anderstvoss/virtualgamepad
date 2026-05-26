@@ -53,6 +53,16 @@ const DUALSENSE_REPORT_ID_FEATURE_PAIRING_INFO: u8 = 0x09;
 const DUALSENSE_REPORT_ID_FEATURE_FIRMWARE_INFO: u8 = 0x20;
 const DUALSENSE_REPORT_ID_INPUT_BT: u8 = 0x31;
 const DUALSENSE_REPORT_ID_OUTPUT_BT: u8 = 0x31;
+// Firmware-info feature report (0x20) layout used by provider-local
+// canned replies. The DualSense firmware reports its bus tag at byte 1
+// (0x01 USB / 0x02 BT) and a fixed 16-bit version word at bytes 2-3
+// (little-endian 0x2100). The remaining payload bytes are left zero —
+// host enumeration is satisfied by the bus tag + version.
+const DUALSENSE_FW_INFO_BUS_TAG_USB: u8 = 0x01;
+const DUALSENSE_FW_INFO_BUS_TAG_BT: u8 = 0x02;
+const DUALSENSE_FW_INFO_VERSION_LSB: u8 = 0x00;
+const DUALSENSE_FW_INFO_VERSION_MSB: u8 = 0x21;
+
 const DUALSENSE_REPORT_LEN_INPUT_USB: usize = 64;
 const DUALSENSE_REPORT_LEN_OUTPUT_USB: usize = 48;
 const DUALSENSE_REPORT_LEN_INPUT_BT: usize = 78;
@@ -285,6 +295,11 @@ impl LinuxUhidBackendFactory {
                 vendor_id: DUALSENSE_USB_VENDOR_ID,
                 product_id: DUALSENSE_BT_PRODUCT_ID,
                 version: DUALSENSE_VERSION,
+                // TODO(phase-9-followup): a real DualSense advertises a
+                // distinct BT name (the `hid-playstation` driver keys
+                // off the USB-style string for both buses, so SDL still
+                // recognizes via vid/pid; revisit if any consumer keys
+                // off the advertised BT name).
                 device_name: "Sony Interactive Entertainment DualSense Wireless Controller"
                     .to_string(),
                 phys: "virtualgamepad/dualsense-bluetooth".to_string(),
@@ -803,12 +818,13 @@ fn feature_payload_for(bus_mode: UhidBusMode, report_id: u8, len: usize) -> Vec<
         *first = report_id;
     }
     if report_id == DUALSENSE_REPORT_ID_FEATURE_FIRMWARE_INFO && payload.len() >= 12 {
+        // byte 1: bus tag, bytes 2-3: little-endian firmware version word.
         payload[1] = match bus_mode {
-            UhidBusMode::Usb => 0x01,
-            UhidBusMode::Bluetooth => 0x02,
+            UhidBusMode::Usb => DUALSENSE_FW_INFO_BUS_TAG_USB,
+            UhidBusMode::Bluetooth => DUALSENSE_FW_INFO_BUS_TAG_BT,
         };
-        payload[2] = 0x00;
-        payload[3] = 0x21;
+        payload[2] = DUALSENSE_FW_INFO_VERSION_LSB;
+        payload[3] = DUALSENSE_FW_INFO_VERSION_MSB;
     }
     payload
 }
