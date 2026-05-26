@@ -10,6 +10,9 @@ Host prerequisites:
 
 - A Linux host with `/dev/uhid` available and the runner user in the
   `input` group (or equivalent udev rule granting `/dev/uhid` access).
+- If the host is not already prepared, install the sample rule with
+  `sudo ./samples/setup/install-linux-input-rules.sh` and verify
+  `/dev/uhid` is group-owned by `input` before starting the gate.
 - `hidraw` enumeration tools (`lsusb`, `bluetoothctl`, or `hid-tools`).
 - SDL or `jstest-gtk` installed for gamepad-mapping recognition.
 - A real DualSense controller for capture comparison, **or** the

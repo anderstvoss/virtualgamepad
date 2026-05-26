@@ -1,0 +1,1 @@
+SUBSYSTEM=="misc", KERNEL=="uhid", GROUP="input", MODE="0660"

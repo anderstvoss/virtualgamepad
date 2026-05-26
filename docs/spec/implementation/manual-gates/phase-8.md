@@ -10,6 +10,15 @@ Start with:
 cargo run -p virtual_gamepad_demo -- phase-gate 8
 ```
 
+If the host is not already prepared, install the sample rule with:
+
+```bash
+sudo ./samples/setup/install-linux-input-rules.sh
+```
+
+Then verify `/dev/uinput` is group-owned by `input` before starting the
+interactive checks.
+
 ## Check 1: generic gamepad device visibility
 
 Goal: confirm the generic-gamepad smoke path can create a Linux input
