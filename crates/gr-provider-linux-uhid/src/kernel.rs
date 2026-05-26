@@ -6,6 +6,8 @@ use std::fs;
 use std::io;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
+use std::thread;
+use std::time::Duration;
 
 use gr_backend_api::{
     BackendError, BackendReverseEventKind, BackendReverseEventSink, EventReadiness, ReadinessHandle,
@@ -348,7 +350,10 @@ fn read_raw_event(fd: RawFd) -> Result<[u8; UHID_RAW_EVENT_LEN], BackendError> {
         return Err(read_error("read uhid event"));
     }
     if read == 0 {
-        return Err(BackendError::WouldBlock);
+        // EOF on `/dev/uhid` means the kernel hung up the session
+        // (module unload, device destroyed). Treat as closed rather
+        // than would-block to avoid an unbounded retry spin.
+        return Err(BackendError::SessionClosed);
     }
     Ok(raw)
 }
@@ -374,10 +379,32 @@ fn write_raw_event(fd: RawFd, raw: &[u8; UHID_RAW_EVENT_LEN]) -> Result<(), Back
 }
 
 fn discover_hidraw_node(spec: &LinuxUhidDeviceSpec) -> Option<String> {
+    // The kernel populates `/sys/class/hidraw/hidrawN/device/uevent`
+    // asynchronously after `UHID_CREATE2`. Retry briefly so callers see
+    // the node on properly-set-up hosts without blocking the smoke
+    // report indefinitely. Returning `None` after the loop remains
+    // non-fatal.
+    const SCAN_ATTEMPTS: usize = 5;
+    const SCAN_INTERVAL: Duration = Duration::from_millis(20);
+
+    for attempt in 0..SCAN_ATTEMPTS {
+        if let Some(node) = scan_hidraw_once(spec) {
+            return Some(node);
+        }
+        if attempt + 1 < SCAN_ATTEMPTS {
+            thread::sleep(SCAN_INTERVAL);
+        }
+    }
+    None
+}
+
+fn scan_hidraw_once(spec: &LinuxUhidDeviceSpec) -> Option<String> {
     let entries = fs::read_dir("/sys/class/hidraw").ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
-        let uevent = fs::read_to_string(path.join("device/uevent")).ok()?;
+        let Ok(uevent) = fs::read_to_string(path.join("device/uevent")) else {
+            continue;
+        };
         let mut hid_id = None;
         let mut hid_name = None;
         for line in uevent.lines() {
@@ -397,23 +424,36 @@ fn discover_hidraw_node(spec: &LinuxUhidDeviceSpec) -> Option<String> {
         if hid_name != spec.identity.device_name {
             continue;
         }
-        let expected_bus = match spec.identity.bus_type {
-            BUS_USB => "0003",
-            BUS_BLUETOOTH => "0005",
-            _ => continue,
-        };
-        let expected_vendor_hex = format!("{:08x}", u32::from(spec.identity.vendor_id));
-        let expected_product_hex = format!("{:08x}", u32::from(spec.identity.product_id));
-        let parts = hid_id.split(':').collect::<Vec<_>>();
-        if parts.len() == 3
-            && parts[0] == expected_bus
-            && parts[1].eq_ignore_ascii_case(&expected_vendor_hex)
-            && parts[2].eq_ignore_ascii_case(&expected_product_hex)
-        {
-            return Some(format!("/dev/{}", entry.file_name().to_string_lossy()));
+        if !hid_id_matches(
+            &hid_id,
+            spec.identity.bus_type,
+            spec.identity.vendor_id,
+            spec.identity.product_id,
+        ) {
+            continue;
         }
+        return Some(format!("/dev/{}", entry.file_name().to_string_lossy()));
     }
     None
+}
+
+/// Returns `true` if `hid_id` (the `HID_ID=` value from `uevent`,
+/// formatted by the kernel as `bbbb:vvvvvvvv:pppppppp`) matches the
+/// expected bus/vendor/product triple. Pure helper so the parser is
+/// trivially unit-testable.
+pub(crate) fn hid_id_matches(hid_id: &str, bus_type: u16, vendor_id: u16, product_id: u16) -> bool {
+    let expected_bus = match bus_type {
+        BUS_USB => "0003",
+        BUS_BLUETOOTH => "0005",
+        _ => return false,
+    };
+    let expected_vendor_hex = format!("{:08x}", u32::from(vendor_id));
+    let expected_product_hex = format!("{:08x}", u32::from(product_id));
+    let parts = hid_id.split(':').collect::<Vec<_>>();
+    parts.len() == 3
+        && parts[0] == expected_bus
+        && parts[1].eq_ignore_ascii_case(&expected_vendor_hex)
+        && parts[2].eq_ignore_ascii_case(&expected_product_hex)
 }
 
 fn open_error(context: &str) -> BackendError {
@@ -431,7 +471,7 @@ fn write_error(context: &str) -> BackendError {
 fn read_error(context: &str) -> BackendError {
     match io::Error::last_os_error().kind() {
         io::ErrorKind::WouldBlock => BackendError::WouldBlock,
-        _ => BackendError::ReverseEventParseFailed {
+        _ => BackendError::ReadFailed {
             reason: format!("{context}: {}", io::Error::last_os_error()),
         },
     }

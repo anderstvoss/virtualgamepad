@@ -222,7 +222,9 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .map(|check| check.success);
     }
 
-    if item.contains("Linux-gated") && item.contains("integration tests pass") {
+    if item.contains("Linux-gated uinput integration tests pass")
+        || item.contains("Linux-gated UHID integration tests pass")
+    {
         return report
             .checks
             .iter()

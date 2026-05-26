@@ -34,6 +34,8 @@ pub enum BackendError {
     OpenFailed { reason: String },
     #[error("backend write failed: {reason}")]
     WriteFailed { reason: String },
+    #[error("backend read failed: {reason}")]
+    ReadFailed { reason: String },
     #[error("backend close failed: {reason}")]
     CloseFailed { reason: String },
     #[error("reverse event parse failed: {reason}")]
