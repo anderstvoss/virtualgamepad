@@ -17,7 +17,7 @@ use libc::{O_CLOEXEC, O_NONBLOCK, O_RDWR};
 
 use crate::{
     BUS_BLUETOOTH, BUS_USB, LinuxKernelDevice, LinuxKernelIoctl, LinuxKernelPreview,
-    LinuxUhidDeviceSpec, build_hid_reverse_event,
+    LinuxUhidDeviceSpec, LinuxUhidInputNodes, build_hid_reverse_event,
 };
 
 const UHID_DESTROY: u32 = 1;
@@ -76,6 +76,7 @@ impl LinuxKernelIoctl for LiveLinuxKernelIoctl {
 struct LiveLinuxKernelDevice {
     owner: UhidFdOwner,
     hidraw_node: Option<String>,
+    input_nodes: LinuxUhidInputNodes,
     numbered_output_reports: bool,
     numbered_feature_reports: bool,
     supported_feature_reports: std::collections::BTreeMap<u8, Vec<u8>>,
@@ -173,6 +174,10 @@ impl LinuxKernelDevice for LiveLinuxKernelDevice {
         self.hidraw_node.as_deref()
     }
 
+    fn input_nodes(&self) -> &LinuxUhidInputNodes {
+        &self.input_nodes
+    }
+
     fn close(&mut self) -> Result<(), BackendError> {
         self.owner.close()
     }
@@ -233,9 +238,14 @@ fn create_live_device(spec: &LinuxUhidDeviceSpec) -> Result<LiveLinuxKernelDevic
         return Err(error);
     }
     let hidraw_node = discover_hidraw_node(spec);
+    let input_nodes = hidraw_node
+        .as_deref()
+        .map(discover_input_nodes_with_retry)
+        .unwrap_or_default();
     Ok(LiveLinuxKernelDevice {
         owner,
         hidraw_node,
+        input_nodes,
         numbered_output_reports: spec.identity.numbered_output_reports,
         numbered_feature_reports: spec.identity.numbered_feature_reports,
         supported_feature_reports: spec.supported_feature_reports.clone(),
@@ -435,6 +445,74 @@ fn scan_hidraw_once(spec: &LinuxUhidDeviceSpec) -> Option<String> {
         return Some(format!("/dev/{}", entry.file_name().to_string_lossy()));
     }
     None
+}
+
+fn discover_input_nodes_with_retry(hidraw_node: &str) -> LinuxUhidInputNodes {
+    for _ in 0..20 {
+        let nodes = discover_input_nodes(hidraw_node);
+        if !nodes.event_nodes.is_empty() || !nodes.js_nodes.is_empty() {
+            return nodes;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
+    LinuxUhidInputNodes::default()
+}
+
+fn discover_input_nodes(hidraw_node: &str) -> LinuxUhidInputNodes {
+    let hidraw_path = PathBuf::from(hidraw_node);
+    let Some(hidraw_name) = hidraw_path.file_name().and_then(|n| n.to_str()) else {
+        return LinuxUhidInputNodes::default();
+    };
+    let input_root = PathBuf::from("/sys/class/hidraw")
+        .join(hidraw_name)
+        .join("device/input");
+    let Ok(entries) = fs::read_dir(input_root) else {
+        return LinuxUhidInputNodes::default();
+    };
+
+    let mut event_nodes = Vec::new();
+    let mut js_nodes = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("input") {
+            continue;
+        }
+        collect_input_class_nodes(&path, "event", &mut event_nodes);
+        collect_input_class_nodes(&path, "js", &mut js_nodes);
+    }
+
+    event_nodes.sort();
+    event_nodes.dedup();
+    js_nodes.sort();
+    js_nodes.dedup();
+    LinuxUhidInputNodes {
+        event_nodes,
+        js_nodes,
+    }
+}
+
+fn collect_input_class_nodes(path: &PathBuf, prefix: &str, out: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(path) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(prefix) {
+            out.push(format!("/dev/input/{name}"));
+        }
+    }
 }
 
 /// Returns `true` if `hid_id` (the `HID_ID=` value from `uevent`,

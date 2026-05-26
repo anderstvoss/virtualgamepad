@@ -758,8 +758,8 @@ Automated portion:
 Manual portion:
 
 - [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus {usb,bluetooth}` each bring up a HID device; `hidraw` enumeration shows the DualSense USB (`0x054c`/`0x0ce6`) and Bluetooth (`0x054c`/`0x0df2`) identity surfaces
-- [ ] 2. `lsusb` (for USB) or `bluetoothctl` (for Bluetooth) shows the expected device identity
-- [ ] 3. SDL or `jstest-gtk` identifies the device as DualSense (correct gamepad mapping picked up automatically)
+- [ ] 2. `udevadm info -q property -n <hidraw node>` and Linux `input` enumeration show the expected DualSense vendor/product identity and controller name for each bus surface
+- [ ] 3. SDL or `jstest-gtk` identifies the joystick node named `Sony Interactive Entertainment DualSense Wireless Controller` as DualSense (correct gamepad mapping picked up automatically)
 - [ ] 4. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
 - [ ] 5. Rumble from a game generates `OutputCommand::Rumble`
 - [ ] 6. Steam (if installed) recognizes the controller in Steam Input

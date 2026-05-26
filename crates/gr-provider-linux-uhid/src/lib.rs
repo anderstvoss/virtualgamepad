@@ -111,6 +111,14 @@ pub struct LinuxUhidIdentitySummary {
     pub descriptor_size: usize,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinuxUhidInputNodes {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub event_nodes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub js_nodes: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxUhidSmokeReport {
     pub profile_id: ProfileId,
@@ -126,6 +134,8 @@ pub struct LinuxUhidSmokeReport {
     pub open_result: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidraw_node: Option<String>,
+    #[serde(default, skip_serializing_if = "is_default_input_nodes")]
+    pub input_nodes: LinuxUhidInputNodes,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub planned_kernel_sequence: Vec<String>,
     pub support: BackendSupportReport,
@@ -139,6 +149,10 @@ struct LinuxKernelPreview {
     live_access: bool,
     planned_kernel_sequence: Vec<String>,
     notes: Vec<String>,
+}
+
+fn is_default_input_nodes(nodes: &LinuxUhidInputNodes) -> bool {
+    nodes.event_nodes.is_empty() && nodes.js_nodes.is_empty()
 }
 
 trait LinuxKernelDevice: Send {
@@ -156,6 +170,7 @@ trait LinuxKernelDevice: Send {
         out: &mut dyn BackendReverseEventSink,
     ) -> Result<usize, BackendError>;
     fn hidraw_node(&self) -> Option<&str>;
+    fn input_nodes(&self) -> &LinuxUhidInputNodes;
     fn close(&mut self) -> Result<(), BackendError>;
 }
 
@@ -374,6 +389,7 @@ impl LinuxUhidBackendFactory {
                 "deferred".to_string()
             },
             hidraw_node: None,
+            input_nodes: LinuxUhidInputNodes::default(),
             planned_kernel_sequence: preview.planned_kernel_sequence,
             support,
             notes,
@@ -384,6 +400,7 @@ impl LinuxUhidBackendFactory {
                 Ok(mut device) => {
                     report.open_result = "created".to_string();
                     report.hidraw_node = device.hidraw_node().map(ToString::to_string);
+                    report.input_nodes = device.input_nodes().clone();
                     if let Err(error) = device.close() {
                         report.notes.push(format!("device teardown note: {error}"));
                     }
@@ -429,6 +446,7 @@ impl LinuxUhidBackendFactory {
             live_access: false,
             open_result: open_result.to_string(),
             hidraw_node: None,
+            input_nodes: LinuxUhidInputNodes::default(),
             planned_kernel_sequence: Vec::new(),
             support,
             notes,
@@ -904,6 +922,7 @@ mod tests {
         reverse_queue: Vec<FakeReverseReport>,
         closed: Arc<Mutex<bool>>,
         hidraw_node: Option<String>,
+        input_nodes: LinuxUhidInputNodes,
     }
 
     impl LinuxKernelDevice for FakeDevice {
@@ -950,6 +969,10 @@ mod tests {
 
         fn hidraw_node(&self) -> Option<&str> {
             self.hidraw_node.as_deref()
+        }
+
+        fn input_nodes(&self) -> &LinuxUhidInputNodes {
+            &self.input_nodes
         }
 
         fn close(&mut self) -> Result<(), BackendError> {
@@ -1004,6 +1027,10 @@ mod tests {
                 reverse_queue: self.reverse_queue.lock().expect("queue").clone(),
                 closed: Arc::clone(&self.closed),
                 hidraw_node: self.hidraw_node.clone(),
+                input_nodes: LinuxUhidInputNodes {
+                    event_nodes: vec!["/dev/input/event-test".to_string()],
+                    js_nodes: vec!["/dev/input/js-test".to_string()],
+                },
             }))
         }
     }
@@ -1040,6 +1067,10 @@ mod tests {
         assert_eq!(report.identity.product_id, DUALSENSE_USB_PRODUCT_ID);
         assert_eq!(report.open_result, "created");
         assert_eq!(report.hidraw_node.as_deref(), Some("/dev/hidraw-test"));
+        assert_eq!(
+            report.input_nodes.js_nodes,
+            vec!["/dev/input/js-test".to_string()]
+        );
     }
 
     #[test]

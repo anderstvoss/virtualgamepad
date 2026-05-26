@@ -58,28 +58,36 @@ cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bu
    - the report identifies the Bluetooth DualSense identity surface
      (`0x054c` / `0x0df2`)
 
-## Check 2: host identity surface matches DualSense
+## Check 2: Linux HID and input identity surfaces match DualSense
 
-Goal: confirm host enumeration tooling reports the expected DualSense
-identity for the virtual device.
+Goal: confirm Linux reports the expected DualSense identity for the
+virtual `UHID` device through `hidraw` and `input` enumeration. `UHID`
+does not create a real USB or Bluetooth transport device, so
+transport-layer tools such as `lsusb` and `bluetoothctl devices` are
+not authoritative evidence here.
 
 ### Steps
 
-1. With the USB smoke session from Check 1 still running, run:
+1. With the USB smoke session from Check 1 still running, note the
+   reported `hidraw` node and run:
 
 ```bash
-lsusb
+udevadm info -q property -n /dev/hidrawN
+for js in /sys/class/input/js*; do echo "$js: $(cat "$js/device/name")"; done
 ```
 
-2. With the Bluetooth smoke session still running, run:
-
-```bash
-bluetoothctl devices
-```
+2. Repeat for the Bluetooth smoke session.
 
 3. Confirm:
-   - each listing shows the expected DualSense device identity
-   - the identity strings match the captured-trace reference
+   - `udevadm` reports a `DEVPATH` under
+     `/devices/virtual/misc/uhid/...`
+   - the `hidraw` path encodes the expected DualSense vendor/product
+     pair for the chosen bus surface
+   - Linux exposes an input node named
+     `Sony Interactive Entertainment DualSense Wireless Controller`
+   - Bluetooth mode may still appear under the same Linux `UHID`
+     subsystem path; the evidence is the product id and controller name,
+     not a real `bluetoothctl` transport entry
 
 ## Check 3: SDL identifies the device as DualSense
 
@@ -88,8 +96,24 @@ mapping rather than treating the device as a generic gamepad.
 
 ### Steps
 
-1. With either smoke session from Check 1 still running, launch SDL's
-   `controllermap` or `jstest-gtk`.
+1. With either smoke session from Check 1 still running, use the
+   reported `js_nodes` list or run:
+
+```bash
+for js in /sys/class/input/js*; do echo "$js: $(cat "$js/device/name")"; done
+```
+
+2. Identify the node named exactly:
+
+```text
+Sony Interactive Entertainment DualSense Wireless Controller
+```
+
+Ignore sibling nodes such as
+`Sony Interactive Entertainment DualSense Wireless Controller Motion Sensors`.
+
+3. Launch SDL's `controllermap`, `jstest-gtk`, or `jstest` against that
+   joystick node.
 2. Confirm:
    - the host software identifies the device as DualSense
    - the canonical DualSense control layout (sticks, dpad, triggers,

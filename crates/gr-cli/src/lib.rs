@@ -18,9 +18,7 @@ use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
     RegistryError, SemanticRef, registry,
 };
-use gr_provider_linux_uhid::{
-    LinuxUhidBackendFactory, LinuxUhidIdentitySummary, LinuxUhidSmokeReport, UhidBusMode,
-};
+use gr_provider_linux_uhid::{LinuxUhidBackendFactory, LinuxUhidSmokeReport, UhidBusMode};
 use gr_provider_linux_uinput::LinuxUinputBackendFactory;
 use gr_runtime_model::{
     BackpressurePolicy, ControllerOutputCommand, EmulationGoal, HostPlatform,
@@ -1854,6 +1852,8 @@ fn normalize_uhid_report_for_snapshots(report: &mut LinuxUhidSmokeReport) {
         report.live_access = true;
         report.open_result = "created".to_string();
         report.hidraw_node = None;
+        report.input_nodes.event_nodes.clear();
+        report.input_nodes.js_nodes.clear();
         report.notes = vec![
             "identity-aware Linux provider for DualSense via `/dev/uhid`".to_string(),
             "bus-specific identity is factory-selected; runtime planning remains `linux-uhid`"
@@ -2027,7 +2027,7 @@ fn run_interactive_uhid_smoke(
     println!();
     println!(
         "{}",
-        render_interactive_uhid_banner(profile, options, &report.identity)
+        render_interactive_uhid_banner(profile, options, &report)
     );
 
     let manager = VirtualControllerManager::with_backends(
@@ -2084,10 +2084,22 @@ fn interactive_uhid_request(profile_id: &ProfileId) -> SessionRequest {
 fn render_interactive_uhid_banner(
     profile: &ControllerProfile,
     options: UhidSmokeOptions,
-    identity: &LinuxUhidIdentitySummary,
+    report: &LinuxUhidSmokeReport,
 ) -> String {
+    let identity = &report.identity;
+    let hidraw_node = report.hidraw_node.as_deref().unwrap_or("<pending>");
+    let js_nodes = if report.input_nodes.js_nodes.is_empty() {
+        "<none>".to_string()
+    } else {
+        report.input_nodes.js_nodes.join(", ")
+    };
+    let event_nodes = if report.input_nodes.event_nodes.is_empty() {
+        "<none>".to_string()
+    } else {
+        report.input_nodes.event_nodes.join(", ")
+    };
     format!(
-        "interactive_uhid_session:\n  profile: {}\n  bus: {}\n  device_name: {}\n  vendor_id: 0x{:04x}\n  product_id: 0x{:04x}\n  input_report_id: 0x{:02x}\n  output_report_id: 0x{:02x}\n  stop: press Enter or Ctrl-C",
+        "interactive_uhid_session:\n  profile: {}\n  bus: {}\n  device_name: {}\n  vendor_id: 0x{:04x}\n  product_id: 0x{:04x}\n  input_report_id: 0x{:02x}\n  output_report_id: 0x{:02x}\n  hidraw: {}\n  js_nodes: {}\n  event_nodes: {}\n  stop: press Enter or Ctrl-C",
         profile.profile_id,
         options.bus_mode,
         identity.device_name,
@@ -2095,6 +2107,9 @@ fn render_interactive_uhid_banner(
         identity.product_id,
         identity.input_report_id,
         identity.output_report_id,
+        hidraw_node,
+        js_nodes,
+        event_nodes,
     )
 }
 
@@ -2506,10 +2521,11 @@ mod tests {
                 interactive: true,
                 bus_mode: UhidBusMode::Bluetooth,
             },
-            &report.identity,
+            &report,
         );
         assert!(banner.contains("bus: bluetooth"));
         assert!(banner.contains("input_report_id: 0x31"));
+        assert!(banner.contains("hidraw: <pending>") || banner.contains("hidraw: /dev/"));
     }
 
     #[test]
