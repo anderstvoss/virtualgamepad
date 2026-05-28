@@ -123,11 +123,11 @@ Ignore sibling nodes such as
    - the canonical DualSense control layout (sticks, dpad, triggers,
      face buttons, touchpad button) is picked up automatically
 
-## Check 4: a Steam Input mode-change scenario round-trips
+## Check 4: Steam-shaped scenario evidence substitutes for unavailable host validation
 
 Goal: confirm the reverse translator handles a representative
-Steam-shaped mode-change/output report end to end without requiring
-Steam itself on the current machine.
+Steam-shaped mode-change/output report end to end without claiming that
+the current machine has manually verified Steam Input behavior.
 
 ### Steps
 
@@ -140,8 +140,10 @@ cargo run -p gr-cli -- run-scenario samples/scenarios/dualsense-steam-input-mode
 2. Confirm:
    - the reverse translator emits the expected normalized outputs
    - the scenario exits 0
+   - mark this as substitute evidence only; it is not a manual
+     verification of Steam Input on the current host
 
-## Check 5: support-report evidence is complete for provider closure
+## Check 5: support-report separates provider closure from deferred host claims
 
 Goal: confirm per-profile evidence covers descriptor, input, output,
 feature, Linux-host recognition, and explicit deferred host-software
@@ -165,8 +167,29 @@ cargo run -p gr-cli -- support-report --profile dualsense
      validated on this machine
    - reference-title validation is clearly marked pending/deferred when
      not validated on this machine
+   - this host is not treated as a manual validation source for those
+     deferred Tier D claims
 
-## Check 6: record the deferred validation queue
+## Check 6: reference-title trigger effects are explicitly deferred
+
+Goal: make it explicit that reference-title trigger-effect validation is
+not manually verifiable on this host and must remain queued for a
+supported system.
+
+### Steps
+
+1. Confirm the Phase 9 gate/docs do not require a public reference
+   title to be available on this machine.
+2. Confirm the deferred validation queue includes:
+   - reference-title trigger effects
+   - required environment
+   - target profile
+   - expected evidence artifact
+3. Confirm:
+   - provider-complete closure does not claim this check is complete
+   - later support claims remain blocked on a supported validation host
+
+## Check 7: Steam Input and host-software rumble remain explicitly deferred
 
 Goal: make the missing Tier D checks explicit so later support claims
 are blocked by a tracked queue rather than by forgotten assumptions.
@@ -177,7 +200,6 @@ are blocked by a tracked queue rather than by forgotten assumptions.
    system:
    - Steam Input recognition
    - Steam controller-layout mapping
-   - reference-title trigger effects
    - host-originated rumble from target software
    - any Steam-specific mode or feature behavior found later
 2. For each item, record:
@@ -194,5 +216,5 @@ are blocked by a tracked queue rather than by forgotten assumptions.
 When all checks pass:
 
 ```bash
-git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"
+git commit --allow-empty -m "chore(phase-gate): Phase 9 provider-complete closure recorded"
 ```

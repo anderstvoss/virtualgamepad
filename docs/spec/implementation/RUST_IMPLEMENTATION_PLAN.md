@@ -764,17 +764,14 @@ Manual portion:
 - [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus {usb,bluetooth}` each bring up a HID device; `hidraw` enumeration shows the DualSense USB (`0x054c`/`0x0ce6`) and Bluetooth (`0x054c`/`0x0df2`) identity surfaces
 - [ ] 2. `udevadm info -q property -n <hidraw node>` and Linux `input` enumeration show the expected DualSense vendor/product identity and controller name for each bus surface
 - [ ] 3. SDL or `jstest-gtk` identifies the joystick node named `Sony Interactive Entertainment DualSense Wireless Controller` as DualSense (correct gamepad mapping picked up automatically)
-- [ ] 4. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
-- [ ] 5. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, linux-host recognition ✓, and deferred/pending entries for Steam Input or equivalent Tier D validation when that host is unavailable
-- [ ] 6. Record a deferred validation queue for a supported system covering:
-  - Steam Input recognition and layout mapping
-  - reference-title trigger effects
-  - host-originated rumble from target software
-  - other Steam-specific mode or feature behaviors discovered during later hardware validation
+- [ ] 4. Not manually verifiable on this host: treat `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` as automated substitute evidence for the Steam-shaped mode-change path
+- [ ] 5. Not manually verifiable on this host: `support-report --profile dualsense` must show descriptor/input/output/feature/linux-host evidence as complete while Steam Input or equivalent Tier D host-software evidence remains explicitly pending/deferred
+- [ ] 6. Not manually verifiable on this host: reference-title trigger effects remain queued for a supported validation system and must not block provider-complete closure
+- [ ] 7. Not manually verifiable on this host: Steam Input recognition, Steam layout mapping, host-originated rumble from target software, and similar Tier D checks remain in an explicit deferred validation queue for a supported system
 
 Phase 9 sign-off means the Linux UHID provider is provider-complete. It does not by itself authorize a "DualSense identity-aware support fully validated" claim; that remains pending until the queued Tier D checks complete on a supported host.
 
-Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"`
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 provider-complete closure recorded"`
 
 ## Phase 10: Linux transport foundation (`gr-provider-linux-transport`)
 
