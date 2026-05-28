@@ -1,0 +1,21 @@
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: linux-transport-stub
+notes: |
+  Phase 10 prep inventory: stub transport-tier backends so the planner
+  can resolve --goal hardware-faithful requests against the
+  linux-transport-{usb,bluetooth} families. No realization is provided;
+  the Phase 10 implementation PR lands the enumeration / protocol state
+  machines and packet models.
+payload:
+  entries:
+    - backend_id: linux-transport-usb
+      family: linux-transport-usb
+      level: transport
+      host_platform: linux
+      supported_fidelity_tiers: []
+    - backend_id: linux-transport-bluetooth
+      family: linux-transport-bluetooth
+      level: transport
+      host_platform: linux
+      supported_fidelity_tiers: []

@@ -414,6 +414,11 @@ dependencies = [
 [[package]]
 name = "gr-provider-linux-transport"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-runtime-model",
+]
 
 [[package]]
 name = "gr-provider-linux-uhid"
