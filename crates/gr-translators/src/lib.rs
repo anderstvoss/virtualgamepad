@@ -139,7 +139,9 @@ impl TranslatorRegistry {
         match (family, level) {
             (TranslatorFamily::GenericGamepad, BackendLevel::Evdev) => Some(&GENERIC_EVDEV),
             (TranslatorFamily::XboxStyle, BackendLevel::Evdev) => Some(&XBOX_STYLE_EVDEV),
+            (TranslatorFamily::XboxStyle, BackendLevel::Transport) => Some(&XBOX360_USB_TRANSPORT),
             (TranslatorFamily::DualSense, BackendLevel::Hid) => Some(&DUALSENSE_USB_HID),
+            (TranslatorFamily::DualSense, BackendLevel::Transport) => Some(&DUALSENSE_TRANSPORT),
             (TranslatorFamily::SteamController, BackendLevel::Hid) => Some(&STEAM_CONTROLLER_HID),
             _ => None,
         }
@@ -463,7 +465,8 @@ impl ReverseTranslator for XboxStyleReverseTranslator {
         out: &mut SmallVec<[ControllerOutputCommand; 4]>,
     ) -> Result<(), TranslationError> {
         let bytes = match &event.payload {
-            BackendReversePayload::Hid { bytes, .. } => bytes.as_slice(),
+            BackendReversePayload::Hid { bytes, .. }
+            | BackendReversePayload::Transport { bytes, .. } => bytes.as_slice(),
             BackendReversePayload::Evdev { events } => {
                 let mut strong = None;
                 let mut weak = None;
@@ -574,11 +577,7 @@ impl ReverseTranslator for DualSenseHidReverseTranslator {
         ctx: &PreparedTranslationContext,
         out: &mut SmallVec<[ControllerOutputCommand; 4]>,
     ) -> Result<(), TranslationError> {
-        let BackendReversePayload::Hid { bytes, .. } = &event.payload else {
-            return Err(TranslationError::InvalidReverseEvent {
-                reason: "DualSense reverse translator requires HID payload".to_string(),
-            });
-        };
+        let bytes = dualsense_reverse_bytes(event)?;
         let profile_id = event_profile_id(event, ctx);
 
         for command in [
@@ -813,8 +812,146 @@ const ABS_HAT0X: u16 = 0x10;
 const ABS_HAT0Y: u16 = 0x11;
 const DUALSENSE_INPUT_REPORT_ID: u8 = 0x01;
 const DUALSENSE_INPUT_REPORT_LEN: usize = 64;
+const DUALSENSE_BLUETOOTH_TRANSPORT_REPORT_ID: u8 = 0x31;
+const DUALSENSE_USB_TRANSPORT_ENDPOINT: u8 = 0x01;
+const DUALSENSE_BLUETOOTH_TRANSPORT_ENDPOINT: u8 = 0x11;
+const XBOX360_USB_TRANSPORT_ENDPOINT: u8 = 0x01;
 const STEAM_CONTROLLER_INPUT_REPORT_ID: u8 = 0x01;
 const STEAM_CONTROLLER_INPUT_REPORT_LEN: usize = 18;
+
+#[derive(Debug)]
+struct Xbox360UsbTransportTranslator;
+
+impl ForwardTranslator for Xbox360UsbTransportTranslator {
+    fn family(&self) -> TranslatorFamily {
+        TranslatorFamily::XboxStyle
+    }
+
+    fn translate(
+        &self,
+        input: &ProfileInputFrame,
+        _ctx: &PreparedTranslationContext,
+        _out: &mut TranslationScratch,
+    ) -> Result<BackendFrame, TranslationError> {
+        let ProfileInputPayload::Xbox360(payload) = &input.payload else {
+            return Err(TranslationError::InvalidInput {
+                reason: format!(
+                    "expected Xbox360 payload, got `{}`",
+                    input.payload.variant_name()
+                ),
+            });
+        };
+        let packet = vec![
+            bool_bit(payload.buttons.face.a, 0)
+                | bool_bit(payload.buttons.face.b, 1)
+                | bool_bit(payload.buttons.face.x, 2)
+                | bool_bit(payload.buttons.face.y, 3),
+            bool_bit(payload.buttons.shoulders.lb, 0)
+                | bool_bit(payload.buttons.shoulders.rb, 1)
+                | bool_bit(payload.buttons.system.guide, 2),
+            encode_dpad_hat(payload.dpad),
+            encode_trigger_u8(payload.triggers.lt),
+            encode_trigger_u8(payload.triggers.rt),
+            encode_axis_u8(payload.sticks.left_x),
+            encode_axis_u8(payload.sticks.left_y),
+            encode_axis_u8(payload.sticks.right_x),
+            encode_axis_u8(payload.sticks.right_y),
+        ];
+        Ok(BackendFrame::TransportPacket {
+            endpoint_id: XBOX360_USB_TRANSPORT_ENDPOINT,
+            bytes: packet,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct DualSenseUsbTransportTranslator;
+
+impl ForwardTranslator for DualSenseUsbTransportTranslator {
+    fn family(&self) -> TranslatorFamily {
+        TranslatorFamily::DualSense
+    }
+
+    fn translate(
+        &self,
+        input: &ProfileInputFrame,
+        ctx: &PreparedTranslationContext,
+        out: &mut TranslationScratch,
+    ) -> Result<BackendFrame, TranslationError> {
+        let BackendFrame::HidInputReport { bytes, .. } =
+            DUALSENSE_USB_HID.translate(input, ctx, out)?
+        else {
+            return Err(TranslationError::DescriptorViolation {
+                reason: "DualSense USB transport translator expected HID bytes".to_string(),
+            });
+        };
+        Ok(BackendFrame::TransportPacket {
+            endpoint_id: DUALSENSE_USB_TRANSPORT_ENDPOINT,
+            bytes,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct DualSenseBluetoothTransportTranslator;
+
+impl ForwardTranslator for DualSenseBluetoothTransportTranslator {
+    fn family(&self) -> TranslatorFamily {
+        TranslatorFamily::DualSense
+    }
+
+    fn translate(
+        &self,
+        input: &ProfileInputFrame,
+        ctx: &PreparedTranslationContext,
+        out: &mut TranslationScratch,
+    ) -> Result<BackendFrame, TranslationError> {
+        let BackendFrame::HidInputReport { bytes, .. } =
+            DUALSENSE_USB_HID.translate(input, ctx, out)?
+        else {
+            return Err(TranslationError::DescriptorViolation {
+                reason: "DualSense Bluetooth transport translator expected HID bytes".to_string(),
+            });
+        };
+        let mut packet = Vec::with_capacity(bytes.len() + 1);
+        packet.push(DUALSENSE_BLUETOOTH_TRANSPORT_REPORT_ID);
+        packet.extend_from_slice(&bytes);
+        Ok(BackendFrame::TransportPacket {
+            endpoint_id: DUALSENSE_BLUETOOTH_TRANSPORT_ENDPOINT,
+            bytes: packet,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct DualSenseTransportTranslator;
+
+impl ForwardTranslator for DualSenseTransportTranslator {
+    fn family(&self) -> TranslatorFamily {
+        TranslatorFamily::DualSense
+    }
+
+    fn translate(
+        &self,
+        input: &ProfileInputFrame,
+        ctx: &PreparedTranslationContext,
+        out: &mut TranslationScratch,
+    ) -> Result<BackendFrame, TranslationError> {
+        match ctx.backend_family {
+            Some(gr_core::BackendFamily::LinuxTransportBluetooth) => {
+                DUALSENSE_BLUETOOTH_TRANSPORT.translate(input, ctx, out)
+            }
+            Some(gr_core::BackendFamily::LinuxTransportUsb) | None => {
+                DUALSENSE_USB_TRANSPORT.translate(input, ctx, out)
+            }
+            Some(other) => Err(TranslationError::DescriptorViolation {
+                reason: format!(
+                    "DualSense transport translator does not support backend family `{other}`"
+                ),
+            }),
+        }
+    }
+}
 
 fn generic_evdev_events(payload: &gr_core::GenericGamepadInput) -> Vec<EvdevEvent> {
     let mut events = Vec::with_capacity(19);
@@ -983,9 +1120,32 @@ fn output_command(
     }
 }
 
+fn dualsense_reverse_bytes(event: &BackendReverseEvent) -> Result<&[u8], TranslationError> {
+    match &event.payload {
+        BackendReversePayload::Hid { bytes, .. } => Ok(bytes.as_slice()),
+        BackendReversePayload::Transport { bytes, .. } => {
+            if bytes.first().copied() == Some(DUALSENSE_BLUETOOTH_TRANSPORT_REPORT_ID)
+                && bytes.len() > 1
+            {
+                Ok(&bytes[1..])
+            } else {
+                Ok(bytes.as_slice())
+            }
+        }
+        _ => Err(TranslationError::InvalidReverseEvent {
+            reason: "DualSense reverse translator requires HID or transport payload".to_string(),
+        }),
+    }
+}
+
 static GENERIC_EVDEV: GenericEvdevTranslator = GenericEvdevTranslator;
 static XBOX_STYLE_EVDEV: XboxStyleEvdevTranslator = XboxStyleEvdevTranslator;
+static XBOX360_USB_TRANSPORT: Xbox360UsbTransportTranslator = Xbox360UsbTransportTranslator;
 static DUALSENSE_USB_HID: DualSenseUsbHidTranslator = DualSenseUsbHidTranslator;
+static DUALSENSE_USB_TRANSPORT: DualSenseUsbTransportTranslator = DualSenseUsbTransportTranslator;
+static DUALSENSE_BLUETOOTH_TRANSPORT: DualSenseBluetoothTransportTranslator =
+    DualSenseBluetoothTransportTranslator;
+static DUALSENSE_TRANSPORT: DualSenseTransportTranslator = DualSenseTransportTranslator;
 static STEAM_CONTROLLER_HID: SteamControllerHidTranslator = SteamControllerHidTranslator;
 static XBOX_STYLE_REVERSE: XboxStyleReverseTranslator = XboxStyleReverseTranslator;
 static DUALSENSE_HID_REVERSE: DualSenseHidReverseTranslator = DualSenseHidReverseTranslator;
@@ -1062,6 +1222,16 @@ mod tests {
                 .forward(TranslatorFamily::DualSense, BackendLevel::Hid)
                 .is_some()
         );
+        assert!(
+            registry
+                .forward(TranslatorFamily::DualSense, BackendLevel::Transport)
+                .is_some()
+        );
+        assert!(
+            registry
+                .forward(TranslatorFamily::XboxStyle, BackendLevel::Transport)
+                .is_some()
+        );
         assert!(registry.reverse(TranslatorFamily::DualSense).is_some());
     }
 
@@ -1081,13 +1251,26 @@ mod tests {
     fn prepared_context_reports_missing_translator() {
         let registry = TranslatorRegistry::new();
         let mut plan = base_plan();
+        plan.profile_id = ProfileId::from("steam-controller");
+        plan.selected_translator_family = TranslatorFamily::SteamController;
+        plan.selected_backend_family = BackendFamily::LinuxTransportUsb;
+        plan.selected_provider_id = "linux-transport-usb".into();
         plan.selected_level = BackendLevel::Transport;
+        plan.requested_goal = EmulationGoal::HardwareFaithful;
+        plan.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        plan.backend_open_context = BackendOpenContext {
+            session_id: SessionId::new(7),
+            profile_id: ProfileId::from("steam-controller"),
+            fidelity_tier: FidelityTier::HardwareFaithful,
+            backend_level: BackendLevel::Transport,
+            host_platform: HostPlatform::Linux,
+        };
 
         let error = prepared_translation_context(&plan, &registry).expect_err("missing");
         assert_eq!(
             error,
             TranslationError::NoTranslatorRegistered {
-                family: TranslatorFamily::DualSense,
+                family: TranslatorFamily::SteamController,
                 level: BackendLevel::Transport
             }
         );
@@ -1363,6 +1546,116 @@ mod tests {
             }
             other => panic!("expected rumble, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn dualsense_transport_translation_uses_usb_endpoint_by_default() {
+        let registry = TranslatorRegistry::new();
+        let mut plan = base_plan();
+        plan.requested_goal = EmulationGoal::HardwareFaithful;
+        plan.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        plan.selected_level = BackendLevel::Transport;
+        plan.selected_backend_family = BackendFamily::LinuxTransportUsb;
+        plan.selected_provider_id = "linux-transport-usb".into();
+        plan.backend_open_context.backend_level = BackendLevel::Transport;
+        plan.backend_open_context.fidelity_tier = FidelityTier::HardwareFaithful;
+        let ctx = prepared_translation_context(&plan, &registry).expect("context");
+        let translator = registry
+            .forward(TranslatorFamily::DualSense, BackendLevel::Transport)
+            .expect("translator");
+        let frame = ProfileInputFrame {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(1),
+            sequence: 1.into(),
+            payload: ProfileInputPayload::DualSense(gr_core::DualSenseInput::neutral()),
+        };
+        let mut scratch = TranslationScratch::new();
+        let translated = translator
+            .translate(&frame, &ctx, &mut scratch)
+            .expect("translate");
+        let gr_backend_api::BackendFrame::TransportPacket { endpoint_id, bytes } = translated
+        else {
+            panic!("expected transport packet");
+        };
+        assert_eq!(endpoint_id, super::DUALSENSE_USB_TRANSPORT_ENDPOINT);
+        assert_eq!(bytes.len(), super::DUALSENSE_INPUT_REPORT_LEN);
+    }
+
+    #[test]
+    fn dualsense_transport_translation_uses_bluetooth_framing() {
+        let registry = TranslatorRegistry::new();
+        let mut plan = base_plan();
+        plan.requested_goal = EmulationGoal::HardwareFaithful;
+        plan.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        plan.selected_level = BackendLevel::Transport;
+        plan.selected_backend_family = BackendFamily::LinuxTransportBluetooth;
+        plan.selected_provider_id = "linux-transport-bluetooth".into();
+        plan.backend_open_context.backend_level = BackendLevel::Transport;
+        plan.backend_open_context.fidelity_tier = FidelityTier::HardwareFaithful;
+        let ctx = prepared_translation_context(&plan, &registry).expect("context");
+        let translator = registry
+            .forward(TranslatorFamily::DualSense, BackendLevel::Transport)
+            .expect("translator");
+        let frame = ProfileInputFrame {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(1),
+            sequence: 1.into(),
+            payload: ProfileInputPayload::DualSense(gr_core::DualSenseInput::neutral()),
+        };
+        let mut scratch = TranslationScratch::new();
+        let translated = translator
+            .translate(&frame, &ctx, &mut scratch)
+            .expect("translate");
+        let gr_backend_api::BackendFrame::TransportPacket { endpoint_id, bytes } = translated
+        else {
+            panic!("expected transport packet");
+        };
+        assert_eq!(endpoint_id, super::DUALSENSE_BLUETOOTH_TRANSPORT_ENDPOINT);
+        assert_eq!(
+            bytes.first().copied(),
+            Some(super::DUALSENSE_BLUETOOTH_TRANSPORT_REPORT_ID)
+        );
+    }
+
+    #[test]
+    fn dualsense_reverse_translation_accepts_transport_payload() {
+        let registry = TranslatorRegistry::new();
+        let mut plan = base_plan();
+        plan.requested_goal = EmulationGoal::HardwareFaithful;
+        plan.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        plan.selected_level = BackendLevel::Transport;
+        plan.selected_backend_family = BackendFamily::LinuxTransportUsb;
+        plan.selected_provider_id = "linux-transport-usb".into();
+        plan.backend_open_context.backend_level = BackendLevel::Transport;
+        plan.backend_open_context.fidelity_tier = FidelityTier::HardwareFaithful;
+        let ctx = prepared_translation_context(&plan, &registry).expect("context");
+        let translator = registry
+            .reverse(TranslatorFamily::DualSense)
+            .expect("translator");
+        let event = BackendReverseEvent {
+            session_id: SessionId::new(7),
+            profile_id: Some(ProfileId::from("dualsense")),
+            timestamp: Timestamp::new(10),
+            sequence: 1.into(),
+            kind: gr_backend_api::BackendReverseEventKind::TransportPacket,
+            target: Some(BackendReverseTarget::SemanticOutput(
+                SemanticOutputFunction::Rumble,
+            )),
+            payload: BackendReversePayload::Transport {
+                endpoint_id: super::DUALSENSE_USB_TRANSPORT_ENDPOINT,
+                bytes: {
+                    let mut bytes = vec![0_u8; 48];
+                    bytes[3] = 10;
+                    bytes[4] = 20;
+                    bytes
+                },
+            },
+        };
+        let mut out = SmallVec::<[_; 4]>::new();
+        translator
+            .translate_reverse(&event, &ctx, &mut out)
+            .expect("reverse");
+        assert_eq!(out.len(), 1);
     }
 
     #[test]

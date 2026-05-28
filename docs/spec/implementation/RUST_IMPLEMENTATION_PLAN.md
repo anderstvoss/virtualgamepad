@@ -846,13 +846,14 @@ Automated portion:
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
 - [ ] transport state machine round-trip tests pass on canned fixtures
+- [ ] `cargo run -p gr-cli -- replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` exits 0
 - [ ] `vgpd-demo phase-gate 10` exits 0
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo plan-session dualsense --goal hardware-faithful --inventory samples/inventories/linux-transport-stub.yaml` produces a plan with `selected_backend_family: LinuxTransportUsb` (or Bluetooth) and no realization yet
-- [ ] 2. `vgpd-demo replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` plays the captured enumeration steps through the state machine; final state matches the documented "ready" state
-- [ ] 3. Author a custom transport-trace fixture omitting a mandatory startup step; replay reports the specific missing state transition
+- [ ] 1. `vgpd-demo plan-session dualsense --goal hardware-faithful --inventory samples/inventories/linux-transport-stub.yaml` produces a plan with `selected_backend_family: linux-transport-usb` (or `linux-transport-bluetooth`) and live realization still deferred to Phase 11
+- [ ] 2. `vgpd-demo replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` plays the canned enumeration steps through the state machine; final state matches the documented `ready` state
+- [ ] 3. Author a custom transport-trace fixture omitting `configure-endpoints`; replay reports the specific missing state transition and step index
 - [ ] 4. Confirm `gr-provider-linux-transport` is `cfg(target_os = "linux")`; `cargo check --target x86_64-pc-windows-msvc -p gr-planner` succeeds (planner stays portable)
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 10 gate passed"`

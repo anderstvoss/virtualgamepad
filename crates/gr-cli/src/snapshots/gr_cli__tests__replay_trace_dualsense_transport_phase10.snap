@@ -1,0 +1,15 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 3260
+expression: output
+---
+trace: dualsense-usb-enumeration
+1. outbound transport-control step=connect
+2. outbound transport-control step=read-descriptor bytes=[12 01 00 02]
+3. outbound transport-control step=configure-endpoints bytes=[01 02]
+4. outbound transport-control step=ready-signal bytes=[aa]
+5. outbound transport-control step=input-packet endpoint=0x01 bytes=[01 7f 80 08]
+6. inbound transport-control step=reverse-packet endpoint=0x02 bytes=[02 00 20 10]
+transport_bus: usb
+transport_final_state: ready
+transport_steps_consumed: 6

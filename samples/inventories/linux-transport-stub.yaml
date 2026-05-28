@@ -13,9 +13,11 @@ payload:
       family: linux-transport-usb
       level: transport
       host_platform: linux
-      supported_fidelity_tiers: []
+      supported_fidelity_tiers:
+        - hardware-faithful
     - backend_id: linux-transport-bluetooth
       family: linux-transport-bluetooth
       level: transport
       host_platform: linux
-      supported_fidelity_tiers: []
+      supported_fidelity_tiers:
+        - hardware-faithful

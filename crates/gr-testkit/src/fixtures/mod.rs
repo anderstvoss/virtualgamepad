@@ -11,7 +11,8 @@ mod session_scenario;
 pub use backend_inventory::{BackendInventory, BackendInventoryFixture, decode_backend_inventory};
 pub use backend_trace::{
     BackendTrace, BackendTraceFixture, BackendTracePayload, BackendTraceStep, TraceDirection,
-    TraceOperation, decode_backend_trace,
+    TraceOperation, TransportControlStep, TransportTraceBus, TransportTraceSpec,
+    TransportTraceState, decode_backend_trace,
 };
 pub use input_frame::{
     InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,

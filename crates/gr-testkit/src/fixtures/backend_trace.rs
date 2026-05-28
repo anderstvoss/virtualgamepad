@@ -27,6 +27,8 @@ pub struct BackendTrace {
     pub backend_id: Option<gr_core::BackendId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub family: Option<gr_core::BackendFamily>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<TransportTraceSpec>,
     #[serde(default)]
     pub steps: Vec<BackendTraceStep>,
 }
@@ -44,6 +46,43 @@ pub struct BackendTraceStep {
     pub payload: BackendTracePayload,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportTraceBus {
+    Usb,
+    Bluetooth,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportTraceState {
+    Idle,
+    Connected,
+    DescriptorRead,
+    EndpointsConfigured,
+    Ready,
+    Disconnected,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransportTraceSpec {
+    pub bus: TransportTraceBus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_final_state: Option<TransportTraceState>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportControlStep {
+    Connect,
+    ReadDescriptor,
+    ConfigureEndpoints,
+    ReadySignal,
+    InputPacket,
+    ReversePacket,
+    Disconnect,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum BackendTracePayload {
@@ -58,6 +97,13 @@ pub enum BackendTracePayload {
     },
     TransportPacket {
         endpoint_id: u8,
+        bytes: Vec<u8>,
+    },
+    TransportControl {
+        step: TransportControlStep,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint_id: Option<u8>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         bytes: Vec<u8>,
     },
     EvdevEvents {
@@ -121,7 +167,10 @@ impl BackendTracePayload {
             Self::EvdevEvents { events } => Some(BackendFrame::EvdevEvents {
                 events: events.clone(),
             }),
-            Self::ReverseEvent { .. } | Self::Failure { .. } | Self::Unsupported { .. } => None,
+            Self::TransportControl { .. }
+            | Self::ReverseEvent { .. }
+            | Self::Failure { .. }
+            | Self::Unsupported { .. } => None,
         }
     }
 
@@ -133,6 +182,7 @@ impl BackendTracePayload {
             Self::HidInputReport { .. } => "hid-input-report",
             Self::HidFeatureReport { .. } => "hid-feature-report",
             Self::TransportPacket { .. } => "transport-packet",
+            Self::TransportControl { .. } => "transport-control",
             Self::EvdevEvents { .. } => "evdev-events",
             Self::ReverseEvent { .. } => "reverse-event",
             Self::Failure { .. } => "failure",
@@ -173,7 +223,10 @@ pub fn decode_backend_trace(
 
 #[cfg(test)]
 mod tests {
-    use super::{BackendTrace, BackendTracePayload, BackendTraceStep, TraceDirection};
+    use super::{
+        BackendTrace, BackendTracePayload, BackendTraceStep, TraceDirection, TransportControlStep,
+        TransportTraceBus, TransportTraceSpec, TransportTraceState,
+    };
 
     #[test]
     fn unsupported_payload_round_trips_through_yaml() {
@@ -199,12 +252,50 @@ steps:
         let trace: BackendTrace = serde_yaml::from_str(yaml).expect("decode");
         assert!(trace.backend_id.is_none());
         assert!(trace.family.is_none());
+        assert!(trace.transport.is_none());
         assert_eq!(trace.steps.len(), 1);
         assert!(matches!(
             trace.steps[0],
             BackendTraceStep {
                 direction: TraceDirection::Outbound,
                 payload: BackendTracePayload::HidInputReport { .. },
+            }
+        ));
+    }
+
+    #[test]
+    fn transport_trace_decodes_additive_phase10_fields() {
+        let yaml = r"
+transport:
+  bus: usb
+  expected_final_state: ready
+steps:
+  - direction: outbound
+    kind: transport-control
+    step: connect
+  - direction: outbound
+    kind: transport-control
+    step: configure-endpoints
+    endpoint_id: 1
+    bytes: [1, 2]
+";
+        let trace: BackendTrace = serde_yaml::from_str(yaml).expect("decode");
+        assert_eq!(
+            trace.transport,
+            Some(TransportTraceSpec {
+                bus: TransportTraceBus::Usb,
+                expected_final_state: Some(TransportTraceState::Ready),
+            })
+        );
+        assert!(matches!(
+            trace.steps[0],
+            BackendTraceStep {
+                direction: TraceDirection::Outbound,
+                payload: BackendTracePayload::TransportControl {
+                    step: TransportControlStep::Connect,
+                    endpoint_id: None,
+                    ..
+                },
             }
         ));
     }

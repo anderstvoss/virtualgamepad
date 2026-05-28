@@ -1,0 +1,47 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 3300
+expression: output
+---
+outcome: plan
+session_id: 1
+profile_id: dualsense
+requested_goal: hardware-faithful
+requested_fidelity_tier: hardware-faithful
+selected_level: transport
+target_host_platform: linux
+selected_backend_family: linux-transport-usb
+selected_provider_id: linux-transport-usb
+selected_translator_family: dual-sense
+capability_result:
+  enabled_capabilities:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
+degradation:
+  degraded: false
+deployment_requirements: {}
+backend_open_context:
+  session_id: 1
+  profile_id: dualsense
+  fidelity_tier: hardware-faithful
+  backend_level: transport
+  host_platform: linux
+session_options:
+  accepted_update_kinds:
+  - frame
+  unknown_field_policy: reject
+  range_validation_policy: reject
+  coerce_integer_like_values: false
+  allow_missing_optional_fields: true
+  require_monotonic_sequence: false
+  reject_unsupported_provider_preference: true
+  unsupported_capability_policy: report
+  delivery_policy: !callback
+    callback_namespace: virtualGamepad
+  backpressure_policy: !drop-oldest
+    log_dropped_outputs: true
+    max_queue_depth: 8

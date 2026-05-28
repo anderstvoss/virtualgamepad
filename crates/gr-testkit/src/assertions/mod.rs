@@ -153,6 +153,7 @@ mod tests {
         let trace = BackendTrace {
             backend_id: None,
             family: None,
+            transport: None,
             steps: vec![BackendTraceStep {
                 direction: TraceDirection::Outbound,
                 payload: BackendTracePayload::HidInputReport {

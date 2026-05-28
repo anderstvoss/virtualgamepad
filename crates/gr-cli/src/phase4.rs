@@ -4,6 +4,9 @@ use std::path::Path;
 use gr_backend_api::{BackendError, BackendReverseEvent, BackendSession, EventReadiness};
 use gr_core::{BackendFamily, BackendLevel, FidelityTier, ProfileId, SessionId};
 use gr_profiles::{ProfileFamily, registry};
+use gr_provider_linux_transport::{
+    TransportBus, TransportControlStepKind, TransportTraceState, replay_transport_trace,
+};
 use gr_runtime_model::{
     BackendOpenContext, BackpressurePolicy, CapabilityNegotiationResult, DegradationReport,
     DeploymentRequirements, EmulationGoal, HostPlatform, PreparedTranslationContext,
@@ -12,7 +15,8 @@ use gr_runtime_model::{
 use gr_testkit::fakes::{FakeBackendFactory, FakeFailure, backend_factory};
 use gr_testkit::fixtures::{
     BackendTrace, BackendTracePayload, FixtureDocument, LegacyScenarioStep, ScenarioFailure,
-    SessionScenarioDocument, SessionScenarioFixture, TraceDirection, load_fixture,
+    SessionScenarioDocument, SessionScenarioFixture, TraceDirection, TransportControlStep,
+    TransportTraceBus, TransportTraceState as FixtureTransportTraceState, load_fixture,
 };
 use gr_testkit::recorder::record;
 use gr_translators::{TranslatorRegistry, prepared_translation_context};
@@ -106,11 +110,16 @@ pub fn replay_trace(path: impl AsRef<Path>) -> Result<String, CliError> {
             message: format!("expected backend-trace fixture at {}", path.display()),
         });
     };
-    Ok(render_trace(
-        &fixture.envelope.id,
-        &fixture.trace,
-        fixture.envelope.profile_id.as_deref(),
-    ))
+    let profile_id = fixture.envelope.profile_id.as_deref();
+    if fixture.trace.transport.is_some() {
+        render_transport_trace(&fixture.envelope.id, &fixture.trace, profile_id)
+    } else {
+        Ok(render_trace(
+            &fixture.envelope.id,
+            &fixture.trace,
+            profile_id,
+        ))
+    }
 }
 
 fn load_scenario(path: &Path) -> Result<SessionScenarioFixture, CliError> {
@@ -266,6 +275,44 @@ fn render_trace(trace_id: &str, trace: &BackendTrace, profile_id: Option<&str>) 
     output
 }
 
+fn render_transport_trace(
+    trace_id: &str,
+    trace: &BackendTrace,
+    profile_id: Option<&str>,
+) -> Result<String, CliError> {
+    let Some(spec) = trace.transport.as_ref() else {
+        return Ok(render_trace(trace_id, trace, profile_id));
+    };
+    let profile_id = profile_id.ok_or_else(|| CliError::Simulation {
+        message: format!("transport backend-trace `{trace_id}` requires an envelope `profile_id`"),
+    })?;
+    let replay_steps = trace
+        .steps
+        .iter()
+        .map(|step| transport_replay_step(&step.payload))
+        .collect::<Result<Vec<_>, _>>()?;
+    let summary = replay_transport_trace(
+        &ProfileId::from(profile_id),
+        transport_trace_bus(spec.bus),
+        &replay_steps,
+        spec.expected_final_state.map(transport_trace_state),
+    )
+    .map_err(|source| CliError::Simulation {
+        message: format!("transport trace replay failed: {source}"),
+    })?;
+
+    let mut output = render_trace(trace_id, trace, Some(profile_id));
+    writeln!(output, "transport_bus: {}", serde_name(&spec.bus)).expect("write");
+    writeln!(output, "transport_final_state: {}", summary.final_state).expect("write");
+    writeln!(
+        output,
+        "transport_steps_consumed: {}",
+        summary.consumed_steps
+    )
+    .expect("write");
+    Ok(output)
+}
+
 fn describe_direction(direction: TraceDirection) -> &'static str {
     match direction {
         TraceDirection::Outbound => "outbound",
@@ -295,6 +342,22 @@ fn describe_trace_payload(payload: &BackendTracePayload) -> String {
                 fmt_bytes(bytes)
             )
         }
+        BackendTracePayload::TransportControl {
+            step,
+            endpoint_id,
+            bytes,
+        } => format!(
+            "transport-control step={}{}{}",
+            serde_name(step),
+            endpoint_id
+                .map(|value| format!(" endpoint=0x{value:02x}"))
+                .unwrap_or_default(),
+            if bytes.is_empty() {
+                String::new()
+            } else {
+                format!(" bytes={}", fmt_bytes(bytes))
+            }
+        ),
         BackendTracePayload::EvdevEvents { events } => {
             format!("evdev-events count={}", events.len())
         }
@@ -343,6 +406,59 @@ fn describe_decoded_step(
         }
         BackendTracePayload::ReverseEvent { event } => describe_reverse_event_summary(ctx?, event),
         _ => None,
+    }
+}
+
+fn transport_replay_step(
+    payload: &BackendTracePayload,
+) -> Result<gr_provider_linux_transport::TransportTraceStep, CliError> {
+    let BackendTracePayload::TransportControl {
+        step,
+        endpoint_id,
+        bytes,
+    } = payload
+    else {
+        return Err(CliError::Simulation {
+            message: format!(
+                "transport backend-trace expected only `transport-control` steps, found `{}`",
+                payload.kind_label()
+            ),
+        });
+    };
+    Ok(gr_provider_linux_transport::TransportTraceStep {
+        step: transport_control_step(*step),
+        endpoint_id: *endpoint_id,
+        bytes: bytes.clone(),
+    })
+}
+
+fn transport_trace_bus(bus: TransportTraceBus) -> TransportBus {
+    match bus {
+        TransportTraceBus::Usb => TransportBus::Usb,
+        TransportTraceBus::Bluetooth => TransportBus::Bluetooth,
+    }
+}
+
+fn transport_trace_state(state: FixtureTransportTraceState) -> TransportTraceState {
+    match state {
+        FixtureTransportTraceState::Idle => TransportTraceState::Idle,
+        FixtureTransportTraceState::Connected => TransportTraceState::Connected,
+        FixtureTransportTraceState::DescriptorRead => TransportTraceState::DescriptorRead,
+        FixtureTransportTraceState::EndpointsConfigured => TransportTraceState::EndpointsConfigured,
+        FixtureTransportTraceState::Ready => TransportTraceState::Ready,
+        FixtureTransportTraceState::Disconnected => TransportTraceState::Disconnected,
+    }
+}
+
+fn transport_control_step(step: TransportControlStep) -> TransportControlStepKind {
+    match step {
+        TransportControlStep::Connect => TransportControlStepKind::Connect,
+        TransportControlStep::ReadDescriptor => TransportControlStepKind::ReadDescriptor,
+        TransportControlStep::ConfigureEndpoints => TransportControlStepKind::ConfigureEndpoints,
+        TransportControlStep::ReadySignal => TransportControlStepKind::ReadySignal,
+        TransportControlStep::InputPacket => TransportControlStepKind::InputPacket,
+        TransportControlStep::ReversePacket => TransportControlStepKind::ReversePacket,
+        TransportControlStep::Disconnect => TransportControlStepKind::Disconnect,
     }
 }
 

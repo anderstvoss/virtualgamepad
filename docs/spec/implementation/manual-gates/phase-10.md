@@ -52,18 +52,9 @@ cargo run -p virtual_gamepad_demo -- plan-session dualsense \
    - the rendered plan reports `selected_backend_family:
      linux-transport-usb` (or `linux-transport-bluetooth`, depending on
      the planner's tie-break ordering)
-   - the realization section is empty or marks the session as
-     `pending` — the transport backend factories refuse work until
-     the Phase 10 implementation PR lands
-
-> **Prep-PR note (remove once impl lands):** the prep PR's factories
-> return `SupportLevel::None`, so the planner currently emits a
-> `rejection` outcome with both transport backends in
-> `considered_backends` rather than a `selected_backend_family`. That
-> proves the inventory + planner integration sees the stubs, which is
-> the prep contract. The selection shape above becomes walkable once
-> the Phase 10 implementation PR upgrades `can_realize` to advertise
-> partial transport support.
+   - the realization section is still deferred to Phase 11 — the
+     transport backend is plannable in Phase 10 but still refuses live
+     `open_session()` calls
 
 3. Re-run with the alternate bus preference if the planner exposes the
    hint to confirm both families are reachable.
@@ -73,14 +64,7 @@ cargo run -p virtual_gamepad_demo -- plan-session dualsense \
 Goal: confirm captured enumeration steps replay through the transport
 state machine and reach the documented "ready" state.
 
-> **Status:** prerequisite-pending until the Phase 10 implementation PR
-> lands the fixture file. The check is documented here so the reviewer
-> contract is visible, but the symbolic path
-> `crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml`
-> does not yet exist on disk. Flip this check to "walked on host" when
-> the impl PR creates the directory and authors the fixture.
-
-### Steps (once the fixture lands)
+### Steps
 
 1. Replay the captured enumeration trace:
 
@@ -91,7 +75,7 @@ cargo run -p virtual_gamepad_demo -- replay-trace \
 
 2. Confirm:
    - each captured step is consumed in order
-   - the final state matches the documented "ready" state for the
+   - the final state matches the documented `ready` state for the
      transport state machine
    - no spurious transitions are emitted
 
@@ -101,15 +85,11 @@ Goal: confirm the state machine rejects malformed traces with a
 diagnostic naming the missing transition, rather than a generic parse
 or panic.
 
-> **Status:** prerequisite-pending until the Phase 10 implementation PR
-> lands the state machine and at least one valid fixture to mutate.
-> Flip to "walked on host" alongside check 2.
-
-### Steps (once the fixture lands)
+### Steps
 
 1. Author a custom transport-trace fixture omitting a mandatory startup
-   step (for example, drop the `configure-endpoints` step from a copy
-   of the dualsense-usb fixture).
+   step (drop the `configure-endpoints` step from a copy of the
+   dualsense-usb fixture).
 
 2. Run the replayer:
 
@@ -121,8 +101,8 @@ cargo run -p virtual_gamepad_demo -- replay-trace path/to/broken-trace.yaml
    - the command exits non-zero
    - the error message names the specific missing state transition
      (not a generic "fixture invalid" or parse failure)
-   - the message points the reviewer at the captured fixture's step
-     index for the failed transition
+   - the message points the reviewer at the fixture step index for the
+     failed transition
 
 ## Check 4: planner stays portable; transport crate is Linux-only
 
