@@ -23,7 +23,10 @@ capability_result:
   - audio
 degradation:
   degraded: false
-deployment_requirements: {}
+deployment_requirements:
+  requirements:
+  - phase-10 transport backend is plannable; live USB gadget realization lands in Phase 11
+  - phase-10 transport backend is plannable; live USB gadget realization lands in Phase 11
 backend_open_context:
   session_id: 1
   profile_id: dualsense

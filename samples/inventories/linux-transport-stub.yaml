@@ -2,11 +2,10 @@ fixture: virtualgamepad/v1
 kind: backend-inventory
 id: linux-transport-stub
 notes: |
-  Phase 10 prep inventory: stub transport-tier backends so the planner
-  can resolve --goal hardware-faithful requests against the
-  linux-transport-{usb,bluetooth} families. No realization is provided;
-  the Phase 10 implementation PR lands the enumeration / protocol state
-  machines and packet models.
+  Phase 10 transport-tier inventory: the linux-transport-{usb,bluetooth}
+  families are plannable for `--goal hardware-faithful` but `open_session`
+  still refuses live sessions. Real USB/Bluetooth gadget realization lands
+  in Phase 11.
 payload:
   entries:
     - backend_id: linux-transport-usb
@@ -15,9 +14,13 @@ payload:
       host_platform: linux
       supported_fidelity_tiers:
         - hardware-faithful
+      notes:
+        - phase-10 transport backend is plannable; live USB gadget realization lands in Phase 11
     - backend_id: linux-transport-bluetooth
       family: linux-transport-bluetooth
       level: transport
       host_platform: linux
       supported_fidelity_tiers:
         - hardware-faithful
+      notes:
+        - phase-10 transport backend is plannable; live Bluetooth gadget realization lands in Phase 11

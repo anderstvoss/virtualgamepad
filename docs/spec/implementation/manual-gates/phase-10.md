@@ -52,9 +52,11 @@ cargo run -p virtual_gamepad_demo -- plan-session dualsense \
    - the rendered plan reports `selected_backend_family:
      linux-transport-usb` (or `linux-transport-bluetooth`, depending on
      the planner's tie-break ordering)
-   - the realization section is still deferred to Phase 11 — the
-     transport backend is plannable in Phase 10 but still refuses live
-     `open_session()` calls
+   - the `deployment_requirements.requirements` section lists the
+     Phase 11 deferral note (`phase-10 transport backend is plannable;
+     live USB/Bluetooth gadget realization lands in Phase 11`),
+     making the deferral self-evidencing rather than an out-of-band
+     contract
 
 3. Re-run with the alternate bus preference if the planner exposes the
    hint to confirm both families are reachable.
