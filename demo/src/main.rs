@@ -34,6 +34,8 @@ enum Command {
     ValidateConfig { path: std::path::PathBuf },
     /// Run a fake backend session scenario (Phase 4 deliverable).
     SimulateSession { path: std::path::PathBuf },
+    /// Run a runtime session scenario using the canonical scenario alias.
+    RunScenario { path: std::path::PathBuf },
     /// Spin up many concurrent fake-backed runtime sessions.
     ManySessions { count: usize },
     /// Run a Linux uinput smoke probe for a profile; use `--interactive`
@@ -46,6 +48,15 @@ enum Command {
         script: String,
         #[arg(long, default_value_t = 750)]
         step_delay_ms: u64,
+    },
+    /// Run a Linux UHID smoke probe for a profile; use `--interactive`
+    /// to keep the device alive for host inspection.
+    RunUhidSmoke {
+        profile_id: String,
+        #[arg(long)]
+        interactive: bool,
+        #[arg(long, default_value = "usb")]
+        bus: String,
     },
     /// Generate the initial support-claim evidence report.
     SupportReport {
@@ -101,6 +112,7 @@ fn run() -> Result<(), String> {
         }
         Command::ValidateConfig { path } => print_output(gr_cli::validate_config(path)),
         Command::SimulateSession { path } => print_output(gr_cli::simulate_session(path, None)),
+        Command::RunScenario { path } => print_output(gr_cli::run_scenario(path, None)),
         Command::ManySessions { count } => print_output(gr_cli::many_sessions(count)),
         Command::RunUinputSmoke {
             profile_id,
@@ -114,6 +126,14 @@ fn run() -> Result<(), String> {
         Command::SupportReport { profile, tier } => {
             print_output(gr_cli::support_report(profile.as_deref(), tier.as_deref()))
         }
+        Command::RunUhidSmoke {
+            profile_id,
+            interactive,
+            bus,
+        } => print_output(
+            gr_cli::parse_uhid_smoke_options(interactive, &bus)
+                .and_then(|options| gr_cli::run_uhid_smoke(&profile_id, options)),
+        ),
         Command::ReplayTrace { path } => print_output(gr_cli::replay_trace(path)),
         Command::PlanSession {
             profile_id,
@@ -145,9 +165,9 @@ fn print_info() {
     println!("vgpd-demo {}", env!("CARGO_PKG_VERSION"));
     println!("companion demo for the virtualgamepad workspace");
     println!();
-    println!("library status: through Phase 8 Linux uinput provider support");
+    println!("library status: through Phase 9 Linux uhid provider support");
     println!(
-        "demo status:    gate runner, profile review, config validation, simulate-session, many-sessions, run-uinput-smoke, support-report, replay-trace, plan-session"
+        "demo status:    gate runner, profile review, config validation, simulate-session, run-scenario, many-sessions, run-uinput-smoke, run-uhid-smoke, support-report, replay-trace, plan-session"
     );
 }
 
@@ -220,6 +240,19 @@ mod tests {
     }
 
     #[test]
+    fn run_scenario_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "run-scenario",
+            "samples/scenarios/dualsense-audio-mode.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunScenario { path } if path == std::path::Path::new("samples/scenarios/dualsense-audio-mode.yaml")
+        ));
+    }
+
+    #[test]
     fn replay_trace_subcommand_parses() {
         let cli = Cli::parse_from([
             "vgpd-demo",
@@ -256,6 +289,28 @@ mod tests {
     fn many_sessions_subcommand_parses() {
         let cli = Cli::parse_from(["vgpd-demo", "many-sessions", "4"]);
         assert!(matches!(cli.command, Command::ManySessions { count } if count == 4));
+    }
+
+    #[test]
+    fn run_uhid_smoke_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "run-uhid-smoke",
+            "dualsense",
+            "--interactive",
+            "--bus",
+            "bluetooth",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunUhidSmoke {
+                profile_id,
+                interactive,
+                bus,
+            } if profile_id == "dualsense"
+                && interactive
+                && bus == "bluetooth"
+        ));
     }
 
     #[test]

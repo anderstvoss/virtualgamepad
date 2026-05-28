@@ -8,9 +8,9 @@ use gr_backend_api::{
 };
 use gr_config::{ConfigLoadError, ConfigValidationReport};
 use gr_core::{
-    BackendLevel, CoreError, FidelityTier, GenericGamepadInput, ProfileId, ProfileInputDelta,
-    ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload, SemanticInputFunction,
-    SemanticOutputFunction, SequenceId, SessionId, Timestamp, Xbox360Input,
+    BackendId, BackendLevel, CoreError, FidelityTier, GenericGamepadInput, ProfileId,
+    ProfileInputDelta, ProfileInputDeltaPayload, ProfileInputFrame, ProfileInputPayload,
+    SemanticInputFunction, SemanticOutputFunction, SequenceId, SessionId, Timestamp, Xbox360Input,
 };
 use gr_host_bridge::CallbackSink;
 use gr_planner::plan_session as plan_runtime_session;
@@ -18,6 +18,7 @@ use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
     RegistryError, SemanticRef, registry,
 };
+use gr_provider_linux_uhid::{LinuxUhidBackendFactory, LinuxUhidSmokeReport, UhidBusMode};
 use gr_provider_linux_uinput::LinuxUinputBackendFactory;
 use gr_runtime_model::{
     BackpressurePolicy, ControllerOutputCommand, EmulationGoal, HostPlatform,
@@ -129,6 +130,35 @@ const PHASE_8_COMMANDS: &[&[&str]] = &[
     &["cargo", "insta", "test", "--check"],
 ];
 
+const PHASE_9_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &["cargo", "insta", "test", "--check"],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "gr-cli",
+        "--",
+        "compare-real-device",
+        "--profile",
+        "dualsense",
+        "--bus",
+        "usb",
+    ],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "gr-cli",
+        "--",
+        "compare-real-device",
+        "--profile",
+        "dualsense",
+        "--bus",
+        "bluetooth",
+    ],
+];
+
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -177,6 +207,50 @@ impl Default for UinputSmokeOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UhidSmokeOptions {
+    pub interactive: bool,
+    pub bus_mode: UhidBusMode,
+}
+
+impl Default for UhidSmokeOptions {
+    fn default() -> Self {
+        Self {
+            interactive: false,
+            bus_mode: UhidBusMode::Usb,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct CompareRealDeviceReport {
+    pub profile_id: ProfileId,
+    pub bus_mode: UhidBusMode,
+    pub provider: BackendId,
+    pub descriptor_matches_profile_template: bool,
+    pub descriptor_head_matches_dualsense: bool,
+    pub reverse_trace_matches_reference: bool,
+    pub feature_reports_available: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_report_id: Option<u8>,
+    pub reference_report_id_matches_bus_output: bool,
+    pub smoke_report: LinuxUhidSmokeReport,
+    pub reference_trace: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notes: Vec<String>,
+}
+
+/// Canonical `DualSense` HID report-descriptor signature: Generic
+/// Desktop usage page, Game Pad usage, Application collection,
+/// Report ID 1.
+const DUALSENSE_DESCRIPTOR_HEAD: [u8; 8] = [
+    0x05, 0x01, // Usage Page (Generic Desktop)
+    0x09, 0x05, // Usage (Game Pad)
+    0xA1, 0x01, // Collection (Application)
+    0x85, 0x01, // Report ID (1)
+];
+
 /// Render a Linux `uinput` smoke report for a built-in profile.
 ///
 /// # Errors
@@ -197,6 +271,152 @@ pub fn run_uinput_smoke(profile_id: &str, options: UinputSmokeOptions) -> Result
     }
 }
 
+/// Render a Linux `uhid` smoke report for a built-in profile.
+///
+/// # Errors
+///
+/// Returns an error when the profile id is unknown or the report cannot
+/// be serialized.
+pub fn run_uhid_smoke(profile_id: &str, options: UhidSmokeOptions) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    validate_uhid_smoke_options(profile, options)?;
+    if options.interactive {
+        run_interactive_uhid_smoke(profile, options)
+    } else {
+        let factory = LinuxUhidBackendFactory::new().with_bus_mode(options.bus_mode);
+        let request = uhid_realization_request(profile, FidelityTier::IdentityAware);
+        let mut report = factory.smoke_report(&profile.profile_id, &request);
+        normalize_uhid_report_for_snapshots(&mut report);
+        serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+    }
+}
+
+/// Compare the Phase 9 UHID implementation against the built-in
+/// `DualSense` descriptor and reverse-trace reference.
+///
+/// # Errors
+///
+/// Returns an error when the profile is unknown, unsupported for UHID,
+/// or the comparison report cannot be serialized.
+pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    validate_uhid_smoke_options(
+        profile,
+        UhidSmokeOptions {
+            interactive: false,
+            bus_mode,
+        },
+    )?;
+
+    let factory = LinuxUhidBackendFactory::new().with_bus_mode(bus_mode);
+    let request = uhid_realization_request(profile, FidelityTier::IdentityAware);
+    let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
+    normalize_uhid_report_for_snapshots(&mut smoke_report);
+    let identity = smoke_report.identity.clone();
+    let identity_descriptor = profile
+        .descriptor_templates
+        .iter()
+        .find(|template| template.fidelity == FidelityTier::IdentityAware);
+    let descriptor_matches_profile_template = identity_descriptor
+        .is_some_and(|template| template.descriptor.0.len() == identity.descriptor_size);
+    let descriptor_head_matches_dualsense = identity_descriptor.is_some_and(|template| {
+        template
+            .descriptor
+            .0
+            .starts_with(&DUALSENSE_DESCRIPTOR_HEAD)
+    });
+    let feature_reports_available = smoke_report
+        .planned_kernel_sequence
+        .iter()
+        .any(|step| step.starts_with("feature reply report_id="));
+
+    let repo_root = repo_root()?;
+    let reference_trace_path =
+        repo_root.join("crates/gr-translators/fixtures/dualsense-rumble-from-host.yaml");
+    let reference_report_id = load_reference_report_id(&reference_trace_path)?;
+    let reference_report_id_matches_bus_output =
+        reference_report_id == Some(identity.output_report_id);
+    let reference_trace = replay_trace(&reference_trace_path)?;
+    // Substring checks against the exact payload values emitted by the
+    // Phase 6 reverse translator for the captured DualSense output report.
+    // These are stronger than presence-of-kind because they catch silent
+    // changes to the rumble/trigger/lighting decode paths.
+    let reverse_trace_matches_reference = reference_trace
+        .contains("Rumble(RumblePayload { strong: 5140, weak: 2570 })")
+        && reference_trace.contains("\"left-strength\": \"30\"")
+        && reference_trace.contains("\"right-strength\": \"40\"")
+        && reference_trace
+            .contains("LightingPayload { red: Some(100), green: Some(110), blue: Some(120)")
+        && reference_trace.contains("player_index: Some(3)")
+        && reference_trace.contains("AudioCommand { action: \"speaker-update\"");
+
+    let mut notes = vec![
+        "comparison uses the built-in DualSense descriptor template and the Phase 6 reverse HID fixture as the captured reference".to_string(),
+        "Bluetooth mode currently reuses the HID descriptor template while varying identity metadata and canned feature replies".to_string(),
+    ];
+    if bus_mode == UhidBusMode::Bluetooth {
+        notes.push(
+            "Bluetooth identity reuses the USB device_name string; SDL still recognizes via vid/pid"
+                .to_string(),
+        );
+    }
+    if !reference_report_id_matches_bus_output {
+        notes.push(format!(
+            "reference fixture report_id={:?} does not match the {} output report id 0x{:02x} (the captured trace is USB-shaped; a BT-shaped fixture lands when one is captured)",
+            reference_report_id, bus_mode, identity.output_report_id,
+        ));
+    }
+
+    let report = CompareRealDeviceReport {
+        profile_id: profile.profile_id.clone(),
+        bus_mode,
+        provider: factory.backend_id(),
+        descriptor_matches_profile_template,
+        descriptor_head_matches_dualsense,
+        reverse_trace_matches_reference,
+        feature_reports_available,
+        reference_report_id,
+        reference_report_id_matches_bus_output,
+        smoke_report,
+        reference_trace,
+        notes,
+    };
+    serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+}
+
+/// Extract the `report_id` of the first `hid-output-report` step in a
+/// captured backend-trace fixture. Returns `None` when the fixture does
+/// not carry one (e.g. evdev-only traces).
+fn load_reference_report_id(path: &Path) -> Result<Option<u8>, CliError> {
+    let contents = std::fs::read_to_string(path).map_err(|error| CliError::Fixture {
+        path: path.to_path_buf(),
+        source: FixtureError::Io(error),
+    })?;
+    let value: serde_yaml::Value =
+        serde_yaml::from_str(&contents).map_err(|error| CliError::Fixture {
+            path: path.to_path_buf(),
+            source: FixtureError::Parse(error),
+        })?;
+    let steps = value
+        .get("payload")
+        .and_then(|payload| payload.get("steps"))
+        .and_then(|steps| steps.as_sequence());
+    let Some(steps) = steps else {
+        return Ok(None);
+    };
+    for step in steps {
+        let report_id = step
+            .get("event")
+            .and_then(|event| event.get("payload"))
+            .and_then(|payload| payload.get("report_id"))
+            .and_then(serde_yaml::Value::as_u64);
+        if let Some(report_id) = report_id {
+            return Ok(u8::try_from(report_id).ok());
+        }
+    }
+    Ok(None)
+}
+
 /// Generate the initial support-claim evidence skeleton.
 ///
 /// # Errors
@@ -204,21 +424,23 @@ pub fn run_uinput_smoke(profile_id: &str, options: UinputSmokeOptions) -> Result
 /// Returns an error when a profile or fidelity tier argument is
 /// unknown, or the final report cannot be serialized.
 pub fn support_report(profile_id: Option<&str>, tier: Option<&str>) -> Result<String, CliError> {
+    let requested_profile = profile_id.map(lookup_profile).transpose()?;
     let fidelity = match tier {
         Some(value) => FidelityTier::from_str(value).map_err(|_| CliError::InvalidArgument {
             argument: "tier",
             value: value.to_string(),
         })?,
-        None => FidelityTier::Compatibility,
+        None => requested_profile
+            .filter(|profile| profile.profile_family == ProfileFamily::DualSense)
+            .map_or(FidelityTier::Compatibility, |_| FidelityTier::IdentityAware),
     };
-    let profiles = match profile_id {
-        Some(profile_id) => vec![lookup_profile(profile_id)?],
+    let profiles = match requested_profile {
+        Some(profile) => vec![profile],
         None => registry().profiles().iter().collect(),
     };
-    let factory = LinuxUinputBackendFactory::new();
     let profiles = profiles
         .into_iter()
-        .map(|profile| build_support_report_entry(&factory, profile, fidelity))
+        .map(|profile| build_support_report_entry(profile, fidelity))
         .collect::<Vec<_>>();
 
     let report = SupportReportBundle {
@@ -258,6 +480,19 @@ pub fn simulate_session(
             expected: "session-scenario",
         }),
     }
+}
+
+/// Alias for `simulate_session` that matches the Phase 9 reviewer
+/// wording in the manual gate.
+///
+/// # Errors
+///
+/// Propagates the same errors as [`simulate_session`].
+pub fn run_scenario(
+    scenario_path: impl AsRef<Path>,
+    record_path: Option<&Path>,
+) -> Result<String, CliError> {
+    simulate_session(scenario_path, record_path)
 }
 
 /// Spin up many fake-backed runtime sessions and summarize their
@@ -1354,6 +1589,19 @@ fn uinput_realization_request(
     }
 }
 
+fn uhid_realization_request(
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+) -> gr_backend_api::BackendRealizationRequest {
+    gr_backend_api::BackendRealizationRequest {
+        profile_id: profile.profile_id.clone(),
+        requested_goal: fidelity_tier.into(),
+        requested_fidelity_tier: fidelity_tier,
+        host_platform: HostPlatform::Linux,
+        required_output_functions: required_output_functions(profile),
+    }
+}
+
 fn required_output_functions(profile: &ControllerProfile) -> Vec<SemanticOutputFunction> {
     profile
         .reverse_command_support
@@ -1367,10 +1615,23 @@ fn required_output_functions(profile: &ControllerProfile) -> Vec<SemanticOutputF
 }
 
 fn build_support_report_entry(
-    factory: &LinuxUinputBackendFactory,
     profile: &ControllerProfile,
     fidelity_tier: FidelityTier,
 ) -> SupportReportEntry {
+    if profile.profile_family == ProfileFamily::DualSense
+        && fidelity_tier == FidelityTier::IdentityAware
+    {
+        build_uhid_support_report_entry(profile)
+    } else {
+        build_uinput_support_report_entry(profile, fidelity_tier)
+    }
+}
+
+fn build_uinput_support_report_entry(
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+) -> SupportReportEntry {
+    let factory = LinuxUinputBackendFactory::new();
     let request = uinput_realization_request(profile, fidelity_tier);
     let support = factory.can_realize(&request);
     let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
@@ -1444,6 +1705,125 @@ fn build_support_report_entry(
     }
 }
 
+fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReportEntry {
+    let usb_factory = LinuxUhidBackendFactory::new().with_bus_mode(UhidBusMode::Usb);
+    let bluetooth_factory = LinuxUhidBackendFactory::new().with_bus_mode(UhidBusMode::Bluetooth);
+    let request = uhid_realization_request(profile, FidelityTier::IdentityAware);
+    let support = usb_factory.can_realize(&request);
+    let mut usb_report = usb_factory.smoke_report(&profile.profile_id, &request);
+    let mut bluetooth_report = bluetooth_factory.smoke_report(&profile.profile_id, &request);
+    normalize_uhid_report_for_snapshots(&mut usb_report);
+    normalize_uhid_report_for_snapshots(&mut bluetooth_report);
+
+    SupportReportEntry {
+        profile_id: profile.profile_id.to_string(),
+        display_name: profile.display_name,
+        provider: usb_factory.backend_id().to_string(),
+        backend_family: usb_factory.family().to_string(),
+        forward_support: serde_name(&support.forward_support),
+        reverse_support: serde_name(&support.reverse_support),
+        supported_output_functions: support
+            .supported_output_functions
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        unsupported_output_functions: support
+            .unsupported_output_functions
+            .iter()
+            .map(|unsupported| UnsupportedOutputSummary {
+                function: unsupported.function.to_string(),
+                reason: unsupported.reason.clone(),
+            })
+            .collect(),
+        evidence: build_uhid_support_evidence(&usb_report, &bluetooth_report),
+        command_hint: "gr-cli run-uhid-smoke dualsense --bus usb".to_string(),
+        notes: usb_report
+            .notes
+            .into_iter()
+            .chain(bluetooth_report.notes)
+            .collect(),
+    }
+}
+
+fn build_uhid_support_evidence(
+    usb_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
+    bluetooth_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
+) -> Vec<SupportEvidenceItem> {
+    let descriptor_status = if usb_report.identity.descriptor_size > 0 {
+        "implemented"
+    } else {
+        "missing"
+    };
+    let linux_host_recognition_status =
+        if usb_report.open_result == "created" || bluetooth_report.open_result == "created" {
+            "verified-on-host"
+        } else {
+            "pending-linux-host"
+        };
+
+    vec![
+        SupportEvidenceItem {
+            check: "command-surface",
+            status: "implemented",
+            detail: "run-uhid-smoke, compare-real-device, run-scenario, and support-report are available in gr-cli and vgpd-demo".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "descriptor-evidence",
+            status: descriptor_status,
+            detail: format!(
+                "usb descriptor={} bytes; bluetooth descriptor={} bytes",
+                usb_report.identity.descriptor_size, bluetooth_report.identity.descriptor_size
+            ),
+        },
+        SupportEvidenceItem {
+            check: "input-report-evidence",
+            status: "implemented",
+            detail: format!(
+                "usb input report 0x{:02x}; bluetooth input report 0x{:02x}",
+                usb_report.identity.input_report_id, bluetooth_report.identity.input_report_id
+            ),
+        },
+        SupportEvidenceItem {
+            check: "output-report-evidence",
+            status: "implemented",
+            detail: format!(
+                "{} (usb report 0x{:02x}; bluetooth report 0x{:02x})",
+                usb_report.reverse_path,
+                usb_report.identity.output_report_id,
+                bluetooth_report.identity.output_report_id
+            ),
+        },
+        SupportEvidenceItem {
+            check: "feature-report-evidence",
+            status: "implemented",
+            detail: "known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "linux-host-recognition",
+            status: linux_host_recognition_status,
+            detail: format!(
+                "usb={} bluetooth={}",
+                usb_report.open_result, bluetooth_report.open_result
+            ),
+        },
+        SupportEvidenceItem {
+            check: "real-hardware-evidence",
+            status: "fixture-backed",
+            detail: "compare-real-device and checked-in descriptor/reverse fixtures back the current identity-aware profile claim; refresh on supported hardware when captures change".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "steam-input-recognition",
+            status: "pending-supported-host",
+            detail: "validate on a supported system with Steam installed; capture recognition, layout mapping, and any host-specific mode behavior before claiming full Tier D support".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "reference-title-validation",
+            status: "pending-supported-host",
+            detail: "validate trigger effects, rumble, and comparable profile-specific host behavior against a public DualSense-aware title on a supported system".to_string(),
+        },
+    ]
+}
+
 fn serde_name<T: Serialize>(value: &T) -> String {
     serde_yaml::to_value(value)
         .ok()
@@ -1477,11 +1857,58 @@ fn normalize_uinput_report_for_snapshots(
     }
 }
 
+/// Force a known-stable shape on the `LinuxUhidSmokeReport` so that
+/// insta snapshots compare byte-for-byte across Linux hosts (with and
+/// without `/dev/uhid` access) and macOS dev machines.
+///
+/// The normalizer fires only under `cfg!(test)` — phase-gate
+/// invocations of `gr-cli compare-real-device` and `gr-cli
+/// run-uhid-smoke` are *not* normalized. Those callers produce
+/// host-dependent `kernel_boundary` / `live_access` / `open_result`
+/// values reflecting reality (the phase gate checks exit codes, not
+/// byte-stable output). The pattern matches the sibling
+/// `normalize_uinput_report_for_snapshots`.
+fn normalize_uhid_report_for_snapshots(report: &mut LinuxUhidSmokeReport) {
+    if cfg!(test) {
+        report.kernel_boundary = "live-linux-kernel-ioctl".to_string();
+        report.live_access = true;
+        report.open_result = "created".to_string();
+        report.hidraw_node = None;
+        report.input_nodes.event_nodes.clear();
+        report.input_nodes.js_nodes.clear();
+        report.notes = vec![
+            "identity-aware Linux provider for DualSense via `/dev/uhid`".to_string(),
+            "bus-specific identity is factory-selected; runtime planning remains `linux-uhid`"
+                .to_string(),
+            "live smoke attempts will open `/dev/uhid` on Linux hosts".to_string(),
+            "feature requests receive provider-local canned replies for known DualSense report ids"
+                .to_string(),
+            format!(
+                "identity surface: {} vid=0x{:04x} pid=0x{:04x}",
+                report.identity.bus_mode, report.identity.vendor_id, report.identity.product_id
+            ),
+        ];
+    }
+}
+
 fn validate_uinput_smoke_options(options: UinputSmokeOptions) -> Result<(), CliError> {
     if !options.interactive && options.script != UinputScriptMode::None {
         return Err(CliError::InvalidArgument {
             argument: "script",
             value: options.script.to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_uhid_smoke_options(
+    profile: &ControllerProfile,
+    _options: UhidSmokeOptions,
+) -> Result<(), CliError> {
+    if profile.profile_family != ProfileFamily::DualSense {
+        return Err(CliError::InvalidArgument {
+            argument: "profile_id",
+            value: profile.profile_id.to_string(),
         });
     }
     Ok(())
@@ -1507,6 +1934,23 @@ pub fn parse_uinput_smoke_options(
     };
     validate_uinput_smoke_options(options)?;
     Ok(options)
+}
+
+/// # Errors
+///
+/// Returns an error when `bus` is not a recognized mode.
+pub fn parse_uhid_smoke_options(
+    interactive: bool,
+    bus: &str,
+) -> Result<UhidSmokeOptions, CliError> {
+    let bus_mode = bus.parse().map_err(|(): ()| CliError::InvalidArgument {
+        argument: "bus",
+        value: bus.to_string(),
+    })?;
+    Ok(UhidSmokeOptions {
+        interactive,
+        bus_mode,
+    })
 }
 
 fn run_interactive_uinput_smoke(
@@ -1591,6 +2035,104 @@ fn interactive_uinput_request(profile_id: &ProfileId) -> SessionRequest {
         provider_preference: Some(gr_runtime_model::ProviderId::from("linux-uinput")),
         host_metadata: SessionHostMetadata::default(),
     }
+}
+
+fn run_interactive_uhid_smoke(
+    profile: &ControllerProfile,
+    options: UhidSmokeOptions,
+) -> Result<String, CliError> {
+    let factory = LinuxUhidBackendFactory::new().with_bus_mode(options.bus_mode);
+    let request = uhid_realization_request(profile, FidelityTier::IdentityAware);
+    let report = factory.smoke_report(&profile.profile_id, &request);
+    let report_yaml = serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)?;
+    print!("{report_yaml}");
+    println!();
+    println!(
+        "{}",
+        render_interactive_uhid_banner(profile, options, &report)
+    );
+
+    let manager = VirtualControllerManager::with_backends(
+        ManagerConfig::default(),
+        vec![Arc::new(factory) as Arc<dyn BackendFactory>],
+    )
+    .map_err(|error| CliError::Simulation {
+        message: error.to_string(),
+    })?;
+
+    let session = Arc::new(
+        manager
+            .create_session(interactive_uhid_request(&profile.profile_id))
+            .map_err(|error| CliError::Simulation {
+                message: error.to_string(),
+            })?,
+    );
+    let _subscription = session
+        .subscribe_outputs(Box::new(CallbackSink::new(|command| {
+            println!("{}", format_interactive_output_command(&command));
+        })))
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    let shutdown_reason = wait_for_interactive_shutdown();
+    manager
+        .close_session(session.session_id())
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    Ok(render_interactive_shutdown_summary(
+        shutdown_reason,
+        UinputScriptMode::None,
+        session.session_id(),
+        manager.diagnostics(session.session_id()).as_ref(),
+    ))
+}
+
+fn interactive_uhid_request(profile_id: &ProfileId) -> SessionRequest {
+    SessionRequest {
+        session_id: SessionId::new(9002),
+        profile_id: profile_id.clone(),
+        goal: EmulationGoal::IdentityAware,
+        requested_fidelity_tier: FidelityTier::IdentityAware,
+        host_platform_preference: Some(HostPlatform::Linux),
+        backend_preference: Some(BackendLevel::Hid),
+        provider_preference: Some(gr_runtime_model::ProviderId::from("linux-uhid")),
+        host_metadata: SessionHostMetadata::default(),
+    }
+}
+
+fn render_interactive_uhid_banner(
+    profile: &ControllerProfile,
+    options: UhidSmokeOptions,
+    report: &LinuxUhidSmokeReport,
+) -> String {
+    let identity = &report.identity;
+    let hidraw_node = report.hidraw_node.as_deref().unwrap_or("<pending>");
+    let js_nodes = if report.input_nodes.js_nodes.is_empty() {
+        "<none>".to_string()
+    } else {
+        report.input_nodes.js_nodes.join(", ")
+    };
+    let event_nodes = if report.input_nodes.event_nodes.is_empty() {
+        "<none>".to_string()
+    } else {
+        report.input_nodes.event_nodes.join(", ")
+    };
+    format!(
+        "interactive_uhid_session:\n  profile: {}\n  bus: {}\n  device_name: {}\n  vendor_id: 0x{:04x}\n  product_id: 0x{:04x}\n  input_report_id: 0x{:02x}\n  output_report_id: 0x{:02x}\n  hidraw: {}\n  js_nodes: {}\n  event_nodes: {}\n  stop: press Enter or Ctrl-C",
+        profile.profile_id,
+        options.bus_mode,
+        identity.device_name,
+        identity.vendor_id,
+        identity.product_id,
+        identity.input_report_id,
+        identity.output_report_id,
+        hidraw_node,
+        js_nodes,
+        event_nodes,
+    )
 }
 
 fn run_exercise_script(
@@ -1859,7 +2401,11 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        9..=12 => Err(CliError::UnimplementedPhase { phase }),
+        9 => Ok(PHASE_9_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
+        10..=12 => Err(CliError::UnimplementedPhase { phase }),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -1919,14 +2465,17 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 mod tests {
     use super::{
         PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
-        PHASE_6_COMMANDS, PHASE_8_COMMANDS, UinputScriptMode, UinputSmokeOptions,
-        capability_coverage, format_interactive_output_command, list_profiles, lookup_profile,
+        PHASE_6_COMMANDS, PHASE_8_COMMANDS, PHASE_9_COMMANDS, UhidSmokeOptions, UinputScriptMode,
+        UinputSmokeOptions, capability_coverage, compare_real_device,
+        format_interactive_output_command, list_profiles, lookup_profile, parse_uhid_smoke_options,
         parse_uinput_smoke_options, phase_gate_commands, plan_session,
-        render_interactive_shutdown_summary, render_interactive_uinput_banner, replay_trace,
-        repo_root, repo_root_from, run_uinput_smoke, show_capabilities, simulate_session,
-        support_report, uinput_realization_request, validate_config, validate_fixture,
+        render_interactive_shutdown_summary, render_interactive_uhid_banner,
+        render_interactive_uinput_banner, replay_trace, repo_root, repo_root_from, run_scenario,
+        run_uhid_smoke, run_uinput_smoke, show_capabilities, simulate_session, support_report,
+        uinput_realization_request, validate_config, validate_fixture,
     };
     use gr_core::{ProfileId, SessionId, Timestamp};
+    use gr_provider_linux_uhid::{LinuxUhidBackendFactory, UhidBusMode};
     use gr_provider_linux_uinput::LinuxUinputBackendFactory;
     use gr_runtime_model::{
         ControllerOutputCommand, OutputCommandType, OutputFunctionRef as RuntimeOutputFunctionRef,
@@ -1970,6 +2519,35 @@ mod tests {
         );
         assert!(banner.contains("exercise loop (1200 ms steps)"));
         assert!(banner.contains("press Enter or Ctrl-C"));
+    }
+
+    #[test]
+    fn parse_uhid_smoke_options_parses_bluetooth_mode() {
+        let options = parse_uhid_smoke_options(true, "bluetooth").expect("options");
+        assert!(options.interactive);
+        assert_eq!(options.bus_mode, UhidBusMode::Bluetooth);
+    }
+
+    #[test]
+    fn interactive_uhid_banner_mentions_bus_and_report_ids() {
+        let profile = lookup_profile("dualsense").expect("profile");
+        let report = LinuxUhidBackendFactory::new()
+            .with_bus_mode(UhidBusMode::Bluetooth)
+            .smoke_report(
+                &profile.profile_id,
+                &super::uhid_realization_request(profile, gr_core::FidelityTier::IdentityAware),
+            );
+        let banner = render_interactive_uhid_banner(
+            profile,
+            UhidSmokeOptions {
+                interactive: true,
+                bus_mode: UhidBusMode::Bluetooth,
+            },
+            &report,
+        );
+        assert!(banner.contains("bus: bluetooth"));
+        assert!(banner.contains("input_report_id: 0x31"));
+        assert!(banner.contains("hidraw: <pending>") || banner.contains("hidraw: /dev/"));
     }
 
     #[test]
@@ -2375,6 +2953,21 @@ mod tests {
     }
 
     #[test]
+    fn phase_nine_commands_match_expected_order() {
+        let commands = phase_gate_commands(9).expect("phase 9 commands");
+        let expected = PHASE_9_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
+    }
+
+    #[test]
     fn phase_eight_commands_match_plan_spec() {
         let repo_root = repo_root().expect("workspace root");
         let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
@@ -2397,6 +2990,33 @@ mod tests {
             assert!(
                 automated.contains(&command),
                 "phase 8 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn phase_nine_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_nine = plan
+            .split("## Phase 9:")
+            .nth(1)
+            .and_then(|section| section.split("## Phase 10:").next())
+            .expect("phase 9 section");
+        let automated = phase_nine
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_9_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 9 automated section is missing {command}"
             );
         }
     }
@@ -2433,6 +3053,50 @@ mod tests {
     }
 
     #[test]
+    fn support_report_dualsense_identity_output_is_stable() {
+        let output = support_report(Some("dualsense"), None).expect("report");
+        assert_snapshot!("support_report_dualsense_identity", output);
+    }
+
+    #[test]
+    fn run_uhid_smoke_usb_output_is_stable() {
+        let output = run_uhid_smoke(
+            "dualsense",
+            UhidSmokeOptions {
+                interactive: false,
+                bus_mode: UhidBusMode::Usb,
+            },
+        )
+        .expect("uhid smoke");
+        assert_snapshot!("run_uhid_smoke_dualsense_usb", output);
+    }
+
+    #[test]
+    fn run_uhid_smoke_bluetooth_output_is_stable() {
+        let output = run_uhid_smoke(
+            "dualsense",
+            UhidSmokeOptions {
+                interactive: false,
+                bus_mode: UhidBusMode::Bluetooth,
+            },
+        )
+        .expect("uhid smoke");
+        assert_snapshot!("run_uhid_smoke_dualsense_bluetooth", output);
+    }
+
+    #[test]
+    fn compare_real_device_output_is_stable() {
+        let output = compare_real_device("dualsense", UhidBusMode::Usb).expect("comparison");
+        assert_snapshot!("compare_real_device_dualsense_usb", output);
+    }
+
+    #[test]
+    fn compare_real_device_bluetooth_output_is_stable() {
+        let output = compare_real_device("dualsense", UhidBusMode::Bluetooth).expect("comparison");
+        assert_snapshot!("compare_real_device_dualsense_bluetooth", output);
+    }
+
+    #[test]
     fn simulate_session_output_is_stable() {
         let repo_root = repo_root().expect("workspace root");
         let scenario =
@@ -2463,6 +3127,25 @@ mod tests {
         assert!(
             output.contains("frames.coalesced"),
             "missing frames.coalesced counter in diagnostics:\n{output}",
+        );
+    }
+
+    #[test]
+    fn run_scenario_dualsense_steam_input_mode_runs_to_completion() {
+        let repo_root = repo_root().expect("workspace root");
+        let scenario = repo_root.join("samples/scenarios/dualsense-steam-input-mode.yaml");
+        let output = run_scenario(&scenario, None::<&std::path::Path>).expect("scenario");
+        assert!(
+            output.contains("scenario: dualsense-steam-input-mode"),
+            "missing scenario header in output:\n{output}",
+        );
+        assert!(
+            output.contains("mode: runtime-session"),
+            "missing mode header in output:\n{output}",
+        );
+        assert!(
+            output.contains("outputs: 5") || output.contains("reverse_events.emitted: 5"),
+            "missing reverse output evidence in diagnostics:\n{output}",
         );
     }
 

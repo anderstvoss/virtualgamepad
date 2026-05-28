@@ -1,0 +1,62 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 2921
+expression: output
+---
+command: gr-cli support-report
+requested_tier: identity-aware
+profiles:
+- profile_id: dualsense
+  display_name: DualSense
+  provider: linux-uhid
+  backend_family: linux-uhid
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
+  unsupported_output_functions: []
+  evidence:
+  - check: command-surface
+    status: implemented
+    detail: run-uhid-smoke, compare-real-device, run-scenario, and support-report are available in gr-cli and vgpd-demo
+  - check: descriptor-evidence
+    status: implemented
+    detail: usb descriptor=273 bytes; bluetooth descriptor=273 bytes
+  - check: input-report-evidence
+    status: implemented
+    detail: usb input report 0x01; bluetooth input report 0x31
+  - check: output-report-evidence
+    status: implemented
+    detail: hid-output-and-feature-reports (usb report 0x02; bluetooth report 0x31)
+  - check: feature-report-evidence
+    status: implemented
+    detail: known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events
+  - check: linux-host-recognition
+    status: verified-on-host
+    detail: usb=created bluetooth=created
+  - check: real-hardware-evidence
+    status: fixture-backed
+    detail: compare-real-device and checked-in descriptor/reverse fixtures back the current identity-aware profile claim; refresh on supported hardware when captures change
+  - check: steam-input-recognition
+    status: pending-supported-host
+    detail: validate on a supported system with Steam installed; capture recognition, layout mapping, and any host-specific mode behavior before claiming full Tier D support
+  - check: reference-title-validation
+    status: pending-supported-host
+    detail: validate trigger effects, rumble, and comparable profile-specific host behavior against a public DualSense-aware title on a supported system
+  command_hint: gr-cli run-uhid-smoke dualsense --bus usb
+  notes:
+  - identity-aware Linux provider for DualSense via `/dev/uhid`
+  - bus-specific identity is factory-selected; runtime planning remains `linux-uhid`
+  - live smoke attempts will open `/dev/uhid` on Linux hosts
+  - feature requests receive provider-local canned replies for known DualSense report ids
+  - 'identity surface: usb vid=0x054c pid=0x0ce6'
+  - identity-aware Linux provider for DualSense via `/dev/uhid`
+  - bus-specific identity is factory-selected; runtime planning remains `linux-uhid`
+  - live smoke attempts will open `/dev/uhid` on Linux hosts
+  - feature requests receive provider-local canned replies for known DualSense report ids
+  - 'identity surface: bluetooth vid=0x054c pid=0x0df2'

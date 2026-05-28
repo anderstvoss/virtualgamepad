@@ -222,7 +222,9 @@ fn automated_item_status(item: &str, report: &PhaseGateReport) -> Option<bool> {
             .map(|check| check.success);
     }
 
-    if item.contains("Linux-gated integration tests pass") {
+    if item.contains("Linux-gated uinput integration tests pass")
+        || item.contains("Linux-gated UHID integration tests pass")
+    {
         return report
             .checks
             .iter()
@@ -271,6 +273,20 @@ mod tests {
         assert_eq!(
             gate.sign_off,
             "`git commit --allow-empty -m \"chore(phase-gate): Phase 0 gate passed\"`"
+        );
+    }
+
+    #[test]
+    fn phase_nine_sign_off_uses_provider_complete_closure_wording() {
+        // Phase 9 closed with deferred Tier D validation; its sign-off
+        // commit message diverges from the standard `gate passed`
+        // wording to flag that profile-claim validation remains queued
+        // for a supported host. Locking this in prevents an
+        // accidental normalization back to "gate passed".
+        let gate = load_gate(9).expect("phase 9 gate");
+        assert_eq!(
+            gate.sign_off,
+            "`git commit --allow-empty -m \"chore(phase-gate): Phase 9 provider-complete closure recorded\"`"
         );
     }
 

@@ -24,6 +24,12 @@ enum Command {
         #[arg(long)]
         concurrency: Option<usize>,
     },
+    /// Run a runtime session scenario using the canonical scenario alias.
+    RunScenario {
+        path: PathBuf,
+        #[arg(long)]
+        record: Option<PathBuf>,
+    },
     /// Render a backend trace fixture.
     ReplayTrace { path: PathBuf },
     /// Plan a session from a profile id and backend inventory fixture.
@@ -68,6 +74,23 @@ enum Command {
         script: String,
         #[arg(long, default_value_t = 750)]
         step_delay_ms: u64,
+    },
+    /// Run a Linux UHID smoke probe for a profile; use `--interactive`
+    /// to keep the device alive for host inspection.
+    RunUhidSmoke {
+        profile_id: String,
+        #[arg(long)]
+        interactive: bool,
+        #[arg(long, default_value = "usb")]
+        bus: String,
+    },
+    /// Compare the built-in Phase 9 UHID implementation against the
+    /// descriptor and reverse-trace references.
+    CompareRealDevice {
+        #[arg(long)]
+        profile: String,
+        #[arg(long, default_value = "usb")]
+        bus: String,
     },
     /// Generate the initial support-claim evidence report.
     SupportReport {
@@ -125,6 +148,15 @@ fn main() {
                         eprintln!("{error}");
                         std::process::exit(1);
                     }
+                }
+            }
+        }
+        Command::RunScenario { path, record } => {
+            match gr_cli::run_scenario(path, record.as_deref()) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
                 }
             }
         }
@@ -212,6 +244,32 @@ fn main() {
                 std::process::exit(1);
             }
         },
+        Command::RunUhidSmoke {
+            profile_id,
+            interactive,
+            bus,
+        } => match gr_cli::parse_uhid_smoke_options(interactive, &bus)
+            .and_then(|options| gr_cli::run_uhid_smoke(&profile_id, options))
+        {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::CompareRealDevice { profile, bus } => {
+            let Ok(bus_mode) = bus.parse() else {
+                eprintln!("invalid `bus` value `{bus}`");
+                std::process::exit(1);
+            };
+            match gr_cli::compare_real_device(&profile, bus_mode) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Command::SupportReport { profile, tier } => {
             match gr_cli::support_report(profile.as_deref(), tier.as_deref()) {
                 Ok(output) => println!("{output}"),
@@ -312,6 +370,45 @@ mod tests {
     }
 
     #[test]
+    fn run_uhid_smoke_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "run-uhid-smoke",
+            "dualsense",
+            "--interactive",
+            "--bus",
+            "bluetooth",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunUhidSmoke {
+                profile_id,
+                interactive,
+                bus,
+            } if profile_id == "dualsense"
+                && interactive
+                && bus == "bluetooth"
+        ));
+    }
+
+    #[test]
+    fn compare_real_device_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "compare-real-device",
+            "--profile",
+            "dualsense",
+            "--bus",
+            "usb",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::CompareRealDevice { profile, bus }
+                if profile == "dualsense" && bus == "usb"
+        ));
+    }
+
+    #[test]
     fn simulate_session_subcommand_still_parses() {
         let cli = Cli::parse_from([
             "gr-cli",
@@ -322,6 +419,20 @@ mod tests {
             cli.command,
             Command::SimulateSession { path, .. }
                 if path == Path::new("crates/gr-testkit/fixtures/community/fake-session-rumble.yaml")
+        ));
+    }
+
+    #[test]
+    fn run_scenario_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "run-scenario",
+            "samples/scenarios/dualsense-audio-mode.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunScenario { path, .. }
+                if path == Path::new("samples/scenarios/dualsense-audio-mode.yaml")
         ));
     }
 }

@@ -1,0 +1,54 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 2934
+expression: output
+---
+profile_id: dualsense
+backend_id: linux-uhid
+backend_family: linux-uhid
+backend_level: hid
+host_platform: linux
+requested_fidelity_tier: identity-aware
+identity:
+  bus_mode: usb
+  bus_label: usb
+  bus_type: 3
+  vendor_id: 1356
+  product_id: 3302
+  version: 256
+  device_name: Sony Interactive Entertainment DualSense Wireless Controller
+  input_report_id: 1
+  output_report_id: 2
+  descriptor_size: 273
+reverse_path: hid-output-and-feature-reports
+kernel_boundary: live-linux-kernel-ioctl
+live_access: true
+open_result: created
+planned_kernel_sequence:
+- open /dev/uhid for profile `dualsense`
+- UHID_CREATE2 Sony Interactive Entertainment DualSense Wireless Controller bus=usb vid=0x054c pid=0x0ce6
+- UHID_INPUT2 report_id=0x01 bytes=64
+- reverse output report_id=0x02 bytes=48
+- feature reply report_id=0x05
+- feature reply report_id=0x09
+- feature reply report_id=0x20
+- UHID_DESTROY
+support:
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
+  notes:
+  - identity-aware Linux provider for DualSense via `/dev/uhid`
+  - bus-specific identity is factory-selected; runtime planning remains `linux-uhid`
+notes:
+- identity-aware Linux provider for DualSense via `/dev/uhid`
+- bus-specific identity is factory-selected; runtime planning remains `linux-uhid`
+- live smoke attempts will open `/dev/uhid` on Linux hosts
+- feature requests receive provider-local canned replies for known DualSense report ids
+- 'identity surface: usb vid=0x054c pid=0x0ce6'

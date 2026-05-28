@@ -13,7 +13,7 @@ The demo grows in lockstep with library phases. Highlights:
 - **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
 - **Phase 4 (runtime fake gate)** — shipped: `simulate-session` and `replay-trace` exercise fake backend sessions and recorded trace review.
 - **Phases 5–7 (runtime gates)** — adds `plan-session`, runtime-backed `simulate-session`, and `many-sessions` on top of the Phase 4 trace surface.
-- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`. `run-uinput-smoke` is dual-mode: the default command is a one-shot probe/report surface for CI evidence, while `--interactive` keeps the device alive for `evtest`, `jstest`, SDL, and rumble verification. `--script exercise` replays representative inputs through the runtime while the session stays open.
+- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`, and `run-scenario`. `run-uinput-smoke` is dual-mode: the default command is a one-shot probe/report surface for CI evidence, while `--interactive` keeps the device alive for `evtest`, `jstest`, SDL, and rumble verification. `--script exercise` replays representative inputs through the runtime while the session stays open. `run-uhid-smoke` uses the same one-shot vs interactive split and accepts `--bus usb|bluetooth` to select the DualSense identity surface.
 - **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
 - **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
 
@@ -42,13 +42,17 @@ cargo run -p virtual_gamepad_demo -- info
 cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
 cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
+cargo run -p virtual_gamepad_demo -- run-scenario samples/scenarios/dualsense-steam-input-mode.yaml
 cargo run -p virtual_gamepad_demo -- many-sessions 8
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive --script exercise
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive
+cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --bus usb
+cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bus bluetooth
 cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
-cargo run -p virtual_gamepad_demo -- phase-gate 8
+cargo run -p virtual_gamepad_demo -- support-report --profile dualsense
+cargo run -p virtual_gamepad_demo -- phase-gate 9
 ```
 
 Add `--help` to any subcommand for usage details.

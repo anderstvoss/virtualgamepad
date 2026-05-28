@@ -50,11 +50,21 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      - name: Check phase 8 command surfaces
+      - name: Install cargo-insta
+        # phase-gate 8 and 9 both shell out to `cargo insta test --check`.
+        run: cargo install cargo-insta --locked
+
+      - name: Check phase 8 and 9 command surfaces
         run: |
           cargo run -p virtual_gamepad_demo -- phase-gate 8
           cargo run -p gr-cli -- run-uinput-smoke generic-gamepad
           cargo run -p gr-cli -- support-report --profile generic-gamepad --tier compatibility
+          cargo run -p virtual_gamepad_demo -- phase-gate 9
+          cargo run -p gr-cli -- run-uhid-smoke dualsense --bus usb
+          cargo run -p gr-cli -- run-uhid-smoke dualsense --bus bluetooth
+          cargo run -p gr-cli -- compare-real-device --profile dualsense --bus usb
+          cargo run -p gr-cli -- compare-real-device --profile dualsense --bus bluetooth
+          cargo run -p gr-cli -- support-report --profile dualsense
 
   privileged-linux:
     name: Privileged Linux provider validation
