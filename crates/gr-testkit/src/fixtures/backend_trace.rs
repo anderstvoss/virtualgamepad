@@ -1,6 +1,9 @@
 //! `backend-trace` fixture support.
 
 use super::schema::{FixtureEnvelope, FixtureError};
+use super::transport_state_machine::{
+    TransportControlStep, TransportEndpoints, TransportTraceBus, TransportTraceState,
+};
 use gr_backend_api::{BackendError, BackendFrame, BackendReverseEvent, EvdevEvent};
 use serde::{Deserialize, Serialize};
 
@@ -46,41 +49,13 @@ pub struct BackendTraceStep {
     pub payload: BackendTracePayload,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TransportTraceBus {
-    Usb,
-    Bluetooth,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TransportTraceState {
-    Idle,
-    Connected,
-    DescriptorRead,
-    EndpointsConfigured,
-    Ready,
-    Disconnected,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransportTraceSpec {
     pub bus: TransportTraceBus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expected_final_state: Option<TransportTraceState>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TransportControlStep {
-    Connect,
-    ReadDescriptor,
-    ConfigureEndpoints,
-    ReadySignal,
-    InputPacket,
-    ReversePacket,
-    Disconnect,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<TransportEndpoints>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -285,6 +260,7 @@ steps:
             Some(TransportTraceSpec {
                 bus: TransportTraceBus::Usb,
                 expected_final_state: Some(TransportTraceState::Ready),
+                endpoints: None,
             })
         );
         assert!(matches!(

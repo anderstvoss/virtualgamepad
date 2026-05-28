@@ -12,6 +12,7 @@ description = "Linux transport provider foundation for virtualgamepad."
 gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
 gr-core = { path = "../gr-core", version = "0.1" }
 gr-runtime-model = { path = "../gr-runtime-model", version = "0.1" }
+gr-testkit = { path = "../gr-testkit", version = "0.1" }
 
 [lints]
 workspace = true

@@ -1,15 +1,14 @@
 //! Linux transport provider foundation for `virtualgamepad`.
 //!
-//! Phase 10 advertises transport-tier planner support and provides a
-//! transport enumeration/control-flow state machine for canned trace
-//! replay. Real Linux USB/Bluetooth gadget realization remains a
-//! Phase 11 task, so `open_session()` still refuses live sessions.
+//! Phase 10 advertises transport-tier planner support and re-exports
+//! the transport state-machine types that `gr-testkit` owns. Real
+//! Linux USB/Bluetooth gadget realization remains a Phase 11 task, so
+//! `open_session()` still refuses live sessions.
 
 #![allow(clippy::module_name_repetitions)]
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 use gr_backend_api::{
     BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
@@ -21,10 +20,14 @@ use gr_core::{
     SessionId,
 };
 use gr_runtime_model::HostPlatform;
+use gr_testkit::fixtures::{TransportEndpoints, TransportTraceBus};
+
+pub use gr_testkit::fixtures::{
+    TransportControlStep, TransportReplayError, TransportReplaySummary, TransportTraceState,
+    TransportTraceStep, replay_transport_trace,
+};
 
 const PHASE_11_REALIZATION_NOTE: &str = "phase-10 transport backend is plannable and trace-replay-capable; real Linux USB/Bluetooth gadget realization lands in Phase 11";
-const UNSUPPORTED_PROFILE_NOTE: &str =
-    "transport support is limited to DualSense USB/Bluetooth and Xbox360 USB during Phase 10";
 
 const USB_BACKEND_ID: &str = "linux-transport-usb";
 const BLUETOOTH_BACKEND_ID: &str = "linux-transport-bluetooth";
@@ -47,286 +50,51 @@ const DUALSENSE_OUTPUTS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::Audio,
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportBus {
-    Usb,
-    Bluetooth,
-}
-
-impl fmt::Display for TransportBus {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Usb => f.write_str("usb"),
-            Self::Bluetooth => f.write_str("bluetooth"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportTraceState {
-    Idle,
-    Connected,
-    DescriptorRead,
-    EndpointsConfigured,
-    Ready,
-    Disconnected,
-}
-
-impl fmt::Display for TransportTraceState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Idle => f.write_str("idle"),
-            Self::Connected => f.write_str("connected"),
-            Self::DescriptorRead => f.write_str("descriptor-read"),
-            Self::EndpointsConfigured => f.write_str("endpoints-configured"),
-            Self::Ready => f.write_str("ready"),
-            Self::Disconnected => f.write_str("disconnected"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransportControlStepKind {
-    Connect,
-    ReadDescriptor,
-    ConfigureEndpoints,
-    ReadySignal,
-    InputPacket,
-    ReversePacket,
-    Disconnect,
-}
-
-impl fmt::Display for TransportControlStepKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Connect => f.write_str("connect"),
-            Self::ReadDescriptor => f.write_str("read-descriptor"),
-            Self::ConfigureEndpoints => f.write_str("configure-endpoints"),
-            Self::ReadySignal => f.write_str("ready-signal"),
-            Self::InputPacket => f.write_str("input-packet"),
-            Self::ReversePacket => f.write_str("reverse-packet"),
-            Self::Disconnect => f.write_str("disconnect"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransportTraceStep {
-    pub step: TransportControlStepKind,
-    pub endpoint_id: Option<u8>,
-    pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransportReplaySummary {
-    pub final_state: TransportTraceState,
-    pub consumed_steps: usize,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransportReplayError {
-    UnsupportedProfile {
-        profile_id: ProfileId,
-        bus: TransportBus,
-    },
-    InvalidEndpoint {
-        step_index: usize,
-        step: TransportControlStepKind,
-        expected: u8,
-        actual: u8,
-    },
-    MissingTransition {
-        step_index: usize,
-        step: TransportControlStepKind,
-        current_state: TransportTraceState,
-        required_step: TransportControlStepKind,
-    },
-    UnexpectedFinalState {
-        expected: TransportTraceState,
-        actual: TransportTraceState,
-    },
-}
-
-impl fmt::Display for TransportReplayError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnsupportedProfile { profile_id, bus } => write!(
-                f,
-                "transport trace replay does not support profile `{profile_id}` on {bus}"
-            ),
-            Self::InvalidEndpoint {
-                step_index,
-                step,
-                expected,
-                actual,
-            } => write!(
-                f,
-                "transport trace step {step_index} `{step}` targeted endpoint 0x{actual:02x}, expected 0x{expected:02x}"
-            ),
-            Self::MissingTransition {
-                step_index,
-                step,
-                current_state,
-                required_step,
-            } => write!(
-                f,
-                "transport trace step {step_index} `{step}` requires `{required_step}` before it; current state is `{current_state}`"
-            ),
-            Self::UnexpectedFinalState { expected, actual } => write!(
-                f,
-                "transport trace finished in `{actual}` but fixture expected `{expected}`"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for TransportReplayError {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransportPacketModel {
-    UsbInterrupt { endpoint_id: u8, bytes: Vec<u8> },
-    BluetoothInterrupt { endpoint_id: u8, bytes: Vec<u8> },
-}
-
-impl TransportPacketModel {
-    #[must_use]
-    pub fn endpoint_id(&self) -> u8 {
-        match self {
-            Self::UsbInterrupt { endpoint_id, .. }
-            | Self::BluetoothInterrupt { endpoint_id, .. } => *endpoint_id,
-        }
-    }
-}
-
-/// Replay a canned transport enumeration/control-flow trace through the
-/// Phase 10 Linux transport state machine.
+/// Single source of truth for the Phase 10 profile / bus allowlist.
 ///
-/// # Errors
-///
-/// Returns [`TransportReplayError`] when the profile/bus pair is not
-/// supported, a mandatory startup transition is missing, an endpoint is
-/// inconsistent with the modeled bus, or the final state does not match
-/// the fixture expectation.
-pub fn replay_transport_trace(
-    profile_id: &ProfileId,
-    bus: TransportBus,
-    steps: &[TransportTraceStep],
-    expected_final_state: Option<TransportTraceState>,
-) -> Result<TransportReplaySummary, TransportReplayError> {
-    let support = support_profile(profile_id, bus).ok_or_else(|| {
-        TransportReplayError::UnsupportedProfile {
-            profile_id: profile_id.clone(),
-            bus,
-        }
-    })?;
-    let mut state = TransportTraceState::Idle;
-    for (index, step) in steps.iter().enumerate() {
-        let step_index = index + 1;
-        if let Some(endpoint_id) = step.endpoint_id {
-            let expected_endpoint = match step.step {
-                TransportControlStepKind::InputPacket => support.input_endpoint,
-                TransportControlStepKind::ReversePacket => support.reverse_endpoint,
-                _ => endpoint_id,
-            };
-            if matches!(
-                step.step,
-                TransportControlStepKind::InputPacket | TransportControlStepKind::ReversePacket
-            ) && endpoint_id != expected_endpoint
-            {
-                return Err(TransportReplayError::InvalidEndpoint {
-                    step_index,
-                    step: step.step,
-                    expected: expected_endpoint,
-                    actual: endpoint_id,
-                });
-            }
-        }
+/// `support_profile` matches arms from this table, and
+/// `unsupported_profile_note` renders the human-readable list from the
+/// same data — so the two cannot drift.
+const SUPPORTED_PROFILE_BUS_PAIRS: &[(&str, TransportTraceBus)] = &[
+    ("dualsense", TransportTraceBus::Usb),
+    ("dualsense", TransportTraceBus::Bluetooth),
+    ("xbox360", TransportTraceBus::Usb),
+];
 
-        state = match (state, step.step) {
-            (TransportTraceState::Idle, TransportControlStepKind::Connect) => {
-                TransportTraceState::Connected
-            }
-            (TransportTraceState::Connected, TransportControlStepKind::ReadDescriptor) => {
-                TransportTraceState::DescriptorRead
-            }
-            (TransportTraceState::DescriptorRead, TransportControlStepKind::ConfigureEndpoints) => {
-                TransportTraceState::EndpointsConfigured
-            }
-            (TransportTraceState::EndpointsConfigured, TransportControlStepKind::ReadySignal)
-            | (
-                TransportTraceState::Ready,
-                TransportControlStepKind::InputPacket | TransportControlStepKind::ReversePacket,
-            ) => TransportTraceState::Ready,
-            (
-                TransportTraceState::Connected
-                | TransportTraceState::DescriptorRead
-                | TransportTraceState::EndpointsConfigured
-                | TransportTraceState::Ready,
-                TransportControlStepKind::Disconnect,
-            ) => TransportTraceState::Disconnected,
-            (current_state, step_kind) => {
-                return Err(TransportReplayError::MissingTransition {
-                    step_index,
-                    step: step_kind,
-                    current_state,
-                    required_step: required_previous_step(step_kind),
-                });
-            }
-        };
-    }
-
-    if let Some(expected) = expected_final_state
-        && state != expected
-    {
-        return Err(TransportReplayError::UnexpectedFinalState {
-            expected,
-            actual: state,
-        });
-    }
-
-    Ok(TransportReplaySummary {
-        final_state: state,
-        consumed_steps: steps.len(),
-    })
-}
-
-fn required_previous_step(step: TransportControlStepKind) -> TransportControlStepKind {
-    match step {
-        TransportControlStepKind::Connect
-        | TransportControlStepKind::ReadDescriptor
-        | TransportControlStepKind::Disconnect => TransportControlStepKind::Connect,
-        TransportControlStepKind::ConfigureEndpoints => TransportControlStepKind::ReadDescriptor,
-        TransportControlStepKind::ReadySignal => TransportControlStepKind::ConfigureEndpoints,
-        TransportControlStepKind::InputPacket | TransportControlStepKind::ReversePacket => {
-            TransportControlStepKind::ReadySignal
-        }
-    }
+fn unsupported_profile_note() -> String {
+    let pairs = SUPPORTED_PROFILE_BUS_PAIRS
+        .iter()
+        .map(|(profile, bus)| format!("{profile} on {bus}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("transport support during Phase 10 is limited to: {pairs}")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SupportedTransportProfile {
-    family: BackendFamily,
     supported_outputs: &'static [SemanticOutputFunction],
     input_endpoint: u8,
     reverse_endpoint: u8,
 }
 
-fn support_profile(profile_id: &ProfileId, bus: TransportBus) -> Option<SupportedTransportProfile> {
+fn support_profile(
+    profile_id: &ProfileId,
+    bus: TransportTraceBus,
+) -> Option<SupportedTransportProfile> {
+    // Match arms must cover every entry in SUPPORTED_PROFILE_BUS_PAIRS;
+    // the `supported_profile_table_matches_match_arms` test guarantees it.
     match (profile_id.as_ref(), bus) {
-        ("dualsense", TransportBus::Usb) => Some(SupportedTransportProfile {
-            family: BackendFamily::LinuxTransportUsb,
+        ("dualsense", TransportTraceBus::Usb) => Some(SupportedTransportProfile {
             supported_outputs: DUALSENSE_OUTPUTS,
             input_endpoint: USB_ENDPOINT_INPUT,
             reverse_endpoint: USB_ENDPOINT_REVERSE,
         }),
-        ("dualsense", TransportBus::Bluetooth) => Some(SupportedTransportProfile {
-            family: BackendFamily::LinuxTransportBluetooth,
+        ("dualsense", TransportTraceBus::Bluetooth) => Some(SupportedTransportProfile {
             supported_outputs: DUALSENSE_OUTPUTS,
             input_endpoint: BLUETOOTH_ENDPOINT_INPUT,
             reverse_endpoint: BLUETOOTH_ENDPOINT_REVERSE,
         }),
-        ("xbox360", TransportBus::Usb) => Some(SupportedTransportProfile {
-            family: BackendFamily::LinuxTransportUsb,
+        ("xbox360", TransportTraceBus::Usb) => Some(SupportedTransportProfile {
             supported_outputs: XBOX360_OUTPUTS,
             input_endpoint: USB_ENDPOINT_INPUT,
             reverse_endpoint: USB_ENDPOINT_REVERSE,
@@ -335,12 +103,26 @@ fn support_profile(profile_id: &ProfileId, bus: TransportBus) -> Option<Supporte
     }
 }
 
+/// Resolve the endpoints a transport-trace replay should expect for a
+/// supported profile+bus pair. Returns `None` for unsupported pairs.
+#[must_use]
+pub fn transport_endpoints_for(
+    profile_id: &ProfileId,
+    bus: TransportTraceBus,
+) -> Option<TransportEndpoints> {
+    support_profile(profile_id, bus).map(|profile| TransportEndpoints {
+        input: profile.input_endpoint,
+        reverse: profile.reverse_endpoint,
+    })
+}
+
 fn support_report_for(
     profile_id: &ProfileId,
-    bus: TransportBus,
+    bus: TransportTraceBus,
     required_output_functions: &[SemanticOutputFunction],
 ) -> BackendSupportReport {
     let Some(supported_profile) = support_profile(profile_id, bus) else {
+        let note = unsupported_profile_note();
         return BackendSupportReport {
             forward_support: SupportLevel::None,
             reverse_support: SupportLevel::None,
@@ -350,10 +132,10 @@ fn support_report_for(
                 .copied()
                 .map(|function| UnsupportedOutputFunction {
                     function,
-                    reason: UNSUPPORTED_PROFILE_NOTE.to_string(),
+                    reason: note.clone(),
                 })
                 .collect(),
-            notes: vec![UNSUPPORTED_PROFILE_NOTE.to_string()],
+            notes: vec![note],
         };
     };
 
@@ -436,7 +218,7 @@ impl BackendFactory for LinuxTransportUsbBackendFactory {
     fn can_realize(&self, request: &BackendRealizationRequest) -> BackendSupportReport {
         support_report_for(
             &request.profile_id,
-            TransportBus::Usb,
+            TransportTraceBus::Usb,
             &request.required_output_functions,
         )
     }
@@ -499,7 +281,7 @@ impl BackendFactory for LinuxTransportBluetoothBackendFactory {
     fn can_realize(&self, request: &BackendRealizationRequest) -> BackendSupportReport {
         support_report_for(
             &request.profile_id,
-            TransportBus::Bluetooth,
+            TransportTraceBus::Bluetooth,
             &request.required_output_functions,
         )
     }
@@ -653,47 +435,81 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_profiles_report_none_support_with_specific_note() {
+    fn unsupported_profiles_report_none_support_with_note_listing_allowlist() {
         let bluetooth = LinuxTransportBluetoothBackendFactory::new();
         let support = bluetooth.can_realize(&dummy_request("steam-controller"));
         assert_eq!(support.forward_support, SupportLevel::None);
         assert_eq!(support.reverse_support, SupportLevel::None);
-        assert!(
-            support
-                .notes
-                .iter()
-                .any(|note| note.contains("DualSense USB/Bluetooth and Xbox360 USB"))
-        );
+        for (profile, bus) in SUPPORTED_PROFILE_BUS_PAIRS {
+            let expected = format!("{profile} on {bus}");
+            assert!(
+                support.notes.iter().any(|note| note.contains(&expected)),
+                "expected note to list `{expected}`; got {:?}",
+                support.notes
+            );
+        }
     }
 
     #[test]
-    fn replay_dualsense_usb_enumeration_reaches_ready() {
+    fn supported_profile_table_matches_match_arms() {
+        // Every entry in SUPPORTED_PROFILE_BUS_PAIRS must resolve via
+        // support_profile; conversely, support_profile must not accept
+        // anything outside the table. This guards concern 6 — the
+        // human-readable note and the runtime allowlist cannot drift.
+        for (profile_id, bus) in SUPPORTED_PROFILE_BUS_PAIRS {
+            let resolved = support_profile(&ProfileId::from(*profile_id), *bus);
+            assert!(
+                resolved.is_some(),
+                "SUPPORTED_PROFILE_BUS_PAIRS lists `{profile_id}` on {bus} but support_profile rejects it"
+            );
+        }
+
+        let unknown_pairs = [
+            ("steam-controller", TransportTraceBus::Usb),
+            ("xbox360", TransportTraceBus::Bluetooth),
+            ("dualshock4", TransportTraceBus::Usb),
+        ];
+        for (profile_id, bus) in unknown_pairs {
+            assert!(
+                support_profile(&ProfileId::from(profile_id), bus).is_none(),
+                "support_profile accepted unlisted pair `{profile_id}` on {bus}"
+            );
+        }
+    }
+
+    #[test]
+    fn replay_via_testkit_uses_resolved_endpoints() {
+        let endpoints =
+            transport_endpoints_for(&ProfileId::from("dualsense"), TransportTraceBus::Usb)
+                .expect("dualsense usb endpoints");
+        assert_eq!(endpoints.input, USB_ENDPOINT_INPUT);
+        assert_eq!(endpoints.reverse, USB_ENDPOINT_REVERSE);
+
         let summary = replay_transport_trace(
-            &ProfileId::from("dualsense"),
-            TransportBus::Usb,
+            Some(endpoints),
             &[
                 TransportTraceStep {
-                    step: TransportControlStepKind::Connect,
+                    step: TransportControlStep::Connect,
                     endpoint_id: None,
                     bytes: Vec::new(),
                 },
                 TransportTraceStep {
-                    step: TransportControlStepKind::ReadDescriptor,
+                    step: TransportControlStep::ReadDescriptor,
                     endpoint_id: None,
                     bytes: vec![0x01, 0x02],
                 },
                 TransportTraceStep {
-                    step: TransportControlStepKind::ConfigureEndpoints,
+                    step: TransportControlStep::ConfigureEndpoints,
                     endpoint_id: None,
                     bytes: vec![USB_ENDPOINT_INPUT, USB_ENDPOINT_REVERSE],
                 },
                 TransportTraceStep {
-                    step: TransportControlStepKind::ReadySignal,
+                    step: TransportControlStep::ReadySignal,
                     endpoint_id: None,
                     bytes: vec![0xaa],
                 },
                 TransportTraceStep {
-                    step: TransportControlStepKind::InputPacket,
+                    step: TransportControlStep::InputPacket,
                     endpoint_id: Some(USB_ENDPOINT_INPUT),
                     bytes: vec![0x01, 0x7f],
                 },
@@ -706,43 +522,6 @@ mod tests {
         assert_eq!(summary.consumed_steps, 5);
     }
 
-    #[test]
-    fn replay_reports_missing_configure_endpoints_with_step_index() {
-        let error = replay_transport_trace(
-            &ProfileId::from("dualsense"),
-            TransportBus::Usb,
-            &[
-                TransportTraceStep {
-                    step: TransportControlStepKind::Connect,
-                    endpoint_id: None,
-                    bytes: Vec::new(),
-                },
-                TransportTraceStep {
-                    step: TransportControlStepKind::ReadDescriptor,
-                    endpoint_id: None,
-                    bytes: vec![0x01],
-                },
-                TransportTraceStep {
-                    step: TransportControlStepKind::ReadySignal,
-                    endpoint_id: None,
-                    bytes: vec![0xaa],
-                },
-            ],
-            Some(TransportTraceState::Ready),
-        )
-        .expect_err("missing configure-endpoints should fail");
-
-        assert!(matches!(
-            error,
-            TransportReplayError::MissingTransition {
-                step_index: 3,
-                step: TransportControlStepKind::ReadySignal,
-                current_state: TransportTraceState::DescriptorRead,
-                required_step: TransportControlStepKind::ConfigureEndpoints,
-            }
-        ));
-    }
-
     fn dummy_request(profile_id: &str) -> BackendRealizationRequest {
         BackendRealizationRequest {
             profile_id: ProfileId::from(profile_id),
@@ -751,7 +530,7 @@ mod tests {
             host_platform: HostPlatform::Linux,
             required_output_functions: support_profile(
                 &ProfileId::from(profile_id),
-                TransportBus::Usb,
+                TransportTraceBus::Usb,
             )
             .map(|profile| profile.supported_outputs.to_vec())
             .unwrap_or_default(),

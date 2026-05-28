@@ -11,6 +11,9 @@ payload:
   transport:
     bus: usb
     expected_final_state: ready
+    endpoints:
+      input: 0x01
+      reverse: 0x02
   steps:
     - direction: outbound
       kind: transport-control
