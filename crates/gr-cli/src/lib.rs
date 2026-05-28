@@ -171,6 +171,14 @@ const PHASE_10_COMMANDS: &[&[&str]] = &[
         "replay-trace",
         "crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml",
     ],
+    &[
+        "cargo",
+        "check",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "-p",
+        "gr-cli",
+    ],
 ];
 
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;

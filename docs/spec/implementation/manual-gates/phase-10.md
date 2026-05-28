@@ -25,6 +25,19 @@ Host prerequisites:
   this gate exercises planner contracts and state-machine fixtures
   only.
 
+Phase 10 profile support (single source of truth: `SUPPORTED_PROFILE_BUS_PAIRS`
+in `crates/gr-provider-linux-transport/src/lib.rs`):
+
+- DualSense on USB
+- DualSense on Bluetooth
+- Xbox 360 on USB
+
+Other profile / bus combinations (Steam Controller, generic gamepad,
+Xbox 360 over Bluetooth) currently surface as `SupportLevel::None`
+from the transport factories. Reviewers running `plan-session` against
+those profiles should expect a `no-backend-supports-profile` rejection,
+not a Phase 10 bug.
+
 Start with:
 
 ```bash

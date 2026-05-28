@@ -843,18 +843,18 @@ Build the transport-tier scaffolding: enumeration, control flow, packet state ma
 
 Automated portion:
 
-- [ ] `cargo test --workspace --all-features` clean
+- [ ] `cargo test --workspace --all-features` clean (covers the transport state-machine round-trip tests)
 - [ ] `cargo insta test --check` clean
-- [ ] transport state machine round-trip tests pass on canned fixtures
 - [ ] `cargo run -p gr-cli -- replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` exits 0
+- [ ] `cargo check --target x86_64-pc-windows-msvc -p gr-cli` succeeds (gr-cli stays portable; transport state machine lives in gr-testkit)
 - [ ] `vgpd-demo phase-gate 10` exits 0
 
 Manual portion:
 
-- [ ] 1. `vgpd-demo plan-session dualsense --goal hardware-faithful --inventory samples/inventories/linux-transport-stub.yaml` produces a plan with `selected_backend_family: linux-transport-usb` (or `linux-transport-bluetooth`) and live realization still deferred to Phase 11
+- [ ] 1. `vgpd-demo plan-session dualsense --goal hardware-faithful --inventory samples/inventories/linux-transport-stub.yaml` produces a plan with `selected_backend_family: linux-transport-usb` (or `linux-transport-bluetooth`) and `deployment_requirements.requirements` lists the Phase 11 deferral note
 - [ ] 2. `vgpd-demo replay-trace crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml` plays the canned enumeration steps through the state machine; final state matches the documented `ready` state
 - [ ] 3. Author a custom transport-trace fixture omitting `configure-endpoints`; replay reports the specific missing state transition and step index
-- [ ] 4. Confirm `gr-provider-linux-transport` is `cfg(target_os = "linux")`; `cargo check --target x86_64-pc-windows-msvc -p gr-planner` succeeds (planner stays portable)
+- [ ] 4. `cargo check --target x86_64-pc-windows-msvc -p gr-planner` succeeds (planner stays portable; transport-provider crate is free to become Linux-only in Phase 11)
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 10 gate passed"`
 
