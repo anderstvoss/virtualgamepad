@@ -47,6 +47,36 @@ The user can author **custom test cases as YAML fixtures** starting in Phase 0; 
 - **Provider phases (8–11)**: gates exercise real Linux devices. The user plugs the virtual device into host software (jstest, SDL games, Steam, etc.) and confirms recognition + functional behavior.
 - **Platform phases (12)**: gates exercise planner-only — Windows/macOS providers begin as inventory stubs and require no real host until later work.
 
+### Evidence-status vocabulary for deferred-validation gates
+
+Phase 9 introduced a tri-state evidence vocabulary for gates that
+touch real-device validation but may close on a host that cannot
+exercise the full Tier D surface (e.g. no `/dev/uhid`, no Steam, no
+real DualSense). Apply this vocabulary to gate authoring for Phase
+10+ so future phase authors do not re-invent the distinction.
+
+- `implemented` — code/test/fixture exists in-repo; no host required.
+- `verified-on-host` — exercised on this Linux host with the relevant
+  device node accessible.
+- `fixture-backed` — backed by checked-in descriptor/reverse fixtures
+  in lieu of live capture; refresh on supported hardware when captures
+  change.
+- `pending-linux-host` — requires Linux plus the relevant `/dev/*`
+  node; acceptable as a deferred state when the validation host is
+  unavailable. Does not block provider-complete closure.
+- `pending-supported-host` — Tier D (Steam Input recognition,
+  reference-title trigger effects, host-originated rumble from target
+  software, etc.). Blocks any "fully validated" support claim but
+  does not block provider-complete closure.
+
+Gates whose `pending-*` items are accepted as deferred sign off with
+the variant wording `chore(phase-gate): Phase N provider-complete
+closure recorded`. Gates whose every check was actually exercised
+on-host continue to use the original `chore(phase-gate): Phase N gate
+passed`. The variant signals that the provider/runtime contract is
+closed but profile-level Tier D claims remain queued for a supported
+validation host.
+
 ## Authority and drift rule
 
 If this plan and the implementation spec disagree on type shape, crate ownership, or contract surface, **the spec is authoritative**. Update this plan, not the spec.

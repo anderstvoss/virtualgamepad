@@ -277,6 +277,20 @@ mod tests {
     }
 
     #[test]
+    fn phase_nine_sign_off_uses_provider_complete_closure_wording() {
+        // Phase 9 closed with deferred Tier D validation; its sign-off
+        // commit message diverges from the standard `gate passed`
+        // wording to flag that profile-claim validation remains queued
+        // for a supported host. Locking this in prevents an
+        // accidental normalization back to "gate passed".
+        let gate = load_gate(9).expect("phase 9 gate");
+        assert_eq!(
+            gate.sign_off,
+            "`git commit --allow-empty -m \"chore(phase-gate): Phase 9 provider-complete closure recorded\"`"
+        );
+    }
+
+    #[test]
     fn phase_one_automated_checklist_extracts_proptest_line() {
         let gate = load_gate(1).expect("phase 1 gate");
         assert_eq!(gate.automated.len(), 4);
