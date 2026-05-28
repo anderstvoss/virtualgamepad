@@ -711,7 +711,7 @@ Sign-off: create `git commit --allow-empty -m "chore(phase-gate): Phase 8 gate p
 
 ### Goal
 
-First identity-aware provider. Host software inspecting HID identity recognizes the virtual device. Reverse path covers output reports + feature reports + the full set of declared capability functions for one profile.
+First identity-aware provider. Host software inspecting HID identity recognizes the virtual device. Reverse path covers output reports + feature reports + the full set of declared capability functions for one profile. Phase 9 closes provider/runtime implementation on Linux; profile-specific host-software claims may remain pending until a supported validation system is available.
 
 ### Entry criteria
 
@@ -725,6 +725,9 @@ First identity-aware provider. Host software inspecting HID identity recognizes 
 - UHID device lifecycle, descriptor provisioning, HID input report write path, output and feature report receive paths
 - one identity-aware target implemented end-to-end (recommend DualSense — most public evidence available)
 - reverse translator integration produces normalized `OutputCommand`s for that target's declared output capabilities
+- Phase 9 evidence is split into:
+  - provider-complete: fixture replay, Linux-host validation, and reverse-path coverage are complete
+  - profile-claim-pending: Steam Input, reference-title validation, and equivalent Tier D checks remain queued until a supported host is available
 
 ### Iteration loop
 
@@ -743,6 +746,7 @@ First identity-aware provider. Host software inspecting HID identity recognizes 
 - `gr-cli run-scenario` alias for reviewer-facing runtime scenario replay
 - Tier C (real-hardware) fixture replay against the chosen target's captured traces
 - `support-report` output evolves to per-profile evidence per [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md#support-evidence-report)
+- `support-report` separates Linux-host recognition from deferred host-software claim evidence (`steam-input-recognition`, `reference-title-validation`, and `real-hardware-evidence`)
 
 ### Exit gate
 
@@ -760,11 +764,15 @@ Manual portion:
 - [ ] 1. `vgpd-demo run-uhid-smoke dualsense --interactive --bus {usb,bluetooth}` each bring up a HID device; `hidraw` enumeration shows the DualSense USB (`0x054c`/`0x0ce6`) and Bluetooth (`0x054c`/`0x0df2`) identity surfaces
 - [ ] 2. `udevadm info -q property -n <hidraw node>` and Linux `input` enumeration show the expected DualSense vendor/product identity and controller name for each bus surface
 - [ ] 3. SDL or `jstest-gtk` identifies the joystick node named `Sony Interactive Entertainment DualSense Wireless Controller` as DualSense (correct gamepad mapping picked up automatically)
-- [ ] 4. Launch a game that uses DualSense-specific features (e.g. one of the public Steam reference titles); confirm trigger-effect commands generate `OutputCommand::TriggerEffect`
-- [ ] 5. Rumble from a game generates `OutputCommand::Rumble`
-- [ ] 6. Steam (if installed) recognizes the controller in Steam Input
-- [ ] 7. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
-- [ ] 8. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, target software recognition ✓
+- [ ] 4. `gr-cli run-scenario samples/scenarios/dualsense-steam-input-mode.yaml` exits 0 and the reverse translator emits the expected normalized outputs
+- [ ] 5. `support-report --profile dualsense` shows: descriptor evidence ✓, input reports ✓, output reports ✓, feature reports ✓, linux-host recognition ✓, and deferred/pending entries for Steam Input or equivalent Tier D validation when that host is unavailable
+- [ ] 6. Record a deferred validation queue for a supported system covering:
+  - Steam Input recognition and layout mapping
+  - reference-title trigger effects
+  - host-originated rumble from target software
+  - other Steam-specific mode or feature behaviors discovered during later hardware validation
+
+Phase 9 sign-off means the Linux UHID provider is provider-complete. It does not by itself authorize a "DualSense identity-aware support fully validated" claim; that remains pending until the queued Tier D checks complete on a supported host.
 
 Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 9 gate passed"`
 
@@ -776,7 +784,7 @@ Build the transport-tier scaffolding: enumeration, control flow, packet state ma
 
 ### Entry criteria
 
-- Phase 9 gate signed off
+- Phase 9 gate signed off for provider-complete closure; deferred Tier D host-software validation may remain open
 
 ### Deliverables
 

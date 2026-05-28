@@ -4,7 +4,10 @@ This guide is the reviewer checklist for Phase 9
 (`gr-provider-linux-uhid`). It covers the first identity-aware Linux
 provider — host software inspecting HID identity must recognize the
 virtual device — and the output/feature report reverse path for one
-identity-aware target (the recommended target is DualSense).
+identity-aware target (the recommended target is DualSense). This gate
+closes Phase 9 at the provider/runtime level. Profile-specific
+host-software claims such as Steam Input recognition may remain pending
+for a later supported validation system.
 
 Host prerequisites:
 
@@ -18,8 +21,9 @@ Host prerequisites:
 - A real DualSense controller for capture comparison, **or** the
   captured DualSense fixture set referenced from
   `DEVICE_SPEC_VALIDATION_PLAN.md`.
-- Steam (optional, for Check 6 — Steam Input recognition).
-- A public DualSense-aware reference title (Check 4 — trigger effects).
+- Steam (optional, for the deferred validation queue).
+- A public DualSense-aware reference title (optional, for the deferred
+  validation queue).
 
 Start with:
 
@@ -119,54 +123,11 @@ Ignore sibling nodes such as
    - the canonical DualSense control layout (sticks, dpad, triggers,
      face buttons, touchpad button) is picked up automatically
 
-## Check 4: trigger effects round-trip as `OutputCommand::TriggerEffect`
+## Check 4: a Steam Input mode-change scenario round-trips
 
-Goal: confirm DualSense-specific trigger-effect commands sent by a
-real game reach the runtime as normalized `OutputCommand::TriggerEffect`
-values.
-
-### Steps
-
-1. Launch a public DualSense-aware reference title (any title that
-   exercises adaptive triggers).
-2. Trigger an in-game scenario known to fire an adaptive-trigger effect.
-3. Confirm:
-   - the demo prints live `OutputCommand::TriggerEffect` lines with the
-     expected effect kind and per-trigger parameters
-   - the reverse-event sequence numbers advance monotonically
-
-## Check 5: rumble round-trips as `OutputCommand::Rumble`
-
-Goal: confirm host rumble requests reach the runtime as normalized
-`OutputCommand::Rumble`.
-
-### Steps
-
-1. With either smoke session from Check 1 still running, trigger rumble
-   from the host (an in-game rumble scene, `fftest`, or equivalent
-   tooling that targets the DualSense HID surface).
-2. Confirm:
-   - the demo prints live rumble output lines with strong/weak values
-   - the session remains healthy after the reverse-path event
-
-## Check 6: Steam Input recognizes the controller
-
-Goal: confirm Steam Input picks up the virtual device as a DualSense
-controller (skip if Steam is not installed).
-
-### Steps
-
-1. Launch Steam with one of the interactive smoke sessions still running.
-2. Open Steam → Settings → Controller.
-3. Confirm:
-   - Steam Input lists the virtual device as a DualSense controller
-   - the controller settings page shows the canonical DualSense control
-     layout
-
-## Check 7: a Steam Input mode-change scenario round-trips
-
-Goal: confirm the reverse translator handles a real Steam Input mode
-change end to end.
+Goal: confirm the reverse translator handles a representative
+Steam-shaped mode-change/output report end to end without requiring
+Steam itself on the current machine.
 
 ### Steps
 
@@ -180,25 +141,53 @@ cargo run -p gr-cli -- run-scenario samples/scenarios/dualsense-steam-input-mode
    - the reverse translator emits the expected normalized outputs
    - the scenario exits 0
 
-## Check 8: support-report evidence is complete for DualSense
+## Check 5: support-report evidence is complete for provider closure
 
 Goal: confirm per-profile evidence covers descriptor, input, output,
-feature, and target-software recognition.
+feature, Linux-host recognition, and explicit deferred host-software
+validation status.
 
 ### Steps
 
-1. Run:
+1. Replay the built-in session-scenario fixture:
 
 ```bash
 cargo run -p gr-cli -- support-report --profile dualsense
 ```
 
-2. Confirm the report shows ticks for:
+2. Confirm:
    - descriptor evidence ✓
    - input report evidence ✓
    - output report evidence ✓
    - feature report evidence ✓
-   - target software recognition ✓
+   - linux-host recognition ✓
+   - steam-input recognition is clearly marked pending/deferred when not
+     validated on this machine
+   - reference-title validation is clearly marked pending/deferred when
+     not validated on this machine
+
+## Check 6: record the deferred validation queue
+
+Goal: make the missing Tier D checks explicit so later support claims
+are blocked by a tracked queue rather than by forgotten assumptions.
+
+### Steps
+
+1. Record the following deferred checks for a supported validation
+   system:
+   - Steam Input recognition
+   - Steam controller-layout mapping
+   - reference-title trigger effects
+   - host-originated rumble from target software
+   - any Steam-specific mode or feature behavior found later
+2. For each item, record:
+   - required environment
+   - target profile
+   - expected evidence artifact
+3. Confirm:
+   - the queue distinguishes provider-complete from profile-claim-pending
+   - no Phase 9 sign-off text claims full DualSense identity-aware
+     validation until the deferred queue is cleared
 
 ## Sign-off
 

@@ -36,9 +36,18 @@ profiles:
   - check: feature-report-evidence
     status: implemented
     detail: known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events
-  - check: target-software-recognition
+  - check: linux-host-recognition
     status: verified-on-host
     detail: usb=created bluetooth=created
+  - check: real-hardware-evidence
+    status: fixture-backed
+    detail: compare-real-device and checked-in descriptor/reverse fixtures back the current identity-aware profile claim; refresh on supported hardware when captures change
+  - check: steam-input-recognition
+    status: pending-supported-host
+    detail: validate on a supported system with Steam installed; capture recognition, layout mapping, and any host-specific mode behavior before claiming full Tier D support
+  - check: reference-title-validation
+    status: pending-supported-host
+    detail: validate trigger effects, rumble, and comparable profile-specific host behavior against a public DualSense-aware title on a supported system
   command_hint: gr-cli run-uhid-smoke dualsense --bus usb
   notes:
   - identity-aware Linux provider for DualSense via `/dev/uhid`

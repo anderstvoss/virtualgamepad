@@ -1715,18 +1715,6 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
     normalize_uhid_report_for_snapshots(&mut usb_report);
     normalize_uhid_report_for_snapshots(&mut bluetooth_report);
 
-    let descriptor_status = if usb_report.identity.descriptor_size > 0 {
-        "implemented"
-    } else {
-        "missing"
-    };
-    let host_recognition_status =
-        if usb_report.open_result == "created" || bluetooth_report.open_result == "created" {
-            "verified-on-host"
-        } else {
-            "pending-linux-host"
-        };
-
     SupportReportEntry {
         profile_id: profile.profile_id.to_string(),
         display_name: profile.display_name,
@@ -1747,52 +1735,7 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
                 reason: unsupported.reason.clone(),
             })
             .collect(),
-        evidence: vec![
-            SupportEvidenceItem {
-                check: "command-surface",
-                status: "implemented",
-                detail: "run-uhid-smoke, compare-real-device, run-scenario, and support-report are available in gr-cli and vgpd-demo".to_string(),
-            },
-            SupportEvidenceItem {
-                check: "descriptor-evidence",
-                status: descriptor_status,
-                detail: format!(
-                    "usb descriptor={} bytes; bluetooth descriptor={} bytes",
-                    usb_report.identity.descriptor_size, bluetooth_report.identity.descriptor_size
-                ),
-            },
-            SupportEvidenceItem {
-                check: "input-report-evidence",
-                status: "implemented",
-                detail: format!(
-                    "usb input report 0x{:02x}; bluetooth input report 0x{:02x}",
-                    usb_report.identity.input_report_id, bluetooth_report.identity.input_report_id
-                ),
-            },
-            SupportEvidenceItem {
-                check: "output-report-evidence",
-                status: "implemented",
-                detail: format!(
-                    "{} (usb report 0x{:02x}; bluetooth report 0x{:02x})",
-                    usb_report.reverse_path,
-                    usb_report.identity.output_report_id,
-                    bluetooth_report.identity.output_report_id
-                ),
-            },
-            SupportEvidenceItem {
-                check: "feature-report-evidence",
-                status: "implemented",
-                detail: "known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events".to_string(),
-            },
-            SupportEvidenceItem {
-                check: "target-software-recognition",
-                status: host_recognition_status,
-                detail: format!(
-                    "usb={} bluetooth={}",
-                    usb_report.open_result, bluetooth_report.open_result
-                ),
-            },
-        ],
+        evidence: build_uhid_support_evidence(&usb_report, &bluetooth_report),
         command_hint: "gr-cli run-uhid-smoke dualsense --bus usb".to_string(),
         notes: usb_report
             .notes
@@ -1800,6 +1743,85 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
             .chain(bluetooth_report.notes)
             .collect(),
     }
+}
+
+fn build_uhid_support_evidence(
+    usb_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
+    bluetooth_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
+) -> Vec<SupportEvidenceItem> {
+    let descriptor_status = if usb_report.identity.descriptor_size > 0 {
+        "implemented"
+    } else {
+        "missing"
+    };
+    let linux_host_recognition_status =
+        if usb_report.open_result == "created" || bluetooth_report.open_result == "created" {
+            "verified-on-host"
+        } else {
+            "pending-linux-host"
+        };
+
+    vec![
+        SupportEvidenceItem {
+            check: "command-surface",
+            status: "implemented",
+            detail: "run-uhid-smoke, compare-real-device, run-scenario, and support-report are available in gr-cli and vgpd-demo".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "descriptor-evidence",
+            status: descriptor_status,
+            detail: format!(
+                "usb descriptor={} bytes; bluetooth descriptor={} bytes",
+                usb_report.identity.descriptor_size, bluetooth_report.identity.descriptor_size
+            ),
+        },
+        SupportEvidenceItem {
+            check: "input-report-evidence",
+            status: "implemented",
+            detail: format!(
+                "usb input report 0x{:02x}; bluetooth input report 0x{:02x}",
+                usb_report.identity.input_report_id, bluetooth_report.identity.input_report_id
+            ),
+        },
+        SupportEvidenceItem {
+            check: "output-report-evidence",
+            status: "implemented",
+            detail: format!(
+                "{} (usb report 0x{:02x}; bluetooth report 0x{:02x})",
+                usb_report.reverse_path,
+                usb_report.identity.output_report_id,
+                bluetooth_report.identity.output_report_id
+            ),
+        },
+        SupportEvidenceItem {
+            check: "feature-report-evidence",
+            status: "implemented",
+            detail: "known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "linux-host-recognition",
+            status: linux_host_recognition_status,
+            detail: format!(
+                "usb={} bluetooth={}",
+                usb_report.open_result, bluetooth_report.open_result
+            ),
+        },
+        SupportEvidenceItem {
+            check: "real-hardware-evidence",
+            status: "fixture-backed",
+            detail: "compare-real-device and checked-in descriptor/reverse fixtures back the current identity-aware profile claim; refresh on supported hardware when captures change".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "steam-input-recognition",
+            status: "pending-supported-host",
+            detail: "validate on a supported system with Steam installed; capture recognition, layout mapping, and any host-specific mode behavior before claiming full Tier D support".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "reference-title-validation",
+            status: "pending-supported-host",
+            detail: "validate trigger effects, rumble, and comparable profile-specific host behavior against a public DualSense-aware title on a supported system".to_string(),
+        },
+    ]
 }
 
 fn serde_name<T: Serialize>(value: &T) -> String {
