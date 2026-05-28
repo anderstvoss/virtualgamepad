@@ -1,0 +1,42 @@
+fixture: virtualgamepad/v1
+kind: backend-trace
+id: dualsense-usb-enumeration
+profile_id: dualsense
+notes: |
+  Phase 10 canned transport enumeration trace for the Linux transport
+  state machine. This is a reviewable transport-control fixture rather
+  than a live USB gadget capture.
+payload:
+  family: linux-transport-usb
+  transport:
+    bus: usb
+    expected_final_state: ready
+    endpoints:
+      input: 0x01
+      reverse: 0x02
+  steps:
+    - direction: outbound
+      kind: transport-control
+      step: connect
+    - direction: outbound
+      kind: transport-control
+      step: read-descriptor
+      bytes: [0x12, 0x01, 0x00, 0x02]
+    - direction: outbound
+      kind: transport-control
+      step: configure-endpoints
+      bytes: [0x01, 0x02]
+    - direction: outbound
+      kind: transport-control
+      step: ready-signal
+      bytes: [0xaa]
+    - direction: outbound
+      kind: transport-control
+      step: input-packet
+      endpoint_id: 0x01
+      bytes: [0x01, 0x7f, 0x80, 0x08]
+    - direction: inbound
+      kind: transport-control
+      step: reverse-packet
+      endpoint_id: 0x02
+      bytes: [0x02, 0x00, 0x20, 0x10]

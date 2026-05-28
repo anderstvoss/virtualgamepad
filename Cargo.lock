@@ -418,6 +418,7 @@ dependencies = [
  "gr-backend-api",
  "gr-core",
  "gr-runtime-model",
+ "gr-testkit",
 ]
 
 [[package]]

@@ -55,6 +55,7 @@ impl<B: BackendSession> TraceRecorder<B> {
         BackendTrace {
             backend_id: Some(diagnostics.backend_id),
             family: Some(diagnostics.family),
+            transport: None,
             steps: self.steps,
         }
     }

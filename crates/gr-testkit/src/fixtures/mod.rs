@@ -7,11 +7,12 @@ mod plan_snapshot;
 mod reverse_event;
 mod schema;
 mod session_scenario;
+mod transport_state_machine;
 
 pub use backend_inventory::{BackendInventory, BackendInventoryFixture, decode_backend_inventory};
 pub use backend_trace::{
     BackendTrace, BackendTraceFixture, BackendTracePayload, BackendTraceStep, TraceDirection,
-    TraceOperation, decode_backend_trace,
+    TraceOperation, TransportTraceSpec, decode_backend_trace,
 };
 pub use input_frame::{
     InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,
@@ -23,4 +24,8 @@ pub use session_scenario::{
     LegacyScenarioStep, LegacySessionScenario, RuntimeScenarioStep, RuntimeSessionConfig,
     RuntimeSessionScenario, ScenarioBackend, ScenarioFailure, SessionScenarioDocument,
     SessionScenarioFixture, decode_session_scenario,
+};
+pub use transport_state_machine::{
+    TransportControlStep, TransportEndpoints, TransportReplayError, TransportReplaySummary,
+    TransportTraceBus, TransportTraceState, TransportTraceStep, replay_transport_trace,
 };

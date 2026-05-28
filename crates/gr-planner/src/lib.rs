@@ -842,6 +842,44 @@ mod tests {
     }
 
     #[test]
+    fn hardware_faithful_selects_transport_backend_when_available() {
+        let mut request = base_request();
+        request.goal = EmulationGoal::HardwareFaithful;
+        request.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        let options = compiled_options();
+        let factories = vec![
+            fake_factory(
+                "linux-transport-usb",
+                BackendFamily::LinuxTransportUsb,
+                BackendLevel::Transport,
+                vec![FidelityTier::HardwareFaithful],
+                &dualsense_outputs(),
+            ),
+            fake_factory(
+                "linux-transport-bluetooth",
+                BackendFamily::LinuxTransportBluetooth,
+                BackendLevel::Transport,
+                vec![FidelityTier::HardwareFaithful],
+                &dualsense_outputs(),
+            ),
+        ];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert_eq!(plan.selected_level, BackendLevel::Transport);
+        assert_eq!(
+            plan.selected_backend_family,
+            BackendFamily::LinuxTransportUsb
+        );
+        assert_eq!(plan.requested_fidelity_tier, FidelityTier::HardwareFaithful);
+        assert!(!plan.degradation.degraded);
+        assert_snapshot!(
+            "hardware_faithful_linux_transport_usb",
+            serde_yaml::to_string(&plan).expect("yaml")
+        );
+    }
+
+    #[test]
     fn identity_aware_degrades_to_compatibility_on_evdev_only() {
         let request = base_request();
         let options = compiled_options();

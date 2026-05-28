@@ -162,6 +162,23 @@ const PHASE_9_COMMANDS: &[&[&str]] = &[
 const PHASE_10_COMMANDS: &[&[&str]] = &[
     &["cargo", "test", "--workspace", "--all-features"],
     &["cargo", "insta", "test", "--check"],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "gr-cli",
+        "--",
+        "replay-trace",
+        "crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml",
+    ],
+    &[
+        "cargo",
+        "check",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "-p",
+        "gr-cli",
+    ],
 ];
 
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
@@ -3243,6 +3260,15 @@ mod tests {
     }
 
     #[test]
+    fn replay_trace_phase10_transport_fixture_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let trace = repo_root
+            .join("crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml");
+        let output = replay_trace(trace).expect("trace");
+        assert_snapshot!("replay_trace_dualsense_transport_phase10", output);
+    }
+
+    #[test]
     fn plan_session_output_is_stable() {
         // Pin `--host-platform linux` so the snapshot is deterministic
         // across CI runners. The planner falls back to the runtime host
@@ -3263,6 +3289,23 @@ mod tests {
         )
         .expect("plan");
         assert_snapshot!("plan_session_identity_aware", output);
+    }
+
+    #[test]
+    fn plan_session_transport_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/linux-transport-stub.yaml");
+        let output = plan_session(
+            "dualsense",
+            "hardware-faithful",
+            inventory,
+            Some("linux"),
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
+        assert_snapshot!("plan_session_transport_hardware_faithful", output);
     }
 
     #[test]

@@ -12,7 +12,8 @@ use gr_runtime_model::{
 use gr_testkit::fakes::{FakeBackendFactory, FakeFailure, backend_factory};
 use gr_testkit::fixtures::{
     BackendTrace, BackendTracePayload, FixtureDocument, LegacyScenarioStep, ScenarioFailure,
-    SessionScenarioDocument, SessionScenarioFixture, TraceDirection, load_fixture,
+    SessionScenarioDocument, SessionScenarioFixture, TraceDirection, TransportTraceStep,
+    load_fixture, replay_transport_trace,
 };
 use gr_testkit::recorder::record;
 use gr_translators::{TranslatorRegistry, prepared_translation_context};
@@ -106,11 +107,16 @@ pub fn replay_trace(path: impl AsRef<Path>) -> Result<String, CliError> {
             message: format!("expected backend-trace fixture at {}", path.display()),
         });
     };
-    Ok(render_trace(
-        &fixture.envelope.id,
-        &fixture.trace,
-        fixture.envelope.profile_id.as_deref(),
-    ))
+    let profile_id = fixture.envelope.profile_id.as_deref();
+    if fixture.trace.transport.is_some() {
+        render_transport_trace(&fixture.envelope.id, &fixture.trace, profile_id)
+    } else {
+        Ok(render_trace(
+            &fixture.envelope.id,
+            &fixture.trace,
+            profile_id,
+        ))
+    }
 }
 
 fn load_scenario(path: &Path) -> Result<SessionScenarioFixture, CliError> {
@@ -266,6 +272,36 @@ fn render_trace(trace_id: &str, trace: &BackendTrace, profile_id: Option<&str>) 
     output
 }
 
+fn render_transport_trace(
+    trace_id: &str,
+    trace: &BackendTrace,
+    profile_id: Option<&str>,
+) -> Result<String, CliError> {
+    let Some(spec) = trace.transport.as_ref() else {
+        return Ok(render_trace(trace_id, trace, profile_id));
+    };
+    let replay_steps = trace
+        .steps
+        .iter()
+        .map(|step| transport_replay_step(&step.payload))
+        .collect::<Result<Vec<_>, _>>()?;
+    let summary = replay_transport_trace(spec.endpoints, &replay_steps, spec.expected_final_state)
+        .map_err(|source| CliError::Simulation {
+            message: format!("transport trace replay failed: {source}"),
+        })?;
+
+    let mut output = render_trace(trace_id, trace, profile_id);
+    writeln!(output, "transport_bus: {}", spec.bus).expect("write");
+    writeln!(output, "transport_final_state: {}", summary.final_state).expect("write");
+    writeln!(
+        output,
+        "transport_steps_consumed: {}",
+        summary.consumed_steps
+    )
+    .expect("write");
+    Ok(output)
+}
+
 fn describe_direction(direction: TraceDirection) -> &'static str {
     match direction {
         TraceDirection::Outbound => "outbound",
@@ -295,6 +331,22 @@ fn describe_trace_payload(payload: &BackendTracePayload) -> String {
                 fmt_bytes(bytes)
             )
         }
+        BackendTracePayload::TransportControl {
+            step,
+            endpoint_id,
+            bytes,
+        } => format!(
+            "transport-control step={}{}{}",
+            serde_name(step),
+            endpoint_id
+                .map(|value| format!(" endpoint=0x{value:02x}"))
+                .unwrap_or_default(),
+            if bytes.is_empty() {
+                String::new()
+            } else {
+                format!(" bytes={}", fmt_bytes(bytes))
+            }
+        ),
         BackendTracePayload::EvdevEvents { events } => {
             format!("evdev-events count={}", events.len())
         }
@@ -344,6 +396,27 @@ fn describe_decoded_step(
         BackendTracePayload::ReverseEvent { event } => describe_reverse_event_summary(ctx?, event),
         _ => None,
     }
+}
+
+fn transport_replay_step(payload: &BackendTracePayload) -> Result<TransportTraceStep, CliError> {
+    let BackendTracePayload::TransportControl {
+        step,
+        endpoint_id,
+        bytes,
+    } = payload
+    else {
+        return Err(CliError::Simulation {
+            message: format!(
+                "transport backend-trace expected only `transport-control` steps, found `{}`",
+                payload.kind_label()
+            ),
+        });
+    };
+    Ok(TransportTraceStep {
+        step: *step,
+        endpoint_id: *endpoint_id,
+        bytes: bytes.clone(),
+    })
 }
 
 fn describe_evdev_summary(
