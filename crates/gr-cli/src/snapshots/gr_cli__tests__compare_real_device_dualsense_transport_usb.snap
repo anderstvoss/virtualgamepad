@@ -1,0 +1,74 @@
+---
+source: crates/gr-cli/src/lib.rs
+expression: output
+---
+layer: transport
+profile_id: dualsense
+bus: usb
+provider: linux-transport-usb
+descriptor_matches_profile_template: true
+transport_trace_matches_fixture: true
+ready_state_reached: true
+reverse_packet_observed: true
+smoke_report:
+  profile_id: dualsense
+  backend_id: linux-transport-usb
+  backend_family: linux-transport-usb
+  backend_level: transport
+  host_platform: linux
+  requested_fidelity_tier: hardware-faithful
+  bus: usb
+  descriptor_size: 273
+  endpoints:
+    input: 1
+    reverse: 2
+  reverse_path: transport-reverse-packets
+  kernel_boundary: deferred-linux-configfs-gadget
+  live_access: false
+  open_result: deferred
+  planned_setup_sequence:
+  - connect gadget for profile `dualsense`
+  - write idVendor
+  - write idProduct
+  - write bcdDevice
+  - write bcdUSB
+  - write strings/0x409/{serialnumber,manufacturer,product}
+  - write configs/c.1/strings/0x409/configuration
+  - create functions/hid.usb0
+  - write hid.usb0/{protocol,subclass,report_length,report_desc}
+  - link hid.usb0 into configs/c.1
+  - configure-endpoints
+  - bind UDC
+  - ready-signal
+  support:
+    forward_support: full
+    reverse_support: full
+    supported_output_functions:
+    - rumble
+    - haptics
+    - lighting
+    - player-indicators
+    - trigger-effect
+    - audio
+    notes:
+    - phase-10 transport backend is plannable and trace-replay-capable; live transport realization is available for `dualsense` on usb only when the host meets Phase 11 requirements
+  notes:
+  - hardware-faithful Linux transport USB provider for DualSense
+  - Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only
+  - live USB gadget validation is deferred until a Linux peripheral-mode host with configfs and a visible UDC is available
+  - 'USB gadget identity: vid=0x054c pid=0x0ce6'
+reference_trace: |
+  trace: dualsense-usb-enumeration
+  1. outbound transport-control step=connect
+  2. outbound transport-control step=read-descriptor bytes=[12 01 00 02]
+  3. outbound transport-control step=configure-endpoints bytes=[01 02]
+  4. outbound transport-control step=ready-signal bytes=[aa]
+  5. outbound transport-control step=input-packet endpoint=0x01 bytes=[01 7f 80 08]
+  6. inbound transport-control step=reverse-packet endpoint=0x02 bytes=[02 00 20 10]
+  transport_bus: usb
+  transport_final_state: ready
+  transport_steps_consumed: 6
+notes:
+- transport comparison is fixture-backed until a supported-host capture campaign lands
+- tolerated live-vs-reference differences must be recorded as `notes:` alongside later host captures
+- live USB gadget validation is pending a peripheral-mode Linux host with configfs access

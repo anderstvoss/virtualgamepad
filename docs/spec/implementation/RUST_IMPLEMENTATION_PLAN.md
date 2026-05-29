@@ -901,7 +901,7 @@ Automated portion:
 
 - [ ] `cargo test --workspace --all-features` clean
 - [ ] `cargo insta test --check` clean
-- [ ] real-device comparison passes within documented tolerance
+- [ ] `cargo run -p gr-cli -- compare-real-device --profile dualsense --bus usb --layer transport` passes within documented tolerance
 - [ ] `vgpd-demo phase-gate 11` exits 0
 
 Manual portion:

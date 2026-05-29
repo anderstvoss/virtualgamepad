@@ -58,6 +58,12 @@ enum Command {
         #[arg(long, default_value = "usb")]
         bus: String,
     },
+    /// Run a Linux transport smoke probe for the Phase 11 `DualSense` USB target.
+    RunTransportSmoke {
+        profile_id: String,
+        #[arg(long)]
+        interactive: bool,
+    },
     /// Generate the initial support-claim evidence report.
     SupportReport {
         #[arg(long)]
@@ -134,6 +140,10 @@ fn run() -> Result<(), String> {
             gr_cli::parse_uhid_smoke_options(interactive, &bus)
                 .and_then(|options| gr_cli::run_uhid_smoke(&profile_id, options)),
         ),
+        Command::RunTransportSmoke {
+            profile_id,
+            interactive,
+        } => print_output(gr_cli::run_transport_smoke(&profile_id, interactive)),
         Command::ReplayTrace { path } => print_output(gr_cli::replay_trace(path)),
         Command::PlanSession {
             profile_id,
@@ -167,7 +177,7 @@ fn print_info() {
     println!();
     println!("library status: through Phase 9 Linux uhid provider support");
     println!(
-        "demo status:    gate runner, profile review, config validation, simulate-session, run-scenario, many-sessions, run-uinput-smoke, run-uhid-smoke, support-report, replay-trace, plan-session"
+        "demo status:    gate runner, profile review, config validation, simulate-session, run-scenario, many-sessions, run-uinput-smoke, run-uhid-smoke, run-transport-smoke, support-report, replay-trace, plan-session"
     );
 }
 
@@ -371,6 +381,23 @@ mod tests {
             Command::SupportReport { profile, tier }
                 if profile.as_deref() == Some("xbox360")
                     && tier.as_deref() == Some("compatibility")
+        ));
+    }
+
+    #[test]
+    fn run_transport_smoke_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "run-transport-smoke",
+            "dualsense",
+            "--interactive",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunTransportSmoke {
+                profile_id,
+                interactive,
+            } if profile_id == "dualsense" && interactive
         ));
     }
 }

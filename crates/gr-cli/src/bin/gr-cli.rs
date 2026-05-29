@@ -84,6 +84,12 @@ enum Command {
         #[arg(long, default_value = "usb")]
         bus: String,
     },
+    /// Run a Linux transport smoke probe for the Phase 11 `DualSense` USB target.
+    RunTransportSmoke {
+        profile_id: String,
+        #[arg(long)]
+        interactive: bool,
+    },
     /// Compare the built-in Phase 9 UHID implementation against the
     /// descriptor and reverse-trace references.
     CompareRealDevice {
@@ -91,6 +97,8 @@ enum Command {
         profile: String,
         #[arg(long, default_value = "usb")]
         bus: String,
+        #[arg(long, default_value = "identity")]
+        layer: String,
     },
     /// Generate the initial support-claim evidence report.
     SupportReport {
@@ -257,12 +265,30 @@ fn main() {
                 std::process::exit(1);
             }
         },
-        Command::CompareRealDevice { profile, bus } => {
+        Command::RunTransportSmoke {
+            profile_id,
+            interactive,
+        } => match gr_cli::run_transport_smoke(&profile_id, interactive) {
+            Ok(output) => println!("{output}"),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        },
+        Command::CompareRealDevice {
+            profile,
+            bus,
+            layer,
+        } => {
             let Ok(bus_mode) = bus.parse() else {
                 eprintln!("invalid `bus` value `{bus}`");
                 std::process::exit(1);
             };
-            match gr_cli::compare_real_device(&profile, bus_mode) {
+            let Ok(layer) = layer.parse() else {
+                eprintln!("invalid `layer` value `{layer}`");
+                std::process::exit(1);
+            };
+            match gr_cli::compare_real_device(&profile, bus_mode, layer) {
                 Ok(output) => println!("{output}"),
                 Err(error) => {
                     eprintln!("{error}");
@@ -400,11 +426,30 @@ mod tests {
             "dualsense",
             "--bus",
             "usb",
+            "--layer",
+            "transport",
         ]);
         assert!(matches!(
             cli.command,
-            Command::CompareRealDevice { profile, bus }
-                if profile == "dualsense" && bus == "usb"
+            Command::CompareRealDevice { profile, bus, layer }
+                if profile == "dualsense" && bus == "usb" && layer == "transport"
+        ));
+    }
+
+    #[test]
+    fn run_transport_smoke_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "run-transport-smoke",
+            "dualsense",
+            "--interactive",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::RunTransportSmoke {
+                profile_id,
+                interactive,
+            } if profile_id == "dualsense" && interactive
         ));
     }
 
