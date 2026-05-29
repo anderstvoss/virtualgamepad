@@ -478,7 +478,7 @@ pub struct ProfileInputContract {
 
 pub struct DescriptorTemplate {
     pub fidelity: FidelityTier,
-    pub descriptor: DescriptorBytes, // placeholder until real bytes ship
+    pub descriptor: DescriptorBytes, // real HID descriptor bytes (shipped Phase 6)
 }
 
 #[non_exhaustive]
