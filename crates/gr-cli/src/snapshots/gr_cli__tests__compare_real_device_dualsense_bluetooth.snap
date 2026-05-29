@@ -1,7 +1,9 @@
 ---
 source: crates/gr-cli/src/lib.rs
+assertion_line: 3653
 expression: output
 ---
+layer: identity
 profile_id: dualsense
 bus_mode: bluetooth
 provider: linux-uhid

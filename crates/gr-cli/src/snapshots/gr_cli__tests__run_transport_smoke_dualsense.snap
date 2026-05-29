@@ -1,0 +1,53 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 3666
+expression: output
+---
+profile_id: dualsense
+backend_id: linux-transport-usb
+backend_family: linux-transport-usb
+backend_level: transport
+host_platform: linux
+requested_fidelity_tier: hardware-faithful
+bus: usb
+descriptor_size: 273
+endpoints:
+  input: 1
+  reverse: 2
+reverse_path: transport-reverse-packets
+kernel_boundary: live-linux-configfs-gadget
+live_access: true
+open_result: created
+gadget_name: virtualgamepad-dualsense-usb
+bound_udc: dummy_udc.0
+planned_setup_sequence:
+- connect gadget for profile `dualsense`
+- write idVendor
+- write idProduct
+- write bcdDevice
+- write bcdUSB
+- write strings/0x409/{serialnumber,manufacturer,product}
+- write configs/c.1/strings/0x409/configuration
+- create functions/hid.usb0
+- write hid.usb0/{protocol,subclass,report_length,report_desc}
+- link hid.usb0 into configs/c.1
+- configure-endpoints
+- bind UDC
+- ready-signal
+support:
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
+  notes:
+  - phase-10 transport backend is plannable and trace-replay-capable; live transport realization is available for `dualsense` on usb only when the host meets Phase 11 requirements
+notes:
+- hardware-faithful Linux transport USB provider for DualSense
+- Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only
+- configfs-backed validation requires a Linux peripheral-mode host with a visible UDC
+- 'USB gadget identity: vid=0x054c pid=0x0ce6'

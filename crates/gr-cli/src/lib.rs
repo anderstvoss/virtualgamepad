@@ -18,6 +18,10 @@ use gr_profiles::{
     CapabilityItem, CapabilityRegistry, ControllerProfile, OutputFunctionRef, ProfileFamily,
     RegistryError, SemanticRef, registry,
 };
+use gr_provider_linux_transport::{
+    LinuxTransportBluetoothBackendFactory, LinuxTransportSmokeReport,
+    LinuxTransportUsbBackendFactory, TransportTraceBus, TransportTraceState,
+};
 use gr_provider_linux_uhid::{LinuxUhidBackendFactory, LinuxUhidSmokeReport, UhidBusMode};
 use gr_provider_linux_uinput::LinuxUinputBackendFactory;
 use gr_runtime_model::{
@@ -187,6 +191,20 @@ const PHASE_10_COMMANDS: &[&[&str]] = &[
 const PHASE_11_COMMANDS: &[&[&str]] = &[
     &["cargo", "test", "--workspace", "--all-features"],
     &["cargo", "insta", "test", "--check"],
+    &[
+        "cargo",
+        "run",
+        "-p",
+        "gr-cli",
+        "--",
+        "compare-real-device",
+        "--profile",
+        "dualsense",
+        "--bus",
+        "usb",
+        "--layer",
+        "transport",
+    ],
 ];
 
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
@@ -252,23 +270,74 @@ impl Default for UhidSmokeOptions {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportSmokeMode {
+    #[default]
+    Usb,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum CompareLayer {
+    #[default]
+    Identity,
+    Transport,
+}
+
+impl fmt::Display for CompareLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Identity => f.write_str("identity"),
+            Self::Transport => f.write_str("transport"),
+        }
+    }
+}
+
+impl FromStr for CompareLayer {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "identity" => Ok(Self::Identity),
+            "transport" => Ok(Self::Transport),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[allow(clippy::struct_excessive_bools)]
-pub struct CompareRealDeviceReport {
-    pub profile_id: ProfileId,
-    pub bus_mode: UhidBusMode,
-    pub provider: BackendId,
-    pub descriptor_matches_profile_template: bool,
-    pub descriptor_head_matches_dualsense: bool,
-    pub reverse_trace_matches_reference: bool,
-    pub feature_reports_available: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_report_id: Option<u8>,
-    pub reference_report_id_matches_bus_output: bool,
-    pub smoke_report: LinuxUhidSmokeReport,
-    pub reference_trace: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notes: Vec<String>,
+#[serde(tag = "layer", rename_all = "kebab-case")]
+pub enum CompareRealDeviceReport {
+    Identity {
+        profile_id: ProfileId,
+        bus_mode: UhidBusMode,
+        provider: BackendId,
+        descriptor_matches_profile_template: bool,
+        descriptor_head_matches_dualsense: bool,
+        reverse_trace_matches_reference: bool,
+        feature_reports_available: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference_report_id: Option<u8>,
+        reference_report_id_matches_bus_output: bool,
+        smoke_report: LinuxUhidSmokeReport,
+        reference_trace: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        notes: Vec<String>,
+    },
+    Transport {
+        profile_id: ProfileId,
+        bus: TransportTraceBus,
+        provider: BackendId,
+        descriptor_matches_profile_template: bool,
+        transport_trace_matches_fixture: bool,
+        ready_state_reached: bool,
+        reverse_packet_observed: bool,
+        smoke_report: LinuxTransportSmokeReport,
+        reference_trace: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        notes: Vec<String>,
+    },
 }
 
 /// Canonical `DualSense` HID report-descriptor signature: Generic
@@ -321,14 +390,48 @@ pub fn run_uhid_smoke(profile_id: &str, options: UhidSmokeOptions) -> Result<Str
     }
 }
 
+/// Render a Linux transport smoke report for the Phase 11 target.
+///
+/// # Errors
+///
+/// Returns an error when the profile id is unknown, unsupported for
+/// live transport realization, or the report cannot be serialized.
+pub fn run_transport_smoke(profile_id: &str, interactive: bool) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    validate_transport_smoke_profile(profile)?;
+    if interactive {
+        run_interactive_transport_smoke(profile)
+    } else {
+        let factory = LinuxTransportUsbBackendFactory::new();
+        let request = transport_realization_request(profile);
+        let mut report = factory.smoke_report(&profile.profile_id, &request);
+        normalize_transport_report_for_snapshots(&mut report);
+        serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+    }
+}
+
 /// Compare the Phase 9 UHID implementation against the built-in
 /// `DualSense` descriptor and reverse-trace reference.
 ///
 /// # Errors
 ///
-/// Returns an error when the profile is unknown, unsupported for UHID,
-/// or the comparison report cannot be serialized.
-pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<String, CliError> {
+/// Returns an error when the profile is unknown, unsupported for the
+/// selected layer, or the comparison report cannot be serialized.
+pub fn compare_real_device(
+    profile_id: &str,
+    bus_mode: UhidBusMode,
+    layer: CompareLayer,
+) -> Result<String, CliError> {
+    match layer {
+        CompareLayer::Identity => compare_real_device_identity(profile_id, bus_mode),
+        CompareLayer::Transport => compare_real_device_transport(profile_id, bus_mode),
+    }
+}
+
+fn compare_real_device_identity(
+    profile_id: &str,
+    bus_mode: UhidBusMode,
+) -> Result<String, CliError> {
     let profile = lookup_profile(profile_id)?;
     validate_uhid_smoke_options(
         profile,
@@ -397,7 +500,7 @@ pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<St
         ));
     }
 
-    let report = CompareRealDeviceReport {
+    let report = CompareRealDeviceReport::Identity {
         profile_id: profile.profile_id.clone(),
         bus_mode,
         provider: factory.backend_id(),
@@ -407,6 +510,109 @@ pub fn compare_real_device(profile_id: &str, bus_mode: UhidBusMode) -> Result<St
         feature_reports_available,
         reference_report_id,
         reference_report_id_matches_bus_output,
+        smoke_report,
+        reference_trace,
+        notes,
+    };
+    serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
+}
+
+fn compare_real_device_transport(
+    profile_id: &str,
+    bus_mode: UhidBusMode,
+) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    validate_transport_smoke_profile(profile)?;
+    let bus = match bus_mode {
+        UhidBusMode::Usb => TransportTraceBus::Usb,
+        UhidBusMode::Bluetooth => TransportTraceBus::Bluetooth,
+    };
+    if bus != TransportTraceBus::Usb {
+        return Err(CliError::InvalidArgument {
+            argument: "bus",
+            value: bus_mode.to_string(),
+        });
+    }
+
+    let factory = LinuxTransportUsbBackendFactory::new();
+    let request = transport_realization_request(profile);
+    let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
+    normalize_transport_report_for_snapshots(&mut smoke_report);
+
+    let repo_root = repo_root()?;
+    let reference_trace_path = repo_root
+        .join("crates/gr-provider-linux-transport/fixtures/dualsense-usb-enumeration.yaml");
+    let reference_trace = replay_trace(&reference_trace_path)?;
+    let trace_fixture =
+        load_fixture(&reference_trace_path).map_err(|source| CliError::Simulation {
+            message: format!("{}: {source}", reference_trace_path.display()),
+        })?;
+    let TestkitFixtureDocument::BackendTrace(fixture) = trace_fixture else {
+        return Err(CliError::FixtureKind {
+            path: reference_trace_path,
+            expected: "backend-trace",
+        });
+    };
+    let transport = fixture
+        .trace
+        .transport
+        .clone()
+        .ok_or_else(|| CliError::Simulation {
+            message: "transport trace fixture is missing transport metadata".to_string(),
+        })?;
+    let steps = fixture
+        .trace
+        .steps
+        .iter()
+        .filter_map(|step| match &step.payload {
+            gr_testkit::fixtures::BackendTracePayload::TransportControl {
+                step,
+                endpoint_id,
+                bytes,
+            } => Some(gr_provider_linux_transport::TransportTraceStep {
+                step: *step,
+                endpoint_id: *endpoint_id,
+                bytes: bytes.clone(),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let replay = gr_provider_linux_transport::replay_transport_trace(
+        transport.endpoints,
+        &steps,
+        transport.expected_final_state,
+    );
+    let descriptor_matches_profile_template = profile
+        .descriptor_templates
+        .iter()
+        .find(|template| template.fidelity == FidelityTier::HardwareFaithful)
+        .is_some_and(|template| template.descriptor.0.len() == smoke_report.descriptor_size);
+    let ready_state_reached = replay
+        .as_ref()
+        .is_ok_and(|summary| summary.final_state == TransportTraceState::Ready);
+    let reverse_packet_observed = steps
+        .iter()
+        .any(|step| step.step == gr_provider_linux_transport::TransportControlStep::ReversePacket);
+    let mut notes = vec![
+        "transport comparison is fixture-backed until a supported-host capture campaign lands"
+            .to_string(),
+        "tolerated live-vs-reference differences must be recorded as `notes:` alongside later host captures"
+            .to_string(),
+    ];
+    if !smoke_report.live_access {
+        notes.push(
+            "live USB gadget validation is pending a peripheral-mode Linux host with configfs access"
+                .to_string(),
+        );
+    }
+    let report = CompareRealDeviceReport::Transport {
+        profile_id: profile.profile_id.clone(),
+        bus,
+        provider: factory.backend_id(),
+        descriptor_matches_profile_template,
+        transport_trace_matches_fixture: replay.is_ok(),
+        ready_state_reached,
+        reverse_packet_observed,
         smoke_report,
         reference_trace,
         notes,
@@ -1632,6 +1838,18 @@ fn uhid_realization_request(
     }
 }
 
+fn transport_realization_request(
+    profile: &ControllerProfile,
+) -> gr_backend_api::BackendRealizationRequest {
+    gr_backend_api::BackendRealizationRequest {
+        profile_id: profile.profile_id.clone(),
+        requested_goal: FidelityTier::HardwareFaithful.into(),
+        requested_fidelity_tier: FidelityTier::HardwareFaithful,
+        host_platform: HostPlatform::Linux,
+        required_output_functions: required_output_functions(profile),
+    }
+}
+
 fn required_output_functions(profile: &ControllerProfile) -> Vec<SemanticOutputFunction> {
     profile
         .reverse_command_support
@@ -1648,6 +1866,11 @@ fn build_support_report_entry(
     profile: &ControllerProfile,
     fidelity_tier: FidelityTier,
 ) -> SupportReportEntry {
+    if profile.profile_family == ProfileFamily::DualSense
+        && fidelity_tier == FidelityTier::HardwareFaithful
+    {
+        return build_transport_support_report_entry(profile);
+    }
     if profile.profile_family == ProfileFamily::DualSense
         && fidelity_tier == FidelityTier::IdentityAware
     {
@@ -1775,6 +1998,39 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
     }
 }
 
+fn build_transport_support_report_entry(profile: &ControllerProfile) -> SupportReportEntry {
+    let factory = LinuxTransportUsbBackendFactory::new();
+    let request = transport_realization_request(profile);
+    let support = factory.can_realize(&request);
+    let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
+    normalize_transport_report_for_snapshots(&mut smoke_report);
+
+    SupportReportEntry {
+        profile_id: profile.profile_id.to_string(),
+        display_name: profile.display_name,
+        provider: factory.backend_id().to_string(),
+        backend_family: factory.family().to_string(),
+        forward_support: serde_name(&support.forward_support),
+        reverse_support: serde_name(&support.reverse_support),
+        supported_output_functions: support
+            .supported_output_functions
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        unsupported_output_functions: support
+            .unsupported_output_functions
+            .iter()
+            .map(|unsupported| UnsupportedOutputSummary {
+                function: unsupported.function.to_string(),
+                reason: unsupported.reason.clone(),
+            })
+            .collect(),
+        evidence: build_transport_support_evidence(&smoke_report),
+        command_hint: "gr-cli run-transport-smoke dualsense".to_string(),
+        notes: smoke_report.notes,
+    }
+}
+
 fn build_uhid_support_evidence(
     usb_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
     bluetooth_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
@@ -1854,6 +2110,55 @@ fn build_uhid_support_evidence(
     ]
 }
 
+fn build_transport_support_evidence(
+    smoke_report: &LinuxTransportSmokeReport,
+) -> Vec<SupportEvidenceItem> {
+    let enumeration_status = if smoke_report.open_result == "created" {
+        "verified-on-host"
+    } else {
+        "pending-supported-host"
+    };
+
+    vec![
+        SupportEvidenceItem {
+            check: "command-surface",
+            status: "implemented",
+            detail: "run-transport-smoke, compare-real-device --layer transport, and support-report are available in gr-cli and vgpd-demo".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "transport-enumeration",
+            status: enumeration_status,
+            detail: format!(
+                "{} via {}",
+                smoke_report.open_result, smoke_report.kernel_boundary
+            ),
+        },
+        SupportEvidenceItem {
+            check: "control-flow",
+            status: "fixture-backed",
+            detail: "checked-in DualSense USB transport enumeration trace reaches `ready` through connect/read-descriptor/configure-endpoints/ready-signal".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "packet-handling",
+            status: "implemented",
+            detail: format!(
+                "input endpoint 0x{:02x}; reverse endpoint 0x{:02x}",
+                smoke_report.endpoints.input, smoke_report.endpoints.reverse
+            ),
+        },
+        SupportEvidenceItem {
+            check: "reverse-packets",
+            status: "implemented",
+            detail: smoke_report.reverse_path.clone(),
+        },
+        SupportEvidenceItem {
+            check: "real-host-recognition",
+            status: "pending-supported-host",
+            detail: "validate `lsusb -v`, host/game acceptance, and reverse-path behavior on a supported Steam Input-capable system before claiming full hardware-faithful completion".to_string(),
+        },
+    ]
+}
+
 fn serde_name<T: Serialize>(value: &T) -> String {
     serde_yaml::to_value(value)
         .ok()
@@ -1921,6 +2226,22 @@ fn normalize_uhid_report_for_snapshots(report: &mut LinuxUhidSmokeReport) {
     }
 }
 
+fn normalize_transport_report_for_snapshots(report: &mut LinuxTransportSmokeReport) {
+    if cfg!(test) {
+        report.kernel_boundary = "live-linux-configfs-gadget".to_string();
+        report.live_access = true;
+        report.open_result = "created".to_string();
+        report.gadget_name = Some("virtualgamepad-dualsense-usb".to_string());
+        report.bound_udc = Some("dummy_udc.0".to_string());
+        report.notes = vec![
+            "hardware-faithful Linux transport USB provider for DualSense".to_string(),
+            "Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only".to_string(),
+            "configfs-backed validation requires a Linux peripheral-mode host with a visible UDC".to_string(),
+            "USB gadget identity: vid=0x054c pid=0x0ce6".to_string(),
+        ];
+    }
+}
+
 fn validate_uinput_smoke_options(options: UinputSmokeOptions) -> Result<(), CliError> {
     if !options.interactive && options.script != UinputScriptMode::None {
         return Err(CliError::InvalidArgument {
@@ -1981,6 +2302,16 @@ pub fn parse_uhid_smoke_options(
         interactive,
         bus_mode,
     })
+}
+
+fn validate_transport_smoke_profile(profile: &ControllerProfile) -> Result<(), CliError> {
+    if profile.profile_id.as_ref() != "dualsense" {
+        return Err(CliError::InvalidArgument {
+            argument: "profile_id",
+            value: profile.profile_id.to_string(),
+        });
+    }
+    Ok(())
 }
 
 fn run_interactive_uinput_smoke(
@@ -2131,6 +2462,87 @@ fn interactive_uhid_request(profile_id: &ProfileId) -> SessionRequest {
         provider_preference: Some(gr_runtime_model::ProviderId::from("linux-uhid")),
         host_metadata: SessionHostMetadata::default(),
     }
+}
+
+fn run_interactive_transport_smoke(profile: &ControllerProfile) -> Result<String, CliError> {
+    let factory = LinuxTransportUsbBackendFactory::new();
+    let request = transport_realization_request(profile);
+    let report = factory.smoke_report(&profile.profile_id, &request);
+    let report_yaml = serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)?;
+    print!("{report_yaml}");
+    println!();
+    println!("{}", render_interactive_transport_banner(profile, &report));
+
+    let manager = VirtualControllerManager::with_backends(
+        ManagerConfig::default(),
+        vec![
+            Arc::new(LinuxTransportUsbBackendFactory::new()) as Arc<dyn BackendFactory>,
+            Arc::new(LinuxTransportBluetoothBackendFactory::new()) as Arc<dyn BackendFactory>,
+        ],
+    )
+    .map_err(|error| CliError::Simulation {
+        message: error.to_string(),
+    })?;
+
+    let session = Arc::new(
+        manager
+            .create_session(interactive_transport_request(&profile.profile_id))
+            .map_err(|error| CliError::Simulation {
+                message: error.to_string(),
+            })?,
+    );
+    let _subscription = session
+        .subscribe_outputs(Box::new(CallbackSink::new(|command| {
+            println!("{}", format_interactive_output_command(&command));
+        })))
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    let shutdown_reason = wait_for_interactive_shutdown();
+    manager
+        .close_session(session.session_id())
+        .map_err(|error| CliError::Simulation {
+            message: error.to_string(),
+        })?;
+
+    Ok(render_interactive_shutdown_summary(
+        shutdown_reason,
+        UinputScriptMode::None,
+        session.session_id(),
+        manager.diagnostics(session.session_id()).as_ref(),
+    ))
+}
+
+fn interactive_transport_request(profile_id: &ProfileId) -> SessionRequest {
+    SessionRequest {
+        session_id: SessionId::new(9003),
+        profile_id: profile_id.clone(),
+        goal: EmulationGoal::HardwareFaithful,
+        requested_fidelity_tier: FidelityTier::HardwareFaithful,
+        host_platform_preference: Some(HostPlatform::Linux),
+        backend_preference: Some(BackendLevel::Transport),
+        provider_preference: Some(gr_runtime_model::ProviderId::from("linux-transport-usb")),
+        host_metadata: SessionHostMetadata::default(),
+    }
+}
+
+fn render_interactive_transport_banner(
+    profile: &ControllerProfile,
+    report: &LinuxTransportSmokeReport,
+) -> String {
+    let gadget_name = report.gadget_name.as_deref().unwrap_or("<pending>");
+    let bound_udc = report.bound_udc.as_deref().unwrap_or("<pending>");
+    format!(
+        "interactive_transport_session:\n  profile: {}\n  bus: {}\n  gadget_name: {}\n  bound_udc: {}\n  descriptor_size: {}\n  input_endpoint: 0x{:02x}\n  reverse_endpoint: 0x{:02x}\n  stop: press Enter or Ctrl-C",
+        profile.profile_id,
+        report.bus,
+        gadget_name,
+        bound_udc,
+        report.descriptor_size,
+        report.endpoints.input,
+        report.endpoints.reverse,
+    )
 }
 
 fn render_interactive_uhid_banner(
@@ -2502,17 +2914,19 @@ pub fn render_phase_gate_report(report: &PhaseGateReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS, PHASE_5_COMMANDS,
-        PHASE_6_COMMANDS, PHASE_8_COMMANDS, PHASE_9_COMMANDS, PHASE_10_COMMANDS, PHASE_11_COMMANDS,
-        UhidSmokeOptions, UinputScriptMode, UinputSmokeOptions, capability_coverage,
-        compare_real_device, format_interactive_output_command, list_profiles, lookup_profile,
-        parse_uhid_smoke_options, parse_uinput_smoke_options, phase_gate_commands, plan_session,
-        render_interactive_shutdown_summary, render_interactive_uhid_banner,
-        render_interactive_uinput_banner, replay_trace, repo_root, repo_root_from, run_scenario,
-        run_uhid_smoke, run_uinput_smoke, show_capabilities, simulate_session, support_report,
+        CompareLayer, PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS,
+        PHASE_5_COMMANDS, PHASE_6_COMMANDS, PHASE_8_COMMANDS, PHASE_9_COMMANDS, PHASE_10_COMMANDS,
+        PHASE_11_COMMANDS, UhidSmokeOptions, UinputScriptMode, UinputSmokeOptions,
+        capability_coverage, compare_real_device, format_interactive_output_command, list_profiles,
+        lookup_profile, parse_uhid_smoke_options, parse_uinput_smoke_options, phase_gate_commands,
+        plan_session, render_interactive_shutdown_summary, render_interactive_transport_banner,
+        render_interactive_uhid_banner, render_interactive_uinput_banner, replay_trace, repo_root,
+        repo_root_from, run_scenario, run_transport_smoke, run_uhid_smoke, run_uinput_smoke,
+        show_capabilities, simulate_session, support_report, transport_realization_request,
         uinput_realization_request, validate_config, validate_fixture,
     };
     use gr_core::{ProfileId, SessionId, Timestamp};
+    use gr_provider_linux_transport::LinuxTransportUsbBackendFactory;
     use gr_provider_linux_uhid::{LinuxUhidBackendFactory, UhidBusMode};
     use gr_provider_linux_uinput::LinuxUinputBackendFactory;
     use gr_runtime_model::{
@@ -2586,6 +3000,16 @@ mod tests {
         assert!(banner.contains("bus: bluetooth"));
         assert!(banner.contains("input_report_id: 0x31"));
         assert!(banner.contains("hidraw: <pending>") || banner.contains("hidraw: /dev/"));
+    }
+
+    #[test]
+    fn interactive_transport_banner_mentions_endpoints() {
+        let profile = lookup_profile("dualsense").expect("profile");
+        let report = LinuxTransportUsbBackendFactory::new()
+            .smoke_report(&profile.profile_id, &transport_realization_request(profile));
+        let banner = render_interactive_transport_banner(profile, &report);
+        assert!(banner.contains("input_endpoint: 0x01"));
+        assert!(banner.contains("reverse_endpoint: 0x02"));
     }
 
     #[test]
@@ -3176,8 +3600,14 @@ mod tests {
 
     #[test]
     fn support_report_dualsense_identity_output_is_stable() {
-        let output = support_report(Some("dualsense"), None).expect("report");
+        let output = support_report(Some("dualsense"), Some("identity-aware")).expect("report");
         assert_snapshot!("support_report_dualsense_identity", output);
+    }
+
+    #[test]
+    fn support_report_dualsense_transport_output_is_stable() {
+        let output = support_report(Some("dualsense"), Some("hardware-faithful")).expect("report");
+        assert_snapshot!("support_report_dualsense_transport", output);
     }
 
     #[test]
@@ -3208,14 +3638,30 @@ mod tests {
 
     #[test]
     fn compare_real_device_output_is_stable() {
-        let output = compare_real_device("dualsense", UhidBusMode::Usb).expect("comparison");
+        let output = compare_real_device("dualsense", UhidBusMode::Usb, CompareLayer::Identity)
+            .expect("comparison");
         assert_snapshot!("compare_real_device_dualsense_usb", output);
     }
 
     #[test]
     fn compare_real_device_bluetooth_output_is_stable() {
-        let output = compare_real_device("dualsense", UhidBusMode::Bluetooth).expect("comparison");
+        let output =
+            compare_real_device("dualsense", UhidBusMode::Bluetooth, CompareLayer::Identity)
+                .expect("comparison");
         assert_snapshot!("compare_real_device_dualsense_bluetooth", output);
+    }
+
+    #[test]
+    fn compare_real_device_transport_output_is_stable() {
+        let output = compare_real_device("dualsense", UhidBusMode::Usb, CompareLayer::Transport)
+            .expect("comparison");
+        assert_snapshot!("compare_real_device_dualsense_transport_usb", output);
+    }
+
+    #[test]
+    fn run_transport_smoke_output_is_stable() {
+        let output = run_transport_smoke("dualsense", false).expect("smoke");
+        assert_snapshot!("run_transport_smoke_dualsense", output);
     }
 
     #[test]

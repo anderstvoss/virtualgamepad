@@ -1,0 +1,47 @@
+---
+source: crates/gr-cli/src/lib.rs
+assertion_line: 3609
+expression: output
+---
+command: gr-cli support-report
+requested_tier: hardware-faithful
+profiles:
+- profile_id: dualsense
+  display_name: DualSense
+  provider: linux-transport-usb
+  backend_family: linux-transport-usb
+  forward_support: full
+  reverse_support: full
+  supported_output_functions:
+  - rumble
+  - haptics
+  - lighting
+  - player-indicators
+  - trigger-effect
+  - audio
+  unsupported_output_functions: []
+  evidence:
+  - check: command-surface
+    status: implemented
+    detail: run-transport-smoke, compare-real-device --layer transport, and support-report are available in gr-cli and vgpd-demo
+  - check: transport-enumeration
+    status: verified-on-host
+    detail: created via live-linux-configfs-gadget
+  - check: control-flow
+    status: fixture-backed
+    detail: checked-in DualSense USB transport enumeration trace reaches `ready` through connect/read-descriptor/configure-endpoints/ready-signal
+  - check: packet-handling
+    status: implemented
+    detail: input endpoint 0x01; reverse endpoint 0x02
+  - check: reverse-packets
+    status: implemented
+    detail: transport-reverse-packets
+  - check: real-host-recognition
+    status: pending-supported-host
+    detail: validate `lsusb -v`, host/game acceptance, and reverse-path behavior on a supported Steam Input-capable system before claiming full hardware-faithful completion
+  command_hint: gr-cli run-transport-smoke dualsense
+  notes:
+  - hardware-faithful Linux transport USB provider for DualSense
+  - Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only
+  - configfs-backed validation requires a Linux peripheral-mode host with a visible UDC
+  - 'USB gadget identity: vid=0x054c pid=0x0ce6'

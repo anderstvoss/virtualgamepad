@@ -51,9 +51,10 @@ Start with:
 cargo run -p virtual_gamepad_demo -- phase-gate 11
 ```
 
-This runs the automated portion (workspace tests + snapshot check). The
-real-device comparison and `lsusb` checks below are manual and gated on
-the hardware prerequisites above.
+This runs the automated portion (workspace tests + snapshot check +
+fixture-backed transport comparison). The live `lsusb` and target-host
+checks below remain manual and gated on the hardware prerequisites
+above.
 
 ## Check 1: virtual device enumerates identically to a real DualSense
 
