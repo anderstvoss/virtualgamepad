@@ -2228,15 +2228,20 @@ fn normalize_uhid_report_for_snapshots(report: &mut LinuxUhidSmokeReport) {
 
 fn normalize_transport_report_for_snapshots(report: &mut LinuxTransportSmokeReport) {
     if cfg!(test) {
-        report.kernel_boundary = "live-linux-configfs-gadget".to_string();
-        report.live_access = true;
-        report.open_result = "created".to_string();
-        report.gadget_name = Some("virtualgamepad-dualsense-usb".to_string());
-        report.bound_udc = Some("dummy_udc.0".to_string());
+        // Pin the *deferred* baseline so the snapshot is deterministic across
+        // hosts AND matches what `compare-real-device` actually prints on a host
+        // without configfs / a bound UDC (the CI and dev case). The live
+        // "created" path is exercised honestly by the in-memory recording
+        // boundary test in `gr-provider-linux-transport` rather than faked here.
+        report.kernel_boundary = "deferred-linux-configfs-gadget".to_string();
+        report.live_access = false;
+        report.open_result = "deferred".to_string();
+        report.gadget_name = None;
+        report.bound_udc = None;
         report.notes = vec![
             "hardware-faithful Linux transport USB provider for DualSense".to_string(),
             "Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only".to_string(),
-            "configfs-backed validation requires a Linux peripheral-mode host with a visible UDC".to_string(),
+            "live USB gadget validation is deferred until a Linux peripheral-mode host with configfs and a visible UDC is available".to_string(),
             "USB gadget identity: vid=0x054c pid=0x0ce6".to_string(),
         ];
     }

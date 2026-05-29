@@ -1,6 +1,5 @@
 ---
 source: crates/gr-cli/src/lib.rs
-assertion_line: 3609
 expression: output
 ---
 command: gr-cli support-report
@@ -25,8 +24,8 @@ profiles:
     status: implemented
     detail: run-transport-smoke, compare-real-device --layer transport, and support-report are available in gr-cli and vgpd-demo
   - check: transport-enumeration
-    status: verified-on-host
-    detail: created via live-linux-configfs-gadget
+    status: pending-supported-host
+    detail: deferred via deferred-linux-configfs-gadget
   - check: control-flow
     status: fixture-backed
     detail: checked-in DualSense USB transport enumeration trace reaches `ready` through connect/read-descriptor/configure-endpoints/ready-signal
@@ -43,5 +42,5 @@ profiles:
   notes:
   - hardware-faithful Linux transport USB provider for DualSense
   - Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only
-  - configfs-backed validation requires a Linux peripheral-mode host with a visible UDC
+  - live USB gadget validation is deferred until a Linux peripheral-mode host with configfs and a visible UDC is available
   - 'USB gadget identity: vid=0x054c pid=0x0ce6'

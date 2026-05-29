@@ -1,6 +1,5 @@
 ---
 source: crates/gr-cli/src/lib.rs
-assertion_line: 3666
 expression: output
 ---
 profile_id: dualsense
@@ -15,11 +14,9 @@ endpoints:
   input: 1
   reverse: 2
 reverse_path: transport-reverse-packets
-kernel_boundary: live-linux-configfs-gadget
-live_access: true
-open_result: created
-gadget_name: virtualgamepad-dualsense-usb
-bound_udc: dummy_udc.0
+kernel_boundary: deferred-linux-configfs-gadget
+live_access: false
+open_result: deferred
 planned_setup_sequence:
 - connect gadget for profile `dualsense`
 - write idVendor
@@ -49,5 +46,5 @@ support:
 notes:
 - hardware-faithful Linux transport USB provider for DualSense
 - Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only
-- configfs-backed validation requires a Linux peripheral-mode host with a visible UDC
+- live USB gadget validation is deferred until a Linux peripheral-mode host with configfs and a visible UDC is available
 - 'USB gadget identity: vid=0x054c pid=0x0ce6'
