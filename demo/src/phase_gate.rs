@@ -291,11 +291,16 @@ mod tests {
     }
 
     #[test]
-    fn phase_twelve_sign_off_uses_provider_complete_closure_wording() {
+    fn phase_twelve_sign_off_uses_standard_gate_passed_wording() {
+        // Phase 12 is foundations-only (planning + deployment-requirement
+        // reporting); realization is out-of-scope v1.x/v2, not a Tier-D
+        // deferral. So it uses the standard `gate passed` wording, like
+        // Phase 10 — guard against drift to the provider-complete-closure
+        // wording that the deferred-validation gates (9, 11) use.
         let gate = load_gate(12).expect("phase 12 gate");
         assert_eq!(
             gate.sign_off,
-            "`git commit --allow-empty -m \"chore(phase-gate): Phase 12 provider-complete closure recorded\"`"
+            "`git commit --allow-empty -m \"chore(phase-gate): Phase 12 gate passed\"`"
         );
     }
 

@@ -967,7 +967,7 @@ Manual portion:
 - [ ] 4. Confirm no core crate references `windows`, `winapi`, `core-foundation`, etc. (provider details stay in their crates): `rg 'extern crate (windows|winapi|core_foundation|objc)' crates/{gr-core,gr-profiles,gr-config,gr-session-options,gr-runtime-model,gr-backend-api,gr-planner,gr-translators,gr-session,gr-host-bridge}` returns nothing
 - [ ] 5. Each provider crate's README documents the realization roadmap
 
-Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 12 provider-complete closure recorded"`
+Sign-off: `git commit --allow-empty -m "chore(phase-gate): Phase 12 gate passed"`
 
 ## After Phase 12
 
