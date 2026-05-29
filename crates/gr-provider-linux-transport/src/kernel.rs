@@ -1,13 +1,22 @@
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
-use gr_backend_api::{BackendError, EventReadiness};
-use gr_core::ProfileId;
+use gr_backend_api::{BackendError, BackendReverseEventSink, EventReadiness, ReadinessHandle};
+use gr_core::{ProfileId, SessionId};
 
 use crate::{
     DeferredLinuxTransportIoctl, LinuxTransportDevice, LinuxTransportDeviceSpec,
-    LinuxTransportIoctl, LinuxTransportPreview,
+    LinuxTransportIoctl, LinuxTransportPreview, transport_reverse_event,
 };
+
+/// Upper bound on reverse reports drained per `drain_reverse_events` call, so a
+/// chatty host cannot livelock the poller.
+const MAX_REVERSE_READS_PER_DRAIN: usize = 64;
+/// Max HID report payload read from the gadget node in one go.
+const HIDG_READ_BUF_LEN: usize = 4096;
 
 #[derive(Default)]
 pub(crate) struct LiveLinuxTransportIoctl;
@@ -42,9 +51,16 @@ impl LinuxTransportIoctl for LiveLinuxTransportIoctl {
         let gadget_name = spec.gadget_name();
         let gadget_dir = context.gadget_root.join(&gadget_name);
         let staged = StagedGadget::create(&context, spec, &gadget_dir)?;
+        let node = open_hidg_node(&staged.function_dir).inspect_err(|_| {
+            // The gadget enumerated but its report node is unusable; unwind the
+            // configfs staging so we do not leak a half-bound gadget.
+            let _ = staged.teardown();
+        })?;
         Ok(Box::new(ConfigfsTransportDevice {
             gadget_name,
             bound_udc: context.udc_name,
+            reverse_endpoint: spec.endpoints.reverse,
+            node: Some(node),
             staged: Some(staged),
         }))
     }
@@ -223,35 +239,84 @@ impl StagedGadget {
 struct ConfigfsTransportDevice {
     gadget_name: String,
     bound_udc: String,
+    reverse_endpoint: u8,
+    node: Option<File>,
     staged: Option<StagedGadget>,
 }
 
 impl LinuxTransportDevice for ConfigfsTransportDevice {
     fn readiness(&self) -> EventReadiness {
-        EventReadiness::NoReverseEvents
+        self.node
+            .as_ref()
+            .map_or(EventReadiness::NoReverseEvents, |node| {
+                EventReadiness::Readable(ReadinessHandle(node.as_raw_fd()))
+            })
     }
 
     fn write_transport_packet(
         &mut self,
         endpoint_id: u8,
-        _bytes: &[u8],
+        bytes: &[u8],
     ) -> Result<(), BackendError> {
         if endpoint_id == 0 {
             return Err(BackendError::WriteFailed {
                 reason: "transport packet endpoint 0x00 is invalid".to_string(),
             });
         }
-        Ok(())
+        let node = self
+            .node
+            .as_mut()
+            .ok_or_else(|| BackendError::WriteFailed {
+                reason: "transport gadget report node is not open".to_string(),
+            })?;
+        // A HID gadget report node takes the whole report in a single write; a
+        // short write would split the report, so treat it as a failure.
+        node.write_all(bytes)
+            .map_err(|error| BackendError::WriteFailed {
+                reason: format!("write hid report ({} bytes): {error}", bytes.len()),
+            })
     }
 
     fn drain_reverse_events(
         &mut self,
-        _session_id: gr_core::SessionId,
-        _profile_id: &ProfileId,
-        _next_sequence: &mut u64,
-        _out: &mut dyn gr_backend_api::BackendReverseEventSink,
+        session_id: SessionId,
+        profile_id: &ProfileId,
+        next_sequence: &mut u64,
+        out: &mut dyn BackendReverseEventSink,
     ) -> Result<usize, BackendError> {
-        Ok(0)
+        let Some(node) = self.node.as_mut() else {
+            return Ok(0);
+        };
+        let reverse_endpoint = self.reverse_endpoint;
+        let mut buf = [0u8; HIDG_READ_BUF_LEN];
+        let mut count = 0;
+        while count < MAX_REVERSE_READS_PER_DRAIN {
+            match node.read(&mut buf) {
+                Ok(0) => break,
+                Ok(read) => {
+                    out.push(transport_reverse_event(
+                        session_id,
+                        profile_id,
+                        next_sequence,
+                        reverse_endpoint,
+                        buf[..read].to_vec(),
+                    ));
+                    count += 1;
+                }
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock
+                        || error.kind() == ErrorKind::Interrupted =>
+                {
+                    break;
+                }
+                Err(error) => {
+                    return Err(BackendError::ReadFailed {
+                        reason: format!("read hid output report: {error}"),
+                    });
+                }
+            }
+        }
+        Ok(count)
     }
 
     fn gadget_name(&self) -> Option<&str> {
@@ -263,11 +328,72 @@ impl LinuxTransportDevice for ConfigfsTransportDevice {
     }
 
     fn close(&mut self) -> Result<(), BackendError> {
+        // Close the report node before unbinding the UDC so the gadget is torn
+        // down with no open handles to the char device.
+        self.node = None;
         if let Some(staged) = self.staged.take() {
             staged.teardown()?;
         }
         Ok(())
     }
+}
+
+/// Open the HID gadget's `/dev/hidgN` report node for the staged function.
+///
+/// The function instance exposes its char-device number as `major:minor` in
+/// `functions/hid.usb0/dev`; we match that against `/sys/class/hidg/*/dev` to
+/// find the node name, then open `/dev/<name>` non-blocking. Roots are
+/// overridable for tests via `VGPD_TRANSPORT_HIDG_SYSFS_ROOT` and
+/// `VGPD_TRANSPORT_DEV_ROOT`.
+fn open_hidg_node(function_dir: &Path) -> Result<File, BackendError> {
+    let hidg_sysfs_root = std::env::var_os("VGPD_TRANSPORT_HIDG_SYSFS_ROOT")
+        .map_or_else(|| PathBuf::from("/sys/class/hidg"), PathBuf::from);
+    let dev_root = std::env::var_os("VGPD_TRANSPORT_DEV_ROOT")
+        .map_or_else(|| PathBuf::from("/dev"), PathBuf::from);
+    open_hidg_node_at(function_dir, &hidg_sysfs_root, &dev_root)
+}
+
+fn open_hidg_node_at(
+    function_dir: &Path,
+    hidg_sysfs_root: &Path,
+    dev_root: &Path,
+) -> Result<File, BackendError> {
+    let dev_id = fs::read_to_string(function_dir.join("dev"))
+        .map_err(|error| BackendError::OpenFailed {
+            reason: format!("read hid function dev id: {error}"),
+        })?
+        .trim()
+        .to_string();
+
+    let node_name =
+        hidg_node_name(hidg_sysfs_root, &dev_id).ok_or_else(|| BackendError::OpenFailed {
+            reason: format!("no hidg sysfs entry matches device id `{dev_id}`"),
+        })?;
+
+    let node_path = dev_root.join(&node_name);
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(&node_path)
+        .map_err(|error| BackendError::OpenFailed {
+            reason: format!("open hid report node `{}`: {error}", node_path.display()),
+        })
+}
+
+/// Find the `hidgN` entry under `hidg_sysfs_root` whose `dev` attribute matches
+/// `dev_id` (`major:minor`).
+fn hidg_node_name(hidg_sysfs_root: &Path, dev_id: &str) -> Option<String> {
+    for entry in fs::read_dir(hidg_sysfs_root).ok()?.flatten() {
+        let candidate = entry.path().join("dev");
+        let Ok(candidate_id) = fs::read_to_string(&candidate) else {
+            continue;
+        };
+        if candidate_id.trim() == dev_id {
+            return Some(entry.file_name().to_string_lossy().into_owned());
+        }
+    }
+    None
 }
 
 fn write_text(path: impl AsRef<Path>, value: &str) -> Result<(), BackendError> {
@@ -361,6 +487,65 @@ mod tests {
         // Teardown leaves no orphan gadget dir (disconnect cleanliness).
         staged.teardown().expect("teardown");
         assert!(!gadget_dir.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn hidg_node_discovery_drain_and_write() {
+        use gr_backend_api::{BackendReverseEvent, BackendReversePayload};
+
+        let root = unique_tmp_dir("hidg");
+        // Fake configfs function dir exposing its char-device id.
+        let function_dir = root.join("functions/hid.usb0");
+        fs::create_dir_all(&function_dir).unwrap();
+        fs::write(function_dir.join("dev"), "240:0\n").unwrap();
+        // Fake /sys/class/hidg with a matching entry.
+        let sysfs = root.join("sys-hidg");
+        fs::create_dir_all(sysfs.join("hidg0")).unwrap();
+        fs::write(sysfs.join("hidg0/dev"), "240:0\n").unwrap();
+        // Fake /dev node, pre-seeded with an output report the host "sent".
+        let dev = root.join("dev");
+        fs::create_dir_all(&dev).unwrap();
+        fs::write(dev.join("hidg0"), [0x02u8, 0xaa, 0xbb]).unwrap();
+
+        let node = open_hidg_node_at(&function_dir, &sysfs, &dev).expect("discover + open node");
+        let mut device = ConfigfsTransportDevice {
+            gadget_name: "virtualgamepad-dualsense-usb".to_string(),
+            bound_udc: "dummy_udc.0".to_string(),
+            reverse_endpoint: 0x02,
+            node: Some(node),
+            staged: None,
+        };
+
+        // Drain reads the seeded report back as one transport reverse event.
+        let mut sink: Vec<BackendReverseEvent> = Vec::new();
+        let mut seq = 1u64;
+        let count = device
+            .drain_reverse_events(
+                SessionId::new(1),
+                &ProfileId::from("dualsense"),
+                &mut seq,
+                &mut sink,
+            )
+            .expect("drain");
+        assert_eq!(count, 1);
+        assert_eq!(sink.len(), 1);
+        match &sink[0].payload {
+            BackendReversePayload::Transport { endpoint_id, bytes } => {
+                assert_eq!(*endpoint_id, 0x02);
+                assert_eq!(bytes, &[0x02, 0xaa, 0xbb]);
+            }
+            other => panic!("unexpected reverse payload: {other:?}"),
+        }
+
+        // Input report write lands in the node.
+        device
+            .write_transport_packet(0x01, &[0x01, 0x10, 0x20])
+            .expect("write input report");
+        device.close().expect("close");
+
+        let on_disk = fs::read(dev.join("hidg0")).unwrap();
+        assert_eq!(&on_disk[on_disk.len() - 3..], &[0x01, 0x10, 0x20]);
         let _ = fs::remove_dir_all(&root);
     }
 }

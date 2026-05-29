@@ -10,11 +10,15 @@ maximum reuse of evidence and fixtures.
 
 Unlike Phase 10 (state-machine and planner contracts only, no `/dev/*`
 prerequisites), Phase 11 realizes a real transport device and therefore
-carries genuine hardware prerequisites. Several checks below cannot be
-manually verified without a supported host and a real DualSense, so they
-remain in a `pending-supported-host` deferred-validation queue — the same
-vocabulary Phase 9 uses for its deferred Tier D claims. `pending-supported-host`
-is **not** `prerequisite-pending`: the latter is a temporary marker that the
+carries genuine hardware prerequisites. The live device path is implemented
+end-to-end — `configfs` gadget enumeration **and** `/dev/hidgN` report I/O
+(input write + non-blocking reverse read) — so the checks below are
+*validation*, not implementation gates: they confirm the implemented path
+against a real host. They cannot be manually verified without a supported
+host and a real DualSense, so any that can't be exercised here remain in a
+`pending-supported-host` deferred-validation queue — the same vocabulary
+Phase 9 uses for its deferred Tier D claims. `pending-supported-host` is
+**not** `prerequisite-pending`: the latter is a temporary marker that the
 implementation PR clears, whereas `pending-supported-host` is a real Tier D
 deferral that closes only on a supported validation system.
 

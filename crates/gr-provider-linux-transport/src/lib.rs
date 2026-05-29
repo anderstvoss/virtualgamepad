@@ -23,11 +23,11 @@ use gr_runtime_model::HostPlatform;
 use gr_testkit::fixtures::TransportEndpoints;
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
+#[cfg(any(test, target_os = "linux"))]
 use gr_backend_api::{
     BackendReverseEvent, BackendReverseEventKind, BackendReversePayload, BackendReverseTarget,
 };
-#[cfg(test)]
+#[cfg(any(test, target_os = "linux"))]
 use gr_core::{SequenceId, Timestamp};
 
 pub use gr_testkit::fixtures::{
@@ -842,8 +842,10 @@ fn unix_seconds() -> u64 {
         .map_or(0, |duration| duration.as_secs())
 }
 
-#[cfg(test)]
-fn reverse_event(
+/// Build a transport-packet reverse event, advancing `next_sequence`. Shared by
+/// the live `kernel` device drain and the in-memory recording test device.
+#[cfg(any(test, target_os = "linux"))]
+pub(crate) fn transport_reverse_event(
     session_id: SessionId,
     profile_id: &ProfileId,
     next_sequence: &mut u64,
@@ -977,7 +979,7 @@ mod tests {
             let count = packets.len();
             drop(state);
             for packet in packets {
-                out.push(reverse_event(
+                out.push(transport_reverse_event(
                     session_id,
                     profile_id,
                     next_sequence,
