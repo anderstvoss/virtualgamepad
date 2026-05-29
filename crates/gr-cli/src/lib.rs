@@ -1625,6 +1625,16 @@ fn planner_factories(
         .collect()
 }
 
+/// Build the real provider factory for an inventory entry so planning uses the
+/// provider's own `can_realize` logic (host/tier checks, deployment notes)
+/// rather than the generic builder.
+///
+/// `gr-cli` depends on the windows/macos provider crates unconditionally (not
+/// `[target.'cfg(...)']`-gated) so these factories can be constructed on any
+/// host — they are pure `#![forbid(unsafe_code)]` planning logic with no
+/// platform system dependencies today. NOTE: when a realization phase adds real
+/// platform deps (winapi / core-foundation / objc), those crates must become
+/// target-gated dependencies here or the Linux build will break.
 fn provider_factory_for_inventory_entry(
     entry: &gr_backend_api::BackendInventoryEntry,
 ) -> Option<Arc<dyn gr_backend_api::BackendFactory>> {

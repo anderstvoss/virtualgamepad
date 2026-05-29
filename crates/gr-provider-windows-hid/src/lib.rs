@@ -55,6 +55,10 @@ impl BackendFactory for WindowsHidBackendFactory {
     fn can_realize(&self, request: &BackendRealizationRequest) -> BackendSupportReport {
         let host_supported = request.host_platform == HostPlatform::Windows;
         let profile_supported = registry().profile(request.profile_id.clone()).is_some();
+        // The Phase 12 foundation intentionally models only the identity-aware
+        // tier (matching `inventory_entry`); compatibility-tier downgrade
+        // targets are out of scope and surface as `SupportLevel::None` with the
+        // explanatory note below.
         let fidelity_supported = request.requested_fidelity_tier == FidelityTier::IdentityAware;
 
         let forward_support = if host_supported && profile_supported && fidelity_supported {

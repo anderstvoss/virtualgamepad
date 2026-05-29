@@ -21,6 +21,9 @@ gr-core = { path = "../gr-core", version = "0.1" }
 gr-host-bridge = { path = "../gr-host-bridge", version = "0.1" }
 gr-planner = { path = "../gr-planner", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }
+# windows/macos providers are planning-only (no platform sys-deps yet), so they
+# are depended on unconditionally to build factories on any host. Move to
+# [target.'cfg(...)'.dependencies] once a realization phase adds platform deps.
 gr-provider-macos-hid = { path = "../gr-provider-macos-hid", version = "0.1" }
 gr-provider-linux-transport = { path = "../gr-provider-linux-transport", version = "0.1" }
 gr-provider-linux-uhid = { path = "../gr-provider-linux-uhid", version = "0.1" }
