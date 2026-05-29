@@ -153,15 +153,18 @@ impl StagedGadget {
             config_strings_dir.join("configuration"),
             "virtualgamepad transport",
         )?;
+        // The configfs `MaxPower` attribute is in mA; the kernel halves it when
+        // encoding `bMaxPower`. Write the mA value directly so the host sees the
+        // intended draw (writing /2 here advertised half the current).
         write_text(
             config_dir.join("MaxPower"),
-            &format!("{}", spec.max_power_ma / 2),
+            &format!("{}", spec.max_power_ma),
         )?;
         write_text(function_dir.join("protocol"), "0")?;
         write_text(function_dir.join("subclass"), "0")?;
         write_text(
             function_dir.join("report_length"),
-            &format!("{}", spec.descriptor.len()),
+            &format!("{}", spec.report_length),
         )?;
         fs::write(function_dir.join("report_desc"), &spec.descriptor).map_err(|error| {
             BackendError::OpenFailed {
@@ -273,6 +276,98 @@ fn write_text(path: impl AsRef<Path>, value: &str) -> Result<(), BackendError> {
     })
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gr_testkit::fixtures::TransportTraceBus;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use gr_testkit::fixtures::TransportEndpoints;
+
+    fn unique_tmp_dir(tag: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let dir = std::env::temp_dir().join(format!(
+            "vgpd-transport-{tag}-{}-{nanos}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&dir).expect("create tmp dir");
+        dir
+    }
+
+    fn sample_spec() -> LinuxTransportDeviceSpec {
+        LinuxTransportDeviceSpec {
+            profile_id: ProfileId::from("dualsense"),
+            bus: TransportTraceBus::Usb,
+            descriptor: vec![0xABu8; 273],
+            endpoints: TransportEndpoints {
+                input: 0x01,
+                reverse: 0x02,
+            },
+            device_name: "Sony Interactive Entertainment DualSense Wireless Controller".to_string(),
+            manufacturer: "Sony Interactive Entertainment".to_string(),
+            serial_number: "VGPD-0000test".to_string(),
+            vendor_id: 0x054c,
+            product_id: 0x0ce6,
+            version: 0x0100,
+            bcd_usb: 0x0200,
+            max_power_ma: 500,
+            report_length: 64,
+        }
+    }
+
+    #[test]
+    fn staged_gadget_writes_configfs_attributes_with_correct_encoding() {
+        let root = unique_tmp_dir("stage");
+        let context = LinuxConfigfsContext {
+            gadget_root: root.clone(),
+            udc_name: "dummy_udc.0".to_string(),
+        };
+        let spec = sample_spec();
+        let gadget_dir = root.join(spec.gadget_name());
+        let staged =
+            StagedGadget::create(&context, &spec, &gadget_dir).expect("stage gadget in tmp dir");
+
+        // idVendor/idProduct must carry the `0x` prefix so configfs parses hex.
+        assert_eq!(
+            fs::read_to_string(gadget_dir.join("idVendor")).unwrap(),
+            "0x054c"
+        );
+        assert_eq!(
+            fs::read_to_string(gadget_dir.join("idProduct")).unwrap(),
+            "0x0ce6"
+        );
+        // report_length is the HID report size (64), not the descriptor length.
+        assert_eq!(
+            fs::read_to_string(gadget_dir.join("functions/hid.usb0/report_length")).unwrap(),
+            "64"
+        );
+        // report_desc carries the full descriptor bytes.
+        assert_eq!(
+            fs::read(gadget_dir.join("functions/hid.usb0/report_desc")).unwrap(),
+            spec.descriptor
+        );
+        // MaxPower is the mA value (kernel halves it for bMaxPower).
+        assert_eq!(
+            fs::read_to_string(gadget_dir.join("configs/c.1/MaxPower")).unwrap(),
+            "500"
+        );
+        assert_eq!(
+            fs::read_to_string(gadget_dir.join("UDC")).unwrap(),
+            "dummy_udc.0"
+        );
+
+        // Teardown leaves no orphan gadget dir (disconnect cleanliness).
+        staged.teardown().expect("teardown");
+        assert!(!gadget_dir.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+}
+
 fn write_hex(path: impl AsRef<Path>, value: u16) -> Result<(), BackendError> {
-    write_text(path, &format!("{value:04x}"))
+    // configfs gadget u16 attributes parse with `kstrtou16(_, 0, _)` (base
+    // auto-detect): a bare `054c` is read as octal and rejected on `c`. The
+    // `0x` prefix forces hex, matching the convention real gadget scripts use.
+    write_text(path, &format!("0x{value:04x}"))
 }

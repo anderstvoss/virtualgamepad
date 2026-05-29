@@ -5,12 +5,6 @@
 #[cfg(target_os = "linux")]
 mod kernel;
 
-#[cfg(not(target_os = "linux"))]
-mod kernel {
-    #[derive(Default)]
-    pub(crate) struct LiveLinuxTransportIoctl;
-}
-
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -52,6 +46,11 @@ const USB_ENDPOINT_REVERSE: u8 = 0x02;
 const BLUETOOTH_ENDPOINT_INPUT: u8 = 0x11;
 const BLUETOOTH_ENDPOINT_REVERSE: u8 = 0x12;
 const USB_BCD_USB: u16 = 0x0200;
+/// HID report length advertised to the gadget `report_length` attribute. This
+/// is the max in/out HID report size (the USB input report is 64 bytes), NOT
+/// the HID report *descriptor* length — the descriptor bytes go to
+/// `report_desc` instead.
+const DUALSENSE_USB_HID_REPORT_LEN: u16 = 64;
 
 const XBOX360_OUTPUTS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::Rumble,
@@ -354,6 +353,7 @@ impl LinuxTransportUsbBackendFactory {
             version: profile.identity.version.unwrap_or(0x0100),
             bcd_usb: USB_BCD_USB,
             max_power_ma: 500,
+            report_length: DUALSENSE_USB_HID_REPORT_LEN,
         })
     }
 
@@ -791,6 +791,7 @@ pub(crate) struct LinuxTransportDeviceSpec {
     version: u16,
     bcd_usb: u16,
     max_power_ma: u16,
+    report_length: u16,
 }
 
 impl LinuxTransportDeviceSpec {
