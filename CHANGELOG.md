@@ -33,10 +33,28 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   surface, `run-uinput-smoke` / `support-report` command surfaces, and
   a Tier B provider workflow scaffold.
 
+- Phase 2 through Phase 7 runtime foundation: built-in profile and
+  capability registry, configuration validation, compiled session
+  options, runtime model types, backend API and fakes, planner,
+  translators, session manager, host bridge, trace replay, and
+  reviewer-facing demo/CLI surfaces.
+
+- Phase 8 through Phase 11 Linux provider buildout: `uinput`
+  compatibility-tier support, DualSense UHID identity-aware support,
+  Linux transport state-machine foundation, and the Phase 11
+  DualSense USB hardware-faithful transport provider surface.
+
+- Phase 12 Windows and macOS HID provider foundations with planning-only
+  inventories, deployment-requirement reporting, planner integration,
+  cross-platform checks, and realization-roadmap READMEs.
+
 ### Changed
 
 - Top-level README adds an explicit project-goals section covering
   both the library and the demo program.
+
+- User-facing status text now reflects Phase 12 provider-complete
+  closure while keeping deferred profile/platform validation explicit.
 
 - `vgpd-demo` now exposes `show-types`, and `gr-cli phase-gate 1 --auto`
   runs the automated Phase 1 checks including snapshot verification.

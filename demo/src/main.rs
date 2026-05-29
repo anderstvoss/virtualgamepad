@@ -172,13 +172,18 @@ fn print_output(result: Result<String, impl ToString>) -> Result<(), String> {
 }
 
 fn print_info() {
-    println!("vgpd-demo {}", env!("CARGO_PKG_VERSION"));
-    println!("companion demo for the virtualgamepad workspace");
-    println!();
-    println!("library status: through Phase 9 Linux uhid provider support");
-    println!(
-        "demo status:    gate runner, profile review, config validation, simulate-session, run-scenario, many-sessions, run-uinput-smoke, run-uhid-smoke, run-transport-smoke, support-report, replay-trace, plan-session"
-    );
+    print!("{}", info_output());
+}
+
+fn info_output() -> String {
+    format!(
+        "vgpd-demo {}\n\
+companion demo for the virtualgamepad workspace\n\
+\n\
+library status: through Phase 12 provider-complete closure; Linux uinput, UHID, and DualSense USB transport surfaces exist; Windows/macOS foundations are planning-only\n\
+demo status:    gate runner, profile review, config validation, simulate-session, run-scenario, many-sessions, run-uinput-smoke, run-uhid-smoke, run-transport-smoke, support-report, replay-trace, plan-session\n",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 fn print_show_types() {
@@ -194,6 +199,14 @@ mod tests {
     #[test]
     fn show_types_output_is_stable() {
         assert_snapshot!("show_types", gr_core::render_type_catalog());
+    }
+
+    #[test]
+    fn info_output_tracks_phase_twelve_status() {
+        let output = super::info_output();
+        assert!(output.contains("through Phase 12 provider-complete closure"));
+        assert!(output.contains("DualSense USB transport"));
+        assert!(output.contains("Windows/macOS foundations are planning-only"));
     }
 
     #[test]

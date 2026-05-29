@@ -163,19 +163,16 @@ impl TranslatorRegistry {
 /// Build the per-session [`PreparedTranslationContext`] from a
 /// [`SessionPlan`].
 ///
-/// Phase 6 implements the body; the prep PR pins the signature so
-/// downstream crates (`gr-session`) can be written against a stable
-/// contract.
+/// This resolves the profile, descriptor template, forward translator,
+/// and reverse translator metadata needed by the hot-path translators.
 ///
 /// # Errors
 ///
 /// Returns [`TranslationError::NoTranslatorRegistered`] when no
 /// translator is registered for the plan's family + level.
-///
-/// # Panics
-///
-/// Stub implementation panics via `unimplemented!()`. Phase 6 replaces
-/// the body.
+/// Returns [`TranslationError::InvalidInput`] when the planned profile
+/// is not registered, the selected descriptor template is missing, or a
+/// required reverse translator is unavailable.
 pub fn prepared_translation_context(
     plan: &SessionPlan,
     translator_registry: &TranslatorRegistry,

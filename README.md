@@ -3,13 +3,15 @@
 Rust library for creating virtual gamepad devices that emulate
 physical hardware at varying accuracy levels.
 
-> **Status:** early WIP. The workspace is through Phase 8, including
-> the Linux `uinput` compatibility-tier provider surface; the public API will
-> land in subsequent releases. See [CHANGELOG.md](CHANGELOG.md) for
-> tracked changes, and [docs/spec/](docs/spec/) for the architecture,
-> implementation, and validation spec the buildout follows. A
-> companion [demo program](demo/) grows alongside the library — see
-> [demo/README.md](demo/README.md) for its growth plan.
+> **Status:** early WIP, through Phase 12 provider-complete closure.
+> Linux provider surfaces exist for `uinput`, UHID, and the DualSense
+> USB transport target. Windows and macOS provider foundations are
+> planning-only and report deployment requirements, not real device
+> realization. By the project plan this means the architecture is
+> functional for full device-emulation buildout, while profile- and
+> platform-specific validation remains ongoing. See [CHANGELOG.md](CHANGELOG.md)
+> and [docs/spec/](docs/spec/) for tracked changes and the buildout
+> spec. A companion [demo program](demo/) grows alongside the library.
 
 ## Project goals
 
@@ -88,9 +90,11 @@ with the library. To run the current scaffold:
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
-cargo run -p virtual_gamepad_demo -- phase-gate 8
+cargo run -p virtual_gamepad_demo -- phase-gate 12
 cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
-cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
+cargo run -p virtual_gamepad_demo -- support-report --profile dualsense --tier hardware-faithful
+cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform windows --inventory samples/inventories/windows-hid-stub.yaml
+cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform macos --inventory samples/inventories/macos-hid-stub.yaml
 ```
 
 See [demo/README.md](demo/README.md) for the planned growth phases and
