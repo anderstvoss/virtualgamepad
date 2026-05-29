@@ -402,6 +402,13 @@ fn write_text(path: impl AsRef<Path>, value: &str) -> Result<(), BackendError> {
     })
 }
 
+fn write_hex(path: impl AsRef<Path>, value: u16) -> Result<(), BackendError> {
+    // configfs gadget u16 attributes parse with `kstrtou16(_, 0, _)` (base
+    // auto-detect): a bare `054c` is read as octal and rejected on `c`. The
+    // `0x` prefix forces hex, matching the convention real gadget scripts use.
+    write_text(path, &format!("0x{value:04x}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,11 +555,4 @@ mod tests {
         assert_eq!(&on_disk[on_disk.len() - 3..], &[0x01, 0x10, 0x20]);
         let _ = fs::remove_dir_all(&root);
     }
-}
-
-fn write_hex(path: impl AsRef<Path>, value: u16) -> Result<(), BackendError> {
-    // configfs gadget u16 attributes parse with `kstrtou16(_, 0, _)` (base
-    // auto-detect): a bare `054c` is read as octal and rejected on `c`. The
-    // `0x` prefix forces hex, matching the convention real gadget scripts use.
-    write_text(path, &format!("0x{value:04x}"))
 }
