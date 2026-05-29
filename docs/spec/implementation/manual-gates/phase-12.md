@@ -9,8 +9,10 @@ deployment-requirement reporting only — **no device realization**.
 Like Phase 10 (and unlike Phases 8/9/11), Phase 12 has no `/dev/*`
 prerequisites and no Tier-D / `pending-supported-host` deferred-validation
 queue. It is cross-build + planner-contract work, fully verifiable on a single
-Linux host. Sign-off uses the standard `chore(phase-gate): Phase 12 gate passed`
-wording. A check flagged `prerequisite-pending` at sign-off means the Phase 12
+Linux host. This branch still records closure with the provider-complete commit
+wording so Phases 9–12 share the same post-implementation review policy on the
+current host: `chore(phase-gate): Phase 12 provider-complete closure recorded`.
+A check flagged `prerequisite-pending` at sign-off means the Phase 12
 implementation PR has not yet landed — that marker is temporary and the impl PR
 clears it; it is **not** a Tier-D deferral.
 
@@ -131,7 +133,7 @@ README describing what a full realization will require.
 When all automated checks and all manual checks pass:
 
 ```bash
-git commit --allow-empty -m "chore(phase-gate): Phase 12 gate passed"
+git commit --allow-empty -m "chore(phase-gate): Phase 12 provider-complete closure recorded"
 ```
 
 Phase 12 is **not** a deferred-validation gate. Any `prerequisite-pending`

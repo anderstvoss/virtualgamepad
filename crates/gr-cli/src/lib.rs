@@ -24,6 +24,8 @@ use gr_provider_linux_transport::{
 };
 use gr_provider_linux_uhid::{LinuxUhidBackendFactory, LinuxUhidSmokeReport, UhidBusMode};
 use gr_provider_linux_uinput::LinuxUinputBackendFactory;
+use gr_provider_macos_hid::MacosHidBackendFactory;
+use gr_provider_windows_hid::WindowsHidBackendFactory;
 use gr_runtime_model::{
     BackpressurePolicy, ControllerOutputCommand, EmulationGoal, HostPlatform,
     ReverseEventDeliveryPolicy, SessionHostMetadata, SessionRequest,
@@ -1601,6 +1603,9 @@ fn planner_factories(
     inventory
         .iter()
         .map(|entry| {
+            if let Some(factory) = provider_factory_for_inventory_entry(entry) {
+                return factory;
+            }
             let mut builder = backend_factory()
                 .backend_id(entry.backend_id.as_ref())
                 .family(entry.family)
@@ -1618,6 +1623,21 @@ fn planner_factories(
             Arc::new(builder.build()) as Arc<dyn gr_backend_api::BackendFactory>
         })
         .collect()
+}
+
+fn provider_factory_for_inventory_entry(
+    entry: &gr_backend_api::BackendInventoryEntry,
+) -> Option<Arc<dyn gr_backend_api::BackendFactory>> {
+    match entry.backend_id.as_ref() {
+        "windows-hid" => {
+            Some(Arc::new(WindowsHidBackendFactory::new())
+                as Arc<dyn gr_backend_api::BackendFactory>)
+        }
+        "macos-hid" => {
+            Some(Arc::new(MacosHidBackendFactory::new()) as Arc<dyn gr_backend_api::BackendFactory>)
+        }
+        _ => None,
+    }
 }
 
 fn parse_fidelity_tier(value: &str) -> Result<FidelityTier, CliError> {
@@ -3880,6 +3900,57 @@ mod tests {
         )
         .expect("plan");
         assert_snapshot!("plan_session_transport_hardware_faithful", output);
+    }
+
+    #[test]
+    fn plan_session_windows_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/windows-hid-stub.yaml");
+        let output = plan_session(
+            "dualsense",
+            "identity-aware",
+            inventory,
+            Some("windows"),
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
+        assert_snapshot!("plan_session_windows_identity_aware", output);
+    }
+
+    #[test]
+    fn plan_session_macos_output_is_stable() {
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/macos-hid-stub.yaml");
+        let output = plan_session(
+            "dualsense",
+            "identity-aware",
+            inventory,
+            Some("macos"),
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
+        assert_snapshot!("plan_session_macos_identity_aware", output);
+    }
+
+    #[test]
+    fn plan_session_macos_hardware_faithful_degrades() {
+        let repo_root = repo_root().expect("workspace root");
+        let inventory = repo_root.join("samples/inventories/macos-hid-stub.yaml");
+        let output = plan_session(
+            "dualsense",
+            "hardware-faithful",
+            inventory,
+            Some("macos"),
+            None,
+            None,
+            Some(1),
+        )
+        .expect("plan");
+        assert_snapshot!("plan_session_macos_hardware_faithful", output);
     }
 
     #[test]

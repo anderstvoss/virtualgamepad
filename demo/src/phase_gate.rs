@@ -291,6 +291,15 @@ mod tests {
     }
 
     #[test]
+    fn phase_twelve_sign_off_uses_provider_complete_closure_wording() {
+        let gate = load_gate(12).expect("phase 12 gate");
+        assert_eq!(
+            gate.sign_off,
+            "`git commit --allow-empty -m \"chore(phase-gate): Phase 12 provider-complete closure recorded\"`"
+        );
+    }
+
+    #[test]
     fn phase_one_automated_checklist_extracts_proptest_line() {
         let gate = load_gate(1).expect("phase 1 gate");
         assert_eq!(gate.automated.len(), 4);
