@@ -1,0 +1,20 @@
+fixture: virtualgamepad/v1
+kind: backend-inventory
+id: windows-hid-stub
+notes: |
+  Phase 12 foundations inventory: the windows-hid family is plannable for
+  identity-aware / compatibility goals so the planner can select it and surface
+  deployment requirements. This is planning + deployment-requirement reporting
+  only — no device realization lands in Phase 12.
+payload:
+  entries:
+    - backend_id: windows-hid
+      family: windows-hid
+      level: hid
+      host_platform: windows
+      supported_fidelity_tiers:
+        - compatibility
+        - identity-aware
+      notes:
+        - "phase-12 windows-hid backend is planning-only; no device realization yet"
+        - "deployment requirement: a signed virtual-HID bus driver must be installed before realization"

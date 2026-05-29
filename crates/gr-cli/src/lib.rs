@@ -207,6 +207,29 @@ const PHASE_11_COMMANDS: &[&[&str]] = &[
     ],
 ];
 
+const PHASE_12_COMMANDS: &[&[&str]] = &[
+    &["cargo", "test", "--workspace", "--all-features"],
+    &[
+        "cargo",
+        "check",
+        "--target",
+        "x86_64-pc-windows-msvc",
+        "--workspace",
+        "--features",
+        "provider-windows-hid",
+    ],
+    &[
+        "cargo",
+        "check",
+        "--target",
+        "x86_64-apple-darwin",
+        "--workspace",
+        "--features",
+        "provider-macos-hid",
+    ],
+    &["cargo", "insta", "test", "--check"],
+];
+
 const DEFAULT_UINPUT_STEP_DELAY_MS: u64 = 750;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -2860,7 +2883,10 @@ fn phase_gate_commands(phase: u8) -> Result<Vec<Vec<String>>, CliError> {
             .iter()
             .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
             .collect()),
-        12 => Err(CliError::UnimplementedPhase { phase }),
+        12 => Ok(PHASE_12_COMMANDS
+            .iter()
+            .map(|command| command.iter().map(|arg| (*arg).to_string()).collect())
+            .collect()),
         _ => Err(CliError::UnknownPhase { phase }),
     }
 }
@@ -2921,10 +2947,11 @@ mod tests {
     use super::{
         CompareLayer, PHASE_0_COMMANDS, PHASE_1_COMMANDS, PHASE_2_COMMANDS, PHASE_3_COMMANDS,
         PHASE_5_COMMANDS, PHASE_6_COMMANDS, PHASE_8_COMMANDS, PHASE_9_COMMANDS, PHASE_10_COMMANDS,
-        PHASE_11_COMMANDS, UhidSmokeOptions, UinputScriptMode, UinputSmokeOptions,
-        capability_coverage, compare_real_device, format_interactive_output_command, list_profiles,
-        lookup_profile, parse_uhid_smoke_options, parse_uinput_smoke_options, phase_gate_commands,
-        plan_session, render_interactive_shutdown_summary, render_interactive_transport_banner,
+        PHASE_11_COMMANDS, PHASE_12_COMMANDS, UhidSmokeOptions, UinputScriptMode,
+        UinputSmokeOptions, capability_coverage, compare_real_device,
+        format_interactive_output_command, list_profiles, lookup_profile, parse_uhid_smoke_options,
+        parse_uinput_smoke_options, phase_gate_commands, plan_session,
+        render_interactive_shutdown_summary, render_interactive_transport_banner,
         render_interactive_uhid_banner, render_interactive_uinput_banner, replay_trace, repo_root,
         repo_root_from, run_scenario, run_transport_smoke, run_uhid_smoke, run_uinput_smoke,
         show_capabilities, simulate_session, support_report, transport_realization_request,
@@ -3568,6 +3595,48 @@ mod tests {
             assert!(
                 automated.contains(&command),
                 "phase 11 automated section is missing {command}"
+            );
+        }
+    }
+
+    #[test]
+    fn phase_twelve_commands_match_expected_order() {
+        let commands = phase_gate_commands(12).expect("phase 12 commands");
+        let expected = PHASE_12_COMMANDS
+            .iter()
+            .map(|command| {
+                command
+                    .iter()
+                    .map(|arg| (*arg).to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(commands, expected);
+    }
+
+    #[test]
+    fn phase_twelve_commands_match_plan_spec() {
+        let repo_root = repo_root().expect("workspace root");
+        let plan_path = repo_root.join("docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md");
+        let plan = std::fs::read_to_string(plan_path).expect("read implementation plan");
+        let phase_twelve = plan
+            .split("## Phase 12:")
+            .nth(1)
+            .and_then(|section| section.split("## After Phase 12").next())
+            .expect("phase 12 section");
+        let automated = phase_twelve
+            .split("Automated portion:")
+            .nth(1)
+            .and_then(|section| section.split("Manual portion:").next())
+            .expect("automated section");
+
+        for command in PHASE_12_COMMANDS
+            .iter()
+            .map(|command| format!("`{}`", command.join(" ")))
+        {
+            assert!(
+                automated.contains(&command),
+                "phase 12 automated section is missing {command}"
             );
         }
     }
