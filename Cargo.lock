@@ -335,6 +335,8 @@ dependencies = [
  "gr-provider-linux-transport",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
+ "gr-provider-macos-hid",
+ "gr-provider-windows-hid",
  "gr-runtime-model",
  "gr-session",
  "gr-session-options",
@@ -453,10 +455,22 @@ dependencies = [
 [[package]]
 name = "gr-provider-macos-hid"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-profiles",
+ "gr-runtime-model",
+]
 
 [[package]]
 name = "gr-provider-windows-hid"
 version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-profiles",
+ "gr-runtime-model",
+]
 
 [[package]]
 name = "gr-runtime-model"

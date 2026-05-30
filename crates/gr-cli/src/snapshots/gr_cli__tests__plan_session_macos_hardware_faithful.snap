@@ -1,17 +1,17 @@
 ---
 source: crates/gr-cli/src/lib.rs
-assertion_line: 3902
+assertion_line: 3953
 expression: output
 ---
 outcome: plan
 session_id: 1
 profile_id: dualsense
 requested_goal: hardware-faithful
-requested_fidelity_tier: hardware-faithful
-selected_level: transport
-target_host_platform: linux
-selected_backend_family: linux-transport-usb
-selected_provider_id: linux-transport-usb
+requested_fidelity_tier: identity-aware
+selected_level: hid
+target_host_platform: macos
+selected_backend_family: macos-hid
+selected_provider_id: macos-hid
 selected_translator_family: dual-sense
 capability_result:
   enabled_capabilities:
@@ -22,16 +22,25 @@ capability_result:
   - trigger-effect
   - audio
 degradation:
-  degraded: false
+  degraded: true
+  reasons:
+  - kind: transport-not-realizable
+    requested_backend_level: transport
+    available_backend_levels:
+    - hid
+    available_backends:
+    - macos-hid
+    reason: 'no transport backend is available; inventory exposes only hid-tier backends; available backends: macos-hid'
 deployment_requirements:
   requirements:
-  - phase-10 transport backend is plannable; live USB gadget realization lands in Phase 11
+  - phase-12 macos-hid backend is planning-only; no device realization yet
+  - 'deployment requirement: a notarized DriverKit system extension and the matching app entitlement must be approved before realization'
 backend_open_context:
   session_id: 1
   profile_id: dualsense
-  fidelity_tier: hardware-faithful
-  backend_level: transport
-  host_platform: linux
+  fidelity_tier: identity-aware
+  backend_level: hid
+  host_platform: macos
 session_options:
   accepted_update_kinds:
   - frame

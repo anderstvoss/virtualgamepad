@@ -318,8 +318,12 @@ pub fn plan_session(
             .notes
             .iter()
             .chain(selected.report.notes.iter())
-            .cloned()
-            .collect(),
+            .fold(Vec::new(), |mut requirements, note| {
+                if !requirements.contains(note) {
+                    requirements.push(note.clone());
+                }
+                requirements
+            }),
     };
     let selected_provider_id = provider_id_from_entry(selected.entry);
     let session_id = request.session_id;
@@ -754,11 +758,29 @@ mod tests {
         tiers: Vec<FidelityTier>,
         outputs: &[gr_core::SemanticOutputFunction],
     ) -> Arc<dyn BackendFactory> {
+        fake_factory_for_host(
+            backend_id,
+            family,
+            level,
+            HostPlatform::Linux,
+            tiers,
+            outputs,
+        )
+    }
+
+    fn fake_factory_for_host(
+        backend_id: &str,
+        family: BackendFamily,
+        level: BackendLevel,
+        platform: HostPlatform,
+        tiers: Vec<FidelityTier>,
+        outputs: &[gr_core::SemanticOutputFunction],
+    ) -> Arc<dyn BackendFactory> {
         let mut builder = backend_factory()
             .backend_id(backend_id)
             .family(family)
             .level(level)
-            .platform(HostPlatform::Linux)
+            .platform(platform)
             .supported_fidelity_tiers(tiers);
         for output in outputs {
             builder = builder.declares_reverse_output(*output);
@@ -1067,6 +1089,62 @@ mod tests {
                 .any(|requirement| requirement == "requires kernel 5.14+"),
             "expected backend note on deployment_requirements; got {:?}",
             plan.deployment_requirements.requirements
+        );
+    }
+
+    #[test]
+    fn windows_only_inventory_selects_windows_provider() {
+        let mut request = base_request();
+        request.host_platform_preference = Some(HostPlatform::Windows);
+        let options = compiled_options();
+        let factories = vec![fake_factory_for_host(
+            "windows-hid",
+            BackendFamily::WindowsHid,
+            BackendLevel::Hid,
+            HostPlatform::Windows,
+            vec![FidelityTier::IdentityAware],
+            &dualsense_outputs(),
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert_eq!(plan.target_host_platform, HostPlatform::Windows);
+        assert_eq!(plan.selected_backend_family, BackendFamily::WindowsHid);
+        assert_eq!(plan.selected_provider_id.0, "windows-hid");
+    }
+
+    #[test]
+    fn macos_hardware_faithful_request_degrades_to_identity_aware_hid() {
+        let mut request = base_request();
+        request.host_platform_preference = Some(HostPlatform::Macos);
+        request.requested_fidelity_tier = FidelityTier::HardwareFaithful;
+        request.goal = EmulationGoal::HardwareFaithful;
+        let options = compiled_options();
+        let factories = vec![fake_factory_for_host(
+            "macos-hid",
+            BackendFamily::MacosHid,
+            BackendLevel::Hid,
+            HostPlatform::Macos,
+            vec![FidelityTier::IdentityAware],
+            &dualsense_outputs(),
+        )];
+        let inventory = inventory_from(&factories);
+
+        let plan = plan_session(&request, &options, &inventory, &factories).expect("plan");
+        assert_eq!(plan.target_host_platform, HostPlatform::Macos);
+        assert_eq!(plan.selected_backend_family, BackendFamily::MacosHid);
+        assert_eq!(plan.requested_fidelity_tier, FidelityTier::IdentityAware);
+        assert!(plan.degradation.degraded);
+        assert!(
+            plan.degradation.reasons.iter().any(|reason| matches!(
+                reason,
+                DegradationReason::TransportNotRealizable {
+                    requested_backend_level: BackendLevel::Transport,
+                    ..
+                }
+            )),
+            "expected TransportNotRealizable in {:?}",
+            plan.degradation.reasons
         );
     }
 

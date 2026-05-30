@@ -3,10 +3,9 @@ kind: backend-inventory
 id: macos-hid-stub
 notes: |
   Phase 12 foundations inventory: the macos-hid family is plannable for
-  identity-aware / compatibility goals so the planner can select it and surface
-  entitlement / system-extension prerequisites. This is planning +
-  deployment-requirement reporting only — no device realization lands in
-  Phase 12.
+  identity-aware goals so the planner can select it and surface entitlement /
+  system-extension prerequisites. This is planning + deployment-requirement
+  reporting only — no device realization lands in Phase 12.
 payload:
   entries:
     - backend_id: macos-hid
@@ -14,7 +13,6 @@ payload:
       level: hid
       host_platform: macos
       supported_fidelity_tiers:
-        - compatibility
         - identity-aware
       notes:
         - "phase-12 macos-hid backend is planning-only; no device realization yet"
