@@ -1,6 +1,6 @@
 ---
 source: crates/gr-cli/src/lib.rs
-assertion_line: 1948
+assertion_line: 4076
 expression: output
 ---
 command: gr-cli support-report
@@ -8,10 +8,29 @@ requested_tier: compatibility
 profiles:
 - profile_id: generic-gamepad
   display_name: Generic gamepad
+  workflow_branch: device/generic-gamepad/buildout
+  default_branch_pattern: device/<profile-id>/buildout
   provider: linux-uinput
   backend_family: linux-uinput
   forward_support: full
   reverse_support: full
+  validation_origin:
+    implemented: true
+    document_backed: false
+    physically_validated: false
+    host_validated: true
+  claim:
+    requested_tier: compatibility
+    claimable: true
+    status: claimable
+    progression: base tier for linear support progression
+  capability_families:
+  - family: gameplay-input
+    status: implemented
+    detail: 21 required input fields are modeled in the profile contract
+  - family: reverse-output-commands
+    status: absent
+    detail: no reverse command families are declared
   supported_output_functions:
   - rumble
   unsupported_output_functions: []

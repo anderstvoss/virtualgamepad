@@ -14,6 +14,7 @@ The demo grows in lockstep with library phases. Highlights:
 - **Phase 4 (runtime fake gate)** — shipped: `simulate-session` and `replay-trace` exercise fake backend sessions and recorded trace review.
 - **Phases 5–7 (runtime gates)** — adds `plan-session`, runtime-backed `simulate-session`, and `many-sessions` on top of the Phase 4 trace surface.
 - **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`, and `run-scenario`. `run-uinput-smoke` is dual-mode: the default command is a one-shot probe/report surface for CI evidence, while `--interactive` keeps the device alive for `evtest`, `jstest`, SDL, and rumble verification. `--script exercise` replays representative inputs through the runtime while the session stays open. `run-uhid-smoke` uses the same one-shot vs interactive split and accepts `--bus usb|bluetooth` to select the DualSense identity surface.
+- **Controller buildout workflow** — `support-report` and `controller-status` now expose validation provenance so document-backed implementations stay distinct from physically validated ones during interactive device work.
 - **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
 - **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
 
@@ -52,6 +53,7 @@ cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --bus usb
 cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bus bluetooth
 cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
 cargo run -p virtual_gamepad_demo -- support-report --profile dualsense
+cargo run -p virtual_gamepad_demo -- controller-status dualsense --tier identity-aware
 cargo run -p virtual_gamepad_demo -- phase-gate 9
 ```
 

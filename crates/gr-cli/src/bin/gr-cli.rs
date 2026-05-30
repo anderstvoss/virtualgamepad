@@ -107,6 +107,13 @@ enum Command {
         #[arg(long)]
         tier: Option<String>,
     },
+    /// Render a controller workflow dossier template for a profile.
+    InitControllerDossier {
+        #[arg(long)]
+        profile: String,
+    },
+    /// Validate a checked-in controller workflow dossier fixture.
+    ValidateControllerDossier { path: PathBuf },
 }
 
 #[derive(Args, Debug)]
@@ -305,6 +312,24 @@ fn main() {
                 }
             }
         }
+        Command::InitControllerDossier { profile } => {
+            match gr_cli::init_controller_dossier(&profile) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        Command::ValidateControllerDossier { path } => {
+            match gr_cli::validate_controller_dossier(path) {
+                Ok(output) => println!("{output}"),
+                Err(error) => {
+                    eprintln!("{error}");
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 
@@ -392,6 +417,34 @@ mod tests {
             Command::SupportReport { profile, tier }
                 if profile.as_deref() == Some("xbox360")
                     && tier.as_deref() == Some("compatibility")
+        ));
+    }
+
+    #[test]
+    fn init_controller_dossier_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "init-controller-dossier",
+            "--profile",
+            "dualsense",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::InitControllerDossier { profile } if profile == "dualsense"
+        ));
+    }
+
+    #[test]
+    fn validate_controller_dossier_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "gr-cli",
+            "validate-controller-dossier",
+            "tests/fixtures/controller-dossier-dualsense.yaml",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::ValidateControllerDossier { path }
+                if path == Path::new("tests/fixtures/controller-dossier-dualsense.yaml")
         ));
     }
 

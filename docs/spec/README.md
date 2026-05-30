@@ -21,3 +21,4 @@ This directory is the source-of-truth spec package for the `virtualgamepad` temp
 - [Test Plan](validation/TEST_PLAN.md): test inventory and coverage expectations
 - [Headless Test Strategy](validation/HEADLESS_TEST_STRATEGY.md): remote-first automation and fixture replay strategy
 - [Device Spec Validation Plan](validation/DEVICE_SPEC_VALIDATION_PLAN.md): evidence dossiers, capture workflow, and reverse-engineering minimization
+- [Interactive Controller Workflow](validation/CONTROLLER_WORKFLOW.md): per-device branch flow, validation provenance, and controller dossier expectations

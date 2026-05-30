@@ -9,6 +9,7 @@ use std::path::Path;
 use super::{
     backend_inventory::{BackendInventoryFixture, decode_backend_inventory},
     backend_trace::{BackendTraceFixture, decode_backend_trace},
+    controller_dossier::{ControllerDossierFixture, decode_controller_dossier},
     input_frame::{InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame},
     plan_snapshot::{PlanSnapshotFixture, decode_plan_snapshot},
     reverse_event::{ReverseEventFixture, decode_reverse_event},
@@ -40,6 +41,7 @@ pub enum FixtureDocument {
     SessionScenario(SessionScenarioFixture),
     PlanSnapshot(PlanSnapshotFixture),
     BackendInventory(BackendInventoryFixture),
+    ControllerDossier(ControllerDossierFixture),
 }
 
 #[derive(Debug)]
@@ -102,6 +104,9 @@ pub fn load_fixture(path: impl AsRef<Path>) -> Result<FixtureDocument, FixtureEr
         "plan-snapshot" => decode_plan_snapshot(envelope).map(FixtureDocument::PlanSnapshot),
         "backend-inventory" => {
             decode_backend_inventory(envelope).map(FixtureDocument::BackendInventory)
+        }
+        "controller-dossier" => {
+            decode_controller_dossier(envelope).map(FixtureDocument::ControllerDossier)
         }
         "reverse-event" => decode_reverse_event(envelope).map(FixtureDocument::ReverseEvent),
         other => Err(FixtureError::UnsupportedKind {

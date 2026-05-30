@@ -1,0 +1,74 @@
+fixture: virtualgamepad/v1
+kind: controller-dossier
+id: dualsense-buildout
+profile_id: dualsense
+notes: Controller-support workflow artifact. Update validation provenance as the branch advances.
+payload:
+  profile_family: dualsense
+  current_branch: device/dualsense/buildout
+  default_branch_pattern: device/<profile-id>/buildout
+  workflow_mode: interactive-linux-bench
+  primary_validation_host: linux
+  tiers:
+  - tier: compatibility
+    implemented: true
+    document_backed: false
+    physically_validated: false
+    host_validated: true
+    claimable: true
+    notes:
+    - base tier for linear support progression
+    - 'provider: linux-uinput'
+  - tier: identity-aware
+    implemented: true
+    document_backed: true
+    physically_validated: false
+    host_validated: false
+    claimable: false
+    notes:
+    - higher tiers may be implemented early, but cannot be claimed before lower tiers are claimable
+    - 'provider: linux-uhid'
+  - tier: hardware-faithful
+    implemented: true
+    document_backed: true
+    physically_validated: false
+    host_validated: false
+    claimable: false
+    notes:
+    - higher tiers may be implemented early, but cannot be claimed before lower tiers are claimable
+    - 'provider: linux-transport-usb'
+  capability_families:
+  - family: gameplay-input
+    status: implemented
+    detail: 28 required input fields are modeled in the profile contract
+  - family: identity-descriptors
+    status: document-backed
+    detail: checked-in descriptor templates exist for this tier
+  - family: reverse-output-commands
+    status: document-backed
+    detail: 6 reverse command families are declared
+  - family: feature-reports
+    status: document-backed
+    detail: identity-aware and transport work include feature-report handling
+  - family: transport-session-behavior
+    status: document-backed
+    detail: 'transport hints: usb, bluetooth'
+  - family: touch-surfaces
+    status: document-backed
+    detail: touch contacts are modeled separately from generic gameplay input
+  - family: motion-sensors
+    status: document-backed
+    detail: gyro and accelerometer fields are exposed in the profile contract
+  - family: adaptive-triggers
+    status: document-backed
+    detail: trigger-effect behavior stays separate from generic rumble
+  - family: audio-routes
+    status: document-backed
+    detail: audio mode commands are tracked separately from PCM streams
+  validation_hosts:
+  - host: linux-bench
+    role: physical-validation
+    status: primary
+  - host: docs-only
+    role: document-backed-implementation
+    status: allowed

@@ -2,6 +2,7 @@
 
 mod backend_inventory;
 mod backend_trace;
+mod controller_dossier;
 mod input_frame;
 mod plan_snapshot;
 mod reverse_event;
@@ -13,6 +14,10 @@ pub use backend_inventory::{BackendInventory, BackendInventoryFixture, decode_ba
 pub use backend_trace::{
     BackendTrace, BackendTraceFixture, BackendTracePayload, BackendTraceStep, TraceDirection,
     TraceOperation, TransportTraceSpec, decode_backend_trace,
+};
+pub use controller_dossier::{
+    CapabilityFamilyRecord, ControllerDossier, ControllerDossierFixture, ControllerTierRecord,
+    ValidationHostRecord, decode_controller_dossier,
 };
 pub use input_frame::{
     InputDeltaFixture, InputFrameFixture, decode_input_delta, decode_input_frame,

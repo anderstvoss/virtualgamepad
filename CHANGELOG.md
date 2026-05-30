@@ -48,6 +48,13 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   inventories, deployment-requirement reporting, planner integration,
   cross-platform checks, and realization-roadmap READMEs.
 
+- Interactive controller-support workflow scaffolding: provenance-aware
+  `support-report` output, `controller-dossier` fixtures in
+  `gr-testkit`, `gr-cli init-controller-dossier` /
+  `validate-controller-dossier`, `vgpd-demo controller-status`, and a
+  Linux-first per-device workflow doc that distinguishes
+  document-backed support from physically validated support.
+
 ### Changed
 
 - Top-level README adds an explicit project-goals section covering

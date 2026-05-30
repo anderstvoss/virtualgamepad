@@ -71,6 +71,12 @@ enum Command {
         #[arg(long)]
         tier: Option<String>,
     },
+    /// Print controller workflow status for one profile.
+    ControllerStatus {
+        profile_id: String,
+        #[arg(long)]
+        tier: Option<String>,
+    },
     /// Render a backend trace fixture (Phase 4 deliverable).
     ReplayTrace { path: std::path::PathBuf },
     /// Plan a session from a profile id and backend inventory fixture (Phase 5 deliverable).
@@ -131,6 +137,9 @@ fn run() -> Result<(), String> {
         ),
         Command::SupportReport { profile, tier } => {
             print_output(gr_cli::support_report(profile.as_deref(), tier.as_deref()))
+        }
+        Command::ControllerStatus { profile_id, tier } => {
+            print_output(gr_cli::support_report(Some(&profile_id), tier.as_deref()))
         }
         Command::RunUhidSmoke {
             profile_id,
@@ -394,6 +403,23 @@ mod tests {
             Command::SupportReport { profile, tier }
                 if profile.as_deref() == Some("xbox360")
                     && tier.as_deref() == Some("compatibility")
+        ));
+    }
+
+    #[test]
+    fn controller_status_subcommand_parses() {
+        let cli = Cli::parse_from([
+            "vgpd-demo",
+            "controller-status",
+            "dualsense",
+            "--tier",
+            "identity-aware",
+        ]);
+        assert!(matches!(
+            cli.command,
+            Command::ControllerStatus { profile_id, tier }
+                if profile_id == "dualsense"
+                    && tier.as_deref() == Some("identity-aware")
         ));
     }
 

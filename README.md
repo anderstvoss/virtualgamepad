@@ -95,11 +95,14 @@ cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
 cargo run -p virtual_gamepad_demo -- support-report --profile dualsense --tier hardware-faithful
 cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform windows --inventory samples/inventories/windows-hid-stub.yaml
 cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform macos --inventory samples/inventories/macos-hid-stub.yaml
+cargo run -p virtual_gamepad_demo -- controller-status dualsense --tier identity-aware
 ```
 
 See [demo/README.md](demo/README.md) for the planned growth phases and
 non-goals (the demo is **not** intended to be embedded by real users
-of the library).
+of the library). For the per-device support workflow and validation
+provenance model, see
+[docs/spec/validation/CONTROLLER_WORKFLOW.md](docs/spec/validation/CONTROLLER_WORKFLOW.md).
 
 ## Configuration
 

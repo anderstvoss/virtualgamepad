@@ -1,5 +1,6 @@
 ---
 source: crates/gr-cli/src/lib.rs
+assertion_line: 4088
 expression: output
 ---
 command: gr-cli support-report
@@ -7,10 +8,50 @@ requested_tier: hardware-faithful
 profiles:
 - profile_id: dualsense
   display_name: DualSense
+  workflow_branch: device/dualsense/buildout
+  default_branch_pattern: device/<profile-id>/buildout
   provider: linux-transport-usb
   backend_family: linux-transport-usb
   forward_support: full
   reverse_support: full
+  validation_origin:
+    implemented: true
+    document_backed: true
+    physically_validated: false
+    host_validated: false
+  claim:
+    requested_tier: hardware-faithful
+    claimable: false
+    status: provisional
+    progression: higher tiers may be implemented early, but cannot be claimed before lower tiers are claimable
+  capability_families:
+  - family: gameplay-input
+    status: implemented
+    detail: 28 required input fields are modeled in the profile contract
+  - family: identity-descriptors
+    status: document-backed
+    detail: checked-in descriptor templates exist for this tier
+  - family: reverse-output-commands
+    status: document-backed
+    detail: 6 reverse command families are declared
+  - family: feature-reports
+    status: document-backed
+    detail: identity-aware and transport work include feature-report handling
+  - family: transport-session-behavior
+    status: document-backed
+    detail: 'transport hints: usb, bluetooth'
+  - family: touch-surfaces
+    status: document-backed
+    detail: touch contacts are modeled separately from generic gameplay input
+  - family: motion-sensors
+    status: document-backed
+    detail: gyro and accelerometer fields are exposed in the profile contract
+  - family: adaptive-triggers
+    status: document-backed
+    detail: trigger-effect behavior stays separate from generic rumble
+  - family: audio-routes
+    status: document-backed
+    detail: audio mode commands are tracked separately from PCM streams
   supported_output_functions:
   - rumble
   - haptics
@@ -27,13 +68,13 @@ profiles:
     status: pending-supported-host
     detail: deferred via deferred-linux-configfs-gadget
   - check: control-flow
-    status: fixture-backed
+    status: document-backed
     detail: checked-in DualSense USB transport enumeration trace reaches `ready` through connect/read-descriptor/configure-endpoints/ready-signal
   - check: packet-handling
-    status: implemented
+    status: document-backed
     detail: input endpoint 0x01; reverse endpoint 0x02
   - check: reverse-packets
-    status: implemented
+    status: document-backed
     detail: transport-reverse-packets
   - check: real-host-recognition
     status: pending-supported-host

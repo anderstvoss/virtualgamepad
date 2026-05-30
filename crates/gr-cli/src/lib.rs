@@ -37,7 +37,10 @@ use gr_session_options::{
 };
 use gr_testkit::{
     fakes::backend_factory,
-    fixtures::{FixtureDocument as TestkitFixtureDocument, PlanOutcome, load_fixture},
+    fixtures::{
+        CapabilityFamilyRecord, ControllerDossier, ControllerTierRecord,
+        FixtureDocument as TestkitFixtureDocument, PlanOutcome, ValidationHostRecord, load_fixture,
+    },
 };
 use gr_translators::TranslatorRegistry;
 use serde::{Deserialize, Serialize};
@@ -713,6 +716,52 @@ pub fn support_report(profile_id: Option<&str>, tier: Option<&str>) -> Result<St
     serde_yaml::to_string(&report).map_err(CliError::SerializeYaml)
 }
 
+/// Render a controller-support dossier template for one built-in
+/// profile.
+///
+/// # Errors
+///
+/// Returns an error when the profile is unknown or the dossier cannot
+/// be serialized.
+pub fn init_controller_dossier(profile_id: &str) -> Result<String, CliError> {
+    let profile = lookup_profile(profile_id)?;
+    let dossier = build_controller_dossier(profile);
+    let envelope = gr_testkit::fixtures::FixtureEnvelope {
+        fixture: "virtualgamepad/v1".to_string(),
+        kind: "controller-dossier".to_string(),
+        id: format!("{}-buildout", profile.profile_id),
+        profile_id: Some(profile.profile_id.to_string()),
+        notes: Some(
+            "Controller-support workflow artifact. Update validation provenance as the branch advances."
+                .to_string(),
+        ),
+        payload: serde_yaml::to_value(&dossier).map_err(CliError::SerializeYaml)?,
+    };
+    serde_yaml::to_string(&envelope).map_err(CliError::SerializeYaml)
+}
+
+/// Validate and summarize a `controller-dossier` fixture.
+///
+/// # Errors
+///
+/// Returns an error when the file is unreadable or the fixture kind is
+/// not `controller-dossier`.
+pub fn validate_controller_dossier(path: impl AsRef<Path>) -> Result<String, CliError> {
+    let path = path.as_ref();
+    match load_fixture_summary(path).map_err(|source| CliError::Fixture {
+        path: path.to_path_buf(),
+        source,
+    })? {
+        FixtureDocument::ControllerDossier(dossier) => {
+            serde_yaml::to_string(&dossier).map_err(CliError::SerializeYaml)
+        }
+        _ => Err(CliError::FixtureKind {
+            path: path.to_path_buf(),
+            expected: "controller-dossier",
+        }),
+    }
+}
+
 /// Run a Phase 4 fake-backend-backed session scenario.
 ///
 /// # Errors
@@ -832,6 +881,16 @@ pub fn validate_fixture(path: impl AsRef<Path>) -> Result<String, CliError> {
                 .as_ref()
                 .map_or("<none>".to_string(), describe_reverse_target),
             reverse_payload_kind(&fixture.event.payload),
+        )),
+        FixtureDocument::ControllerDossier(dossier) => Ok(format!(
+            "fixture: {}\nkind: {}\nid: {}\nprofile_id: {}\nworkflow_mode: {}\ncurrent_branch: {}\ntiers: {}",
+            FIXTURE_SCHEMA_VERSION,
+            "controller-dossier",
+            "<controller-dossier>",
+            "<see fixture>",
+            dossier.workflow_mode,
+            dossier.current_branch,
+            dossier.tiers.len(),
         )),
     }
 }
@@ -1187,6 +1246,7 @@ enum FixtureDocument {
     InputFrame(InputFrameFixture),
     InputDelta(InputDeltaFixture),
     ReverseEvent(ReverseEventFixture),
+    ControllerDossier(ControllerDossier),
 }
 
 #[derive(Debug)]
@@ -1306,15 +1366,44 @@ struct SupportReportBundle {
 struct SupportReportEntry {
     profile_id: String,
     display_name: &'static str,
+    workflow_branch: String,
+    default_branch_pattern: &'static str,
     provider: String,
     backend_family: String,
     forward_support: String,
     reverse_support: String,
+    validation_origin: ValidationOriginSummary,
+    claim: ClaimSummary,
+    capability_families: Vec<CapabilityFamilySummary>,
     supported_output_functions: Vec<String>,
     unsupported_output_functions: Vec<UnsupportedOutputSummary>,
     evidence: Vec<SupportEvidenceItem>,
     command_hint: String,
     notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[allow(clippy::struct_excessive_bools)]
+struct ValidationOriginSummary {
+    implemented: bool,
+    document_backed: bool,
+    physically_validated: bool,
+    host_validated: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct ClaimSummary {
+    requested_tier: String,
+    claimable: bool,
+    status: &'static str,
+    progression: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct CapabilityFamilySummary {
+    family: &'static str,
+    status: &'static str,
+    detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1493,6 +1582,9 @@ fn load_fixture_summary(path: impl AsRef<Path>) -> Result<FixtureDocument, Fixtu
         "input-frame" => decode_input_frame(envelope).map(FixtureDocument::InputFrame),
         "input-delta" => decode_input_delta(envelope).map(FixtureDocument::InputDelta),
         "reverse-event" => decode_reverse_event(envelope).map(FixtureDocument::ReverseEvent),
+        "controller-dossier" => serde_yaml::from_value::<ControllerDossier>(envelope.payload)
+            .map(FixtureDocument::ControllerDossier)
+            .map_err(FixtureError::Parse),
         "backend-trace" | "backend-inventory" | "plan-snapshot" | "session-scenario" => {
             Ok(FixtureDocument::Envelope(envelope))
         }
@@ -1942,14 +2034,61 @@ fn build_uinput_support_report_entry(
     let support = factory.can_realize(&request);
     let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
     normalize_uinput_report_for_snapshots(&mut smoke_report);
+    let evidence = vec![
+        SupportEvidenceItem {
+            check: "command-surface",
+            status: "implemented",
+            detail: "run-uinput-smoke and support-report are available in gr-cli and vgpd-demo"
+                .to_string(),
+        },
+        SupportEvidenceItem {
+            check: "tier-b-runner",
+            status: "scaffolded",
+            detail: "privileged Linux workflow is wired for manual/nightly execution".to_string(),
+        },
+        SupportEvidenceItem {
+            check: "device-creation",
+            status: if smoke_report.open_result == "created" {
+                "verified-on-host"
+            } else {
+                "pending-linux-host"
+            },
+            detail: format!(
+                "{}{}",
+                smoke_report.open_result,
+                smoke_report
+                    .device_node
+                    .as_ref()
+                    .map_or_else(String::new, |node| format!(" ({node})"),)
+            ),
+        },
+        SupportEvidenceItem {
+            check: "reverse-path",
+            status: if smoke_report.capability_summary.ff_effects.is_empty() {
+                "not-declared"
+            } else {
+                "implemented"
+            },
+            detail: format!(
+                "{} [{}]",
+                smoke_report.reverse_path,
+                smoke_report.capability_summary.ff_effects.join(", ")
+            ),
+        },
+    ];
 
     SupportReportEntry {
         profile_id: profile.profile_id.to_string(),
         display_name: profile.display_name,
+        workflow_branch: workflow_branch_name(profile),
+        default_branch_pattern: "device/<profile-id>/buildout",
         provider: factory.backend_id().to_string(),
         backend_family: factory.family().to_string(),
         forward_support: serde_name(&support.forward_support),
         reverse_support: serde_name(&support.reverse_support),
+        validation_origin: validation_origin_from_evidence(&evidence),
+        claim: claim_summary(profile, fidelity_tier, &evidence),
+        capability_families: capability_family_summary(profile, fidelity_tier),
         supported_output_functions: support
             .supported_output_functions
             .iter()
@@ -1963,49 +2102,7 @@ fn build_uinput_support_report_entry(
                 reason: unsupported.reason.clone(),
             })
             .collect(),
-        evidence: vec![
-            SupportEvidenceItem {
-                check: "command-surface",
-                status: "implemented",
-                detail: "run-uinput-smoke and support-report are available in gr-cli and vgpd-demo"
-                    .to_string(),
-            },
-            SupportEvidenceItem {
-                check: "tier-b-runner",
-                status: "scaffolded",
-                detail: "privileged Linux workflow is wired for manual/nightly execution"
-                    .to_string(),
-            },
-            SupportEvidenceItem {
-                check: "device-creation",
-                status: if smoke_report.open_result == "created" {
-                    "verified-on-host"
-                } else {
-                    "pending-linux-host"
-                },
-                detail: format!(
-                    "{}{}",
-                    smoke_report.open_result,
-                    smoke_report
-                        .device_node
-                        .as_ref()
-                        .map_or_else(String::new, |node| format!(" ({node})"),)
-                ),
-            },
-            SupportEvidenceItem {
-                check: "reverse-path",
-                status: if smoke_report.capability_summary.ff_effects.is_empty() {
-                    "not-declared"
-                } else {
-                    "implemented"
-                },
-                detail: format!(
-                    "{} [{}]",
-                    smoke_report.reverse_path,
-                    smoke_report.capability_summary.ff_effects.join(", ")
-                ),
-            },
-        ],
+        evidence,
         command_hint: format!("gr-cli run-uinput-smoke {}", profile.profile_id),
         notes: smoke_report.notes,
     }
@@ -2020,14 +2117,20 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
     let mut bluetooth_report = bluetooth_factory.smoke_report(&profile.profile_id, &request);
     normalize_uhid_report_for_snapshots(&mut usb_report);
     normalize_uhid_report_for_snapshots(&mut bluetooth_report);
+    let evidence = build_uhid_support_evidence(&usb_report, &bluetooth_report);
 
     SupportReportEntry {
         profile_id: profile.profile_id.to_string(),
         display_name: profile.display_name,
+        workflow_branch: workflow_branch_name(profile),
+        default_branch_pattern: "device/<profile-id>/buildout",
         provider: usb_factory.backend_id().to_string(),
         backend_family: usb_factory.family().to_string(),
         forward_support: serde_name(&support.forward_support),
         reverse_support: serde_name(&support.reverse_support),
+        validation_origin: validation_origin_from_evidence(&evidence),
+        claim: claim_summary(profile, FidelityTier::IdentityAware, &evidence),
+        capability_families: capability_family_summary(profile, FidelityTier::IdentityAware),
         supported_output_functions: support
             .supported_output_functions
             .iter()
@@ -2041,7 +2144,7 @@ fn build_uhid_support_report_entry(profile: &ControllerProfile) -> SupportReport
                 reason: unsupported.reason.clone(),
             })
             .collect(),
-        evidence: build_uhid_support_evidence(&usb_report, &bluetooth_report),
+        evidence,
         command_hint: "gr-cli run-uhid-smoke dualsense --bus usb".to_string(),
         notes: usb_report
             .notes
@@ -2057,14 +2160,20 @@ fn build_transport_support_report_entry(profile: &ControllerProfile) -> SupportR
     let support = factory.can_realize(&request);
     let mut smoke_report = factory.smoke_report(&profile.profile_id, &request);
     normalize_transport_report_for_snapshots(&mut smoke_report);
+    let evidence = build_transport_support_evidence(&smoke_report);
 
     SupportReportEntry {
         profile_id: profile.profile_id.to_string(),
         display_name: profile.display_name,
+        workflow_branch: workflow_branch_name(profile),
+        default_branch_pattern: "device/<profile-id>/buildout",
         provider: factory.backend_id().to_string(),
         backend_family: factory.family().to_string(),
         forward_support: serde_name(&support.forward_support),
         reverse_support: serde_name(&support.reverse_support),
+        validation_origin: validation_origin_from_evidence(&evidence),
+        claim: claim_summary(profile, FidelityTier::HardwareFaithful, &evidence),
+        capability_families: capability_family_summary(profile, FidelityTier::HardwareFaithful),
         supported_output_functions: support
             .supported_output_functions
             .iter()
@@ -2078,7 +2187,7 @@ fn build_transport_support_report_entry(profile: &ControllerProfile) -> SupportR
                 reason: unsupported.reason.clone(),
             })
             .collect(),
-        evidence: build_transport_support_evidence(&smoke_report),
+        evidence,
         command_hint: "gr-cli run-transport-smoke dualsense".to_string(),
         notes: smoke_report.notes,
     }
@@ -2089,7 +2198,7 @@ fn build_uhid_support_evidence(
     bluetooth_report: &gr_provider_linux_uhid::LinuxUhidSmokeReport,
 ) -> Vec<SupportEvidenceItem> {
     let descriptor_status = if usb_report.identity.descriptor_size > 0 {
-        "implemented"
+        "document-backed"
     } else {
         "missing"
     };
@@ -2116,7 +2225,7 @@ fn build_uhid_support_evidence(
         },
         SupportEvidenceItem {
             check: "input-report-evidence",
-            status: "implemented",
+            status: "document-backed",
             detail: format!(
                 "usb input report 0x{:02x}; bluetooth input report 0x{:02x}",
                 usb_report.identity.input_report_id, bluetooth_report.identity.input_report_id
@@ -2124,7 +2233,7 @@ fn build_uhid_support_evidence(
         },
         SupportEvidenceItem {
             check: "output-report-evidence",
-            status: "implemented",
+            status: "document-backed",
             detail: format!(
                 "{} (usb report 0x{:02x}; bluetooth report 0x{:02x})",
                 usb_report.reverse_path,
@@ -2134,7 +2243,7 @@ fn build_uhid_support_evidence(
         },
         SupportEvidenceItem {
             check: "feature-report-evidence",
-            status: "implemented",
+            status: "document-backed",
             detail: "known DualSense feature report ids 0x05, 0x09, and 0x20 receive provider-local replies and surface as HID feature reverse events".to_string(),
         },
         SupportEvidenceItem {
@@ -2147,7 +2256,7 @@ fn build_uhid_support_evidence(
         },
         SupportEvidenceItem {
             check: "real-hardware-evidence",
-            status: "fixture-backed",
+            status: "document-backed",
             detail: "compare-real-device and checked-in descriptor/reverse fixtures back the current identity-aware profile claim; refresh on supported hardware when captures change".to_string(),
         },
         SupportEvidenceItem {
@@ -2188,12 +2297,12 @@ fn build_transport_support_evidence(
         },
         SupportEvidenceItem {
             check: "control-flow",
-            status: "fixture-backed",
+            status: "document-backed",
             detail: "checked-in DualSense USB transport enumeration trace reaches `ready` through connect/read-descriptor/configure-endpoints/ready-signal".to_string(),
         },
         SupportEvidenceItem {
             check: "packet-handling",
-            status: "implemented",
+            status: "document-backed",
             detail: format!(
                 "input endpoint 0x{:02x}; reverse endpoint 0x{:02x}",
                 smoke_report.endpoints.input, smoke_report.endpoints.reverse
@@ -2201,7 +2310,7 @@ fn build_transport_support_evidence(
         },
         SupportEvidenceItem {
             check: "reverse-packets",
-            status: "implemented",
+            status: "document-backed",
             detail: smoke_report.reverse_path.clone(),
         },
         SupportEvidenceItem {
@@ -2210,6 +2319,278 @@ fn build_transport_support_evidence(
             detail: "validate `lsusb -v`, host/game acceptance, and reverse-path behavior on a supported Steam Input-capable system before claiming full hardware-faithful completion".to_string(),
         },
     ]
+}
+
+fn workflow_branch_name(profile: &ControllerProfile) -> String {
+    format!("device/{}/buildout", profile.profile_id)
+}
+
+fn validation_origin_from_evidence(evidence: &[SupportEvidenceItem]) -> ValidationOriginSummary {
+    ValidationOriginSummary {
+        implemented: evidence.iter().any(|item| item.status == "implemented"),
+        document_backed: evidence.iter().any(|item| item.status == "document-backed"),
+        physically_validated: evidence
+            .iter()
+            .any(|item| item.status == "physically-validated"),
+        host_validated: evidence.iter().any(|item| {
+            matches!(
+                item.status,
+                "verified-on-host" | "host-validated" | "physically-validated"
+            )
+        }),
+    }
+}
+
+fn claim_summary(
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+    evidence: &[SupportEvidenceItem],
+) -> ClaimSummary {
+    let host_ready = evidence.iter().any(|item| {
+        matches!(
+            item.check,
+            "device-creation" | "linux-host-recognition" | "transport-enumeration"
+        ) && matches!(item.status, "verified-on-host" | "physically-validated")
+    });
+    let has_documented_basis = evidence.iter().any(|item| {
+        matches!(
+            item.status,
+            "implemented" | "document-backed" | "verified-on-host" | "physically-validated"
+        )
+    });
+    let claimable = match fidelity_tier {
+        FidelityTier::Compatibility => host_ready,
+        FidelityTier::IdentityAware | FidelityTier::HardwareFaithful => {
+            host_ready && has_documented_basis
+        }
+    };
+
+    ClaimSummary {
+        requested_tier: fidelity_tier.to_string(),
+        claimable,
+        status: if claimable {
+            "claimable"
+        } else if has_documented_basis {
+            "provisional"
+        } else {
+            "planned"
+        },
+        progression: if fidelity_tier == FidelityTier::Compatibility {
+            "base tier for linear support progression"
+        } else if profile
+            .supported_fidelity
+            .contains(&FidelityTier::Compatibility)
+        {
+            "higher tiers may be implemented early, but cannot be claimed before lower tiers are claimable"
+        } else {
+            "requested tier is the first claimable tier exposed by this profile"
+        },
+    }
+}
+
+fn capability_family_summary(
+    profile: &ControllerProfile,
+    fidelity_tier: FidelityTier,
+) -> Vec<CapabilityFamilySummary> {
+    let mut families = vec![CapabilityFamilySummary {
+        family: "gameplay-input",
+        status: "implemented",
+        detail: format!(
+            "{} required input fields are modeled in the profile contract",
+            profile.input_contract.required_fields.len()
+        ),
+    }];
+
+    if profile
+        .descriptor_templates
+        .iter()
+        .any(|template| template.fidelity == fidelity_tier && !template.descriptor.0.is_empty())
+    {
+        families.push(CapabilityFamilySummary {
+            family: "identity-descriptors",
+            status: "document-backed",
+            detail: "checked-in descriptor templates exist for this tier".to_string(),
+        });
+    }
+
+    families.push(CapabilityFamilySummary {
+        family: "reverse-output-commands",
+        status: if profile.reverse_command_support.supported.is_empty() {
+            "absent"
+        } else if fidelity_tier == FidelityTier::Compatibility {
+            "partial"
+        } else {
+            "document-backed"
+        },
+        detail: if profile.reverse_command_support.supported.is_empty() {
+            "no reverse command families are declared".to_string()
+        } else {
+            format!(
+                "{} reverse command families are declared",
+                profile.reverse_command_support.supported.len()
+            )
+        },
+    });
+
+    if fidelity_tier != FidelityTier::Compatibility {
+        families.push(CapabilityFamilySummary {
+            family: "feature-reports",
+            status: if profile.profile_family == ProfileFamily::DualSense {
+                "document-backed"
+            } else {
+                "not-required"
+            },
+            detail: if profile.profile_family == ProfileFamily::DualSense {
+                "identity-aware and transport work include feature-report handling".to_string()
+            } else {
+                "this profile does not currently require explicit feature-report workflow"
+                    .to_string()
+            },
+        });
+    }
+
+    if fidelity_tier == FidelityTier::HardwareFaithful {
+        families.push(CapabilityFamilySummary {
+            family: "transport-session-behavior",
+            status: if profile.identity.transport_hints.is_empty() {
+                "not-required"
+            } else {
+                "document-backed"
+            },
+            detail: format!(
+                "transport hints: {}",
+                profile
+                    .identity
+                    .transport_hints
+                    .iter()
+                    .map(serde_name)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        });
+    }
+
+    families.extend(auxiliary_capability_families(profile));
+    families
+}
+
+fn auxiliary_capability_families(profile: &ControllerProfile) -> Vec<CapabilityFamilySummary> {
+    match profile.profile_family {
+        ProfileFamily::DualSense => vec![
+            CapabilityFamilySummary {
+                family: "touch-surfaces",
+                status: "document-backed",
+                detail: "touch contacts are modeled separately from generic gameplay input"
+                    .to_string(),
+            },
+            CapabilityFamilySummary {
+                family: "motion-sensors",
+                status: "document-backed",
+                detail: "gyro and accelerometer fields are exposed in the profile contract"
+                    .to_string(),
+            },
+            CapabilityFamilySummary {
+                family: "adaptive-triggers",
+                status: "document-backed",
+                detail: "trigger-effect behavior stays separate from generic rumble".to_string(),
+            },
+            CapabilityFamilySummary {
+                family: "audio-routes",
+                status: "document-backed",
+                detail: "audio mode commands are tracked separately from PCM streams".to_string(),
+            },
+        ],
+        ProfileFamily::Xbox360 => vec![CapabilityFamilySummary {
+            family: "expansion-accessory-ports",
+            status: "document-backed",
+            detail: "profile-specific accessory channels can be added without changing simpler controllers".to_string(),
+        }],
+        ProfileFamily::SteamController => vec![
+            CapabilityFamilySummary {
+                family: "touch-surfaces",
+                status: "document-backed",
+                detail: "touchpad-first behavior should evolve independently from generic controllers".to_string(),
+            },
+            CapabilityFamilySummary {
+                family: "vendor-specific-side-channels",
+                status: "planned",
+                detail: "specialized host behavior belongs in auxiliary profile-scoped channels"
+                    .to_string(),
+            },
+        ],
+        _ => Vec::new(),
+    }
+}
+
+fn build_controller_dossier(profile: &ControllerProfile) -> ControllerDossier {
+    let tiers = [
+        FidelityTier::Compatibility,
+        FidelityTier::IdentityAware,
+        FidelityTier::HardwareFaithful,
+    ]
+    .into_iter()
+    .filter(|tier| profile.supported_fidelity.contains(tier))
+    .map(|tier| {
+        let report = build_support_report_entry(profile, tier);
+        ControllerTierRecord {
+            tier: tier.to_string(),
+            implemented: report.validation_origin.implemented,
+            document_backed: report.validation_origin.document_backed,
+            physically_validated: report.validation_origin.physically_validated,
+            host_validated: report.validation_origin.host_validated,
+            claimable: report.claim.claimable,
+            notes: vec![
+                report.claim.progression.to_string(),
+                format!("provider: {}", report.provider),
+            ],
+        }
+    })
+    .collect();
+
+    ControllerDossier {
+        profile_family: profile_family_name(profile.profile_family).to_string(),
+        current_branch: workflow_branch_name(profile),
+        default_branch_pattern: "device/<profile-id>/buildout".to_string(),
+        workflow_mode: "interactive-linux-bench".to_string(),
+        primary_validation_host: "linux".to_string(),
+        tiers,
+        capability_families: capability_family_summary(profile, highest_supported_tier(profile))
+            .into_iter()
+            .map(|family| CapabilityFamilyRecord {
+                family: family.family.to_string(),
+                status: family.status.to_string(),
+                detail: family.detail,
+            })
+            .collect(),
+        validation_hosts: vec![
+            ValidationHostRecord {
+                host: "linux-bench".to_string(),
+                role: "physical-validation".to_string(),
+                status: "primary".to_string(),
+            },
+            ValidationHostRecord {
+                host: "docs-only".to_string(),
+                role: "document-backed-implementation".to_string(),
+                status: "allowed".to_string(),
+            },
+        ],
+    }
+}
+
+fn highest_supported_tier(profile: &ControllerProfile) -> FidelityTier {
+    if profile
+        .supported_fidelity
+        .contains(&FidelityTier::HardwareFaithful)
+    {
+        FidelityTier::HardwareFaithful
+    } else if profile
+        .supported_fidelity
+        .contains(&FidelityTier::IdentityAware)
+    {
+        FidelityTier::IdentityAware
+    } else {
+        FidelityTier::Compatibility
+    }
 }
 
 fn serde_name<T: Serialize>(value: &T) -> String {
@@ -2979,13 +3360,13 @@ mod tests {
         PHASE_5_COMMANDS, PHASE_6_COMMANDS, PHASE_8_COMMANDS, PHASE_9_COMMANDS, PHASE_10_COMMANDS,
         PHASE_11_COMMANDS, PHASE_12_COMMANDS, UhidSmokeOptions, UinputScriptMode,
         UinputSmokeOptions, capability_coverage, compare_real_device,
-        format_interactive_output_command, list_profiles, lookup_profile, parse_uhid_smoke_options,
-        parse_uinput_smoke_options, phase_gate_commands, plan_session,
+        format_interactive_output_command, init_controller_dossier, list_profiles, lookup_profile,
+        parse_uhid_smoke_options, parse_uinput_smoke_options, phase_gate_commands, plan_session,
         render_interactive_shutdown_summary, render_interactive_transport_banner,
         render_interactive_uhid_banner, render_interactive_uinput_banner, replay_trace, repo_root,
         repo_root_from, run_scenario, run_transport_smoke, run_uhid_smoke, run_uinput_smoke,
         show_capabilities, simulate_session, support_report, transport_realization_request,
-        uinput_realization_request, validate_config, validate_fixture,
+        uinput_realization_request, validate_config, validate_controller_dossier, validate_fixture,
     };
     use gr_core::{ProfileId, SessionId, Timestamp};
     use gr_provider_linux_transport::LinuxTransportUsbBackendFactory;
@@ -3686,6 +4067,28 @@ mod tests {
             repo_root.join("crates/gr-testkit/fixtures/community/dualsense-rumble-standalone.yaml");
         let summary = validate_fixture(fixture_path).expect("fixture should validate");
         assert_snapshot!("validate_fixture_reverse_event", summary);
+    }
+
+    #[test]
+    fn validate_fixture_summary_for_controller_dossier_is_typed() {
+        let repo_root = repo_root().expect("workspace root");
+        let fixture_path = repo_root.join("tests/fixtures/controller-dossier-dualsense.yaml");
+        let summary = validate_fixture(fixture_path).expect("fixture should validate");
+        assert!(summary.contains("kind: controller-dossier"));
+        assert!(summary.contains("workflow_mode: interactive-linux-bench"));
+    }
+
+    #[test]
+    fn init_and_validate_controller_dossier_surfaces_workflow_status() {
+        let rendered = init_controller_dossier("dualsense").expect("dossier");
+        assert!(rendered.contains("kind: controller-dossier"));
+        assert!(rendered.contains("current_branch: device/dualsense/buildout"));
+
+        let repo_root = repo_root().expect("workspace root");
+        let fixture_path = repo_root.join("tests/fixtures/controller-dossier-dualsense.yaml");
+        let validated = validate_controller_dossier(fixture_path).expect("validated dossier");
+        assert!(validated.contains("profile_family: dualsense"));
+        assert!(validated.contains("primary_validation_host: linux"));
     }
 
     #[test]
