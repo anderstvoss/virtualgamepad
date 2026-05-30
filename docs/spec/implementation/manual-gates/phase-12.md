@@ -6,13 +6,20 @@ proves the Linux-first runtime admits Windows and macOS providers without
 architectural rewrites: both ship as inventory + diagnostics +
 deployment-requirement reporting only — **no device realization**.
 
-Like Phase 10 (and unlike Phases 8/9/11), Phase 12 has no `/dev/*`
-prerequisites and no Tier-D / `pending-supported-host` deferred-validation
-queue. It is cross-build + planner-contract work, fully verifiable on a single
-Linux host. Sign-off uses the standard `chore(phase-gate): Phase 12 gate passed`
-wording. A check flagged `prerequisite-pending` at sign-off means the Phase 12
-implementation PR has not yet landed — that marker is temporary and the impl PR
-clears it; it is **not** a Tier-D deferral.
+Phase 12 has no `/dev/*` prerequisites: the foundation checks below
+(provider selection, deployment-requirement reporting, degradation,
+cross-build, core-purity, READMEs) are all verifiable on a single Linux
+host. However, these providers assert Windows / macOS host-software
+recognition (e.g. Steam Input mapping, real-device acceptance,
+host-originated rumble on those platforms) that **cannot** be validated
+without a supported Windows / macOS host. That real-host capability
+validation is therefore deferred to a `pending-supported-host` queue, and
+closure uses the provider-complete wording — `chore(phase-gate): Phase 12
+provider-complete closure recorded` — consistent with Phases 9 and 11. The
+foundation is complete; the host-software capability claims are not yet
+validated. A check flagged `prerequisite-pending` at sign-off means the
+Phase 12 implementation PR has not yet landed — that marker is temporary
+and distinct from the `pending-supported-host` deferral.
 
 Host prerequisites:
 
@@ -131,10 +138,14 @@ README describing what a full realization will require.
 When all automated checks and all manual checks pass:
 
 ```bash
-git commit --allow-empty -m "chore(phase-gate): Phase 12 gate passed"
+git commit --allow-empty -m "chore(phase-gate): Phase 12 provider-complete closure recorded"
 ```
 
-Phase 12 is **not** a deferred-validation gate. Any `prerequisite-pending`
-markers at sign-off time mean the Phase 12 implementation PR has not yet landed
-and the gate is not complete — there is no `pending-supported-host` queue for
-this phase.
+Provider-complete closure records that the Phase 12 foundation is complete
+(planning, deployment-requirement reporting, cross-build, core-purity,
+READMEs all verified) without claiming the providers' Windows / macOS
+host-software recognition has been validated. Those real-host capability
+checks (Steam Input mapping, real-device acceptance, host-originated rumble
+on Windows / macOS) remain in a `pending-supported-host` deferred-validation
+queue until they can run on a supported host. A `prerequisite-pending` marker
+is a separate, temporary state that the implementation PR clears.
