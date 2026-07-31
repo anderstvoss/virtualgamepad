@@ -298,9 +298,9 @@ jobs:
           command: check
 
       - name: cargo-audit
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+        # The archived action installs cargo-audit without --locked; its
+        # dependency resolution now exceeds the runner's Rust version.
+        run: cargo install cargo-audit --version 0.22.2 --locked && cargo audit
 
   dependency-review:
     name: Dependency review
