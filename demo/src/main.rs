@@ -3,6 +3,7 @@
 //! Starts as a minimal CLI scaffold and grows alongside the library
 //! buildout; see `demo/README.md` for the planned growth phases.
 
+mod gui;
 mod phase_gate;
 
 use clap::{Parser, Subcommand};
@@ -16,6 +17,8 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Start the local graphical controller debugger (Linux only).
+    Gui,
     /// Print demo and workspace scaffold information.
     Info,
     /// Print the canonical Phase 1 type catalog.
@@ -103,6 +106,7 @@ fn main() {
 
 fn run() -> Result<(), String> {
     match Cli::parse().command {
+        Command::Gui => gui::run(),
         Command::Info => {
             print_info();
             Ok(())
@@ -219,6 +223,12 @@ mod tests {
     fn show_types_subcommand_accepts_singular_alias() {
         let cli = Cli::parse_from(["vgpd-demo", "show-type"]);
         assert!(matches!(cli.command, Command::ShowTypes));
+    }
+
+    #[test]
+    fn gui_subcommand_parses() {
+        let cli = Cli::parse_from(["vgpd-demo", "gui"]);
+        assert!(matches!(cli.command, Command::Gui));
     }
 
     #[test]

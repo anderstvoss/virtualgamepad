@@ -39,6 +39,7 @@ Selection happens when the demo actually needs a GUI.
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
+cargo run -p virtual_gamepad_demo -- gui
 cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
 cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
@@ -56,6 +57,12 @@ cargo run -p virtual_gamepad_demo -- phase-gate 9
 ```
 
 Add `--help` to any subcommand for usage details.
+
+`gui` is a Linux-only local development surface. It opens real sessions through
+the standard Linux provider inventory and lets testers create multiple
+controllers, drive profile-specific buttons and axes, and inspect planner and
+runtime diagnostics. Host permissions and USB gadget setup are still required
+for a provider to open a real device.
 
 ## License
 
