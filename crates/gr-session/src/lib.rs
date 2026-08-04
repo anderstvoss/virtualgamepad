@@ -17,7 +17,7 @@ use gr_host_bridge::{AudioStreamSink, AudioStreamSource, OutputSink};
 use gr_planner::plan_session;
 use gr_runtime_model::{
     BackpressurePolicy, ControllerOutputCommand, PlanRejection, SessionDiagnosticsSnapshot,
-    SessionLifecycleState, SessionRequest, SessionStatusSnapshot,
+    SessionLifecycleState, SessionPlan, SessionRequest, SessionStatusSnapshot,
 };
 use gr_session_options::{
     CompiledSessionOptions, InputValidationPolicy, ProviderHints, RangeValidationPolicy,
@@ -334,6 +334,7 @@ impl VirtualControllerManager {
             input_queue,
             subscriptions,
             shared,
+            plan,
         })
     }
 
@@ -457,6 +458,7 @@ pub struct VirtualControllerSessionHandle {
     input_queue: Arc<BoundedInputQueue>,
     subscriptions: Arc<SubscriptionRegistry>,
     shared: Arc<SessionShared>,
+    plan: SessionPlan,
 }
 
 #[allow(clippy::missing_fields_in_debug)]
@@ -472,6 +474,12 @@ impl VirtualControllerSessionHandle {
     #[must_use]
     pub fn session_id(&self) -> SessionId {
         self.session_id
+    }
+
+    /// Return the immutable plan accepted when this session was opened.
+    #[must_use]
+    pub fn plan_snapshot(&self) -> SessionPlan {
+        self.plan.clone()
     }
 
     /// Submit a full profile-specific input frame.
@@ -1302,6 +1310,25 @@ mod tests {
             .expect_err("duplicate should fail");
         assert!(matches!(error, ManagerError::SessionAlreadyActive { .. }));
         manager.close_session(SessionId::new(7)).expect("close");
+    }
+
+    #[test]
+    fn session_handle_returns_the_accepted_plan() {
+        let manager =
+            VirtualControllerManager::with_backends(ManagerConfig::default(), vec![fake_backend()])
+                .expect("manager");
+        let session = manager
+            .create_session(dualsense_request(15))
+            .expect("session");
+
+        let plan = session.plan_snapshot();
+        assert_eq!(plan.session_id, SessionId::new(15));
+        assert_eq!(plan.profile_id, ProfileId::from("dualsense"));
+        assert_eq!(plan.selected_provider_id.0, "fake-backend");
+        assert_eq!(plan.selected_level, BackendLevel::Hid);
+        assert_eq!(plan.requested_fidelity_tier, FidelityTier::IdentityAware);
+
+        manager.close_session(SessionId::new(15)).expect("close");
     }
 
     #[test]
