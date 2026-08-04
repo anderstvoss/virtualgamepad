@@ -97,7 +97,10 @@ mod linux {
     impl DebugApp {
         fn new() -> Self {
             let config = ManagerConfig::default();
-            let provider_mode = ProviderMode::Standard;
+            // Keeping UHID in the inventory does not require opening
+            // `/dev/uhid`; it lets the default GUI create a DualSense while
+            // generic sessions continue to select uinput.
+            let provider_mode = ProviderMode::IdentityAware;
             let backends = provider_mode.backends();
             let manager = VirtualControllerManager::with_backends(config.clone(), backends.clone())
                 .expect("the local provider inventory is non-empty");
@@ -237,6 +240,30 @@ mod linux {
                     .expect("profile");
                 if !profile.supported_fidelity.contains(&self.draft_tier) {
                     self.draft_tier = profile.supported_fidelity[0];
+                }
+                if profile.profile_id.as_ref() == "dualsense"
+                    && self.provider_mode == ProviderMode::IdentityAware
+                    && self.draft_tier == FidelityTier::Compatibility
+                {
+                    self.draft_tier = FidelityTier::IdentityAware;
+                }
+                if profile.profile_id.as_ref() == "dualsense"
+                    && self.provider_mode == ProviderMode::Standard
+                {
+                    ui.colored_label(
+                        Color32::YELLOW,
+                        "DualSense needs the identity-aware UHID provider.",
+                    );
+                    if ui
+                        .add_enabled(
+                            self.controllers.is_empty(),
+                            Button::new("Use identity-aware scope"),
+                        )
+                        .clicked()
+                    {
+                        self.set_provider_mode(ProviderMode::IdentityAware);
+                        self.draft_tier = FidelityTier::IdentityAware;
+                    }
                 }
                 egui::ComboBox::from_label("Accuracy")
                     .selected_text(self.draft_tier.to_string())
@@ -846,6 +873,35 @@ mod linux {
                 let id = ProfileId::from(profile);
                 assert!(ProfileInputPayload::neutral_for_profile_id(&id).is_some());
             }
+        }
+
+        #[test]
+        fn default_scope_plans_an_identity_aware_dualsense() {
+            let config = ManagerConfig::default();
+            let backends = ProviderMode::IdentityAware.backends();
+            let request = SessionRequest {
+                session_id: SessionId::new(1),
+                profile_id: ProfileId::from("dualsense"),
+                goal: EmulationGoal::IdentityAware,
+                requested_fidelity_tier: FidelityTier::IdentityAware,
+                host_platform_preference: Some(HostPlatform::Linux),
+                backend_preference: None,
+                provider_preference: None,
+                host_metadata: SessionHostMetadata::default(),
+            };
+            let inventory = backends
+                .iter()
+                .map(|backend| backend.inventory_entry())
+                .collect::<Vec<_>>();
+            let plan = plan_session(
+                &request,
+                &config.default_session_options,
+                &inventory,
+                &backends,
+            )
+            .expect("DualSense should be plannable in the default scope");
+            assert_eq!(plan.selected_provider_id.0, "linux-uhid");
+            assert_eq!(plan.selected_level, gr_core::BackendLevel::Hid);
         }
         #[test]
         fn neutral_frame_matches_its_profile() {
