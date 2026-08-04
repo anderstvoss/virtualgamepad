@@ -44,9 +44,50 @@ pub use gr_provider_macos_hid as provider_macos_hid;
 #[cfg(all(feature = "provider-windows-hid", target_os = "windows"))]
 pub use gr_provider_windows_hid as provider_windows_hid;
 
+/// Return the standard Linux provider inventory for local development tools.
+///
+/// Planning support does not guarantee that a host can open every provider:
+/// `/dev/uinput` and `/dev/uhid` permissions, as well as USB gadget
+/// configuration, are checked only when a session is opened.
+///
+/// Bluetooth transport is deliberately excluded because live realization is
+/// not yet supported.
+#[cfg(all(
+    target_os = "linux",
+    feature = "provider-linux-uinput",
+    feature = "provider-linux-uhid",
+    feature = "provider-linux-transport"
+))]
+#[must_use]
+pub fn linux_default_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::BackendFactory>> {
+    use gr_provider_linux_transport::LinuxTransportUsbBackendFactory;
+    use gr_provider_linux_uhid::LinuxUhidBackendFactory;
+    use gr_provider_linux_uinput::LinuxUinputBackendFactory;
+
+    vec![
+        std::sync::Arc::new(LinuxUinputBackendFactory::new()),
+        std::sync::Arc::new(LinuxUhidBackendFactory::new()),
+        std::sync::Arc::new(LinuxTransportUsbBackendFactory::new()),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::enabled_provider_features;
+
+    #[cfg(all(
+        target_os = "linux",
+        feature = "provider-linux-uinput",
+        feature = "provider-linux-uhid",
+        feature = "provider-linux-transport"
+    ))]
+    #[cfg(all(
+        target_os = "linux",
+        feature = "provider-linux-uinput",
+        feature = "provider-linux-uhid",
+        feature = "provider-linux-transport"
+    ))]
+    use gr_core::{BackendLevel, FidelityTier};
 
     #[test]
     fn enabled_provider_features_match_cfg_flags() {
@@ -74,6 +115,41 @@ mod tests {
         assert_eq!(
             features.contains(&"provider-macos-hid"),
             cfg!(all(feature = "provider-macos-hid", target_os = "macos"))
+        );
+    }
+
+    #[cfg(all(
+        target_os = "linux",
+        feature = "provider-linux-uinput",
+        feature = "provider-linux-uhid",
+        feature = "provider-linux-transport"
+    ))]
+    #[test]
+    fn linux_default_backends_have_the_expected_provider_inventory() {
+        let backends = super::linux_default_backends();
+        assert_eq!(backends.len(), 3);
+
+        let inventory = backends
+            .iter()
+            .map(|backend| backend.inventory_entry())
+            .collect::<Vec<_>>();
+        assert_eq!(inventory[0].backend_id.as_ref(), "linux-uinput");
+        assert_eq!(inventory[0].level, BackendLevel::Evdev);
+        assert_eq!(
+            inventory[0].supported_fidelity_tiers,
+            vec![FidelityTier::Compatibility]
+        );
+        assert_eq!(inventory[1].backend_id.as_ref(), "linux-uhid");
+        assert_eq!(inventory[1].level, BackendLevel::Hid);
+        assert_eq!(
+            inventory[1].supported_fidelity_tiers,
+            vec![FidelityTier::IdentityAware]
+        );
+        assert_eq!(inventory[2].backend_id.as_ref(), "linux-transport-usb");
+        assert_eq!(inventory[2].level, BackendLevel::Transport);
+        assert_eq!(
+            inventory[2].supported_fidelity_tiers,
+            vec![FidelityTier::HardwareFaithful]
         );
     }
 }
