@@ -55,12 +55,12 @@ cargo run -p virtual_gamepad_demo -- phase-gate 9
 
 Add `--help` to any subcommand for usage details.
 
-`gui` is a Linux-only local development surface. It starts in the
-identity-aware scope (`uinput` plus UHID) so a DualSense can be created without
-first changing provider scope. UHID is opened only when a DualSense session is
-created; generic sessions still select `uinput`. Standard `uinput` and USB
-transport-lab scopes remain explicit choices. Their host requirements are
-documented in the local provider scope decision.
+`gui` is a Linux-only local development surface. It starts in the standard
+`uinput` scope. A DualSense selection in this scope creates a conventional
+evdev gamepad with the DualSense control layout; native DualSense HID identity,
+touch contacts, and motion realization require the explicit identity-aware UHID
+or USB transport-lab scope. Their host requirements are documented in the
+local provider scope decision.
 
 ## License
 

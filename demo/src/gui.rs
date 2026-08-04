@@ -97,10 +97,7 @@ mod linux {
     impl DebugApp {
         fn new() -> Self {
             let config = ManagerConfig::default();
-            // Keeping UHID in the inventory does not require opening
-            // `/dev/uhid`; it lets the default GUI create a DualSense while
-            // generic sessions continue to select uinput.
-            let provider_mode = ProviderMode::IdentityAware;
+            let provider_mode = ProviderMode::Standard;
             let backends = provider_mode.backends();
             let manager = VirtualControllerManager::with_backends(config.clone(), backends.clone())
                 .expect("the local provider inventory is non-empty");
@@ -250,20 +247,7 @@ mod linux {
                 if profile.profile_id.as_ref() == "dualsense"
                     && self.provider_mode == ProviderMode::Standard
                 {
-                    ui.colored_label(
-                        Color32::YELLOW,
-                        "DualSense needs the identity-aware UHID provider.",
-                    );
-                    if ui
-                        .add_enabled(
-                            self.controllers.is_empty(),
-                            Button::new("Use identity-aware scope"),
-                        )
-                        .clicked()
-                    {
-                        self.set_provider_mode(ProviderMode::IdentityAware);
-                        self.draft_tier = FidelityTier::IdentityAware;
-                    }
+                    ui.small("Compatibility mode creates a conventional evdev gamepad; select identity-aware scope for native DualSense HID, touch, and motion realization.");
                 }
                 egui::ComboBox::from_label("Accuracy")
                     .selected_text(self.draft_tier.to_string())
@@ -355,6 +339,14 @@ mod linux {
                         "requested {} • provider {} • {:?}",
                         controller.requested_tier, plan.selected_provider_id.0, plan.selected_level
                     ));
+                    if plan.profile_id.as_ref() == "dualsense"
+                        && plan.selected_level == gr_core::BackendLevel::Evdev
+                    {
+                        ui.colored_label(
+                            Color32::YELLOW,
+                            "Compatibility mapping emits face/system buttons, D-pad, sticks, and triggers. Touch contacts, touchpad click, and motion need an identity-aware provider.",
+                        );
+                    }
                     let mut changed = false;
                     if ui.button("Reset all inputs").clicked() {
                         controller.input =
@@ -876,14 +868,14 @@ mod linux {
         }
 
         #[test]
-        fn default_scope_plans_an_identity_aware_dualsense() {
+        fn default_scope_plans_a_compatible_dualsense() {
             let config = ManagerConfig::default();
-            let backends = ProviderMode::IdentityAware.backends();
+            let backends = ProviderMode::Standard.backends();
             let request = SessionRequest {
                 session_id: SessionId::new(1),
                 profile_id: ProfileId::from("dualsense"),
-                goal: EmulationGoal::IdentityAware,
-                requested_fidelity_tier: FidelityTier::IdentityAware,
+                goal: EmulationGoal::Compatibility,
+                requested_fidelity_tier: FidelityTier::Compatibility,
                 host_platform_preference: Some(HostPlatform::Linux),
                 backend_preference: None,
                 provider_preference: None,
@@ -900,8 +892,8 @@ mod linux {
                 &backends,
             )
             .expect("DualSense should be plannable in the default scope");
-            assert_eq!(plan.selected_provider_id.0, "linux-uhid");
-            assert_eq!(plan.selected_level, gr_core::BackendLevel::Hid);
+            assert_eq!(plan.selected_provider_id.0, "linux-uinput");
+            assert_eq!(plan.selected_level, gr_core::BackendLevel::Evdev);
         }
         #[test]
         fn neutral_frame_matches_its_profile() {

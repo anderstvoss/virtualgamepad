@@ -140,6 +140,7 @@ impl TranslatorRegistry {
             (TranslatorFamily::GenericGamepad, BackendLevel::Evdev) => Some(&GENERIC_EVDEV),
             (TranslatorFamily::XboxStyle, BackendLevel::Evdev) => Some(&XBOX_STYLE_EVDEV),
             (TranslatorFamily::XboxStyle, BackendLevel::Transport) => Some(&XBOX360_USB_TRANSPORT),
+            (TranslatorFamily::DualSense, BackendLevel::Evdev) => Some(&DUALSENSE_EVDEV),
             (TranslatorFamily::DualSense, BackendLevel::Hid) => Some(&DUALSENSE_USB_HID),
             (TranslatorFamily::DualSense, BackendLevel::Transport) => Some(&DUALSENSE_TRANSPORT),
             (TranslatorFamily::SteamController, BackendLevel::Hid) => Some(&STEAM_CONTROLLER_HID),
@@ -321,6 +322,64 @@ impl ForwardTranslator for XboxStyleEvdevTranslator {
         push_axis_event(&mut events, ABS_Z, i32::from(payload.triggers.lt));
         push_axis_event(&mut events, ABS_RZ, i32::from(payload.triggers.rt));
 
+        Ok(BackendFrame::EvdevEvents { events })
+    }
+}
+
+#[derive(Debug)]
+struct DualSenseEvdevTranslator;
+
+impl ForwardTranslator for DualSenseEvdevTranslator {
+    fn family(&self) -> TranslatorFamily {
+        TranslatorFamily::DualSense
+    }
+
+    fn translate(
+        &self,
+        input: &ProfileInputFrame,
+        _ctx: &PreparedTranslationContext,
+        _out: &mut TranslationScratch,
+    ) -> Result<BackendFrame, TranslationError> {
+        let ProfileInputPayload::DualSense(payload) = &input.payload else {
+            return Err(TranslationError::InvalidInput {
+                reason: format!(
+                    "DualSense evdev translator expected dualsense payload, got `{}`",
+                    input.payload.variant_name()
+                ),
+            });
+        };
+
+        // Compatibility mode is a conventional evdev gamepad. Native
+        // DualSense identity, touch contacts, and motion require HID/UHID or
+        // transport realization and are intentionally not invented here.
+        let mut events = Vec::with_capacity(19);
+        push_button_event(&mut events, BTN_SOUTH, payload.buttons.face.cross);
+        push_button_event(&mut events, BTN_EAST, payload.buttons.face.circle);
+        push_button_event(&mut events, BTN_WEST, payload.buttons.face.square);
+        push_button_event(&mut events, BTN_NORTH, payload.buttons.face.triangle);
+        push_button_event(&mut events, BTN_TL, payload.buttons.shoulders.l1);
+        push_button_event(&mut events, BTN_TR, payload.buttons.shoulders.r1);
+        push_button_event(&mut events, BTN_THUMBL, payload.buttons.stick_clicks.l3);
+        push_button_event(&mut events, BTN_THUMBR, payload.buttons.stick_clicks.r3);
+        push_button_event(&mut events, BTN_START, payload.buttons.system.options);
+        push_button_event(&mut events, BTN_SELECT, payload.buttons.system.create);
+        push_button_event(&mut events, BTN_MODE, payload.buttons.system.ps);
+        push_axis_event(
+            &mut events,
+            ABS_HAT0X,
+            dpad_axis(payload.dpad.left, payload.dpad.right),
+        );
+        push_axis_event(
+            &mut events,
+            ABS_HAT0Y,
+            dpad_axis(payload.dpad.up, payload.dpad.down),
+        );
+        push_axis_event(&mut events, ABS_X, i32::from(payload.sticks.left_x));
+        push_axis_event(&mut events, ABS_Y, i32::from(payload.sticks.left_y));
+        push_axis_event(&mut events, ABS_RX, i32::from(payload.sticks.right_x));
+        push_axis_event(&mut events, ABS_RY, i32::from(payload.sticks.right_y));
+        push_axis_event(&mut events, ABS_Z, i32::from(payload.triggers.l2));
+        push_axis_event(&mut events, ABS_RZ, i32::from(payload.triggers.r2));
         Ok(BackendFrame::EvdevEvents { events })
     }
 }
@@ -1154,6 +1213,7 @@ fn dualsense_reverse_bytes(event: &BackendReverseEvent) -> Result<&[u8], Transla
 static GENERIC_EVDEV: GenericEvdevTranslator = GenericEvdevTranslator;
 static XBOX_STYLE_EVDEV: XboxStyleEvdevTranslator = XboxStyleEvdevTranslator;
 static XBOX360_USB_TRANSPORT: Xbox360UsbTransportTranslator = Xbox360UsbTransportTranslator;
+static DUALSENSE_EVDEV: DualSenseEvdevTranslator = DualSenseEvdevTranslator;
 static DUALSENSE_USB_HID: DualSenseUsbHidTranslator = DualSenseUsbHidTranslator;
 static DUALSENSE_USB_TRANSPORT: DualSenseUsbTransportTranslator = DualSenseUsbTransportTranslator;
 static DUALSENSE_BLUETOOTH_TRANSPORT: DualSenseBluetoothTransportTranslator =
@@ -1168,10 +1228,13 @@ static STEAM_CONTROLLER_REVERSE: SteamControllerReverseTranslator =
 #[cfg(test)]
 mod tests {
     use super::{
-        DUALSENSE_INPUT_REPORT_ID, STEAM_CONTROLLER_INPUT_REPORT_ID, TranslationError,
-        TranslationScratch, TranslatorRegistry, prepared_translation_context,
+        ABS_HAT0X, ABS_RZ, ABS_X, BTN_SOUTH, BTN_START, DUALSENSE_INPUT_REPORT_ID,
+        STEAM_CONTROLLER_INPUT_REPORT_ID, TranslationError, TranslationScratch, TranslatorRegistry,
+        prepared_translation_context,
     };
-    use gr_backend_api::{BackendReverseEvent, BackendReversePayload, BackendReverseTarget};
+    use gr_backend_api::{
+        BackendFrame, BackendReverseEvent, BackendReversePayload, BackendReverseTarget,
+    };
     use gr_core::{
         BackendFamily, BackendLevel, FidelityTier, ProfileId, ProfileInputFrame,
         ProfileInputPayload, SemanticOutputFunction, SessionId, Timestamp,
@@ -1411,6 +1474,72 @@ mod tests {
             events
                 .iter()
                 .any(|event| event.code == super::ABS_RZ && event.value == 20)
+        );
+    }
+
+    #[test]
+    fn dualsense_evdev_translation_emits_compatible_gamepad_controls() {
+        let registry = TranslatorRegistry::new();
+        let mut plan = base_plan();
+        plan.requested_goal = EmulationGoal::Compatibility;
+        plan.requested_fidelity_tier = FidelityTier::Compatibility;
+        plan.selected_level = BackendLevel::Evdev;
+        plan.selected_backend_family = BackendFamily::LinuxUinput;
+        plan.selected_provider_id = "linux-uinput".into();
+        plan.backend_open_context = BackendOpenContext {
+            session_id: SessionId::new(7),
+            profile_id: ProfileId::from("dualsense"),
+            fidelity_tier: FidelityTier::Compatibility,
+            backend_level: BackendLevel::Evdev,
+            host_platform: HostPlatform::Linux,
+        };
+        let ctx = prepared_translation_context(&plan, &registry).expect("context");
+        let translator = registry
+            .forward(TranslatorFamily::DualSense, BackendLevel::Evdev)
+            .expect("DualSense compatibility translator");
+        let mut payload = gr_core::DualSenseInput::neutral();
+        payload.buttons.face.cross = true;
+        payload.buttons.system.options = true;
+        payload.dpad.right = true;
+        payload.sticks.left_x = 1200;
+        payload.triggers.r2 = 20;
+        let frame = ProfileInputFrame {
+            profile_id: ProfileId::from("dualsense"),
+            timestamp: Timestamp::new(1),
+            sequence: 1.into(),
+            payload: ProfileInputPayload::DualSense(payload),
+        };
+        let mut scratch = TranslationScratch::new();
+        let BackendFrame::EvdevEvents { events } = translator
+            .translate(&frame, &ctx, &mut scratch)
+            .expect("translate")
+        else {
+            panic!("expected evdev events");
+        };
+        assert!(
+            events
+                .iter()
+                .any(|event| event.code == BTN_SOUTH && event.value == 1)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.code == BTN_START && event.value == 1)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.code == ABS_HAT0X && event.value == 1)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.code == ABS_X && event.value == 1200)
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| event.code == ABS_RZ && event.value == 20)
         );
     }
 
