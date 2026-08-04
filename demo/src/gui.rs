@@ -169,7 +169,12 @@ mod linux {
                             ui.selectable_value(&mut self.draft_profile, index, *profile);
                         }
                     });
-                let profile = registry().profile_by_str(PROFILES[self.draft_profile]).expect("profile");
+                let profile = registry()
+                    .profile_by_str(PROFILES[self.draft_profile])
+                    .expect("profile");
+                if !profile.supported_fidelity.contains(&self.draft_tier) {
+                    self.draft_tier = profile.supported_fidelity[0];
+                }
                 egui::ComboBox::from_label("Accuracy")
                     .selected_text(self.draft_tier.to_string())
                     .show_ui(ui, |ui| {
