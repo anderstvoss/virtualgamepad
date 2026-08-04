@@ -159,6 +159,7 @@ mod linux {
     }
 
     impl eframe::App for DebugApp {
+        #[allow(clippy::too_many_lines)]
         fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
             egui::SidePanel::left("controllers").show(ctx, |ui| {
                 ui.heading("Create controller");
