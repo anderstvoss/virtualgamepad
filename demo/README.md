@@ -21,13 +21,10 @@ The split between `vgpd-demo` (this binary, human-facing) and `gr-cli` (internal
 
 ## GUI framework
 
-Not chosen yet. Candidates being tracked:
-
-- [`egui`](https://github.com/emilk/egui) — immediate-mode, integrates with native windowing easily, lowest ceremony
-- [`iced`](https://github.com/iced-rs/iced) — Elm-style retained-mode, more structured
-- [`slint`](https://github.com/slint-ui/slint) — declarative UI language, more separation of view and logic
-
-Selection happens when the demo actually needs a GUI.
+The shipped GUI uses [`egui`](https://github.com/emilk/egui) via `eframe`.
+It is optimized for local debugging: controls send full input frames immediately,
+session diagnostics stay visible, and long profile-specific control surfaces
+remain scrollable.
 
 ## Non-goals
 
@@ -58,11 +55,10 @@ cargo run -p virtual_gamepad_demo -- phase-gate 9
 
 Add `--help` to any subcommand for usage details.
 
-`gui` is a Linux-only local development surface. It opens real sessions through
-the standard Linux provider inventory and lets testers create multiple
-controllers, drive profile-specific buttons and axes, and inspect planner and
-runtime diagnostics. Host permissions and USB gadget setup are still required
-for a provider to open a real device.
+`gui` is a Linux-only local development surface. It starts in the standard
+`uinput` scope, which requires only `/dev/uinput` access. Identity-aware UHID
+and USB transport-lab scopes are explicit pre-creation choices; their extra
+host requirements are documented in the local provider scope decision.
 
 ## License
 

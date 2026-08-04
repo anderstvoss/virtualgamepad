@@ -248,12 +248,50 @@ mod linux {
                         }
                     });
                 let request = self.request(self.next_session_id);
-                let inventory = self.backends.iter().map(|backend| backend.inventory_entry()).collect::<Vec<_>>();
-                match plan_session(&request, &self.config.default_session_options, &inventory, &self.backends) {
-                    Ok(plan) => ui.label(format!("Preview: {} / {:?}{}", plan.selected_provider_id.0, plan.selected_level, if plan.degradation.degraded { " (degraded)" } else { "" })),
-                    Err(error) => ui.colored_label(Color32::RED, format!("Unavailable: {error:?}")),
-                };
-                if ui.button("Create").clicked() { self.create_controller(); }
+                let inventory = self
+                    .backends
+                    .iter()
+                    .map(|backend| backend.inventory_entry())
+                    .collect::<Vec<_>>();
+                let preview = plan_session(
+                    &request,
+                    &self.config.default_session_options,
+                    &inventory,
+                    &self.backends,
+                );
+                let transport_busy = self.provider_mode == ProviderMode::TransportLab
+                    && !self.controllers.is_empty();
+                match &preview {
+                    Ok(plan) => {
+                        let label = if plan.degradation.degraded {
+                            "Degraded plan"
+                        } else {
+                            "Ready"
+                        };
+                        ui.strong(format!(
+                            "{label}: {} / {:?}",
+                            plan.selected_provider_id.0, plan.selected_level
+                        ));
+                        for warning in &plan.warnings {
+                            ui.colored_label(Color32::YELLOW, &warning.message);
+                        }
+                    }
+                    Err(error) => {
+                        ui.colored_label(Color32::RED, format!("Unavailable: {error:?}"));
+                    }
+                }
+                if transport_busy {
+                    ui.colored_label(
+                        Color32::YELLOW,
+                        "Transport lab permits one active gadget controller.",
+                    );
+                }
+                if ui
+                    .add_enabled(preview.is_ok() && !transport_busy, Button::new("Create controller"))
+                    .clicked()
+                {
+                    self.create_controller();
+                }
                 if let Some(error) = &self.create_error { ui.colored_label(Color32::RED, error); }
                 ui.separator();
                 ui.heading("Active controllers");
@@ -271,60 +309,82 @@ mod linux {
             });
 
             egui::CentralPanel::default().show(ctx, |ui| {
-                let Some(index) = self
-                    .selected
-                    .filter(|index| *index < self.controllers.len())
-                else {
-                    ui.heading("Create a controller to begin");
-                    return;
-                };
-                let controller = &mut self.controllers[index];
-                let plan = controller.handle.plan_snapshot();
-                ui.heading(format!(
-                    "Controller #{} — {}",
-                    controller.handle.session_id(),
-                    plan.profile_id
-                ));
-                ui.label(format!(
-                    "requested {} • provider {} • {:?}",
-                    controller.requested_tier, plan.selected_provider_id.0, plan.selected_level
-                ));
-                if ui.button("Reset all inputs").clicked() {
-                    controller.input =
-                        ProfileInputPayload::neutral_for_profile_id(&plan.profile_id)
-                            .expect("built-in");
-                    controller.last_error = None;
-                }
-                let changed = draw_payload(ui, &mut controller.input);
-                if changed || ui.button("Send current frame").clicked() {
-                    controller.sequence += 1;
-                    let frame = ProfileInputFrame {
-                        profile_id: plan.profile_id.clone(),
-                        timestamp: Timestamp::new(controller.sequence),
-                        sequence: SequenceId::new(controller.sequence),
-                        payload: controller.input.clone(),
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let Some(index) = self
+                        .selected
+                        .filter(|index| *index < self.controllers.len())
+                    else {
+                        ui.heading("Create a controller to begin");
+                        return;
                     };
-                    controller.last_error = controller
-                        .handle
-                        .send_input(frame)
-                        .err()
-                        .map(|error| error.to_string());
-                }
-                if let Some(error) = &controller.last_error {
-                    ui.colored_label(Color32::RED, error);
-                }
-                ui.separator();
-                ui.heading("Diagnostics");
-                ui.label(format!("status: {plan:?}"));
-                ui.label(format!(
-                    "runtime: {:?}",
-                    controller.handle.diagnostics_snapshot()
-                ));
-                ui.heading("Reverse commands");
-                let log = controller.output_log.lock().expect("output log");
-                for entry in log.iter().rev().take(10) {
-                    ui.monospace(entry);
-                }
+                    let controller = &mut self.controllers[index];
+                    let plan = controller.handle.plan_snapshot();
+                    ui.heading(format!(
+                        "Controller #{} — {}",
+                        controller.handle.session_id(),
+                        plan.profile_id
+                    ));
+                    ui.label(format!(
+                        "requested {} • provider {} • {:?}",
+                        controller.requested_tier, plan.selected_provider_id.0, plan.selected_level
+                    ));
+                    let mut changed = false;
+                    if ui.button("Reset all inputs").clicked() {
+                        controller.input =
+                            ProfileInputPayload::neutral_for_profile_id(&plan.profile_id)
+                                .expect("built-in");
+                        controller.last_error = None;
+                        changed = true;
+                    }
+                    changed |= draw_payload(ui, &mut controller.input);
+                    if changed || ui.button("Send current frame").clicked() {
+                        controller.sequence += 1;
+                        let frame = ProfileInputFrame {
+                            profile_id: plan.profile_id.clone(),
+                            timestamp: Timestamp::new(controller.sequence),
+                            sequence: SequenceId::new(controller.sequence),
+                            payload: controller.input.clone(),
+                        };
+                        controller.last_error = controller
+                            .handle
+                            .send_input(frame)
+                            .err()
+                            .map(|error| error.to_string());
+                    }
+                    if let Some(error) = &controller.last_error {
+                        ui.colored_label(Color32::RED, error);
+                    }
+                    ui.separator();
+                    ui.collapsing("Session diagnostics", |ui| {
+                        if let Some(status) =
+                            self.manager.session_status(controller.handle.session_id())
+                        {
+                            ui.label(format!("Lifecycle: {:?}", status.state));
+                            for warning in status.warnings {
+                                ui.colored_label(Color32::YELLOW, warning);
+                            }
+                        }
+                        let diagnostics = controller.handle.diagnostics_snapshot();
+                        egui::Grid::new("diagnostic-counters")
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for (name, value) in diagnostics.counters {
+                                    ui.label(name);
+                                    ui.monospace(value.to_string());
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                    ui.collapsing("Reverse commands", |ui| {
+                        let log = controller.output_log.lock().expect("output log");
+                        if log.is_empty() {
+                            ui.small("No reverse commands received.");
+                        }
+                        for entry in log.iter().rev().take(20) {
+                            ui.monospace(entry);
+                        }
+                    });
+                });
             });
         }
     }
