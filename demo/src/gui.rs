@@ -90,7 +90,7 @@ mod linux {
         input: ProfileInputPayload,
         sequence: u64,
         last_error: Option<String>,
-        output_log: Arc<Mutex<VecDeque<String>>>,
+        output_log: Arc<Mutex<VecDeque<gr_runtime_model::ControllerOutputCommand>>>,
         _subscription: SessionOutputSubscription,
     }
 
@@ -154,7 +154,7 @@ mod linux {
                             if log.len() == OUTPUT_LOG_LIMIT {
                                 log.pop_front();
                             }
-                            log.push_back(format!("{command:?}"));
+                            log.push_back(command);
                         },
                     ))) {
                         Ok(subscription) => subscription,
@@ -356,6 +356,35 @@ mod linux {
                     }
                     ui.separator();
                     ui.collapsing("Session diagnostics", |ui| {
+                        let profile = registry()
+                            .profile(plan.profile_id.clone())
+                            .expect("built-in selected profile");
+                        egui::Grid::new("device-identity")
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.label("Emulated device");
+                                ui.label(profile.display_name);
+                                ui.end_row();
+                                ui.label("Vendor ID");
+                                ui.monospace(format!("0x{:04x}", profile.identity.vendor_id.get()));
+                                ui.end_row();
+                                ui.label("Product ID");
+                                ui.monospace(format!("0x{:04x}", profile.identity.product_id.get()));
+                                ui.end_row();
+                                ui.label("Version");
+                                ui.monospace(profile.identity.version.map_or_else(|| "unspecified".to_string(), |version| format!("0x{version:04x}")));
+                                ui.end_row();
+                                ui.label("Provider / backend");
+                                ui.monospace(format!("{} / {:?}", plan.selected_provider_id.0, plan.selected_backend_family));
+                                ui.end_row();
+                                ui.label("Translator");
+                                ui.monospace(format!("{:?}", plan.selected_translator_family));
+                                ui.end_row();
+                            });
+                        if plan.profile_id.0 == "dualsense" {
+                            ui.small("Motion input is advertised by the profile, but the current ProfileInputPayload has no accelerometer or gyroscope fields; the debugger cannot emit motion values yet.");
+                        }
+                        ui.separator();
                         if let Some(status) =
                             self.manager.session_status(controller.handle.session_id())
                         {
@@ -378,10 +407,10 @@ mod linux {
                     ui.collapsing("Reverse commands", |ui| {
                         let log = controller.output_log.lock().expect("output log");
                         if log.is_empty() {
-                            ui.small("No reverse commands received.");
+                            ui.small("No reverse commands received (rumble, LED/lighting, audio, trigger effects, feature requests, or profile-specific accessories). ");
                         }
-                        for entry in log.iter().rev().take(20) {
-                            ui.monospace(entry);
+                        for command in log.iter().rev().take(20) {
+                            draw_reverse_command(ui, command);
                         }
                     });
                 });
@@ -485,19 +514,11 @@ mod linux {
                 changed |= sticks_group(ui, &mut input.sticks);
                 changed |= triggers_group(ui, &mut input.triggers.l2, &mut input.triggers.r2);
                 changed |= control_group(ui, "Touch contacts", |ui| {
-                    touch(
-                        ui,
-                        "Contact 1",
-                        &mut input.touchpad.contact_1.active,
-                        &mut input.touchpad.contact_1.x,
-                        &mut input.touchpad.contact_1.y,
-                    ) | touch(
-                        ui,
-                        "Contact 2",
-                        &mut input.touchpad.contact_2.active,
-                        &mut input.touchpad.contact_2.x,
-                        &mut input.touchpad.contact_2.y,
-                    )
+                    ui.horizontal_wrapped(|ui| {
+                        touch_pad(ui, "Contact 1", &mut input.touchpad.contact_1)
+                            | touch_pad(ui, "Contact 2", &mut input.touchpad.contact_2)
+                    })
+                    .inner
                 });
             }
             ProfileInputPayload::SteamController(input) => {
@@ -585,18 +606,12 @@ mod linux {
         control_group(ui, "D-pad", |ui| dpad(ui, dpad_state))
     }
     fn dpad(ui: &mut egui::Ui, dpad: &mut gr_core::Dpad) -> bool {
-        let mut changed = ui
-            .horizontal_centered(|ui| hold(ui, "Up", &mut dpad.up))
-            .inner;
-        changed |= ui
-            .horizontal_centered(|ui| {
-                hold(ui, "Left", &mut dpad.left) | hold(ui, "Right", &mut dpad.right)
-            })
-            .inner;
-        changed |= ui
-            .horizontal_centered(|ui| hold(ui, "Down", &mut dpad.down))
-            .inner;
-        changed
+        button_row(ui, |ui| {
+            hold(ui, "Up", &mut dpad.up)
+                | hold(ui, "Down", &mut dpad.down)
+                | hold(ui, "Left", &mut dpad.left)
+                | hold(ui, "Right", &mut dpad.right)
+        })
     }
     fn sticks_group(ui: &mut egui::Ui, sticks: &mut TwinStickAxes) -> bool {
         control_group(ui, "Sticks", |ui| {
@@ -611,21 +626,75 @@ mod linux {
         control_group(ui, "Triggers", |ui| triggers(ui, left, right))
     }
     fn triggers(ui: &mut egui::Ui, left: &mut u16, right: &mut u16) -> bool {
-        let mut changed = ui
-            .add(egui::Slider::new(left, 0..=u16::MAX).text("Left trigger"))
-            .changed();
-        changed |= ui.add(egui::DragValue::new(left)).changed();
-        changed |= ui
-            .add(egui::Slider::new(right, 0..=u16::MAX).text("Right trigger"))
-            .changed();
-        changed |= ui.add(egui::DragValue::new(right)).changed();
+        momentary_trigger(ui, "Left trigger", left) | momentary_trigger(ui, "Right trigger", right)
+    }
+    fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u16) -> bool {
+        let response = ui.add(egui::Slider::new(value, 0..=u16::MAX).text(label));
+        let mut changed = response.changed();
+        if response.drag_stopped() || response.clicked() {
+            changed |= reset_trigger(value);
+        }
+        ui.monospace(format!("{label}: {value}"));
         changed
     }
-    fn touch(ui: &mut egui::Ui, label: &str, active: &mut bool, x: &mut u16, y: &mut u16) -> bool {
-        ui.label(label);
-        ui.checkbox(active, "active").changed()
-            | ui.add(egui::DragValue::new(x).range(0..=1920)).changed()
-            | ui.add(egui::DragValue::new(y).range(0..=1080)).changed()
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn touch_pad(
+        ui: &mut egui::Ui,
+        label: &str,
+        contact: &mut gr_core::DualSenseTouchContact,
+    ) -> bool {
+        ui.vertical(|ui| {
+            ui.label(label);
+            let (rect, response) =
+                ui.allocate_exact_size(Vec2::new(180.0, 100.0), Sense::click_and_drag());
+            ui.painter().rect_stroke(
+                rect,
+                4.0,
+                Stroke::new(1.0, Color32::GRAY),
+                egui::StrokeKind::Inside,
+            );
+            let mut changed = false;
+            if response.is_pointer_button_down_on() {
+                if let Some(pos) = response.interact_pointer_pos() {
+                    let x = ((pos.x - rect.left()) / rect.width()
+                        * f32::from(gr_core::DualSenseTouchpad::WIDTH))
+                    .clamp(0.0, f32::from(gr_core::DualSenseTouchpad::WIDTH))
+                        as u16;
+                    let y = ((pos.y - rect.top()) / rect.height()
+                        * f32::from(gr_core::DualSenseTouchpad::HEIGHT))
+                    .clamp(0.0, f32::from(gr_core::DualSenseTouchpad::HEIGHT))
+                        as u16;
+                    changed = !contact.active || contact.x != x || contact.y != y;
+                    contact.active = true;
+                    contact.x = x;
+                    contact.y = y;
+                }
+            } else if response.drag_stopped() || response.clicked() {
+                changed |= release_touch(contact);
+            }
+            if contact.active {
+                let x = rect.left()
+                    + f32::from(contact.x) / f32::from(gr_core::DualSenseTouchpad::WIDTH)
+                        * rect.width();
+                let y = rect.top()
+                    + f32::from(contact.y) / f32::from(gr_core::DualSenseTouchpad::HEIGHT)
+                        * rect.height();
+                ui.painter()
+                    .circle_filled(Pos2::new(x, y), 5.0, Color32::LIGHT_BLUE);
+            }
+            ui.small(format!(
+                "{} • x={} y={}",
+                if contact.active {
+                    "touching"
+                } else {
+                    "released"
+                },
+                contact.x,
+                contact.y
+            ));
+            changed
+        })
+        .inner
     }
     #[allow(clippy::cast_possible_truncation)]
     fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
@@ -642,24 +711,83 @@ mod linux {
         ui.painter()
             .circle_filled(Pos2::new(px, py), 4.0, Color32::LIGHT_BLUE);
         let mut changed = false;
-        if let Some(pos) = response
-            .interact_pointer_pos()
-            .filter(|_| response.dragged() || response.clicked())
-        {
+        if response.is_pointer_button_down_on() {
+            let pos = response
+                .interact_pointer_pos()
+                .expect("held pointer has a position");
             *x = (((pos.x - rect.center().x) / (rect.width() / 2.0)).clamp(-1.0, 1.0) * 32767.0)
                 as i16;
             *y = (((pos.y - rect.center().y) / (rect.height() / 2.0)).clamp(-1.0, 1.0) * 32767.0)
                 as i16;
             changed = true;
         }
-        changed |=
-            ui.add(egui::DragValue::new(x)).changed() | ui.add(egui::DragValue::new(y)).changed();
-        if ui.small_button("Center").clicked() {
-            *x = 0;
-            *y = 0;
-            changed = true;
+        if response.drag_stopped() || response.clicked() {
+            changed |= reset_axis(x, y);
         }
+        ui.monospace(format!("x={x} y={y}"));
         changed
+    }
+
+    fn reset_axis(x: &mut i16, y: &mut i16) -> bool {
+        let changed = *x != 0 || *y != 0;
+        *x = 0;
+        *y = 0;
+        changed
+    }
+
+    fn reset_trigger(value: &mut u16) -> bool {
+        let changed = *value != 0;
+        *value = 0;
+        changed
+    }
+
+    fn release_touch(contact: &mut gr_core::DualSenseTouchContact) -> bool {
+        let changed = contact.active;
+        contact.active = false;
+        changed
+    }
+
+    fn draw_reverse_command(
+        ui: &mut egui::Ui,
+        command: &gr_runtime_model::ControllerOutputCommand,
+    ) {
+        let (kind, detail) = match &command.payload {
+            gr_runtime_model::OutputPayload::Rumble(payload) => (
+                "Rumble",
+                format!("strong={} weak={}", payload.strong, payload.weak),
+            ),
+            gr_runtime_model::OutputPayload::Lighting(payload) => (
+                "LED / lighting",
+                format!(
+                    "rgb={:?}/{:?}/{:?} player={:?}",
+                    payload.red, payload.green, payload.blue, payload.player_index
+                ),
+            ),
+            gr_runtime_model::OutputPayload::TriggerEffect(payload) => (
+                "Trigger effect",
+                format!("mode={} parameters={:?}", payload.mode, payload.parameters),
+            ),
+            gr_runtime_model::OutputPayload::Audio(payload) => (
+                "Audio",
+                format!("action={} target={:?}", payload.action, payload.target),
+            ),
+            gr_runtime_model::OutputPayload::FeatureRequest(payload) => {
+                ("Feature request", format!("request={}", payload.request))
+            }
+            gr_runtime_model::OutputPayload::ProfileSpecific(payload) => (
+                "Profile-specific accessory",
+                format!("{} {:?}", payload.payload_id.0, payload.fields),
+            ),
+            _ => ("Unknown reverse command", format!("{:#?}", command.payload)),
+        };
+        ui.group(|ui| {
+            ui.strong(kind);
+            ui.small(format!(
+                "type={:?} function={:?} timestamp={}",
+                command.command_type, command.function, command.timestamp
+            ));
+            ui.monospace(detail);
+        });
     }
 
     #[cfg(test)]
@@ -719,6 +847,30 @@ mod linux {
                 }
                 render_payload(&mut payload);
             }
+        }
+
+        #[test]
+        fn momentary_controls_return_to_their_neutral_state_on_release() {
+            let mut x = i16::MAX;
+            let mut y = i16::MIN;
+            assert!(reset_axis(&mut x, &mut y));
+            assert_eq!((x, y), (0, 0));
+            assert!(!reset_axis(&mut x, &mut y));
+
+            let mut trigger = u16::MAX;
+            assert!(reset_trigger(&mut trigger));
+            assert_eq!(trigger, 0);
+            assert!(!reset_trigger(&mut trigger));
+
+            let mut contact = gr_core::DualSenseTouchContact {
+                active: true,
+                x: 100,
+                y: 200,
+            };
+            assert!(release_touch(&mut contact));
+            assert!(!contact.active);
+            assert_eq!((contact.x, contact.y), (100, 200));
+            assert!(!release_touch(&mut contact));
         }
     }
 }
