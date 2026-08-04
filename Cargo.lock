@@ -1080,6 +1080,8 @@ dependencies = [
 name = "virtualgamepad"
 version = "0.1.0"
 dependencies = [
+ "gr-backend-api",
+ "gr-core",
  "gr-provider-linux-transport",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
