@@ -34,6 +34,33 @@ mod linux {
     ];
     const OUTPUT_LOG_LIMIT: usize = 100;
 
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ProviderMode {
+        Standard,
+        IdentityAware,
+        TransportLab,
+    }
+
+    impl ProviderMode {
+        const ALL: [Self; 3] = [Self::Standard, Self::IdentityAware, Self::TransportLab];
+
+        const fn label(self) -> &'static str {
+            match self {
+                Self::Standard => "Standard (uinput)",
+                Self::IdentityAware => "Identity-aware (uinput + UHID)",
+                Self::TransportLab => "Transport lab (USB gadget)",
+            }
+        }
+
+        fn backends(self) -> Vec<Arc<dyn BackendFactory>> {
+            match self {
+                Self::Standard => virtualgamepad::linux_standard_backends(),
+                Self::IdentityAware => virtualgamepad::linux_identity_backends(),
+                Self::TransportLab => virtualgamepad::linux_transport_lab_backends(),
+            }
+        }
+    }
+
     pub fn run() -> Result<(), String> {
         let options = eframe::NativeOptions::default();
         eframe::run_native(
@@ -48,6 +75,7 @@ mod linux {
         manager: VirtualControllerManager,
         config: ManagerConfig,
         backends: Vec<Arc<dyn BackendFactory>>,
+        provider_mode: ProviderMode,
         draft_profile: usize,
         draft_tier: FidelityTier,
         next_session_id: u64,
@@ -69,13 +97,15 @@ mod linux {
     impl DebugApp {
         fn new() -> Self {
             let config = ManagerConfig::default();
-            let backends = virtualgamepad::linux_default_backends();
+            let provider_mode = ProviderMode::Standard;
+            let backends = provider_mode.backends();
             let manager = VirtualControllerManager::with_backends(config.clone(), backends.clone())
                 .expect("the local provider inventory is non-empty");
             Self {
                 manager,
                 config,
                 backends,
+                provider_mode,
                 draft_profile: 0,
                 draft_tier: FidelityTier::Compatibility,
                 next_session_id: 1,
@@ -83,6 +113,19 @@ mod linux {
                 selected: None,
                 create_error: None,
             }
+        }
+
+        fn set_provider_mode(&mut self, mode: ProviderMode) {
+            if mode == self.provider_mode || !self.controllers.is_empty() {
+                return;
+            }
+            let backends = mode.backends();
+            self.manager =
+                VirtualControllerManager::with_backends(self.config.clone(), backends.clone())
+                    .expect("the selected local provider inventory is non-empty");
+            self.backends = backends;
+            self.provider_mode = mode;
+            self.create_error = None;
         }
 
         fn request(&self, session_id: u64) -> SessionRequest {
@@ -163,6 +206,25 @@ mod linux {
         fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
             egui::SidePanel::left("controllers").show(ctx, |ui| {
                 ui.heading("Create controller");
+                let mut provider_mode = self.provider_mode;
+                ui.add_enabled_ui(self.controllers.is_empty(), |ui| {
+                    egui::ComboBox::from_label("Provider scope")
+                        .selected_text(provider_mode.label())
+                        .show_ui(ui, |ui| {
+                            for mode in ProviderMode::ALL {
+                                ui.selectable_value(&mut provider_mode, mode, mode.label());
+                            }
+                        });
+                });
+                self.set_provider_mode(provider_mode);
+                if !self.controllers.is_empty() {
+                    ui.small("Remove all controllers to change provider scope.");
+                }
+                match self.provider_mode {
+                    ProviderMode::Standard => ui.small("Standard mode needs only /dev/uinput access."),
+                    ProviderMode::IdentityAware => ui.small("Identity-aware mode additionally needs /dev/uhid access."),
+                    ProviderMode::TransportLab => ui.small("Transport lab mode requires a prepared USB gadget host; create only one controller."),
+                };
                 egui::ComboBox::from_label("Type")
                     .selected_text(PROFILES[self.draft_profile])
                     .show_ui(ui, |ui| {

@@ -8,6 +8,11 @@ requires host-managed kernel permissions and, for transport fidelity, USB gadget
 setup. This document resolves that boundary by defining the required manual
 handoff rather than weakening the GUI or embedding external compliance tools.
 
+For the durable scope decision behind this handoff, see
+[Local provider scopes](LOCAL_PROVIDER_SCOPE_DECISION.md). This document is
+only for the optional live-provider and lab paths, not a prerequisite for
+general library use.
+
 ## Preconditions
 
 - Run on Linux with a graphical desktop session.
