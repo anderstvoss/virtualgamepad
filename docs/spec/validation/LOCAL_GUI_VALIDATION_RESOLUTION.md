@@ -18,6 +18,74 @@ handoff rather than weakening the GUI or embedding external compliance tools.
 - Do not run more than one hardware-faithful USB transport controller at once;
   the current provider does not guarantee concurrent gadget instances.
 
+## Host setup resolution
+
+### Standard development host: uinput and UHID
+
+Use the repository-owned `udev` rules instead of running the GUI as root. On
+the Linux development host, an administrator performs this one-time setup:
+
+```bash
+sudo ./samples/setup/install-linux-input-rules.sh
+sudo usermod -aG input "$USER"
+```
+
+The user must then log out and back in (or start a new login session) before
+running the GUI. Verify the resolved state before any live validation:
+
+```bash
+id -nG
+ls -l /dev/uinput /dev/uhid
+cargo run -p gr-cli -- run-uinput-smoke generic-gamepad
+cargo run -p gr-cli -- run-uhid-smoke dualsense --bus usb
+```
+
+The acceptance condition is that the nodes exist, are group-owned by `input`,
+have read/write group access, and the smoke commands report a created device.
+If the nodes are missing, load the modules where the distribution supports it
+(`sudo modprobe uinput` and `sudo modprobe uhid`) and rerun the setup script.
+If permissions remain stale, follow the repository's retrigger instructions in
+[`samples/setup/README.md`](../../../samples/setup/README.md); temporary
+`chgrp`/`chmod` repairs are diagnostic only and must not be treated as the
+permanent solution.
+
+### Dedicated transport host: USB gadget
+
+Hardware-faithful transport validation requires a distinct, prepared Linux
+device with a peripheral-capable USB Device Controller. A normal desktop or
+laptop USB host port is not sufficient. Before scheduling validation, the host
+owner must confirm all of the following:
+
+```bash
+test -d /sys/kernel/config/usb_gadget
+ls /sys/class/udc
+test -e /dev/hidg0 || true
+```
+
+- `configfs` is mounted and at least one UDC is listed.
+- The tester has delegated access to configure the gadget, or a designated
+  operator runs only the transport session under the required privilege.
+- A separate observing machine is connected to the peripheral-capable port and
+  has `lsusb` available.
+- The observer and gadget host have an agreed cleanup owner: the operator must
+  stop the GUI, confirm the gadget directory is removed, and disconnect only
+  after the virtual device is gone.
+
+The complete transport checklist remains
+[Phase 11's manual gate](../implementation/manual-gates/phase-11.md). If no
+such host is available, record `pending-supported-host`; do not substitute a
+host-only machine, run the GUI as root, or claim hardware-faithful validation.
+
+### Ownership and retry policy
+
+- The host owner supplies kernel modules, `udev` rules, group membership, and
+  UDC/configfs access.
+- The tester runs the smoke probes and GUI as their ordinary login user and
+  records the selected plan, device identity, and command output.
+- A missing node or permission failure returns the work to the host owner. A
+  successful open with externally incorrect reports returns the work to the
+  corresponding provider owner.
+
 ## Validation procedure
 
 1. Start the GUI with `cargo run -p virtual_gamepad_demo -- gui`.
