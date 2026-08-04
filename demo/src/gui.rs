@@ -14,8 +14,8 @@ mod linux {
     use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
     use gr_backend_api::BackendFactory;
     use gr_core::{
-        FidelityTier, GenericGamepadInput, ProfileId, ProfileInputFrame, ProfileInputPayload,
-        SequenceId, SessionId, Timestamp, TwinStickAxes,
+        FidelityTier, ProfileId, ProfileInputFrame, ProfileInputPayload, SequenceId, SessionId,
+        Timestamp, TwinStickAxes,
     };
     use gr_host_bridge::CallbackSink;
     use gr_planner::plan_session;
@@ -394,107 +394,184 @@ mod linux {
         let mut changed = false;
         match payload {
             ProfileInputPayload::GenericGamepad(input) => {
-                changed |= generic_buttons(ui, input);
-                changed |= dpad(ui, &mut input.dpad);
-                changed |= sticks(ui, &mut input.sticks);
-                changed |= triggers(
+                changed |= control_group(ui, "Face buttons", |ui| {
+                    let b = &mut input.buttons;
+                    button_row(ui, |ui| {
+                        hold(ui, "South", &mut b.south)
+                            | hold(ui, "East", &mut b.east)
+                            | hold(ui, "West", &mut b.west)
+                            | hold(ui, "North", &mut b.north)
+                    })
+                });
+                changed |= control_group(ui, "Shoulders and stick clicks", |ui| {
+                    let b = &mut input.buttons;
+                    button_row(ui, |ui| {
+                        hold(ui, "L shoulder", &mut b.left_shoulder)
+                            | hold(ui, "R shoulder", &mut b.right_shoulder)
+                            | hold(ui, "L stick", &mut b.left_stick_button)
+                            | hold(ui, "R stick", &mut b.right_stick_button)
+                    })
+                });
+                changed |= control_group(ui, "System", |ui| {
+                    let b = &mut input.buttons;
+                    button_row(ui, |ui| {
+                        hold(ui, "Menu", &mut b.menu_primary)
+                            | hold(ui, "View", &mut b.menu_secondary)
+                            | hold(ui, "Guide", &mut b.guide)
+                    })
+                });
+                changed |= dpad_group(ui, &mut input.dpad);
+                changed |= sticks_group(ui, &mut input.sticks);
+                changed |= triggers_group(
                     ui,
                     &mut input.triggers.left_trigger,
                     &mut input.triggers.right_trigger,
                 );
             }
             ProfileInputPayload::Xbox360(input) => {
-                changed |= hold(ui, "A", &mut input.buttons.face.a)
-                    | hold(ui, "B", &mut input.buttons.face.b)
-                    | hold(ui, "X", &mut input.buttons.face.x)
-                    | hold(ui, "Y", &mut input.buttons.face.y);
-                changed |= hold(ui, "LB", &mut input.buttons.shoulders.lb)
-                    | hold(ui, "RB", &mut input.buttons.shoulders.rb)
-                    | hold(ui, "LS", &mut input.buttons.stick_clicks.ls)
-                    | hold(ui, "RS", &mut input.buttons.stick_clicks.rs)
-                    | hold(ui, "Start", &mut input.buttons.system.start)
-                    | hold(ui, "Back", &mut input.buttons.system.back)
-                    | hold(ui, "Guide", &mut input.buttons.system.guide);
-                changed |= dpad(ui, &mut input.dpad);
-                changed |= sticks(ui, &mut input.sticks);
-                changed |= triggers(ui, &mut input.triggers.lt, &mut input.triggers.rt);
+                changed |= control_group(ui, "Face buttons", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "A", &mut input.buttons.face.a)
+                            | hold(ui, "B", &mut input.buttons.face.b)
+                            | hold(ui, "X", &mut input.buttons.face.x)
+                            | hold(ui, "Y", &mut input.buttons.face.y)
+                    })
+                });
+                changed |= control_group(ui, "Shoulders and stick clicks", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "LB", &mut input.buttons.shoulders.lb)
+                            | hold(ui, "RB", &mut input.buttons.shoulders.rb)
+                            | hold(ui, "LS", &mut input.buttons.stick_clicks.ls)
+                            | hold(ui, "RS", &mut input.buttons.stick_clicks.rs)
+                    })
+                });
+                changed |= control_group(ui, "System", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "Start", &mut input.buttons.system.start)
+                            | hold(ui, "Back", &mut input.buttons.system.back)
+                            | hold(ui, "Guide", &mut input.buttons.system.guide)
+                    })
+                });
+                changed |= dpad_group(ui, &mut input.dpad);
+                changed |= sticks_group(ui, &mut input.sticks);
+                changed |= triggers_group(ui, &mut input.triggers.lt, &mut input.triggers.rt);
             }
             ProfileInputPayload::DualSense(input) => {
-                changed |= hold(ui, "Cross", &mut input.buttons.face.cross)
-                    | hold(ui, "Circle", &mut input.buttons.face.circle)
-                    | hold(ui, "Square", &mut input.buttons.face.square)
-                    | hold(ui, "Triangle", &mut input.buttons.face.triangle);
-                changed |= hold(ui, "L1", &mut input.buttons.shoulders.l1)
-                    | hold(ui, "R1", &mut input.buttons.shoulders.r1)
-                    | hold(ui, "L3", &mut input.buttons.stick_clicks.l3)
-                    | hold(ui, "R3", &mut input.buttons.stick_clicks.r3)
-                    | hold(ui, "Create", &mut input.buttons.system.create)
-                    | hold(ui, "Options", &mut input.buttons.system.options)
-                    | hold(ui, "PS", &mut input.buttons.system.ps)
-                    | hold(ui, "Touch click", &mut input.buttons.system.touchpad_click);
-                changed |= dpad(ui, &mut input.dpad);
-                changed |= sticks(ui, &mut input.sticks);
-                changed |= triggers(ui, &mut input.triggers.l2, &mut input.triggers.r2);
-                ui.label("Touch contacts");
-                changed |= touch(
-                    ui,
-                    "Contact 1",
-                    &mut input.touchpad.contact_1.active,
-                    &mut input.touchpad.contact_1.x,
-                    &mut input.touchpad.contact_1.y,
-                );
-                changed |= touch(
-                    ui,
-                    "Contact 2",
-                    &mut input.touchpad.contact_2.active,
-                    &mut input.touchpad.contact_2.x,
-                    &mut input.touchpad.contact_2.y,
-                );
+                changed |= control_group(ui, "Face buttons", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "Cross", &mut input.buttons.face.cross)
+                            | hold(ui, "Circle", &mut input.buttons.face.circle)
+                            | hold(ui, "Square", &mut input.buttons.face.square)
+                            | hold(ui, "Triangle", &mut input.buttons.face.triangle)
+                    })
+                });
+                changed |= control_group(ui, "Shoulders and stick clicks", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "L1", &mut input.buttons.shoulders.l1)
+                            | hold(ui, "R1", &mut input.buttons.shoulders.r1)
+                            | hold(ui, "L3", &mut input.buttons.stick_clicks.l3)
+                            | hold(ui, "R3", &mut input.buttons.stick_clicks.r3)
+                    })
+                });
+                changed |= control_group(ui, "System and touchpad", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "Create", &mut input.buttons.system.create)
+                            | hold(ui, "Options", &mut input.buttons.system.options)
+                            | hold(ui, "PS", &mut input.buttons.system.ps)
+                            | hold(ui, "Touch click", &mut input.buttons.system.touchpad_click)
+                    })
+                });
+                changed |= dpad_group(ui, &mut input.dpad);
+                changed |= sticks_group(ui, &mut input.sticks);
+                changed |= triggers_group(ui, &mut input.triggers.l2, &mut input.triggers.r2);
+                changed |= control_group(ui, "Touch contacts", |ui| {
+                    touch(
+                        ui,
+                        "Contact 1",
+                        &mut input.touchpad.contact_1.active,
+                        &mut input.touchpad.contact_1.x,
+                        &mut input.touchpad.contact_1.y,
+                    ) | touch(
+                        ui,
+                        "Contact 2",
+                        &mut input.touchpad.contact_2.active,
+                        &mut input.touchpad.contact_2.x,
+                        &mut input.touchpad.contact_2.y,
+                    )
+                });
             }
             ProfileInputPayload::SteamController(input) => {
-                for (label, value) in [
-                    ("A", &mut input.buttons.a),
-                    ("B", &mut input.buttons.b),
-                    ("X", &mut input.buttons.x),
-                    ("Y", &mut input.buttons.y),
-                    ("Left grip", &mut input.buttons.left_grip),
-                    ("Right grip", &mut input.buttons.right_grip),
-                    ("LB", &mut input.buttons.lb),
-                    ("RB", &mut input.buttons.rb),
-                    ("Menu", &mut input.buttons.menu_primary),
-                    ("View", &mut input.buttons.menu_secondary),
-                    ("Steam", &mut input.buttons.steam),
-                    ("Left pad click", &mut input.buttons.left_pad_click),
-                    ("Right pad click", &mut input.buttons.right_pad_click),
-                    ("Stick click", &mut input.buttons.left_stick_click),
-                ] {
-                    changed |= hold(ui, label, value);
-                }
-                changed |= axis_pad(
-                    ui,
-                    "Left pad",
-                    &mut input.sticks.left_pad_x,
-                    &mut input.sticks.left_pad_y,
-                );
-                changed |= axis_pad(
-                    ui,
-                    "Right pad",
-                    &mut input.sticks.right_pad_x,
-                    &mut input.sticks.right_pad_y,
-                );
-                changed |= axis_pad(
-                    ui,
-                    "Left stick",
-                    &mut input.sticks.left_stick_x,
-                    &mut input.sticks.left_stick_y,
-                );
-                changed |= triggers(ui, &mut input.triggers.lt, &mut input.triggers.rt);
+                changed |= control_group(ui, "Face buttons", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "A", &mut input.buttons.a)
+                            | hold(ui, "B", &mut input.buttons.b)
+                            | hold(ui, "X", &mut input.buttons.x)
+                            | hold(ui, "Y", &mut input.buttons.y)
+                    })
+                });
+                changed |= control_group(ui, "Grips and shoulders", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "Left grip", &mut input.buttons.left_grip)
+                            | hold(ui, "Right grip", &mut input.buttons.right_grip)
+                            | hold(ui, "LB", &mut input.buttons.lb)
+                            | hold(ui, "RB", &mut input.buttons.rb)
+                    })
+                });
+                changed |= control_group(ui, "Menus and clicks", |ui| {
+                    button_row(ui, |ui| {
+                        hold(ui, "Menu", &mut input.buttons.menu_primary)
+                            | hold(ui, "View", &mut input.buttons.menu_secondary)
+                            | hold(ui, "Steam", &mut input.buttons.steam)
+                            | hold(ui, "Left pad click", &mut input.buttons.left_pad_click)
+                            | hold(ui, "Right pad click", &mut input.buttons.right_pad_click)
+                            | hold(ui, "Stick click", &mut input.buttons.left_stick_click)
+                    })
+                });
+                changed |= control_group(ui, "Touchpads and stick", |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        axis_pad(
+                            ui,
+                            "Left pad",
+                            &mut input.sticks.left_pad_x,
+                            &mut input.sticks.left_pad_y,
+                        ) | axis_pad(
+                            ui,
+                            "Right pad",
+                            &mut input.sticks.right_pad_x,
+                            &mut input.sticks.right_pad_y,
+                        ) | axis_pad(
+                            ui,
+                            "Left stick",
+                            &mut input.sticks.left_stick_x,
+                            &mut input.sticks.left_stick_y,
+                        )
+                    })
+                    .inner
+                });
+                changed |= triggers_group(ui, &mut input.triggers.lt, &mut input.triggers.rt);
             }
             _ => {
                 ui.label("This profile is not available in the local debugger.");
             }
         }
         changed
+    }
+
+    fn control_group(
+        ui: &mut egui::Ui,
+        title: &str,
+        add: impl FnOnce(&mut egui::Ui) -> bool,
+    ) -> bool {
+        ui.group(|ui| {
+            ui.strong(title);
+            ui.add_space(4.0);
+            add(ui)
+        })
+        .inner
+    }
+
+    fn button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> bool) -> bool {
+        ui.horizontal_wrapped(add).inner
     }
 
     fn hold(ui: &mut egui::Ui, label: &str, value: &mut bool) -> bool {
@@ -504,29 +581,36 @@ mod linux {
         *value = next;
         changed
     }
-    fn generic_buttons(ui: &mut egui::Ui, input: &mut GenericGamepadInput) -> bool {
-        let b = &mut input.buttons;
-        hold(ui, "South", &mut b.south)
-            | hold(ui, "East", &mut b.east)
-            | hold(ui, "West", &mut b.west)
-            | hold(ui, "North", &mut b.north)
-            | hold(ui, "L shoulder", &mut b.left_shoulder)
-            | hold(ui, "R shoulder", &mut b.right_shoulder)
-            | hold(ui, "L stick", &mut b.left_stick_button)
-            | hold(ui, "R stick", &mut b.right_stick_button)
-            | hold(ui, "Menu", &mut b.menu_primary)
-            | hold(ui, "View", &mut b.menu_secondary)
-            | hold(ui, "Guide", &mut b.guide)
+    fn dpad_group(ui: &mut egui::Ui, dpad_state: &mut gr_core::Dpad) -> bool {
+        control_group(ui, "D-pad", |ui| dpad(ui, dpad_state))
     }
     fn dpad(ui: &mut egui::Ui, dpad: &mut gr_core::Dpad) -> bool {
-        hold(ui, "Up", &mut dpad.up)
-            | hold(ui, "Down", &mut dpad.down)
-            | hold(ui, "Left", &mut dpad.left)
-            | hold(ui, "Right", &mut dpad.right)
+        egui::Grid::new("dpad-controls")
+            .show(ui, |ui| {
+                ui.add_space(58.0);
+                let mut changed = hold(ui, "Up", &mut dpad.up);
+                ui.end_row();
+                changed |= hold(ui, "Left", &mut dpad.left);
+                ui.label(" ");
+                changed |= hold(ui, "Right", &mut dpad.right);
+                ui.end_row();
+                ui.add_space(58.0);
+                changed |= hold(ui, "Down", &mut dpad.down);
+                changed
+            })
+            .inner
     }
-    fn sticks(ui: &mut egui::Ui, sticks: &mut TwinStickAxes) -> bool {
-        axis_pad(ui, "Left stick", &mut sticks.left_x, &mut sticks.left_y)
-            | axis_pad(ui, "Right stick", &mut sticks.right_x, &mut sticks.right_y)
+    fn sticks_group(ui: &mut egui::Ui, sticks: &mut TwinStickAxes) -> bool {
+        control_group(ui, "Sticks", |ui| {
+            ui.horizontal_wrapped(|ui| {
+                axis_pad(ui, "Left stick", &mut sticks.left_x, &mut sticks.left_y)
+                    | axis_pad(ui, "Right stick", &mut sticks.right_x, &mut sticks.right_y)
+            })
+            .inner
+        })
+    }
+    fn triggers_group(ui: &mut egui::Ui, left: &mut u16, right: &mut u16) -> bool {
+        control_group(ui, "Triggers", |ui| triggers(ui, left, right))
     }
     fn triggers(ui: &mut egui::Ui, left: &mut u16, right: &mut u16) -> bool {
         let mut changed = ui
