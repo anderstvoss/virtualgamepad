@@ -76,6 +76,8 @@ provider-windows-hid = ["dep:gr-provider-windows-hid"]
 provider-macos-hid = ["dep:gr-provider-macos-hid"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
+gr-backend-api = { path = "crates/gr-backend-api", version = "0.1" }
+gr-core = { path = "crates/gr-core", version = "0.1" }
 gr-provider-linux-uinput = { path = "crates/gr-provider-linux-uinput", optional = true }
 gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", optional = true }
 gr-provider-linux-transport = { path = "crates/gr-provider-linux-transport", optional = true }
