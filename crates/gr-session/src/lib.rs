@@ -220,7 +220,7 @@ impl VirtualControllerManager {
     /// # Panics
     ///
     /// Panics if an internal session-registry mutex has been poisoned.
-    #[allow(clippy::needless_pass_by_value)]
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_lines)]
     pub fn create_session(
         &self,
         request: SessionRequest,
