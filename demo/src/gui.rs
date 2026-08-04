@@ -585,20 +585,18 @@ mod linux {
         control_group(ui, "D-pad", |ui| dpad(ui, dpad_state))
     }
     fn dpad(ui: &mut egui::Ui, dpad: &mut gr_core::Dpad) -> bool {
-        egui::Grid::new("dpad-controls")
-            .show(ui, |ui| {
-                ui.add_space(58.0);
-                let mut changed = hold(ui, "Up", &mut dpad.up);
-                ui.end_row();
-                changed |= hold(ui, "Left", &mut dpad.left);
-                ui.label(" ");
-                changed |= hold(ui, "Right", &mut dpad.right);
-                ui.end_row();
-                ui.add_space(58.0);
-                changed |= hold(ui, "Down", &mut dpad.down);
-                changed
+        let mut changed = ui
+            .horizontal_centered(|ui| hold(ui, "Up", &mut dpad.up))
+            .inner;
+        changed |= ui
+            .horizontal_centered(|ui| {
+                hold(ui, "Left", &mut dpad.left) | hold(ui, "Right", &mut dpad.right)
             })
-            .inner
+            .inner;
+        changed |= ui
+            .horizontal_centered(|ui| hold(ui, "Down", &mut dpad.down))
+            .inner;
+        changed
     }
     fn sticks_group(ui: &mut egui::Ui, sticks: &mut TwinStickAxes) -> bool {
         control_group(ui, "Sticks", |ui| {
@@ -667,6 +665,16 @@ mod linux {
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        fn render_payload(payload: &mut ProfileInputPayload) {
+            let context = egui::Context::default();
+            let _ = context.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    draw_payload(ui, payload);
+                });
+            });
+        }
+
         #[test]
         fn every_profile_has_a_neutral_frame() {
             for profile in PROFILES {
@@ -684,6 +692,32 @@ mod linux {
                         .validate_profile_id(&id)
                         .is_ok()
                 );
+            }
+        }
+
+        #[test]
+        fn every_profile_control_surface_renders_headlessly() {
+            for profile in PROFILES {
+                let id = ProfileId::from(profile);
+                let mut payload =
+                    ProfileInputPayload::neutral_for_profile_id(&id).expect("payload");
+                render_payload(&mut payload);
+            }
+        }
+
+        #[test]
+        fn dpad_surfaces_render_after_direction_changes() {
+            for profile in ["generic-gamepad", "xbox360", "dualsense"] {
+                let id = ProfileId::from(profile);
+                let mut payload =
+                    ProfileInputPayload::neutral_for_profile_id(&id).expect("payload");
+                match &mut payload {
+                    ProfileInputPayload::GenericGamepad(input) => input.dpad.up = true,
+                    ProfileInputPayload::Xbox360(input) => input.dpad.right = true,
+                    ProfileInputPayload::DualSense(input) => input.dpad.down = true,
+                    _ => unreachable!("selected profile has a D-pad"),
+                }
+                render_payload(&mut payload);
             }
         }
     }
