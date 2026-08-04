@@ -44,6 +44,10 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   Linux transport state-machine foundation, and the Phase 11
   DualSense USB hardware-faithful transport provider surface.
 
+- Linux UHID broker provider: an opt-in, constrained local socket boundary for
+  the identity-aware DualSense provider, keeping `/dev/uhid` out of client
+  applications while `uinput` remains the standard production path.
+
 - Phase 12 Windows and macOS HID provider foundations with planning-only
   inventories, deployment-requirement reporting, planner integration,
   cross-platform checks, and realization-roadmap READMEs.

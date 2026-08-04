@@ -23,6 +23,7 @@ members = [
     "crates/gr-host-bridge",
     "crates/gr-provider-linux-uinput",
     "crates/gr-provider-linux-uhid",
+    "crates/gr-provider-linux-uhid-broker",
     "crates/gr-provider-linux-transport",
     "crates/gr-provider-windows-hid",
     "crates/gr-provider-macos-hid",
@@ -65,12 +66,14 @@ pedantic = { level = "warn", priority = -1 }
 default = [
     "provider-linux-uinput",
     "provider-linux-uhid",
+    "provider-linux-uhid-broker",
     "provider-linux-transport",
     "provider-windows-hid",
     "provider-macos-hid",
 ]
 provider-linux-uinput = ["dep:gr-provider-linux-uinput"]
 provider-linux-uhid = ["dep:gr-provider-linux-uhid"]
+provider-linux-uhid-broker = ["dep:gr-provider-linux-uhid-broker"]
 provider-linux-transport = ["dep:gr-provider-linux-transport"]
 provider-windows-hid = ["dep:gr-provider-windows-hid"]
 provider-macos-hid = ["dep:gr-provider-macos-hid"]
@@ -80,6 +83,7 @@ gr-backend-api = { path = "crates/gr-backend-api", version = "0.1" }
 gr-core = { path = "crates/gr-core", version = "0.1" }
 gr-provider-linux-uinput = { path = "crates/gr-provider-linux-uinput", optional = true }
 gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", optional = true }
+gr-provider-linux-uhid-broker = { path = "crates/gr-provider-linux-uhid-broker", optional = true }
 gr-provider-linux-transport = { path = "crates/gr-provider-linux-transport", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]

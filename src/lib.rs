@@ -18,6 +18,12 @@ pub fn enabled_provider_features() -> Vec<&'static str> {
         features.push("provider-linux-uhid");
     }
     if cfg!(all(
+        feature = "provider-linux-uhid-broker",
+        target_os = "linux"
+    )) {
+        features.push("provider-linux-uhid-broker");
+    }
+    if cfg!(all(
         feature = "provider-linux-transport",
         target_os = "linux"
     )) {
@@ -37,6 +43,8 @@ pub fn enabled_provider_features() -> Vec<&'static str> {
 pub use gr_provider_linux_transport as provider_linux_transport;
 #[cfg(all(feature = "provider-linux-uhid", target_os = "linux"))]
 pub use gr_provider_linux_uhid as provider_linux_uhid;
+#[cfg(all(feature = "provider-linux-uhid-broker", target_os = "linux"))]
+pub use gr_provider_linux_uhid_broker as provider_linux_uhid_broker;
 #[cfg(all(feature = "provider-linux-uinput", target_os = "linux"))]
 pub use gr_provider_linux_uinput as provider_linux_uinput;
 #[cfg(all(feature = "provider-macos-hid", target_os = "macos"))]
@@ -75,6 +83,31 @@ pub fn linux_identity_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::Backe
     vec![
         std::sync::Arc::new(LinuxUinputBackendFactory::new()),
         std::sync::Arc::new(LinuxUhidBackendFactory::new()),
+    ]
+}
+
+/// Return a Linux identity-aware inventory whose UHID access is delegated to
+/// a separately managed constrained local broker.
+///
+/// `uinput` remains the default production target through
+/// [`linux_standard_backends`]. This opt-in inventory is only for profiles
+/// whose native HID identity is required. The caller must arrange access to
+/// the broker socket; it never needs direct access to `/dev/uhid`.
+#[cfg(all(
+    target_os = "linux",
+    feature = "provider-linux-uinput",
+    feature = "provider-linux-uhid-broker"
+))]
+#[must_use]
+pub fn linux_brokered_identity_backends(
+    endpoint: impl Into<std::path::PathBuf>,
+) -> Vec<std::sync::Arc<dyn gr_backend_api::BackendFactory>> {
+    use gr_provider_linux_uhid_broker::BrokeredLinuxUhidBackendFactory;
+    use gr_provider_linux_uinput::LinuxUinputBackendFactory;
+
+    vec![
+        std::sync::Arc::new(LinuxUinputBackendFactory::new()),
+        std::sync::Arc::new(BrokeredLinuxUhidBackendFactory::new(endpoint)),
     ]
 }
 
@@ -122,6 +155,13 @@ mod tests {
             cfg!(all(feature = "provider-linux-uhid", target_os = "linux"))
         );
         assert_eq!(
+            features.contains(&"provider-linux-uhid-broker"),
+            cfg!(all(
+                feature = "provider-linux-uhid-broker",
+                target_os = "linux"
+            ))
+        );
+        assert_eq!(
             features.contains(&"provider-linux-transport"),
             cfg!(all(
                 feature = "provider-linux-transport",
@@ -167,6 +207,17 @@ mod tests {
             identity[1].supported_fidelity_tiers,
             vec![FidelityTier::IdentityAware]
         );
+
+        #[cfg(feature = "provider-linux-uhid-broker")]
+        {
+            let brokered = super::linux_brokered_identity_backends("/run/virtualgamepad/uhid.sock")
+                .iter()
+                .map(|backend| backend.inventory_entry())
+                .collect::<Vec<_>>();
+            assert_eq!(brokered.len(), 2);
+            assert_eq!(brokered[1].backend_id.as_ref(), "linux-uhid-broker");
+            assert_eq!(brokered[1].level, BackendLevel::Hid);
+        }
 
         let transport = super::linux_transport_lab_backends();
         assert_eq!(transport.len(), 1);

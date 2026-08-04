@@ -13,6 +13,11 @@ physical hardware at varying accuracy levels.
 > and [docs/spec/](docs/spec/) for tracked changes and the buildout
 > spec. A companion [demo program](demo/) grows alongside the library.
 
+Linux `uinput` is the normal production path and does not require UHID. Native
+HID identity is an explicit higher-fidelity scope; see the
+[UHID broker decision](docs/decisions/uhid-broker.md) for its constrained,
+separately managed privilege boundary.
+
 ## Project goals
 
 - ship a Rust library for virtual controller emulation per the

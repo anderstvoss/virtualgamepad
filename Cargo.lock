@@ -415,6 +415,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gr-provider-linux-uhid-broker"
+version = "0.1.0"
+dependencies = [
+ "gr-backend-api",
+ "gr-core",
+ "gr-provider-linux-uhid",
+ "gr-runtime-model",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "gr-provider-linux-uinput"
 version = "0.1.0"
 dependencies = [
@@ -1084,6 +1097,7 @@ dependencies = [
  "gr-core",
  "gr-provider-linux-transport",
  "gr-provider-linux-uhid",
+ "gr-provider-linux-uhid-broker",
  "gr-provider-linux-uinput",
  "gr-provider-macos-hid",
  "gr-provider-windows-hid",
