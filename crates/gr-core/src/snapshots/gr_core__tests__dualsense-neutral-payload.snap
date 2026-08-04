@@ -43,3 +43,12 @@ fields:
       active: false
       x: 0
       y: 0
+  motion:
+    gyroscope:
+      x: 0
+      y: 0
+      z: 0
+    accelerometer:
+      x: 0
+      y: 0
+      z: 0

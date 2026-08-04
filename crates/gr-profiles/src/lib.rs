@@ -922,6 +922,12 @@ const DUALSENSE_REQUIRED_FIELDS: &[InputFieldRef] = &[
     InputFieldRef("touchpad.contact_2.active"),
     InputFieldRef("touchpad.contact_2.x"),
     InputFieldRef("touchpad.contact_2.y"),
+    InputFieldRef("motion.gyroscope.x"),
+    InputFieldRef("motion.gyroscope.y"),
+    InputFieldRef("motion.gyroscope.z"),
+    InputFieldRef("motion.accelerometer.x"),
+    InputFieldRef("motion.accelerometer.y"),
+    InputFieldRef("motion.accelerometer.z"),
 ];
 
 const DUALSENSE_RANGES: &[InputFieldRange] = &[
@@ -964,6 +970,30 @@ const DUALSENSE_RANGES: &[InputFieldRange] = &[
     InputFieldRange {
         field: InputFieldRef("touchpad.contact_2.y"),
         range: RANGE_TOUCH_Y,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.x"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.y"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.z"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.x"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.y"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.z"),
+        range: RANGE_STICK,
     },
 ];
 

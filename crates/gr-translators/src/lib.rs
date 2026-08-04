@@ -369,6 +369,7 @@ impl ForwardTranslator for DualSenseUsbHidTranslator {
             | bool_bit(payload.buttons.system.options, 5);
         out.bytes[9] = bool_bit(payload.buttons.system.ps, 0)
             | bool_bit(payload.buttons.system.touchpad_click, 1);
+        encode_dualsense_motion(&mut out.bytes, payload.motion);
         encode_dualsense_touch_contact(&mut out.bytes[32..36], payload.touchpad.contact_1, 0);
         encode_dualsense_touch_contact(&mut out.bytes[36..40], payload.touchpad.contact_2, 1);
         ensure_hid_report_shape("dualsense", &out.bytes, DUALSENSE_INPUT_REPORT_LEN)?;
@@ -1058,6 +1059,21 @@ fn encode_dualsense_touch_contact(
     bytes[3] = (y >> 4) as u8;
 }
 
+fn encode_dualsense_motion(bytes: &mut [u8], motion: gr_core::DualSenseMotion) {
+    // The 64-byte USB input report carries raw little-endian gyro samples at
+    // payload bytes 15..21, followed by accelerometer samples at 21..27.
+    for (offset, value) in [
+        (15, motion.gyroscope.x),
+        (17, motion.gyroscope.y),
+        (19, motion.gyroscope.z),
+        (21, motion.accelerometer.x),
+        (23, motion.accelerometer.y),
+        (25, motion.accelerometer.z),
+    ] {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+}
+
 fn ensure_hid_report_shape(
     profile_family: &str,
     bytes: &[u8],
@@ -1441,6 +1457,18 @@ mod tests {
                     },
                     contact_2: gr_core::DualSenseTouchContact::neutral(),
                 },
+                motion: gr_core::DualSenseMotion {
+                    gyroscope: gr_core::MotionAxes {
+                        x: 0x1234,
+                        y: -2,
+                        z: 7,
+                    },
+                    accelerometer: gr_core::MotionAxes {
+                        x: -3,
+                        y: 4,
+                        z: i16::MIN,
+                    },
+                },
             }),
         };
         let mut scratch = TranslationScratch::new();
@@ -1456,6 +1484,8 @@ mod tests {
         assert_eq!(bytes[8] & 0x01, 0x01);
         assert_eq!(bytes[9] & 0x02, 0x02);
         assert_eq!(bytes[32] & 0x80, 0x00);
+        assert_eq!(&bytes[15..21], &[0x34, 0x12, 0xfe, 0xff, 0x07, 0x00]);
+        assert_eq!(&bytes[21..27], &[0xfd, 0xff, 0x04, 0x00, 0x00, 0x80]);
     }
 
     #[test]

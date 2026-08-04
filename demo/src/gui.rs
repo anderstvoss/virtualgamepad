@@ -381,9 +381,6 @@ mod linux {
                                 ui.monospace(format!("{:?}", plan.selected_translator_family));
                                 ui.end_row();
                             });
-                        if plan.profile_id.0 == "dualsense" {
-                            ui.small("Motion input is advertised by the profile, but the current ProfileInputPayload has no accelerometer or gyroscope fields; the debugger cannot emit motion values yet.");
-                        }
                         ui.separator();
                         if let Some(status) =
                             self.manager.session_status(controller.handle.session_id())
@@ -520,6 +517,7 @@ mod linux {
                     })
                     .inner
                 });
+                changed |= motion_group(ui, &mut input.motion);
             }
             ProfileInputPayload::SteamController(input) => {
                 changed |= control_group(ui, "Face buttons", |ui| {
@@ -625,6 +623,29 @@ mod linux {
     fn triggers_group(ui: &mut egui::Ui, left: &mut u16, right: &mut u16) -> bool {
         control_group(ui, "Triggers", |ui| triggers(ui, left, right))
     }
+
+    fn motion_group(ui: &mut egui::Ui, motion: &mut gr_core::DualSenseMotion) -> bool {
+        control_group(ui, "Motion sensors (raw)", |ui| {
+            ui.small(
+                "Hold and drag to emit raw signed samples; every axis returns to zero on release.",
+            );
+            ui.horizontal_wrapped(|ui| {
+                motion_axes(ui, "Gyroscope", &mut motion.gyroscope)
+                    | motion_axes(ui, "Accelerometer", &mut motion.accelerometer)
+            })
+            .inner
+        })
+    }
+
+    fn motion_axes(ui: &mut egui::Ui, label: &str, axes: &mut gr_core::MotionAxes) -> bool {
+        ui.vertical(|ui| {
+            ui.strong(label);
+            let mut changed = axis_pad(ui, "X / Y", &mut axes.x, &mut axes.y);
+            changed |= momentary_signed_axis(ui, "Z", &mut axes.z);
+            changed
+        })
+        .inner
+    }
     fn triggers(ui: &mut egui::Ui, left: &mut u16, right: &mut u16) -> bool {
         momentary_trigger(ui, "Left trigger", left) | momentary_trigger(ui, "Right trigger", right)
     }
@@ -633,6 +654,16 @@ mod linux {
         let mut changed = response.changed();
         if response.drag_stopped() || response.clicked() {
             changed |= reset_trigger(value);
+        }
+        ui.monospace(format!("{label}: {value}"));
+        changed
+    }
+
+    fn momentary_signed_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
+        let response = ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label));
+        let mut changed = response.changed();
+        if response.drag_stopped() || response.clicked() {
+            changed |= reset_signed_axis(value);
         }
         ui.monospace(format!("{label}: {value}"));
         changed
@@ -736,6 +767,12 @@ mod linux {
     }
 
     fn reset_trigger(value: &mut u16) -> bool {
+        let changed = *value != 0;
+        *value = 0;
+        changed
+    }
+
+    fn reset_signed_axis(value: &mut i16) -> bool {
         let changed = *value != 0;
         *value = 0;
         changed
@@ -861,6 +898,11 @@ mod linux {
             assert!(reset_trigger(&mut trigger));
             assert_eq!(trigger, 0);
             assert!(!reset_trigger(&mut trigger));
+
+            let mut signed_axis = i16::MIN;
+            assert!(reset_signed_axis(&mut signed_axis));
+            assert_eq!(signed_axis, 0);
+            assert!(!reset_signed_axis(&mut signed_axis));
 
             let mut contact = gr_core::DualSenseTouchContact {
                 active: true,
