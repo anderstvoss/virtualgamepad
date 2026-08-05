@@ -317,13 +317,16 @@ const DUALSENSE_USB_DESCRIPTOR: DescriptorBytes = DescriptorBytes(&[
     0x85, 0xf4, 0x09, 0x35, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf5, 0x09, 0x36, 0x95, 0x03, 0xb1, 0x02,
     0xc0,
 ]);
+// Report 1 carries the gamepad surface followed by six signed, vendor-defined
+// raw motion samples (gyro X/Y/Z then accelerometer X/Y/Z).
 const STEAM_CONTROLLER_DESCRIPTOR: DescriptorBytes = DescriptorBytes(&[
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x05, 0x09, 0x19, 0x01, 0x29, 0x0e, 0x15, 0x00,
     0x25, 0x01, 0x75, 0x01, 0x95, 0x0e, 0x81, 0x02, 0x75, 0x02, 0x95, 0x01, 0x81, 0x01, 0x16, 0x00,
     0x80, 0x26, 0xff, 0x7f, 0x36, 0x00, 0x80, 0x46, 0xff, 0x7f, 0x75, 0x10, 0x95, 0x06, 0x05, 0x01,
     0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35, 0x09, 0x33, 0x09, 0x34, 0x81, 0x02, 0x15, 0x00,
     0x26, 0xff, 0xff, 0x75, 0x10, 0x95, 0x02, 0x05, 0x02, 0x09, 0xc5, 0x09, 0xc4, 0x81, 0x02, 0x85,
-    0x02, 0x06, 0x00, 0xff, 0x09, 0x23, 0x75, 0x08, 0x95, 0x08, 0x91, 0x02, 0xc0,
+    0x01, 0x06, 0x00, 0xff, 0x09, 0x24, 0x75, 0x10, 0x95, 0x06, 0x81, 0x02, 0x85, 0x02, 0x06, 0x00,
+    0xff, 0x09, 0x23, 0x75, 0x08, 0x95, 0x08, 0x91, 0x02, 0xc0,
 ]);
 // Each `*_DESCRIPTORS_ALL` const reuses the same descriptor bytes
 // across all three fidelity tiers because a device's HID descriptor
@@ -760,6 +763,18 @@ const STEAM_CONTROLLER_INPUT_CAPABILITIES: &[CapabilityItem] = &[
         Some(RANGE_STICK),
     ),
     cap_input(
+        CapabilityCategory::MotionSensor,
+        SemanticInputFunction::Accelerometer,
+        Optionality::Optional,
+        None,
+    ),
+    cap_input(
+        CapabilityCategory::MotionSensor,
+        SemanticInputFunction::Gyroscope,
+        Optionality::Optional,
+        None,
+    ),
+    cap_input(
         CapabilityCategory::Trigger,
         SemanticInputFunction::LeftTrigger,
         Optionality::Required,
@@ -1020,6 +1035,12 @@ const STEAM_CONTROLLER_REQUIRED_FIELDS: &[InputFieldRef] = &[
     InputFieldRef("sticks.left_stick_y"),
     InputFieldRef("triggers.lt"),
     InputFieldRef("triggers.rt"),
+    InputFieldRef("motion.gyroscope.x"),
+    InputFieldRef("motion.gyroscope.y"),
+    InputFieldRef("motion.gyroscope.z"),
+    InputFieldRef("motion.accelerometer.x"),
+    InputFieldRef("motion.accelerometer.y"),
+    InputFieldRef("motion.accelerometer.z"),
 ];
 
 const STEAM_CONTROLLER_RANGES: &[InputFieldRange] = &[
@@ -1054,6 +1075,30 @@ const STEAM_CONTROLLER_RANGES: &[InputFieldRange] = &[
     InputFieldRange {
         field: InputFieldRef("triggers.rt"),
         range: RANGE_TRIGGER,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.x"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.y"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.gyroscope.z"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.x"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.y"),
+        range: RANGE_STICK,
+    },
+    InputFieldRange {
+        field: InputFieldRef("motion.accelerometer.z"),
+        range: RANGE_STICK,
     },
 ];
 

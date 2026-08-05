@@ -529,12 +529,8 @@ mod linux {
                 changed |= dpad_group(ui, &mut input.dpad);
                 changed |= sticks_group(ui, &mut input.sticks);
                 changed |= triggers_group(ui, &mut input.triggers.l2, &mut input.triggers.r2);
-                changed |= control_group(ui, "Touch contacts", |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        touch_pad(ui, "Contact 1", &mut input.touchpad.contact_1)
-                            | touch_pad(ui, "Contact 2", &mut input.touchpad.contact_2)
-                    })
-                    .inner
+                changed |= control_group(ui, "Touchpad", |ui| {
+                    dualsense_touchpad(ui, &mut input.touchpad)
                 });
                 changed |= motion_group(ui, &mut input.motion);
             }
@@ -587,6 +583,7 @@ mod linux {
                     .inner
                 });
                 changed |= triggers_group(ui, &mut input.triggers.lt, &mut input.triggers.rt);
+                changed |= motion_group(ui, &mut input.motion);
             }
             _ => {
                 ui.label("This profile is not available in the local debugger.");
@@ -659,9 +656,12 @@ mod linux {
     fn motion_axes(ui: &mut egui::Ui, label: &str, axes: &mut gr_core::MotionAxes) -> bool {
         ui.vertical(|ui| {
             ui.strong(label);
-            let mut changed = axis_pad(ui, "X / Y", &mut axes.x, &mut axes.y);
-            changed |= momentary_signed_axis(ui, "Z", &mut axes.z);
-            changed
+            ui.horizontal_wrapped(|ui| {
+                momentary_signed_axis(ui, "X", &mut axes.x)
+                    | momentary_signed_axis(ui, "Y", &mut axes.y)
+                    | momentary_signed_axis(ui, "Z", &mut axes.z)
+            })
+            .inner
         })
         .inner
     }
@@ -688,13 +688,9 @@ mod linux {
         changed
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    fn touch_pad(
-        ui: &mut egui::Ui,
-        label: &str,
-        contact: &mut gr_core::DualSenseTouchContact,
-    ) -> bool {
+    fn dualsense_touchpad(ui: &mut egui::Ui, touchpad: &mut gr_core::DualSenseTouchpad) -> bool {
         ui.vertical(|ui| {
-            ui.label(label);
+            ui.small("One physical touchpad. Mouse input controls finger 1; finger 2 is available below for multi-touch tests.");
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(180.0, 100.0), Sense::click_and_drag());
             ui.painter().rect_stroke(
@@ -714,34 +710,58 @@ mod linux {
                         * f32::from(gr_core::DualSenseTouchpad::HEIGHT))
                     .clamp(0.0, f32::from(gr_core::DualSenseTouchpad::HEIGHT))
                         as u16;
+                    let contact = &mut touchpad.contact_1;
                     changed = !contact.active || contact.x != x || contact.y != y;
                     contact.active = true;
                     contact.x = x;
                     contact.y = y;
                 }
             } else if response.drag_stopped() || response.clicked() {
-                changed |= release_touch(contact);
+                changed |= release_touch(&mut touchpad.contact_1);
             }
-            if contact.active {
-                let x = rect.left()
-                    + f32::from(contact.x) / f32::from(gr_core::DualSenseTouchpad::WIDTH)
-                        * rect.width();
-                let y = rect.top()
-                    + f32::from(contact.y) / f32::from(gr_core::DualSenseTouchpad::HEIGHT)
-                        * rect.height();
-                ui.painter()
-                    .circle_filled(Pos2::new(x, y), 5.0, Color32::LIGHT_BLUE);
-            }
-            ui.small(format!(
-                "{} • x={} y={}",
+            for (contact, color) in [
+                (&touchpad.contact_1, Color32::LIGHT_BLUE),
+                (&touchpad.contact_2, Color32::LIGHT_GREEN),
+            ] {
                 if contact.active {
-                    "touching"
-                } else {
-                    "released"
-                },
-                contact.x,
-                contact.y
-            ));
+                    let x = rect.left()
+                        + f32::from(contact.x) / f32::from(gr_core::DualSenseTouchpad::WIDTH)
+                            * rect.width();
+                    let y = rect.top()
+                        + f32::from(contact.y) / f32::from(gr_core::DualSenseTouchpad::HEIGHT)
+                            * rect.height();
+                    ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
+                }
+            }
+            ui.small(format!("Finger 1: {} • x={} y={}", if touchpad.contact_1.active { "touching" } else { "released" }, touchpad.contact_1.x, touchpad.contact_1.y));
+            changed |= second_touch_contact(ui, &mut touchpad.contact_2);
+            changed
+        })
+        .inner
+    }
+
+    fn second_touch_contact(
+        ui: &mut egui::Ui,
+        contact: &mut gr_core::DualSenseTouchContact,
+    ) -> bool {
+        ui.horizontal(|ui| {
+            let mut changed = ui
+                .checkbox(&mut contact.active, "Finger 2 active")
+                .changed();
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut contact.x)
+                        .range(0..=gr_core::DualSenseTouchpad::WIDTH)
+                        .prefix("x "),
+                )
+                .changed();
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut contact.y)
+                        .range(0..=gr_core::DualSenseTouchpad::HEIGHT)
+                        .prefix("y "),
+                )
+                .changed();
             changed
         })
         .inner

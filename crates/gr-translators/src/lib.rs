@@ -494,6 +494,18 @@ impl ForwardTranslator for SteamControllerHidTranslator {
         out.bytes[cursor..cursor + 2].copy_from_slice(&payload.triggers.lt.to_le_bytes());
         cursor += 2;
         out.bytes[cursor..cursor + 2].copy_from_slice(&payload.triggers.rt.to_le_bytes());
+        cursor += 2;
+        for value in [
+            payload.motion.gyroscope.x,
+            payload.motion.gyroscope.y,
+            payload.motion.gyroscope.z,
+            payload.motion.accelerometer.x,
+            payload.motion.accelerometer.y,
+            payload.motion.accelerometer.z,
+        ] {
+            out.bytes[cursor..cursor + 2].copy_from_slice(&value.to_le_bytes());
+            cursor += 2;
+        }
         ensure_hid_report_shape(
             "steam-controller",
             &out.bytes,
@@ -874,7 +886,7 @@ const DUALSENSE_USB_TRANSPORT_ENDPOINT: u8 = 0x01;
 const DUALSENSE_BLUETOOTH_TRANSPORT_ENDPOINT: u8 = 0x11;
 const XBOX360_USB_TRANSPORT_ENDPOINT: u8 = 0x01;
 const STEAM_CONTROLLER_INPUT_REPORT_ID: u8 = 0x01;
-const STEAM_CONTROLLER_INPUT_REPORT_LEN: usize = 18;
+const STEAM_CONTROLLER_INPUT_REPORT_LEN: usize = 30;
 
 #[derive(Debug)]
 struct Xbox360UsbTransportTranslator;
@@ -1646,6 +1658,18 @@ mod tests {
                     left_stick_y: -66,
                 },
                 triggers: gr_core::SteamControllerTriggers { lt: 77, rt: 88 },
+                motion: gr_core::SteamControllerMotion {
+                    gyroscope: gr_core::MotionAxes {
+                        x: 101,
+                        y: -202,
+                        z: 303,
+                    },
+                    accelerometer: gr_core::MotionAxes {
+                        x: -404,
+                        y: 505,
+                        z: -606,
+                    },
+                },
             }),
         };
         let mut scratch = TranslationScratch::new();
@@ -1661,6 +1685,8 @@ mod tests {
         assert_eq!(i16::from_le_bytes([bytes[2], bytes[3]]), 11);
         assert_eq!(u16::from_le_bytes([bytes[14], bytes[15]]), 77);
         assert_eq!(u16::from_le_bytes([bytes[16], bytes[17]]), 88);
+        assert_eq!(i16::from_le_bytes([bytes[18], bytes[19]]), 101);
+        assert_eq!(i16::from_le_bytes([bytes[28], bytes[29]]), -606);
     }
 
     #[test]
