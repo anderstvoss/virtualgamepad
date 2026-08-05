@@ -656,12 +656,9 @@ mod linux {
     fn motion_axes(ui: &mut egui::Ui, label: &str, axes: &mut gr_core::MotionAxes) -> bool {
         ui.vertical(|ui| {
             ui.strong(label);
-            ui.horizontal_wrapped(|ui| {
-                momentary_signed_axis(ui, "X", &mut axes.x)
-                    | momentary_signed_axis(ui, "Y", &mut axes.y)
-                    | momentary_signed_axis(ui, "Z", &mut axes.z)
-            })
-            .inner
+            momentary_signed_axis(ui, "X", &mut axes.x)
+                | momentary_signed_axis(ui, "Y", &mut axes.y)
+                | momentary_signed_axis(ui, "Z", &mut axes.z)
         })
         .inner
     }
