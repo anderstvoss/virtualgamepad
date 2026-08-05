@@ -26,6 +26,24 @@ It is optimized for local debugging: controls send full input frames immediately
 session diagnostics stay visible, and long profile-specific control surfaces
 remain scrollable.
 
+## Capability-driven GUI boundary
+
+The GUI discovers profiles from the library registry and selects a typed editor
+for the built-in Generic Gamepad, Xbox 360, DualSense, and Steam Controller
+families. A future registered family remains visible, but receives a
+capability-and-range fallback rather than invented input controls. This keeps
+session management and diagnostics independent of profile-editor work.
+
+Likewise, the provider catalog distinguishes runnable Linux inventories from
+planning-only paths. Only the selected local Linux inventory can create a
+session. Windows, macOS, and the future brokered UHID path are intentionally
+disabled cards on Linux; showing them records their requirements without
+claiming host support or attempting privilege escalation. The accepted session
+plan and policy are read-only source-of-truth diagnostics. Future policy,
+transport, accessory, trace/replay, and configuration-file controls have
+reserved locations, but are not implemented until corresponding library
+runtime contracts exist.
+
 ## Non-goals
 
 - The demo is **not** a reusable component. Hosts embedding the library should not depend on `virtual_gamepad_demo`.

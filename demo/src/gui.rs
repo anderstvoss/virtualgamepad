@@ -14,34 +14,28 @@ mod linux {
     use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
     use gr_backend_api::BackendFactory;
     use gr_core::{
-        FidelityTier, ProfileId, ProfileInputFrame, ProfileInputPayload, SequenceId, SessionId,
-        Timestamp, TwinStickAxes,
+        BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, ProfileInputPayload, SequenceId,
+        SessionId, Timestamp, TwinStickAxes,
     };
     use gr_host_bridge::CallbackSink;
     use gr_planner::plan_session;
-    use gr_profiles::registry;
+    use gr_profiles::{ControllerProfile, ProfileFamily, SemanticRef, registry};
     use gr_runtime_model::{EmulationGoal, HostPlatform, SessionHostMetadata, SessionRequest};
     use gr_session::{
         ManagerConfig, SessionOutputSubscription, VirtualControllerManager,
         VirtualControllerSessionHandle,
     };
 
-    const PROFILES: [&str; 4] = [
-        "generic-gamepad",
-        "xbox360",
-        "dualsense",
-        "steam-controller",
-    ];
     const OUTPUT_LOG_LIMIT: usize = 100;
 
     #[derive(Clone, Copy, PartialEq, Eq)]
-    enum ProviderMode {
+    enum ProviderScope {
         Standard,
         IdentityAware,
         TransportLab,
     }
 
-    impl ProviderMode {
+    impl ProviderScope {
         const ALL: [Self; 3] = [Self::Standard, Self::IdentityAware, Self::TransportLab];
 
         const fn label(self) -> &'static str {
@@ -61,6 +55,110 @@ mod linux {
         }
     }
 
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ProviderAvailability {
+        Available,
+        Planned,
+    }
+
+    struct ProviderCatalogEntry {
+        scope: Option<ProviderScope>,
+        label: &'static str,
+        availability: ProviderAvailability,
+        detail: &'static str,
+    }
+
+    fn provider_catalog() -> [ProviderCatalogEntry; 6] {
+        [
+            ProviderCatalogEntry {
+                scope: Some(ProviderScope::Standard),
+                label: "Linux standard — uinput",
+                availability: ProviderAvailability::Available,
+                detail: "Production default; requires only /dev/uinput access.",
+            },
+            ProviderCatalogEntry {
+                scope: Some(ProviderScope::IdentityAware),
+                label: "Linux identity-aware — UHID",
+                availability: ProviderAvailability::Available,
+                detail: "Native HID identity; requires /dev/uhid access or a future broker endpoint.",
+            },
+            ProviderCatalogEntry {
+                scope: None,
+                label: "Linux identity-aware — UHID broker",
+                availability: ProviderAvailability::Planned,
+                detail: "Reserved for a brokered, identity-aware path; it is not part of this demo's local inventory yet.",
+            },
+            ProviderCatalogEntry {
+                scope: Some(ProviderScope::TransportLab),
+                label: "Linux transport lab — USB gadget",
+                availability: ProviderAvailability::Available,
+                detail: "Hardware-faithful lab path; requires a prepared gadget host and permits one active session.",
+            },
+            ProviderCatalogEntry {
+                scope: None,
+                label: "Windows HID provider",
+                availability: ProviderAvailability::Planned,
+                detail: "Planning foundation exists; the Linux-local GUI cannot create Windows sessions.",
+            },
+            ProviderCatalogEntry {
+                scope: None,
+                label: "macOS HID provider",
+                availability: ProviderAvailability::Planned,
+                detail: "Planning foundation exists; the Linux-local GUI cannot create macOS sessions.",
+            },
+        ]
+    }
+
+    #[derive(Clone)]
+    struct SessionDraft {
+        profile_id: ProfileId,
+        requested_tier: FidelityTier,
+        host_platform: HostPlatform,
+        backend_preference: Option<BackendLevel>,
+        provider_preference: Option<gr_runtime_model::ProviderId>,
+        input: ProfileInputPayload,
+    }
+
+    impl Default for SessionDraft {
+        fn default() -> Self {
+            let profile_id = registry().profiles()[0].profile_id.clone();
+            Self {
+                input: ProfileInputPayload::neutral_for_profile_id(&profile_id)
+                    .expect("built-in registry profile has a neutral payload"),
+                profile_id,
+                requested_tier: FidelityTier::Compatibility,
+                host_platform: HostPlatform::Linux,
+                backend_preference: None,
+                provider_preference: None,
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ProfileUiAdapter {
+        GenericGamepad,
+        Xbox360,
+        DualSense,
+        SteamController,
+        Fallback,
+    }
+
+    impl ProfileUiAdapter {
+        fn for_profile(profile: &ControllerProfile) -> Self {
+            match profile.profile_family {
+                ProfileFamily::GenericGamepad => Self::GenericGamepad,
+                ProfileFamily::Xbox360 => Self::Xbox360,
+                ProfileFamily::DualSense => Self::DualSense,
+                ProfileFamily::SteamController => Self::SteamController,
+                _ => Self::Fallback,
+            }
+        }
+
+        const fn has_typed_editor(self) -> bool {
+            !matches!(self, Self::Fallback)
+        }
+    }
+
     pub fn run() -> Result<(), String> {
         let options = eframe::NativeOptions::default();
         eframe::run_native(
@@ -75,9 +173,8 @@ mod linux {
         manager: VirtualControllerManager,
         config: ManagerConfig,
         backends: Vec<Arc<dyn BackendFactory>>,
-        provider_mode: ProviderMode,
-        draft_profile: usize,
-        draft_tier: FidelityTier,
+        provider_scope: ProviderScope,
+        draft: SessionDraft,
         next_session_id: u64,
         controllers: Vec<Controller>,
         selected: Option<usize>,
@@ -97,17 +194,16 @@ mod linux {
     impl DebugApp {
         fn new() -> Self {
             let config = ManagerConfig::default();
-            let provider_mode = ProviderMode::Standard;
-            let backends = provider_mode.backends();
+            let provider_scope = ProviderScope::Standard;
+            let backends = provider_scope.backends();
             let manager = VirtualControllerManager::with_backends(config.clone(), backends.clone())
                 .expect("the local provider inventory is non-empty");
             Self {
                 manager,
                 config,
                 backends,
-                provider_mode,
-                draft_profile: 0,
-                draft_tier: FidelityTier::Compatibility,
+                provider_scope,
+                draft: SessionDraft::default(),
                 next_session_id: 1,
                 controllers: Vec::new(),
                 selected: None,
@@ -115,34 +211,47 @@ mod linux {
             }
         }
 
-        fn set_provider_mode(&mut self, mode: ProviderMode) {
-            if mode == self.provider_mode || !self.controllers.is_empty() {
+        fn set_provider_scope(&mut self, scope: ProviderScope) {
+            if scope == self.provider_scope || !self.controllers.is_empty() {
                 return;
             }
-            let backends = mode.backends();
+            let backends = scope.backends();
             self.manager =
                 VirtualControllerManager::with_backends(self.config.clone(), backends.clone())
                     .expect("the selected local provider inventory is non-empty");
             self.backends = backends;
-            self.provider_mode = mode;
+            self.provider_scope = scope;
             self.create_error = None;
         }
 
         fn request(&self, session_id: u64) -> SessionRequest {
-            let profile_id = ProfileId::from(PROFILES[self.draft_profile]);
             SessionRequest {
                 session_id: SessionId::new(session_id),
-                profile_id,
-                goal: EmulationGoal::from(self.draft_tier),
-                requested_fidelity_tier: self.draft_tier,
-                host_platform_preference: Some(HostPlatform::Linux),
-                backend_preference: None,
-                provider_preference: None,
+                profile_id: self.draft.profile_id.clone(),
+                goal: EmulationGoal::from(self.draft.requested_tier),
+                requested_fidelity_tier: self.draft.requested_tier,
+                host_platform_preference: Some(self.draft.host_platform),
+                backend_preference: self.draft.backend_preference,
+                provider_preference: self.draft.provider_preference.clone(),
                 host_metadata: SessionHostMetadata::default(),
             }
         }
 
+        fn ensure_draft_input_matches_profile(&mut self) {
+            if self
+                .draft
+                .input
+                .validate_profile_id(&self.draft.profile_id)
+                .is_err()
+            {
+                self.draft.input =
+                    ProfileInputPayload::neutral_for_profile_id(&self.draft.profile_id)
+                        .expect("registered profile has a neutral payload");
+            }
+        }
+
         fn create_controller(&mut self) {
+            self.ensure_draft_input_matches_profile();
             let request = self.request(self.next_session_id);
             match self.manager.create_session(request.clone()) {
                 Ok(handle) => {
@@ -165,9 +274,8 @@ mod linux {
                         }
                     };
                     self.controllers.push(Controller {
-                        requested_tier: self.draft_tier,
-                        input: ProfileInputPayload::neutral_for_profile_id(&request.profile_id)
-                            .expect("built-in selected profile"),
+                        requested_tier: self.draft.requested_tier,
+                        input: self.draft.input.clone(),
                         handle,
                         sequence: 0,
                         last_error: None,
@@ -206,58 +314,87 @@ mod linux {
         fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
             egui::SidePanel::left("controllers").show(ctx, |ui| {
                 ui.heading("Create controller");
-                let mut provider_mode = self.provider_mode;
+                let mut provider_scope = self.provider_scope;
                 ui.add_enabled_ui(self.controllers.is_empty(), |ui| {
                     egui::ComboBox::from_label("Provider scope")
-                        .selected_text(provider_mode.label())
+                        .selected_text(provider_scope.label())
                         .show_ui(ui, |ui| {
-                            for mode in ProviderMode::ALL {
-                                ui.selectable_value(&mut provider_mode, mode, mode.label());
+                            for scope in ProviderScope::ALL {
+                                ui.selectable_value(&mut provider_scope, scope, scope.label());
                             }
                         });
                 });
-                self.set_provider_mode(provider_mode);
+                self.set_provider_scope(provider_scope);
                 if !self.controllers.is_empty() {
                     ui.small("Remove all controllers to change provider scope.");
                 }
-                match self.provider_mode {
-                    ProviderMode::Standard => ui.small("Standard mode needs only /dev/uinput access."),
-                    ProviderMode::IdentityAware => ui.small("Identity-aware mode additionally needs /dev/uhid access."),
-                    ProviderMode::TransportLab => ui.small("Transport lab mode requires a prepared USB gadget host; create only one controller."),
-                };
+                ui.collapsing("Provider catalog", |ui| {
+                    for entry in provider_catalog() {
+                        let selected = entry.scope == Some(self.provider_scope);
+                        let availability = match entry.availability {
+                            ProviderAvailability::Available => "available",
+                            ProviderAvailability::Planned => "planning only",
+                        };
+                        ui.group(|ui| {
+                            ui.strong(format!("{} — {availability}", entry.label));
+                            ui.small(entry.detail);
+                            if let Some(scope) = entry.scope {
+                                let inventory = scope
+                                    .backends()
+                                    .iter()
+                                    .map(|backend| {
+                                        let item = backend.inventory_entry();
+                                        format!("{} ({:?})", item.backend_id.0, item.level)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                ui.small(format!("Compiled inventory: {inventory}"));
+                            }
+                            if selected {
+                                ui.colored_label(Color32::LIGHT_GREEN, "Selected inventory");
+                            }
+                        });
+                    }
+                });
                 egui::ComboBox::from_label("Type")
-                    .selected_text(PROFILES[self.draft_profile])
+                    .selected_text(self.draft.profile_id.as_ref())
                     .show_ui(ui, |ui| {
-                        for (index, profile) in PROFILES.iter().enumerate() {
-                            ui.selectable_value(&mut self.draft_profile, index, *profile);
+                        for profile in registry().profiles() {
+                            ui.selectable_value(
+                                &mut self.draft.profile_id,
+                                profile.profile_id.clone(),
+                                profile.display_name,
+                            );
                         }
                     });
                 let profile = registry()
-                    .profile_by_str(PROFILES[self.draft_profile])
+                    .profile(self.draft.profile_id.clone())
                     .expect("profile");
-                if !profile.supported_fidelity.contains(&self.draft_tier) {
-                    self.draft_tier = profile.supported_fidelity[0];
+                self.ensure_draft_input_matches_profile();
+                if !profile.supported_fidelity.contains(&self.draft.requested_tier) {
+                    self.draft.requested_tier = profile.supported_fidelity[0];
                 }
                 if profile.profile_id.as_ref() == "dualsense"
-                    && self.provider_mode == ProviderMode::IdentityAware
-                    && self.draft_tier == FidelityTier::Compatibility
+                    && self.provider_scope == ProviderScope::IdentityAware
+                    && self.draft.requested_tier == FidelityTier::Compatibility
                 {
-                    self.draft_tier = FidelityTier::IdentityAware;
+                    self.draft.requested_tier = FidelityTier::IdentityAware;
                 }
                 if profile.profile_id.as_ref() == "dualsense"
-                    && self.provider_mode == ProviderMode::Standard
+                    && self.provider_scope == ProviderScope::Standard
                 {
                     ui.small("Compatibility mode creates a conventional evdev gamepad; select identity-aware scope for native DualSense HID, touch, and motion realization.");
                 }
                 egui::ComboBox::from_label("Accuracy")
-                    .selected_text(self.draft_tier.to_string())
+                    .selected_text(self.draft.requested_tier.to_string())
                     .show_ui(ui, |ui| {
                         for tier in FidelityTier::ALL {
                             ui.add_enabled_ui(profile.supported_fidelity.contains(&tier), |ui| {
-                                ui.selectable_value(&mut self.draft_tier, tier, tier.to_string());
+                                ui.selectable_value(&mut self.draft.requested_tier, tier, tier.to_string());
                             });
                         }
                     });
+                draw_capability_summary(ui, profile, ProfileUiAdapter::for_profile(profile));
                 let request = self.request(self.next_session_id);
                 let inventory = self
                     .backends
@@ -270,7 +407,7 @@ mod linux {
                     &inventory,
                     &self.backends,
                 );
-                let transport_busy = self.provider_mode == ProviderMode::TransportLab
+                let transport_busy = self.provider_scope == ProviderScope::TransportLab
                     && !self.controllers.is_empty();
                 match &preview {
                     Ok(plan) => {
@@ -355,7 +492,10 @@ mod linux {
                         controller.last_error = None;
                         changed = true;
                     }
-                    changed |= draw_payload(ui, &mut controller.input);
+                    let profile = registry()
+                        .profile(plan.profile_id.clone())
+                        .expect("built-in selected profile");
+                    changed |= draw_profile_payload(ui, profile, &mut controller.input);
                     if changed || ui.button("Send current frame").clicked() {
                         controller.sequence += 1;
                         let frame = ProfileInputFrame {
@@ -420,6 +560,45 @@ mod linux {
                                 }
                             });
                     });
+                    ui.collapsing("Accepted plan and policy", |ui| {
+                        ui.small("Read-only session policy. Future GUI revisions can edit this draft before creation.");
+                        ui.monospace(format!(
+                            "goal={:?} requested={} effective={} provider={} backend={:?}",
+                            plan.requested_goal,
+                            plan.requested_fidelity_tier,
+                            plan.selected_level,
+                            plan.selected_provider_id.0,
+                            plan.selected_backend_family,
+                        ));
+                        ui.label(format!(
+                            "updates={:?} • range policy={} • unsupported capability policy={}",
+                            plan.session_options.accepted_update_kinds,
+                            plan.session_options.range_validation_policy,
+                            plan.session_options.unsupported_capability_policy,
+                        ));
+                        ui.label(format!("delivery={:?}", plan.session_options.delivery_policy));
+                        for capability in &plan.capability_result.enabled_capabilities {
+                            ui.small(format!("enabled: {capability}"));
+                        }
+                        for capability in &plan.capability_result.unsupported_capabilities {
+                            ui.colored_label(Color32::YELLOW, format!("unavailable: {capability}"));
+                        }
+                        for reason in &plan.degradation.reasons {
+                            ui.colored_label(Color32::YELLOW, format!("degradation: {reason:?}"));
+                        }
+                        for requirement in &plan.deployment_requirements.requirements {
+                            ui.colored_label(Color32::YELLOW, format!("host requirement: {requirement}"));
+                        }
+                    });
+                    ui.collapsing("Future hardware and accessory surfaces", |ui| {
+                        ui.add_enabled_ui(false, |ui| {
+                            let mut unavailable = false;
+                            ui.checkbox(&mut unavailable, "Transport handshake and endpoint state");
+                            ui.checkbox(&mut unavailable, "Attached accessories and expansion ports");
+                            ui.checkbox(&mut unavailable, "Trace/replay and configuration-file actions");
+                        });
+                        ui.small("These remain unavailable until the library exposes the corresponding runtime contracts.");
+                    });
                     ui.collapsing("Reverse commands", |ui| {
                         let log = controller.output_log.lock().expect("output log");
                         if log.is_empty() {
@@ -434,11 +613,80 @@ mod linux {
         }
     }
 
+    fn draw_profile_payload(
+        ui: &mut egui::Ui,
+        profile: &ControllerProfile,
+        payload: &mut ProfileInputPayload,
+    ) -> bool {
+        let adapter = ProfileUiAdapter::for_profile(profile);
+        if !adapter.has_typed_editor() {
+            draw_fallback_profile_surface(ui, profile);
+            return false;
+        }
+        draw_typed_payload(ui, adapter, payload)
+    }
+
+    fn draw_capability_summary(
+        ui: &mut egui::Ui,
+        profile: &ControllerProfile,
+        adapter: ProfileUiAdapter,
+    ) {
+        ui.collapsing("Profile capabilities", |ui| {
+            let input_count = profile
+                .capabilities
+                .input
+                .iter()
+                .filter(|capability| matches!(capability.semantic, SemanticRef::Input(_)))
+                .count();
+            let output_count = profile
+                .capabilities
+                .output
+                .iter()
+                .filter(|capability| matches!(capability.semantic, SemanticRef::Output(_)))
+                .count();
+            ui.label(format!(
+                "{input_count} input capabilities • {output_count} output capabilities"
+            ));
+            ui.small(format!(
+                "Editor: {}",
+                if adapter.has_typed_editor() {
+                    "typed"
+                } else {
+                    "fallback"
+                }
+            ));
+            for capability in profile.capabilities.input {
+                ui.small(format!(
+                    "input: {:?} ({:?})",
+                    capability.semantic, capability.optionality
+                ));
+            }
+        });
+    }
+
+    fn draw_fallback_profile_surface(ui: &mut egui::Ui, profile: &ControllerProfile) {
+        ui.group(|ui| {
+            ui.strong("Profile editor extension point");
+            ui.colored_label(
+                Color32::YELLOW,
+                "This profile is registered but does not yet have a typed debugger editor.",
+            );
+            ui.small("Its declared capabilities and ranges are shown below; no synthetic inputs are sent.");
+            for range in profile.input_contract.ranges {
+                ui.monospace(format!("{}: {:?}", range.field.0, range.range));
+            }
+        });
+    }
+
     #[allow(clippy::too_many_lines)]
-    fn draw_payload(ui: &mut egui::Ui, payload: &mut ProfileInputPayload) -> bool {
+    fn draw_typed_payload(
+        ui: &mut egui::Ui,
+        adapter: ProfileUiAdapter,
+        payload: &mut ProfileInputPayload,
+    ) -> bool {
         let mut changed = false;
-        match payload {
-            ProfileInputPayload::GenericGamepad(input) => {
+        match (adapter, payload) {
+            (ProfileUiAdapter::GenericGamepad, ProfileInputPayload::GenericGamepad(input)) => {
                 changed |= control_group(ui, "Face buttons", |ui| {
                     let b = &mut input.buttons;
                     button_row(ui, |ui| {
@@ -473,7 +721,7 @@ mod linux {
                     &mut input.triggers.right_trigger,
                 );
             }
-            ProfileInputPayload::Xbox360(input) => {
+            (ProfileUiAdapter::Xbox360, ProfileInputPayload::Xbox360(input)) => {
                 changed |= control_group(ui, "Face buttons", |ui| {
                     button_row(ui, |ui| {
                         hold(ui, "A", &mut input.buttons.face.a)
@@ -501,7 +749,7 @@ mod linux {
                 changed |= sticks_group(ui, &mut input.sticks);
                 changed |= triggers_group(ui, &mut input.triggers.lt, &mut input.triggers.rt);
             }
-            ProfileInputPayload::DualSense(input) => {
+            (ProfileUiAdapter::DualSense, ProfileInputPayload::DualSense(input)) => {
                 changed |= control_group(ui, "Face buttons", |ui| {
                     button_row(ui, |ui| {
                         hold(ui, "Cross", &mut input.buttons.face.cross)
@@ -534,7 +782,7 @@ mod linux {
                 });
                 changed |= motion_group(ui, &mut input.motion);
             }
-            ProfileInputPayload::SteamController(input) => {
+            (ProfileUiAdapter::SteamController, ProfileInputPayload::SteamController(input)) => {
                 changed |= control_group(ui, "Face buttons", |ui| {
                     button_row(ui, |ui| {
                         hold(ui, "A", &mut input.buttons.a)
@@ -586,7 +834,10 @@ mod linux {
                 changed |= motion_group(ui, &mut input.motion);
             }
             _ => {
-                ui.label("This profile is not available in the local debugger.");
+                ui.colored_label(
+                    Color32::YELLOW,
+                    "Profile payload does not match its registered UI adapter.",
+                );
             }
         }
         changed
@@ -867,27 +1118,26 @@ mod linux {
     mod tests {
         use super::*;
 
-        fn render_payload(payload: &mut ProfileInputPayload) {
+        fn render_profile_payload(profile: &ControllerProfile, payload: &mut ProfileInputPayload) {
             let context = egui::Context::default();
             let _ = context.run(egui::RawInput::default(), |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    draw_payload(ui, payload);
+                    draw_profile_payload(ui, profile, payload);
                 });
             });
         }
 
         #[test]
         fn every_profile_has_a_neutral_frame() {
-            for profile in PROFILES {
-                let id = ProfileId::from(profile);
-                assert!(ProfileInputPayload::neutral_for_profile_id(&id).is_some());
+            for profile in registry().profiles() {
+                assert!(ProfileInputPayload::neutral_for_profile_id(&profile.profile_id).is_some());
             }
         }
 
         #[test]
         fn default_scope_plans_a_compatible_dualsense() {
             let config = ManagerConfig::default();
-            let backends = ProviderMode::Standard.backends();
+            let backends = ProviderScope::Standard.backends();
             let request = SessionRequest {
                 session_id: SessionId::new(1),
                 profile_id: ProfileId::from("dualsense"),
@@ -914,12 +1164,11 @@ mod linux {
         }
         #[test]
         fn neutral_frame_matches_its_profile() {
-            for profile in PROFILES {
-                let id = ProfileId::from(profile);
+            for profile in registry().profiles() {
                 assert!(
-                    ProfileInputPayload::neutral_for_profile_id(&id)
+                    ProfileInputPayload::neutral_for_profile_id(&profile.profile_id)
                         .expect("payload")
-                        .validate_profile_id(&id)
+                        .validate_profile_id(&profile.profile_id)
                         .is_ok()
                 );
             }
@@ -927,12 +1176,82 @@ mod linux {
 
         #[test]
         fn every_profile_control_surface_renders_headlessly() {
-            for profile in PROFILES {
-                let id = ProfileId::from(profile);
-                let mut payload =
-                    ProfileInputPayload::neutral_for_profile_id(&id).expect("payload");
-                render_payload(&mut payload);
+            for profile in registry().profiles() {
+                let mut payload = ProfileInputPayload::neutral_for_profile_id(&profile.profile_id)
+                    .expect("payload");
+                render_profile_payload(profile, &mut payload);
             }
+        }
+
+        #[test]
+        fn registered_profiles_select_a_typed_adapter() {
+            for profile in registry().profiles() {
+                assert!(
+                    ProfileUiAdapter::for_profile(profile).has_typed_editor(),
+                    "{} needs a typed adapter or fallback coverage update",
+                    profile.profile_id
+                );
+            }
+        }
+
+        #[test]
+        fn fallback_surface_renders_from_a_declared_profile_contract() {
+            let profile = &registry().profiles()[0];
+            let context = egui::Context::default();
+            let _ = context.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    draw_fallback_profile_surface(ui, profile);
+                });
+            });
+        }
+
+        #[test]
+        fn provider_catalog_marks_planned_paths_unavailable_for_creation() {
+            let catalog = provider_catalog();
+            assert_eq!(
+                catalog
+                    .iter()
+                    .filter(|entry| entry.availability == ProviderAvailability::Available)
+                    .count(),
+                ProviderScope::ALL.len()
+            );
+            for entry in &catalog {
+                if entry.availability == ProviderAvailability::Planned {
+                    assert!(entry.scope.is_none());
+                    assert!(!entry.detail.is_empty());
+                }
+            }
+        }
+
+        #[test]
+        fn session_draft_request_preserves_profile_tier_and_hints() {
+            let mut app = DebugApp::new();
+            app.draft.profile_id = ProfileId::from("steam-controller");
+            app.draft.requested_tier = FidelityTier::IdentityAware;
+            app.draft.backend_preference = Some(BackendLevel::Hid);
+            let request = app.request(42);
+
+            assert_eq!(request.session_id, SessionId::new(42));
+            assert_eq!(request.profile_id.as_ref(), "steam-controller");
+            assert_eq!(request.requested_fidelity_tier, FidelityTier::IdentityAware);
+            assert_eq!(request.backend_preference, Some(BackendLevel::Hid));
+            assert_eq!(request.host_platform_preference, Some(HostPlatform::Linux));
+        }
+
+        #[test]
+        fn changing_the_draft_profile_resets_only_the_draft_payload() {
+            let mut app = DebugApp::new();
+            let previous_payload = app.draft.input.clone();
+            app.draft.profile_id = ProfileId::from("dualsense");
+            app.ensure_draft_input_matches_profile();
+
+            assert!(
+                app.draft
+                    .input
+                    .validate_profile_id(&app.draft.profile_id)
+                    .is_ok()
+            );
+            assert_ne!(app.draft.input, previous_payload);
         }
 
         #[test]
@@ -947,7 +1266,8 @@ mod linux {
                     ProfileInputPayload::DualSense(input) => input.dpad.down = true,
                     _ => unreachable!("selected profile has a D-pad"),
                 }
-                render_payload(&mut payload);
+                let profile = registry().profile(id).expect("registered profile");
+                render_profile_payload(profile, &mut payload);
             }
         }
 
