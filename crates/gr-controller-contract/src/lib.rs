@@ -126,6 +126,7 @@ pub trait ControllerDefinition: Send + Sync + 'static {
 /// controller family or report format.
 pub trait ControllerDriver: ControllerDefinition {
     type State: Clone + Send + 'static;
+    type Frame: Send + 'static;
 
     fn neutral_state(&self) -> Self::State;
 
@@ -141,13 +142,13 @@ pub trait ControllerDriver: ControllerDefinition {
         update: ControlUpdate,
     ) -> Result<(), ControlError>;
 
-    /// Encode the complete current state into a caller-owned reusable buffer.
+    /// Encode the complete current state into a provider-ready typed frame.
     ///
     /// # Errors
     ///
     /// Returns [`ControlError`] if the state cannot be represented by this
     /// controller's report contract.
-    fn encode(&self, state: &Self::State, output: &mut Vec<u8>) -> Result<(), ControlError>;
+    fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError>;
 }
 
 /// Errors caused by an invalid or incompatible control update.

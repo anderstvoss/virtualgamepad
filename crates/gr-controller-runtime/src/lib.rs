@@ -6,28 +6,36 @@ use gr_controller_contract::{CommitError, ControlError, ControlUpdate, Controlle
 
 /// The provider-facing sink used by a prepared controller runtime.
 pub trait FrameSink: Send {
+    type Frame: Send + 'static;
     /// Submit one complete encoded controller frame.
     ///
     /// # Errors
     ///
     /// Returns a recoverable [`CommitError`] without invalidating the runtime.
-    fn send(&mut self, frame: &[u8]) -> Result<(), CommitError>;
+    fn send(&mut self, frame: Self::Frame) -> Result<(), CommitError>;
 }
 
-/// A typed controller instance with reusable encoding storage.
+/// A typed controller instance with a provider-ready frame boundary.
 ///
 /// Updates are local. A failed [`Self::commit`] keeps `dirty` set so callers
 /// can retry without reconstructing state.
-pub struct ControllerRuntime<D: ControllerDriver, S: FrameSink> {
+pub struct ControllerRuntime<D, S>
+where
+    D: ControllerDriver,
+    S: FrameSink<Frame = D::Frame>,
+{
     driver: D,
     sink: S,
     state: D::State,
-    encoded: Vec<u8>,
     dirty: bool,
     closed: bool,
 }
 
-impl<D: ControllerDriver, S: FrameSink> ControllerRuntime<D, S> {
+impl<D, S> ControllerRuntime<D, S>
+where
+    D: ControllerDriver,
+    S: FrameSink<Frame = D::Frame>,
+{
     #[must_use]
     pub fn new(driver: D, sink: S) -> Self {
         let state = driver.neutral_state();
@@ -35,7 +43,6 @@ impl<D: ControllerDriver, S: FrameSink> ControllerRuntime<D, S> {
             driver,
             sink,
             state,
-            encoded: Vec::with_capacity(128),
             dirty: true,
             closed: false,
         }
@@ -72,13 +79,13 @@ impl<D: ControllerDriver, S: FrameSink> ControllerRuntime<D, S> {
         if !self.dirty {
             return Ok(());
         }
-        self.encoded.clear();
-        self.driver
-            .encode(&self.state, &mut self.encoded)
+        let frame = self
+            .driver
+            .encode(&self.state)
             .map_err(|error| CommitError::Backend {
                 reason: error.to_string(),
             })?;
-        self.sink.send(&self.encoded)?;
+        self.sink.send(frame)?;
         self.dirty = false;
         Ok(())
     }
@@ -126,6 +133,7 @@ mod tests {
     }
     impl ControllerDriver for Driver {
         type State = bool;
+        type Frame = u8;
         fn neutral_state(&self) -> Self::State {
             false
         }
@@ -147,9 +155,8 @@ mod tests {
             *state = pressed;
             Ok(())
         }
-        fn encode(&self, state: &Self::State, output: &mut Vec<u8>) -> Result<(), ControlError> {
-            output.push(u8::from(*state));
-            Ok(())
+        fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError> {
+            Ok(u8::from(*state))
         }
     }
     struct Sink {
@@ -157,13 +164,15 @@ mod tests {
         frames: Vec<Vec<u8>>,
     }
     impl FrameSink for Sink {
-        fn send(&mut self, frame: &[u8]) -> Result<(), CommitError> {
+        type Frame = u8;
+
+        fn send(&mut self, frame: Self::Frame) -> Result<(), CommitError> {
             if self.fail {
                 Err(CommitError::Backend {
                     reason: "injected".to_string(),
                 })
             } else {
-                self.frames.push(frame.to_vec());
+                self.frames.push(vec![frame]);
                 Ok(())
             }
         }
