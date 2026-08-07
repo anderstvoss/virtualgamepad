@@ -984,15 +984,12 @@ pub mod controller {
                             .flat_map(|report| gr_controllers::decode_output_event(kind, report))
                             .collect::<Vec<_>>();
                         if !events.is_empty() {
-                            let mut registered = match subscribers.lock() {
-                                Ok(registered) => registered,
-                                Err(_) => {
-                                    if let Ok(mut worker_error) = diagnostics.worker_error.lock() {
-                                        *worker_error =
-                                            Some("output subscriber lock was poisoned".to_string());
-                                    }
-                                    return;
+                            let Ok(mut registered) = subscribers.lock() else {
+                                if let Ok(mut worker_error) = diagnostics.worker_error.lock() {
+                                    *worker_error =
+                                        Some("output subscriber lock was poisoned".to_string());
                                 }
+                                return;
                             };
                             registered
                                 .retain(|subscriber| subscriber.active.load(Ordering::Acquire));
