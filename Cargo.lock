@@ -3209,6 +3209,7 @@ version = "0.1.0"
 dependencies = [
  "gr-backend-api",
  "gr-controller-contract",
+ "gr-controller-runtime",
  "gr-controllers",
  "gr-core",
  "gr-host-bridge",
