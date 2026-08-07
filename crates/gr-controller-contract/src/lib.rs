@@ -185,6 +185,15 @@ pub trait ControllerDriver: ControllerDefinition {
         update: ControlUpdate,
     ) -> Result<(), ControlError>;
 
+    /// Validate a complete controller state before it replaces the last valid
+    /// state or reaches a provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when any controller-specific invariant is
+    /// violated.
+    fn validate_state(&self, state: &Self::State) -> Result<(), ControlError>;
+
     /// Encode the complete current state into a provider-ready typed frame.
     ///
     /// # Errors
@@ -207,8 +216,12 @@ pub enum ControlError {
         controller: ControllerKind,
         control: &'static str,
     },
-    #[error("trigger value {value} is outside the supported range 0..={maximum}")]
-    OutOfRange { value: u16, maximum: u16 },
+    #[error("{control} value {value} is outside the supported range 0..={maximum}")]
+    ValueOutOfRange {
+        control: &'static str,
+        value: u32,
+        maximum: u32,
+    },
     #[error("{control} index {index} is invalid; expected an index below {exclusive_maximum}")]
     InvalidIndex {
         control: &'static str,
@@ -222,6 +235,11 @@ pub enum ControlError {
 /// Failure to create an exact controller realization.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum CreationError {
+    #[error("{target} support is not compiled in; enable Cargo feature `{feature}`")]
+    ProviderNotCompiled {
+        target: LinuxTarget,
+        feature: &'static str,
+    },
     #[error("{controller} cannot be realized through {target}: {reason}")]
     UnsupportedTarget {
         controller: ControllerKind,
@@ -234,6 +252,17 @@ pub enum CreationError {
         target: LinuxTarget,
         reason: String,
     },
+}
+
+/// Failure to register a reverse-output callback.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum SubscriptionError {
+    #[error("controller is closed")]
+    Closed,
+    #[error("output subscription capacity {capacity} has been reached")]
+    Capacity { capacity: usize },
+    #[error("output subscription state is unavailable")]
+    Unavailable,
 }
 
 /// Failure to submit the latest valid controller state.

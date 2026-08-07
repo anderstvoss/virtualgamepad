@@ -6,29 +6,32 @@
 //! receive a complete typed state only at commit time, keeping updates cheap,
 //! deterministic, and straightforward to test.
 
-use gr_backend_api::{BackendFrame, EvdevEvent};
+use gr_backend_api::{
+    BackendFrame, BackendReverseEvent, BackendReverseEventKind, BackendReversePayload, EvdevEvent,
+};
 use gr_controller_contract::{
     ControlError, ControlUpdate, ControllerDefinition, ControllerDriver, ControllerKind,
     DpadDirection, FaceButton, RealizationRequirements, Stick, StickPosition, Trigger,
 };
-use gr_core::{
-    DualSenseInput, GenericGamepadInput, SteamControllerInput, TwinStickAxes, Xbox360Input,
-};
+use gr_core::TwinStickAxes;
 
-pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
+pub use gr_core::{
+    DualSenseInput, DualSenseMotion, DualSenseTouchContact, GenericGamepadInput, MotionAxes,
+    SteamControllerInput, Xbox360Input,
+};
 
 /// Reverse output from a generic compatibility gamepad.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericGamepadOutputEvent {
     Rumble { strong: u16, weak: u16 },
-    RawEvdevEvents { events: Vec<EvdevEvent> },
+    UnrecognizedEvdevEvents { events: Vec<EvdevEvent> },
 }
 
 /// Reverse output from an Xbox 360 controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Xbox360OutputEvent {
     Rumble { strong: u16, weak: u16 },
-    RawEvdevEvents { events: Vec<EvdevEvent> },
+    UnrecognizedEvdevEvents { events: Vec<EvdevEvent> },
 }
 
 /// Reverse output from a `DualSense` controller.
@@ -45,20 +48,22 @@ pub enum DualSenseOutputEvent {
         player_index: Option<u8>,
     },
     TriggerEffect {
-        mode: String,
+        mode: u8,
+        left_strength: u8,
+        right_strength: u8,
     },
-    Audio {
-        action: String,
-        target: Option<String>,
+    SpeakerUpdate {
+        flags: u8,
     },
-    FeatureRequest {
-        request: String,
-    },
-    RawHidReport {
+    FeatureReport {
         report_id: Option<u8>,
         bytes: Vec<u8>,
     },
-    RawTransportPacket {
+    UnrecognizedHidReport {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    UnrecognizedTransportPacket {
         endpoint_id: u8,
         bytes: Vec<u8>,
     },
@@ -77,10 +82,11 @@ pub enum SteamControllerOutputEvent {
         blue: Option<u8>,
         player_index: Option<u8>,
     },
-    FeatureRequest {
-        request: String,
+    FeatureReport {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
     },
-    RawHidReport {
+    UnrecognizedHidReport {
         report_id: Option<u8>,
         bytes: Vec<u8>,
     },
@@ -93,6 +99,177 @@ pub enum CuratedControllerOutputEvent {
     Xbox360(Xbox360OutputEvent),
     DualSense(DualSenseOutputEvent),
     SteamController(SteamControllerOutputEvent),
+}
+
+/// Decode one provider reverse report without losing controller-specific
+/// semantics. Unknown reports remain available through lossless fallback
+/// variants.
+#[must_use]
+pub fn decode_output_event(
+    kind: ControllerKind,
+    report: BackendReverseEvent,
+) -> Vec<CuratedControllerOutputEvent> {
+    match (kind, report.kind, report.payload) {
+        (ControllerKind::GenericGamepad, _, BackendReversePayload::Evdev { events }) => {
+            decode_evdev_rumble(events, true)
+        }
+        (ControllerKind::Xbox360, _, BackendReversePayload::Evdev { events }) => {
+            decode_evdev_rumble(events, false)
+        }
+        (
+            ControllerKind::DualSense,
+            BackendReverseEventKind::HidFeatureReport,
+            BackendReversePayload::Hid { report_id, bytes },
+        ) => vec![CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::FeatureReport { report_id, bytes },
+        )],
+        (ControllerKind::DualSense, _, BackendReversePayload::Hid { report_id, bytes }) => {
+            decode_dualsense_output(bytes, Some((report_id, None)))
+        }
+        (ControllerKind::DualSense, _, BackendReversePayload::Transport { endpoint_id, bytes }) => {
+            decode_dualsense_output(bytes, Some((None, Some(endpoint_id))))
+        }
+        (
+            ControllerKind::SteamController,
+            BackendReverseEventKind::HidFeatureReport,
+            BackendReversePayload::Hid { report_id, bytes },
+        ) => vec![CuratedControllerOutputEvent::SteamController(
+            SteamControllerOutputEvent::FeatureReport { report_id, bytes },
+        )],
+        (ControllerKind::SteamController, _, BackendReversePayload::Hid { report_id, bytes }) => {
+            decode_steam_output(report_id, bytes)
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn decode_evdev_rumble(
+    events: Vec<EvdevEvent>,
+    generic_gamepad: bool,
+) -> Vec<CuratedControllerOutputEvent> {
+    let strong = events
+        .iter()
+        .find(|event| event.code == 0)
+        .map(|event| clamp_rumble(event.value));
+    let weak = events
+        .iter()
+        .find(|event| event.code == 1)
+        .map(|event| clamp_rumble(event.value));
+    let decoded = strong.is_some() || weak.is_some();
+    let strong_value = strong.or(weak).unwrap_or_default();
+    let weak_value = weak.or(strong).unwrap_or_default();
+
+    if generic_gamepad {
+        vec![CuratedControllerOutputEvent::GenericGamepad(if decoded {
+            GenericGamepadOutputEvent::Rumble {
+                strong: strong_value,
+                weak: weak_value,
+            }
+        } else {
+            GenericGamepadOutputEvent::UnrecognizedEvdevEvents { events }
+        })]
+    } else {
+        vec![CuratedControllerOutputEvent::Xbox360(if decoded {
+            Xbox360OutputEvent::Rumble {
+                strong: strong_value,
+                weak: weak_value,
+            }
+        } else {
+            Xbox360OutputEvent::UnrecognizedEvdevEvents { events }
+        })]
+    }
+}
+
+fn clamp_rumble(value: i32) -> u16 {
+    u16::try_from(value.clamp(0, i32::from(u16::MAX))).unwrap_or_default()
+}
+
+fn decode_dualsense_output(
+    bytes: Vec<u8>,
+    origin: Option<(Option<u8>, Option<u8>)>,
+) -> Vec<CuratedControllerOutputEvent> {
+    let (report_id, endpoint_id) = origin.unwrap_or_default();
+    let report = if endpoint_id.is_some() && bytes.first() == Some(&0x31) {
+        &bytes[1..]
+    } else {
+        bytes.as_slice()
+    };
+    let mut events = Vec::with_capacity(4);
+
+    if report.len() > 4 && (report[3] != 0 || report[4] != 0) {
+        events.push(CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::Rumble {
+                strong: u16::from(report[4]) * 257,
+                weak: u16::from(report[3]) * 257,
+            },
+        ));
+    }
+    if report.len() > 47 {
+        let (red, green, blue) = (report[45], report[46], report[47]);
+        let player_index = report.get(44).copied().filter(|value| *value != 0);
+        if red != 0 || green != 0 || blue != 0 || player_index.is_some() {
+            events.push(CuratedControllerOutputEvent::DualSense(
+                DualSenseOutputEvent::Lighting {
+                    red: Some(red),
+                    green: Some(green),
+                    blue: Some(blue),
+                    player_index,
+                },
+            ));
+        }
+    }
+    if report.len() > 13 && (report[11] != 0 || report[12] != 0 || report[13] != 0) {
+        events.push(CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::TriggerEffect {
+                mode: report[11],
+                left_strength: report[12],
+                right_strength: report[13],
+            },
+        ));
+    }
+    if report.len() > 9 && report[9] != 0 {
+        events.push(CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::SpeakerUpdate { flags: report[9] },
+        ));
+    }
+
+    if events.is_empty() {
+        let unrecognized = if let Some(endpoint_id) = endpoint_id {
+            DualSenseOutputEvent::UnrecognizedTransportPacket { endpoint_id, bytes }
+        } else {
+            DualSenseOutputEvent::UnrecognizedHidReport { report_id, bytes }
+        };
+        events.push(CuratedControllerOutputEvent::DualSense(unrecognized));
+    }
+    events
+}
+
+fn decode_steam_output(report_id: Option<u8>, bytes: Vec<u8>) -> Vec<CuratedControllerOutputEvent> {
+    let mut events = Vec::with_capacity(2);
+    if bytes.len() >= 4 {
+        events.push(CuratedControllerOutputEvent::SteamController(
+            SteamControllerOutputEvent::Lighting {
+                red: Some(bytes[0]),
+                green: Some(bytes[1]),
+                blue: Some(bytes[2]),
+                player_index: None,
+            },
+        ));
+    }
+    if bytes.len() >= 6 && (bytes[4] != 0 || bytes[5] != 0) {
+        events.push(CuratedControllerOutputEvent::SteamController(
+            SteamControllerOutputEvent::Rumble {
+                strong: u16::from(bytes[5]) * 257,
+                weak: u16::from(bytes[4]) * 257,
+            },
+        ));
+    }
+    if events.is_empty() {
+        events.push(CuratedControllerOutputEvent::SteamController(
+            SteamControllerOutputEvent::UnrecognizedHidReport { report_id, bytes },
+        ));
+    }
+    events
 }
 
 /// Static definition for the generic compatibility controller.
@@ -217,13 +394,18 @@ impl ControllerDriver for CompiledControllerDriver {
     }
 
     fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError> {
+        self.validate_state(state)?;
+        Ok(PreparedControllerFrame::from(state))
+    }
+
+    fn validate_state(&self, state: &Self::State) -> Result<(), ControlError> {
         if state.kind() != self.kind {
             return Err(ControlError::UnsupportedControl {
                 controller: self.kind,
                 control: "controller state from a different driver",
             });
         }
-        Ok(PreparedControllerFrame::from(state))
+        state.validate()
     }
 }
 
@@ -464,9 +646,26 @@ fn dpad_hat(dpad: gr_core::Dpad) -> u8 {
         _ => 8,
     }
 }
+
+fn validate_touch_contact(contact: DualSenseTouchContact) -> Result<(), ControlError> {
+    for (control, value) in [
+        ("DualSense touch x", contact.x),
+        ("DualSense touch y", contact.y),
+    ] {
+        if value > 0x0fff {
+            return Err(ControlError::ValueOutOfRange {
+                control,
+                value: u32::from(value),
+                maximum: 0x0fff,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn encode_touch(bytes: &mut [u8], contact: DualSenseTouchContact, counter: u8) {
-    let x = contact.x.min(0x0fff);
-    let y = contact.y.min(0x0fff);
+    let x = contact.x;
+    let y = contact.y;
     let x_high = u8::try_from(x >> 8).expect("12-bit touch coordinate high byte fits");
     let y_low = u8::try_from(y & 0x0f).expect("12-bit touch coordinate low nibble fits");
     let y_high = u8::try_from(y >> 4).expect("12-bit touch coordinate high byte fits");
@@ -521,6 +720,20 @@ impl ControllerState {
             Self::DualSense(_) => ControllerKind::DualSense,
             Self::SteamController(_) => ControllerKind::SteamController,
         }
+    }
+
+    /// Validate all controller-specific state invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] for values that cannot be represented without
+    /// clipping or silent degradation.
+    pub fn validate(&self) -> Result<(), ControlError> {
+        if let Self::DualSense(state) = self {
+            validate_touch_contact(state.touchpad.contact_1)?;
+            validate_touch_contact(state.touchpad.contact_2)?;
+        }
+        Ok(())
     }
 
     /// Apply a normalized update without touching a provider.
@@ -693,6 +906,7 @@ impl ControllerState {
                 exclusive_maximum: 2,
             });
         }
+        validate_touch_contact(value)?;
         let Self::DualSense(state) = self else {
             return Err(ControlError::UnsupportedControl {
                 controller: self.kind(),
@@ -912,10 +1126,12 @@ pub enum SteamControllerControl {
 #[cfg(test)]
 mod tests {
     use super::{
-        ControllerState, DualSenseControl, NativeControl, NativeControlUpdate,
-        PreparedControllerFrame, XboxControl, definition_for,
+        ControllerState, CuratedControllerOutputEvent, DualSenseControl, DualSenseOutputEvent,
+        GenericGamepadOutputEvent, NativeControl, NativeControlUpdate, PreparedControllerFrame,
+        SteamControllerOutputEvent, XboxControl, decode_dualsense_output, decode_evdev_rumble,
+        decode_steam_output, definition_for,
     };
-    use gr_backend_api::BackendFrame;
+    use gr_backend_api::{BackendFrame, EvdevEvent};
     use gr_controller_contract::{
         ControlError, ControlUpdate, ControllerKind, FaceButton, LinuxTarget,
     };
@@ -974,6 +1190,104 @@ mod tests {
             .expect_err("only two contacts are available");
         assert!(matches!(error, ControlError::InvalidIndex { .. }));
         assert_eq!(state, original);
+    }
+
+    #[test]
+    fn out_of_range_touch_coordinates_are_rejected_without_clipping() {
+        let mut state = ControllerState::neutral(ControllerKind::DualSense);
+        let original = state.clone();
+        let mut contact = super::DualSenseTouchContact::neutral();
+        contact.x = 0x1000;
+        let error = state
+            .set_dualsense_touch(0, contact)
+            .expect_err("13-bit coordinate cannot be encoded as a 12-bit touch coordinate");
+        assert!(matches!(error, ControlError::ValueOutOfRange { .. }));
+        assert_eq!(state, original);
+    }
+
+    #[test]
+    fn evdev_rumble_decoding_clamps_and_mirrors_a_single_channel() {
+        let decoded = decode_evdev_rumble(
+            vec![EvdevEvent {
+                event_type: 0,
+                code: 0,
+                value: i32::MAX,
+            }],
+            true,
+        );
+        assert_eq!(
+            decoded,
+            vec![CuratedControllerOutputEvent::GenericGamepad(
+                GenericGamepadOutputEvent::Rumble {
+                    strong: u16::MAX,
+                    weak: u16::MAX,
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn dualsense_reverse_report_decodes_all_present_native_semantics() {
+        let mut report = vec![0; 48];
+        report[3] = 2;
+        report[4] = 3;
+        report[9] = 4;
+        report[11] = 5;
+        report[12] = 6;
+        report[13] = 7;
+        report[44] = 8;
+        report[45] = 9;
+        report[46] = 10;
+        report[47] = 11;
+        let decoded = decode_dualsense_output(report, Some((Some(2), None)));
+        assert!(decoded.contains(&CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::Rumble {
+                strong: 3 * 257,
+                weak: 2 * 257,
+            }
+        )));
+        assert!(decoded.contains(&CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::TriggerEffect {
+                mode: 5,
+                left_strength: 6,
+                right_strength: 7,
+            }
+        )));
+        assert!(decoded.contains(&CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::SpeakerUpdate { flags: 4 }
+        )));
+        assert!(decoded.contains(&CuratedControllerOutputEvent::DualSense(
+            DualSenseOutputEvent::Lighting {
+                red: Some(9),
+                green: Some(10),
+                blue: Some(11),
+                player_index: Some(8),
+            }
+        )));
+    }
+
+    #[test]
+    fn malformed_native_reports_remain_available_losslessly() {
+        let dualsense_bytes = vec![1, 2];
+        assert_eq!(
+            decode_dualsense_output(dualsense_bytes.clone(), Some((Some(7), None))),
+            vec![CuratedControllerOutputEvent::DualSense(
+                DualSenseOutputEvent::UnrecognizedHidReport {
+                    report_id: Some(7),
+                    bytes: dualsense_bytes,
+                }
+            )]
+        );
+        let steam_bytes = vec![1, 2, 3];
+        assert_eq!(
+            decode_steam_output(Some(9), steam_bytes.clone()),
+            vec![CuratedControllerOutputEvent::SteamController(
+                SteamControllerOutputEvent::UnrecognizedHidReport {
+                    report_id: Some(9),
+                    bytes: steam_bytes,
+                }
+            )]
+        );
     }
 
     #[test]

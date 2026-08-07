@@ -96,42 +96,61 @@ pub fn linux_transport_lab_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::
 /// The API requires an exact Linux realization target. It never selects a
 /// lower-fidelity provider automatically.
 #[cfg(target_os = "linux")]
-#[allow(clippy::missing_errors_doc)] // Public error semantics are specified in CONTROLLER_NATIVE_API_SPEC.md during the provider-seam migration.
 pub mod controller {
     use std::panic::{AssertUnwindSafe, catch_unwind};
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
 
-    use gr_backend_api::{
-        BackendError, BackendFactory, BackendOpenContext, BackendReverseEvent,
-        BackendReversePayload, BackendSession,
-    };
+    use gr_backend_api::{BackendError, BackendFactory, BackendOpenContext, BackendSession};
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
-        validate_realization,
+        SubscriptionError, validate_realization,
     };
     use gr_controller_runtime::{ControllerRuntime, FrameSink};
     use gr_controllers::{
         CompiledControllerDriver, ControllerState, CuratedControllerOutputEvent, DualSenseControl,
-        DualSenseOutputEvent, GenericGamepadControl, GenericGamepadOutputEvent, NativeControl,
-        NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
-        SteamControllerOutputEvent, Xbox360OutputEvent, XboxControl, definition_for,
+        DualSenseInput, DualSenseOutputEvent, GenericGamepadControl, GenericGamepadInput,
+        GenericGamepadOutputEvent, NativeControl, NativeControlUpdate, PreparedControllerFrame,
+        SteamControllerControl, SteamControllerInput, SteamControllerOutputEvent, Xbox360Input,
+        Xbox360OutputEvent, XboxControl, definition_for,
     };
     use gr_core::{BackendLevel, FidelityTier, ProfileId, SessionId};
     use gr_runtime_model::HostPlatform;
+
+    static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn next_session_id() -> SessionId {
+        let value = NEXT_SESSION_ID
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(if current == u64::MAX { 1 } else { current + 1 })
+            })
+            .unwrap_or_else(|current| current);
+        SessionId::new(value)
+    }
 
     /// Explicit creation settings. The selected target is a binding contract.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct CreationOptions {
         pub target: LinuxTarget,
+        pub output_subscription_capacity: usize,
     }
 
     impl CreationOptions {
         #[must_use]
         pub const fn new(target: LinuxTarget) -> Self {
-            Self { target }
+            Self {
+                target,
+                output_subscription_capacity: 32,
+            }
+        }
+
+        /// Set the maximum number of live reverse-output subscriptions.
+        #[must_use]
+        pub const fn with_output_subscription_capacity(mut self, capacity: usize) -> Self {
+            self.output_subscription_capacity = capacity;
+            self
         }
     }
 
@@ -166,6 +185,15 @@ pub mod controller {
         active: Arc<AtomicBool>,
     }
 
+    impl std::fmt::Debug for OutputSubscription {
+        fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter
+                .debug_struct("OutputSubscription")
+                .field("active", &self.active.load(Ordering::Acquire))
+                .finish()
+        }
+    }
+
     impl Drop for OutputSubscription {
         fn drop(&mut self) {
             self.active.store(false, Ordering::Release);
@@ -174,14 +202,15 @@ pub mod controller {
 
     struct Subscriber {
         active: Arc<AtomicBool>,
-        callback: Box<dyn FnMut(CuratedControllerOutputEvent) + Send>,
+        callback: Mutex<Box<dyn FnMut(CuratedControllerOutputEvent) + Send>>,
     }
 
     struct ManagedController {
         runtime: ControllerRuntime<CompiledControllerDriver, NativeBackendSink>,
         stop_output_worker: Arc<AtomicBool>,
         output_worker: Option<JoinHandle<()>>,
-        subscribers: Arc<Mutex<Vec<Subscriber>>>,
+        subscribers: Arc<Mutex<Vec<Arc<Subscriber>>>>,
+        output_subscription_capacity: usize,
     }
 
     impl ManagedController {
@@ -198,7 +227,7 @@ pub mod controller {
                         reason: "selected target has no backend factory".to_string(),
                     })?;
             let context = BackendOpenContext {
-                session_id: SessionId::new(1),
+                session_id: next_session_id(),
                 profile_id: ProfileId::from(profile_id),
                 fidelity_tier: fidelity,
                 backend_level: level,
@@ -219,6 +248,14 @@ pub mod controller {
                     target: options.target,
                     reason: error.to_string(),
                 })?;
+            Ok(Self::from_open_backend(kind, options, backend))
+        }
+
+        fn from_open_backend(
+            kind: ControllerKind,
+            options: CreationOptions,
+            backend: Box<dyn BackendSession>,
+        ) -> Self {
             let backend = Arc::new(Mutex::new(backend));
             let subscribers = Arc::new(Mutex::new(Vec::new()));
             let stop_output_worker = Arc::new(AtomicBool::new(false));
@@ -228,7 +265,7 @@ pub mod controller {
                 Arc::clone(&stop_output_worker),
                 kind,
             ));
-            Ok(Self {
+            Self {
                 runtime: ControllerRuntime::new(
                     CompiledControllerDriver::new(kind),
                     NativeBackendSink {
@@ -239,7 +276,8 @@ pub mod controller {
                 stop_output_worker,
                 output_worker,
                 subscribers,
-            })
+                output_subscription_capacity: options.output_subscription_capacity,
+            }
         }
 
         fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
@@ -259,25 +297,33 @@ pub mod controller {
             if self.runtime.is_closed() {
                 return Ok(());
             }
+            let mut first_error = None;
             self.stop_output_worker.store(true, Ordering::Release);
             if let Some(worker) = self.output_worker.take() {
-                worker.join().map_err(|_| CommitError::Backend {
-                    reason: "native output worker panicked".to_string(),
-                })?;
+                if worker.join().is_err() {
+                    first_error = Some(CommitError::Backend {
+                        reason: "native output worker panicked".to_string(),
+                    });
+                }
             }
-            self.runtime
+            let close_result = self
+                .runtime
                 .sink_mut()
                 .backend
                 .lock()
                 .map_err(|_| CommitError::Backend {
                     reason: "native backend lock was poisoned".to_string(),
-                })?
-                .close()
-                .map_err(|error| CommitError::Backend {
-                    reason: error.to_string(),
-                })?;
+                })
+                .and_then(|mut backend| {
+                    backend.close().map_err(|error| CommitError::Backend {
+                        reason: error.to_string(),
+                    })
+                });
+            if first_error.is_none() {
+                first_error = close_result.err();
+            }
             self.runtime.close();
-            Ok(())
+            first_error.map_or(Ok(()), Err)
         }
 
         fn state(&self) -> &ControllerState {
@@ -290,19 +336,35 @@ pub mod controller {
             self.runtime.state().kind()
         }
 
-        fn subscribe_outputs<F>(&self, callback: F) -> OutputSubscription
+        fn subscribe_outputs<F>(&self, callback: F) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
+            if self.runtime.is_closed() {
+                return Err(SubscriptionError::Closed);
+            }
             let active = Arc::new(AtomicBool::new(true));
-            self.subscribers
+            let mut subscribers = self
+                .subscribers
                 .lock()
-                .expect("native output subscriptions")
-                .push(Subscriber {
-                    active: Arc::clone(&active),
-                    callback: Box::new(callback),
+                .map_err(|_| SubscriptionError::Unavailable)?;
+            subscribers.retain(|subscriber| subscriber.active.load(Ordering::Acquire));
+            if subscribers.len() >= self.output_subscription_capacity {
+                return Err(SubscriptionError::Capacity {
+                    capacity: self.output_subscription_capacity,
                 });
-            OutputSubscription { active }
+            }
+            subscribers.push(Arc::new(Subscriber {
+                active: Arc::clone(&active),
+                callback: Mutex::new(Box::new(callback)),
+            }));
+            Ok(OutputSubscription { active })
+        }
+    }
+
+    impl Drop for ManagedController {
+        fn drop(&mut self) {
+            let _ = self.close();
         }
     }
 
@@ -315,19 +377,53 @@ pub mod controller {
     }
 
     impl ControllerHandle {
+        /// Apply a normalized update to this controller's local state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the control is unavailable, invalid, or
+        /// the controller is closed. An error leaves state unchanged.
         pub fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
             self.inner_mut().apply(update)
         }
+        /// Apply an explicitly tagged native update to local state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the native control belongs to another
+        /// controller or this controller is closed. State remains unchanged.
         pub fn apply_native(&mut self, update: NativeControlUpdate) -> Result<(), ControlError> {
             self.inner_mut().apply_native(update)
         }
+        /// Submit the latest complete state to the selected provider.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`CommitError`] on provider or lifecycle failure. Failed
+        /// commits remain dirty and may be retried.
         pub fn commit(&mut self) -> Result<(), CommitError> {
             self.inner_mut().commit()
         }
+        /// Stop output delivery and close the provider session.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`CommitError`] if worker shutdown or provider closure
+        /// fails. The handle is terminally closed even when cleanup reports an
+        /// error.
         pub fn close(&mut self) -> Result<(), CommitError> {
             self.inner_mut().close()
         }
-        pub fn subscribe_outputs<F>(&self, callback: F) -> OutputSubscription
+        /// Register a callback for tagged controller-native output events.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`SubscriptionError`] when the controller is closed, the
+        /// configured capacity is full, or subscription state is unavailable.
+        pub fn subscribe_outputs<F>(
+            &self,
+            callback: F,
+        ) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
@@ -386,18 +482,32 @@ pub mod controller {
     macro_rules! common_controller_methods {
         ($type:ident) => {
             impl $type {
+                /// Apply a normalized update to local state.
+                ///
+                /// # Errors
+                ///
+                /// Returns [`ControlError`] for an invalid or unavailable
+                /// control, or after closure. State is unchanged on error.
                 pub fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
                     self.inner.apply(update)
                 }
+                /// Submit the latest complete state to the selected provider.
+                ///
+                /// # Errors
+                ///
+                /// Returns [`CommitError`] on provider or lifecycle failure.
+                /// Failed commits remain dirty and retryable.
                 pub fn commit(&mut self) -> Result<(), CommitError> {
                     self.inner.commit()
                 }
+                /// Stop output delivery and close the provider session.
+                ///
+                /// # Errors
+                ///
+                /// Returns [`CommitError`] if cleanup fails. The controller is
+                /// closed even when an error is returned.
                 pub fn close(&mut self) -> Result<(), CommitError> {
                     self.inner.close()
-                }
-                #[must_use]
-                pub fn state(&self) -> &ControllerState {
-                    self.inner.state()
                 }
                 #[must_use]
                 pub fn is_dirty(&self) -> bool {
@@ -412,7 +522,46 @@ pub mod controller {
     common_controller_methods!(SteamController);
 
     impl GenericGamepadController {
-        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
+        #[must_use]
+        pub fn state(&self) -> &GenericGamepadInput {
+            let ControllerState::GenericGamepad(state) = self.inner.state() else {
+                unreachable!("generic handle contains a different controller state")
+            };
+            state
+        }
+
+        /// Atomically edit the complete typed generic-gamepad state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the resulting state is invalid or the
+        /// controller is closed. The prior state is preserved on error.
+        pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
+        where
+            F: FnOnce(&mut GenericGamepadInput),
+        {
+            self.inner.runtime.update_state(|state| {
+                let ControllerState::GenericGamepad(state) = state else {
+                    return Err(ControlError::UnsupportedControl {
+                        controller: ControllerKind::GenericGamepad,
+                        control: "generic gamepad state",
+                    });
+                };
+                update(state);
+                Ok(())
+            })
+        }
+
+        /// Subscribe to typed generic-gamepad output events.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`SubscriptionError`] when closed, at capacity, or when
+        /// subscription state is unavailable.
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(GenericGamepadOutputEvent) + Send + 'static,
         {
@@ -423,6 +572,11 @@ pub mod controller {
             })
         }
 
+        /// Set a controller-native generic-gamepad control.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] after closure or for invalid state.
         pub fn set_native(
             &mut self,
             control: GenericGamepadControl,
@@ -435,7 +589,46 @@ pub mod controller {
         }
     }
     impl Xbox360Controller {
-        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
+        #[must_use]
+        pub fn state(&self) -> &Xbox360Input {
+            let ControllerState::Xbox360(state) = self.inner.state() else {
+                unreachable!("Xbox 360 handle contains a different controller state")
+            };
+            state
+        }
+
+        /// Atomically edit the complete typed Xbox 360 state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the resulting state is invalid or the
+        /// controller is closed. The prior state is preserved on error.
+        pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
+        where
+            F: FnOnce(&mut Xbox360Input),
+        {
+            self.inner.runtime.update_state(|state| {
+                let ControllerState::Xbox360(state) = state else {
+                    return Err(ControlError::UnsupportedControl {
+                        controller: ControllerKind::Xbox360,
+                        control: "Xbox 360 state",
+                    });
+                };
+                update(state);
+                Ok(())
+            })
+        }
+
+        /// Subscribe to typed Xbox 360 output events.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`SubscriptionError`] when closed, at capacity, or when
+        /// subscription state is unavailable.
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(Xbox360OutputEvent) + Send + 'static,
         {
@@ -446,6 +639,11 @@ pub mod controller {
             })
         }
 
+        /// Set an explicitly named Xbox 360 control.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] after closure or for invalid state.
         pub fn set_native(
             &mut self,
             control: XboxControl,
@@ -458,7 +656,46 @@ pub mod controller {
         }
     }
     impl DualSenseController {
-        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
+        #[must_use]
+        pub fn state(&self) -> &DualSenseInput {
+            let ControllerState::DualSense(state) = self.inner.state() else {
+                unreachable!("DualSense handle contains a different controller state")
+            };
+            state
+        }
+
+        /// Atomically edit the complete typed `DualSense` state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the resulting state is invalid or the
+        /// controller is closed. The prior state is preserved on error.
+        pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
+        where
+            F: FnOnce(&mut DualSenseInput),
+        {
+            self.inner.runtime.update_state(|state| {
+                let ControllerState::DualSense(state) = state else {
+                    return Err(ControlError::UnsupportedControl {
+                        controller: ControllerKind::DualSense,
+                        control: "DualSense state",
+                    });
+                };
+                update(state);
+                Ok(())
+            })
+        }
+
+        /// Subscribe to typed `DualSense` output events.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`SubscriptionError`] when closed, at capacity, or when
+        /// subscription state is unavailable.
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(DualSenseOutputEvent) + Send + 'static,
         {
@@ -469,6 +706,11 @@ pub mod controller {
             })
         }
 
+        /// Set an explicitly named `DualSense` control.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] after closure or for invalid state.
         pub fn set_native(
             &mut self,
             control: DualSenseControl,
@@ -480,6 +722,12 @@ pub mod controller {
             })
         }
 
+        /// Set one native `DualSense` touch contact.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] for an invalid index or coordinate, or
+        /// after closure. State is unchanged on error.
         pub fn set_touch_contact(
             &mut self,
             contact: usize,
@@ -490,6 +738,12 @@ pub mod controller {
                 .update_state(|state| state.set_dualsense_touch(contact, value))
         }
 
+        /// Replace the native `DualSense` motion sample.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] after closure or if the resulting state is
+        /// invalid.
         pub fn set_motion(
             &mut self,
             value: gr_controllers::DualSenseMotion,
@@ -500,7 +754,45 @@ pub mod controller {
         }
     }
     impl SteamController {
-        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
+        #[must_use]
+        pub fn state(&self) -> &SteamControllerInput {
+            let ControllerState::SteamController(state) = self.inner.state() else {
+                unreachable!("Steam Controller handle contains a different controller state")
+            };
+            state
+        }
+
+        /// Atomically edit the complete typed Steam Controller state.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] if the resulting state is invalid or the
+        /// controller is closed. The prior state is preserved on error.
+        pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
+        where
+            F: FnOnce(&mut SteamControllerInput),
+        {
+            self.inner.runtime.update_state(|state| {
+                let ControllerState::SteamController(state) = state else {
+                    return Err(ControlError::UnsupportedControl {
+                        controller: ControllerKind::SteamController,
+                        control: "Steam Controller state",
+                    });
+                };
+                update(state);
+                Ok(())
+            })
+        }
+        /// Subscribe to typed Steam Controller output events.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`SubscriptionError`] when closed, at capacity, or when
+        /// subscription state is unavailable.
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<OutputSubscription, SubscriptionError>
         where
             F: FnMut(SteamControllerOutputEvent) + Send + 'static,
         {
@@ -511,6 +803,11 @@ pub mod controller {
             })
         }
 
+        /// Set an explicitly named Steam Controller control.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] after closure or for invalid state.
         pub fn set_native(
             &mut self,
             control: SteamControllerControl,
@@ -522,6 +819,12 @@ pub mod controller {
             })
         }
 
+        /// Set one native Steam Controller trackpad position.
+        ///
+        /// # Errors
+        ///
+        /// Returns [`ControlError`] for an invalid pad index or after closure.
+        /// State is unchanged on error.
         pub fn set_trackpad(
             &mut self,
             pad: usize,
@@ -533,22 +836,46 @@ pub mod controller {
         }
     }
 
+    /// Create a generic compatibility gamepad on the explicit target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CreationError`] when the target is unavailable, incompatible,
+    /// or cannot be opened. No partial handle is returned.
     pub fn create_generic_gamepad(
         options: CreationOptions,
     ) -> Result<GenericGamepadController, CreationError> {
         ManagedController::create(ControllerKind::GenericGamepad, options)
             .map(|inner| GenericGamepadController { inner })
     }
+    /// Create an Xbox 360 controller on the explicit target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CreationError`] when the target is unavailable, incompatible,
+    /// or cannot be opened. No partial handle is returned.
     pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, CreationError> {
         ManagedController::create(ControllerKind::Xbox360, options)
             .map(|inner| Xbox360Controller { inner })
     }
+    /// Create a `DualSense` controller on the explicit target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CreationError`] when the target is unavailable, incompatible,
+    /// or cannot be opened. No partial handle is returned.
     pub fn create_dualsense(
         options: CreationOptions,
     ) -> Result<DualSenseController, CreationError> {
         ManagedController::create(ControllerKind::DualSense, options)
             .map(|inner| DualSenseController { inner })
     }
+    /// Create a Steam Controller on the explicit target.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CreationError`] when the target is unavailable, incompatible,
+    /// or cannot be opened. No partial handle is returned.
     pub fn create_steam_controller(
         options: CreationOptions,
     ) -> Result<SteamController, CreationError> {
@@ -558,7 +885,7 @@ pub mod controller {
 
     fn start_output_worker(
         backend: Arc<Mutex<Box<dyn BackendSession>>>,
-        subscribers: Arc<Mutex<Vec<Subscriber>>>,
+        subscribers: Arc<Mutex<Vec<Arc<Subscriber>>>>,
         stop: Arc<AtomicBool>,
         kind: ControllerKind,
     ) -> JoinHandle<()> {
@@ -573,28 +900,32 @@ pub mod controller {
                     Ok(()) => {
                         let events = reports
                             .into_iter()
-                            .filter_map(|report| output_event(kind, report))
+                            .flat_map(|report| gr_controllers::decode_output_event(kind, report))
                             .collect::<Vec<_>>();
                         if !events.is_empty() {
-                            let Ok(mut subscribers) = subscribers.lock() else {
+                            let Ok(mut registered) = subscribers.lock() else {
                                 return;
                             };
-                            subscribers.retain_mut(|subscriber| {
-                                if !subscriber.active.load(Ordering::Acquire) {
-                                    return false;
-                                }
+                            registered
+                                .retain(|subscriber| subscriber.active.load(Ordering::Acquire));
+                            let active = registered.clone();
+                            drop(registered);
+                            for subscriber in active {
+                                let Ok(mut callback) = subscriber.callback.lock() else {
+                                    subscriber.active.store(false, Ordering::Release);
+                                    continue;
+                                };
                                 for event in &events {
                                     if catch_unwind(AssertUnwindSafe(|| {
-                                        (subscriber.callback)(event.clone());
+                                        (callback)(event.clone());
                                     }))
                                     .is_err()
                                     {
                                         subscriber.active.store(false, Ordering::Release);
-                                        return false;
+                                        break;
                                     }
                                 }
-                                true
-                            });
+                            }
                         }
                     }
                     Err(BackendError::WouldBlock) => {}
@@ -605,47 +936,101 @@ pub mod controller {
         })
     }
 
-    fn output_event(
-        kind: ControllerKind,
-        report: BackendReverseEvent,
-    ) -> Option<CuratedControllerOutputEvent> {
-        match (kind, report.payload) {
-            (ControllerKind::GenericGamepad, BackendReversePayload::Evdev { events }) => {
-                Some(CuratedControllerOutputEvent::GenericGamepad(
-                    GenericGamepadOutputEvent::RawEvdevEvents { events },
-                ))
-            }
-            (ControllerKind::Xbox360, BackendReversePayload::Evdev { events }) => {
-                Some(CuratedControllerOutputEvent::Xbox360(
-                    Xbox360OutputEvent::RawEvdevEvents { events },
-                ))
-            }
-            (ControllerKind::DualSense, BackendReversePayload::Hid { report_id, bytes }) => {
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::RawHidReport { report_id, bytes },
-                ))
-            }
-            (
-                ControllerKind::DualSense,
-                BackendReversePayload::Transport { endpoint_id, bytes },
-            ) => Some(CuratedControllerOutputEvent::DualSense(
-                DualSenseOutputEvent::RawTransportPacket { endpoint_id, bytes },
-            )),
-            (ControllerKind::SteamController, BackendReversePayload::Hid { report_id, bytes }) => {
-                Some(CuratedControllerOutputEvent::SteamController(
-                    SteamControllerOutputEvent::RawHidReport { report_id, bytes },
-                ))
-            }
-            _ => None,
-        }
-    }
-
     fn profile_id_for(kind: ControllerKind) -> &'static str {
         match kind {
             ControllerKind::GenericGamepad => "generic-gamepad",
             ControllerKind::Xbox360 => "xbox360",
             ControllerKind::DualSense => "dualsense",
             ControllerKind::SteamController => "steam-controller",
+        }
+    }
+
+    #[cfg(not(all(
+        feature = "provider-linux-uinput",
+        feature = "provider-linux-uhid",
+        feature = "provider-linux-transport"
+    )))]
+    fn provider_not_compiled(target: LinuxTarget, feature: &'static str) -> CreationError {
+        CreationError::ProviderNotCompiled { target, feature }
+    }
+
+    #[allow(clippy::unnecessary_wraps)] // Error branches are compiled by feature-minimal builds.
+    fn target_capabilities(
+        target: LinuxTarget,
+    ) -> Result<gr_controller_contract::ProviderCapabilities, CreationError> {
+        match target {
+            LinuxTarget::Uinput => {
+                #[cfg(feature = "provider-linux-uinput")]
+                {
+                    Ok(crate::provider_linux_uinput::controller_capabilities())
+                }
+                #[cfg(not(feature = "provider-linux-uinput"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-uinput"))
+                }
+            }
+            LinuxTarget::Uhid => {
+                #[cfg(feature = "provider-linux-uhid")]
+                {
+                    Ok(crate::provider_linux_uhid::controller_capabilities())
+                }
+                #[cfg(not(feature = "provider-linux-uhid"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-uhid"))
+                }
+            }
+            LinuxTarget::UsbTransport => {
+                #[cfg(feature = "provider-linux-transport")]
+                {
+                    Ok(crate::provider_linux_transport::controller_capabilities())
+                }
+                #[cfg(not(feature = "provider-linux-transport"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-transport"))
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::unnecessary_wraps)] // Error branches are compiled by feature-minimal builds.
+    fn target_factory(target: LinuxTarget) -> Result<Arc<dyn BackendFactory>, CreationError> {
+        match target {
+            LinuxTarget::Uinput => {
+                #[cfg(feature = "provider-linux-uinput")]
+                {
+                    Ok(Arc::new(
+                        crate::provider_linux_uinput::LinuxUinputBackendFactory::new(),
+                    ))
+                }
+                #[cfg(not(feature = "provider-linux-uinput"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-uinput"))
+                }
+            }
+            LinuxTarget::Uhid => {
+                #[cfg(feature = "provider-linux-uhid")]
+                {
+                    Ok(Arc::new(
+                        crate::provider_linux_uhid::LinuxUhidBackendFactory::new(),
+                    ))
+                }
+                #[cfg(not(feature = "provider-linux-uhid"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-uhid"))
+                }
+            }
+            LinuxTarget::UsbTransport => {
+                #[cfg(feature = "provider-linux-transport")]
+                {
+                    Ok(Arc::new(
+                        crate::provider_linux_transport::LinuxTransportUsbBackendFactory::new(),
+                    ))
+                }
+                #[cfg(not(feature = "provider-linux-transport"))]
+                {
+                    Err(provider_not_compiled(target, "provider-linux-transport"))
+                }
+            }
         }
     }
 
@@ -668,11 +1053,7 @@ pub mod controller {
             target,
             reason: reason.to_string(),
         };
-        let capabilities = match target {
-            LinuxTarget::Uinput => crate::provider_linux_uinput::controller_capabilities(),
-            LinuxTarget::Uhid => crate::provider_linux_uhid::controller_capabilities(),
-            LinuxTarget::UsbTransport => crate::provider_linux_transport::controller_capabilities(),
-        };
+        let capabilities = target_capabilities(target)?;
         validate_realization(definition_for(kind), capabilities)?;
         match (kind, target) {
             (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput) => {
@@ -681,9 +1062,7 @@ pub mod controller {
                     FidelityTier::Compatibility,
                     BackendLevel::Evdev,
                     "linux-uinput",
-                    vec![Arc::new(
-                        crate::provider_linux_uinput::LinuxUinputBackendFactory::new(),
-                    )],
+                    vec![target_factory(target)?],
                 ))
             }
             (ControllerKind::DualSense, LinuxTarget::Uhid) => Ok((
@@ -691,18 +1070,14 @@ pub mod controller {
                 FidelityTier::IdentityAware,
                 BackendLevel::Hid,
                 "linux-uhid",
-                vec![Arc::new(
-                    crate::provider_linux_uhid::LinuxUhidBackendFactory::new(),
-                )],
+                vec![target_factory(target)?],
             )),
             (ControllerKind::DualSense, LinuxTarget::UsbTransport) => Ok((
                 "dualsense",
                 FidelityTier::HardwareFaithful,
                 BackendLevel::Transport,
                 "linux-transport-usb",
-                vec![Arc::new(
-                    crate::provider_linux_transport::LinuxTransportUsbBackendFactory::new(),
-                )],
+                vec![target_factory(target)?],
             )),
             (ControllerKind::SteamController, _) => Err(unsupported(
                 "no current Linux provider realizes the complete Steam Controller surface",
@@ -715,8 +1090,87 @@ pub mod controller {
 
     #[cfg(test)]
     mod tests {
-        use super::{CreationOptions, target_contract};
-        use gr_controller_contract::{ControllerKind, LinuxTarget};
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        use super::{CreationOptions, ManagedController, target_contract};
+        use gr_backend_api::{
+            BackendDiagnostics, BackendError, BackendFrame, BackendReverseEventSink,
+            BackendSession, BackendState, EventReadiness,
+        };
+        use gr_controller_contract::{CommitError, ControllerKind, LinuxTarget, SubscriptionError};
+        use gr_core::{BackendFamily, BackendId, SessionId};
+
+        struct FakeBackend {
+            close_count: Arc<AtomicU64>,
+            fail_close: bool,
+        }
+
+        impl BackendSession for FakeBackend {
+            fn session_id(&self) -> SessionId {
+                SessionId::new(99)
+            }
+
+            fn open(&mut self) -> Result<(), BackendError> {
+                Ok(())
+            }
+
+            fn send(&mut self, _frame: BackendFrame) -> Result<(), BackendError> {
+                Ok(())
+            }
+
+            fn drain_reverse_events(
+                &mut self,
+                _out: &mut dyn BackendReverseEventSink,
+            ) -> Result<(), BackendError> {
+                Err(BackendError::WouldBlock)
+            }
+
+            fn readiness(&self) -> EventReadiness {
+                EventReadiness::AlwaysPoll
+            }
+
+            fn diagnostics(&self) -> BackendDiagnostics {
+                BackendDiagnostics {
+                    backend_id: BackendId::from("fake-native"),
+                    family: BackendFamily::LinuxUinput,
+                    state: BackendState::Open,
+                    frames_sent: 0,
+                    reverse_events_drained: 0,
+                    write_failures: 0,
+                    last_error: None,
+                    vendor_counters: BTreeMap::new(),
+                }
+            }
+
+            fn close(&mut self) -> Result<(), BackendError> {
+                self.close_count.fetch_add(1, Ordering::Relaxed);
+                if self.fail_close {
+                    Err(BackendError::CloseFailed {
+                        reason: "injected close failure".to_string(),
+                    })
+                } else {
+                    Ok(())
+                }
+            }
+        }
+
+        fn managed_controller(
+            capacity: usize,
+            fail_close: bool,
+            close_count: Arc<AtomicU64>,
+        ) -> ManagedController {
+            ManagedController::from_open_backend(
+                ControllerKind::GenericGamepad,
+                CreationOptions::new(LinuxTarget::Uinput)
+                    .with_output_subscription_capacity(capacity),
+                Box::new(FakeBackend {
+                    close_count,
+                    fail_close,
+                }),
+            )
+        }
 
         #[test]
         fn exact_target_matrix_rejects_silent_degradation() {
@@ -731,38 +1185,70 @@ pub mod controller {
             let options = CreationOptions::new(LinuxTarget::Uhid);
             assert_eq!(options.target, LinuxTarget::Uhid);
         }
+
+        #[test]
+        fn dropping_a_controller_stops_the_worker_and_closes_the_backend_once() {
+            let close_count = Arc::new(AtomicU64::new(0));
+            drop(managed_controller(1, false, Arc::clone(&close_count)));
+            assert_eq!(close_count.load(Ordering::Relaxed), 1);
+        }
+
+        #[test]
+        fn close_failure_is_reported_but_still_makes_the_handle_terminal() {
+            let close_count = Arc::new(AtomicU64::new(0));
+            let mut controller = managed_controller(1, true, Arc::clone(&close_count));
+            assert!(matches!(
+                controller.close(),
+                Err(CommitError::Backend { .. })
+            ));
+            assert!(controller.runtime.is_closed());
+            assert_eq!(controller.close(), Ok(()));
+            assert_eq!(close_count.load(Ordering::Relaxed), 1);
+        }
+
+        #[test]
+        fn output_subscriptions_are_bounded_and_cancel_on_drop() {
+            let close_count = Arc::new(AtomicU64::new(0));
+            let controller = managed_controller(1, false, close_count);
+            let first = controller
+                .subscribe_outputs(|_| {})
+                .expect("first subscription");
+            assert_eq!(
+                controller.subscribe_outputs(|_| {}).unwrap_err(),
+                SubscriptionError::Capacity { capacity: 1 }
+            );
+            drop(first);
+            controller
+                .subscribe_outputs(|_| {})
+                .expect("cancelled slot can be reused");
+        }
     }
 }
 
 #[cfg(target_os = "linux")]
 pub use controller::{
     ControllerHandle, CreationOptions, DualSenseController, GenericGamepadController,
-    SteamController, Xbox360Controller, create_dualsense, create_generic_gamepad,
-    create_steam_controller, create_xbox360,
+    OutputSubscription, SteamController, Xbox360Controller, create_dualsense,
+    create_generic_gamepad, create_steam_controller, create_xbox360,
 };
 #[cfg(target_os = "linux")]
 pub use gr_controller_contract::{
     CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, DpadDirection,
-    FaceButton, LinuxTarget, Stick, StickPosition, Trigger,
+    FaceButton, LinuxTarget, Stick, StickPosition, SubscriptionError, Trigger,
 };
 #[cfg(target_os = "linux")]
 pub use gr_controllers::{
-    CuratedControllerOutputEvent, DualSenseControl, DualSenseMotion, DualSenseOutputEvent,
-    DualSenseTouchContact, GenericGamepadControl, GenericGamepadOutputEvent, MotionAxes,
-    NativeControl, NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
-    SteamControllerOutputEvent, Xbox360OutputEvent, XboxControl,
+    CuratedControllerOutputEvent, DualSenseControl, DualSenseInput, DualSenseMotion,
+    DualSenseOutputEvent, DualSenseTouchContact, GenericGamepadControl, GenericGamepadInput,
+    GenericGamepadOutputEvent, MotionAxes, NativeControl, NativeControlUpdate,
+    PreparedControllerFrame, SteamControllerControl, SteamControllerInput,
+    SteamControllerOutputEvent, Xbox360Input, Xbox360OutputEvent, XboxControl,
 };
 
 #[cfg(test)]
 mod tests {
     use super::enabled_provider_features;
 
-    #[cfg(all(
-        target_os = "linux",
-        feature = "provider-linux-uinput",
-        feature = "provider-linux-uhid",
-        feature = "provider-linux-transport"
-    ))]
     #[cfg(all(
         target_os = "linux",
         feature = "provider-linux-uinput",

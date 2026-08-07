@@ -60,6 +60,7 @@ where
         }
         let mut next = self.state.clone();
         self.driver.apply_normalized(&mut next, update)?;
+        self.driver.validate_state(&next)?;
         self.state = next;
         self.dirty = true;
         Ok(())
@@ -84,6 +85,7 @@ where
         }
         let mut next = self.state.clone();
         update(&mut next)?;
+        self.driver.validate_state(&next)?;
         self.state = next;
         self.dirty = true;
         Ok(())
@@ -187,6 +189,9 @@ mod tests {
                 });
             };
             *state = pressed;
+            Ok(())
+        }
+        fn validate_state(&self, _state: &Self::State) -> Result<(), ControlError> {
             Ok(())
         }
         fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError> {
