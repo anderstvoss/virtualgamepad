@@ -127,6 +127,11 @@ where
     pub const fn sink(&self) -> &S {
         &self.sink
     }
+    /// Mutably access the provider-facing sink for controlled recovery or
+    /// diagnostics. Normal callers should use [`Self::commit`] only.
+    pub fn sink_mut(&mut self) -> &mut S {
+        &mut self.sink
+    }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
         self.dirty
@@ -233,6 +238,59 @@ mod tests {
             .expect("valid");
         assert!(runtime.commit().is_err());
         assert!(runtime.is_dirty());
+    }
+
+    #[test]
+    fn failed_send_can_be_retried_without_reapplying_state() {
+        let mut runtime = ControllerRuntime::new(
+            Driver,
+            Sink {
+                fail: true,
+                frames: Vec::new(),
+            },
+        );
+        runtime
+            .apply(ControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("valid update");
+        assert!(runtime.commit().is_err());
+        runtime.sink_mut().fail = false;
+        runtime.commit().expect("retry succeeds");
+        assert_eq!(runtime.sink().frames, vec![vec![1]]);
+        assert!(!runtime.is_dirty());
+    }
+
+    #[test]
+    fn native_update_closure_is_atomic_and_close_is_terminal() {
+        let mut runtime = ControllerRuntime::new(
+            Driver,
+            Sink {
+                fail: false,
+                frames: Vec::new(),
+            },
+        );
+        let error = runtime
+            .update_state(|state| {
+                *state = true;
+                Err(ControlError::UnsupportedControl {
+                    controller: ControllerKind::GenericGamepad,
+                    control: "injected",
+                })
+            })
+            .expect_err("failed native update");
+        assert!(matches!(error, ControlError::UnsupportedControl { .. }));
+        assert!(!*runtime.state());
+        runtime.close();
+        assert!(matches!(
+            runtime.apply(ControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            }),
+            Err(ControlError::Closed)
+        ));
+        assert!(matches!(runtime.commit(), Err(CommitError::Closed)));
     }
 
     proptest! {
