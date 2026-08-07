@@ -12,6 +12,7 @@ publish = false
 [workspace]
 members = [
     "crates/gr-controller-contract",
+    "crates/gr-controller-runtime",
     "crates/gr-controllers",
     "crates/gr-core",
     "crates/gr-profiles",

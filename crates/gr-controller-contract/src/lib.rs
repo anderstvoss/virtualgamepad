@@ -121,6 +121,35 @@ pub trait ControllerDefinition: Send + Sync + 'static {
     fn requirements(&self) -> RealizationRequirements;
 }
 
+/// A compiled controller implementation that owns its typed state and report
+/// encoder. The generic runtime invokes this contract without knowing a
+/// controller family or report format.
+pub trait ControllerDriver: ControllerDefinition {
+    type State: Clone + Send + 'static;
+
+    fn neutral_state(&self) -> Self::State;
+
+    /// Apply a normalized update to a typed state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when the update is unsupported or invalid for
+    /// this controller.
+    fn apply_normalized(
+        &self,
+        state: &mut Self::State,
+        update: ControlUpdate,
+    ) -> Result<(), ControlError>;
+
+    /// Encode the complete current state into a caller-owned reusable buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] if the state cannot be represented by this
+    /// controller's report contract.
+    fn encode(&self, state: &Self::State, output: &mut Vec<u8>) -> Result<(), ControlError>;
+}
+
 /// Errors caused by an invalid or incompatible control update.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ControlError {
