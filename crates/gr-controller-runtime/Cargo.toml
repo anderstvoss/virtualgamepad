@@ -1,0 +1,20 @@
+[package]
+name = "gr-controller-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Controller-agnostic commit runtime for virtualgamepad."
+publish = false
+
+[dependencies]
+gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+
+[lints]
+workspace = true

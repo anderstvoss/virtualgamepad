@@ -1,22 +1,33 @@
-# virtualgamepad spec overview
+# VirtualGamepad specification overview
 
-`virtualgamepad` is a Rust-first design and planning package for a virtual controller library. This directory is the source-of-truth spec.
+The authoritative product and architecture contract is the
+[controller-native API specification](implementation/CONTROLLER_NATIVE_API_SPEC.md).
+The implemented public API creates curated, compiled controller types with an
+explicit Linux target; it does not expose profile registration, YAML runtime
+configuration, planning, or automatic fidelity degradation.
 
-The crate at the repo root is an early scaffold (see [../../README.md](../../README.md) and [../../CHANGELOG.md](../../CHANGELOG.md)); the runtime API will be built out against the architecture and crate layout defined here.
+## Active documents
 
-## What lives here
+- [Controller-native API specification](implementation/CONTROLLER_NATIVE_API_SPEC.md)
+- [Adding a curated controller](implementation/ADDING_A_CURATED_CONTROLLER.md)
+- [Demo reference consumer](../../demo/README.md)
+- [Repository setup and validation](../REPO-SETUP.md)
 
-- [Product and architecture specs](specs/): target architecture, configuration rules, and fidelity definitions
-- [Implementation guidance](implementation/): language-agnostic framework guidance plus Rust build plan and crate-level implementation specification
-- [Validation strategy](validation/): test plan, headless automation strategy, and device-spec evidence workflow
+## Historical documents
 
-See [README.md](README.md) for the per-document index.
+Files under `specs/`, the older implementation-plan documents, and the
+profile-oriented validation plans describe the pre-redesign architecture.
+They are retained as design history only and are non-normative. They must not
+be used to add public APIs or runtime behavior. New design decisions belong in
+the controller-native specification.
 
-## Current status
+## Current realization boundary
 
-- The crate scaffold exists but exposes no public API yet.
-- The active source of truth for design intent is this spec package.
+- Generic Gamepad and Xbox 360: Linux uinput compatibility realization.
+- DualSense: Linux UHID identity-aware and USB gadget transport realization.
+- Steam Controller: compiled typed API, with creation rejected until a Linux
+  provider can realize the complete surface.
+- Windows/macOS: no creation API.
 
-## Next expected step
-
-Scaffold the Rust workspace beyond the current single-crate stub and start implementing the crate layout described in [RUST_IMPLEMENTATION_SPEC.md](implementation/RUST_IMPLEMENTATION_SPEC.md), following the sequencing in [RUST_IMPLEMENTATION_PLAN.md](implementation/RUST_IMPLEMENTATION_PLAN.md).
+Every supported path is selected explicitly and validated before a provider
+session opens.

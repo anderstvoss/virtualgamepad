@@ -1,6 +1,7 @@
 //! Linux transport provider for `virtualgamepad`.
 
 #![allow(clippy::module_name_repetitions)]
+#![cfg_attr(not(feature = "legacy-profile-api"), allow(dead_code))]
 
 #[cfg(target_os = "linux")]
 mod kernel;
@@ -10,17 +11,23 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gr_backend_api::{
-    BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
-    BackendOpenContext, BackendRealizationRequest, BackendReverseEventSink, BackendSession,
-    BackendState, BackendSupportReport, EventReadiness, SupportLevel, UnsupportedOutputFunction,
+    BackendDiagnostics, BackendError, BackendFrame, BackendReverseEventSink, BackendSession,
+    BackendState, EventReadiness, NativeBackendFactory, NativeBackendOpenContext,
+    NativeControllerRealization,
 };
-use gr_core::{
-    BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
-    SessionId,
+#[cfg(feature = "legacy-profile-api")]
+use gr_backend_api::{
+    BackendFactory, BackendInventoryEntry, BackendOpenContext, BackendRealizationRequest,
+    BackendSupportReport, SupportLevel, UnsupportedOutputFunction,
 };
+use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
+use gr_core::{BackendFamily, BackendId, ProfileId, SessionId};
+#[cfg(feature = "legacy-profile-api")]
+use gr_core::{BackendLevel, FidelityTier, SemanticOutputFunction};
+#[cfg(feature = "legacy-profile-api")]
 use gr_profiles::{ControllerProfile, ProfileFamily, registry};
+#[cfg(feature = "legacy-profile-api")]
 use gr_runtime_model::HostPlatform;
-use gr_testkit::fixtures::TransportEndpoints;
 use serde::{Deserialize, Serialize};
 
 #[cfg(any(test, target_os = "linux"))]
@@ -30,14 +37,48 @@ use gr_backend_api::{
 #[cfg(any(test, target_os = "linux"))]
 use gr_core::{SequenceId, Timestamp};
 
+#[cfg(feature = "legacy-profile-api")]
 pub use gr_testkit::fixtures::{
-    TransportControlStep, TransportReplayError, TransportReplaySummary, TransportTraceBus,
-    TransportTraceState, TransportTraceStep, replay_transport_trace,
+    TransportControlStep, TransportReplayError, TransportReplaySummary, TransportTraceState,
+    TransportTraceStep, replay_transport_trace,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TransportTraceBus {
+    Usb,
+    Bluetooth,
+}
+
+impl std::fmt::Display for TransportTraceBus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Usb => "usb",
+            Self::Bluetooth => "bluetooth",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransportEndpoints {
+    pub input: u8,
+    pub reverse: u8,
+}
 
 const PHASE_10_PLANNING_NOTE: &str =
     "phase-10 transport backend is plannable and trace-replay-capable";
 const PHASE_11_SCOPE_NOTE: &str = "Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only";
+
+/// Provider-only realization promise consumed by the curated runtime.
+#[must_use]
+pub const fn controller_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        target: LinuxTarget::UsbTransport,
+        provides_identity: true,
+        provides_transport: true,
+        provides_reverse_output: true,
+    }
+}
 
 const USB_BACKEND_ID: &str = "linux-transport-usb";
 const BLUETOOTH_BACKEND_ID: &str = "linux-transport-bluetooth";
@@ -52,11 +93,13 @@ const USB_BCD_USB: u16 = 0x0200;
 /// `report_desc` instead.
 const DUALSENSE_USB_HID_REPORT_LEN: u16 = 64;
 
+#[cfg(feature = "legacy-profile-api")]
 const XBOX360_OUTPUTS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::Rumble,
     SemanticOutputFunction::Lighting,
     SemanticOutputFunction::PlayerIndicators,
 ];
+#[cfg(feature = "legacy-profile-api")]
 const DUALSENSE_OUTPUTS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::Rumble,
     SemanticOutputFunction::Haptics,
@@ -67,18 +110,21 @@ const DUALSENSE_OUTPUTS: &[SemanticOutputFunction] = &[
 ];
 
 /// Single source of truth for the transport profile / bus allowlist.
+#[cfg(feature = "legacy-profile-api")]
 const SUPPORTED_PROFILE_BUS_PAIRS: &[(&str, TransportTraceBus)] = &[
     ("dualsense", TransportTraceBus::Usb),
     ("dualsense", TransportTraceBus::Bluetooth),
     ("xbox360", TransportTraceBus::Usb),
 ];
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxTransportEndpointSummary {
     pub input: u8,
     pub reverse: u8,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxTransportSmokeReport {
     pub profile_id: ProfileId,
@@ -171,6 +217,7 @@ impl LinuxTransportIoctl for DeferredLinuxTransportIoctl {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 fn unsupported_profile_note() -> String {
     let pairs = SUPPORTED_PROFILE_BUS_PAIRS
         .iter()
@@ -181,12 +228,14 @@ fn unsupported_profile_note() -> String {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "legacy-profile-api")]
 struct SupportedTransportProfile {
     supported_outputs: &'static [SemanticOutputFunction],
     input_endpoint: u8,
     reverse_endpoint: u8,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 fn support_profile(
     profile_id: &ProfileId,
     bus: TransportTraceBus,
@@ -213,6 +262,7 @@ fn support_profile(
 
 /// Resolve the endpoints a transport-trace replay should expect for a
 /// supported profile+bus pair. Returns `None` for unsupported pairs.
+#[cfg(feature = "legacy-profile-api")]
 #[must_use]
 pub fn transport_endpoints_for(
     profile_id: &ProfileId,
@@ -224,6 +274,7 @@ pub fn transport_endpoints_for(
     })
 }
 
+#[cfg(feature = "legacy-profile-api")]
 fn support_report_for(
     profile_id: &ProfileId,
     bus: TransportTraceBus,
@@ -315,6 +366,7 @@ impl LinuxTransportUsbBackendFactory {
         self
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     fn device_spec(profile: &ControllerProfile) -> Result<LinuxTransportDeviceSpec, BackendError> {
         if profile.profile_family != ProfileFamily::DualSense {
             return Err(BackendError::Unsupported {
@@ -357,6 +409,7 @@ impl LinuxTransportUsbBackendFactory {
         })
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     #[must_use]
     pub fn smoke_report(
         &self,
@@ -442,6 +495,7 @@ impl LinuxTransportUsbBackendFactory {
         report
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     fn invalid_smoke_report(
         &self,
         profile_id: &ProfileId,
@@ -476,6 +530,7 @@ impl LinuxTransportUsbBackendFactory {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl BackendFactory for LinuxTransportUsbBackendFactory {
     fn backend_id(&self) -> BackendId {
         self.backend_id.clone()
@@ -516,8 +571,8 @@ impl BackendFactory for LinuxTransportUsbBackendFactory {
         let spec = Self::device_spec(profile)?;
         Ok(Box::new(LinuxTransportBackendSession::new(
             context.session_id,
-            self.backend_id(),
-            self.family(),
+            self.backend_id.clone(),
+            BackendFamily::LinuxTransportUsb,
             context.profile_id.clone(),
             spec,
             Arc::clone(&self.transport_boundary),
@@ -525,11 +580,60 @@ impl BackendFactory for LinuxTransportUsbBackendFactory {
     }
 }
 
+impl NativeBackendFactory for LinuxTransportUsbBackendFactory {
+    fn target(&self) -> LinuxTarget {
+        LinuxTarget::UsbTransport
+    }
+
+    fn open_native_session(
+        &self,
+        context: &NativeBackendOpenContext,
+    ) -> Result<Box<dyn BackendSession>, BackendError> {
+        let NativeControllerRealization::Usb(realization) = &context.realization else {
+            return Err(BackendError::Unsupported {
+                reason: format!(
+                    "linux USB transport requires a USB realization, not {}",
+                    context.realization.target()
+                ),
+            });
+        };
+        let profile_id = ProfileId::from(context.controller.to_string());
+        let spec = LinuxTransportDeviceSpec {
+            profile_id: profile_id.clone(),
+            bus: TransportTraceBus::Usb,
+            descriptor: realization.descriptor.clone(),
+            endpoints: TransportEndpoints {
+                input: realization.input_endpoint,
+                reverse: realization.reverse_endpoint,
+            },
+            device_name: realization.device_name.clone(),
+            manufacturer: realization.manufacturer.clone(),
+            serial_number: realization.serial_number.clone(),
+            vendor_id: realization.identity.vendor_id,
+            product_id: realization.identity.product_id,
+            version: realization.identity.version,
+            bcd_usb: realization.usb_version,
+            max_power_ma: realization.maximum_power_ma,
+            report_length: realization.report_length,
+        };
+        Ok(Box::new(LinuxTransportBackendSession::new(
+            context.session_id,
+            self.backend_id.clone(),
+            BackendFamily::LinuxTransportUsb,
+            profile_id,
+            spec,
+            Arc::clone(&self.transport_boundary),
+        )))
+    }
+}
+
+#[cfg(feature = "legacy-profile-api")]
 pub struct LinuxTransportBluetoothBackendFactory {
     backend_id: BackendId,
     notes: Vec<String>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl Default for LinuxTransportBluetoothBackendFactory {
     fn default() -> Self {
         Self {
@@ -543,6 +647,7 @@ impl Default for LinuxTransportBluetoothBackendFactory {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl LinuxTransportBluetoothBackendFactory {
     #[must_use]
     pub fn new() -> Self {
@@ -550,6 +655,7 @@ impl LinuxTransportBluetoothBackendFactory {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl BackendFactory for LinuxTransportBluetoothBackendFactory {
     fn backend_id(&self) -> BackendId {
         self.backend_id.clone()
@@ -1111,7 +1217,10 @@ mod tests {
         assert_eq!(endpoints.reverse, USB_ENDPOINT_REVERSE);
 
         let summary = replay_transport_trace(
-            Some(endpoints),
+            Some(gr_testkit::fixtures::TransportEndpoints {
+                input: endpoints.input,
+                reverse: endpoints.reverse,
+            }),
             &[
                 TransportTraceStep {
                     step: TransportControlStep::Connect,

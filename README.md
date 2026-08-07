@@ -1,68 +1,82 @@
 # VirtualGamepad
 
-Rust library for creating virtual gamepad devices that emulate
-physical hardware at varying accuracy levels.
+`virtualgamepad` is a Rust library for creating a small, curated set of Linux
+virtual controllers through controller-specific, strongly typed APIs. It is a
+compiled controller emulator—not a YAML profile engine, runtime registry, or
+plugin host.
 
-> **Status:** early WIP, through Phase 12 provider-complete closure.
-> Linux provider surfaces exist for `uinput`, UHID, and the DualSense
-> USB transport target. Windows and macOS provider foundations are
-> planning-only and report deployment requirements, not real device
-> realization. By the project plan this means the architecture is
-> functional for full device-emulation buildout, while profile- and
-> platform-specific validation remains ongoing. See [CHANGELOG.md](CHANGELOG.md)
-> and [docs/spec/](docs/spec/) for tracked changes and the buildout
-> spec. A companion [demo program](demo/) grows alongside the library.
+The public API is intentionally breaking before 1.0. Its source of truth is
+the [controller-native API specification](docs/spec/implementation/CONTROLLER_NATIVE_API_SPEC.md).
 
-## Project goals
+## Supported creation paths
 
-- ship a Rust library for virtual controller emulation per the
-  [spec](docs/spec/)
-- ship a separate [demo program](demo/) that grows from a CLI today
-  into a full GUI with an internal controller visualizer once the
-  library is functional (architecture ready for full device-emulation
-  buildout, not necessarily every device supported)
+Callers must choose a Linux target explicitly. Creation never falls back to a
+different target or a less faithful device.
 
-## License
+| Controller | `Uinput` | `Uhid` | `UsbTransport` |
+|---|---:|---:|---:|
+| Generic Gamepad | compatibility | rejected | rejected |
+| Xbox 360 | compatibility | rejected | rejected |
+| DualSense | rejected | identity-aware | USB gadget |
+| Steam Controller | rejected | rejected | rejected |
 
-[AGPL-3.0-only](LICENSE).
+Steam Controller has a typed compiled API, but creation currently returns an
+actionable error because no Linux provider realizes its complete declared
+surface. Windows and macOS do not expose controller creation APIs.
 
-## Setup
+## Using the API
 
-After cloning, run once:
+State changes are local, validated, and atomic. `commit()` submits the complete
+current state. A rejected update preserves the prior state; a failed commit
+keeps the controller dirty and available for retry.
 
-```bash
-cargo install cargo-deny cargo-audit
-git config core.hooksPath .githooks
+```rust,no_run
+use virtualgamepad::{
+    ControlUpdate, CreationOptions, DualSenseControl, FaceButton, LinuxTarget,
+    create_dualsense,
+};
 
-# If you previously ran `pre-commit install` on this clone, remove the
-# now-stale wrappers in .git/hooks/ so git only consults .githooks/:
-rm -f .git/hooks/pre-commit .git/hooks/pre-push
+let mut controller = create_dualsense(CreationOptions::new(LinuxTarget::Uhid))?;
+
+// Normalized labels are spatial and portable.
+controller.apply(ControlUpdate::FaceButton {
+    button: FaceButton::South,
+    pressed: true,
+})?;
+
+// Native labels are explicit controller-specific types.
+controller.set_native(DualSenseControl::Cross, true)?;
+if let Err(error) = controller.commit() {
+    eprintln!("commit remains retryable: {error}");
+}
+
+let diagnostics = controller.diagnostics();
+assert_eq!(diagnostics.controller, virtualgamepad::ControllerKind::DualSense);
+controller.close()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-`core.hooksPath` redirects git to the committed `.githooks/`
-directory. Both hook wrappers (`pre-commit` and `pre-push`) are
-committed there. The `pre-commit` wrapper delegates to the
-`pre-commit` Python package (install via pipx or pip — see
-<https://pre-commit.com/#install>); the `pre-push` wrapper runs the
-custom safety checks (gitleaks, tracked-file blocker, local-paths
-scan) and then hands off to pre-commit's pre-push-stage hooks
-(`cargo deny` + `cargo audit`).
+Normalized names use physical positions such as
+`FaceButton::{North, South, East, West}`. Native names use types such as
+`DualSenseControl::Cross` and `XboxControl::A`; ambiguous methods such as
+`button_x` are deliberately absent.
+
+Reverse output is delivered through bounded typed subscriptions. Callback
+panics cancel only that subscription, slow callbacks do not run on the commit
+path, and delivery health is available through `diagnostics()`.
+
+## Linux prerequisites
+
+- `Uinput` requires access to `/dev/uinput`.
+- `Uhid` requires access to `/dev/uhid`.
+- `UsbTransport` requires a peripheral-capable USB controller, configfs gadget
+  support, an available UDC, and the permissions needed to configure it.
+
+Missing Cargo provider features, unsupported controller/target pairs, and host
+open failures produce distinct creation errors. See the
+[demo](demo/README.md) for a reference consumer.
 
 ## Development
-
-Build:
-
-```bash
-cargo build
-```
-
-Test:
-
-```bash
-cargo test
-```
-
-Local gates (also run in CI on every PR):
 
 ```bash
 cargo fmt --all -- --check
@@ -72,48 +86,16 @@ cargo test --workspace --all-features
 gitleaks detect
 ```
 
-Before publishing or merging anything that matters, run a deep
-gitleaks scan across all branches and tags:
+Compile-fail tests enforce controller-specific API boundaries. Property tests
+exercise mapping and lifecycle invariants. Raw reverse reports and generated
+control sequences have dedicated [`cargo-fuzz` targets](fuzz/README.md).
+Privileged Linux device tests remain separate from the hermetic suite.
 
-```bash
-scripts/deep-scan.sh
-```
+Record user-visible changes in [CHANGELOG.md](CHANGELOG.md). Repository setup
+and security checks are documented in [docs/REPO-SETUP.md](docs/REPO-SETUP.md),
+[docs/HARDENING-CHECKLIST.md](docs/HARDENING-CHECKLIST.md), and
+[SECURITY.md](SECURITY.md).
 
-Record user-visible changes in [`CHANGELOG.md`](CHANGELOG.md) under
-the `Unreleased` section as part of any feature, fix, or breaking
-change.
+## License
 
-## Demo program
-
-The repo ships a separate demo binary under [`demo/`](demo/) that grows
-with the library. To run the current scaffold:
-
-```bash
-cargo run -p virtual_gamepad_demo -- info
-cargo run -p virtual_gamepad_demo -- phase-gate 12
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
-cargo run -p virtual_gamepad_demo -- support-report --profile dualsense --tier hardware-faithful
-cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform windows --inventory samples/inventories/windows-hid-stub.yaml
-cargo run -p virtual_gamepad_demo -- plan-session dualsense --goal identity-aware --host-platform macos --inventory samples/inventories/macos-hid-stub.yaml
-```
-
-See [demo/README.md](demo/README.md) for the planned growth phases and
-non-goals (the demo is **not** intended to be embedded by real users
-of the library).
-
-## Configuration
-
-Copy `.env.example` to `.env` for local development. Do not commit
-`.env` or other local configuration files (the pre-commit and
-pre-push hooks block this).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Security
-
-See [SECURITY.md](SECURITY.md). For the end-to-end hardening
-procedure (reusable across projects), see
-[`docs/REPO-SETUP.md`](docs/REPO-SETUP.md); for the tickable one-page
-bootstrap list, see [`docs/HARDENING-CHECKLIST.md`](docs/HARDENING-CHECKLIST.md).
+[AGPL-3.0-only](LICENSE)

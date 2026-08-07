@@ -1,84 +1,34 @@
 # virtualgamepad demo
 
-A companion program for the [`virtualgamepad`](../README.md) library. The demo is **not** intended to be embedded into real library users — it exists to drive hands-on testing and visualization as the library is built out.
+`vgpd-demo` is a small reference consumer for the controller-native public
+API. It deliberately has no profile browser, YAML configuration, session
+planner, or automatic provider selection.
 
-The demo's growth tracks the library's growth, one phase at a time, per the [Rust implementation plan](../docs/spec/implementation/RUST_IMPLEMENTATION_PLAN.md). Each phase ends with a manual gate the user runs via `vgpd-demo phase-gate <N>`.
-
-## Growth phases
-
-The demo grows in lockstep with library phases. Highlights:
-
-- **Phase 0 (CLI scaffold + gate runner)** — shipped: a minimal [`clap`](https://docs.rs/clap)-based CLI, plus the `phase-gate <N>` driver that reads the gate checklist out of the implementation plan.
-- **Phase 1 (core domain model gate)** — shipped: `show-types` prints the canonical fidelity/backend/capability names that reviewers confirm during the gate, and those names are snapshot-tested for stability.
-- **Phases 1–3 (foundation gates)** — adds `show-types`, `list-profiles`, `show-capabilities`, `validate-config`. Each gate exercises authoring custom YAML fixtures.
-- **Phase 4 (runtime fake gate)** — shipped: `simulate-session` and `replay-trace` exercise fake backend sessions and recorded trace review.
-- **Phases 5–7 (runtime gates)** — adds `plan-session`, runtime-backed `simulate-session`, and `many-sessions` on top of the Phase 4 trace surface.
-- **Phases 8–11 (Linux provider gates)** — adds `run-uinput-smoke`, `run-uhid-smoke`, `run-transport-smoke`, and `run-scenario`. `run-uinput-smoke` is dual-mode: the default command is a one-shot probe/report surface for CI evidence, while `--interactive` keeps the device alive for `evtest`, `jstest`, SDL, and rumble verification. `--script exercise` replays representative inputs through the runtime while the session stays open. `run-uhid-smoke` uses the same one-shot vs interactive split and accepts `--bus usb|bluetooth` to select the DualSense identity surface.
-- **Phase 12 (cross-platform planner gates)** — `plan-session --host-platform windows|macos` exercises the planner-only stubs.
-- **After Phase 12 (GUI graduation)** — the controller visualizer GUI lands: real-time visualization of forward input, reverse commands, planner output, and live diagnostics across active sessions.
-
-The split between `vgpd-demo` (this binary, human-facing) and `gr-cli` (internal/CI, scriptable) is specified in [TESTING_TOOLING_SPEC.md](../docs/spec/implementation/TESTING_TOOLING_SPEC.md#cli-surfaces). The two share backing libraries; `vgpd-demo` is the one humans run at phase gates.
-
-## GUI framework
-
-The shipped GUI uses [`egui`](https://github.com/emilk/egui) via `eframe`.
-It is optimized for local debugging: controls send full input frames immediately,
-session diagnostics stay visible, and long profile-specific control surfaces
-remain scrollable.
-
-## Capability-driven GUI boundary
-
-The GUI discovers profiles from the library registry and selects a typed editor
-for the built-in Generic Gamepad, Xbox 360, DualSense, and Steam Controller
-families. A future registered family remains visible, but receives a
-capability-and-range fallback rather than invented input controls. This keeps
-session management and diagnostics independent of profile-editor work.
-
-Likewise, the provider catalog distinguishes runnable Linux inventories from
-planning-only paths. Only the selected local Linux inventory can create a
-session. Windows, macOS, and the future brokered UHID path are intentionally
-disabled cards on Linux; showing them records their requirements without
-claiming host support or attempting privilege escalation. The accepted session
-plan and policy are read-only source-of-truth diagnostics. Future policy,
-transport, accessory, trace/replay, and configuration-file controls have
-reserved locations, but are not implemented until corresponding library
-runtime contracts exist.
-
-## Non-goals
-
-- The demo is **not** a reusable component. Hosts embedding the library should not depend on `virtual_gamepad_demo`.
-- The demo does **not** mirror or test every library code path. The library has its own test suite under `tests/` and (eventually) per-crate test modules. The demo is for human-facing exploration.
-- The demo does **not** participate in the library's public API stability story.
+It lets a developer choose one curated controller and one explicit Linux
+target, apply normalized controls to local mutable state, and call `commit()`.
+Creation errors are shown verbatim: a target that cannot exactly realize the
+selected controller is rejected rather than downgraded. Typed reverse events
+and `ControllerDiagnostics` are displayed without converting them to generic
+string/map payloads.
 
 ## Running
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
 cargo run -p virtual_gamepad_demo -- gui
-cargo run -p virtual_gamepad_demo -- show-types
-cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
-cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
-cargo run -p virtual_gamepad_demo -- run-scenario samples/scenarios/dualsense-steam-input-mode.yaml
-cargo run -p virtual_gamepad_demo -- many-sessions 8
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke generic-gamepad --interactive --script exercise
-cargo run -p virtual_gamepad_demo -- run-uinput-smoke xbox360 --interactive
-cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --bus usb
-cargo run -p virtual_gamepad_demo -- run-uhid-smoke dualsense --interactive --bus bluetooth
-cargo run -p virtual_gamepad_demo -- support-report --profile generic-gamepad
-cargo run -p virtual_gamepad_demo -- support-report --profile dualsense
-cargo run -p virtual_gamepad_demo -- phase-gate 9
 ```
 
-Add `--help` to any subcommand for usage details.
+The GUI is Linux-only and needs the appropriate provider-host permissions for
+successful creation. It is a manual reference client; its source demonstrates
+the same constructors and `ControllerHandle` operations available to library
+users.
 
-`gui` is a Linux-only local development surface. It starts in the standard
-`uinput` scope. A DualSense selection in this scope creates a conventional
-evdev gamepad with the DualSense control layout; native DualSense HID identity,
-touch contacts, and motion realization require the explicit identity-aware UHID
-or USB transport-lab scope. Their host requirements are documented in the
-local provider scope decision.
+## Non-goals
+
+- It is not an embeddable component or a compatibility wrapper.
+- It does not define controller behavior through YAML or profiles.
+- It does not claim a realization works when the selected Linux target lacks
+  the controller's complete declared surface.
 
 ## License
 

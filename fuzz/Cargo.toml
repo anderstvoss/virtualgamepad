@@ -1,0 +1,32 @@
+[package]
+name = "virtualgamepad-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+gr-backend-api = { path = "../crates/gr-backend-api", default-features = false }
+gr-controller-contract = { path = "../crates/gr-controller-contract" }
+gr-controllers = { path = "../crates/gr-controllers" }
+gr-core = { path = "../crates/gr-core" }
+
+[[bin]]
+name = "reverse_reports"
+path = "fuzz_targets/reverse_reports.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "control_sequences"
+path = "fuzz_targets/control_sequences.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

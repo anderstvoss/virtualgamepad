@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- Breaking controller-native API for Generic Gamepad, Xbox 360, DualSense, and
+  Steam Controller, with explicit Linux targets, typed normalized/native state,
+  explicit commit, typed reverse output, controller diagnostics, controller-
+  owned realization specifications, compile-fail API tests, and fuzz targets.
+
 - Companion demo binary under `demo/` (`virtual_gamepad_demo`) that
   grows from a CLI scaffold into a future GUI controller visualizer
   alongside the library.
@@ -98,7 +103,16 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Removed
 
+- Profile IDs, runtime/YAML controller selection, planner inventories, generic
+  profile payloads, and automatic degradation from the root public API.
+
 ### Fixed
+
+- Controller drop now stops reverse delivery and closes the backend; close
+  failures still leave the handle terminal, rejected complete-state edits are
+  atomic, failed commits remain retryable, subscription growth is bounded,
+  callback panics are isolated, feature-minimal builds compile, and invalid
+  DualSense touch coordinates are rejected instead of silently clipped.
 
 - Full-repo validation commands in repo docs and CI now use explicit
   `--workspace` flags so formatting, linting, build, and test checks

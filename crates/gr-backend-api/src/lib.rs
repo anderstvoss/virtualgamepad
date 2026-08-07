@@ -11,12 +11,16 @@
 
 use std::collections::BTreeMap;
 
+use gr_controller_contract::{ControllerKind, LinuxTarget};
 use gr_core::{
-    BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
-    SequenceId, SessionId, Timestamp,
+    BackendFamily, BackendId, ProfileId, SemanticOutputFunction, SequenceId, SessionId, Timestamp,
 };
+#[cfg(feature = "legacy-profile-api")]
+use gr_core::{BackendLevel, FidelityTier};
+#[cfg(feature = "legacy-profile-api")]
 use gr_runtime_model::{EmulationGoal, HostPlatform, ProfileSpecificOutputFunctionId};
 
+#[cfg(feature = "legacy-profile-api")]
 pub use gr_runtime_model::BackendOpenContext;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -112,6 +116,7 @@ pub enum BackendReverseEventKind {
 #[non_exhaustive]
 pub enum BackendReverseTarget {
     SemanticOutput(SemanticOutputFunction),
+    #[cfg(feature = "legacy-profile-api")]
     ProfileSpecificOutput(ProfileSpecificOutputFunctionId),
     ReportId(u8),
     EndpointId(u8),
@@ -163,6 +168,97 @@ pub enum BackendState {
 }
 
 // --------------------------------------------------------------------
+// Controller-native realization
+// --------------------------------------------------------------------
+
+/// Stable device identity supplied by a compiled controller implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeDeviceIdentity {
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub version: u16,
+}
+
+/// One absolute-axis declaration for a native evdev realization.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeAbsoluteAxis {
+    pub code: u16,
+    pub minimum: i32,
+    pub maximum: i32,
+    pub flat: i32,
+}
+
+/// Complete controller-owned uinput realization specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeEvdevRealization {
+    pub device_name: String,
+    pub identity: NativeDeviceIdentity,
+    pub event_codes: Vec<u16>,
+    pub key_codes: Vec<u16>,
+    pub absolute_axes: Vec<NativeAbsoluteAxis>,
+    pub force_feedback_codes: Vec<u16>,
+}
+
+/// Complete controller-owned UHID realization specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeHidRealization {
+    pub bus_type: u16,
+    pub device_name: String,
+    pub physical_path: String,
+    pub unique_id: String,
+    pub identity: NativeDeviceIdentity,
+    pub input_report_id: u8,
+    pub output_report_id: u8,
+    pub numbered_output_reports: bool,
+    pub numbered_feature_reports: bool,
+    pub descriptor: Vec<u8>,
+    pub feature_reports: BTreeMap<u8, Vec<u8>>,
+}
+
+/// Complete controller-owned USB gadget realization specification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeUsbRealization {
+    pub descriptor: Vec<u8>,
+    pub input_endpoint: u8,
+    pub reverse_endpoint: u8,
+    pub device_name: String,
+    pub manufacturer: String,
+    pub serial_number: String,
+    pub identity: NativeDeviceIdentity,
+    pub usb_version: u16,
+    pub maximum_power_ma: u16,
+    pub report_length: u16,
+}
+
+/// Immutable OS-facing specification prepared by a controller implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeControllerRealization {
+    Evdev(NativeEvdevRealization),
+    Hid(NativeHidRealization),
+    Usb(NativeUsbRealization),
+}
+
+impl NativeControllerRealization {
+    /// Return the Linux target required by this realization shape.
+    #[must_use]
+    pub const fn target(&self) -> LinuxTarget {
+        match self {
+            Self::Evdev(_) => LinuxTarget::Uinput,
+            Self::Hid(_) => LinuxTarget::Uhid,
+            Self::Usb(_) => LinuxTarget::UsbTransport,
+        }
+    }
+}
+
+/// Profile-free context used by the curated controller API.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeBackendOpenContext {
+    pub session_id: SessionId,
+    pub controller: ControllerKind,
+    pub realization: NativeControllerRealization,
+}
+
+// --------------------------------------------------------------------
 // Open + realization
 // --------------------------------------------------------------------
 
@@ -171,6 +267,7 @@ pub enum BackendState {
 // re-export at the top of this module keeps the import path stable for
 // providers.
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendRealizationRequest {
     pub profile_id: ProfileId,
@@ -181,6 +278,7 @@ pub struct BackendRealizationRequest {
     pub required_output_functions: Vec<SemanticOutputFunction>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendSupportReport {
     pub forward_support: SupportLevel,
@@ -193,6 +291,7 @@ pub struct BackendSupportReport {
     pub notes: Vec<String>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SupportLevel {
@@ -201,12 +300,14 @@ pub enum SupportLevel {
     None,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnsupportedOutputFunction {
     pub function: SemanticOutputFunction,
     pub reason: String,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendInventoryEntry {
     pub backend_id: BackendId,
@@ -267,6 +368,7 @@ where
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 pub trait BackendFactory: Send + Sync {
     fn backend_id(&self) -> BackendId;
     fn family(&self) -> BackendFamily;
@@ -283,6 +385,22 @@ pub trait BackendFactory: Send + Sync {
     fn open_session(
         &self,
         context: &BackendOpenContext,
+    ) -> Result<Box<dyn BackendSession>, BackendError>;
+}
+
+/// Provider contract for a controller-owned, profile-free realization spec.
+pub trait NativeBackendFactory: Send + Sync {
+    fn target(&self) -> LinuxTarget;
+
+    /// Prepare a backend session without opening the host device yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BackendError::Unsupported`] when the realization shape does
+    /// not match this factory, or another backend error if preparation fails.
+    fn open_native_session(
+        &self,
+        context: &NativeBackendOpenContext,
     ) -> Result<Box<dyn BackendSession>, BackendError>;
 }
 
