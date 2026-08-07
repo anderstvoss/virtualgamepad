@@ -1,6 +1,7 @@
 //! Linux `UHID` provider for `virtualgamepad`.
 
 #![allow(clippy::module_name_repetitions)]
+#![cfg_attr(not(feature = "legacy-profile-api"), allow(dead_code))]
 
 #[cfg(target_os = "linux")]
 mod kernel;
@@ -18,22 +19,29 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gr_backend_api::{
-    BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
-    BackendOpenContext, BackendRealizationRequest, BackendReverseEvent, BackendReverseEventKind,
+    BackendDiagnostics, BackendError, BackendFrame, BackendReverseEvent, BackendReverseEventKind,
     BackendReverseEventSink, BackendReversePayload, BackendReverseTarget, BackendSession,
-    BackendState, BackendSupportReport, EventReadiness, NativeBackendFactory,
-    NativeBackendOpenContext, NativeControllerRealization, SupportLevel, UnsupportedOutputFunction,
+    BackendState, EventReadiness, NativeBackendFactory, NativeBackendOpenContext,
+    NativeControllerRealization,
+};
+#[cfg(feature = "legacy-profile-api")]
+use gr_backend_api::{
+    BackendFactory, BackendInventoryEntry, BackendOpenContext, BackendRealizationRequest,
+    BackendSupportReport, SupportLevel, UnsupportedOutputFunction,
 };
 use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
-use gr_core::{
-    BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
-    SequenceId, SessionId, Timestamp,
-};
+use gr_core::{BackendFamily, BackendId, ProfileId, SequenceId, SessionId, Timestamp};
+#[cfg(feature = "legacy-profile-api")]
+use gr_core::{BackendLevel, FidelityTier, SemanticOutputFunction};
+#[cfg(feature = "legacy-profile-api")]
 use gr_profiles::{ControllerProfile, ProfileFamily, registry};
+#[cfg(feature = "legacy-profile-api")]
 use gr_runtime_model::HostPlatform;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "legacy-profile-api")]
 const SUPPORTED_FIDELITY_TIERS: &[FidelityTier] = &[FidelityTier::IdentityAware];
+#[cfg(feature = "legacy-profile-api")]
 const SUPPORTED_OUTPUT_FUNCTIONS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::Rumble,
     SemanticOutputFunction::Haptics,
@@ -110,6 +118,7 @@ impl FromStr for UhidBusMode {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxUhidIdentitySummary {
     pub bus_mode: UhidBusMode,
@@ -124,14 +133,22 @@ pub struct LinuxUhidIdentitySummary {
     pub descriptor_size: usize,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "legacy-profile-api", derive(Serialize, Deserialize))]
 pub struct LinuxUhidInputNodes {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "legacy-profile-api",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub event_nodes: Vec<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "legacy-profile-api",
+        serde(default, skip_serializing_if = "Vec::is_empty")
+    )]
     pub js_nodes: Vec<String>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxUhidSmokeReport {
     pub profile_id: ProfileId,
@@ -276,6 +293,7 @@ impl LinuxUhidBackendFactory {
         self
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     fn device_spec(
         &self,
         profile: &ControllerProfile,
@@ -347,6 +365,7 @@ impl LinuxUhidBackendFactory {
         })
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     #[must_use]
     pub fn smoke_report(
         &self,
@@ -427,6 +446,7 @@ impl LinuxUhidBackendFactory {
         report
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     fn invalid_smoke_report(
         &self,
         profile_id: &ProfileId,
@@ -467,6 +487,7 @@ impl LinuxUhidBackendFactory {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl BackendFactory for LinuxUhidBackendFactory {
     fn backend_id(&self) -> BackendId {
         self.backend_id.clone()
@@ -564,8 +585,8 @@ impl BackendFactory for LinuxUhidBackendFactory {
         let spec = self.device_spec(profile)?;
         Ok(Box::new(LinuxUhidBackendSession::new(
             context.session_id,
-            self.backend_id(),
-            self.family(),
+            self.backend_id.clone(),
+            BackendFamily::LinuxUhid,
             context.profile_id.clone(),
             spec,
             Arc::clone(&self.kernel_boundary),
@@ -612,8 +633,8 @@ impl NativeBackendFactory for LinuxUhidBackendFactory {
         };
         Ok(Box::new(LinuxUhidBackendSession::new(
             context.session_id,
-            self.backend_id(),
-            self.family(),
+            self.backend_id.clone(),
+            BackendFamily::LinuxUhid,
             profile_id,
             spec,
             Arc::clone(&self.kernel_boundary),
@@ -822,6 +843,7 @@ struct DeviceIdentity {
 }
 
 impl DeviceIdentity {
+    #[cfg(feature = "legacy-profile-api")]
     fn summary(&self, descriptor_size: usize) -> LinuxUhidIdentitySummary {
         LinuxUhidIdentitySummary {
             bus_mode: self.bus_mode,

@@ -11,6 +11,8 @@ use crate::{
     DeferredLinuxTransportIoctl, LinuxTransportDevice, LinuxTransportDeviceSpec,
     LinuxTransportIoctl, LinuxTransportPreview, transport_reverse_event,
 };
+#[cfg(test)]
+use crate::{TransportEndpoints, TransportTraceBus};
 
 /// Upper bound on reverse reports drained per `drain_reverse_events` call, so a
 /// chatty host cannot livelock the poller.
@@ -412,10 +414,7 @@ fn write_hex(path: impl AsRef<Path>, value: u16) -> Result<(), BackendError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gr_testkit::fixtures::TransportTraceBus;
     use std::time::{SystemTime, UNIX_EPOCH};
-
-    use gr_testkit::fixtures::TransportEndpoints;
 
     fn unique_tmp_dir(tag: &str) -> PathBuf {
         let nanos = SystemTime::now()

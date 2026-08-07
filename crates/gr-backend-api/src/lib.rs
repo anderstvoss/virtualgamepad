@@ -13,11 +13,14 @@ use std::collections::BTreeMap;
 
 use gr_controller_contract::{ControllerKind, LinuxTarget};
 use gr_core::{
-    BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
-    SequenceId, SessionId, Timestamp,
+    BackendFamily, BackendId, ProfileId, SemanticOutputFunction, SequenceId, SessionId, Timestamp,
 };
+#[cfg(feature = "legacy-profile-api")]
+use gr_core::{BackendLevel, FidelityTier};
+#[cfg(feature = "legacy-profile-api")]
 use gr_runtime_model::{EmulationGoal, HostPlatform, ProfileSpecificOutputFunctionId};
 
+#[cfg(feature = "legacy-profile-api")]
 pub use gr_runtime_model::BackendOpenContext;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -113,6 +116,7 @@ pub enum BackendReverseEventKind {
 #[non_exhaustive]
 pub enum BackendReverseTarget {
     SemanticOutput(SemanticOutputFunction),
+    #[cfg(feature = "legacy-profile-api")]
     ProfileSpecificOutput(ProfileSpecificOutputFunctionId),
     ReportId(u8),
     EndpointId(u8),
@@ -263,6 +267,7 @@ pub struct NativeBackendOpenContext {
 // re-export at the top of this module keeps the import path stable for
 // providers.
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendRealizationRequest {
     pub profile_id: ProfileId,
@@ -273,6 +278,7 @@ pub struct BackendRealizationRequest {
     pub required_output_functions: Vec<SemanticOutputFunction>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendSupportReport {
     pub forward_support: SupportLevel,
@@ -285,6 +291,7 @@ pub struct BackendSupportReport {
     pub notes: Vec<String>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SupportLevel {
@@ -293,12 +300,14 @@ pub enum SupportLevel {
     None,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnsupportedOutputFunction {
     pub function: SemanticOutputFunction,
     pub reason: String,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BackendInventoryEntry {
     pub backend_id: BackendId,
@@ -359,6 +368,7 @@ where
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 pub trait BackendFactory: Send + Sync {
     fn backend_id(&self) -> BackendId;
     fn family(&self) -> BackendFamily;

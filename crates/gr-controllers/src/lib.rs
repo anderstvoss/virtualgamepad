@@ -8,6 +8,9 @@
 
 use std::collections::BTreeMap;
 
+mod state;
+pub use state::*;
+
 use gr_backend_api::{
     BackendFrame, BackendReverseEvent, BackendReverseEventKind, BackendReversePayload, EvdevEvent,
     NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity, NativeEvdevRealization,
@@ -16,12 +19,6 @@ use gr_backend_api::{
 use gr_controller_contract::{
     ControlError, ControlUpdate, ControllerDefinition, ControllerDriver, ControllerKind,
     DpadDirection, FaceButton, RealizationRequirements, Stick, StickPosition, Trigger,
-};
-use gr_core::TwinStickAxes;
-
-pub use gr_core::{
-    DualSenseInput, DualSenseMotion, DualSenseTouchContact, GenericGamepadInput, MotionAxes,
-    SteamControllerInput, Xbox360Input,
 };
 
 /// Reverse output from a generic compatibility gamepad.
@@ -808,7 +805,7 @@ fn trigger_u8(value: u16) -> u8 {
 fn bit(enabled: bool, position: u8) -> u8 {
     if enabled { 1 << position } else { 0 }
 }
-fn dpad_hat(dpad: gr_core::Dpad) -> u8 {
+fn dpad_hat(dpad: Dpad) -> u8 {
     match (dpad.up, dpad.right, dpad.down, dpad.left) {
         (true, false, false, false) => 0,
         (true, true, false, false) => 1,
@@ -823,15 +820,15 @@ fn dpad_hat(dpad: gr_core::Dpad) -> u8 {
 }
 
 fn validate_touch_contact(contact: DualSenseTouchContact) -> Result<(), ControlError> {
-    for (control, value) in [
-        ("DualSense touch x", contact.x),
-        ("DualSense touch y", contact.y),
+    for (control, value, exclusive_limit) in [
+        ("DualSense touch x", contact.x, DualSenseTouchpad::WIDTH),
+        ("DualSense touch y", contact.y, DualSenseTouchpad::HEIGHT),
     ] {
-        if value > 0x0fff {
+        if value >= exclusive_limit {
             return Err(ControlError::ValueOutOfRange {
                 control,
                 value: u32::from(value),
-                maximum: 0x0fff,
+                maximum: u32::from(exclusive_limit - 1),
             });
         }
     }
@@ -1372,12 +1369,26 @@ mod tests {
         let mut state = ControllerState::neutral(ControllerKind::DualSense);
         let original = state.clone();
         let mut contact = super::DualSenseTouchContact::neutral();
-        contact.x = 0x1000;
+        contact.x = super::DualSenseTouchpad::WIDTH;
         let error = state
             .set_dualsense_touch(0, contact)
-            .expect_err("13-bit coordinate cannot be encoded as a 12-bit touch coordinate");
+            .expect_err("coordinate lies outside the physical touch surface");
         assert!(matches!(error, ControlError::ValueOutOfRange { .. }));
         assert_eq!(state, original);
+
+        contact.x = 0;
+        contact.y = super::DualSenseTouchpad::HEIGHT;
+        assert!(matches!(
+            state.set_dualsense_touch(0, contact),
+            Err(ControlError::ValueOutOfRange { .. })
+        ));
+        assert_eq!(state, original);
+
+        contact.x = super::DualSenseTouchpad::WIDTH - 1;
+        contact.y = super::DualSenseTouchpad::HEIGHT - 1;
+        state
+            .set_dualsense_touch(0, contact)
+            .expect("last physical coordinate is valid");
     }
 
     #[test]

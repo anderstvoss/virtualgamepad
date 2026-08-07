@@ -1,6 +1,7 @@
 //! Linux `uinput` provider for `virtualgamepad`.
 
 #![allow(clippy::module_name_repetitions)]
+#![cfg_attr(not(feature = "legacy-profile-api"), allow(dead_code))]
 
 #[cfg(target_os = "linux")]
 mod kernel;
@@ -11,27 +12,39 @@ mod kernel {
     pub(crate) struct LiveLinuxKernelIoctl;
 }
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(feature = "legacy-profile-api")]
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use gr_backend_api::{
-    BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
-    BackendOpenContext, BackendRealizationRequest, BackendReverseEvent, BackendReverseEventKind,
+    BackendDiagnostics, BackendError, BackendFrame, BackendReverseEvent, BackendReverseEventKind,
     BackendReverseEventSink, BackendReversePayload, BackendReverseTarget, BackendSession,
-    BackendState, BackendSupportReport, EvdevEvent, EventReadiness, NativeBackendFactory,
-    NativeBackendOpenContext, NativeControllerRealization, SupportLevel, UnsupportedOutputFunction,
+    BackendState, EvdevEvent, EventReadiness, NativeBackendFactory, NativeBackendOpenContext,
+    NativeControllerRealization,
+};
+#[cfg(feature = "legacy-profile-api")]
+use gr_backend_api::{
+    BackendFactory, BackendInventoryEntry, BackendOpenContext, BackendRealizationRequest,
+    BackendSupportReport, SupportLevel, UnsupportedOutputFunction,
 };
 use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
-    BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
-    SequenceId, SessionId, Timestamp,
+    BackendFamily, BackendId, ProfileId, SemanticOutputFunction, SequenceId, SessionId, Timestamp,
 };
+#[cfg(feature = "legacy-profile-api")]
+use gr_core::{BackendLevel, FidelityTier};
+#[cfg(feature = "legacy-profile-api")]
 use gr_profiles::{ControllerProfile, ProfileFamily, registry};
+#[cfg(feature = "legacy-profile-api")]
 use gr_runtime_model::HostPlatform;
+#[cfg(feature = "legacy-profile-api")]
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "legacy-profile-api")]
 const SUPPORTED_FIDELITY_TIERS: &[FidelityTier] = &[FidelityTier::Compatibility];
+#[cfg(feature = "legacy-profile-api")]
 const SUPPORTED_OUTPUT_FUNCTIONS: &[SemanticOutputFunction] = &[SemanticOutputFunction::Rumble];
 
 /// Provider-only realization promise consumed by the curated runtime.
@@ -77,6 +90,7 @@ const EV_UINPUT: u16 = 0x0101;
 const UI_FF_UPLOAD: u16 = 1;
 const UI_FF_ERASE: u16 = 2;
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxUinputCapabilitySummary {
     pub event_types: Vec<String>,
@@ -88,6 +102,7 @@ pub struct LinuxUinputCapabilitySummary {
     pub ff_effects: Vec<String>,
 }
 
+#[cfg(feature = "legacy-profile-api")]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LinuxUinputSmokeReport {
     pub profile_id: ProfileId,
@@ -220,6 +235,7 @@ impl LinuxUinputBackendFactory {
         &self.device_name_prefix
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     fn device_spec(&self, profile: &ControllerProfile) -> LinuxUinputDeviceSpec {
         let capability_plan = capability_plan_for(profile);
         LinuxUinputDeviceSpec {
@@ -238,6 +254,7 @@ impl LinuxUinputBackendFactory {
         }
     }
 
+    #[cfg(feature = "legacy-profile-api")]
     #[must_use]
     pub fn smoke_report(
         &self,
@@ -317,6 +334,7 @@ impl LinuxUinputBackendFactory {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 impl BackendFactory for LinuxUinputBackendFactory {
     fn backend_id(&self) -> BackendId {
         self.backend_id.clone()
@@ -399,8 +417,8 @@ impl BackendFactory for LinuxUinputBackendFactory {
         let spec = self.device_spec(profile);
         Ok(Box::new(LinuxUinputBackendSession::new(
             context.session_id,
-            self.backend_id(),
-            self.family(),
+            self.backend_id.clone(),
+            BackendFamily::LinuxUinput,
             context.profile_id.clone(),
             spec,
             Arc::clone(&self.kernel_boundary),
@@ -452,8 +470,8 @@ impl NativeBackendFactory for LinuxUinputBackendFactory {
         };
         Ok(Box::new(LinuxUinputBackendSession::new(
             context.session_id,
-            self.backend_id(),
-            self.family(),
+            self.backend_id.clone(),
+            BackendFamily::LinuxUinput,
             profile_id,
             spec,
             Arc::clone(&self.kernel_boundary),
@@ -674,6 +692,7 @@ struct CapabilityPlan {
 }
 
 impl CapabilityPlan {
+    #[cfg(feature = "legacy-profile-api")]
     fn summary(&self) -> LinuxUinputCapabilitySummary {
         LinuxUinputCapabilitySummary {
             event_types: self
@@ -744,6 +763,7 @@ fn default_kernel_boundary() -> Arc<dyn LinuxKernelIoctl> {
     }
 }
 
+#[cfg(feature = "legacy-profile-api")]
 fn capability_plan_for(profile: &ControllerProfile) -> CapabilityPlan {
     let mut event_bits = BTreeSet::from([EV_KEY, EV_ABS]);
     let key_bits = match profile.profile_family {
