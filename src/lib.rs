@@ -106,7 +106,7 @@ pub mod controller {
     };
     use gr_controllers::{
         ControllerState, DualSenseControl, GenericGamepadControl, NativeControl,
-        NativeControlUpdate, SteamControllerControl, XboxControl,
+        NativeControlUpdate, SteamControllerControl, XboxControl, definition_for,
     };
     use gr_core::{
         BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
@@ -491,6 +491,12 @@ pub mod controller {
             target,
             reason: reason.to_string(),
         };
+        let requirements = definition_for(kind).requirements();
+        if target == LinuxTarget::Uinput && requirements.requires_identity {
+            return Err(unsupported(
+                "the selected controller requires an identity-aware or transport realization",
+            ));
+        }
         match (kind, target) {
             (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput) => {
                 Ok((
@@ -545,7 +551,7 @@ pub mod controller {
             let Err(error) = target_contract(ControllerKind::DualSense, LinuxTarget::Uinput) else {
                 panic!("uinput must not silently emulate a full DualSense");
             };
-            assert!(error.to_string().contains("complete declared surface"));
+            assert!(error.to_string().contains("identity-aware"));
         }
 
         #[test]

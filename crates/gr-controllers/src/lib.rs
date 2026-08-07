@@ -7,8 +7,8 @@
 //! deterministic, and straightforward to test.
 
 use gr_controller_contract::{
-    ControlError, ControlUpdate, ControllerKind, DpadDirection, FaceButton, Stick, StickPosition,
-    Trigger,
+    ControlError, ControlUpdate, ControllerDefinition, ControllerKind, DpadDirection, FaceButton,
+    RealizationRequirements, Stick, StickPosition, Trigger,
 };
 use gr_core::{
     DualSenseInput, GenericGamepadInput, ProfileInputPayload, SteamControllerInput, TwinStickAxes,
@@ -16,6 +16,82 @@ use gr_core::{
 };
 
 pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
+
+/// Static definition for the generic compatibility controller.
+pub struct GenericGamepadDefinition;
+/// Static definition for the Xbox 360 controller.
+pub struct Xbox360Definition;
+/// Static definition for the `DualSense` controller.
+pub struct DualSenseDefinition;
+/// Static definition for the Steam Controller.
+pub struct SteamControllerDefinition;
+
+macro_rules! definition {
+    ($type:ident, $kind:expr, $requirements:expr) => {
+        impl ControllerDefinition for $type {
+            fn kind(&self) -> ControllerKind {
+                $kind
+            }
+
+            fn requirements(&self) -> RealizationRequirements {
+                $requirements
+            }
+        }
+    };
+}
+
+definition!(
+    GenericGamepadDefinition,
+    ControllerKind::GenericGamepad,
+    RealizationRequirements {
+        requires_identity: false,
+        requires_transport: false,
+        requires_reverse_output: true,
+    }
+);
+definition!(
+    Xbox360Definition,
+    ControllerKind::Xbox360,
+    RealizationRequirements {
+        requires_identity: false,
+        requires_transport: false,
+        requires_reverse_output: true,
+    }
+);
+definition!(
+    DualSenseDefinition,
+    ControllerKind::DualSense,
+    RealizationRequirements {
+        requires_identity: true,
+        requires_transport: false,
+        requires_reverse_output: true,
+    }
+);
+definition!(
+    SteamControllerDefinition,
+    ControllerKind::SteamController,
+    RealizationRequirements {
+        requires_identity: true,
+        requires_transport: false,
+        requires_reverse_output: true,
+    }
+);
+
+static GENERIC_GAMEPAD_DEFINITION: GenericGamepadDefinition = GenericGamepadDefinition;
+static XBOX360_DEFINITION: Xbox360Definition = Xbox360Definition;
+static DUALSENSE_DEFINITION: DualSenseDefinition = DualSenseDefinition;
+static STEAM_CONTROLLER_DEFINITION: SteamControllerDefinition = SteamControllerDefinition;
+
+/// Return the single compiled definition for a curated controller kind.
+#[must_use]
+pub fn definition_for(kind: ControllerKind) -> &'static dyn ControllerDefinition {
+    match kind {
+        ControllerKind::GenericGamepad => &GENERIC_GAMEPAD_DEFINITION,
+        ControllerKind::Xbox360 => &XBOX360_DEFINITION,
+        ControllerKind::DualSense => &DUALSENSE_DEFINITION,
+        ControllerKind::SteamController => &STEAM_CONTROLLER_DEFINITION,
+    }
+}
 
 /// The complete mutable state of one curated controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -370,6 +446,7 @@ pub enum SteamControllerControl {
 mod tests {
     use super::{
         ControllerState, DualSenseControl, NativeControl, NativeControlUpdate, XboxControl,
+        definition_for,
     };
     use gr_controller_contract::{ControlError, ControlUpdate, ControllerKind, FaceButton};
     use proptest::prelude::*;
@@ -408,6 +485,14 @@ mod tests {
             ControlError::UnsupportedNativeControl { .. }
         ));
         assert_eq!(state, original);
+    }
+
+    #[test]
+    fn compiled_definitions_keep_identity_requirements_out_of_runtime_switches() {
+        let generic = definition_for(ControllerKind::GenericGamepad).requirements();
+        let dualsense = definition_for(ControllerKind::DualSense).requirements();
+        assert!(!generic.requires_identity);
+        assert!(dualsense.requires_identity);
     }
 
     proptest! {
