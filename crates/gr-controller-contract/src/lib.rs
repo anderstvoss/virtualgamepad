@@ -136,6 +136,12 @@ pub enum ControlError {
     },
     #[error("trigger value {value} is outside the supported range 0..={maximum}")]
     OutOfRange { value: u16, maximum: u16 },
+    #[error("{control} index {index} is invalid; expected an index below {exclusive_maximum}")]
+    InvalidIndex {
+        control: &'static str,
+        index: usize,
+        exclusive_maximum: usize,
+    },
     #[error("controller is closed")]
     Closed,
 }

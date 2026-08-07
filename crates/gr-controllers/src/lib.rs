@@ -291,6 +291,89 @@ impl ControllerState {
         Ok(())
     }
 
+    /// Set one `DualSense` touch contact in native touch-surface coordinates.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] if this is not a `DualSense`, or `contact` is
+    /// not zero or one. Errors leave state unchanged.
+    pub fn set_dualsense_touch(
+        &mut self,
+        contact: usize,
+        value: DualSenseTouchContact,
+    ) -> Result<(), ControlError> {
+        if contact >= 2 {
+            return Err(ControlError::InvalidIndex {
+                control: "DualSense touch contact",
+                index: contact,
+                exclusive_maximum: 2,
+            });
+        }
+        let Self::DualSense(state) = self else {
+            return Err(ControlError::UnsupportedControl {
+                controller: self.kind(),
+                control: "DualSense touch surface",
+            });
+        };
+        if contact == 0 {
+            state.touchpad.contact_1 = value;
+        } else {
+            state.touchpad.contact_2 = value;
+        }
+        Ok(())
+    }
+
+    /// Set a `DualSense` raw motion sample.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::UnsupportedControl`] when the controller does
+    /// not expose the `DualSense` motion surface.
+    pub fn set_dualsense_motion(&mut self, value: DualSenseMotion) -> Result<(), ControlError> {
+        let Self::DualSense(state) = self else {
+            return Err(ControlError::UnsupportedControl {
+                controller: self.kind(),
+                control: "DualSense motion",
+            });
+        };
+        state.motion = value;
+        Ok(())
+    }
+
+    /// Set one `Steam Controller` trackpad position in native units.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] if this is not a `Steam Controller`, or if the
+    /// pad index is not zero (left) or one (right).
+    pub fn set_steam_trackpad(
+        &mut self,
+        pad: usize,
+        position: StickPosition,
+    ) -> Result<(), ControlError> {
+        if pad >= 2 {
+            return Err(ControlError::InvalidIndex {
+                control: "Steam Controller trackpad",
+                index: pad,
+                exclusive_maximum: 2,
+            });
+        }
+        let Self::SteamController(state) = self else {
+            return Err(ControlError::UnsupportedControl {
+                controller: self.kind(),
+                control: "Steam Controller trackpad",
+            });
+        };
+        if pad == 0 {
+            state.sticks.left_pad_x = position.x;
+            state.sticks.left_pad_y = position.y;
+        } else {
+            state.sticks.right_pad_x = position.x;
+            state.sticks.right_pad_y = position.y;
+        }
+        Ok(())
+    }
+
     fn set_native(&mut self, control: NativeControl, pressed: bool) -> Result<(), ControlError> {
         let controller = self.kind();
         match (self, control) {
@@ -493,6 +576,17 @@ mod tests {
         let dualsense = definition_for(ControllerKind::DualSense).requirements();
         assert!(!generic.requires_identity);
         assert!(dualsense.requires_identity);
+    }
+
+    #[test]
+    fn invalid_touch_contact_keeps_dualsense_state_unchanged() {
+        let mut state = ControllerState::neutral(ControllerKind::DualSense);
+        let original = state.clone();
+        let error = state
+            .set_dualsense_touch(2, super::DualSenseTouchContact::neutral())
+            .expect_err("only two contacts are available");
+        assert!(matches!(error, ControlError::InvalidIndex { .. }));
+        assert_eq!(state, original);
     }
 
     proptest! {

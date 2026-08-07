@@ -426,6 +426,25 @@ pub mod controller {
                 pressed,
             })
         }
+
+        pub fn set_touch_contact(
+            &mut self,
+            contact: usize,
+            value: gr_controllers::DualSenseTouchContact,
+        ) -> Result<(), ControlError> {
+            self.inner.state.set_dualsense_touch(contact, value)?;
+            self.inner.dirty = true;
+            Ok(())
+        }
+
+        pub fn set_motion(
+            &mut self,
+            value: gr_controllers::DualSenseMotion,
+        ) -> Result<(), ControlError> {
+            self.inner.state.set_dualsense_motion(value)?;
+            self.inner.dirty = true;
+            Ok(())
+        }
     }
     impl SteamController {
         pub fn set_native(
@@ -437,6 +456,16 @@ pub mod controller {
                 control: NativeControl::SteamController(control),
                 pressed,
             })
+        }
+
+        pub fn set_trackpad(
+            &mut self,
+            pad: usize,
+            position: gr_controller_contract::StickPosition,
+        ) -> Result<(), ControlError> {
+            self.inner.state.set_steam_trackpad(pad, position)?;
+            self.inner.dirty = true;
+            Ok(())
         }
     }
 
@@ -597,8 +626,8 @@ pub use gr_controller_contract::{
 };
 #[cfg(target_os = "linux")]
 pub use gr_controllers::{
-    DualSenseControl, GenericGamepadControl, NativeControl, NativeControlUpdate,
-    SteamControllerControl, XboxControl,
+    DualSenseControl, DualSenseMotion, DualSenseTouchContact, GenericGamepadControl, MotionAxes,
+    NativeControl, NativeControlUpdate, SteamControllerControl, XboxControl,
 };
 
 #[cfg(test)]
