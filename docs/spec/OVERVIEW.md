@@ -1,14 +1,17 @@
 # virtualgamepad spec overview
 
-`virtualgamepad` is a Rust-first design and planning package for a virtual controller library. This directory is the source-of-truth spec.
+`virtualgamepad` is a Rust library for a curated set of tightly integrated
+virtual controllers. The controller-native API specification is the source of
+truth; legacy profile/session documents below are retained only to migrate the
+kernel-facing provider stack.
 
 The crate at the repo root is an early scaffold (see [../../README.md](../../README.md) and [../../CHANGELOG.md](../../CHANGELOG.md)); the runtime API will be built out against the architecture and crate layout defined here.
 
 ## What lives here
 
-- [Product and architecture specs](specs/): target architecture, configuration rules, and fidelity definitions
-- [Implementation guidance](implementation/): language-agnostic framework guidance plus Rust build plan and crate-level implementation specification
-- [Validation strategy](validation/): test plan, headless automation strategy, and device-spec evidence workflow
+- [Controller-native implementation](implementation/CONTROLLER_NATIVE_API_SPEC.md): current product and architecture contract
+- [Curated controller checklist](implementation/ADDING_A_CURATED_CONTROLLER.md): requirements for first-party additions
+- [Legacy references](specs/): prior profile/session planning material, not public API guidance
 
 See [README.md](README.md) for the per-document index.
 

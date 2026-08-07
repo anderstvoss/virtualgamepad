@@ -1,5 +1,9 @@
 # Fidelity Guide
 
+> **Legacy terminology reference.** New creation uses an explicit Linux target
+> and exact realization validation as specified in
+> [CONTROLLER_NATIVE_API_SPEC.md](../implementation/CONTROLLER_NATIVE_API_SPEC.md).
+
 This document defines the three controller emulation fidelity tiers in human-understandable terms and describes how to create and validate each one.
 
 For remote-first automation and real-device evidence capture, see [HEADLESS_TEST_STRATEGY.md](../validation/HEADLESS_TEST_STRATEGY.md) and [DEVICE_SPEC_VALIDATION_PLAN.md](../validation/DEVICE_SPEC_VALIDATION_PLAN.md).

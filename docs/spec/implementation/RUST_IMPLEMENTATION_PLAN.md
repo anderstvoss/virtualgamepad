@@ -1,5 +1,10 @@
 # Rust Implementation Plan
 
+> **Legacy migration reference.** New work follows
+> [CONTROLLER_NATIVE_API_SPEC.md](CONTROLLER_NATIVE_API_SPEC.md) and its
+> [curated-controller checklist](ADDING_A_CURATED_CONTROLLER.md), not the
+> profile/session phase sequence below.
+
 This document defines the **sequencing and validation strategy** for the Rust buildout of `virtualgamepad`. It complements:
 
 - [RUST_IMPLEMENTATION_SPEC.md](RUST_IMPLEMENTATION_SPEC.md) — authoritative for crate boundaries, runtime types, and contracts

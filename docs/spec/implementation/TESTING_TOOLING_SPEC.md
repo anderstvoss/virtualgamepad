@@ -1,5 +1,9 @@
 # Testing Tooling Specification
 
+> **Legacy migration reference.** The current test model is defined in
+> [CONTROLLER_NATIVE_API_SPEC.md](CONTROLLER_NATIVE_API_SPEC.md); YAML is
+> fixture/snapshot-only and no longer a runtime-controller authoring surface.
+
 This document specifies the testing tooling that supports the [Rust implementation plan](RUST_IMPLEMENTATION_PLAN.md). The plan's phased buildout relies on a substantial, reusable test stack so that each phase can be validated automatically before its manual gate, and so users (developers and reviewers) can author **custom test cases** without writing Rust.
 
 Tooling described here is part of the build target. It ships in the workspace alongside the runtime crates and is exercised in CI and at every phase gate.

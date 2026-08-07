@@ -3,8 +3,10 @@
 Rust library for creating curated virtual controller devices with a typed,
 controller-native API.
 
-> **Status:** early WIP. The new controller-native API is being introduced on
-> top of the existing Linux provider stack.
+> **Status:** early WIP. The public integration model is controller-native and
+> requires an explicit Linux realization target; profile/YAML configuration is
+> not a public extension mechanism. A private provider migration adapter still
+> bridges to the existing Linux kernel-facing stack.
 > Linux provider surfaces exist for `uinput`, UHID, and the DualSense
 > USB transport target. Windows and macOS provider foundations are
 > planning-only and report deployment requirements, not real device

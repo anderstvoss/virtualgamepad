@@ -1,78 +1,116 @@
 # Controller-native API specification
 
-## Purpose
+## Product boundary
 
-`virtualgamepad` is a curated virtual-controller library. It creates a small
-set of high-fidelity controller types through an explicit Linux provider
-target. It is not a runtime profile engine, a YAML-defined controller system,
-or a third-party plugin host.
+`virtualgamepad` creates a deliberately small set of tightly integrated,
+statically compiled virtual controllers. It is not a profile platform, a YAML
+controller-definition engine, or a plugin host. The initial curated set is
+Generic Gamepad, Xbox 360, DualSense, and Steam Controller.
 
-The initial curated types are Generic Gamepad, Xbox 360, DualSense, and Steam
-Controller. Each is compiled Rust code with its own state model, report codec,
-descriptor, and reverse-event decoder. Adding a future curated type must be a
-new controller implementation plus a root creation function; runtime lifecycle
-and Linux provider code must not acquire controller-specific branches.
+This is a breaking pre-1.0 design. A future controller is reviewed first-party
+Rust code, not a file loaded at runtime. That choice keeps report encoding,
+identity/descriptors, reverse output, and feature semantics together and lets
+the hot path avoid registry lookup, reflection, stringly typed controls, and
+configuration parsing.
 
-## API contract
+## Public API
 
-Applications choose a target explicitly with `CreationOptions` and call a
-controller-specific constructor such as `create_dualsense`. Creation is exact:
-the selected provider must realize the whole declared controller surface at its
-documented tier, or creation returns `CreationError` and no handle. The library
-never silently substitutes a lower-fidelity provider.
+Applications select an exact Linux target and call one of
+`create_generic_gamepad`, `create_xbox360`, `create_dualsense`, or
+`create_steam_controller` with `CreationOptions`. There is no target default,
+automatic selection, or silent fallback. Creation validates the immutable
+`ControllerDefinition` requirements against the selected provider capabilities
+before opening a handle. A missing identity, transport, or reverse-output
+surface returns `CreationError` and no handle.
 
-Controller state is mutable and local. Applications apply one or more updates
-then call `commit()`. Updates do not perform provider I/O. A failed update
-leaves state unchanged; a failed commit leaves the valid state dirty and the
-controller live so the caller may retry, inspect it, or close it.
-
-Normalized inputs are spatial and controller independent where that is honest:
-`FaceButton::North`, `South`, `East`, and `West`; D-pad directions; sticks;
-and triggers. Native labels are explicit, typed controller operations:
+Each concrete handle owns mutable typed state. Normalized updates use spatial
+names—`FaceButton::{North, South, East, West}`, D-pad directions, sticks, and
+triggers. Native updates have explicit controller-specific types, for example
 `DualSenseControl::Cross`, `XboxControl::A`, and
-`SteamControllerControl::Steam`. Native labels never use ambiguous names such
-as `button_x`. A native and normalized operation map to the same stored state
-when they identify the same physical position.
+`SteamControllerControl::Steam`. `button_x`-style ambiguous public names are
+prohibited. A controller implementation defines and tests every normalized ↔
+native equivalence once.
 
-Concrete handles expose only controls that exist on the type. Runtime
-collections use `ControllerHandle`; incompatible normalized/native updates
-return recoverable `ControlError` values without mutating or closing the
-controller.
+Controller-specific physical features remain native: DualSense touch contacts,
+motion, trigger effects, LEDs, audio, and reports; Steam pads and grips; and
+any future capacitive sensors or accessories. They are never flattened into a
+misleading universal control set. A concrete handle omits unavailable methods,
+which makes misuse a compile error. `ControllerHandle` is the closed
+heterogeneous wrapper; incompatible runtime updates return `ControlError` and
+preserve the handle and prior state.
 
-## Core and provider boundaries
+Updates are local and allocation-free at the controller-state layer. Callers
+batch them and call `commit()` explicitly. A rejected update does not mutate
+state. An encode/send failure leaves the last valid state dirty and the handle
+live for retry. `close()` makes further updates and commits return their typed
+closed error. Callbacks are typed per controller, while heterogeneous callers
+receive `CuratedControllerOutputEvent`.
 
-`gr-controller-contract` owns controller-neutral identifiers, normalized input
-primitives, creation/commit/control errors, realization requirements, and the
-controller definition/driver contracts. `gr-controller-runtime` owns the
-controller-independent mutable-state lifecycle: reusable encoding storage,
-atomic updates, dirty tracking, retry-safe commit, and closure. Its `FrameSink`
-is the only provider-facing commit boundary. `gr-controllers` owns all curated
-controller state, native controls, mappings, and conversion preparation. Linux
-providers own OS device realization only.
+## Core contracts
 
-The first migration slice uses the existing profile/report pipeline as a
-strictly isolated provider seam. `ControllerState::legacy_payload()` is the
-only bridge. It is not a public profile API and must disappear when providers
-accept prepared controller encoders directly.
+`gr-controller-contract` is controller-agnostic. It owns normalized value
+types, lifecycle errors, Linux target IDs, realization requirements,
+`ProviderCapabilities`, `ControllerDefinition`, and `ControllerDriver`.
+`validate_realization` is the one creation-time compatibility predicate.
 
-The root façade also converts the existing generic reverse command exactly once
-into `ControllerOutputEvent`, then invokes the application callback through the
-bounded delivery worker. New controller implementations must replace this
-adapter with their own typed output event enum; applications and controller
-state types must not import the legacy runtime-model output container.
+`gr-controller-runtime` owns cloned-next-state update atomicity, dirty state,
+retry-safe commit, closure, and the typed `FrameSink` boundary. It has no
+controller-family branches. Its invariants are tested with generated update
+sequences and injected sink failures.
 
-`ControllerRuntime` must be the destination for all new controller creation
-paths. The legacy session actor is temporary infrastructure only; future
-controller additions may not add profile/session branches to it.
+`gr-controllers` owns all compiled controller state, native control enums,
+normalization mapping, validation, and `PreparedControllerFrame`. A frame is
+an immutable tagged controller-specific value prepared once at commit time.
+Linux providers report only OS transport capabilities; they do not define
+control labels or controller behaviour.
 
-## Reliability requirements
+The existing profile/session translator pipeline is currently isolated behind
+one private root-provider adapter while its kernel-facing contracts migrate.
+`ProfileInputFrame`, `ProfileId`, and generic output commands are not exposed
+by the controller-native public API, demo, or CLI. No new controller may add a
+profile, YAML configuration, planner branch, or public generic payload to this
+adapter; its remaining removal is a provider-internal migration task.
 
-The commit hot path must have no YAML parsing, registry lookup, reflection, or
-string/map control dispatch. User-controlled input and recoverable provider
-failures never panic. Memory and callback queues are bounded. Reverse output
-must be typed per concrete controller and delivered off the input path.
+## Realization guarantees
 
-Every controller addition requires unit, property, state-machine,
-fault-injection, report regression, and Linux integration coverage. YAML is
-permitted only for fixtures and snapshots; it never defines a runtime
-controller or public controller configuration.
+The target must meet the controller's complete declared surface at the target's
+documented fidelity. Current Linux boundaries are explicit:
+
+- uinput supplies compatibility realization for Generic Gamepad and Xbox 360;
+- UHID supplies the identity-aware DualSense path;
+- USB transport supplies the supported hardware-faithful DualSense path;
+- Steam Controller creation is rejected until a provider can realize its full
+  declared surface.
+
+Windows and macOS have no creation API until native providers exist. Provider
+availability is never inferred from a planner-only foundation.
+
+## Adding a curated controller
+
+1. Add a compiled controller module with typed neutral state, native enums,
+   normalized mappings, validation, descriptors, deterministic encoder, and
+   typed reverse-event decoder.
+2. Implement `ControllerDefinition` and `ControllerDriver`; declare only the
+   immutable realization requirements the controller actually needs.
+3. Add the tagged state/frame/output variants and one root typed constructor.
+   Do not change the generic runtime or insert controller branches in a Linux
+   provider.
+4. Add unit, property, mapping-equivalence, rejected-update, deterministic
+   frame, decoder robustness, fault-injection, compile-fail, and Linux target
+   realization tests.
+5. Add sanitized raw-report fixtures only when they test codec behaviour.
+   YAML may describe those fixtures or snapshots, never runtime behaviour.
+6. Document host prerequisites, exact fidelity claim, native feature semantics,
+   and every unsupported target before advertising the controller.
+
+## Quality and threat model
+
+No caller-controlled input or recoverable provider failure may panic. Unsafe
+code is forbidden outside narrowly scoped kernel/provider modules, where every
+boundary must be documented. State, serialization, and capability decisions
+must be deterministic. Provider and callback failure must be observable and
+must not corrupt state. Test coverage includes unit and property tests,
+state-machine operation sequences, fault-injection sinks, compile-fail API
+coverage, raw-report regression fixtures, and privileged Linux checks separated
+from the hermetic suite. Fuzz targets for untrusted reverse-report decoding are
+maintained with sanitized reproducible corpora.

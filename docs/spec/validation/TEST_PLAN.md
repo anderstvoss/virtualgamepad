@@ -1,5 +1,9 @@
 # Test Plan
 
+> **Legacy migration reference.** The controller-native test architecture and
+> acceptance criteria are in
+> [CONTROLLER_NATIVE_API_SPEC.md](../implementation/CONTROLLER_NATIVE_API_SPEC.md).
+
 This document defines a formal, language-agnostic test plan for the gamepad emulation library.
 
 The purpose of the test plan is to ensure:

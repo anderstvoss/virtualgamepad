@@ -40,6 +40,17 @@ const PHASE_10_PLANNING_NOTE: &str =
     "phase-10 transport backend is plannable and trace-replay-capable";
 const PHASE_11_SCOPE_NOTE: &str = "Phase 11 live realization is scoped to DualSense USB; Bluetooth and Xbox transport remain plannable-only";
 
+/// Provider-only realization promise consumed by the curated runtime.
+#[must_use]
+pub const fn controller_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        target: LinuxTarget::UsbTransport,
+        provides_identity: true,
+        provides_transport: true,
+        provides_reverse_output: true,
+    }
+}
+
 const USB_BACKEND_ID: &str = "linux-transport-usb";
 const BLUETOOTH_BACKEND_ID: &str = "linux-transport-bluetooth";
 const USB_ENDPOINT_INPUT: u8 = 0x01;
@@ -1217,15 +1228,5 @@ mod tests {
             panic!("expected bluetooth session to remain unsupported");
         };
         assert!(matches!(error, BackendError::Unsupported { .. }));
-    }
-}
-/// Provider-only realization promise consumed by the curated runtime.
-#[must_use]
-pub const fn controller_capabilities() -> ProviderCapabilities {
-    ProviderCapabilities {
-        target: LinuxTarget::UsbTransport,
-        provides_identity: true,
-        provides_transport: true,
-        provides_reverse_output: true,
     }
 }

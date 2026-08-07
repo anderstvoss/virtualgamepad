@@ -105,7 +105,7 @@ mod linux {
                 })
                 .map_or_else(
                     |error| error.to_string(),
-                    |_| "Updated local state; commit when ready.".to_string(),
+                    |()| "Updated local state; commit when ready.".to_string(),
                 );
         }
     }
@@ -142,7 +142,7 @@ mod linux {
                 if ui.button("Commit current state").clicked() {
                     self.status = self.controller.as_mut().map_or_else(
                         || "Create a controller first.".to_string(),
-                        |controller| controller.commit().map_or_else(|error| error.to_string(), |_| "Committed current state.".to_string()),
+                        |controller| controller.commit().map_or_else(|error| error.to_string(), |()| "Committed current state.".to_string()),
                     );
                 }
                 ui.separator();

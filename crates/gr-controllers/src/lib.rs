@@ -29,7 +29,7 @@ pub enum Xbox360OutputEvent {
     Rumble { strong: u16, weak: u16 },
 }
 
-/// Reverse output from a DualSense controller.
+/// Reverse output from a `DualSense` controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualSenseOutputEvent {
     Rumble {

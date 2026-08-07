@@ -1,5 +1,10 @@
 # Gamepad Emulation Framework
 
+> **Legacy migration reference.** The controller-native contract is
+> [CONTROLLER_NATIVE_API_SPEC.md](CONTROLLER_NATIVE_API_SPEC.md). This document
+> describes the former profile-oriented framework and must not guide new API or
+> controller work.
+
 This document defines a language-agnostic implementation framework for a reusable gamepad emulation subsystem that lives inside a larger host program.
 
 The framework assumes:

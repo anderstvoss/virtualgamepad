@@ -1,8 +1,14 @@
 # Documentation Index
 
-This directory is the source-of-truth spec package for the `virtualgamepad` template repo.
+The authoritative design is the curated controller-native API. Older
+profile/session documents are migration references only.
 
-## Specs
+## Controller-native design
+
+- [Controller-native API Specification](implementation/CONTROLLER_NATIVE_API_SPEC.md): public API, core contracts, realization guarantees, and failure model
+- [Adding a Curated Controller](implementation/ADDING_A_CURATED_CONTROLLER.md): reviewed compiled-controller checklist
+
+## Legacy migration references
 
 - [Architecture Specification](specs/ARCHITECTURE_SPEC.md): product goals, architecture boundaries, planning model, and target component model
 - [Configuration Specification](specs/CONFIGURATION_SPEC.md): session-oriented configuration shape and runtime policy rules
