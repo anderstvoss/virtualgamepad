@@ -1,29 +1,17 @@
-# Documentation Index
+# Documentation index
 
-The authoritative design is the curated controller-native API. Older
-profile/session documents are migration references only.
+## Normative controller-native design
 
-## Controller-native design
+- [Controller-native API specification](implementation/CONTROLLER_NATIVE_API_SPEC.md)
+- [Adding a curated controller](implementation/ADDING_A_CURATED_CONTROLLER.md)
+- [Testing and tooling](implementation/TESTING_TOOLING_SPEC.md)
+- [Headless validation](validation/HEADLESS_TEST_STRATEGY.md)
+- [Device evidence requirements](validation/DEVICE_SPEC_VALIDATION_PLAN.md)
 
-- [Controller-native API Specification](implementation/CONTROLLER_NATIVE_API_SPEC.md): public API, core contracts, realization guarantees, and failure model
-- [Adding a Curated Controller](implementation/ADDING_A_CURATED_CONTROLLER.md): reviewed compiled-controller checklist
+## Historical compatibility pointers
 
-## Legacy migration references
-
-- [Architecture Specification](specs/ARCHITECTURE_SPEC.md): product goals, architecture boundaries, planning model, and target component model
-- [Configuration Specification](specs/CONFIGURATION_SPEC.md): session-oriented configuration shape and runtime policy rules
-- [Fidelity Guide](specs/FIDELITY_GUIDE.md): externally named fidelity tiers and support-claim rules
-
-## Implementation
-
-- [Gamepad Emulation Framework](implementation/IMPLEMENTATION_FRAMEWORK.md): language-agnostic module model
-- [Rust Implementation Plan](implementation/RUST_IMPLEMENTATION_PLAN.md): phased sequencing with manual gates between phases
-- [Rust Implementation Specification](implementation/RUST_IMPLEMENTATION_SPEC.md): authoritative crate ownership, runtime contracts, and acceptance criteria
-- [Testing Tooling Specification](implementation/TESTING_TOOLING_SPEC.md): `gr-testkit`, fixture format, snapshot/property strategies, CLI surfaces
-- [Manual Gate Guides](implementation/manual-gates/README.md): step-by-step reviewer instructions for phase-gate manual checks
-
-## Validation
-
-- [Test Plan](validation/TEST_PLAN.md): test inventory and coverage expectations
-- [Headless Test Strategy](validation/HEADLESS_TEST_STRATEGY.md): remote-first automation and fixture replay strategy
-- [Device Spec Validation Plan](validation/DEVICE_SPEC_VALIDATION_PLAN.md): evidence dossiers, capture workflow, and reverse-engineering minimization
+The remaining phase plans, manual phase gates, and files under `specs/`
+document the retired profile/session/planner design. Their directory placement
+and filenames are retained for old links, but they are non-normative and must
+not drive new code or support claims. The
+[overview](OVERVIEW.md) records the current realization matrix.

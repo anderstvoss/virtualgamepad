@@ -2,46 +2,16 @@
 
 Status: accepted
 
-## Decision
+`DualSenseInput` exposes raw signed 16-bit gyroscope and accelerometer vectors.
+The concrete handle accepts a complete `DualSenseMotion` value through
+`set_motion` or an atomic typed-state edit. Motion is native controller state,
+not a universal capability or a string-addressed field.
 
-DualSense motion is represented in `gr_core` as raw signed 16-bit, three-axis
-samples in every full `DualSenseInput` frame:
+The 64-byte USB input payload encodes gyroscope little-endian values at bytes
+`15..21` and accelerometer values at `21..27`; report ID `0x01` remains outside
+that payload for UHID. The library does not silently calibrate, rotate, apply
+gravity compensation, or convert raw report units to SI units.
 
-- `motion.gyroscope.{x,y,z}`
-- `motion.accelerometer.{x,y,z}`
-
-Sparse deltas use `DualSenseMotionDelta` and `MotionAxesDelta`, so each axis
-can be updated independently. Zero is the neutral sample. The frame timestamp
-is the timestamp for both sensors; per-sensor timestamps are deliberately not
-introduced because the DualSense input report carries one shared sensor time.
-
-The values are intentionally raw report units. The library transports and
-emulates controller data; it does not impose host-specific calibration,
-gravity compensation, orientation, or SI-unit conversion.
-
-## Realization
-
-The DualSense HID and USB transport translators encode the raw samples into
-the existing 64-byte USB input report payload:
-
-- gyroscope: little-endian `i16` values at bytes `15..21`
-- accelerometer: little-endian `i16` values at bytes `21..27`
-
-The report ID remains out-of-band in `BackendFrame::HidInputReport`, so these
-offsets are relative to the payload buffer, not a buffer that includes report
-ID `0x01`. Bluetooth transport reuses the same payload before adding its
-transport header.
-
-The mapping is based on the Linux `hid-playstation` DualSense input-report
-layout. Tests pin the byte-level mapping with positive and negative extrema.
-
-## Scope and reconsideration
-
-Motion is a typed input contract, not an inferred capability flag. Any new
-profile with motion must add a profile-specific payload type and a tested
-translator mapping; it must not reuse these DualSense fields.
-
-This decision should be revisited only when adding calibrated/physical-unit
-motion APIs, separate sensor timestamps, or an input provider whose report
-format cannot carry the six raw samples. Those changes require a new explicit
-contract rather than silently redefining the raw values above.
+A future controller with motion defines its own typed state and report mapping.
+Shared physical-unit types may be introduced only when their calibration and
+meaning are truly equivalent across controllers.

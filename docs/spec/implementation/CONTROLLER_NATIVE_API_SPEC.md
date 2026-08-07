@@ -39,12 +39,20 @@ which makes misuse a compile error. `ControllerHandle` is the closed
 heterogeneous wrapper; incompatible runtime updates return `ControlError` and
 preserve the handle and prior state.
 
-Updates are local and allocation-free at the controller-state layer. Callers
-batch them and call `commit()` explicitly. A rejected update does not mutate
-state. An encode/send failure leaves the last valid state dirty and the handle
-live for retry. `close()` makes further updates and commits return their typed
-closed error. Callbacks are typed per controller, while heterogeneous callers
-receive `CuratedControllerOutputEvent`.
+Updates are local at the controller-state layer. Callers batch them and call
+`commit()` explicitly. Every update runs against a cloned candidate, validates
+the complete candidate, and replaces the current state only on success. This
+makes direct typed-state edits and individual control methods obey the same
+atomicity rule. An encode/send failure leaves the last valid state dirty and
+the handle live for retry. `close()` stops reverse delivery, attempts provider
+cleanup, and makes the handle terminal even if cleanup itself reports an
+error. Dropping a live handle performs the same bounded cleanup.
+
+`CreationOptions` bounds the number of output subscriptions and defines the
+slow-callback diagnostic threshold. Callbacks are typed per controller, while
+heterogeneous callers receive `CuratedControllerOutputEvent`. Dropping an
+`OutputSubscription` cancels it. Capacity exhaustion is a recoverable
+`SubscriptionError`, not an allocation-growth policy.
 
 ## Core contracts
 
@@ -59,24 +67,47 @@ controller-family branches. Its invariants are tested with generated update
 sequences and injected sink failures.
 
 `gr-controllers` owns all compiled controller state, native control enums,
-normalization mapping, validation, and `PreparedControllerFrame`. A frame is
-an immutable tagged controller-specific value prepared once at commit time.
-Linux providers report only OS transport capabilities; they do not define
-control labels or controller behaviour.
+normalization mapping, validation, `PreparedControllerFrame`, reverse decoders,
+and immutable OS realization specifications. A realization contains identity,
+descriptor, report, evdev capability, feature-report, or USB-gadget data. A
+frame is an immutable tagged controller-specific value prepared at commit
+time. Linux providers report only OS transport capabilities and consume a
+matching realization shape; they do not select identities, define control
+labels, or branch on a controller family.
 
-The root opens the caller-selected backend directly. `PreparedControllerFrame`
-is encoded to a provider `BackendFrame` by the compiled controller, so commits
-do not construct `ProfileInputFrame`, use the session actor, or select a
-translator. The current Linux provider implementations retain internal legacy
-identity lookup while their device-spec construction is moved into controller
-modules; that internal compatibility detail is not reachable from the public
-API and must not receive new profile/YAML extension points.
+The root opens the caller-selected backend through `NativeBackendOpenContext`.
+`PreparedControllerFrame` is encoded to a provider `BackendFrame` by the
+compiled controller, so creation and commits do not construct profile input,
+query a registry, use the legacy session actor, or select a translator. Older
+profile/planner interfaces remain only for quarantined pre-redesign workspace
+tools while they are retired; the public crate does not re-export their
+provider inventories or accept their identifiers.
 
-The root reverse worker drains provider reports outside the commit path and
-delivers tagged controller-native events. It contains callback panics by
-dropping only the offending subscription; slow callbacks remain isolated from
-input progress. Raw report variants preserve device semantics while a
-controller-specific decoder is expanded.
+The root reverse worker drains provider reports outside the commit path,
+decodes all recognized native meanings, and delivers tagged controller-native
+events. Unknown or malformed reports use lossless controller-specific fallback
+variants. It contains callback panics by cancelling only the offending
+subscription. Slow callbacks may delay other subscribers on that controller's
+delivery worker, but never run on its update/commit path or another controller's
+worker. Diagnostics expose backend state, lifecycle, dirty state, active
+subscriptions, delivered-event count, callback panics, slow callbacks, and a
+terminal reverse-worker error.
+
+## Lifecycle and failure contract
+
+| Operation | Recoverable failure | State after failure |
+|---|---|---|
+| create | feature absent, target incompatible, host open failed | no handle |
+| normalized/native update | unsupported control, invalid index/range, closed | prior state unchanged |
+| typed full-state edit | complete-state validation failed, closed | prior state unchanged |
+| commit | encode or provider send failed | handle live and dirty; retry allowed |
+| subscribe | closed, capacity reached, lock unavailable | existing subscriptions unchanged |
+| callback | panic | only that subscription cancelled and counted |
+| close | worker join or provider close failed | handle terminally closed |
+
+No public method panics for caller-controlled values. Internal `unreachable!`
+checks are restricted to invariants established by concrete handle
+construction and cannot be selected through public input.
 
 ## Realization guarantees
 
@@ -95,13 +126,13 @@ availability is never inferred from a planner-only foundation.
 ## Adding a curated controller
 
 1. Add a compiled controller module with typed neutral state, native enums,
-   normalized mappings, validation, descriptors, deterministic encoder, and
-   typed reverse-event decoder.
+   normalized mappings, complete-state validation, deterministic encoder,
+   typed reverse-event decoder, and controller-owned realization specs.
 2. Implement `ControllerDefinition` and `ControllerDriver`; declare only the
    immutable realization requirements the controller actually needs.
-3. Add the tagged state/frame/output variants and one root typed constructor.
-   Do not change the generic runtime or insert controller branches in a Linux
-   provider.
+3. Add the tagged state/frame/output variants, heterogeneous dispatch arm, and
+   one root typed constructor. Do not change the generic runtime or insert
+   controller branches in a Linux provider.
 4. Add unit, property, mapping-equivalence, rejected-update, deterministic
    frame, decoder robustness, fault-injection, compile-fail, and Linux target
    realization tests.
@@ -114,10 +145,22 @@ availability is never inferred from a planner-only foundation.
 
 No caller-controlled input or recoverable provider failure may panic. Unsafe
 code is forbidden outside narrowly scoped kernel/provider modules, where every
-boundary must be documented. State, serialization, and capability decisions
-must be deterministic. Provider and callback failure must be observable and
-must not corrupt state. Test coverage includes unit and property tests,
-state-machine operation sequences, fault-injection sinks, compile-fail API
-coverage, raw-report regression fixtures, and privileged Linux checks separated
-from the hermetic suite. Fuzz targets for untrusted reverse-report decoding are
-maintained with sanitized reproducible corpora.
+boundary must be documented. State, serialization, identity, and capability
+decisions must be deterministic for a given instance ID. Session IDs and
+host-visible unique identifiers must not collide during ordinary concurrent
+creation.
+
+The normal commit path has no registry lookup, YAML parsing, reflection, or
+string-map dispatch. Mutable state is owned by the caller's handle; provider
+access is serialized per handle; each handle owns one reverse worker; callback
+lists and callback invocations use separate locks so callback code never runs
+while the subscriber-list lock is held. Queue-like collections are bounded by
+API configuration or kernel/provider boundaries.
+
+Test coverage includes unit and property tests, generated lifecycle operation
+sequences, injected sink and backend failures, drop/close tests, callback panic
+and worker-failure containment, compile-fail API coverage, realization and raw
+report regression checks, feature-minimal builds, and privileged Linux checks
+separated from the hermetic suite. `cargo-fuzz` targets exercise untrusted
+reverse-report bytes and generated control sequences. Only minimized,
+synthetic corpora may be committed.
