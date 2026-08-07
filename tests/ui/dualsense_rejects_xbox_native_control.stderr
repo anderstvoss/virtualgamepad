@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/ui/dualsense_rejects_xbox_native_control.rs:4:27
+  |
+4 |     controller.set_native(XboxControl::A, true);
+  |                ---------- ^^^^^^^^^^^^^^ expected `DualSenseControl`, found `XboxControl`
+  |                |
+  |                arguments to this method are incorrect
+  |
+note: method defined here
+ --> src/lib.rs
+  |
+  |         pub fn set_native(
+  |                ^^^^^^^^^^
