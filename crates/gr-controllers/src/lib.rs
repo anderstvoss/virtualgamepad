@@ -12,8 +12,7 @@ use gr_controller_contract::{
     DpadDirection, FaceButton, RealizationRequirements, Stick, StickPosition, Trigger,
 };
 use gr_core::{
-    DualSenseInput, GenericGamepadInput, ProfileInputPayload, SteamControllerInput, TwinStickAxes,
-    Xbox360Input,
+    DualSenseInput, GenericGamepadInput, SteamControllerInput, TwinStickAxes, Xbox360Input,
 };
 
 pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
@@ -250,17 +249,6 @@ impl PreparedControllerFrame {
             Self::Xbox360(_) => ControllerKind::Xbox360,
             Self::DualSense(_) => ControllerKind::DualSense,
             Self::SteamController(_) => ControllerKind::SteamController,
-        }
-    }
-
-    /// Convert only at the legacy provider boundary during the migration.
-    #[must_use]
-    pub fn legacy_payload(self) -> ProfileInputPayload {
-        match self {
-            Self::GenericGamepad(state) => ProfileInputPayload::GenericGamepad(state),
-            Self::Xbox360(state) => ProfileInputPayload::Xbox360(state),
-            Self::DualSense(state) => ProfileInputPayload::DualSense(state),
-            Self::SteamController(state) => ProfileInputPayload::SteamController(state),
         }
     }
 
@@ -532,20 +520,6 @@ impl ControllerState {
             Self::Xbox360(_) => ControllerKind::Xbox360,
             Self::DualSense(_) => ControllerKind::DualSense,
             Self::SteamController(_) => ControllerKind::SteamController,
-        }
-    }
-
-    /// Convert the prepared state through the legacy provider seam.
-    ///
-    /// This conversion is intentionally isolated here: Linux providers still
-    /// consume the pre-redesign report pipeline while their contracts migrate.
-    #[must_use]
-    pub fn legacy_payload(&self) -> ProfileInputPayload {
-        match self {
-            Self::GenericGamepad(state) => ProfileInputPayload::GenericGamepad(state.clone()),
-            Self::Xbox360(state) => ProfileInputPayload::Xbox360(state.clone()),
-            Self::DualSense(state) => ProfileInputPayload::DualSense(state.clone()),
-            Self::SteamController(state) => ProfileInputPayload::SteamController(state.clone()),
         }
     }
 
