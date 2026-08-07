@@ -1,0 +1,439 @@
+#![forbid(unsafe_code)]
+
+//! Compiled implementations for the curated controller set.
+//!
+//! The public state layer deliberately has no provider dependency. Providers
+//! receive a complete typed state only at commit time, keeping updates cheap,
+//! deterministic, and straightforward to test.
+
+use gr_controller_contract::{
+    ControlError, ControlUpdate, ControllerKind, DpadDirection, FaceButton, Stick, StickPosition,
+    Trigger,
+};
+use gr_core::{
+    DualSenseInput, GenericGamepadInput, ProfileInputPayload, SteamControllerInput, TwinStickAxes,
+    Xbox360Input,
+};
+
+pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
+
+/// The complete mutable state of one curated controller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ControllerState {
+    GenericGamepad(GenericGamepadInput),
+    Xbox360(Xbox360Input),
+    DualSense(DualSenseInput),
+    SteamController(SteamControllerInput),
+}
+
+impl ControllerState {
+    #[must_use]
+    pub const fn neutral(kind: ControllerKind) -> Self {
+        match kind {
+            ControllerKind::GenericGamepad => Self::GenericGamepad(GenericGamepadInput::neutral()),
+            ControllerKind::Xbox360 => Self::Xbox360(Xbox360Input::neutral()),
+            ControllerKind::DualSense => Self::DualSense(DualSenseInput::neutral()),
+            ControllerKind::SteamController => {
+                Self::SteamController(SteamControllerInput::neutral())
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> ControllerKind {
+        match self {
+            Self::GenericGamepad(_) => ControllerKind::GenericGamepad,
+            Self::Xbox360(_) => ControllerKind::Xbox360,
+            Self::DualSense(_) => ControllerKind::DualSense,
+            Self::SteamController(_) => ControllerKind::SteamController,
+        }
+    }
+
+    /// Convert the prepared state through the legacy provider seam.
+    ///
+    /// This conversion is intentionally isolated here: Linux providers still
+    /// consume the pre-redesign report pipeline while their contracts migrate.
+    #[must_use]
+    pub fn legacy_payload(&self) -> ProfileInputPayload {
+        match self {
+            Self::GenericGamepad(state) => ProfileInputPayload::GenericGamepad(state.clone()),
+            Self::Xbox360(state) => ProfileInputPayload::Xbox360(state.clone()),
+            Self::DualSense(state) => ProfileInputPayload::DualSense(state.clone()),
+            Self::SteamController(state) => ProfileInputPayload::SteamController(state.clone()),
+        }
+    }
+
+    /// Apply a normalized update without touching a provider.
+    ///
+    /// Errors leave this state unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when this controller lacks the normalized
+    /// control in `update`.
+    pub fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
+        match update {
+            ControlUpdate::FaceButton { button, pressed } => self.set_face(button, pressed),
+            ControlUpdate::Dpad { direction, pressed } => self.set_dpad(direction, pressed),
+            ControlUpdate::Stick { stick, position } => self.set_stick(stick, position),
+            ControlUpdate::Trigger { trigger, value } => self.set_trigger(trigger, value),
+        }
+    }
+
+    /// Apply a controller-native update without touching a provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::UnsupportedNativeControl`] when `update` does
+    /// not belong to this controller. State remains unchanged on error.
+    pub fn apply_native(&mut self, update: NativeControlUpdate) -> Result<(), ControlError> {
+        if update.control.kind() != self.kind() {
+            return Err(ControlError::UnsupportedNativeControl {
+                controller: self.kind(),
+                control: update.control.name(),
+            });
+        }
+        self.set_native(update.control, update.pressed)
+    }
+
+    /// Set a normalized face button.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] if the controller does not expose face buttons.
+    pub fn set_face(&mut self, button: FaceButton, pressed: bool) -> Result<(), ControlError> {
+        match self {
+            Self::GenericGamepad(state) => match button {
+                FaceButton::North => state.buttons.north = pressed,
+                FaceButton::South => state.buttons.south = pressed,
+                FaceButton::East => state.buttons.east = pressed,
+                FaceButton::West => state.buttons.west = pressed,
+            },
+            Self::Xbox360(state) => match button {
+                FaceButton::North => state.buttons.face.y = pressed,
+                FaceButton::South => state.buttons.face.a = pressed,
+                FaceButton::East => state.buttons.face.b = pressed,
+                FaceButton::West => state.buttons.face.x = pressed,
+            },
+            Self::DualSense(state) => match button {
+                FaceButton::North => state.buttons.face.triangle = pressed,
+                FaceButton::South => state.buttons.face.cross = pressed,
+                FaceButton::East => state.buttons.face.circle = pressed,
+                FaceButton::West => state.buttons.face.square = pressed,
+            },
+            Self::SteamController(state) => match button {
+                FaceButton::North => state.buttons.y = pressed,
+                FaceButton::South => state.buttons.a = pressed,
+                FaceButton::East => state.buttons.b = pressed,
+                FaceButton::West => state.buttons.x = pressed,
+            },
+        }
+        Ok(())
+    }
+
+    /// Set one normalized D-pad direction.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::UnsupportedControl`] when the controller has
+    /// no D-pad.
+    pub fn set_dpad(
+        &mut self,
+        direction: DpadDirection,
+        pressed: bool,
+    ) -> Result<(), ControlError> {
+        let dpad = match self {
+            Self::GenericGamepad(state) => &mut state.dpad,
+            Self::Xbox360(state) => &mut state.dpad,
+            Self::DualSense(state) => &mut state.dpad,
+            Self::SteamController(_) => {
+                return Err(ControlError::UnsupportedControl {
+                    controller: self.kind(),
+                    control: "dpad",
+                });
+            }
+        };
+        match direction {
+            DpadDirection::Up => dpad.up = pressed,
+            DpadDirection::Down => dpad.down = pressed,
+            DpadDirection::Left => dpad.left = pressed,
+            DpadDirection::Right => dpad.right = pressed,
+        }
+        Ok(())
+    }
+
+    /// Set a normalized stick position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::UnsupportedControl`] when that stick is absent.
+    pub fn set_stick(&mut self, stick: Stick, position: StickPosition) -> Result<(), ControlError> {
+        match self {
+            Self::GenericGamepad(state) => set_twin_stick(&mut state.sticks, stick, position),
+            Self::Xbox360(state) => set_twin_stick(&mut state.sticks, stick, position),
+            Self::DualSense(state) => set_twin_stick(&mut state.sticks, stick, position),
+            Self::SteamController(state) => match stick {
+                Stick::Left => {
+                    state.sticks.left_stick_x = position.x;
+                    state.sticks.left_stick_y = position.y;
+                }
+                Stick::Right => {
+                    return Err(ControlError::UnsupportedControl {
+                        controller: self.kind(),
+                        control: "right stick",
+                    });
+                }
+            },
+        }
+        Ok(())
+    }
+
+    /// Set a normalized analog trigger.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when the controller lacks the trigger.
+    pub fn set_trigger(&mut self, trigger: Trigger, value: u16) -> Result<(), ControlError> {
+        match self {
+            Self::GenericGamepad(state) => match trigger {
+                Trigger::Left => state.triggers.left_trigger = value,
+                Trigger::Right => state.triggers.right_trigger = value,
+            },
+            Self::Xbox360(state) => match trigger {
+                Trigger::Left => state.triggers.lt = value,
+                Trigger::Right => state.triggers.rt = value,
+            },
+            Self::DualSense(state) => match trigger {
+                Trigger::Left => state.triggers.l2 = value,
+                Trigger::Right => state.triggers.r2 = value,
+            },
+            Self::SteamController(state) => match trigger {
+                Trigger::Left => state.triggers.lt = value,
+                Trigger::Right => state.triggers.rt = value,
+            },
+        }
+        Ok(())
+    }
+
+    fn set_native(&mut self, control: NativeControl, pressed: bool) -> Result<(), ControlError> {
+        let controller = self.kind();
+        match (self, control) {
+            (Self::GenericGamepad(state), NativeControl::GenericGamepad(control)) => {
+                match control {
+                    GenericGamepadControl::Guide => state.buttons.guide = pressed,
+                }
+            }
+            (Self::Xbox360(state), NativeControl::Xbox360(control)) => match control {
+                XboxControl::A => state.buttons.face.a = pressed,
+                XboxControl::B => state.buttons.face.b = pressed,
+                XboxControl::X => state.buttons.face.x = pressed,
+                XboxControl::Y => state.buttons.face.y = pressed,
+                XboxControl::Guide => state.buttons.system.guide = pressed,
+                XboxControl::Start => state.buttons.system.start = pressed,
+                XboxControl::Back => state.buttons.system.back = pressed,
+            },
+            (Self::DualSense(state), NativeControl::DualSense(control)) => match control {
+                DualSenseControl::Cross => state.buttons.face.cross = pressed,
+                DualSenseControl::Circle => state.buttons.face.circle = pressed,
+                DualSenseControl::Square => state.buttons.face.square = pressed,
+                DualSenseControl::Triangle => state.buttons.face.triangle = pressed,
+                DualSenseControl::PlayStation => state.buttons.system.ps = pressed,
+                DualSenseControl::Create => state.buttons.system.create = pressed,
+                DualSenseControl::Options => state.buttons.system.options = pressed,
+                DualSenseControl::TouchpadClick => state.buttons.system.touchpad_click = pressed,
+            },
+            (Self::SteamController(state), NativeControl::SteamController(control)) => {
+                match control {
+                    SteamControllerControl::A => state.buttons.a = pressed,
+                    SteamControllerControl::B => state.buttons.b = pressed,
+                    SteamControllerControl::X => state.buttons.x = pressed,
+                    SteamControllerControl::Y => state.buttons.y = pressed,
+                    SteamControllerControl::Steam => state.buttons.steam = pressed,
+                    SteamControllerControl::LeftGrip => state.buttons.left_grip = pressed,
+                    SteamControllerControl::RightGrip => state.buttons.right_grip = pressed,
+                }
+            }
+            (_, control) => {
+                return Err(ControlError::UnsupportedNativeControl {
+                    controller,
+                    control: control.name(),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn set_twin_stick(sticks: &mut TwinStickAxes, stick: Stick, position: StickPosition) {
+    match stick {
+        Stick::Left => {
+            sticks.left_x = position.x;
+            sticks.left_y = position.y;
+        }
+        Stick::Right => {
+            sticks.right_x = position.x;
+            sticks.right_y = position.y;
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeControlUpdate {
+    pub control: NativeControl,
+    pub pressed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeControl {
+    GenericGamepad(GenericGamepadControl),
+    Xbox360(XboxControl),
+    DualSense(DualSenseControl),
+    SteamController(SteamControllerControl),
+}
+
+impl NativeControl {
+    const fn kind(self) -> ControllerKind {
+        match self {
+            Self::GenericGamepad(_) => ControllerKind::GenericGamepad,
+            Self::Xbox360(_) => ControllerKind::Xbox360,
+            Self::DualSense(_) => ControllerKind::DualSense,
+            Self::SteamController(_) => ControllerKind::SteamController,
+        }
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::GenericGamepad(GenericGamepadControl::Guide) => "generic-gamepad.guide",
+            Self::Xbox360(XboxControl::A) => "xbox.a",
+            Self::Xbox360(XboxControl::B) => "xbox.b",
+            Self::Xbox360(XboxControl::X) => "xbox.x",
+            Self::Xbox360(XboxControl::Y) => "xbox.y",
+            Self::Xbox360(XboxControl::Guide) => "xbox.guide",
+            Self::Xbox360(XboxControl::Start) => "xbox.start",
+            Self::Xbox360(XboxControl::Back) => "xbox.back",
+            Self::DualSense(DualSenseControl::Cross) => "dualsense.cross",
+            Self::DualSense(DualSenseControl::Circle) => "dualsense.circle",
+            Self::DualSense(DualSenseControl::Square) => "dualsense.square",
+            Self::DualSense(DualSenseControl::Triangle) => "dualsense.triangle",
+            Self::DualSense(DualSenseControl::PlayStation) => "dualsense.playstation",
+            Self::DualSense(DualSenseControl::Create) => "dualsense.create",
+            Self::DualSense(DualSenseControl::Options) => "dualsense.options",
+            Self::DualSense(DualSenseControl::TouchpadClick) => "dualsense.touchpad-click",
+            Self::SteamController(SteamControllerControl::A) => "steam.a",
+            Self::SteamController(SteamControllerControl::B) => "steam.b",
+            Self::SteamController(SteamControllerControl::X) => "steam.x",
+            Self::SteamController(SteamControllerControl::Y) => "steam.y",
+            Self::SteamController(SteamControllerControl::Steam) => "steam.steam",
+            Self::SteamController(SteamControllerControl::LeftGrip) => "steam.left-grip",
+            Self::SteamController(SteamControllerControl::RightGrip) => "steam.right-grip",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenericGamepadControl {
+    Guide,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum XboxControl {
+    A,
+    B,
+    X,
+    Y,
+    Guide,
+    Start,
+    Back,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DualSenseControl {
+    Cross,
+    Circle,
+    Square,
+    Triangle,
+    PlayStation,
+    Create,
+    Options,
+    TouchpadClick,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SteamControllerControl {
+    A,
+    B,
+    X,
+    Y,
+    Steam,
+    LeftGrip,
+    RightGrip,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ControllerState, DualSenseControl, NativeControl, NativeControlUpdate, XboxControl,
+    };
+    use gr_controller_contract::{ControlError, ControlUpdate, ControllerKind, FaceButton};
+    use proptest::prelude::*;
+
+    #[test]
+    fn normalized_and_native_face_buttons_share_state() {
+        let mut normalized = ControllerState::neutral(ControllerKind::DualSense);
+        normalized
+            .apply(ControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("normalized update");
+        let mut native = ControllerState::neutral(ControllerKind::DualSense);
+        native
+            .apply_native(NativeControlUpdate {
+                control: NativeControl::DualSense(DualSenseControl::Cross),
+                pressed: true,
+            })
+            .expect("native update");
+        assert_eq!(normalized, native);
+    }
+
+    #[test]
+    fn wrong_native_control_preserves_state() {
+        let mut state = ControllerState::neutral(ControllerKind::DualSense);
+        let original = state.clone();
+        let error = state
+            .apply_native(NativeControlUpdate {
+                control: NativeControl::Xbox360(XboxControl::A),
+                pressed: true,
+            })
+            .expect_err("wrong controller");
+        assert!(matches!(
+            error,
+            ControlError::UnsupportedNativeControl { .. }
+        ));
+        assert_eq!(state, original);
+    }
+
+    proptest! {
+        #[test]
+        fn every_normalized_dualsense_face_mapping_matches_its_native_label(
+            north in any::<bool>(),
+            south in any::<bool>(),
+            east in any::<bool>(),
+            west in any::<bool>(),
+        ) {
+            let mut normalized = ControllerState::neutral(ControllerKind::DualSense);
+            normalized.apply(ControlUpdate::FaceButton { button: FaceButton::North, pressed: north })?;
+            normalized.apply(ControlUpdate::FaceButton { button: FaceButton::South, pressed: south })?;
+            normalized.apply(ControlUpdate::FaceButton { button: FaceButton::East, pressed: east })?;
+            normalized.apply(ControlUpdate::FaceButton { button: FaceButton::West, pressed: west })?;
+
+            let mut native = ControllerState::neutral(ControllerKind::DualSense);
+            for (control, pressed) in [
+                (DualSenseControl::Triangle, north),
+                (DualSenseControl::Cross, south),
+                (DualSenseControl::Circle, east),
+                (DualSenseControl::Square, west),
+            ] {
+                native.apply_native(NativeControlUpdate { control: NativeControl::DualSense(control), pressed })?;
+            }
+            prop_assert_eq!(normalized, native);
+        }
+    }
+}

@@ -1,9 +1,10 @@
 # VirtualGamepad
 
-Rust library for creating virtual gamepad devices that emulate
-physical hardware at varying accuracy levels.
+Rust library for creating curated virtual controller devices with a typed,
+controller-native API.
 
-> **Status:** early WIP, through Phase 12 provider-complete closure.
+> **Status:** early WIP. The new controller-native API is being introduced on
+> top of the existing Linux provider stack.
 > Linux provider surfaces exist for `uinput`, UHID, and the DualSense
 > USB transport target. Windows and macOS provider foundations are
 > planning-only and report deployment requirements, not real device
@@ -15,12 +16,38 @@ physical hardware at varying accuracy levels.
 
 ## Project goals
 
-- ship a Rust library for virtual controller emulation per the
-  [spec](docs/spec/)
+- ship a Rust library for a small, curated controller set with typed native
+  APIs and explicit Linux realization targets; see the
+  [controller-native specification](docs/spec/implementation/CONTROLLER_NATIVE_API_SPEC.md)
 - ship a separate [demo program](demo/) that grows from a CLI today
   into a full GUI with an internal controller visualizer once the
   library is functional (architecture ready for full device-emulation
   buildout, not necessarily every device supported)
+
+## Controller-native API
+
+Applications explicitly select the Linux realization target. The library never
+silently substitutes a lower-fidelity provider. Updates are local and cheap;
+`commit()` sends the complete typed state.
+
+```rust,no_run
+use virtualgamepad::{
+    create_dualsense, CreationOptions, DualSenseControl, FaceButton, LinuxTarget,
+};
+
+let mut controller = create_dualsense(CreationOptions::new(LinuxTarget::Uhid))?;
+controller.apply(virtualgamepad::ControlUpdate::FaceButton {
+    button: FaceButton::South,
+    pressed: true,
+})?;
+controller.set_native(DualSenseControl::Cross, true)?;
+controller.commit()?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+Normalized controls use spatial names (`North`, `South`, `East`, `West`).
+Controller-native controls use explicit types such as `DualSenseControl::Cross`
+and `XboxControl::A`, avoiding ambiguous labels such as `button_x`.
 
 ## License
 

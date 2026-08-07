@@ -11,6 +11,8 @@ publish = false
 
 [workspace]
 members = [
+    "crates/gr-controller-contract",
+    "crates/gr-controllers",
     "crates/gr-core",
     "crates/gr-profiles",
     "crates/gr-config",
@@ -46,6 +48,7 @@ clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 insta = "1"
 proptest = "1"
+trybuild = "1"
 rstest = "0.26"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -77,7 +80,11 @@ provider-macos-hid = ["dep:gr-provider-macos-hid"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gr-backend-api = { path = "crates/gr-backend-api", version = "0.1" }
+gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.1" }
+gr-controllers = { path = "crates/gr-controllers", version = "0.1" }
 gr-core = { path = "crates/gr-core", version = "0.1" }
+gr-runtime-model = { path = "crates/gr-runtime-model", version = "0.1" }
+gr-session = { path = "crates/gr-session", version = "0.1" }
 gr-provider-linux-uinput = { path = "crates/gr-provider-linux-uinput", optional = true }
 gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", optional = true }
 gr-provider-linux-transport = { path = "crates/gr-provider-linux-transport", optional = true }
