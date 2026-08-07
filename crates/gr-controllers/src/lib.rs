@@ -6,6 +6,7 @@
 //! receive a complete typed state only at commit time, keeping updates cheap,
 //! deterministic, and straightforward to test.
 
+use gr_backend_api::{BackendFrame, EvdevEvent};
 use gr_controller_contract::{
     ControlError, ControlUpdate, ControllerDefinition, ControllerDriver, ControllerKind,
     DpadDirection, FaceButton, RealizationRequirements, Stick, StickPosition, Trigger,
@@ -248,6 +249,230 @@ impl PreparedControllerFrame {
             Self::SteamController(state) => ProfileInputPayload::SteamController(state),
         }
     }
+
+    /// Encode this immutable native frame for its explicitly selected Linux
+    /// target. This is the profile-free forward provider boundary.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::UnsupportedControl`] if the target cannot
+    /// transport this controller frame.
+    pub fn encode_for(
+        self,
+        target: gr_controller_contract::LinuxTarget,
+    ) -> Result<BackendFrame, ControlError> {
+        match (self, target) {
+            (Self::GenericGamepad(state), gr_controller_contract::LinuxTarget::Uinput) => {
+                Ok(BackendFrame::EvdevEvents {
+                    events: generic_evdev_events(&state),
+                })
+            }
+            (Self::Xbox360(state), gr_controller_contract::LinuxTarget::Uinput) => {
+                Ok(BackendFrame::EvdevEvents {
+                    events: xbox_evdev_events(&state),
+                })
+            }
+            (Self::DualSense(state), gr_controller_contract::LinuxTarget::Uhid) => {
+                Ok(BackendFrame::HidInputReport {
+                    report_id: Some(0x01),
+                    bytes: dualsense_hid_report(&state),
+                })
+            }
+            (Self::DualSense(state), gr_controller_contract::LinuxTarget::UsbTransport) => {
+                Ok(BackendFrame::TransportPacket {
+                    endpoint_id: 0x01,
+                    bytes: dualsense_hid_report(&state),
+                })
+            }
+            (frame, target) => Err(ControlError::UnsupportedControl {
+                controller: frame.kind(),
+                control: match target {
+                    gr_controller_contract::LinuxTarget::Uinput => "uinput frame encoding",
+                    gr_controller_contract::LinuxTarget::Uhid => "UHID frame encoding",
+                    gr_controller_contract::LinuxTarget::UsbTransport => {
+                        "USB transport frame encoding"
+                    }
+                },
+            }),
+        }
+    }
+}
+
+const EV_KEY: u16 = 0x01;
+const EV_ABS: u16 = 0x03;
+const BTN_SOUTH: u16 = 0x130;
+const BTN_EAST: u16 = 0x131;
+const BTN_NORTH: u16 = 0x133;
+const BTN_WEST: u16 = 0x134;
+const BTN_TL: u16 = 0x136;
+const BTN_TR: u16 = 0x137;
+const BTN_SELECT: u16 = 0x13a;
+const BTN_START: u16 = 0x13b;
+const BTN_MODE: u16 = 0x13c;
+const BTN_THUMBL: u16 = 0x13d;
+const BTN_THUMBR: u16 = 0x13e;
+const ABS_X: u16 = 0x00;
+const ABS_Y: u16 = 0x01;
+const ABS_Z: u16 = 0x02;
+const ABS_RX: u16 = 0x03;
+const ABS_RY: u16 = 0x04;
+const ABS_RZ: u16 = 0x05;
+const ABS_HAT0X: u16 = 0x10;
+const ABS_HAT0Y: u16 = 0x11;
+
+fn generic_evdev_events(state: &GenericGamepadInput) -> Vec<EvdevEvent> {
+    let mut events = Vec::with_capacity(19);
+    push_button(&mut events, BTN_SOUTH, state.buttons.south);
+    push_button(&mut events, BTN_EAST, state.buttons.east);
+    push_button(&mut events, BTN_WEST, state.buttons.west);
+    push_button(&mut events, BTN_NORTH, state.buttons.north);
+    push_button(&mut events, BTN_TL, state.buttons.left_shoulder);
+    push_button(&mut events, BTN_TR, state.buttons.right_shoulder);
+    push_button(&mut events, BTN_THUMBL, state.buttons.left_stick_button);
+    push_button(&mut events, BTN_THUMBR, state.buttons.right_stick_button);
+    push_button(&mut events, BTN_START, state.buttons.menu_primary);
+    push_button(&mut events, BTN_SELECT, state.buttons.menu_secondary);
+    push_button(&mut events, BTN_MODE, state.buttons.guide);
+    push_axis(
+        &mut events,
+        ABS_HAT0X,
+        dpad_axis(state.dpad.left, state.dpad.right),
+    );
+    push_axis(
+        &mut events,
+        ABS_HAT0Y,
+        dpad_axis(state.dpad.up, state.dpad.down),
+    );
+    push_axis(&mut events, ABS_X, i32::from(state.sticks.left_x));
+    push_axis(&mut events, ABS_Y, i32::from(state.sticks.left_y));
+    push_axis(&mut events, ABS_RX, i32::from(state.sticks.right_x));
+    push_axis(&mut events, ABS_RY, i32::from(state.sticks.right_y));
+    push_axis(&mut events, ABS_Z, i32::from(state.triggers.left_trigger));
+    push_axis(&mut events, ABS_RZ, i32::from(state.triggers.right_trigger));
+    events
+}
+
+fn xbox_evdev_events(state: &Xbox360Input) -> Vec<EvdevEvent> {
+    let mut events = Vec::with_capacity(19);
+    push_button(&mut events, BTN_SOUTH, state.buttons.face.a);
+    push_button(&mut events, BTN_EAST, state.buttons.face.b);
+    push_button(&mut events, BTN_WEST, state.buttons.face.x);
+    push_button(&mut events, BTN_NORTH, state.buttons.face.y);
+    push_button(&mut events, BTN_TL, state.buttons.shoulders.lb);
+    push_button(&mut events, BTN_TR, state.buttons.shoulders.rb);
+    push_button(&mut events, BTN_THUMBL, state.buttons.stick_clicks.ls);
+    push_button(&mut events, BTN_THUMBR, state.buttons.stick_clicks.rs);
+    push_button(&mut events, BTN_START, state.buttons.system.start);
+    push_button(&mut events, BTN_SELECT, state.buttons.system.back);
+    push_button(&mut events, BTN_MODE, state.buttons.system.guide);
+    push_axis(
+        &mut events,
+        ABS_HAT0X,
+        dpad_axis(state.dpad.left, state.dpad.right),
+    );
+    push_axis(
+        &mut events,
+        ABS_HAT0Y,
+        dpad_axis(state.dpad.up, state.dpad.down),
+    );
+    push_axis(&mut events, ABS_X, i32::from(state.sticks.left_x));
+    push_axis(&mut events, ABS_Y, i32::from(state.sticks.left_y));
+    push_axis(&mut events, ABS_RX, i32::from(state.sticks.right_x));
+    push_axis(&mut events, ABS_RY, i32::from(state.sticks.right_y));
+    push_axis(&mut events, ABS_Z, i32::from(state.triggers.lt));
+    push_axis(&mut events, ABS_RZ, i32::from(state.triggers.rt));
+    events
+}
+
+fn dualsense_hid_report(state: &DualSenseInput) -> Vec<u8> {
+    let mut bytes = vec![0; 64];
+    bytes[0] = axis_u8(state.sticks.left_x);
+    bytes[1] = axis_u8(state.sticks.left_y);
+    bytes[2] = axis_u8(state.sticks.right_x);
+    bytes[3] = axis_u8(state.sticks.right_y);
+    bytes[4] = trigger_u8(state.triggers.l2);
+    bytes[5] = trigger_u8(state.triggers.r2);
+    bytes[7] = dpad_hat(state.dpad)
+        | bit(state.buttons.face.square, 4)
+        | bit(state.buttons.face.cross, 5)
+        | bit(state.buttons.face.circle, 6)
+        | bit(state.buttons.face.triangle, 7);
+    bytes[8] = bit(state.buttons.shoulders.l1, 0)
+        | bit(state.buttons.shoulders.r1, 1)
+        | bit(state.buttons.system.create, 4)
+        | bit(state.buttons.system.options, 5)
+        | bit(state.buttons.stick_clicks.l3, 6)
+        | bit(state.buttons.stick_clicks.r3, 7);
+    bytes[9] = bit(state.buttons.system.ps, 0) | bit(state.buttons.system.touchpad_click, 1);
+    for (offset, value) in [
+        (15, state.motion.gyroscope.x),
+        (17, state.motion.gyroscope.y),
+        (19, state.motion.gyroscope.z),
+        (21, state.motion.accelerometer.x),
+        (23, state.motion.accelerometer.y),
+        (25, state.motion.accelerometer.z),
+    ] {
+        bytes[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+    }
+    encode_touch(&mut bytes[32..36], state.touchpad.contact_1, 0);
+    encode_touch(&mut bytes[36..40], state.touchpad.contact_2, 1);
+    bytes
+}
+
+fn push_button(events: &mut Vec<EvdevEvent>, code: u16, pressed: bool) {
+    events.push(EvdevEvent {
+        event_type: EV_KEY,
+        code,
+        value: i32::from(pressed),
+    });
+}
+fn push_axis(events: &mut Vec<EvdevEvent>, code: u16, value: i32) {
+    events.push(EvdevEvent {
+        event_type: EV_ABS,
+        code,
+        value,
+    });
+}
+fn dpad_axis(negative: bool, positive: bool) -> i32 {
+    match (negative, positive) {
+        (true, false) => -1,
+        (false, true) => 1,
+        _ => 0,
+    }
+}
+fn axis_u8(value: i16) -> u8 {
+    u8::try_from(((i32::from(value) + 32_768) * 255) / 65_535).expect("scaled axis fits")
+}
+fn trigger_u8(value: u16) -> u8 {
+    (value / 257) as u8
+}
+fn bit(enabled: bool, position: u8) -> u8 {
+    if enabled { 1 << position } else { 0 }
+}
+fn dpad_hat(dpad: gr_core::Dpad) -> u8 {
+    match (dpad.up, dpad.right, dpad.down, dpad.left) {
+        (true, false, false, false) => 0,
+        (true, true, false, false) => 1,
+        (false, true, false, false) => 2,
+        (false, true, true, false) => 3,
+        (false, false, true, false) => 4,
+        (false, false, true, true) => 5,
+        (false, false, false, true) => 6,
+        (true, false, false, true) => 7,
+        _ => 8,
+    }
+}
+fn encode_touch(bytes: &mut [u8], contact: DualSenseTouchContact, counter: u8) {
+    let x = contact.x.min(0x0fff);
+    let y = contact.y.min(0x0fff);
+    bytes[0] = if contact.active {
+        counter & 0x7f
+    } else {
+        0x80 | (counter & 0x7f)
+    };
+    bytes[1] = (x & 0xff) as u8;
+    bytes[2] = ((x >> 8) as u8 & 0x0f) | ((y as u8 & 0x0f) << 4);
+    bytes[3] = (y >> 4) as u8;
 }
 
 impl From<&ControllerState> for PreparedControllerFrame {

@@ -1100,6 +1100,7 @@ dependencies = [
 name = "gr-controllers"
 version = "0.1.0"
 dependencies = [
+ "gr-backend-api",
  "gr-controller-contract",
  "gr-core",
  "proptest",
