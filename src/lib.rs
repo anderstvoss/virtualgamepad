@@ -50,10 +50,11 @@ pub mod controller {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{Arc, Mutex};
     use std::thread::{self, JoinHandle};
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use gr_backend_api::{
-        BackendError, BackendSession, NativeBackendFactory, NativeBackendOpenContext,
+        BackendDiagnostics, BackendError, BackendSession, NativeBackendFactory,
+        NativeBackendOpenContext,
     };
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
@@ -85,6 +86,7 @@ pub mod controller {
     pub struct CreationOptions {
         pub target: LinuxTarget,
         pub output_subscription_capacity: usize,
+        pub slow_callback_threshold: Duration,
     }
 
     impl CreationOptions {
@@ -93,6 +95,7 @@ pub mod controller {
             Self {
                 target,
                 output_subscription_capacity: 32,
+                slow_callback_threshold: Duration::from_millis(10),
             }
         }
 
@@ -102,6 +105,44 @@ pub mod controller {
             self.output_subscription_capacity = capacity;
             self
         }
+
+        /// Set the duration after which a callback invocation is counted as
+        /// slow in controller diagnostics.
+        #[must_use]
+        pub const fn with_slow_callback_threshold(mut self, threshold: Duration) -> Self {
+            self.slow_callback_threshold = threshold;
+            self
+        }
+    }
+
+    /// Reverse-output delivery counters and terminal worker status.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct OutputDeliveryDiagnostics {
+        pub active_subscriptions: usize,
+        pub delivered_events: u64,
+        pub callback_panics: u64,
+        pub slow_callbacks: u64,
+        pub worker_error: Option<String>,
+    }
+
+    /// Point-in-time diagnostics for one controller handle.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    pub struct ControllerDiagnostics {
+        pub controller: ControllerKind,
+        pub target: LinuxTarget,
+        pub dirty: bool,
+        pub closed: bool,
+        pub backend: Option<BackendDiagnostics>,
+        pub backend_diagnostics_error: Option<String>,
+        pub output_delivery: OutputDeliveryDiagnostics,
+    }
+
+    #[derive(Default)]
+    struct OutputWorkerDiagnostics {
+        delivered_events: AtomicU64,
+        callback_panics: AtomicU64,
+        slow_callbacks: AtomicU64,
+        worker_error: Mutex<Option<String>>,
     }
 
     struct NativeBackendSink {
@@ -161,6 +202,7 @@ pub mod controller {
         output_worker: Option<JoinHandle<()>>,
         subscribers: Arc<Mutex<Vec<Arc<Subscriber>>>>,
         output_subscription_capacity: usize,
+        output_diagnostics: Arc<OutputWorkerDiagnostics>,
     }
 
     impl ManagedController {
@@ -205,10 +247,13 @@ pub mod controller {
             let backend = Arc::new(Mutex::new(backend));
             let subscribers = Arc::new(Mutex::new(Vec::new()));
             let stop_output_worker = Arc::new(AtomicBool::new(false));
+            let output_diagnostics = Arc::new(OutputWorkerDiagnostics::default());
             let output_worker = Some(start_output_worker(
                 Arc::clone(&backend),
                 Arc::clone(&subscribers),
                 Arc::clone(&stop_output_worker),
+                Arc::clone(&output_diagnostics),
+                options.slow_callback_threshold,
                 kind,
             ));
             Self {
@@ -223,6 +268,7 @@ pub mod controller {
                 output_worker,
                 subscribers,
                 output_subscription_capacity: options.output_subscription_capacity,
+                output_diagnostics,
             }
         }
 
@@ -280,6 +326,56 @@ pub mod controller {
         }
         fn kind(&self) -> ControllerKind {
             self.runtime.state().kind()
+        }
+
+        fn diagnostics(&self) -> ControllerDiagnostics {
+            let (backend, backend_diagnostics_error) = match self.runtime.sink().backend.lock() {
+                Ok(backend) => (Some(backend.diagnostics()), None),
+                Err(_) => (None, Some("native backend lock was poisoned".to_string())),
+            };
+            let (active_subscriptions, subscriber_error) = match self.subscribers.lock() {
+                Ok(subscribers) => (
+                    subscribers
+                        .iter()
+                        .filter(|subscriber| subscriber.active.load(Ordering::Acquire))
+                        .count(),
+                    None,
+                ),
+                Err(_) => (0, Some("output subscriber lock was poisoned".to_string())),
+            };
+            let worker_error = self
+                .output_diagnostics
+                .worker_error
+                .lock()
+                .map_or_else(
+                    |_| Some("output diagnostics lock was poisoned".to_string()),
+                    |error| error.clone(),
+                )
+                .or(subscriber_error);
+            ControllerDiagnostics {
+                controller: self.kind(),
+                target: self.runtime.sink().target,
+                dirty: self.runtime.is_dirty(),
+                closed: self.runtime.is_closed(),
+                backend,
+                backend_diagnostics_error,
+                output_delivery: OutputDeliveryDiagnostics {
+                    active_subscriptions,
+                    delivered_events: self
+                        .output_diagnostics
+                        .delivered_events
+                        .load(Ordering::Relaxed),
+                    callback_panics: self
+                        .output_diagnostics
+                        .callback_panics
+                        .load(Ordering::Relaxed),
+                    slow_callbacks: self
+                        .output_diagnostics
+                        .slow_callbacks
+                        .load(Ordering::Relaxed),
+                    worker_error,
+                },
+            }
         }
 
         fn subscribe_outputs<F>(&self, callback: F) -> Result<OutputSubscription, SubscriptionError>
@@ -375,6 +471,12 @@ pub mod controller {
         {
             self.inner().subscribe_outputs(callback)
         }
+        /// Return a point-in-time snapshot of lifecycle, backend, and output
+        /// delivery health.
+        #[must_use]
+        pub fn diagnostics(&self) -> ControllerDiagnostics {
+            self.inner().diagnostics()
+        }
         #[must_use]
         pub fn kind(&self) -> ControllerKind {
             self.inner().kind()
@@ -458,6 +560,12 @@ pub mod controller {
                 #[must_use]
                 pub fn is_dirty(&self) -> bool {
                     self.inner.dirty()
+                }
+                /// Return a snapshot of lifecycle, backend, and output
+                /// delivery health.
+                #[must_use]
+                pub fn diagnostics(&self) -> ControllerDiagnostics {
+                    self.inner.diagnostics()
                 }
             }
         };
@@ -833,6 +941,8 @@ pub mod controller {
         backend: Arc<Mutex<Box<dyn BackendSession>>>,
         subscribers: Arc<Mutex<Vec<Arc<Subscriber>>>>,
         stop: Arc<AtomicBool>,
+        diagnostics: Arc<OutputWorkerDiagnostics>,
+        slow_callback_threshold: Duration,
         kind: ControllerKind,
     ) -> JoinHandle<()> {
         thread::spawn(move || {
@@ -862,20 +972,31 @@ pub mod controller {
                                     continue;
                                 };
                                 for event in &events {
+                                    let started = Instant::now();
                                     if catch_unwind(AssertUnwindSafe(|| {
                                         (callback)(event.clone());
                                     }))
                                     .is_err()
                                     {
+                                        diagnostics.callback_panics.fetch_add(1, Ordering::Relaxed);
                                         subscriber.active.store(false, Ordering::Release);
                                         break;
+                                    }
+                                    diagnostics.delivered_events.fetch_add(1, Ordering::Relaxed);
+                                    if started.elapsed() >= slow_callback_threshold {
+                                        diagnostics.slow_callbacks.fetch_add(1, Ordering::Relaxed);
                                     }
                                 }
                             }
                         }
                     }
                     Err(BackendError::WouldBlock) => {}
-                    Err(_) => return,
+                    Err(error) => {
+                        if let Ok(mut worker_error) = diagnostics.worker_error.lock() {
+                            *worker_error = Some(error.to_string());
+                        }
+                        return;
+                    }
                 }
                 thread::sleep(Duration::from_millis(2));
             }
@@ -999,20 +1120,30 @@ pub mod controller {
     #[cfg(test)]
     mod tests {
         use std::collections::BTreeMap;
-        use std::sync::Arc;
         use std::sync::atomic::{AtomicU64, Ordering};
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
 
-        use super::{CreationOptions, ManagedController, target_contract};
+        use super::{
+            CreationOptions, ManagedController, OutputWorkerDiagnostics, Subscriber,
+            start_output_worker, target_contract,
+        };
         use gr_backend_api::{
-            BackendDiagnostics, BackendError, BackendFrame, BackendReverseEventSink,
-            BackendSession, BackendState, EventReadiness,
+            BackendDiagnostics, BackendError, BackendFrame, BackendReverseEvent,
+            BackendReverseEventKind, BackendReverseEventSink, BackendReversePayload,
+            BackendSession, BackendState, EvdevEvent, EventReadiness,
         };
         use gr_controller_contract::{CommitError, ControllerKind, LinuxTarget, SubscriptionError};
-        use gr_core::{BackendFamily, BackendId, SessionId};
+        use gr_core::{BackendFamily, BackendId, SequenceId, SessionId, Timestamp};
 
         struct FakeBackend {
             close_count: Arc<AtomicU64>,
             fail_close: bool,
+        }
+
+        struct ReverseBackend {
+            event: Option<BackendReverseEvent>,
+            fail_after_event: bool,
         }
 
         impl BackendSession for FakeBackend {
@@ -1061,6 +1192,57 @@ pub mod controller {
                 } else {
                     Ok(())
                 }
+            }
+        }
+
+        impl BackendSession for ReverseBackend {
+            fn session_id(&self) -> SessionId {
+                SessionId::new(100)
+            }
+
+            fn open(&mut self) -> Result<(), BackendError> {
+                Ok(())
+            }
+
+            fn send(&mut self, _frame: BackendFrame) -> Result<(), BackendError> {
+                Ok(())
+            }
+
+            fn drain_reverse_events(
+                &mut self,
+                out: &mut dyn BackendReverseEventSink,
+            ) -> Result<(), BackendError> {
+                if let Some(event) = self.event.take() {
+                    out.push(event);
+                    Ok(())
+                } else if self.fail_after_event {
+                    Err(BackendError::ReadFailed {
+                        reason: "injected reverse failure".to_string(),
+                    })
+                } else {
+                    Err(BackendError::WouldBlock)
+                }
+            }
+
+            fn readiness(&self) -> EventReadiness {
+                EventReadiness::AlwaysPoll
+            }
+
+            fn diagnostics(&self) -> BackendDiagnostics {
+                BackendDiagnostics {
+                    backend_id: BackendId::from("reverse-fake"),
+                    family: BackendFamily::LinuxUinput,
+                    state: BackendState::Open,
+                    frames_sent: 0,
+                    reverse_events_drained: 0,
+                    write_failures: 0,
+                    last_error: None,
+                    vendor_counters: BTreeMap::new(),
+                }
+            }
+
+            fn close(&mut self) -> Result<(), BackendError> {
+                Ok(())
             }
         }
 
@@ -1130,14 +1312,117 @@ pub mod controller {
                 .subscribe_outputs(|_| {})
                 .expect("cancelled slot can be reused");
         }
+
+        #[test]
+        fn callback_panics_are_isolated_and_observable() {
+            let event = BackendReverseEvent {
+                session_id: SessionId::new(100),
+                profile_id: None,
+                timestamp: Timestamp::new(1),
+                sequence: SequenceId::new(1),
+                kind: BackendReverseEventKind::EvdevEvent,
+                target: None,
+                payload: BackendReversePayload::Evdev {
+                    events: vec![EvdevEvent {
+                        event_type: 0,
+                        code: 0,
+                        value: 1,
+                    }],
+                },
+            };
+            let backend: Arc<Mutex<Box<dyn BackendSession>>> =
+                Arc::new(Mutex::new(Box::new(ReverseBackend {
+                    event: Some(event),
+                    fail_after_event: false,
+                })));
+            let panicking = Arc::new(Subscriber {
+                active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                callback: Mutex::new(Box::new(|_| panic!("injected callback panic"))),
+            });
+            let (sent, received) = mpsc::channel();
+            let healthy = Arc::new(Subscriber {
+                active: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+                callback: Mutex::new(Box::new(move |_| {
+                    sent.send(()).expect("test receiver remains connected");
+                })),
+            });
+            let subscribers = Arc::new(Mutex::new(vec![
+                Arc::clone(&panicking),
+                Arc::clone(&healthy),
+            ]));
+            let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let diagnostics = Arc::new(OutputWorkerDiagnostics::default());
+            let worker = start_output_worker(
+                backend,
+                subscribers,
+                Arc::clone(&stop),
+                Arc::clone(&diagnostics),
+                Duration::ZERO,
+                ControllerKind::GenericGamepad,
+            );
+            received
+                .recv_timeout(Duration::from_secs(1))
+                .expect("healthy subscriber receives the event");
+            stop.store(true, Ordering::Release);
+            worker.join().expect("worker exits cleanly");
+
+            assert!(!panicking.active.load(Ordering::Acquire));
+            assert!(healthy.active.load(Ordering::Acquire));
+            assert_eq!(diagnostics.callback_panics.load(Ordering::Relaxed), 1);
+            assert_eq!(diagnostics.delivered_events.load(Ordering::Relaxed), 1);
+            assert_eq!(diagnostics.slow_callbacks.load(Ordering::Relaxed), 1);
+        }
+
+        #[test]
+        fn diagnostics_report_lifecycle_and_subscription_health() {
+            let close_count = Arc::new(AtomicU64::new(0));
+            let mut controller = managed_controller(2, false, close_count);
+            let subscription = controller.subscribe_outputs(|_| {}).expect("subscription");
+            let open = controller.diagnostics();
+            assert!(!open.closed);
+            assert_eq!(open.output_delivery.active_subscriptions, 1);
+            drop(subscription);
+            controller.close().expect("close");
+            let closed = controller.diagnostics();
+            assert!(closed.closed);
+            assert_eq!(closed.output_delivery.active_subscriptions, 0);
+        }
+
+        #[test]
+        fn terminal_reverse_worker_errors_are_observable() {
+            let backend: Arc<Mutex<Box<dyn BackendSession>>> =
+                Arc::new(Mutex::new(Box::new(ReverseBackend {
+                    event: None,
+                    fail_after_event: true,
+                })));
+            let diagnostics = Arc::new(OutputWorkerDiagnostics::default());
+            let worker = start_output_worker(
+                backend,
+                Arc::new(Mutex::new(Vec::new())),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                Arc::clone(&diagnostics),
+                Duration::from_millis(10),
+                ControllerKind::GenericGamepad,
+            );
+            worker.join().expect("worker contains backend failure");
+            assert!(
+                diagnostics
+                    .worker_error
+                    .lock()
+                    .expect("diagnostics lock")
+                    .as_deref()
+                    .is_some_and(|error| error.contains("injected reverse failure"))
+            );
+        }
     }
 }
 
 #[cfg(target_os = "linux")]
 pub use controller::{
-    ControllerHandle, CreationOptions, DualSenseController, GenericGamepadController,
-    OutputSubscription, SteamController, Xbox360Controller, create_dualsense,
-    create_generic_gamepad, create_steam_controller, create_xbox360,
+    ControllerDiagnostics, ControllerHandle, CreationOptions, DualSenseController,
+    GenericGamepadController, OutputDeliveryDiagnostics, OutputSubscription, SteamController,
+    Xbox360Controller, create_dualsense, create_generic_gamepad, create_steam_controller,
+    create_xbox360,
 };
 #[cfg(target_os = "linux")]
 pub use gr_controller_contract::{
