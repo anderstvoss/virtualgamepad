@@ -296,7 +296,8 @@ pub mod controller {
 
     struct ManagedController {
         // The manager owns the session runtime; it must outlive the handle.
-        _manager: VirtualControllerManager,
+        manager: VirtualControllerManager,
+        session_id: SessionId,
         runtime: ControllerRuntime<CompiledControllerDriver, LegacySessionSink>,
     }
 
@@ -330,7 +331,8 @@ pub mod controller {
                         reason: error.to_string(),
                     })?;
             Ok(Self {
-                _manager: manager,
+                manager,
+                session_id: SessionId::new(1),
                 runtime: ControllerRuntime::new(
                     CompiledControllerDriver::new(kind),
                     LegacySessionSink {
@@ -352,6 +354,19 @@ pub mod controller {
 
         fn commit(&mut self) -> Result<(), CommitError> {
             self.runtime.commit()
+        }
+
+        fn close(&mut self) -> Result<(), CommitError> {
+            if self.runtime.is_closed() {
+                return Ok(());
+            }
+            self.manager
+                .close_session(self.session_id)
+                .map_err(|error| CommitError::Backend {
+                    reason: error.to_string(),
+                })?;
+            self.runtime.close();
+            Ok(())
         }
 
         fn state(&self) -> &ControllerState {
@@ -402,6 +417,9 @@ pub mod controller {
         }
         pub fn commit(&mut self) -> Result<(), CommitError> {
             self.inner_mut().commit()
+        }
+        pub fn close(&mut self) -> Result<(), CommitError> {
+            self.inner_mut().close()
         }
         pub fn subscribe_outputs<F>(
             &self,
@@ -470,6 +488,9 @@ pub mod controller {
                 }
                 pub fn commit(&mut self) -> Result<(), CommitError> {
                     self.inner.commit()
+                }
+                pub fn close(&mut self) -> Result<(), CommitError> {
+                    self.inner.close()
                 }
                 #[must_use]
                 pub fn state(&self) -> &ControllerState {
