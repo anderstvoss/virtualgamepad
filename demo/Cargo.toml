@@ -19,18 +19,7 @@ clap.workspace = true
 # accesskit bridge. Keeping the native window, renderer, and Linux backends
 # explicit avoids pulling the vulnerable transitive AT-SPI XML stack.
 eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
-gr-backend-api = { path = "../crates/gr-backend-api", version = "0.1" }
-gr-cli = { path = "../crates/gr-cli", version = "0.1" }
-gr-core = { path = "../crates/gr-core", version = "0.1" }
-gr-host-bridge = { path = "../crates/gr-host-bridge", version = "0.1" }
-gr-planner = { path = "../crates/gr-planner", version = "0.1" }
-gr-profiles = { path = "../crates/gr-profiles", version = "0.1" }
-gr-runtime-model = { path = "../crates/gr-runtime-model", version = "0.1" }
-gr-session = { path = "../crates/gr-session", version = "0.1" }
 virtualgamepad = { path = "..", version = "0.1" }
-
-[dev-dependencies]
-insta.workspace = true
 
 [lints]
 workspace = true
