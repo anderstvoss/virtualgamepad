@@ -1,5 +1,10 @@
 # Rust Implementation Specification
 
+> **Superseded for new controller-native work.** The authoritative design is
+> [CONTROLLER_NATIVE_API_SPEC.md](CONTROLLER_NATIVE_API_SPEC.md). This document
+> describes the legacy profile/session implementation and remains only as a
+> migration reference while providers and tooling are converted.
+
 This document is the build-facing implementation specification for the Rust version of `VirtualGamepad`.
 
 It refines the strategy in [RUST_IMPLEMENTATION_PLAN.md](../implementation/RUST_IMPLEMENTATION_PLAN.md) into concrete crate boundaries, type ownership, runtime contracts, scheduling behavior, and testing requirements.

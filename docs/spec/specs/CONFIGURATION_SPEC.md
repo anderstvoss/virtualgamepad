@@ -1,5 +1,12 @@
 # Configuration Specification
 
+> **Legacy migration document.** Runtime YAML configuration and profile
+> selection are being removed from the public API. New application integrations
+> must use the typed constructors and explicit `CreationOptions` in
+> [CONTROLLER_NATIVE_API_SPEC.md](../implementation/CONTROLLER_NATIVE_API_SPEC.md).
+> YAML remains supported only for fixtures and snapshots until the old tooling
+> is removed.
+
 This document defines the recommended configuration format for describing:
 
 - which target controller is being emulated

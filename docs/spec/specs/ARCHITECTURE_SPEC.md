@@ -1,5 +1,11 @@
 # Architecture Specification
 
+> **Superseded for new controller-native work.** See
+> [CONTROLLER_NATIVE_API_SPEC.md](../implementation/CONTROLLER_NATIVE_API_SPEC.md)
+> for the curated compiled-controller architecture. The profile-oriented
+> material below is retained temporarily to guide migration of existing Linux
+> providers and tools.
+
 This document defines the target architecture for `VirtualGamepad` as an embeddable controller-emulation subsystem.
 
 It is intended to do three things:
