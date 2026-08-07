@@ -104,9 +104,10 @@ pub mod controller {
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
     };
+    use gr_controller_runtime::{ControllerRuntime, FrameSink};
     use gr_controllers::{
-        ControllerState, DualSenseControl, GenericGamepadControl, NativeControl,
-        NativeControlUpdate, SteamControllerControl, XboxControl, definition_for,
+        CompiledControllerDriver, ControllerState, DualSenseControl, GenericGamepadControl,
+        NativeControl, NativeControlUpdate, SteamControllerControl, XboxControl, definition_for,
     };
     use gr_core::{
         BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
@@ -186,13 +187,35 @@ pub mod controller {
         }
     }
 
+    struct LegacySessionSink {
+        session: VirtualControllerSessionHandle,
+        next_sequence: u64,
+    }
+
+    impl FrameSink for LegacySessionSink {
+        type Frame = ControllerState;
+
+        fn send(&mut self, state: Self::Frame) -> Result<(), CommitError> {
+            let frame = ProfileInputFrame {
+                profile_id: ProfileId::from(profile_id_for(state.kind())),
+                timestamp: Timestamp::new(self.next_sequence),
+                sequence: SequenceId::new(self.next_sequence),
+                payload: state.legacy_payload(),
+            };
+            self.session
+                .send_input(frame)
+                .map_err(|error| CommitError::Backend {
+                    reason: error.to_string(),
+                })?;
+            self.next_sequence = self.next_sequence.saturating_add(1);
+            Ok(())
+        }
+    }
+
     struct ManagedController {
         // The manager owns the session runtime; it must outlive the handle.
         _manager: VirtualControllerManager,
-        session: VirtualControllerSessionHandle,
-        state: ControllerState,
-        next_sequence: u64,
-        dirty: bool,
+        runtime: ControllerRuntime<CompiledControllerDriver, LegacySessionSink>,
     }
 
     impl ManagedController {
@@ -226,53 +249,37 @@ pub mod controller {
                     })?;
             Ok(Self {
                 _manager: manager,
-                session,
-                state: ControllerState::neutral(kind),
-                next_sequence: 0,
-                dirty: true,
+                runtime: ControllerRuntime::new(
+                    CompiledControllerDriver::new(kind),
+                    LegacySessionSink {
+                        session,
+                        next_sequence: 0,
+                    },
+                ),
             })
         }
 
         fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
-            self.state.apply(update)?;
-            self.dirty = true;
-            Ok(())
+            self.runtime.apply(update)
         }
 
         fn apply_native(&mut self, update: NativeControlUpdate) -> Result<(), ControlError> {
-            self.state.apply_native(update)?;
-            self.dirty = true;
-            Ok(())
+            self.runtime
+                .update_state(|state| state.apply_native(update))
         }
 
         fn commit(&mut self) -> Result<(), CommitError> {
-            if !self.dirty {
-                return Ok(());
-            }
-            let frame = ProfileInputFrame {
-                profile_id: ProfileId::from(profile_id_for(self.state.kind())),
-                timestamp: Timestamp::new(self.next_sequence),
-                sequence: SequenceId::new(self.next_sequence),
-                payload: self.state.legacy_payload(),
-            };
-            self.session
-                .send_input(frame)
-                .map_err(|error| CommitError::Backend {
-                    reason: error.to_string(),
-                })?;
-            self.next_sequence = self.next_sequence.saturating_add(1);
-            self.dirty = false;
-            Ok(())
+            self.runtime.commit()
         }
 
         fn state(&self) -> &ControllerState {
-            &self.state
+            self.runtime.state()
         }
         fn dirty(&self) -> bool {
-            self.dirty
+            self.runtime.is_dirty()
         }
         fn kind(&self) -> ControllerKind {
-            self.state.kind()
+            self.runtime.state().kind()
         }
 
         fn subscribe_outputs<F>(
@@ -282,7 +289,9 @@ pub mod controller {
         where
             F: FnMut(ControllerOutputEvent) + Send + 'static,
         {
-            self.session
+            self.runtime
+                .sink()
+                .session
                 .subscribe_outputs(Box::new(CallbackSink::new(move |command| {
                     if let Some(event) = output_event(command) {
                         callback(event);
@@ -443,18 +452,18 @@ pub mod controller {
             contact: usize,
             value: gr_controllers::DualSenseTouchContact,
         ) -> Result<(), ControlError> {
-            self.inner.state.set_dualsense_touch(contact, value)?;
-            self.inner.dirty = true;
-            Ok(())
+            self.inner
+                .runtime
+                .update_state(|state| state.set_dualsense_touch(contact, value))
         }
 
         pub fn set_motion(
             &mut self,
             value: gr_controllers::DualSenseMotion,
         ) -> Result<(), ControlError> {
-            self.inner.state.set_dualsense_motion(value)?;
-            self.inner.dirty = true;
-            Ok(())
+            self.inner
+                .runtime
+                .update_state(|state| state.set_dualsense_motion(value))
         }
     }
     impl SteamController {
@@ -474,9 +483,9 @@ pub mod controller {
             pad: usize,
             position: gr_controller_contract::StickPosition,
         ) -> Result<(), ControlError> {
-            self.inner.state.set_steam_trackpad(pad, position)?;
-            self.inner.dirty = true;
-            Ok(())
+            self.inner
+                .runtime
+                .update_state(|state| state.set_steam_trackpad(pad, position))
         }
     }
 

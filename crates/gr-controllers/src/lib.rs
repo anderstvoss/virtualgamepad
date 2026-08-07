@@ -7,8 +7,8 @@
 //! deterministic, and straightforward to test.
 
 use gr_controller_contract::{
-    ControlError, ControlUpdate, ControllerDefinition, ControllerKind, DpadDirection, FaceButton,
-    RealizationRequirements, Stick, StickPosition, Trigger,
+    ControlError, ControlUpdate, ControllerDefinition, ControllerDriver, ControllerKind,
+    DpadDirection, FaceButton, RealizationRequirements, Stick, StickPosition, Trigger,
 };
 use gr_core::{
     DualSenseInput, GenericGamepadInput, ProfileInputPayload, SteamControllerInput, TwinStickAxes,
@@ -90,6 +90,62 @@ pub fn definition_for(kind: ControllerKind) -> &'static dyn ControllerDefinition
         ControllerKind::Xbox360 => &XBOX360_DEFINITION,
         ControllerKind::DualSense => &DUALSENSE_DEFINITION,
         ControllerKind::SteamController => &STEAM_CONTROLLER_DEFINITION,
+    }
+}
+
+/// Prepared compiled driver for one curated controller kind.
+#[derive(Debug, Clone, Copy)]
+pub struct CompiledControllerDriver {
+    kind: ControllerKind,
+}
+
+impl CompiledControllerDriver {
+    #[must_use]
+    pub const fn new(kind: ControllerKind) -> Self {
+        Self { kind }
+    }
+}
+
+impl ControllerDefinition for CompiledControllerDriver {
+    fn kind(&self) -> ControllerKind {
+        self.kind
+    }
+
+    fn requirements(&self) -> RealizationRequirements {
+        definition_for(self.kind).requirements()
+    }
+}
+
+impl ControllerDriver for CompiledControllerDriver {
+    type State = ControllerState;
+    type Frame = ControllerState;
+
+    fn neutral_state(&self) -> Self::State {
+        ControllerState::neutral(self.kind)
+    }
+
+    fn apply_normalized(
+        &self,
+        state: &mut Self::State,
+        update: ControlUpdate,
+    ) -> Result<(), ControlError> {
+        if state.kind() != self.kind {
+            return Err(ControlError::UnsupportedControl {
+                controller: self.kind,
+                control: "controller state from a different driver",
+            });
+        }
+        state.apply(update)
+    }
+
+    fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError> {
+        if state.kind() != self.kind {
+            return Err(ControlError::UnsupportedControl {
+                controller: self.kind,
+                control: "controller state from a different driver",
+            });
+        }
+        Ok(state.clone())
     }
 }
 

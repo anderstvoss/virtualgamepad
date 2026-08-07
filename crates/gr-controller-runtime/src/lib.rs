@@ -65,6 +65,30 @@ where
         Ok(())
     }
 
+    /// Apply a controller-native state change without provider I/O.
+    ///
+    /// The closure receives a copy of the current state.  Returning an error
+    /// discards that copy, preserving the same no-mutation-on-failure contract
+    /// as [`Self::apply`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError::Closed`] after closure or an error returned by
+    /// `update`; the runtime state is unchanged in either error case.
+    pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
+    where
+        F: FnOnce(&mut D::State) -> Result<(), ControlError>,
+    {
+        if self.closed {
+            return Err(ControlError::Closed);
+        }
+        let mut next = self.state.clone();
+        update(&mut next)?;
+        self.state = next;
+        self.dirty = true;
+        Ok(())
+    }
+
     /// Encode and submit the complete current state.
     ///
     /// # Errors
@@ -97,6 +121,11 @@ where
     #[must_use]
     pub fn state(&self) -> &D::State {
         &self.state
+    }
+    /// Return the provider-facing sink for callback registration or diagnostics.
+    #[must_use]
+    pub const fn sink(&self) -> &S {
+        &self.sink
     }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
