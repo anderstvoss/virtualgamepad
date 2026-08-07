@@ -465,14 +465,17 @@ fn dpad_hat(dpad: gr_core::Dpad) -> u8 {
 fn encode_touch(bytes: &mut [u8], contact: DualSenseTouchContact, counter: u8) {
     let x = contact.x.min(0x0fff);
     let y = contact.y.min(0x0fff);
+    let x_high = u8::try_from(x >> 8).expect("12-bit touch coordinate high byte fits");
+    let y_low = u8::try_from(y & 0x0f).expect("12-bit touch coordinate low nibble fits");
+    let y_high = u8::try_from(y >> 4).expect("12-bit touch coordinate high byte fits");
     bytes[0] = if contact.active {
         counter & 0x7f
     } else {
         0x80 | (counter & 0x7f)
     };
-    bytes[1] = (x & 0xff) as u8;
-    bytes[2] = ((x >> 8) as u8 & 0x0f) | ((y as u8 & 0x0f) << 4);
-    bytes[3] = (y >> 4) as u8;
+    bytes[1] = u8::try_from(x & 0xff).expect("12-bit touch coordinate low byte fits");
+    bytes[2] = (x_high & 0x0f) | (y_low << 4);
+    bytes[3] = y_high;
 }
 
 impl From<&ControllerState> for PreparedControllerFrame {
@@ -921,10 +924,13 @@ pub enum SteamControllerControl {
 #[cfg(test)]
 mod tests {
     use super::{
-        ControllerState, DualSenseControl, NativeControl, NativeControlUpdate, XboxControl,
-        definition_for,
+        ControllerState, DualSenseControl, NativeControl, NativeControlUpdate,
+        PreparedControllerFrame, XboxControl, definition_for,
     };
-    use gr_controller_contract::{ControlError, ControlUpdate, ControllerKind, FaceButton};
+    use gr_backend_api::BackendFrame;
+    use gr_controller_contract::{
+        ControlError, ControlUpdate, ControllerKind, FaceButton, LinuxTarget,
+    };
     use proptest::prelude::*;
 
     #[test]
@@ -980,6 +986,38 @@ mod tests {
             .expect_err("only two contacts are available");
         assert!(matches!(error, ControlError::InvalidIndex { .. }));
         assert_eq!(state, original);
+    }
+
+    #[test]
+    fn native_frame_encoders_select_only_exact_target_shapes() {
+        let generic = PreparedControllerFrame::from(&ControllerState::neutral(
+            ControllerKind::GenericGamepad,
+        ));
+        let BackendFrame::EvdevEvents { events } = generic
+            .encode_for(LinuxTarget::Uinput)
+            .expect("generic uinput frame")
+        else {
+            panic!("generic controller must encode evdev events");
+        };
+        assert_eq!(events.len(), 19);
+
+        let dualsense =
+            PreparedControllerFrame::from(&ControllerState::neutral(ControllerKind::DualSense));
+        let BackendFrame::HidInputReport { report_id, bytes } = dualsense
+            .encode_for(LinuxTarget::Uhid)
+            .expect("DualSense UHID frame")
+        else {
+            panic!("DualSense must encode a HID report");
+        };
+        assert_eq!(report_id, Some(1));
+        assert_eq!(bytes.len(), 64);
+        assert!(
+            PreparedControllerFrame::from(&ControllerState::neutral(
+                ControllerKind::SteamController,
+            ))
+            .encode_for(LinuxTarget::Uhid)
+            .is_err()
+        );
     }
 
     proptest! {
