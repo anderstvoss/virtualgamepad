@@ -229,13 +229,7 @@ pub mod controller {
                     reason: error.to_string(),
                 }
             })?;
-            backend
-                .open()
-                .map_err(|error| CreationError::ProviderOpen {
-                    controller: kind,
-                    target: options.target,
-                    reason: error.to_string(),
-                })?;
+            open_backend(&mut *backend, kind, options.target)?;
             Ok(Self::from_open_backend(kind, options, backend))
         }
 
@@ -896,6 +890,13 @@ pub mod controller {
     ///
     /// Returns [`CreationError`] when the target is unavailable, incompatible,
     /// or cannot be opened. No partial handle is returned.
+    ///
+    /// ```no_run
+    /// use virtualgamepad::{CreationOptions, LinuxTarget, create_generic_gamepad};
+    /// let mut controller = create_generic_gamepad(CreationOptions::new(LinuxTarget::Uinput))?;
+    /// controller.commit()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn create_generic_gamepad(
         options: CreationOptions,
     ) -> Result<GenericGamepadController, CreationError> {
@@ -908,6 +909,14 @@ pub mod controller {
     ///
     /// Returns [`CreationError`] when the target is unavailable, incompatible,
     /// or cannot be opened. No partial handle is returned.
+    ///
+    /// ```no_run
+    /// use virtualgamepad::{CreationOptions, LinuxTarget, XboxControl, create_xbox360};
+    /// let mut controller = create_xbox360(CreationOptions::new(LinuxTarget::Uinput))?;
+    /// controller.set_native(XboxControl::A, true)?;
+    /// controller.commit()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, CreationError> {
         ManagedController::create(ControllerKind::Xbox360, options)
             .map(|inner| Xbox360Controller { inner })
@@ -918,6 +927,14 @@ pub mod controller {
     ///
     /// Returns [`CreationError`] when the target is unavailable, incompatible,
     /// or cannot be opened. No partial handle is returned.
+    ///
+    /// ```no_run
+    /// use virtualgamepad::{CreationOptions, DualSenseControl, LinuxTarget, create_dualsense};
+    /// let mut controller = create_dualsense(CreationOptions::new(LinuxTarget::Uhid))?;
+    /// controller.set_native(DualSenseControl::Cross, true)?;
+    /// controller.commit()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn create_dualsense(
         options: CreationOptions,
     ) -> Result<DualSenseController, CreationError> {
@@ -930,6 +947,14 @@ pub mod controller {
     ///
     /// Returns [`CreationError`] when the target is unavailable, incompatible,
     /// or cannot be opened. No partial handle is returned.
+    ///
+    /// ```no_run
+    /// use virtualgamepad::{CreationOptions, LinuxTarget, create_steam_controller};
+    /// let error = create_steam_controller(CreationOptions::new(LinuxTarget::Uhid))
+    ///     .err()
+    ///     .expect("no complete Steam Controller provider is currently available");
+    /// eprintln!("{error}");
+    /// ```
     pub fn create_steam_controller(
         options: CreationOptions,
     ) -> Result<SteamController, CreationError> {
@@ -959,8 +984,15 @@ pub mod controller {
                             .flat_map(|report| gr_controllers::decode_output_event(kind, report))
                             .collect::<Vec<_>>();
                         if !events.is_empty() {
-                            let Ok(mut registered) = subscribers.lock() else {
-                                return;
+                            let mut registered = match subscribers.lock() {
+                                Ok(registered) => registered,
+                                Err(_) => {
+                                    if let Ok(mut worker_error) = diagnostics.worker_error.lock() {
+                                        *worker_error =
+                                            Some("output subscriber lock was poisoned".to_string());
+                                    }
+                                    return;
+                                }
                             };
                             registered
                                 .retain(|subscriber| subscriber.active.load(Ordering::Acquire));
@@ -1001,6 +1033,27 @@ pub mod controller {
                 thread::sleep(Duration::from_millis(2));
             }
         })
+    }
+
+    fn open_backend(
+        backend: &mut dyn BackendSession,
+        controller: ControllerKind,
+        target: LinuxTarget,
+    ) -> Result<(), CreationError> {
+        if let Err(open_error) = backend.open() {
+            let reason = match backend.close() {
+                Ok(()) => open_error.to_string(),
+                Err(close_error) => format!(
+                    "{open_error}; cleanup after the failed open also failed: {close_error}"
+                ),
+            };
+            return Err(CreationError::ProviderOpen {
+                controller,
+                target,
+                reason,
+            });
+        }
+        Ok(())
     }
 
     #[cfg(not(all(
@@ -1096,25 +1149,9 @@ pub mod controller {
         kind: ControllerKind,
         target: LinuxTarget,
     ) -> Result<Arc<dyn NativeBackendFactory>, CreationError> {
-        let unsupported = |reason: &str| CreationError::UnsupportedTarget {
-            controller: kind,
-            target,
-            reason: reason.to_string(),
-        };
         let capabilities = target_capabilities(target)?;
         validate_realization(definition_for(kind), capabilities)?;
-        match (kind, target) {
-            (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput)
-            | (ControllerKind::DualSense, LinuxTarget::Uhid | LinuxTarget::UsbTransport) => {
-                target_factory(target)
-            }
-            (ControllerKind::SteamController, _) => Err(unsupported(
-                "no current Linux provider realizes the complete Steam Controller surface",
-            )),
-            _ => Err(unsupported(
-                "the selected provider does not realize this controller's complete declared surface",
-            )),
-        }
+        target_factory(target)
     }
 
     #[cfg(test)]
@@ -1125,7 +1162,7 @@ pub mod controller {
         use std::time::Duration;
 
         use super::{
-            CreationOptions, ManagedController, OutputWorkerDiagnostics, Subscriber,
+            CreationOptions, ManagedController, OutputWorkerDiagnostics, Subscriber, open_backend,
             start_output_worker, target_contract,
         };
         use gr_backend_api::{
@@ -1294,6 +1331,76 @@ pub mod controller {
             assert!(controller.runtime.is_closed());
             assert_eq!(controller.close(), Ok(()));
             assert_eq!(close_count.load(Ordering::Relaxed), 1);
+        }
+
+        #[test]
+        fn failed_open_attempts_backend_cleanup_and_preserves_both_errors() {
+            struct FailedOpenBackend {
+                close_count: Arc<AtomicU64>,
+            }
+
+            impl BackendSession for FailedOpenBackend {
+                fn session_id(&self) -> SessionId {
+                    SessionId::new(101)
+                }
+
+                fn open(&mut self) -> Result<(), BackendError> {
+                    Err(BackendError::OpenFailed {
+                        reason: "injected open failure".to_string(),
+                    })
+                }
+
+                fn send(&mut self, _frame: BackendFrame) -> Result<(), BackendError> {
+                    unreachable!("a failed backend is never submitted")
+                }
+
+                fn drain_reverse_events(
+                    &mut self,
+                    _sink: &mut dyn BackendReverseEventSink,
+                ) -> Result<(), BackendError> {
+                    unreachable!("a failed backend never starts an output worker")
+                }
+
+                fn readiness(&self) -> EventReadiness {
+                    EventReadiness::AlwaysPoll
+                }
+
+                fn diagnostics(&self) -> BackendDiagnostics {
+                    BackendDiagnostics {
+                        backend_id: BackendId::from("failed-open-native"),
+                        family: BackendFamily::LinuxUinput,
+                        state: BackendState::Failed,
+                        frames_sent: 0,
+                        reverse_events_drained: 0,
+                        write_failures: 0,
+                        last_error: None,
+                        vendor_counters: BTreeMap::new(),
+                    }
+                }
+
+                fn close(&mut self) -> Result<(), BackendError> {
+                    self.close_count.fetch_add(1, Ordering::Relaxed);
+                    Err(BackendError::CloseFailed {
+                        reason: "injected cleanup failure".to_string(),
+                    })
+                }
+            }
+
+            let close_count = Arc::new(AtomicU64::new(0));
+            let mut backend = FailedOpenBackend {
+                close_count: Arc::clone(&close_count),
+            };
+            let error = open_backend(
+                &mut backend,
+                ControllerKind::GenericGamepad,
+                LinuxTarget::Uinput,
+            )
+            .expect_err("open must fail");
+
+            assert_eq!(close_count.load(Ordering::Relaxed), 1);
+            let message = error.to_string();
+            assert!(message.contains("injected open failure"));
+            assert!(message.contains("injected cleanup failure"));
         }
 
         #[test]
