@@ -1202,6 +1202,7 @@ name = "gr-provider-linux-transport"
 version = "0.1.0"
 dependencies = [
  "gr-backend-api",
+ "gr-controller-contract",
  "gr-core",
  "gr-profiles",
  "gr-runtime-model",
@@ -1215,6 +1216,7 @@ name = "gr-provider-linux-uhid"
 version = "0.1.0"
 dependencies = [
  "gr-backend-api",
+ "gr-controller-contract",
  "gr-core",
  "gr-profiles",
  "gr-runtime-model",
@@ -1227,6 +1229,7 @@ name = "gr-provider-linux-uinput"
 version = "0.1.0"
 dependencies = [
  "gr-backend-api",
+ "gr-controller-contract",
  "gr-core",
  "gr-profiles",
  "gr-runtime-model",
