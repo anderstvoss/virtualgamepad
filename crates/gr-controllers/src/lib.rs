@@ -22,12 +22,14 @@ pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericGamepadOutputEvent {
     Rumble { strong: u16, weak: u16 },
+    RawEvdevEvents { events: Vec<EvdevEvent> },
 }
 
 /// Reverse output from an Xbox 360 controller.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Xbox360OutputEvent {
     Rumble { strong: u16, weak: u16 },
+    RawEvdevEvents { events: Vec<EvdevEvent> },
 }
 
 /// Reverse output from a `DualSense` controller.
@@ -53,6 +55,14 @@ pub enum DualSenseOutputEvent {
     FeatureRequest {
         request: String,
     },
+    RawHidReport {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    RawTransportPacket {
+        endpoint_id: u8,
+        bytes: Vec<u8>,
+    },
 }
 
 /// Reverse output from a Steam Controller.
@@ -70,6 +80,10 @@ pub enum SteamControllerOutputEvent {
     },
     FeatureRequest {
         request: String,
+    },
+    RawHidReport {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
     },
 }
 

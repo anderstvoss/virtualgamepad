@@ -64,12 +64,19 @@ an immutable tagged controller-specific value prepared once at commit time.
 Linux providers report only OS transport capabilities; they do not define
 control labels or controller behaviour.
 
-The existing profile/session translator pipeline is currently isolated behind
-one private root-provider adapter while its kernel-facing contracts migrate.
-`ProfileInputFrame`, `ProfileId`, and generic output commands are not exposed
-by the controller-native public API, demo, or CLI. No new controller may add a
-profile, YAML configuration, planner branch, or public generic payload to this
-adapter; its remaining removal is a provider-internal migration task.
+The root opens the caller-selected backend directly. `PreparedControllerFrame`
+is encoded to a provider `BackendFrame` by the compiled controller, so commits
+do not construct `ProfileInputFrame`, use the session actor, or select a
+translator. The current Linux provider implementations retain internal legacy
+identity lookup while their device-spec construction is moved into controller
+modules; that internal compatibility detail is not reachable from the public
+API and must not receive new profile/YAML extension points.
+
+The root reverse worker drains provider reports outside the commit path and
+delivers tagged controller-native events. It contains callback panics by
+dropping only the offending subscription; slow callbacks remain isolated from
+input progress. Raw report variants preserve device semantics while a
+controller-specific decoder is expanded.
 
 ## Realization guarantees
 

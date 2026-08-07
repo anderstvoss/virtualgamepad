@@ -3158,14 +3158,12 @@ dependencies = [
  "gr-controller-runtime",
  "gr-controllers",
  "gr-core",
- "gr-host-bridge",
  "gr-provider-linux-transport",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
  "gr-provider-macos-hid",
  "gr-provider-windows-hid",
  "gr-runtime-model",
- "gr-session",
 ]
 
 [[package]]

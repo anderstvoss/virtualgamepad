@@ -98,9 +98,16 @@ pub fn linux_transport_lab_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::
 #[cfg(target_os = "linux")]
 #[allow(clippy::missing_errors_doc)] // Public error semantics are specified in CONTROLLER_NATIVE_API_SPEC.md during the provider-seam migration.
 pub mod controller {
-    use std::sync::Arc;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
+    use std::thread::{self, JoinHandle};
+    use std::time::Duration;
 
-    use gr_backend_api::BackendFactory;
+    use gr_backend_api::{
+        BackendError, BackendFactory, BackendOpenContext, BackendReverseEvent,
+        BackendReversePayload, BackendSession,
+    };
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
         validate_realization,
@@ -112,149 +119,8 @@ pub mod controller {
         NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
         SteamControllerOutputEvent, Xbox360OutputEvent, XboxControl, definition_for,
     };
-    use gr_core::{
-        BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
-    };
-    use gr_host_bridge::CallbackSink;
-    use gr_runtime_model::{
-        ControllerOutputCommand, EmulationGoal, HostPlatform, OutputPayload, ProviderId,
-        SessionHostMetadata, SessionRequest,
-    };
-    use gr_session::{
-        ManagerConfig, SessionError, SessionOutputSubscription, VirtualControllerManager,
-        VirtualControllerSessionHandle,
-    };
-
-    /// Typed reverse output delivered by the controller-native façade.
-    #[derive(Debug, Clone, PartialEq, Eq)]
-    #[non_exhaustive]
-    pub enum LegacyOutputEvent {
-        Rumble {
-            strong: u16,
-            weak: u16,
-        },
-        Lighting {
-            red: Option<u8>,
-            green: Option<u8>,
-            blue: Option<u8>,
-            player_index: Option<u8>,
-        },
-        TriggerEffect {
-            mode: String,
-        },
-        Audio {
-            action: String,
-            target: Option<String>,
-        },
-        FeatureRequest {
-            request: String,
-        },
-    }
-
-    fn legacy_output_event(command: ControllerOutputCommand) -> Option<LegacyOutputEvent> {
-        match command.payload {
-            OutputPayload::Rumble(payload) => Some(LegacyOutputEvent::Rumble {
-                strong: payload.strong,
-                weak: payload.weak,
-            }),
-            OutputPayload::Lighting(payload) => Some(LegacyOutputEvent::Lighting {
-                red: payload.red,
-                green: payload.green,
-                blue: payload.blue,
-                player_index: payload.player_index,
-            }),
-            OutputPayload::TriggerEffect(payload) => {
-                Some(LegacyOutputEvent::TriggerEffect { mode: payload.mode })
-            }
-            OutputPayload::Audio(payload) => Some(LegacyOutputEvent::Audio {
-                action: payload.action,
-                target: payload.target,
-            }),
-            OutputPayload::FeatureRequest(payload) => Some(LegacyOutputEvent::FeatureRequest {
-                request: payload.request,
-            }),
-            _ => None,
-        }
-    }
-
-    fn output_event(
-        kind: ControllerKind,
-        event: LegacyOutputEvent,
-    ) -> Option<CuratedControllerOutputEvent> {
-        match (kind, event) {
-            (ControllerKind::GenericGamepad, LegacyOutputEvent::Rumble { strong, weak }) => {
-                Some(CuratedControllerOutputEvent::GenericGamepad(
-                    GenericGamepadOutputEvent::Rumble { strong, weak },
-                ))
-            }
-            (ControllerKind::Xbox360, LegacyOutputEvent::Rumble { strong, weak }) => Some(
-                CuratedControllerOutputEvent::Xbox360(Xbox360OutputEvent::Rumble { strong, weak }),
-            ),
-            (ControllerKind::DualSense, LegacyOutputEvent::Rumble { strong, weak }) => {
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::Rumble { strong, weak },
-                ))
-            }
-            (
-                ControllerKind::DualSense,
-                LegacyOutputEvent::Lighting {
-                    red,
-                    green,
-                    blue,
-                    player_index,
-                },
-            ) => Some(CuratedControllerOutputEvent::DualSense(
-                DualSenseOutputEvent::Lighting {
-                    red,
-                    green,
-                    blue,
-                    player_index,
-                },
-            )),
-            (ControllerKind::DualSense, LegacyOutputEvent::TriggerEffect { mode }) => {
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::TriggerEffect { mode },
-                ))
-            }
-            (ControllerKind::DualSense, LegacyOutputEvent::Audio { action, target }) => {
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::Audio { action, target },
-                ))
-            }
-            (ControllerKind::DualSense, LegacyOutputEvent::FeatureRequest { request }) => {
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::FeatureRequest { request },
-                ))
-            }
-            (ControllerKind::SteamController, LegacyOutputEvent::Rumble { strong, weak }) => {
-                Some(CuratedControllerOutputEvent::SteamController(
-                    SteamControllerOutputEvent::Rumble { strong, weak },
-                ))
-            }
-            (
-                ControllerKind::SteamController,
-                LegacyOutputEvent::Lighting {
-                    red,
-                    green,
-                    blue,
-                    player_index,
-                },
-            ) => Some(CuratedControllerOutputEvent::SteamController(
-                SteamControllerOutputEvent::Lighting {
-                    red,
-                    green,
-                    blue,
-                    player_index,
-                },
-            )),
-            (ControllerKind::SteamController, LegacyOutputEvent::FeatureRequest { request }) => {
-                Some(CuratedControllerOutputEvent::SteamController(
-                    SteamControllerOutputEvent::FeatureRequest { request },
-                ))
-            }
-            _ => None,
-        }
-    }
+    use gr_core::{BackendLevel, FidelityTier, ProfileId, SessionId};
+    use gr_runtime_model::HostPlatform;
 
     /// Explicit creation settings. The selected target is a binding contract.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,77 +135,110 @@ pub mod controller {
         }
     }
 
-    struct LegacySessionSink {
-        session: VirtualControllerSessionHandle,
-        next_sequence: u64,
+    struct NativeBackendSink {
+        backend: Arc<Mutex<Box<dyn BackendSession>>>,
+        target: LinuxTarget,
     }
 
-    impl FrameSink for LegacySessionSink {
+    impl FrameSink for NativeBackendSink {
         type Frame = PreparedControllerFrame;
 
         fn send(&mut self, frame: Self::Frame) -> Result<(), CommitError> {
-            let frame = ProfileInputFrame {
-                profile_id: ProfileId::from(profile_id_for(frame.kind())),
-                timestamp: Timestamp::new(self.next_sequence),
-                sequence: SequenceId::new(self.next_sequence),
-                payload: frame.legacy_payload(),
-            };
-            self.session
-                .send_input(frame)
+            let frame = frame
+                .encode_for(self.target)
                 .map_err(|error| CommitError::Backend {
                     reason: error.to_string(),
                 })?;
-            self.next_sequence = self.next_sequence.saturating_add(1);
-            Ok(())
+            self.backend
+                .lock()
+                .map_err(|_| CommitError::Backend {
+                    reason: "native backend lock was poisoned".to_string(),
+                })?
+                .send(frame)
+                .map_err(|error| CommitError::Backend {
+                    reason: error.to_string(),
+                })
         }
     }
 
+    /// Cancels one callback subscription when dropped.
+    pub struct OutputSubscription {
+        active: Arc<AtomicBool>,
+    }
+
+    impl Drop for OutputSubscription {
+        fn drop(&mut self) {
+            self.active.store(false, Ordering::Release);
+        }
+    }
+
+    struct Subscriber {
+        active: Arc<AtomicBool>,
+        callback: Box<dyn FnMut(CuratedControllerOutputEvent) + Send>,
+    }
+
     struct ManagedController {
-        // The manager owns the session runtime; it must outlive the handle.
-        manager: VirtualControllerManager,
-        session_id: SessionId,
-        runtime: ControllerRuntime<CompiledControllerDriver, LegacySessionSink>,
+        runtime: ControllerRuntime<CompiledControllerDriver, NativeBackendSink>,
+        stop_output_worker: Arc<AtomicBool>,
+        output_worker: Option<JoinHandle<()>>,
+        subscribers: Arc<Mutex<Vec<Subscriber>>>,
     }
 
     impl ManagedController {
         fn create(kind: ControllerKind, options: CreationOptions) -> Result<Self, CreationError> {
-            let (profile_id, fidelity, level, provider, backends) =
+            let (profile_id, fidelity, level, _provider, backends) =
                 target_contract(kind, options.target)?;
-            let manager =
-                VirtualControllerManager::with_backends(ManagerConfig::default(), backends)
-                    .map_err(|error| CreationError::ProviderOpen {
+            let factory =
+                backends
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| CreationError::ProviderOpen {
                         controller: kind,
                         target: options.target,
-                        reason: error.to_string(),
+                        reason: "selected target has no backend factory".to_string(),
                     })?;
-            let request = SessionRequest {
+            let context = BackendOpenContext {
                 session_id: SessionId::new(1),
                 profile_id: ProfileId::from(profile_id),
-                goal: EmulationGoal::from(fidelity),
-                requested_fidelity_tier: fidelity,
-                host_platform_preference: Some(HostPlatform::Linux),
-                backend_preference: Some(level),
-                provider_preference: Some(ProviderId::from(provider)),
-                host_metadata: SessionHostMetadata::default(),
+                fidelity_tier: fidelity,
+                backend_level: level,
+                host_platform: HostPlatform::Linux,
             };
-            let session =
-                manager
-                    .create_session(request)
+            let mut backend =
+                factory
+                    .open_session(&context)
                     .map_err(|error| CreationError::ProviderOpen {
                         controller: kind,
                         target: options.target,
                         reason: error.to_string(),
                     })?;
+            backend
+                .open()
+                .map_err(|error| CreationError::ProviderOpen {
+                    controller: kind,
+                    target: options.target,
+                    reason: error.to_string(),
+                })?;
+            let backend = Arc::new(Mutex::new(backend));
+            let subscribers = Arc::new(Mutex::new(Vec::new()));
+            let stop_output_worker = Arc::new(AtomicBool::new(false));
+            let output_worker = Some(start_output_worker(
+                Arc::clone(&backend),
+                Arc::clone(&subscribers),
+                Arc::clone(&stop_output_worker),
+                kind,
+            ));
             Ok(Self {
-                manager,
-                session_id: SessionId::new(1),
                 runtime: ControllerRuntime::new(
                     CompiledControllerDriver::new(kind),
-                    LegacySessionSink {
-                        session,
-                        next_sequence: 0,
+                    NativeBackendSink {
+                        backend,
+                        target: options.target,
                     },
                 ),
+                stop_output_worker,
+                output_worker,
+                subscribers,
             })
         }
 
@@ -360,8 +259,20 @@ pub mod controller {
             if self.runtime.is_closed() {
                 return Ok(());
             }
-            self.manager
-                .close_session(self.session_id)
+            self.stop_output_worker.store(true, Ordering::Release);
+            if let Some(worker) = self.output_worker.take() {
+                worker.join().map_err(|_| CommitError::Backend {
+                    reason: "native output worker panicked".to_string(),
+                })?;
+            }
+            self.runtime
+                .sink_mut()
+                .backend
+                .lock()
+                .map_err(|_| CommitError::Backend {
+                    reason: "native backend lock was poisoned".to_string(),
+                })?
+                .close()
                 .map_err(|error| CommitError::Backend {
                     reason: error.to_string(),
                 })?;
@@ -379,24 +290,19 @@ pub mod controller {
             self.runtime.state().kind()
         }
 
-        fn subscribe_outputs<F>(
-            &self,
-            mut callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        fn subscribe_outputs<F>(&self, callback: F) -> OutputSubscription
         where
             F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
-            let kind = self.kind();
-            self.runtime
-                .sink()
-                .session
-                .subscribe_outputs(Box::new(CallbackSink::new(move |command| {
-                    if let Some(event) =
-                        legacy_output_event(command).and_then(|event| output_event(kind, event))
-                    {
-                        callback(event);
-                    }
-                })))
+            let active = Arc::new(AtomicBool::new(true));
+            self.subscribers
+                .lock()
+                .expect("native output subscriptions")
+                .push(Subscriber {
+                    active: Arc::clone(&active),
+                    callback: Box::new(callback),
+                });
+            OutputSubscription { active }
         }
     }
 
@@ -421,10 +327,7 @@ pub mod controller {
         pub fn close(&mut self) -> Result<(), CommitError> {
             self.inner_mut().close()
         }
-        pub fn subscribe_outputs<F>(
-            &self,
-            callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        pub fn subscribe_outputs<F>(&self, callback: F) -> OutputSubscription
         where
             F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
@@ -509,10 +412,7 @@ pub mod controller {
     common_controller_methods!(SteamController);
 
     impl GenericGamepadController {
-        pub fn subscribe_outputs<F>(
-            &self,
-            mut callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
         where
             F: FnMut(GenericGamepadOutputEvent) + Send + 'static,
         {
@@ -535,10 +435,7 @@ pub mod controller {
         }
     }
     impl Xbox360Controller {
-        pub fn subscribe_outputs<F>(
-            &self,
-            mut callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
         where
             F: FnMut(Xbox360OutputEvent) + Send + 'static,
         {
@@ -561,10 +458,7 @@ pub mod controller {
         }
     }
     impl DualSenseController {
-        pub fn subscribe_outputs<F>(
-            &self,
-            mut callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
         where
             F: FnMut(DualSenseOutputEvent) + Send + 'static,
         {
@@ -606,10 +500,7 @@ pub mod controller {
         }
     }
     impl SteamController {
-        pub fn subscribe_outputs<F>(
-            &self,
-            mut callback: F,
-        ) -> Result<SessionOutputSubscription, SessionError>
+        pub fn subscribe_outputs<F>(&self, mut callback: F) -> OutputSubscription
         where
             F: FnMut(SteamControllerOutputEvent) + Send + 'static,
         {
@@ -663,6 +554,90 @@ pub mod controller {
     ) -> Result<SteamController, CreationError> {
         ManagedController::create(ControllerKind::SteamController, options)
             .map(|inner| SteamController { inner })
+    }
+
+    fn start_output_worker(
+        backend: Arc<Mutex<Box<dyn BackendSession>>>,
+        subscribers: Arc<Mutex<Vec<Subscriber>>>,
+        stop: Arc<AtomicBool>,
+        kind: ControllerKind,
+    ) -> JoinHandle<()> {
+        thread::spawn(move || {
+            while !stop.load(Ordering::Acquire) {
+                let mut reports = Vec::new();
+                let result = backend
+                    .lock()
+                    .map_err(|_| BackendError::SessionClosed)
+                    .and_then(|mut backend| backend.drain_reverse_events(&mut reports));
+                match result {
+                    Ok(()) => {
+                        let events = reports
+                            .into_iter()
+                            .filter_map(|report| output_event(kind, report))
+                            .collect::<Vec<_>>();
+                        if !events.is_empty() {
+                            let Ok(mut subscribers) = subscribers.lock() else {
+                                return;
+                            };
+                            subscribers.retain_mut(|subscriber| {
+                                if !subscriber.active.load(Ordering::Acquire) {
+                                    return false;
+                                }
+                                for event in &events {
+                                    if catch_unwind(AssertUnwindSafe(|| {
+                                        (subscriber.callback)(event.clone());
+                                    }))
+                                    .is_err()
+                                    {
+                                        subscriber.active.store(false, Ordering::Release);
+                                        return false;
+                                    }
+                                }
+                                true
+                            });
+                        }
+                    }
+                    Err(BackendError::WouldBlock) => {}
+                    Err(_) => return,
+                }
+                thread::sleep(Duration::from_millis(2));
+            }
+        })
+    }
+
+    fn output_event(
+        kind: ControllerKind,
+        report: BackendReverseEvent,
+    ) -> Option<CuratedControllerOutputEvent> {
+        match (kind, report.payload) {
+            (ControllerKind::GenericGamepad, BackendReversePayload::Evdev { events }) => {
+                Some(CuratedControllerOutputEvent::GenericGamepad(
+                    GenericGamepadOutputEvent::RawEvdevEvents { events },
+                ))
+            }
+            (ControllerKind::Xbox360, BackendReversePayload::Evdev { events }) => {
+                Some(CuratedControllerOutputEvent::Xbox360(
+                    Xbox360OutputEvent::RawEvdevEvents { events },
+                ))
+            }
+            (ControllerKind::DualSense, BackendReversePayload::Hid { report_id, bytes }) => {
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::RawHidReport { report_id, bytes },
+                ))
+            }
+            (
+                ControllerKind::DualSense,
+                BackendReversePayload::Transport { endpoint_id, bytes },
+            ) => Some(CuratedControllerOutputEvent::DualSense(
+                DualSenseOutputEvent::RawTransportPacket { endpoint_id, bytes },
+            )),
+            (ControllerKind::SteamController, BackendReversePayload::Hid { report_id, bytes }) => {
+                Some(CuratedControllerOutputEvent::SteamController(
+                    SteamControllerOutputEvent::RawHidReport { report_id, bytes },
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn profile_id_for(kind: ControllerKind) -> &'static str {
@@ -740,14 +715,8 @@ pub mod controller {
 
     #[cfg(test)]
     mod tests {
-        use super::{CreationOptions, legacy_output_event, output_event, target_contract};
+        use super::{CreationOptions, target_contract};
         use gr_controller_contract::{ControllerKind, LinuxTarget};
-        use gr_controllers::{CuratedControllerOutputEvent, DualSenseOutputEvent};
-        use gr_core::{ProfileId, SemanticOutputFunction, SessionId, Timestamp};
-        use gr_runtime_model::{
-            ControllerOutputCommand, OutputCommandType, OutputFunctionRef, OutputPayload,
-            RumblePayload,
-        };
 
         #[test]
         fn exact_target_matrix_rejects_silent_degradation() {
@@ -761,31 +730,6 @@ pub mod controller {
         fn creation_options_require_an_explicit_target() {
             let options = CreationOptions::new(LinuxTarget::Uhid);
             assert_eq!(options.target, LinuxTarget::Uhid);
-        }
-
-        #[test]
-        fn legacy_reverse_commands_are_contained_at_the_typed_event_boundary() {
-            let event = legacy_output_event(ControllerOutputCommand {
-                session_id: SessionId::new(1),
-                profile_id: ProfileId::from("dualsense"),
-                timestamp: Timestamp::new(1),
-                command_type: OutputCommandType::StateUpdate,
-                function: OutputFunctionRef::Semantic(SemanticOutputFunction::Rumble),
-                payload: OutputPayload::Rumble(RumblePayload {
-                    strong: 10,
-                    weak: 20,
-                }),
-            });
-            let event = event.and_then(|event| output_event(ControllerKind::DualSense, event));
-            assert_eq!(
-                event,
-                Some(CuratedControllerOutputEvent::DualSense(
-                    DualSenseOutputEvent::Rumble {
-                        strong: 10,
-                        weak: 20
-                    }
-                ))
-            );
         }
     }
 }
