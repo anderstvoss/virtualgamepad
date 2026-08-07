@@ -143,6 +143,12 @@ input_contract:
   - touchpad.contact_2.active
   - touchpad.contact_2.x
   - touchpad.contact_2.y
+  - motion.gyroscope.x
+  - motion.gyroscope.y
+  - motion.gyroscope.z
+  - motion.accelerometer.x
+  - motion.accelerometer.y
+  - motion.accelerometer.z
   optional_fields: []
   ranges:
   - field: sticks.left_x
@@ -195,6 +201,36 @@ input_contract:
       kind: u16
       min: 0
       max: 1080
+  - field: motion.gyroscope.x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.gyroscope.y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.gyroscope.z
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.z
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
   delta_support: sparse-partial
 descriptor_templates:
 - fidelity: compatibility

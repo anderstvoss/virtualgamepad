@@ -682,7 +682,7 @@ fn default_kernel_boundary() -> Arc<dyn LinuxKernelIoctl> {
 fn capability_plan_for(profile: &ControllerProfile) -> CapabilityPlan {
     let mut event_bits = BTreeSet::from([EV_KEY, EV_ABS]);
     let key_bits = match profile.profile_family {
-        ProfileFamily::GenericGamepad | ProfileFamily::Xbox360 => vec![
+        ProfileFamily::GenericGamepad | ProfileFamily::Xbox360 | ProfileFamily::DualSense => vec![
             BTN_SOUTH, BTN_EAST, BTN_WEST, BTN_NORTH, BTN_TL, BTN_TR, BTN_THUMBL, BTN_THUMBR,
             BTN_START, BTN_SELECT, BTN_MODE,
         ],

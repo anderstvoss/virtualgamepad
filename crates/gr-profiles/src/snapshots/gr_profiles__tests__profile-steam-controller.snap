@@ -64,6 +64,12 @@ capabilities:
       kind: i16
       min: -32768
       max: 32767
+  - category: motion-sensor
+    semantic: !input accelerometer
+    optionality: optional
+  - category: motion-sensor
+    semantic: !input gyroscope
+    optionality: optional
   - category: trigger
     semantic: !input left-trigger
     optionality: required
@@ -113,6 +119,12 @@ input_contract:
   - sticks.left_stick_y
   - triggers.lt
   - triggers.rt
+  - motion.gyroscope.x
+  - motion.gyroscope.y
+  - motion.gyroscope.z
+  - motion.accelerometer.x
+  - motion.accelerometer.y
+  - motion.accelerometer.z
   optional_fields: []
   ranges:
   - field: sticks.left_pad_x
@@ -155,6 +167,36 @@ input_contract:
       kind: u16
       min: 0
       max: 65535
+  - field: motion.gyroscope.x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.gyroscope.y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.gyroscope.z
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.x
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.y
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
+  - field: motion.accelerometer.z
+    range:
+      kind: i16
+      min: -32768
+      max: 32767
   delta_support: sparse-partial
 descriptor_templates:
 - fidelity: compatibility
@@ -236,6 +278,19 @@ descriptor_templates:
   - 197
   - 9
   - 196
+  - 129
+  - 2
+  - 133
+  - 1
+  - 6
+  - 0
+  - 255
+  - 9
+  - 36
+  - 117
+  - 16
+  - 149
+  - 6
   - 129
   - 2
   - 133
@@ -334,6 +389,19 @@ descriptor_templates:
   - 129
   - 2
   - 133
+  - 1
+  - 6
+  - 0
+  - 255
+  - 9
+  - 36
+  - 117
+  - 16
+  - 149
+  - 6
+  - 129
+  - 2
+  - 133
   - 2
   - 6
   - 0
@@ -426,6 +494,19 @@ descriptor_templates:
   - 197
   - 9
   - 196
+  - 129
+  - 2
+  - 133
+  - 1
+  - 6
+  - 0
+  - 255
+  - 9
+  - 36
+  - 117
+  - 16
+  - 149
+  - 6
   - 129
   - 2
   - 133

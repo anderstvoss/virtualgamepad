@@ -21,13 +21,28 @@ The split between `vgpd-demo` (this binary, human-facing) and `gr-cli` (internal
 
 ## GUI framework
 
-Not chosen yet. Candidates being tracked:
+The shipped GUI uses [`egui`](https://github.com/emilk/egui) via `eframe`.
+It is optimized for local debugging: controls send full input frames immediately,
+session diagnostics stay visible, and long profile-specific control surfaces
+remain scrollable.
 
-- [`egui`](https://github.com/emilk/egui) — immediate-mode, integrates with native windowing easily, lowest ceremony
-- [`iced`](https://github.com/iced-rs/iced) — Elm-style retained-mode, more structured
-- [`slint`](https://github.com/slint-ui/slint) — declarative UI language, more separation of view and logic
+## Capability-driven GUI boundary
 
-Selection happens when the demo actually needs a GUI.
+The GUI discovers profiles from the library registry and selects a typed editor
+for the built-in Generic Gamepad, Xbox 360, DualSense, and Steam Controller
+families. A future registered family remains visible, but receives a
+capability-and-range fallback rather than invented input controls. This keeps
+session management and diagnostics independent of profile-editor work.
+
+Likewise, the provider catalog distinguishes runnable Linux inventories from
+planning-only paths. Only the selected local Linux inventory can create a
+session. Windows, macOS, and the future brokered UHID path are intentionally
+disabled cards on Linux; showing them records their requirements without
+claiming host support or attempting privilege escalation. The accepted session
+plan and policy are read-only source-of-truth diagnostics. Future policy,
+transport, accessory, trace/replay, and configuration-file controls have
+reserved locations, but are not implemented until corresponding library
+runtime contracts exist.
 
 ## Non-goals
 
@@ -39,6 +54,7 @@ Selection happens when the demo actually needs a GUI.
 
 ```bash
 cargo run -p virtual_gamepad_demo -- info
+cargo run -p virtual_gamepad_demo -- gui
 cargo run -p virtual_gamepad_demo -- show-types
 cargo run -p virtual_gamepad_demo -- validate-config samples/configs/dualsense-identity.yaml
 cargo run -p virtual_gamepad_demo -- simulate-session crates/gr-testkit/fixtures/community/fake-session-rumble.yaml
@@ -56,6 +72,13 @@ cargo run -p virtual_gamepad_demo -- phase-gate 9
 ```
 
 Add `--help` to any subcommand for usage details.
+
+`gui` is a Linux-only local development surface. It starts in the standard
+`uinput` scope. A DualSense selection in this scope creates a conventional
+evdev gamepad with the DualSense control layout; native DualSense HID identity,
+touch contacts, and motion realization require the explicit identity-aware UHID
+or USB transport-lab scope. Their host requirements are documented in the
+local provider scope decision.
 
 ## License
 

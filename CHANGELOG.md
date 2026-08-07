@@ -48,6 +48,17 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
   inventories, deployment-requirement reporting, planner integration,
   cross-platform checks, and realization-roadmap READMEs.
 
+- Debug GUI motion controls for every motion-capable built-in profile: separate
+  X/Y/Z sliders for gyro and accelerometer samples, plus Steam Controller
+  motion fields and HID report support. The DualSense UI now represents its
+  single physical touchpad with two optional finger contacts.
+
+- Capability-driven debugger GUI foundation: profile discovery and typed-editor
+  adapters with a capability-only fallback, a Linux provider catalog that
+  distinguishes runnable and planning-only paths, persistent session drafts,
+  accepted-plan/policy diagnostics, and reserved hardware/accessory/replay
+  extension locations without inventing unsupported library behavior.
+
 ### Changed
 
 - Top-level README adds an explicit project-goals section covering

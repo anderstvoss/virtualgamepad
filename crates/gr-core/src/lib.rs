@@ -991,6 +991,77 @@ pub struct DualSenseTriggersDelta {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// One raw, signed three-axis motion sensor sample.
+///
+/// Values use the controller report's native units. Calibration and unit
+/// conversion are deliberately host concerns; a frame timestamp applies to
+/// the complete sample.
+pub struct MotionAxes {
+    pub x: i16,
+    pub y: i16,
+    pub z: i16,
+}
+
+impl MotionAxes {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self { x: 0, y: 0, z: 0 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MotionAxesDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<i16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub z: Option<i16>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct DualSenseMotion {
+    pub gyroscope: MotionAxes,
+    pub accelerometer: MotionAxes,
+}
+
+impl DualSenseMotion {
+    #[must_use]
+    pub const fn neutral() -> Self {
+        Self {
+            gyroscope: MotionAxes::neutral(),
+            accelerometer: MotionAxes::neutral(),
+        }
+    }
+}
+
+impl Default for DualSenseMotion {
+    fn default() -> Self {
+        Self::neutral()
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DualSenseMotionDelta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gyroscope: Option<MotionAxesDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub accelerometer: Option<MotionAxesDelta>,
+}
+
+/// Shared raw motion state for the Steam Controller.
+///
+/// The Steam Controller has the same gyro/accelerometer shape as the
+/// `DualSense` input model. The alias keeps the profile-facing field meaningful
+/// without duplicating the serializable representation.
+pub type SteamControllerMotion = DualSenseMotion;
+
+/// Sparse shared raw motion state for the Steam Controller.
+pub type SteamControllerMotionDelta = DualSenseMotionDelta;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct DualSenseTouchContact {
     pub active: bool,
     pub x: u16,
@@ -1054,6 +1125,8 @@ pub struct DualSenseInput {
     pub sticks: TwinStickAxes,
     pub triggers: DualSenseTriggers,
     pub touchpad: DualSenseTouchpad,
+    #[serde(default)]
+    pub motion: DualSenseMotion,
 }
 
 impl DualSenseInput {
@@ -1065,6 +1138,7 @@ impl DualSenseInput {
             sticks: TwinStickAxes::neutral(),
             triggers: DualSenseTriggers::neutral(),
             touchpad: DualSenseTouchpad::neutral(),
+            motion: DualSenseMotion::neutral(),
         }
     }
 }
@@ -1082,6 +1156,8 @@ pub struct DualSenseDelta {
     pub triggers: Option<DualSenseTriggersDelta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub touchpad: Option<DualSenseTouchpadDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub motion: Option<DualSenseMotionDelta>,
 }
 
 impl DualSenseDelta {
@@ -1233,6 +1309,8 @@ pub struct SteamControllerInput {
     pub buttons: SteamControllerButtons,
     pub sticks: SteamControllerSticks,
     pub triggers: SteamControllerTriggers,
+    #[serde(default)]
+    pub motion: SteamControllerMotion,
 }
 
 impl SteamControllerInput {
@@ -1242,6 +1320,7 @@ impl SteamControllerInput {
             buttons: SteamControllerButtons::neutral(),
             sticks: SteamControllerSticks::neutral(),
             triggers: SteamControllerTriggers::neutral(),
+            motion: SteamControllerMotion::neutral(),
         }
     }
 }
@@ -1255,6 +1334,8 @@ pub struct SteamControllerDelta {
     pub sticks: Option<SteamControllerSticksDelta>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub triggers: Option<SteamControllerTriggersDelta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub motion: Option<SteamControllerMotionDelta>,
 }
 
 impl SteamControllerDelta {
@@ -1533,7 +1614,21 @@ fn apply_dualsense_delta(base: &DualSenseInput, delta: &DualSenseDelta) -> DualS
             apply_bool(&mut next.touchpad.contact_2.y, contact.y);
         }
     }
+    if let Some(motion) = &delta.motion {
+        if let Some(gyroscope) = &motion.gyroscope {
+            apply_motion_axes(&mut next.motion.gyroscope, gyroscope);
+        }
+        if let Some(accelerometer) = &motion.accelerometer {
+            apply_motion_axes(&mut next.motion.accelerometer, accelerometer);
+        }
+    }
     next
+}
+
+fn apply_motion_axes(base: &mut MotionAxes, delta: &MotionAxesDelta) {
+    apply_bool(&mut base.x, delta.x);
+    apply_bool(&mut base.y, delta.y);
+    apply_bool(&mut base.z, delta.z);
 }
 
 fn apply_steam_controller_delta(
@@ -1568,6 +1663,14 @@ fn apply_steam_controller_delta(
     if let Some(triggers) = &delta.triggers {
         apply_bool(&mut next.triggers.lt, triggers.lt);
         apply_bool(&mut next.triggers.rt, triggers.rt);
+    }
+    if let Some(motion) = &delta.motion {
+        if let Some(gyroscope) = &motion.gyroscope {
+            apply_motion_axes(&mut next.motion.gyroscope, gyroscope);
+        }
+        if let Some(accelerometer) = &motion.accelerometer {
+            apply_motion_axes(&mut next.motion.accelerometer, accelerometer);
+        }
     }
     next
 }
@@ -1842,6 +1945,92 @@ mod tests {
         assert!(yaml.contains("active: true"));
         let decoded: ProfileInputFrame = serde_yaml::from_str(&yaml).expect("decode frame");
         assert_eq!(decoded, frame);
+    }
+
+    #[test]
+    fn dualsense_motion_round_trip_and_delta_merge() {
+        let input = DualSenseInput {
+            motion: DualSenseMotion {
+                gyroscope: MotionAxes {
+                    x: 10,
+                    y: -20,
+                    z: 30,
+                },
+                accelerometer: MotionAxes {
+                    x: -40,
+                    y: 50,
+                    z: -60,
+                },
+            },
+            ..DualSenseInput::neutral()
+        };
+        let yaml = serde_yaml::to_string(&input).expect("serialize motion input");
+        assert!(yaml.contains("gyroscope:"));
+        let decoded: DualSenseInput = serde_yaml::from_str(&yaml).expect("decode motion input");
+        assert_eq!(decoded, input);
+
+        let delta = DualSenseDelta {
+            motion: Some(DualSenseMotionDelta {
+                gyroscope: Some(MotionAxesDelta {
+                    x: Some(i16::MAX),
+                    y: None,
+                    z: Some(i16::MIN),
+                }),
+                accelerometer: None,
+            }),
+            ..DualSenseDelta::default()
+        };
+        let merged = apply_dualsense_delta(&input, &delta);
+        assert_eq!(
+            merged.motion.gyroscope,
+            MotionAxes {
+                x: i16::MAX,
+                y: -20,
+                z: i16::MIN
+            }
+        );
+        assert_eq!(merged.motion.accelerometer, input.motion.accelerometer);
+    }
+
+    #[test]
+    fn steam_controller_motion_round_trip_and_delta_merge() {
+        let input = SteamControllerInput {
+            motion: SteamControllerMotion {
+                gyroscope: MotionAxes {
+                    x: 11,
+                    y: -22,
+                    z: 33,
+                },
+                accelerometer: MotionAxes {
+                    x: -44,
+                    y: 55,
+                    z: -66,
+                },
+            },
+            ..SteamControllerInput::neutral()
+        };
+        let yaml = serde_yaml::to_string(&input).expect("serialize motion input");
+        assert!(yaml.contains("accelerometer:"));
+        let decoded: SteamControllerInput =
+            serde_yaml::from_str(&yaml).expect("decode motion input");
+        assert_eq!(decoded, input);
+
+        let merged = apply_steam_controller_delta(
+            &input,
+            &SteamControllerDelta {
+                motion: Some(SteamControllerMotionDelta {
+                    gyroscope: None,
+                    accelerometer: Some(MotionAxesDelta {
+                        x: None,
+                        y: Some(i16::MAX),
+                        z: None,
+                    }),
+                }),
+                ..SteamControllerDelta::empty()
+            },
+        );
+        assert_eq!(merged.motion.gyroscope, input.motion.gyroscope);
+        assert_eq!(merged.motion.accelerometer.y, i16::MAX);
     }
 
     #[test]
