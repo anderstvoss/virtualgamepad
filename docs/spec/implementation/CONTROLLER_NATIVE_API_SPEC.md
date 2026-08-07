@@ -43,10 +43,12 @@ controller.
 
 `gr-controller-contract` owns controller-neutral identifiers, normalized input
 primitives, creation/commit/control errors, realization requirements, and the
-controller definition contract. `gr-controllers` owns all curated controller
-state, native controls, mappings, and conversion preparation. The session
-runtime owns bounded delivery and provider I/O. Linux providers own OS device
-realization only.
+controller definition/driver contracts. `gr-controller-runtime` owns the
+controller-independent mutable-state lifecycle: reusable encoding storage,
+atomic updates, dirty tracking, retry-safe commit, and closure. Its `FrameSink`
+is the only provider-facing commit boundary. `gr-controllers` owns all curated
+controller state, native controls, mappings, and conversion preparation. Linux
+providers own OS device realization only.
 
 The first migration slice uses the existing profile/report pipeline as a
 strictly isolated provider seam. `ControllerState::legacy_payload()` is the
@@ -58,6 +60,10 @@ into `ControllerOutputEvent`, then invokes the application callback through the
 bounded delivery worker. New controller implementations must replace this
 adapter with their own typed output event enum; applications and controller
 state types must not import the legacy runtime-model output container.
+
+`ControllerRuntime` must be the destination for all new controller creation
+paths. The legacy session actor is temporary infrastructure only; future
+controller additions may not add profile/session branches to it.
 
 ## Reliability requirements
 
