@@ -1125,6 +1125,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gr-controller-runtime"
+version = "0.1.0"
+dependencies = [
+ "gr-controller-contract",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "gr-controllers"
 version = "0.1.0"
 dependencies = [
