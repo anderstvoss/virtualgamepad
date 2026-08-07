@@ -107,9 +107,10 @@ pub mod controller {
     };
     use gr_controller_runtime::{ControllerRuntime, FrameSink};
     use gr_controllers::{
-        CompiledControllerDriver, ControllerState, DualSenseControl, GenericGamepadControl,
-        NativeControl, NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
-        XboxControl, definition_for,
+        CompiledControllerDriver, ControllerState, CuratedControllerOutputEvent, DualSenseControl,
+        DualSenseOutputEvent, GenericGamepadControl, GenericGamepadOutputEvent, NativeControl,
+        NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
+        SteamControllerOutputEvent, Xbox360OutputEvent, XboxControl, definition_for,
     };
     use gr_core::{
         BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
@@ -127,7 +128,7 @@ pub mod controller {
     /// Typed reverse output delivered by the controller-native façade.
     #[derive(Debug, Clone, PartialEq, Eq)]
     #[non_exhaustive]
-    pub enum ControllerOutputEvent {
+    pub enum LegacyOutputEvent {
         Rumble {
             strong: u16,
             weak: u16,
@@ -150,28 +151,107 @@ pub mod controller {
         },
     }
 
-    fn output_event(command: ControllerOutputCommand) -> Option<ControllerOutputEvent> {
+    fn legacy_output_event(command: ControllerOutputCommand) -> Option<LegacyOutputEvent> {
         match command.payload {
-            OutputPayload::Rumble(payload) => Some(ControllerOutputEvent::Rumble {
+            OutputPayload::Rumble(payload) => Some(LegacyOutputEvent::Rumble {
                 strong: payload.strong,
                 weak: payload.weak,
             }),
-            OutputPayload::Lighting(payload) => Some(ControllerOutputEvent::Lighting {
+            OutputPayload::Lighting(payload) => Some(LegacyOutputEvent::Lighting {
                 red: payload.red,
                 green: payload.green,
                 blue: payload.blue,
                 player_index: payload.player_index,
             }),
             OutputPayload::TriggerEffect(payload) => {
-                Some(ControllerOutputEvent::TriggerEffect { mode: payload.mode })
+                Some(LegacyOutputEvent::TriggerEffect { mode: payload.mode })
             }
-            OutputPayload::Audio(payload) => Some(ControllerOutputEvent::Audio {
+            OutputPayload::Audio(payload) => Some(LegacyOutputEvent::Audio {
                 action: payload.action,
                 target: payload.target,
             }),
-            OutputPayload::FeatureRequest(payload) => Some(ControllerOutputEvent::FeatureRequest {
+            OutputPayload::FeatureRequest(payload) => Some(LegacyOutputEvent::FeatureRequest {
                 request: payload.request,
             }),
+            _ => None,
+        }
+    }
+
+    fn output_event(
+        kind: ControllerKind,
+        event: LegacyOutputEvent,
+    ) -> Option<CuratedControllerOutputEvent> {
+        match (kind, event) {
+            (ControllerKind::GenericGamepad, LegacyOutputEvent::Rumble { strong, weak }) => {
+                Some(CuratedControllerOutputEvent::GenericGamepad(
+                    GenericGamepadOutputEvent::Rumble { strong, weak },
+                ))
+            }
+            (ControllerKind::Xbox360, LegacyOutputEvent::Rumble { strong, weak }) => Some(
+                CuratedControllerOutputEvent::Xbox360(Xbox360OutputEvent::Rumble { strong, weak }),
+            ),
+            (ControllerKind::DualSense, LegacyOutputEvent::Rumble { strong, weak }) => {
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::Rumble { strong, weak },
+                ))
+            }
+            (
+                ControllerKind::DualSense,
+                LegacyOutputEvent::Lighting {
+                    red,
+                    green,
+                    blue,
+                    player_index,
+                },
+            ) => Some(CuratedControllerOutputEvent::DualSense(
+                DualSenseOutputEvent::Lighting {
+                    red,
+                    green,
+                    blue,
+                    player_index,
+                },
+            )),
+            (ControllerKind::DualSense, LegacyOutputEvent::TriggerEffect { mode }) => {
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::TriggerEffect { mode },
+                ))
+            }
+            (ControllerKind::DualSense, LegacyOutputEvent::Audio { action, target }) => {
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::Audio { action, target },
+                ))
+            }
+            (ControllerKind::DualSense, LegacyOutputEvent::FeatureRequest { request }) => {
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::FeatureRequest { request },
+                ))
+            }
+            (ControllerKind::SteamController, LegacyOutputEvent::Rumble { strong, weak }) => {
+                Some(CuratedControllerOutputEvent::SteamController(
+                    SteamControllerOutputEvent::Rumble { strong, weak },
+                ))
+            }
+            (
+                ControllerKind::SteamController,
+                LegacyOutputEvent::Lighting {
+                    red,
+                    green,
+                    blue,
+                    player_index,
+                },
+            ) => Some(CuratedControllerOutputEvent::SteamController(
+                SteamControllerOutputEvent::Lighting {
+                    red,
+                    green,
+                    blue,
+                    player_index,
+                },
+            )),
+            (ControllerKind::SteamController, LegacyOutputEvent::FeatureRequest { request }) => {
+                Some(CuratedControllerOutputEvent::SteamController(
+                    SteamControllerOutputEvent::FeatureRequest { request },
+                ))
+            }
             _ => None,
         }
     }
@@ -289,13 +369,16 @@ pub mod controller {
             mut callback: F,
         ) -> Result<SessionOutputSubscription, SessionError>
         where
-            F: FnMut(ControllerOutputEvent) + Send + 'static,
+            F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
+            let kind = self.kind();
             self.runtime
                 .sink()
                 .session
                 .subscribe_outputs(Box::new(CallbackSink::new(move |command| {
-                    if let Some(event) = output_event(command) {
+                    if let Some(event) =
+                        legacy_output_event(command).and_then(|event| output_event(kind, event))
+                    {
                         callback(event);
                     }
                 })))
@@ -325,7 +408,7 @@ pub mod controller {
             callback: F,
         ) -> Result<SessionOutputSubscription, SessionError>
         where
-            F: FnMut(ControllerOutputEvent) + Send + 'static,
+            F: FnMut(CuratedControllerOutputEvent) + Send + 'static,
         {
             self.inner().subscribe_outputs(callback)
         }
@@ -388,15 +471,6 @@ pub mod controller {
                 pub fn commit(&mut self) -> Result<(), CommitError> {
                     self.inner.commit()
                 }
-                pub fn subscribe_outputs<F>(
-                    &self,
-                    callback: F,
-                ) -> Result<SessionOutputSubscription, SessionError>
-                where
-                    F: FnMut(ControllerOutputEvent) + Send + 'static,
-                {
-                    self.inner.subscribe_outputs(callback)
-                }
                 #[must_use]
                 pub fn state(&self) -> &ControllerState {
                     self.inner.state()
@@ -414,6 +488,20 @@ pub mod controller {
     common_controller_methods!(SteamController);
 
     impl GenericGamepadController {
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(GenericGamepadOutputEvent) + Send + 'static,
+        {
+            self.inner.subscribe_outputs(move |event| {
+                if let CuratedControllerOutputEvent::GenericGamepad(event) = event {
+                    callback(event);
+                }
+            })
+        }
+
         pub fn set_native(
             &mut self,
             control: GenericGamepadControl,
@@ -426,6 +514,20 @@ pub mod controller {
         }
     }
     impl Xbox360Controller {
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(Xbox360OutputEvent) + Send + 'static,
+        {
+            self.inner.subscribe_outputs(move |event| {
+                if let CuratedControllerOutputEvent::Xbox360(event) = event {
+                    callback(event);
+                }
+            })
+        }
+
         pub fn set_native(
             &mut self,
             control: XboxControl,
@@ -438,6 +540,20 @@ pub mod controller {
         }
     }
     impl DualSenseController {
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(DualSenseOutputEvent) + Send + 'static,
+        {
+            self.inner.subscribe_outputs(move |event| {
+                if let CuratedControllerOutputEvent::DualSense(event) = event {
+                    callback(event);
+                }
+            })
+        }
+
         pub fn set_native(
             &mut self,
             control: DualSenseControl,
@@ -469,6 +585,20 @@ pub mod controller {
         }
     }
     impl SteamController {
+        pub fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(SteamControllerOutputEvent) + Send + 'static,
+        {
+            self.inner.subscribe_outputs(move |event| {
+                if let CuratedControllerOutputEvent::SteamController(event) = event {
+                    callback(event);
+                }
+            })
+        }
+
         pub fn set_native(
             &mut self,
             control: SteamControllerControl,
@@ -589,8 +719,9 @@ pub mod controller {
 
     #[cfg(test)]
     mod tests {
-        use super::{ControllerOutputEvent, CreationOptions, output_event, target_contract};
+        use super::{CreationOptions, legacy_output_event, output_event, target_contract};
         use gr_controller_contract::{ControllerKind, LinuxTarget};
+        use gr_controllers::{CuratedControllerOutputEvent, DualSenseOutputEvent};
         use gr_core::{ProfileId, SemanticOutputFunction, SessionId, Timestamp};
         use gr_runtime_model::{
             ControllerOutputCommand, OutputCommandType, OutputFunctionRef, OutputPayload,
@@ -613,7 +744,7 @@ pub mod controller {
 
         #[test]
         fn legacy_reverse_commands_are_contained_at_the_typed_event_boundary() {
-            let event = output_event(ControllerOutputCommand {
+            let event = legacy_output_event(ControllerOutputCommand {
                 session_id: SessionId::new(1),
                 profile_id: ProfileId::from("dualsense"),
                 timestamp: Timestamp::new(1),
@@ -624,12 +755,15 @@ pub mod controller {
                     weak: 20,
                 }),
             });
+            let event = event.and_then(|event| output_event(ControllerKind::DualSense, event));
             assert_eq!(
                 event,
-                Some(ControllerOutputEvent::Rumble {
-                    strong: 10,
-                    weak: 20
-                })
+                Some(CuratedControllerOutputEvent::DualSense(
+                    DualSenseOutputEvent::Rumble {
+                        strong: 10,
+                        weak: 20
+                    }
+                ))
             );
         }
     }
@@ -637,9 +771,9 @@ pub mod controller {
 
 #[cfg(target_os = "linux")]
 pub use controller::{
-    ControllerHandle, ControllerOutputEvent, CreationOptions, DualSenseController,
-    GenericGamepadController, SteamController, Xbox360Controller, create_dualsense,
-    create_generic_gamepad, create_steam_controller, create_xbox360,
+    ControllerHandle, CreationOptions, DualSenseController, GenericGamepadController,
+    SteamController, Xbox360Controller, create_dualsense, create_generic_gamepad,
+    create_steam_controller, create_xbox360,
 };
 #[cfg(target_os = "linux")]
 pub use gr_controller_contract::{
@@ -648,9 +782,10 @@ pub use gr_controller_contract::{
 };
 #[cfg(target_os = "linux")]
 pub use gr_controllers::{
-    DualSenseControl, DualSenseMotion, DualSenseTouchContact, GenericGamepadControl, MotionAxes,
+    CuratedControllerOutputEvent, DualSenseControl, DualSenseMotion, DualSenseOutputEvent,
+    DualSenseTouchContact, GenericGamepadControl, GenericGamepadOutputEvent, MotionAxes,
     NativeControl, NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
-    XboxControl,
+    SteamControllerOutputEvent, Xbox360OutputEvent, XboxControl,
 };
 
 #[cfg(test)]

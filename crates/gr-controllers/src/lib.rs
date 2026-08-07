@@ -17,6 +17,70 @@ use gr_core::{
 
 pub use gr_core::{DualSenseMotion, DualSenseTouchContact, MotionAxes};
 
+/// Reverse output from a generic compatibility gamepad.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GenericGamepadOutputEvent {
+    Rumble { strong: u16, weak: u16 },
+}
+
+/// Reverse output from an Xbox 360 controller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Xbox360OutputEvent {
+    Rumble { strong: u16, weak: u16 },
+}
+
+/// Reverse output from a DualSense controller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DualSenseOutputEvent {
+    Rumble {
+        strong: u16,
+        weak: u16,
+    },
+    Lighting {
+        red: Option<u8>,
+        green: Option<u8>,
+        blue: Option<u8>,
+        player_index: Option<u8>,
+    },
+    TriggerEffect {
+        mode: String,
+    },
+    Audio {
+        action: String,
+        target: Option<String>,
+    },
+    FeatureRequest {
+        request: String,
+    },
+}
+
+/// Reverse output from a Steam Controller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SteamControllerOutputEvent {
+    Rumble {
+        strong: u16,
+        weak: u16,
+    },
+    Lighting {
+        red: Option<u8>,
+        green: Option<u8>,
+        blue: Option<u8>,
+        player_index: Option<u8>,
+    },
+    FeatureRequest {
+        request: String,
+    },
+}
+
+/// Closed tagged reverse-output wrapper for heterogeneous collections.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CuratedControllerOutputEvent {
+    GenericGamepad(GenericGamepadOutputEvent),
+    Xbox360(Xbox360OutputEvent),
+    DualSense(DualSenseOutputEvent),
+    SteamController(SteamControllerOutputEvent),
+}
+
 /// Static definition for the generic compatibility controller.
 pub struct GenericGamepadDefinition;
 /// Static definition for the Xbox 360 controller.
