@@ -107,7 +107,8 @@ pub mod controller {
     use gr_controller_runtime::{ControllerRuntime, FrameSink};
     use gr_controllers::{
         CompiledControllerDriver, ControllerState, DualSenseControl, GenericGamepadControl,
-        NativeControl, NativeControlUpdate, SteamControllerControl, XboxControl, definition_for,
+        NativeControl, NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
+        XboxControl, definition_for,
     };
     use gr_core::{
         BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
@@ -193,14 +194,14 @@ pub mod controller {
     }
 
     impl FrameSink for LegacySessionSink {
-        type Frame = ControllerState;
+        type Frame = PreparedControllerFrame;
 
-        fn send(&mut self, state: Self::Frame) -> Result<(), CommitError> {
+        fn send(&mut self, frame: Self::Frame) -> Result<(), CommitError> {
             let frame = ProfileInputFrame {
-                profile_id: ProfileId::from(profile_id_for(state.kind())),
+                profile_id: ProfileId::from(profile_id_for(frame.kind())),
                 timestamp: Timestamp::new(self.next_sequence),
                 sequence: SequenceId::new(self.next_sequence),
-                payload: state.legacy_payload(),
+                payload: frame.legacy_payload(),
             };
             self.session
                 .send_input(frame)
@@ -647,7 +648,8 @@ pub use gr_controller_contract::{
 #[cfg(target_os = "linux")]
 pub use gr_controllers::{
     DualSenseControl, DualSenseMotion, DualSenseTouchContact, GenericGamepadControl, MotionAxes,
-    NativeControl, NativeControlUpdate, SteamControllerControl, XboxControl,
+    NativeControl, NativeControlUpdate, PreparedControllerFrame, SteamControllerControl,
+    XboxControl,
 };
 
 #[cfg(test)]

@@ -118,7 +118,7 @@ impl ControllerDefinition for CompiledControllerDriver {
 
 impl ControllerDriver for CompiledControllerDriver {
     type State = ControllerState;
-    type Frame = ControllerState;
+    type Frame = PreparedControllerFrame;
 
     fn neutral_state(&self) -> Self::State {
         ControllerState::neutral(self.kind)
@@ -145,7 +145,55 @@ impl ControllerDriver for CompiledControllerDriver {
                 control: "controller state from a different driver",
             });
         }
-        Ok(state.clone())
+        Ok(PreparedControllerFrame::from(state))
+    }
+}
+
+/// A complete, immutable native frame prepared by a compiled controller.
+///
+/// Providers receive this boundary instead of mutable state.  Each variant is
+/// deliberately controller-specific, so adding a curated controller extends
+/// this enum and its provider realization once, without profile identifiers or
+/// runtime translation selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PreparedControllerFrame {
+    GenericGamepad(GenericGamepadInput),
+    Xbox360(Xbox360Input),
+    DualSense(DualSenseInput),
+    SteamController(SteamControllerInput),
+}
+
+impl PreparedControllerFrame {
+    #[must_use]
+    pub const fn kind(&self) -> ControllerKind {
+        match self {
+            Self::GenericGamepad(_) => ControllerKind::GenericGamepad,
+            Self::Xbox360(_) => ControllerKind::Xbox360,
+            Self::DualSense(_) => ControllerKind::DualSense,
+            Self::SteamController(_) => ControllerKind::SteamController,
+        }
+    }
+
+    /// Convert only at the legacy provider boundary during the migration.
+    #[must_use]
+    pub fn legacy_payload(self) -> ProfileInputPayload {
+        match self {
+            Self::GenericGamepad(state) => ProfileInputPayload::GenericGamepad(state),
+            Self::Xbox360(state) => ProfileInputPayload::Xbox360(state),
+            Self::DualSense(state) => ProfileInputPayload::DualSense(state),
+            Self::SteamController(state) => ProfileInputPayload::SteamController(state),
+        }
+    }
+}
+
+impl From<&ControllerState> for PreparedControllerFrame {
+    fn from(state: &ControllerState) -> Self {
+        match state {
+            ControllerState::GenericGamepad(state) => Self::GenericGamepad(state.clone()),
+            ControllerState::Xbox360(state) => Self::Xbox360(state.clone()),
+            ControllerState::DualSense(state) => Self::DualSense(state.clone()),
+            ControllerState::SteamController(state) => Self::SteamController(state.clone()),
+        }
     }
 }
 
