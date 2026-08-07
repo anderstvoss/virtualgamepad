@@ -108,6 +108,7 @@ mod tests {
         CommitError, ControlError, ControlUpdate, ControllerDefinition, ControllerDriver,
         ControllerKind, FaceButton, RealizationRequirements,
     };
+    use proptest::prelude::*;
 
     #[derive(Clone)]
     struct Driver;
@@ -194,5 +195,23 @@ mod tests {
             .expect("valid");
         assert!(runtime.commit().is_err());
         assert!(runtime.is_dirty());
+    }
+
+    proptest! {
+        #[test]
+        fn generated_update_sequences_preserve_the_last_valid_state(values in proptest::collection::vec(any::<bool>(), 0..64)) {
+            let mut runtime = ControllerRuntime::new(Driver, Sink { fail: false, frames: Vec::new() });
+            for value in &values {
+                runtime.apply(ControlUpdate::FaceButton { button: FaceButton::South, pressed: *value })?;
+            }
+            let expected = values.last().copied().unwrap_or(false);
+            prop_assert_eq!(*runtime.state(), expected);
+            if values.is_empty() {
+                prop_assert!(runtime.is_dirty());
+            } else {
+                runtime.commit()?;
+                prop_assert!(!runtime.is_dirty());
+            }
+        }
     }
 }
