@@ -21,7 +21,8 @@ use gr_backend_api::{
     BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
     BackendOpenContext, BackendRealizationRequest, BackendReverseEvent, BackendReverseEventKind,
     BackendReverseEventSink, BackendReversePayload, BackendReverseTarget, BackendSession,
-    BackendState, BackendSupportReport, EventReadiness, SupportLevel, UnsupportedOutputFunction,
+    BackendState, BackendSupportReport, EventReadiness, NativeBackendFactory,
+    NativeBackendOpenContext, NativeControllerRealization, SupportLevel, UnsupportedOutputFunction,
 };
 use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
@@ -566,6 +567,54 @@ impl BackendFactory for LinuxUhidBackendFactory {
             self.backend_id(),
             self.family(),
             context.profile_id.clone(),
+            spec,
+            Arc::clone(&self.kernel_boundary),
+        )))
+    }
+}
+
+impl NativeBackendFactory for LinuxUhidBackendFactory {
+    fn target(&self) -> LinuxTarget {
+        LinuxTarget::Uhid
+    }
+
+    fn open_native_session(
+        &self,
+        context: &NativeBackendOpenContext,
+    ) -> Result<Box<dyn BackendSession>, BackendError> {
+        let NativeControllerRealization::Hid(realization) = &context.realization else {
+            return Err(BackendError::Unsupported {
+                reason: format!(
+                    "linux-uhid requires a HID realization, not {}",
+                    context.realization.target()
+                ),
+            });
+        };
+        let profile_id = ProfileId::from(context.controller.to_string());
+        let spec = LinuxUhidDeviceSpec {
+            profile_id: profile_id.clone(),
+            identity: DeviceIdentity {
+                bus_mode: self.bus_mode,
+                bus_type: realization.bus_type,
+                vendor_id: realization.identity.vendor_id,
+                product_id: realization.identity.product_id,
+                version: realization.identity.version,
+                device_name: realization.device_name.clone(),
+                phys: realization.physical_path.clone(),
+                uniq: realization.unique_id.clone(),
+                input_report_id: realization.input_report_id,
+                output_report_id: realization.output_report_id,
+                numbered_output_reports: realization.numbered_output_reports,
+                numbered_feature_reports: realization.numbered_feature_reports,
+            },
+            descriptor: realization.descriptor.clone(),
+            supported_feature_reports: realization.feature_reports.clone(),
+        };
+        Ok(Box::new(LinuxUhidBackendSession::new(
+            context.session_id,
+            self.backend_id(),
+            self.family(),
+            profile_id,
             spec,
             Arc::clone(&self.kernel_boundary),
         )))

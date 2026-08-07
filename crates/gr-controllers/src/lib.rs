@@ -6,8 +6,12 @@
 //! receive a complete typed state only at commit time, keeping updates cheap,
 //! deterministic, and straightforward to test.
 
+use std::collections::BTreeMap;
+
 use gr_backend_api::{
     BackendFrame, BackendReverseEvent, BackendReverseEventKind, BackendReversePayload, EvdevEvent,
+    NativeAbsoluteAxis, NativeControllerRealization, NativeDeviceIdentity, NativeEvdevRealization,
+    NativeHidRealization, NativeUsbRealization,
 };
 use gr_controller_contract::{
     ControlError, ControlUpdate, ControllerDefinition, ControllerDriver, ControllerKind,
@@ -301,7 +305,7 @@ definition!(
     RealizationRequirements {
         requires_identity: false,
         requires_transport: false,
-        requires_reverse_output: true,
+        requires_reverse_output: false,
     }
 );
 definition!(
@@ -484,6 +488,7 @@ impl PreparedControllerFrame {
 
 const EV_KEY: u16 = 0x01;
 const EV_ABS: u16 = 0x03;
+const EV_FF: u16 = 0x15;
 const BTN_SOUTH: u16 = 0x130;
 const BTN_EAST: u16 = 0x131;
 const BTN_NORTH: u16 = 0x133;
@@ -503,6 +508,176 @@ const ABS_RY: u16 = 0x04;
 const ABS_RZ: u16 = 0x05;
 const ABS_HAT0X: u16 = 0x10;
 const ABS_HAT0Y: u16 = 0x11;
+const FF_RUMBLE: u16 = 0x50;
+
+const DUALSENSE_USB_DESCRIPTOR: &[u8] = &[
+    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
+    0x09, 0x33, 0x09, 0x34, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x06, 0x81, 0x02, 0x06,
+    0x00, 0xff, 0x09, 0x20, 0x95, 0x01, 0x81, 0x02, 0x05, 0x01, 0x09, 0x39, 0x15, 0x00, 0x25, 0x07,
+    0x35, 0x00, 0x46, 0x3b, 0x01, 0x65, 0x14, 0x75, 0x04, 0x95, 0x01, 0x81, 0x42, 0x65, 0x00, 0x05,
+    0x09, 0x19, 0x01, 0x29, 0x0f, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x0f, 0x81, 0x02, 0x06,
+    0x00, 0xff, 0x09, 0x21, 0x95, 0x0d, 0x81, 0x02, 0x06, 0x00, 0xff, 0x09, 0x22, 0x15, 0x00, 0x26,
+    0xff, 0x00, 0x75, 0x08, 0x95, 0x34, 0x81, 0x02, 0x85, 0x02, 0x09, 0x23, 0x95, 0x2f, 0x91, 0x02,
+    0x85, 0x05, 0x09, 0x33, 0x95, 0x28, 0xb1, 0x02, 0x85, 0x08, 0x09, 0x34, 0x95, 0x2f, 0xb1, 0x02,
+    0x85, 0x09, 0x09, 0x24, 0x95, 0x13, 0xb1, 0x02, 0x85, 0x0a, 0x09, 0x25, 0x95, 0x1a, 0xb1, 0x02,
+    0x85, 0x20, 0x09, 0x26, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x21, 0x09, 0x27, 0x95, 0x04, 0xb1, 0x02,
+    0x85, 0x22, 0x09, 0x40, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x80, 0x09, 0x28, 0x95, 0x3f, 0xb1, 0x02,
+    0x85, 0x81, 0x09, 0x29, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x82, 0x09, 0x2a, 0x95, 0x09, 0xb1, 0x02,
+    0x85, 0x83, 0x09, 0x2b, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x84, 0x09, 0x2c, 0x95, 0x3f, 0xb1, 0x02,
+    0x85, 0x85, 0x09, 0x2d, 0x95, 0x02, 0xb1, 0x02, 0x85, 0xa0, 0x09, 0x2e, 0x95, 0x01, 0xb1, 0x02,
+    0x85, 0xe0, 0x09, 0x2f, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf0, 0x09, 0x30, 0x95, 0x3f, 0xb1, 0x02,
+    0x85, 0xf1, 0x09, 0x31, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf2, 0x09, 0x32, 0x95, 0x0f, 0xb1, 0x02,
+    0x85, 0xf4, 0x09, 0x35, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf5, 0x09, 0x36, 0x95, 0x03, 0xb1, 0x02,
+    0xc0,
+];
+
+/// Build the immutable OS-facing realization owned by a compiled controller.
+///
+/// Providers consume this data generically and do not select controller
+/// identities, descriptors, or capabilities themselves.
+///
+/// # Errors
+///
+/// Returns [`ControlError::UnsupportedControl`] when this controller has no
+/// complete realization for the selected target.
+pub fn realization_for(
+    kind: ControllerKind,
+    target: gr_controller_contract::LinuxTarget,
+    instance_id: u64,
+) -> Result<NativeControllerRealization, ControlError> {
+    match (kind, target) {
+        (
+            ControllerKind::GenericGamepad | ControllerKind::Xbox360,
+            gr_controller_contract::LinuxTarget::Uinput,
+        ) => Ok(NativeControllerRealization::Evdev(evdev_realization(kind))),
+        (ControllerKind::DualSense, gr_controller_contract::LinuxTarget::Uhid) => Ok(
+            NativeControllerRealization::Hid(dualsense_hid_realization(instance_id)),
+        ),
+        (ControllerKind::DualSense, gr_controller_contract::LinuxTarget::UsbTransport) => Ok(
+            NativeControllerRealization::Usb(dualsense_usb_realization(instance_id)),
+        ),
+        _ => Err(ControlError::UnsupportedControl {
+            controller: kind,
+            control: match target {
+                gr_controller_contract::LinuxTarget::Uinput => "uinput realization",
+                gr_controller_contract::LinuxTarget::Uhid => "UHID realization",
+                gr_controller_contract::LinuxTarget::UsbTransport => "USB realization",
+            },
+        }),
+    }
+}
+
+fn evdev_realization(kind: ControllerKind) -> NativeEvdevRealization {
+    let (device_name, identity, rumble) = match kind {
+        ControllerKind::GenericGamepad => (
+            "VirtualGamepad Generic Gamepad",
+            NativeDeviceIdentity {
+                vendor_id: 0x0001,
+                product_id: 0x0001,
+                version: 0x0001,
+            },
+            false,
+        ),
+        ControllerKind::Xbox360 => (
+            "VirtualGamepad Xbox 360",
+            NativeDeviceIdentity {
+                vendor_id: 0x045e,
+                product_id: 0x028e,
+                version: 0x0001,
+            },
+            true,
+        ),
+        _ => unreachable!("evdev realization is only built for validated evdev controllers"),
+    };
+    let mut event_codes = vec![EV_KEY, EV_ABS];
+    let force_feedback_codes = if rumble {
+        event_codes.push(EV_FF);
+        vec![FF_RUMBLE]
+    } else {
+        Vec::new()
+    };
+    NativeEvdevRealization {
+        device_name: device_name.to_string(),
+        identity,
+        event_codes,
+        key_codes: vec![
+            BTN_SOUTH, BTN_EAST, BTN_WEST, BTN_NORTH, BTN_TL, BTN_TR, BTN_THUMBL, BTN_THUMBR,
+            BTN_START, BTN_SELECT, BTN_MODE,
+        ],
+        absolute_axes: vec![
+            native_axis(ABS_X, i32::from(i16::MIN), i32::from(i16::MAX)),
+            native_axis(ABS_Y, i32::from(i16::MIN), i32::from(i16::MAX)),
+            native_axis(ABS_RX, i32::from(i16::MIN), i32::from(i16::MAX)),
+            native_axis(ABS_RY, i32::from(i16::MIN), i32::from(i16::MAX)),
+            native_axis(ABS_Z, 0, i32::from(u16::MAX)),
+            native_axis(ABS_RZ, 0, i32::from(u16::MAX)),
+            native_axis(ABS_HAT0X, -1, 1),
+            native_axis(ABS_HAT0Y, -1, 1),
+        ],
+        force_feedback_codes,
+    }
+}
+
+const fn native_axis(code: u16, minimum: i32, maximum: i32) -> NativeAbsoluteAxis {
+    NativeAbsoluteAxis {
+        code,
+        minimum,
+        maximum,
+        flat: 0,
+    }
+}
+
+fn dualsense_hid_realization(instance_id: u64) -> NativeHidRealization {
+    NativeHidRealization {
+        bus_type: 0x03,
+        device_name: "Sony Interactive Entertainment DualSense Wireless Controller".to_string(),
+        physical_path: format!("virtualgamepad/dualsense-usb-{instance_id:016x}"),
+        unique_id: format!("virtualgamepad-dualsense-{instance_id:016x}"),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x054c,
+            product_id: 0x0ce6,
+            version: 0x0100,
+        },
+        input_report_id: 0x01,
+        output_report_id: 0x02,
+        numbered_output_reports: true,
+        numbered_feature_reports: true,
+        descriptor: DUALSENSE_USB_DESCRIPTOR.to_vec(),
+        feature_reports: dualsense_feature_reports(),
+    }
+}
+
+fn dualsense_feature_reports() -> BTreeMap<u8, Vec<u8>> {
+    let mut reports = BTreeMap::new();
+    for (report_id, length) in [(0x05, 41), (0x09, 20), (0x20, 64)] {
+        let mut payload = vec![0; length];
+        payload[0] = report_id;
+        if report_id == 0x20 {
+            payload[1..4].copy_from_slice(&[0x01, 0x00, 0x21]);
+        }
+        reports.insert(report_id, payload);
+    }
+    reports
+}
+
+fn dualsense_usb_realization(instance_id: u64) -> NativeUsbRealization {
+    NativeUsbRealization {
+        descriptor: DUALSENSE_USB_DESCRIPTOR.to_vec(),
+        input_endpoint: 0x01,
+        reverse_endpoint: 0x02,
+        device_name: "Sony Interactive Entertainment DualSense Wireless Controller".to_string(),
+        manufacturer: "Sony Interactive Entertainment".to_string(),
+        serial_number: format!("VGPD-{instance_id:016X}"),
+        identity: NativeDeviceIdentity {
+            vendor_id: 0x054c,
+            product_id: 0x0ce6,
+            version: 0x0100,
+        },
+        usb_version: 0x0200,
+        maximum_power_ma: 500,
+        report_length: 64,
+    }
+}
 
 fn generic_evdev_events(state: &GenericGamepadInput) -> Vec<EvdevEvent> {
     let mut events = Vec::with_capacity(19);
@@ -1129,9 +1304,9 @@ mod tests {
         ControllerState, CuratedControllerOutputEvent, DualSenseControl, DualSenseOutputEvent,
         GenericGamepadOutputEvent, NativeControl, NativeControlUpdate, PreparedControllerFrame,
         SteamControllerOutputEvent, XboxControl, decode_dualsense_output, decode_evdev_rumble,
-        decode_steam_output, definition_for,
+        decode_steam_output, definition_for, realization_for,
     };
-    use gr_backend_api::{BackendFrame, EvdevEvent};
+    use gr_backend_api::{BackendFrame, EvdevEvent, NativeControllerRealization};
     use gr_controller_contract::{
         ControlError, ControlUpdate, ControllerKind, FaceButton, LinuxTarget,
     };
@@ -1320,6 +1495,58 @@ mod tests {
             .encode_for(LinuxTarget::Uhid)
             .is_err()
         );
+    }
+
+    #[test]
+    fn controller_owned_realizations_capture_identity_and_host_capabilities() {
+        let NativeControllerRealization::Evdev(generic) =
+            realization_for(ControllerKind::GenericGamepad, LinuxTarget::Uinput, 1)
+                .expect("generic uinput realization")
+        else {
+            panic!("generic gamepad must own an evdev realization");
+        };
+        let NativeControllerRealization::Evdev(xbox) =
+            realization_for(ControllerKind::Xbox360, LinuxTarget::Uinput, 2)
+                .expect("Xbox uinput realization")
+        else {
+            panic!("Xbox 360 must own an evdev realization");
+        };
+        assert!(generic.force_feedback_codes.is_empty());
+        assert!(!xbox.force_feedback_codes.is_empty());
+        assert_eq!(xbox.identity.vendor_id, 0x045e);
+        assert_eq!(xbox.identity.product_id, 0x028e);
+
+        let NativeControllerRealization::Hid(dualsense) =
+            realization_for(ControllerKind::DualSense, LinuxTarget::Uhid, 3)
+                .expect("DualSense UHID realization")
+        else {
+            panic!("DualSense must own a HID realization");
+        };
+        assert_eq!(dualsense.identity.vendor_id, 0x054c);
+        assert_eq!(dualsense.identity.product_id, 0x0ce6);
+        assert_eq!(dualsense.descriptor, super::DUALSENSE_USB_DESCRIPTOR);
+        assert_eq!(
+            dualsense
+                .feature_reports
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![0x05, 0x09, 0x20]
+        );
+        assert!(dualsense.unique_id.ends_with("0000000000000003"));
+    }
+
+    #[test]
+    fn realization_instances_are_deterministic_and_uniquely_identified() {
+        let first = realization_for(ControllerKind::DualSense, LinuxTarget::UsbTransport, 7)
+            .expect("first realization");
+        let repeated = realization_for(ControllerKind::DualSense, LinuxTarget::UsbTransport, 7)
+            .expect("repeated realization");
+        let second = realization_for(ControllerKind::DualSense, LinuxTarget::UsbTransport, 8)
+            .expect("second realization");
+        assert_eq!(first, repeated);
+        assert_ne!(first, second);
+        assert!(realization_for(ControllerKind::SteamController, LinuxTarget::Uhid, 9).is_err());
     }
 
     proptest! {

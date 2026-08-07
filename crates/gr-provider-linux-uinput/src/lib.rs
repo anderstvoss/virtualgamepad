@@ -19,8 +19,8 @@ use gr_backend_api::{
     BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
     BackendOpenContext, BackendRealizationRequest, BackendReverseEvent, BackendReverseEventKind,
     BackendReverseEventSink, BackendReversePayload, BackendReverseTarget, BackendSession,
-    BackendState, BackendSupportReport, EvdevEvent, EventReadiness, SupportLevel,
-    UnsupportedOutputFunction,
+    BackendState, BackendSupportReport, EvdevEvent, EventReadiness, NativeBackendFactory,
+    NativeBackendOpenContext, NativeControllerRealization, SupportLevel, UnsupportedOutputFunction,
 };
 use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
@@ -402,6 +402,59 @@ impl BackendFactory for LinuxUinputBackendFactory {
             self.backend_id(),
             self.family(),
             context.profile_id.clone(),
+            spec,
+            Arc::clone(&self.kernel_boundary),
+        )))
+    }
+}
+
+impl NativeBackendFactory for LinuxUinputBackendFactory {
+    fn target(&self) -> LinuxTarget {
+        LinuxTarget::Uinput
+    }
+
+    fn open_native_session(
+        &self,
+        context: &NativeBackendOpenContext,
+    ) -> Result<Box<dyn BackendSession>, BackendError> {
+        let NativeControllerRealization::Evdev(realization) = &context.realization else {
+            return Err(BackendError::Unsupported {
+                reason: format!(
+                    "linux-uinput requires an evdev realization, not {}",
+                    context.realization.target()
+                ),
+            });
+        };
+        let profile_id = ProfileId::from(context.controller.to_string());
+        let spec = LinuxUinputDeviceSpec {
+            profile_id: profile_id.clone(),
+            device_name: realization.device_name.clone(),
+            identity: DeviceIdentity {
+                vendor_id: realization.identity.vendor_id,
+                product_id: realization.identity.product_id,
+                version: realization.identity.version,
+            },
+            capability_plan: CapabilityPlan {
+                event_bits: realization.event_codes.clone(),
+                key_bits: realization.key_codes.clone(),
+                abs_axes: realization
+                    .absolute_axes
+                    .iter()
+                    .map(|axis| AbsAxisSpec {
+                        code: axis.code,
+                        minimum: axis.minimum,
+                        maximum: axis.maximum,
+                        flat: axis.flat,
+                    })
+                    .collect(),
+                ff_bits: realization.force_feedback_codes.clone(),
+            },
+        };
+        Ok(Box::new(LinuxUinputBackendSession::new(
+            context.session_id,
+            self.backend_id(),
+            self.family(),
+            profile_id,
             spec,
             Arc::clone(&self.kernel_boundary),
         )))

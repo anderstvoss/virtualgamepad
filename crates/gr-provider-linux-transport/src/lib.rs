@@ -12,7 +12,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use gr_backend_api::{
     BackendDiagnostics, BackendError, BackendFactory, BackendFrame, BackendInventoryEntry,
     BackendOpenContext, BackendRealizationRequest, BackendReverseEventSink, BackendSession,
-    BackendState, BackendSupportReport, EventReadiness, SupportLevel, UnsupportedOutputFunction,
+    BackendState, BackendSupportReport, EventReadiness, NativeBackendFactory,
+    NativeBackendOpenContext, NativeControllerRealization, SupportLevel, UnsupportedOutputFunction,
 };
 use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
@@ -531,6 +532,53 @@ impl BackendFactory for LinuxTransportUsbBackendFactory {
             self.backend_id(),
             self.family(),
             context.profile_id.clone(),
+            spec,
+            Arc::clone(&self.transport_boundary),
+        )))
+    }
+}
+
+impl NativeBackendFactory for LinuxTransportUsbBackendFactory {
+    fn target(&self) -> LinuxTarget {
+        LinuxTarget::UsbTransport
+    }
+
+    fn open_native_session(
+        &self,
+        context: &NativeBackendOpenContext,
+    ) -> Result<Box<dyn BackendSession>, BackendError> {
+        let NativeControllerRealization::Usb(realization) = &context.realization else {
+            return Err(BackendError::Unsupported {
+                reason: format!(
+                    "linux USB transport requires a USB realization, not {}",
+                    context.realization.target()
+                ),
+            });
+        };
+        let profile_id = ProfileId::from(context.controller.to_string());
+        let spec = LinuxTransportDeviceSpec {
+            profile_id: profile_id.clone(),
+            bus: TransportTraceBus::Usb,
+            descriptor: realization.descriptor.clone(),
+            endpoints: TransportEndpoints {
+                input: realization.input_endpoint,
+                reverse: realization.reverse_endpoint,
+            },
+            device_name: realization.device_name.clone(),
+            manufacturer: realization.manufacturer.clone(),
+            serial_number: realization.serial_number.clone(),
+            vendor_id: realization.identity.vendor_id,
+            product_id: realization.identity.product_id,
+            version: realization.identity.version,
+            bcd_usb: realization.usb_version,
+            max_power_ma: realization.maximum_power_ma,
+            report_length: realization.report_length,
+        };
+        Ok(Box::new(LinuxTransportBackendSession::new(
+            context.session_id,
+            self.backend_id(),
+            self.family(),
+            profile_id,
             spec,
             Arc::clone(&self.transport_boundary),
         )))

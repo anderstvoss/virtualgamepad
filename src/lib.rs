@@ -34,62 +34,11 @@ pub fn enabled_provider_features() -> Vec<&'static str> {
 }
 
 #[cfg(all(feature = "provider-linux-transport", target_os = "linux"))]
-pub use gr_provider_linux_transport as provider_linux_transport;
+use gr_provider_linux_transport as provider_linux_transport;
 #[cfg(all(feature = "provider-linux-uhid", target_os = "linux"))]
-pub use gr_provider_linux_uhid as provider_linux_uhid;
+use gr_provider_linux_uhid as provider_linux_uhid;
 #[cfg(all(feature = "provider-linux-uinput", target_os = "linux"))]
-pub use gr_provider_linux_uinput as provider_linux_uinput;
-#[cfg(all(feature = "provider-macos-hid", target_os = "macos"))]
-pub use gr_provider_macos_hid as provider_macos_hid;
-#[cfg(all(feature = "provider-windows-hid", target_os = "windows"))]
-pub use gr_provider_windows_hid as provider_windows_hid;
-
-/// Return the standard Linux provider inventory for local development tools.
-///
-/// This is the least-privilege default: opening a session requires access only
-/// to `/dev/uinput`. Select [`linux_identity_backends`] or
-/// [`linux_transport_lab_backends`] explicitly when those provider surfaces
-/// are needed.
-#[cfg(all(target_os = "linux", feature = "provider-linux-uinput"))]
-#[must_use]
-pub fn linux_standard_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::BackendFactory>> {
-    vec![std::sync::Arc::new(
-        gr_provider_linux_uinput::LinuxUinputBackendFactory::new(),
-    )]
-}
-
-/// Return the Linux provider inventory for identity-aware local development.
-///
-/// Opening an identity-aware session requires `/dev/uhid` access in addition
-/// to the standard `/dev/uinput` access.
-#[cfg(all(
-    target_os = "linux",
-    feature = "provider-linux-uinput",
-    feature = "provider-linux-uhid"
-))]
-#[must_use]
-pub fn linux_identity_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::BackendFactory>> {
-    use gr_provider_linux_uhid::LinuxUhidBackendFactory;
-    use gr_provider_linux_uinput::LinuxUinputBackendFactory;
-
-    vec![
-        std::sync::Arc::new(LinuxUinputBackendFactory::new()),
-        std::sync::Arc::new(LinuxUhidBackendFactory::new()),
-    ]
-}
-
-/// Return the USB-gadget transport inventory for a prepared validation lab.
-///
-/// This deliberately excludes the standard and identity-aware providers. A
-/// transport session needs a peripheral-capable USB Device Controller,
-/// configfs access, and an observing host; it is not a desktop default.
-#[cfg(all(target_os = "linux", feature = "provider-linux-transport"))]
-#[must_use]
-pub fn linux_transport_lab_backends() -> Vec<std::sync::Arc<dyn gr_backend_api::BackendFactory>> {
-    vec![std::sync::Arc::new(
-        gr_provider_linux_transport::LinuxTransportUsbBackendFactory::new(),
-    )]
-}
+use gr_provider_linux_uinput as provider_linux_uinput;
 
 /// Curated controller-native API.
 ///
@@ -103,7 +52,9 @@ pub mod controller {
     use std::thread::{self, JoinHandle};
     use std::time::Duration;
 
-    use gr_backend_api::{BackendError, BackendFactory, BackendOpenContext, BackendSession};
+    use gr_backend_api::{
+        BackendError, BackendSession, NativeBackendFactory, NativeBackendOpenContext,
+    };
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
         SubscriptionError, validate_realization,
@@ -114,10 +65,9 @@ pub mod controller {
         DualSenseInput, DualSenseOutputEvent, GenericGamepadControl, GenericGamepadInput,
         GenericGamepadOutputEvent, NativeControl, NativeControlUpdate, PreparedControllerFrame,
         SteamControllerControl, SteamControllerInput, SteamControllerOutputEvent, Xbox360Input,
-        Xbox360OutputEvent, XboxControl, definition_for,
+        Xbox360OutputEvent, XboxControl, definition_for, realization_for,
     };
-    use gr_core::{BackendLevel, FidelityTier, ProfileId, SessionId};
-    use gr_runtime_model::HostPlatform;
+    use gr_core::SessionId;
 
     static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -215,32 +165,28 @@ pub mod controller {
 
     impl ManagedController {
         fn create(kind: ControllerKind, options: CreationOptions) -> Result<Self, CreationError> {
-            let (profile_id, fidelity, level, _provider, backends) =
-                target_contract(kind, options.target)?;
-            let factory =
-                backends
-                    .into_iter()
-                    .next()
-                    .ok_or_else(|| CreationError::ProviderOpen {
-                        controller: kind,
-                        target: options.target,
-                        reason: "selected target has no backend factory".to_string(),
-                    })?;
-            let context = BackendOpenContext {
-                session_id: next_session_id(),
-                profile_id: ProfileId::from(profile_id),
-                fidelity_tier: fidelity,
-                backend_level: level,
-                host_platform: HostPlatform::Linux,
-            };
-            let mut backend =
-                factory
-                    .open_session(&context)
-                    .map_err(|error| CreationError::ProviderOpen {
+            let factory = target_contract(kind, options.target)?;
+            let session_id = next_session_id();
+            let realization =
+                realization_for(kind, options.target, session_id.get()).map_err(|error| {
+                    CreationError::UnsupportedTarget {
                         controller: kind,
                         target: options.target,
                         reason: error.to_string(),
-                    })?;
+                    }
+                })?;
+            let context = NativeBackendOpenContext {
+                session_id,
+                controller: kind,
+                realization,
+            };
+            let mut backend = factory.open_native_session(&context).map_err(|error| {
+                CreationError::ProviderOpen {
+                    controller: kind,
+                    target: options.target,
+                    reason: error.to_string(),
+                }
+            })?;
             backend
                 .open()
                 .map_err(|error| CreationError::ProviderOpen {
@@ -936,15 +882,6 @@ pub mod controller {
         })
     }
 
-    fn profile_id_for(kind: ControllerKind) -> &'static str {
-        match kind {
-            ControllerKind::GenericGamepad => "generic-gamepad",
-            ControllerKind::Xbox360 => "xbox360",
-            ControllerKind::DualSense => "dualsense",
-            ControllerKind::SteamController => "steam-controller",
-        }
-    }
-
     #[cfg(not(all(
         feature = "provider-linux-uinput",
         feature = "provider-linux-uhid",
@@ -993,7 +930,7 @@ pub mod controller {
     }
 
     #[allow(clippy::unnecessary_wraps)] // Error branches are compiled by feature-minimal builds.
-    fn target_factory(target: LinuxTarget) -> Result<Arc<dyn BackendFactory>, CreationError> {
+    fn target_factory(target: LinuxTarget) -> Result<Arc<dyn NativeBackendFactory>, CreationError> {
         match target {
             LinuxTarget::Uinput => {
                 #[cfg(feature = "provider-linux-uinput")]
@@ -1034,20 +971,10 @@ pub mod controller {
         }
     }
 
-    #[allow(clippy::type_complexity)]
     fn target_contract(
         kind: ControllerKind,
         target: LinuxTarget,
-    ) -> Result<
-        (
-            &'static str,
-            FidelityTier,
-            BackendLevel,
-            &'static str,
-            Vec<Arc<dyn BackendFactory>>,
-        ),
-        CreationError,
-    > {
+    ) -> Result<Arc<dyn NativeBackendFactory>, CreationError> {
         let unsupported = |reason: &str| CreationError::UnsupportedTarget {
             controller: kind,
             target,
@@ -1056,29 +983,10 @@ pub mod controller {
         let capabilities = target_capabilities(target)?;
         validate_realization(definition_for(kind), capabilities)?;
         match (kind, target) {
-            (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput) => {
-                Ok((
-                    profile_id_for(kind),
-                    FidelityTier::Compatibility,
-                    BackendLevel::Evdev,
-                    "linux-uinput",
-                    vec![target_factory(target)?],
-                ))
+            (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput)
+            | (ControllerKind::DualSense, LinuxTarget::Uhid | LinuxTarget::UsbTransport) => {
+                target_factory(target)
             }
-            (ControllerKind::DualSense, LinuxTarget::Uhid) => Ok((
-                "dualsense",
-                FidelityTier::IdentityAware,
-                BackendLevel::Hid,
-                "linux-uhid",
-                vec![target_factory(target)?],
-            )),
-            (ControllerKind::DualSense, LinuxTarget::UsbTransport) => Ok((
-                "dualsense",
-                FidelityTier::HardwareFaithful,
-                BackendLevel::Transport,
-                "linux-transport-usb",
-                vec![target_factory(target)?],
-            )),
             (ControllerKind::SteamController, _) => Err(unsupported(
                 "no current Linux provider realizes the complete Steam Controller surface",
             )),
@@ -1249,14 +1157,6 @@ pub use gr_controllers::{
 mod tests {
     use super::enabled_provider_features;
 
-    #[cfg(all(
-        target_os = "linux",
-        feature = "provider-linux-uinput",
-        feature = "provider-linux-uhid",
-        feature = "provider-linux-transport"
-    ))]
-    use gr_core::{BackendLevel, FidelityTier};
-
     #[test]
     fn enabled_provider_features_match_cfg_flags() {
         let features = enabled_provider_features();
@@ -1283,47 +1183,6 @@ mod tests {
         assert_eq!(
             features.contains(&"provider-macos-hid"),
             cfg!(all(feature = "provider-macos-hid", target_os = "macos"))
-        );
-    }
-
-    #[cfg(all(
-        target_os = "linux",
-        feature = "provider-linux-uinput",
-        feature = "provider-linux-uhid",
-        feature = "provider-linux-transport"
-    ))]
-    #[test]
-    fn linux_provider_inventories_are_explicitly_scoped() {
-        let standard = super::linux_standard_backends();
-        assert_eq!(standard.len(), 1);
-        let standard_entry = standard[0].inventory_entry();
-        assert_eq!(standard_entry.backend_id.as_ref(), "linux-uinput");
-        assert_eq!(standard_entry.level, BackendLevel::Evdev);
-        assert_eq!(
-            standard_entry.supported_fidelity_tiers,
-            vec![FidelityTier::Compatibility]
-        );
-
-        let identity = super::linux_identity_backends()
-            .iter()
-            .map(|backend| backend.inventory_entry())
-            .collect::<Vec<_>>();
-        assert_eq!(identity.len(), 2);
-        assert_eq!(identity[1].backend_id.as_ref(), "linux-uhid");
-        assert_eq!(identity[1].level, BackendLevel::Hid);
-        assert_eq!(
-            identity[1].supported_fidelity_tiers,
-            vec![FidelityTier::IdentityAware]
-        );
-
-        let transport = super::linux_transport_lab_backends();
-        assert_eq!(transport.len(), 1);
-        let transport_entry = transport[0].inventory_entry();
-        assert_eq!(transport_entry.backend_id.as_ref(), "linux-transport-usb");
-        assert_eq!(transport_entry.level, BackendLevel::Transport);
-        assert_eq!(
-            transport_entry.supported_fidelity_tiers,
-            vec![FidelityTier::HardwareFaithful]
         );
     }
 }
