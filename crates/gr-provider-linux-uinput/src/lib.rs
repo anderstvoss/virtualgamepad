@@ -22,6 +22,7 @@ use gr_backend_api::{
     BackendState, BackendSupportReport, EvdevEvent, EventReadiness, SupportLevel,
     UnsupportedOutputFunction,
 };
+use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
     BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
     SequenceId, SessionId, Timestamp,
@@ -32,6 +33,17 @@ use serde::{Deserialize, Serialize};
 
 const SUPPORTED_FIDELITY_TIERS: &[FidelityTier] = &[FidelityTier::Compatibility];
 const SUPPORTED_OUTPUT_FUNCTIONS: &[SemanticOutputFunction] = &[SemanticOutputFunction::Rumble];
+
+/// Provider-only realization promise consumed by the curated runtime.
+#[must_use]
+pub const fn controller_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        target: LinuxTarget::Uinput,
+        provides_identity: false,
+        provides_transport: false,
+        provides_reverse_output: true,
+    }
+}
 
 const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;

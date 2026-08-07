@@ -115,6 +115,49 @@ pub struct RealizationRequirements {
     pub requires_reverse_output: bool,
 }
 
+/// Immutable capabilities promised by one explicitly selected provider.
+///
+/// This is intentionally controller-agnostic: providers describe only their
+/// transport surface, while compiled controller definitions describe what
+/// they require. The compatibility decision is made once during creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderCapabilities {
+    pub target: LinuxTarget,
+    pub provides_identity: bool,
+    pub provides_transport: bool,
+    pub provides_reverse_output: bool,
+}
+
+/// Validate that a provider can realize a controller's complete declared
+/// surface without compatibility fallback.
+///
+/// # Errors
+///
+/// Returns [`CreationError::UnsupportedTarget`] when any declared requirement
+/// is absent from `provider`.
+pub fn validate_realization(
+    controller: &dyn ControllerDefinition,
+    provider: ProviderCapabilities,
+) -> Result<(), CreationError> {
+    let requirements = controller.requirements();
+    let missing = if requirements.requires_transport && !provider.provides_transport {
+        Some("the controller requires transport-level realization")
+    } else if requirements.requires_identity && !provider.provides_identity {
+        Some("the controller requires an identity-aware realization")
+    } else if requirements.requires_reverse_output && !provider.provides_reverse_output {
+        Some("the controller requires reverse-output delivery")
+    } else {
+        None
+    };
+    missing.map_or(Ok(()), |reason| {
+        Err(CreationError::UnsupportedTarget {
+            controller: controller.kind(),
+            target: provider.target,
+            reason: reason.to_string(),
+        })
+    })
+}
+
 /// Static metadata used by the controller runtime before any session opens.
 pub trait ControllerDefinition: Send + Sync + 'static {
     fn kind(&self) -> ControllerKind;
@@ -204,11 +247,43 @@ pub enum CommitError {
 
 #[cfg(test)]
 mod tests {
-    use super::{ControllerKind, LinuxTarget};
+    use super::{
+        ControllerDefinition, ControllerKind, LinuxTarget, ProviderCapabilities,
+        RealizationRequirements, validate_realization,
+    };
+
+    struct IdentityController;
+    impl ControllerDefinition for IdentityController {
+        fn kind(&self) -> ControllerKind {
+            ControllerKind::DualSense
+        }
+        fn requirements(&self) -> RealizationRequirements {
+            RealizationRequirements {
+                requires_identity: true,
+                requires_transport: false,
+                requires_reverse_output: true,
+            }
+        }
+    }
 
     #[test]
     fn stable_display_names_are_human_readable() {
         assert_eq!(ControllerKind::DualSense.to_string(), "DualSense");
         assert_eq!(LinuxTarget::Uhid.to_string(), "linux UHID");
+    }
+
+    #[test]
+    fn realization_validation_rejects_missing_declared_surface() {
+        let error = validate_realization(
+            &IdentityController,
+            ProviderCapabilities {
+                target: LinuxTarget::Uinput,
+                provides_identity: false,
+                provides_transport: false,
+                provides_reverse_output: true,
+            },
+        )
+        .expect_err("uinput lacks identity");
+        assert!(error.to_string().contains("identity-aware"));
     }
 }

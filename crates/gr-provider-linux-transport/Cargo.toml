@@ -9,6 +9,7 @@ authors.workspace = true
 description = "Linux transport provider foundation for virtualgamepad."
 
 [dependencies]
+gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
 gr-backend-api = { path = "../gr-backend-api", version = "0.1" }
 gr-core = { path = "../gr-core", version = "0.1" }
 gr-profiles = { path = "../gr-profiles", version = "0.1" }

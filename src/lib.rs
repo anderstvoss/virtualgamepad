@@ -103,6 +103,7 @@ pub mod controller {
     use gr_backend_api::BackendFactory;
     use gr_controller_contract::{
         CommitError, ControlError, ControlUpdate, ControllerKind, CreationError, LinuxTarget,
+        validate_realization,
     };
     use gr_controller_runtime::{ControllerRuntime, FrameSink};
     use gr_controllers::{
@@ -541,12 +542,12 @@ pub mod controller {
             target,
             reason: reason.to_string(),
         };
-        let requirements = definition_for(kind).requirements();
-        if target == LinuxTarget::Uinput && requirements.requires_identity {
-            return Err(unsupported(
-                "the selected controller requires an identity-aware or transport realization",
-            ));
-        }
+        let capabilities = match target {
+            LinuxTarget::Uinput => crate::provider_linux_uinput::controller_capabilities(),
+            LinuxTarget::Uhid => crate::provider_linux_uhid::controller_capabilities(),
+            LinuxTarget::UsbTransport => crate::provider_linux_transport::controller_capabilities(),
+        };
+        validate_realization(definition_for(kind), capabilities)?;
         match (kind, target) {
             (ControllerKind::GenericGamepad | ControllerKind::Xbox360, LinuxTarget::Uinput) => {
                 Ok((

@@ -23,6 +23,7 @@ use gr_backend_api::{
     BackendReverseEventSink, BackendReversePayload, BackendReverseTarget, BackendSession,
     BackendState, BackendSupportReport, EventReadiness, SupportLevel, UnsupportedOutputFunction,
 };
+use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
     BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
     SequenceId, SessionId, Timestamp,
@@ -40,6 +41,17 @@ const SUPPORTED_OUTPUT_FUNCTIONS: &[SemanticOutputFunction] = &[
     SemanticOutputFunction::TriggerEffect,
     SemanticOutputFunction::Audio,
 ];
+
+/// Provider-only realization promise consumed by the curated runtime.
+#[must_use]
+pub const fn controller_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        target: LinuxTarget::Uhid,
+        provides_identity: true,
+        provides_transport: false,
+        provides_reverse_output: true,
+    }
+}
 const BUS_USB: u16 = 0x03;
 const BUS_BLUETOOTH: u16 = 0x05;
 const DUALSENSE_USB_VENDOR_ID: u16 = 0x054c;

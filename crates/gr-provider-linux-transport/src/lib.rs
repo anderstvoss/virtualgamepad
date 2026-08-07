@@ -14,6 +14,7 @@ use gr_backend_api::{
     BackendOpenContext, BackendRealizationRequest, BackendReverseEventSink, BackendSession,
     BackendState, BackendSupportReport, EventReadiness, SupportLevel, UnsupportedOutputFunction,
 };
+use gr_controller_contract::{LinuxTarget, ProviderCapabilities};
 use gr_core::{
     BackendFamily, BackendId, BackendLevel, FidelityTier, ProfileId, SemanticOutputFunction,
     SessionId,
@@ -1216,5 +1217,15 @@ mod tests {
             panic!("expected bluetooth session to remain unsupported");
         };
         assert!(matches!(error, BackendError::Unsupported { .. }));
+    }
+}
+/// Provider-only realization promise consumed by the curated runtime.
+#[must_use]
+pub const fn controller_capabilities() -> ProviderCapabilities {
+    ProviderCapabilities {
+        target: LinuxTarget::UsbTransport,
+        provides_identity: true,
+        provides_transport: true,
+        provides_reverse_output: true,
     }
 }
