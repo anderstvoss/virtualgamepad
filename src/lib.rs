@@ -111,10 +111,67 @@ pub mod controller {
     use gr_core::{
         BackendLevel, FidelityTier, ProfileId, ProfileInputFrame, SequenceId, SessionId, Timestamp,
     };
+    use gr_host_bridge::CallbackSink;
     use gr_runtime_model::{
-        EmulationGoal, HostPlatform, ProviderId, SessionHostMetadata, SessionRequest,
+        ControllerOutputCommand, EmulationGoal, HostPlatform, OutputPayload, ProviderId,
+        SessionHostMetadata, SessionRequest,
     };
-    use gr_session::{ManagerConfig, VirtualControllerManager, VirtualControllerSessionHandle};
+    use gr_session::{
+        ManagerConfig, SessionError, SessionOutputSubscription, VirtualControllerManager,
+        VirtualControllerSessionHandle,
+    };
+
+    /// Typed reverse output delivered by the controller-native façade.
+    #[derive(Debug, Clone, PartialEq, Eq)]
+    #[non_exhaustive]
+    pub enum ControllerOutputEvent {
+        Rumble {
+            strong: u16,
+            weak: u16,
+        },
+        Lighting {
+            red: Option<u8>,
+            green: Option<u8>,
+            blue: Option<u8>,
+            player_index: Option<u8>,
+        },
+        TriggerEffect {
+            mode: String,
+        },
+        Audio {
+            action: String,
+            target: Option<String>,
+        },
+        FeatureRequest {
+            request: String,
+        },
+    }
+
+    fn output_event(command: ControllerOutputCommand) -> Option<ControllerOutputEvent> {
+        match command.payload {
+            OutputPayload::Rumble(payload) => Some(ControllerOutputEvent::Rumble {
+                strong: payload.strong,
+                weak: payload.weak,
+            }),
+            OutputPayload::Lighting(payload) => Some(ControllerOutputEvent::Lighting {
+                red: payload.red,
+                green: payload.green,
+                blue: payload.blue,
+                player_index: payload.player_index,
+            }),
+            OutputPayload::TriggerEffect(payload) => {
+                Some(ControllerOutputEvent::TriggerEffect { mode: payload.mode })
+            }
+            OutputPayload::Audio(payload) => Some(ControllerOutputEvent::Audio {
+                action: payload.action,
+                target: payload.target,
+            }),
+            OutputPayload::FeatureRequest(payload) => Some(ControllerOutputEvent::FeatureRequest {
+                request: payload.request,
+            }),
+            _ => None,
+        }
+    }
 
     /// Explicit creation settings. The selected target is a binding contract.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +274,21 @@ pub mod controller {
         fn kind(&self) -> ControllerKind {
             self.state.kind()
         }
+
+        fn subscribe_outputs<F>(
+            &self,
+            mut callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(ControllerOutputEvent) + Send + 'static,
+        {
+            self.session
+                .subscribe_outputs(Box::new(CallbackSink::new(move |command| {
+                    if let Some(event) = output_event(command) {
+                        callback(event);
+                    }
+                })))
+        }
     }
 
     /// A runtime-polymorphic curated controller.
@@ -236,6 +308,15 @@ pub mod controller {
         }
         pub fn commit(&mut self) -> Result<(), CommitError> {
             self.inner_mut().commit()
+        }
+        pub fn subscribe_outputs<F>(
+            &self,
+            callback: F,
+        ) -> Result<SessionOutputSubscription, SessionError>
+        where
+            F: FnMut(ControllerOutputEvent) + Send + 'static,
+        {
+            self.inner().subscribe_outputs(callback)
         }
         #[must_use]
         pub fn kind(&self) -> ControllerKind {
@@ -284,6 +365,15 @@ pub mod controller {
                 }
                 pub fn commit(&mut self) -> Result<(), CommitError> {
                     self.inner.commit()
+                }
+                pub fn subscribe_outputs<F>(
+                    &self,
+                    callback: F,
+                ) -> Result<SessionOutputSubscription, SessionError>
+                where
+                    F: FnMut(ControllerOutputEvent) + Send + 'static,
+                {
+                    self.inner.subscribe_outputs(callback)
                 }
                 #[must_use]
                 pub fn state(&self) -> &ControllerState {
@@ -442,8 +532,13 @@ pub mod controller {
 
     #[cfg(test)]
     mod tests {
-        use super::{CreationOptions, target_contract};
+        use super::{ControllerOutputEvent, CreationOptions, output_event, target_contract};
         use gr_controller_contract::{ControllerKind, LinuxTarget};
+        use gr_core::{ProfileId, SemanticOutputFunction, SessionId, Timestamp};
+        use gr_runtime_model::{
+            ControllerOutputCommand, OutputCommandType, OutputFunctionRef, OutputPayload,
+            RumblePayload,
+        };
 
         #[test]
         fn exact_target_matrix_rejects_silent_degradation() {
@@ -458,14 +553,36 @@ pub mod controller {
             let options = CreationOptions::new(LinuxTarget::Uhid);
             assert_eq!(options.target, LinuxTarget::Uhid);
         }
+
+        #[test]
+        fn legacy_reverse_commands_are_contained_at_the_typed_event_boundary() {
+            let event = output_event(ControllerOutputCommand {
+                session_id: SessionId::new(1),
+                profile_id: ProfileId::from("dualsense"),
+                timestamp: Timestamp::new(1),
+                command_type: OutputCommandType::StateUpdate,
+                function: OutputFunctionRef::Semantic(SemanticOutputFunction::Rumble),
+                payload: OutputPayload::Rumble(RumblePayload {
+                    strong: 10,
+                    weak: 20,
+                }),
+            });
+            assert_eq!(
+                event,
+                Some(ControllerOutputEvent::Rumble {
+                    strong: 10,
+                    weak: 20
+                })
+            );
+        }
     }
 }
 
 #[cfg(target_os = "linux")]
 pub use controller::{
-    ControllerHandle, CreationOptions, DualSenseController, GenericGamepadController,
-    SteamController, Xbox360Controller, create_dualsense, create_generic_gamepad,
-    create_steam_controller, create_xbox360,
+    ControllerHandle, ControllerOutputEvent, CreationOptions, DualSenseController,
+    GenericGamepadController, SteamController, Xbox360Controller, create_dualsense,
+    create_generic_gamepad, create_steam_controller, create_xbox360,
 };
 #[cfg(target_os = "linux")]
 pub use gr_controller_contract::{

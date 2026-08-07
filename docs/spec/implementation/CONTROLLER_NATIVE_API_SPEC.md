@@ -53,6 +53,12 @@ strictly isolated provider seam. `ControllerState::legacy_payload()` is the
 only bridge. It is not a public profile API and must disappear when providers
 accept prepared controller encoders directly.
 
+The root façade also converts the existing generic reverse command exactly once
+into `ControllerOutputEvent`, then invokes the application callback through the
+bounded delivery worker. New controller implementations must replace this
+adapter with their own typed output event enum; applications and controller
+state types must not import the legacy runtime-model output container.
+
 ## Reliability requirements
 
 The commit hot path must have no YAML parsing, registry lookup, reflection, or
