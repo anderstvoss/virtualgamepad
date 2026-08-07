@@ -7,7 +7,9 @@ planner, or automatic provider selection.
 It lets a developer choose one curated controller and one explicit Linux
 target, apply normalized controls to local mutable state, and call `commit()`.
 Creation errors are shown verbatim: a target that cannot exactly realize the
-selected controller is rejected rather than downgraded.
+selected controller is rejected rather than downgraded. Typed reverse events
+and `ControllerDiagnostics` are displayed without converting them to generic
+string/map payloads.
 
 ## Running
 

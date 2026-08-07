@@ -7,10 +7,13 @@ pub fn run() -> Result<(), String> {
 
 #[cfg(target_os = "linux")]
 mod linux {
+    use std::sync::mpsc::{self, Receiver};
+
     use eframe::egui;
     use virtualgamepad::{
-        ControlUpdate, ControllerHandle, CreationOptions, FaceButton, LinuxTarget,
-        create_dualsense, create_generic_gamepad, create_steam_controller, create_xbox360,
+        ControlUpdate, ControllerHandle, CreationOptions, CuratedControllerOutputEvent, FaceButton,
+        LinuxTarget, OutputSubscription, create_dualsense, create_generic_gamepad,
+        create_steam_controller, create_xbox360,
     };
 
     #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,6 +55,9 @@ mod linux {
         choice: ControllerChoice,
         target: LinuxTarget,
         controller: Option<ControllerHandle>,
+        output_subscription: Option<OutputSubscription>,
+        output_receiver: Option<Receiver<CuratedControllerOutputEvent>>,
+        last_output: String,
         status: String,
     }
 
@@ -61,6 +67,9 @@ mod linux {
                 choice: ControllerChoice::GenericGamepad,
                 target: LinuxTarget::Uinput,
                 controller: None,
+                output_subscription: None,
+                output_receiver: None,
+                last_output: "No reverse output received.".to_string(),
                 status: "Choose a controller and exact Linux realization target.".to_string(),
             }
         }
@@ -83,11 +92,23 @@ mod linux {
             };
             match result {
                 Ok(controller) => {
+                    let (sender, receiver) = mpsc::channel();
+                    let (subscription, subscription_note) =
+                        match controller.subscribe_outputs(move |event| {
+                            let _ = sender.send(event);
+                        }) {
+                            Ok(subscription) => (Some(subscription), String::new()),
+                            Err(error) => (None, format!(" Output subscription failed: {error}")),
+                        };
                     self.status = format!(
-                        "Created {}. State is local until commit().",
-                        controller.kind()
+                        "Created {}. State is local until commit().{}",
+                        controller.kind(),
+                        subscription_note
                     );
                     self.controller = Some(controller);
+                    self.output_subscription = subscription;
+                    self.output_receiver = Some(receiver);
+                    self.last_output = "No reverse output received.".to_string();
                 }
                 Err(error) => self.status = error.to_string(),
             }
@@ -112,6 +133,11 @@ mod linux {
 
     impl eframe::App for DebugApp {
         fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+            if let Some(receiver) = &self.output_receiver {
+                for event in receiver.try_iter() {
+                    self.last_output = format!("{event:?}");
+                }
+            }
             egui::CentralPanel::default().show(ctx, |ui| {
                 ui.heading("Curated controller-native API");
                 ui.label("The demo deliberately exposes no profiles, YAML configuration, or automatic backend fallback.");
@@ -145,8 +171,24 @@ mod linux {
                         |controller| controller.commit().map_or_else(|error| error.to_string(), |()| "Committed current state.".to_string()),
                     );
                 }
+                if ui.button("Close controller").clicked() {
+                    self.output_subscription = None;
+                    self.output_receiver = None;
+                    self.status = self.controller.as_mut().map_or_else(
+                        || "No controller is open.".to_string(),
+                        |controller| controller.close().map_or_else(
+                            |error| format!("Controller closed with cleanup error: {error}"),
+                            |()| "Controller closed.".to_string(),
+                        ),
+                    );
+                }
                 ui.separator();
                 ui.label(&self.status);
+                ui.label(format!("Last output: {}", self.last_output));
+                if let Some(controller) = &self.controller {
+                    let diagnostics = controller.diagnostics();
+                    ui.monospace(format!("Diagnostics: {diagnostics:#?}"));
+                }
             });
         }
     }
