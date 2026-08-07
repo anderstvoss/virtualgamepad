@@ -3202,6 +3202,7 @@ dependencies = [
  "gr-controller-contract",
  "gr-controllers",
  "gr-core",
+ "gr-host-bridge",
  "gr-provider-linux-transport",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
