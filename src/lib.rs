@@ -347,6 +347,17 @@ pub mod controller {
     pub struct GenericGamepadController {
         inner: ManagedController,
     }
+    /// Typed Xbox 360 controller handle.
+    ///
+    /// Controller-specific features are unavailable at compile time:
+    ///
+    /// ```compile_fail
+    /// use virtualgamepad::{DualSenseTouchContact, Xbox360Controller};
+    ///
+    /// fn invalid(controller: &mut Xbox360Controller) {
+    ///     controller.set_touch_contact(0, DualSenseTouchContact::neutral());
+    /// }
+    /// ```
     pub struct Xbox360Controller {
         inner: ManagedController,
     }
