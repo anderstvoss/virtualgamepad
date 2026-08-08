@@ -3,8 +3,8 @@
 //! Controller-semantic contracts with no controller-family or provider logic.
 
 use gr_realization_api::{
-    ControllerId, LinuxTarget, ProviderRequirements, RealizationMode, RealizationModeSet,
-    RealizationSelection,
+    ControllerId, DeploymentTarget, HardwareValidationTarget, LinuxTarget, ProviderRequirements,
+    RealizationMode, RealizationModeSet, RealizationSelection,
 };
 use thiserror::Error;
 
@@ -180,6 +180,24 @@ pub enum ManifestError {
         driver_controller: ControllerId,
     },
 }
+/// Prepare a realization for ordinary application deployment.
+#[allow(clippy::missing_errors_doc)]
+pub fn prepare_deployment_realization(
+    definition: &dyn RealizationControllerDefinition,
+    target: DeploymentTarget,
+) -> Result<PreparedRealization, ManifestError> {
+    prepare_realization(definition, target.linux_target())
+}
+
+/// Prepare a realization for explicit hardware validation.
+#[allow(clippy::missing_errors_doc)]
+pub fn prepare_hardware_validation_realization(
+    definition: &dyn RealizationControllerDefinition,
+    target: HardwareValidationTarget,
+) -> Result<PreparedRealization, ManifestError> {
+    prepare_realization(definition, target.linux_target())
+}
+
 #[allow(clippy::missing_errors_doc)]
 pub fn prepare_realization(
     definition: &dyn RealizationControllerDefinition,

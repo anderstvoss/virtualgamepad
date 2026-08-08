@@ -42,6 +42,36 @@ pub enum LinuxTarget {
     UsbGadget,
 }
 
+/// Linux target available to ordinary library deployments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum DeploymentTarget {
+    Uinput,
+    Uhid,
+}
+impl DeploymentTarget {
+    #[must_use]
+    pub const fn linux_target(self) -> LinuxTarget {
+        match self {
+            Self::Uinput => LinuxTarget::Uinput,
+            Self::Uhid => LinuxTarget::Uhid,
+        }
+    }
+}
+
+/// Linux target reserved for explicit hardware-validation sessions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum HardwareValidationTarget {
+    UsbGadget,
+}
+impl HardwareValidationTarget {
+    #[must_use]
+    pub const fn linux_target(self) -> LinuxTarget {
+        LinuxTarget::UsbGadget
+    }
+}
+
 impl LinuxTarget {
     /// The independent host-realization mode promised by this target.
     #[must_use]
