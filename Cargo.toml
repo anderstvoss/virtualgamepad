@@ -11,6 +11,7 @@ publish = false
 
 [workspace]
 members = [
+    "crates/gr-realization-api",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
     "crates/gr-controllers",
