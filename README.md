@@ -14,6 +14,11 @@ The active workspace contains controller-neutral realization/contracts/runtime
 crates plus Linux uinput, UHID, and USB gadget providers. Retired profile-era
 code is preserved only on archival branches.
 
+The realization policy, including the distinction between normal uinput/UHID
+deployment and USB-gadget hardware validation, is documented in
+[docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md) and
+[docs/DEPLOYMENT_AND_VALIDATION.md](docs/DEPLOYMENT_AND_VALIDATION.md).
+
 ## Development
 
 ```bash
