@@ -1,6 +1,9 @@
 #![forbid(unsafe_code)]
 //! Mode-aware local controller state runtime.
-use gr_controller_contract::{CommitError, ControlError, ControlUpdate, ModeAwareControllerDriver};
+use gr_controller_contract::{
+    CommitError, ControlError, ControlUpdate, ManifestError, ModeAwareControllerDriver,
+    PreparedRealization,
+};
 use gr_realization_api::RealizationSelection;
 
 #[allow(clippy::missing_errors_doc)]
@@ -11,24 +14,29 @@ pub trait FrameSink: Send {
 pub struct ModeControllerRuntime<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> {
     driver: D,
     sink: S,
-    selection: RealizationSelection,
+    prepared: PreparedRealization,
     state: D::State,
     dirty: bool,
     closed: bool,
 }
 #[allow(clippy::missing_errors_doc)]
 impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControllerRuntime<D, S> {
-    #[must_use]
-    pub fn new(driver: D, sink: S, selection: RealizationSelection) -> Self {
+    pub fn new(driver: D, sink: S, prepared: PreparedRealization) -> Result<Self, ManifestError> {
+        if prepared.selection().controller != driver.controller_id() {
+            return Err(ManifestError::ControllerMismatch {
+                prepared_controller: prepared.selection().controller,
+                driver_controller: driver.controller_id(),
+            });
+        }
         let state = driver.neutral_state();
-        Self {
+        Ok(Self {
             driver,
             sink,
-            selection,
+            prepared,
             state,
             dirty: true,
             closed: false,
-        }
+        })
     }
     pub fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
         if self.closed {
@@ -36,7 +44,8 @@ impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControlle
         }
         let mut next = self.state.clone();
         self.driver.apply_normalized(&mut next, update)?;
-        self.driver.validate_state(self.selection, &next)?;
+        self.driver
+            .validate_state(self.prepared.selection(), &next)?;
         self.state = next;
         self.dirty = true;
         Ok(())
@@ -50,7 +59,8 @@ impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControlle
         }
         let mut next = self.state.clone();
         update(&mut next)?;
-        self.driver.validate_state(self.selection, &next)?;
+        self.driver
+            .validate_state(self.prepared.selection(), &next)?;
         self.state = next;
         self.dirty = true;
         Ok(())
@@ -64,7 +74,7 @@ impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControlle
         }
         let frame = self
             .driver
-            .encode(self.selection, &self.state)
+            .encode(self.prepared.selection(), &self.state)
             .map_err(|error| CommitError::Backend {
                 reason: error.to_string(),
             })?;
@@ -85,7 +95,7 @@ impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControlle
     }
     #[must_use]
     pub const fn selection(&self) -> RealizationSelection {
-        self.selection
+        self.prepared.selection()
     }
 }
 
@@ -94,10 +104,9 @@ mod tests {
     use super::*;
     use gr_controller_contract::{
         RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+        prepare_realization,
     };
-    use gr_realization_api::{
-        ControllerId, LinuxTarget, ProviderRequirements, RealizationMode, RealizationModeSet,
-    };
+    use gr_realization_api::{ControllerId, LinuxTarget, ProviderRequirements, RealizationMode};
 
     #[derive(Default)]
     struct Driver;
@@ -113,7 +122,6 @@ mod tests {
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
-                available_features: RealizationModeSet::singleton(RealizationMode::HostCompatible),
             }];
             RealizationManifest::new(&ENTRIES)
         }
@@ -173,12 +181,9 @@ mod tests {
         ModeControllerRuntime::new(
             Driver,
             Sink { fail, sent: vec![] },
-            RealizationSelection {
-                controller: ControllerId::new("test.runtime"),
-                target: LinuxTarget::Uinput,
-                mode: RealizationMode::HostCompatible,
-            },
+            prepare_realization(&Driver, LinuxTarget::Uinput).expect("prepared realization"),
         )
+        .expect("matching controller")
     }
 
     #[test]
@@ -206,5 +211,59 @@ mod tests {
         ));
         assert!(!*runtime.state());
         assert!(!runtime.is_dirty());
+    }
+
+    #[test]
+    fn prepared_realization_cannot_open_a_different_controller() {
+        struct OtherDriver;
+        impl RealizationControllerDefinition for OtherDriver {
+            fn controller_id(&self) -> ControllerId {
+                ControllerId::new("test.other")
+            }
+            fn realization_manifest(&self) -> RealizationManifest {
+                Driver.realization_manifest()
+            }
+        }
+        impl ModeAwareControllerDriver for OtherDriver {
+            type State = bool;
+            type Frame = bool;
+            fn neutral_state(&self) -> Self::State {
+                false
+            }
+            fn apply_normalized(
+                &self,
+                _: &mut Self::State,
+                _: ControlUpdate,
+            ) -> Result<(), ControlError> {
+                Ok(())
+            }
+            fn validate_state(
+                &self,
+                _: RealizationSelection,
+                _: &Self::State,
+            ) -> Result<(), ControlError> {
+                Ok(())
+            }
+            fn encode(
+                &self,
+                _: RealizationSelection,
+                _: &Self::State,
+            ) -> Result<Self::Frame, ControlError> {
+                Ok(false)
+            }
+        }
+        let prepared = prepare_realization(&Driver, LinuxTarget::Uinput).expect("prepared");
+        let result = ModeControllerRuntime::new(
+            OtherDriver,
+            Sink {
+                fail: false,
+                sent: vec![],
+            },
+            prepared,
+        );
+        assert!(matches!(
+            result,
+            Err(ManifestError::ControllerMismatch { .. })
+        ));
     }
 }

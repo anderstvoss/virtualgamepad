@@ -89,7 +89,6 @@ pub struct RealizationManifestEntry {
     pub target: LinuxTarget,
     pub mode: RealizationMode,
     pub provider_requirements: ProviderRequirements,
-    pub available_features: RealizationModeSet,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealizationManifest {
@@ -108,6 +107,29 @@ impl RealizationManifest {
 pub trait RealizationControllerDefinition: Send + Sync + 'static {
     fn controller_id(&self) -> ControllerId;
     fn realization_manifest(&self) -> RealizationManifest;
+}
+
+/// An exact manifest entry validated for one controller and Linux target.
+///
+/// Controller packages keep typed feature availability outside this generic
+/// value. The prepared realization binds only the provider-neutral selection
+/// and requirements needed before host I/O begins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PreparedRealization {
+    selection: RealizationSelection,
+    entry: RealizationManifestEntry,
+}
+
+impl PreparedRealization {
+    #[must_use]
+    pub const fn selection(&self) -> RealizationSelection {
+        self.selection
+    }
+
+    #[must_use]
+    pub const fn entry(&self) -> RealizationManifestEntry {
+        self.entry
+    }
 }
 #[allow(clippy::missing_errors_doc)]
 pub trait ModeAwareControllerDriver: RealizationControllerDefinition {
@@ -150,12 +172,19 @@ pub enum ManifestError {
         controller: ControllerId,
         target: LinuxTarget,
     },
+    #[error(
+        "prepared realization belongs to controller `{prepared_controller}`, not `{driver_controller}`"
+    )]
+    ControllerMismatch {
+        prepared_controller: ControllerId,
+        driver_controller: ControllerId,
+    },
 }
 #[allow(clippy::missing_errors_doc)]
-pub fn select_realization(
+pub fn prepare_realization(
     definition: &dyn RealizationControllerDefinition,
     target: LinuxTarget,
-) -> Result<(RealizationSelection, RealizationManifestEntry), ManifestError> {
+) -> Result<PreparedRealization, ManifestError> {
     let controller = definition.controller_id();
     let entries = definition.realization_manifest().entries();
     if entries.is_empty() {
@@ -184,14 +213,14 @@ pub fn select_realization(
         .copied()
         .find(|entry| entry.target == target)
         .ok_or(ManifestError::UnsupportedTarget { controller, target })?;
-    Ok((
-        RealizationSelection {
+    Ok(PreparedRealization {
+        selection: RealizationSelection {
             controller,
             target,
             mode: entry.mode,
         },
         entry,
-    ))
+    })
 }
 
 #[cfg(test)]
@@ -209,18 +238,15 @@ mod tests {
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
-                available_features: RealizationModeSet::singleton(
-                    RealizationMode::HardwareFaithful,
-                ),
             }];
             RealizationManifest::new(&ENTRIES)
         }
     }
     #[test]
     fn independent_hardware_mode_needs_no_lower_mode() {
-        assert!(select_realization(&Hardware, LinuxTarget::UsbGadget).is_ok());
+        assert!(prepare_realization(&Hardware, LinuxTarget::UsbGadget).is_ok());
         assert!(matches!(
-            select_realization(&Hardware, LinuxTarget::Uhid),
+            prepare_realization(&Hardware, LinuxTarget::Uhid),
             Err(ManifestError::UnsupportedTarget { .. })
         ));
     }

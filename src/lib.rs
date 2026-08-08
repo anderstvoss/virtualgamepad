@@ -7,8 +7,9 @@
 
 pub use gr_controller_contract::{
     CommitError, ControlError, ControlUpdate, DpadDirection, FaceButton, ManifestError,
-    ModeAwareControllerDriver, RealizationControllerDefinition, RealizationManifest,
-    RealizationManifestEntry, Stick, StickPosition, Trigger, select_realization,
+    ModeAwareControllerDriver, PreparedRealization, RealizationControllerDefinition,
+    RealizationManifest, RealizationManifestEntry, Stick, StickPosition, Trigger,
+    prepare_realization,
 };
 pub use gr_controller_runtime::{FrameSink, ModeControllerRuntime};
 pub use gr_realization_api::{
