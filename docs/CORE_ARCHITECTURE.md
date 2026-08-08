@@ -12,19 +12,21 @@ they never select or branch on a controller family.
 A controller has one typed semantic state and one control vocabulary. A
 realization controls how a host sees that controller; it never selects a
 different input API or changes the meaning of a control. Linux targets map to
-three independent modes:
+three independent targets:
 
-| Mode | Linux target | Product role |
+| Realization target | Linux mechanism | Product role |
 | --- | --- | --- |
-| `HostCompatible` | uinput | Normal local deployment. |
-| `IdentityAccurate` | UHID | Normal local deployment with HID identity and report behavior. |
-| `HardwareFaithful` | USB gadget | Explicit hardware-validation transport, not ordinary library deployment. |
+| `Evdev` | uinput | Normal local deployment through Linux evdev. |
+| `Hid` | UHID | Normal local deployment with HID identity and report behavior. |
+| `UsbTransportValidation` | USB gadget | Explicit, opt-in transport-validation API; unavailable hardware is a creation error. |
 
-The modes are not an ordered ladder and do not imply each other. A controller
+Targets are not an ordered ladder and do not imply each other. A controller
 may implement any non-empty subset, including only hardware validation. Normal
-creation selects an exact deployable target; USB-gadget use is exposed through
-a separate validation API. No selection falls back to another provider or
-mode.
+creation selects an exact deployable target. USB-gadget use is deliberately
+available through a separate, explicit library API for callers that have an
+already-provisioned gadget-capable host; it fails with a typed preflight or
+open error when that facility is absent or inaccessible. No selection falls
+back to another provider or target.
 
 ## Feature-complete intent is controller-defined
 
@@ -40,10 +42,10 @@ Each controller realization manifest declares, for its exact target, the
 prepared OS realization, host prerequisites, codec/report behavior,
 reverse-output support, and typed controller feature surface. The same native
 or normalized operation may be faithfully available in any, all, or none of
-the modes. An operation that the controller family never implements returns
+the targets. An operation that the controller family never implements returns
 `UnsupportedControl`. An operation the controller implements but whose chosen
-realization cannot faithfully expose returns
-`UnavailableInRealizationMode`; its candidate state is discarded and the
+realization cannot faithfully expose returns `UnavailableInRealization`; its
+candidate state is discarded and the
 controller remains usable.
 
 Examples of target mechanisms are intentionally descriptive rather than
@@ -60,10 +62,20 @@ prescriptive:
   make those hardware claims, not to unlock a generic controller feature by
   definition.
 
+Audio and attached accessories are separate from ordinary controller input and
+output. A native HID report may represent jack presence, mute, volume, audio
+routing controls, or an attached accessory's protocol. It does *not* create a
+playback/capture endpoint. Usable headset or controller audio requires a
+separate, controller-declared audio realization with a host audio service and
+its own streams, lifecycle, and permissions. Similarly, a controller-attached
+keyboard is a controller-native accessory protocol, not permission to inject
+arbitrary host keyboard events. A realization may expose either only where it
+can faithfully do so; otherwise the typed operation is target-unavailable.
+
 ## Creation and lifecycle invariants
 
 Creation prepares and validates the exact controller/target realization before
-opening host I/O. It verifies the controller manifest, target/mode pairing,
+opening host I/O. It verifies the controller manifest, target pairing,
 provider capabilities, realization shape, host prerequisites, and required
 reverse output. Invalid or unavailable realization produces an actionable
 creation/preflight error and no handle.
@@ -74,12 +86,26 @@ commit leaves valid state dirty and retryable. Close is terminal even if host
 cleanup reports an error. Reverse output is bounded and isolated from the
 commit path.
 
+## Linux provider verification boundary
+
+The uinput and UHID crates keep their Linux file-descriptor and ioctl work in
+private live I/O implementations. Each has a separate private factory and
+already-open I/O interface used only to inject deterministic fakes in that
+crate's tests. This is not a public provider extension point and does not
+change controller or runtime contracts. Hermetic tests use it to exercise
+open/configure, short-write, would-block, malformed reverse-data, reply, and
+teardown failures. Ignored host tests remain the separate confirmation that
+the same live implementation works with an operator-provisioned Linux node.
+
 ## Extension rule
 
 Adding a curated controller must not require controller-family changes to the
 core or providers. Its package supplies typed state/features, a non-empty
 independent manifest, target-specific realization specs/codecs, reverse-event
-decoding, and conformance tests. It must document its host prerequisites and
+decoding, and conformance tests. If it declares host audio streams, it also
+supplies an audio sidecar requirement through the backend-neutral audio
+contract; controller-native audio controls and attachment semantics remain in
+the package. It must document its host prerequisites and
 feature availability for every declared target.
 
 See [deployment and hardware validation](DEPLOYMENT_AND_VALIDATION.md) for

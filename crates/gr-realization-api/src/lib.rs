@@ -36,25 +36,25 @@ impl fmt::Display for ControllerId {
 /// Exact Linux provider target selected by an application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum LinuxTarget {
-    Uinput,
-    Uhid,
-    UsbGadget,
+pub enum RealizationTarget {
+    Evdev,
+    Hid,
+    UsbTransportValidation,
 }
 
 /// Linux target available to ordinary library deployments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum DeploymentTarget {
-    Uinput,
-    Uhid,
+    Evdev,
+    Hid,
 }
 impl DeploymentTarget {
     #[must_use]
-    pub const fn linux_target(self) -> LinuxTarget {
+    pub const fn realization_target(self) -> RealizationTarget {
         match self {
-            Self::Uinput => LinuxTarget::Uinput,
-            Self::Uhid => LinuxTarget::Uhid,
+            Self::Evdev => RealizationTarget::Evdev,
+            Self::Hid => RealizationTarget::Hid,
         }
     }
 }
@@ -62,69 +62,35 @@ impl DeploymentTarget {
 /// Linux target reserved for explicit hardware-validation sessions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-pub enum HardwareValidationTarget {
+pub enum TransportValidationTarget {
     UsbGadget,
 }
-impl HardwareValidationTarget {
+impl TransportValidationTarget {
     #[must_use]
-    pub const fn linux_target(self) -> LinuxTarget {
-        LinuxTarget::UsbGadget
+    pub const fn realization_target(self) -> RealizationTarget {
+        RealizationTarget::UsbTransportValidation
     }
 }
 
-impl LinuxTarget {
-    /// The independent host-realization mode promised by this target.
-    #[must_use]
-    pub const fn mode(self) -> RealizationMode {
-        match self {
-            Self::Uinput => RealizationMode::HostCompatible,
-            Self::Uhid => RealizationMode::IdentityAccurate,
-            Self::UsbGadget => RealizationMode::HardwareFaithful,
-        }
-    }
-}
-
-impl fmt::Display for LinuxTarget {
+impl fmt::Display for RealizationTarget {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
-            Self::Uinput => "linux uinput",
-            Self::Uhid => "linux UHID",
-            Self::UsbGadget => "linux USB gadget",
+            Self::Evdev => "linux uinput/evdev",
+            Self::Hid => "linux UHID",
+            Self::UsbTransportValidation => "linux USB gadget transport validation",
         })
     }
 }
-
-/// Independent host-presentation fidelity mode.
-///
-/// This enum is intentionally not ordered: no mode implies another mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum RealizationMode {
-    HostCompatible,
-    IdentityAccurate,
-    HardwareFaithful,
-}
-
-impl fmt::Display for RealizationMode {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::HostCompatible => "host-compatible",
-            Self::IdentityAccurate => "identity-accurate",
-            Self::HardwareFaithful => "hardware-faithful",
-        })
-    }
-}
-
-/// Allocation-free set of independent realization modes.
+/// Allocation-free set of independent realization targets.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct RealizationModeSet(u8);
+pub struct RealizationTargetSet(u8);
 
-impl RealizationModeSet {
+impl RealizationTargetSet {
     pub const EMPTY: Self = Self(0);
 
     #[must_use]
-    pub const fn singleton(mode: RealizationMode) -> Self {
-        Self(mode_bit(mode))
+    pub const fn singleton(target: RealizationTarget) -> Self {
+        Self(target_bit(target))
     }
 
     #[must_use]
@@ -133,8 +99,8 @@ impl RealizationModeSet {
     }
 
     #[must_use]
-    pub const fn contains(self, mode: RealizationMode) -> bool {
-        self.0 & mode_bit(mode) != 0
+    pub const fn contains(self, target: RealizationTarget) -> bool {
+        self.0 & target_bit(target) != 0
     }
 
     #[must_use]
@@ -143,29 +109,26 @@ impl RealizationModeSet {
     }
 }
 
-const fn mode_bit(mode: RealizationMode) -> u8 {
-    match mode {
-        RealizationMode::HostCompatible => 1,
-        RealizationMode::IdentityAccurate => 2,
-        RealizationMode::HardwareFaithful => 4,
+const fn target_bit(target: RealizationTarget) -> u8 {
+    match target {
+        RealizationTarget::Evdev => 1,
+        RealizationTarget::Hid => 2,
+        RealizationTarget::UsbTransportValidation => 4,
     }
 }
 
 /// Immutable capabilities promised by one provider target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderCapabilities {
-    pub target: LinuxTarget,
-    pub mode: RealizationMode,
+    pub target: RealizationTarget,
     pub provides_reverse_output: bool,
 }
 
 impl ProviderCapabilities {
-    /// Construct capabilities for a target's fixed realization mode.
     #[must_use]
-    pub const fn for_target(target: LinuxTarget, provides_reverse_output: bool) -> Self {
+    pub const fn for_target(target: RealizationTarget, provides_reverse_output: bool) -> Self {
         Self {
             target,
-            mode: target.mode(),
             provides_reverse_output,
         }
     }
@@ -181,22 +144,20 @@ pub struct ProviderRequirements {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealizationSelection {
     pub controller: ControllerId,
-    pub target: LinuxTarget,
-    pub mode: RealizationMode,
+    pub target: RealizationTarget,
 }
 
 /// Error caused by incompatible target/provider realization.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RealizationError {
-    #[error("{target} realizes {actual_mode}, not requested {requested_mode}")]
-    TargetModeMismatch {
-        target: LinuxTarget,
-        requested_mode: RealizationMode,
-        actual_mode: RealizationMode,
+    #[error("provider realizes {actual_target}, not requested {requested_target}")]
+    TargetMismatch {
+        requested_target: RealizationTarget,
+        actual_target: RealizationTarget,
     },
     #[error("{target} does not provide required reverse-output delivery")]
-    MissingReverseOutput { target: LinuxTarget },
+    MissingReverseOutput { target: RealizationTarget },
 }
 
 /// Validate an exact prepared selection against a provider promise.
@@ -205,18 +166,17 @@ pub enum RealizationError {
 ///
 /// # Errors
 ///
-/// Returns [`RealizationError`] when the selected target/mode differs from the
+/// Returns [`RealizationError`] when the selected target differs from the
 /// provider promise or a declared generic provider prerequisite is absent.
 pub fn validate_provider(
     selection: RealizationSelection,
     provider: ProviderCapabilities,
     requirements: ProviderRequirements,
 ) -> Result<(), RealizationError> {
-    if selection.target != provider.target || selection.mode != provider.mode {
-        return Err(RealizationError::TargetModeMismatch {
-            target: selection.target,
-            requested_mode: selection.mode,
-            actual_mode: provider.mode,
+    if selection.target != provider.target {
+        return Err(RealizationError::TargetMismatch {
+            requested_target: selection.target,
+            actual_target: provider.target,
         });
     }
     if requirements.requires_reverse_output && !provider.provides_reverse_output {
@@ -266,31 +226,28 @@ pub struct NativeHidRealization {
     pub feature_report_responses: BTreeMap<u8, Vec<u8>>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeUsbRealization {
-    pub descriptor: Vec<u8>,
-    pub input_endpoint: u8,
-    pub reverse_endpoint: u8,
+pub struct NativeUsbTransportValidationRealization {
+    /// Existing endpoint supplied by an operator-provisioned gadget facility.
+    pub input_endpoint_path: String,
+    /// Existing reverse endpoint, when the declared realization requires one.
+    pub reverse_endpoint_path: Option<String>,
     pub device_name: String,
-    pub manufacturer: String,
-    pub serial_number: String,
-    pub identity: NativeDeviceIdentity,
-    pub usb_version: u16,
-    pub maximum_power_ma: u16,
-    pub report_length: u16,
+    pub maximum_input_packet_length: u16,
+    pub maximum_reverse_packet_length: Option<u16>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeControllerRealization {
     Evdev(NativeEvdevRealization),
     Hid(NativeHidRealization),
-    Usb(NativeUsbRealization),
+    UsbTransportValidation(NativeUsbTransportValidationRealization),
 }
 impl NativeControllerRealization {
     #[must_use]
-    pub const fn target(&self) -> LinuxTarget {
+    pub const fn target(&self) -> RealizationTarget {
         match self {
-            Self::Evdev(_) => LinuxTarget::Uinput,
-            Self::Hid(_) => LinuxTarget::Uhid,
-            Self::Usb(_) => LinuxTarget::UsbGadget,
+            Self::Evdev(_) => RealizationTarget::Evdev,
+            Self::Hid(_) => RealizationTarget::Hid,
+            Self::UsbTransportValidation(_) => RealizationTarget::UsbTransportValidation,
         }
     }
 
@@ -308,7 +265,7 @@ impl NativeControllerRealization {
             Self::Evdev(specification) => {
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: LinuxTarget::Uinput,
+                        target: RealizationTarget::Evdev,
                     });
                 }
                 if has_duplicate(&specification.event_codes) {
@@ -338,38 +295,30 @@ impl NativeControllerRealization {
             Self::Hid(specification) => {
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: LinuxTarget::Uhid,
+                        target: RealizationTarget::Hid,
                     });
                 }
                 if specification.descriptor.is_empty() {
                     return Err(NativeRealizationError::EmptyHidDescriptor);
                 }
             }
-            Self::Usb(specification) => {
+            Self::UsbTransportValidation(specification) => {
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: LinuxTarget::UsbGadget,
+                        target: RealizationTarget::UsbTransportValidation,
                     });
                 }
-                if specification.descriptor.is_empty() {
-                    return Err(NativeRealizationError::EmptyUsbDescriptor);
+                if specification.input_endpoint_path.is_empty() {
+                    return Err(NativeRealizationError::EmptyUsbEndpointPath { reverse: false });
                 }
-                if specification.input_endpoint == 0 || specification.reverse_endpoint == 0 {
-                    return Err(NativeRealizationError::InvalidUsbEndpoint {
-                        endpoint: if specification.input_endpoint == 0 {
-                            specification.input_endpoint
-                        } else {
-                            specification.reverse_endpoint
-                        },
-                    });
+                if specification.maximum_input_packet_length == 0 {
+                    return Err(NativeRealizationError::EmptyUsbPacketLength { reverse: false });
                 }
-                if specification.input_endpoint == specification.reverse_endpoint {
-                    return Err(NativeRealizationError::DuplicateUsbEndpoint {
-                        endpoint: specification.input_endpoint,
-                    });
+                if specification.reverse_endpoint_path.as_deref() == Some("") {
+                    return Err(NativeRealizationError::EmptyUsbEndpointPath { reverse: true });
                 }
-                if specification.report_length == 0 {
-                    return Err(NativeRealizationError::EmptyUsbReportLength);
+                if specification.maximum_reverse_packet_length == Some(0) {
+                    return Err(NativeRealizationError::EmptyUsbPacketLength { reverse: true });
                 }
             }
         }
@@ -389,7 +338,7 @@ fn has_duplicate(values: &[u16]) -> bool {
 #[non_exhaustive]
 pub enum NativeRealizationError {
     #[error("{target} realization requires a non-empty device name")]
-    EmptyDeviceName { target: LinuxTarget },
+    EmptyDeviceName { target: RealizationTarget },
     #[error("evdev event codes contain a duplicate")]
     DuplicateEvdevEventCode,
     #[error("evdev key codes contain a duplicate")]
@@ -404,14 +353,10 @@ pub enum NativeRealizationError {
     },
     #[error("UHID realization requires a non-empty HID descriptor")]
     EmptyHidDescriptor,
-    #[error("USB gadget realization requires a non-empty descriptor")]
-    EmptyUsbDescriptor,
-    #[error("USB gadget endpoint {endpoint} is invalid")]
-    InvalidUsbEndpoint { endpoint: u8 },
-    #[error("USB gadget endpoint {endpoint} is used for both directions")]
-    DuplicateUsbEndpoint { endpoint: u8 },
-    #[error("USB gadget realization requires a non-zero report length")]
-    EmptyUsbReportLength,
+    #[error("USB transport validation endpoint path is empty (reverse={reverse})")]
+    EmptyUsbEndpointPath { reverse: bool },
+    #[error("USB transport validation packet length is zero (reverse={reverse})")]
+    EmptyUsbPacketLength { reverse: bool },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -424,6 +369,23 @@ pub enum ProviderFrame {
     HidFeature {
         report_id: u8,
         bytes: Vec<u8>,
+    },
+    HidGetReportReply {
+        request_id: u32,
+        status: i16,
+        bytes: Vec<u8>,
+    },
+    HidSetReportReply {
+        request_id: u32,
+        status: i16,
+    },
+    ForceFeedbackUploadReply {
+        request_id: u32,
+        status: i32,
+    },
+    ForceFeedbackEraseReply {
+        request_id: u32,
+        status: i32,
     },
     Transport {
         endpoint: u8,
@@ -446,6 +408,25 @@ pub enum RawReverseEvent {
     HidFeature {
         report_id: Option<u8>,
         bytes: Vec<u8>,
+    },
+    HidGetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+    },
+    HidSetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+        bytes: Vec<u8>,
+    },
+    ForceFeedbackUpload {
+        request_id: u32,
+        effect: Vec<u8>,
+    },
+    ForceFeedbackErase {
+        request_id: u32,
+        effect_id: u32,
     },
     Transport {
         endpoint: u8,
@@ -471,6 +452,10 @@ pub struct ProviderDiagnostics {
     pub frames_sent: u64,
     pub reverse_events_drained: u64,
     pub write_failures: u64,
+    /// Informational lifecycle notifications observed after opening.
+    ///
+    /// They never alter the session's polling contract or close a controller.
+    pub lifecycle_events: u64,
     pub last_error: Option<String>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -480,6 +465,8 @@ pub enum EventReadiness {
 }
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ProviderError {
+    #[error(transparent)]
+    Preflight(#[from] ProviderPreflightError),
     #[error("provider open failed: {reason}")]
     Open { reason: String },
     #[error("provider write failed: {reason}")]
@@ -499,17 +486,23 @@ pub enum ProviderError {
 #[non_exhaustive]
 pub enum ProviderPreflightError {
     #[error("{target} is unavailable on this platform")]
-    UnsupportedPlatform { target: LinuxTarget },
+    UnsupportedPlatform { target: RealizationTarget },
     #[error("{target} requires device node `{path}`")]
-    MissingDeviceNode { target: LinuxTarget, path: String },
+    MissingDeviceNode {
+        target: RealizationTarget,
+        path: String,
+    },
     #[error("{target} cannot access device node `{path}`")]
-    AccessDenied { target: LinuxTarget, path: String },
-    #[error("USB gadget validation requires a mounted configfs gadget root")]
-    MissingConfigfs,
+    AccessDenied {
+        target: RealizationTarget,
+        path: String,
+    },
+    #[error("USB transport validation requires prepared endpoint `{path}`")]
+    MissingPreparedEndpoint { path: String },
     #[error("USB gadget validation requires a peripheral-capable USB Device Controller")]
     MissingUsbDeviceController,
-    #[error("USB gadget validation requires administrative authority")]
-    InsufficientAuthority,
+    #[error("USB transport validation endpoint `{path}` cannot be accessed")]
+    PreparedEndpointAccessDenied { path: String },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderOpenRequest {
@@ -533,10 +526,9 @@ impl ProviderOpenRequest {
         validate_provider(self.selection, capabilities, self.requirements)?;
         self.realization.validate()?;
         if self.selection.target != self.realization.target() {
-            return Err(RealizationError::TargetModeMismatch {
-                target: self.selection.target,
-                requested_mode: self.selection.mode,
-                actual_mode: self.realization.target().mode(),
+            return Err(RealizationError::TargetMismatch {
+                requested_target: self.selection.target,
+                actual_target: self.realization.target(),
             }
             .into());
         }
@@ -563,7 +555,6 @@ impl<T: Extend<ProviderReverseEvent>> ProviderReverseEventSink for T {
 }
 #[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderSession: Send {
-    fn open(&mut self) -> Result<(), ProviderError>;
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError>;
     fn drain_reverse_events(
         &mut self,
@@ -576,13 +567,13 @@ pub trait NativeProviderSession: Send {
 #[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderFactory: Send + Sync {
     fn capabilities(&self) -> ProviderCapabilities;
-    /// Check host prerequisites without opening or mutating a provider session.
+    /// Check host prerequisites for one complete prepared request.
     ///
     /// # Errors
     ///
     /// Returns [`ProviderPreflightError`] when the selected host facility is
     /// absent or inaccessible to the current process.
-    fn preflight(&self) -> Result<(), ProviderPreflightError>;
+    fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError>;
     fn open(
         &self,
         request: ProviderOpenRequest,
@@ -591,20 +582,14 @@ pub trait NativeProviderFactory: Send + Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ControllerId, LinuxTarget, NativeControllerRealization, NativeDeviceIdentity,
-        NativeEvdevRealization, NativeRealizationError, ProviderCapabilities, ProviderOpenRequest,
-        ProviderOpenValidationError, ProviderRequirements, RealizationError, RealizationMode,
-        RealizationModeSet, RealizationSelection, validate_provider,
-    };
+    use super::*;
 
     fn uinput_request() -> ProviderOpenRequest {
         ProviderOpenRequest {
             session: super::RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.provider"),
-                target: LinuxTarget::Uinput,
-                mode: RealizationMode::HostCompatible,
+                target: RealizationTarget::Evdev,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -623,51 +608,63 @@ mod tests {
     }
 
     #[test]
-    fn targets_have_exact_independent_modes() {
-        assert_eq!(LinuxTarget::Uinput.mode(), RealizationMode::HostCompatible);
-        assert_eq!(LinuxTarget::Uhid.mode(), RealizationMode::IdentityAccurate);
+    fn targets_are_exact_and_independent() {
+        assert_ne!(RealizationTarget::Evdev, RealizationTarget::Hid);
+        assert_ne!(
+            RealizationTarget::Hid,
+            RealizationTarget::UsbTransportValidation
+        );
+    }
+
+    #[test]
+    fn deployment_and_usb_validation_targets_are_explicitly_separate() {
         assert_eq!(
-            LinuxTarget::UsbGadget.mode(),
-            RealizationMode::HardwareFaithful
+            DeploymentTarget::Evdev.realization_target(),
+            RealizationTarget::Evdev
+        );
+        assert_eq!(
+            DeploymentTarget::Hid.realization_target(),
+            RealizationTarget::Hid
+        );
+        assert_eq!(
+            TransportValidationTarget::UsbGadget.realization_target(),
+            RealizationTarget::UsbTransportValidation
         );
     }
 
     #[test]
-    fn mode_sets_are_unordered_membership_sets() {
-        let modes = RealizationModeSet::singleton(RealizationMode::HardwareFaithful).union(
-            RealizationModeSet::singleton(RealizationMode::HostCompatible),
-        );
-        assert!(modes.contains(RealizationMode::HardwareFaithful));
-        assert!(modes.contains(RealizationMode::HostCompatible));
-        assert!(!modes.contains(RealizationMode::IdentityAccurate));
+    fn target_sets_are_unordered_membership_sets() {
+        let targets = RealizationTargetSet::singleton(RealizationTarget::UsbTransportValidation)
+            .union(RealizationTargetSet::singleton(RealizationTarget::Evdev));
+        assert!(targets.contains(RealizationTarget::UsbTransportValidation));
+        assert!(targets.contains(RealizationTarget::Evdev));
+        assert!(!targets.contains(RealizationTarget::Hid));
     }
 
     #[test]
-    fn provider_validation_rejects_mode_mismatch_without_fallback() {
+    fn provider_validation_rejects_target_mismatch_without_fallback() {
         let selection = RealizationSelection {
             controller: ControllerId::new("test.hardware-only"),
-            target: LinuxTarget::Uinput,
-            mode: RealizationMode::HardwareFaithful,
+            target: RealizationTarget::Evdev,
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(LinuxTarget::Uinput, true),
+            ProviderCapabilities::for_target(RealizationTarget::Hid, true),
             ProviderRequirements::default(),
         )
-        .expect_err("uinput cannot become hardware faithful");
-        assert!(matches!(error, RealizationError::TargetModeMismatch { .. }));
+        .expect_err("providers cannot substitute targets");
+        assert!(matches!(error, RealizationError::TargetMismatch { .. }));
     }
 
     #[test]
     fn provider_validation_checks_reverse_output_separately() {
         let selection = RealizationSelection {
             controller: ControllerId::new("test.identity"),
-            target: LinuxTarget::Uhid,
-            mode: RealizationMode::IdentityAccurate,
+            target: RealizationTarget::Hid,
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(LinuxTarget::Uhid, false),
+            ProviderCapabilities::for_target(RealizationTarget::Hid, false),
             ProviderRequirements {
                 requires_reverse_output: true,
             },
@@ -682,13 +679,19 @@ mod tests {
     #[test]
     fn open_validation_uses_the_actual_provider_capabilities() {
         uinput_request()
-            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .validate_against(ProviderCapabilities::for_target(
+                RealizationTarget::Evdev,
+                false,
+            ))
             .expect("no reverse output is required");
 
         let mut request = uinput_request();
         request.requirements.requires_reverse_output = true;
         let error = request
-            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .validate_against(ProviderCapabilities::for_target(
+                RealizationTarget::Evdev,
+                false,
+            ))
             .expect_err("provider cannot satisfy reverse output");
         assert!(matches!(
             error,
@@ -704,12 +707,15 @@ mod tests {
         };
         specification.device_name.clear();
         let error = request
-            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .validate_against(ProviderCapabilities::for_target(
+                RealizationTarget::Evdev,
+                false,
+            ))
             .expect_err("empty name is invalid");
         assert!(matches!(
             error,
             ProviderOpenValidationError::Specification(NativeRealizationError::EmptyDeviceName {
-                target: LinuxTarget::Uinput
+                target: RealizationTarget::Evdev
             })
         ));
     }

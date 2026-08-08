@@ -9,5 +9,6 @@ authors.workspace = true
 publish = false
 [dependencies]
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
+libc = "0.2"
 [lints]
 workspace = true

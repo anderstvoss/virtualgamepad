@@ -2,9 +2,10 @@
 
 //! Controller-semantic contracts with no controller-family or provider logic.
 
+use gr_audio_contract::AudioSidecarRequirement;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, HardwareValidationTarget, LinuxTarget, ProviderRequirements,
-    RealizationMode, RealizationModeSet, RealizationSelection,
+    ControllerId, DeploymentTarget, ProviderRequirements, RealizationSelection, RealizationTarget,
+    RealizationTargetSet, TransportValidationTarget,
 };
 use thiserror::Error;
 
@@ -68,10 +69,10 @@ pub enum ControlError {
         value: u32,
         maximum: u32,
     },
-    #[error("operation is unavailable in {selected_mode}; available in {available_in:?}")]
-    UnavailableInRealizationMode {
-        selected_mode: RealizationMode,
-        available_in: RealizationModeSet,
+    #[error("operation is unavailable in {selected_target}; available in {available_in:?}")]
+    UnavailableInRealization {
+        selected_target: RealizationTarget,
+        available_in: RealizationTargetSet,
     },
     #[error("controller is closed")]
     Closed,
@@ -86,9 +87,10 @@ pub enum CommitError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealizationManifestEntry {
-    pub target: LinuxTarget,
-    pub mode: RealizationMode,
+    pub target: RealizationTarget,
     pub provider_requirements: ProviderRequirements,
+    /// Optional host-audio stream contract independent of controller reports.
+    pub audio_sidecar: Option<AudioSidecarRequirement>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealizationManifest {
@@ -132,7 +134,7 @@ impl PreparedRealization {
     }
 }
 #[allow(clippy::missing_errors_doc)]
-pub trait ModeAwareControllerDriver: RealizationControllerDefinition {
+pub trait TargetAwareControllerDriver: RealizationControllerDefinition {
     type State: Clone + Send + 'static;
     type Frame: Send + 'static;
     fn neutral_state(&self) -> Self::State;
@@ -159,18 +161,17 @@ pub enum ManifestError {
     #[error("target {target} is duplicated for `{controller}`")]
     DuplicateTarget {
         controller: ControllerId,
-        target: LinuxTarget,
+        target: RealizationTarget,
     },
-    #[error("target {target} realizes {actual_mode}, not {mode}")]
-    TargetModeMismatch {
-        target: LinuxTarget,
-        mode: RealizationMode,
-        actual_mode: RealizationMode,
+    #[error("controller `{controller}` has an invalid audio sidecar for {target}")]
+    InvalidAudioSidecar {
+        controller: ControllerId,
+        target: RealizationTarget,
     },
     #[error("controller `{controller}` does not support {target}")]
     UnsupportedTarget {
         controller: ControllerId,
-        target: LinuxTarget,
+        target: RealizationTarget,
     },
     #[error(
         "prepared realization belongs to controller `{prepared_controller}`, not `{driver_controller}`"
@@ -186,22 +187,22 @@ pub fn prepare_deployment_realization(
     definition: &dyn RealizationControllerDefinition,
     target: DeploymentTarget,
 ) -> Result<PreparedRealization, ManifestError> {
-    prepare_realization(definition, target.linux_target())
+    prepare_realization(definition, target.realization_target())
 }
 
 /// Prepare a realization for explicit hardware validation.
 #[allow(clippy::missing_errors_doc)]
-pub fn prepare_hardware_validation_realization(
+pub fn prepare_transport_validation_realization(
     definition: &dyn RealizationControllerDefinition,
-    target: HardwareValidationTarget,
+    target: TransportValidationTarget,
 ) -> Result<PreparedRealization, ManifestError> {
-    prepare_realization(definition, target.linux_target())
+    prepare_realization(definition, target.realization_target())
 }
 
 #[allow(clippy::missing_errors_doc)]
 pub fn prepare_realization(
     definition: &dyn RealizationControllerDefinition,
-    target: LinuxTarget,
+    target: RealizationTarget,
 ) -> Result<PreparedRealization, ManifestError> {
     let controller = definition.controller_id();
     let entries = definition.realization_manifest().entries();
@@ -209,11 +210,13 @@ pub fn prepare_realization(
         return Err(ManifestError::Empty { controller });
     }
     for (index, entry) in entries.iter().enumerate() {
-        if entry.mode != entry.target.mode() {
-            return Err(ManifestError::TargetModeMismatch {
+        if entry
+            .audio_sidecar
+            .is_some_and(|sidecar| !sidecar.is_valid())
+        {
+            return Err(ManifestError::InvalidAudioSidecar {
+                controller,
                 target: entry.target,
-                mode: entry.mode,
-                actual_mode: entry.target.mode(),
             });
         }
         if entries[..index]
@@ -232,11 +235,7 @@ pub fn prepare_realization(
         .find(|entry| entry.target == target)
         .ok_or(ManifestError::UnsupportedTarget { controller, target })?;
     Ok(PreparedRealization {
-        selection: RealizationSelection {
-            controller,
-            target,
-            mode: entry.mode,
-        },
+        selection: RealizationSelection { controller, target },
         entry,
     })
 }
@@ -251,21 +250,60 @@ mod tests {
         }
         fn realization_manifest(&self) -> RealizationManifest {
             static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                target: LinuxTarget::UsbGadget,
-                mode: RealizationMode::HardwareFaithful,
+                target: RealizationTarget::UsbTransportValidation,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
+                audio_sidecar: None,
             }];
             RealizationManifest::new(&ENTRIES)
         }
     }
     #[test]
     fn independent_hardware_mode_needs_no_lower_mode() {
-        assert!(prepare_realization(&Hardware, LinuxTarget::UsbGadget).is_ok());
+        assert!(prepare_realization(&Hardware, RealizationTarget::UsbTransportValidation).is_ok());
         assert!(matches!(
-            prepare_realization(&Hardware, LinuxTarget::Uhid),
+            prepare_realization(&Hardware, RealizationTarget::Hid),
             Err(ManifestError::UnsupportedTarget { .. })
+        ));
+    }
+
+    #[test]
+    fn explicit_usb_validation_prepares_a_hardware_only_controller() {
+        let prepared = prepare_transport_validation_realization(
+            &Hardware,
+            TransportValidationTarget::UsbGadget,
+        )
+        .expect("the explicit USB API admits its declared target");
+        assert_eq!(
+            prepared.selection().target,
+            RealizationTarget::UsbTransportValidation
+        );
+    }
+
+    #[test]
+    fn invalid_audio_sidecar_prevents_preparation() {
+        struct InvalidAudio;
+        impl RealizationControllerDefinition for InvalidAudio {
+            fn controller_id(&self) -> ControllerId {
+                ControllerId::new("test.invalid-audio")
+            }
+            fn realization_manifest(&self) -> RealizationManifest {
+                static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
+                    target: RealizationTarget::Evdev,
+                    provider_requirements: ProviderRequirements {
+                        requires_reverse_output: false,
+                    },
+                    audio_sidecar: Some(gr_audio_contract::AudioSidecarRequirement {
+                        streams: &[],
+                    }),
+                }];
+                RealizationManifest::new(&ENTRIES)
+            }
+        }
+        assert!(matches!(
+            prepare_realization(&InvalidAudio, RealizationTarget::Evdev),
+            Err(ManifestError::InvalidAudioSidecar { .. })
         ));
     }
 }

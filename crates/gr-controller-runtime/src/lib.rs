@@ -1,8 +1,8 @@
 #![forbid(unsafe_code)]
-//! Mode-aware local controller state runtime.
+//! Target-aware local controller state runtime.
 use gr_controller_contract::{
-    CommitError, ControlError, ControlUpdate, ManifestError, ModeAwareControllerDriver,
-    PreparedRealization,
+    CommitError, ControlError, ControlUpdate, ManifestError, PreparedRealization,
+    TargetAwareControllerDriver,
 };
 use gr_realization_api::RealizationSelection;
 
@@ -11,7 +11,7 @@ pub trait FrameSink: Send {
     type Frame: Send + 'static;
     fn send(&mut self, frame: Self::Frame) -> Result<(), CommitError>;
 }
-pub struct ModeControllerRuntime<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> {
+pub struct ControllerRuntime<D: TargetAwareControllerDriver, S: FrameSink<Frame = D::Frame>> {
     driver: D,
     sink: S,
     prepared: PreparedRealization,
@@ -20,7 +20,7 @@ pub struct ModeControllerRuntime<D: ModeAwareControllerDriver, S: FrameSink<Fram
     closed: bool,
 }
 #[allow(clippy::missing_errors_doc)]
-impl<D: ModeAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ModeControllerRuntime<D, S> {
+impl<D: TargetAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ControllerRuntime<D, S> {
     pub fn new(driver: D, sink: S, prepared: PreparedRealization) -> Result<Self, ManifestError> {
         if prepared.selection().controller != driver.controller_id() {
             return Err(ManifestError::ControllerMismatch {
@@ -106,7 +106,7 @@ mod tests {
         RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
         prepare_realization,
     };
-    use gr_realization_api::{ControllerId, LinuxTarget, ProviderRequirements, RealizationMode};
+    use gr_realization_api::{ControllerId, ProviderRequirements, RealizationTarget};
 
     #[derive(Default)]
     struct Driver;
@@ -117,16 +117,16 @@ mod tests {
         }
         fn realization_manifest(&self) -> RealizationManifest {
             static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                target: LinuxTarget::Uinput,
-                mode: RealizationMode::HostCompatible,
+                target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
+                audio_sidecar: None,
             }];
             RealizationManifest::new(&ENTRIES)
         }
     }
-    impl ModeAwareControllerDriver for Driver {
+    impl TargetAwareControllerDriver for Driver {
         type State = bool;
         type Frame = bool;
         fn neutral_state(&self) -> Self::State {
@@ -177,11 +177,11 @@ mod tests {
             }
         }
     }
-    fn runtime(fail: bool) -> ModeControllerRuntime<Driver, Sink> {
-        ModeControllerRuntime::new(
+    fn runtime(fail: bool) -> ControllerRuntime<Driver, Sink> {
+        ControllerRuntime::new(
             Driver,
             Sink { fail, sent: vec![] },
-            prepare_realization(&Driver, LinuxTarget::Uinput).expect("prepared realization"),
+            prepare_realization(&Driver, RealizationTarget::Evdev).expect("prepared realization"),
         )
         .expect("matching controller")
     }
@@ -224,7 +224,7 @@ mod tests {
                 Driver.realization_manifest()
             }
         }
-        impl ModeAwareControllerDriver for OtherDriver {
+        impl TargetAwareControllerDriver for OtherDriver {
             type State = bool;
             type Frame = bool;
             fn neutral_state(&self) -> Self::State {
@@ -252,8 +252,8 @@ mod tests {
                 Ok(false)
             }
         }
-        let prepared = prepare_realization(&Driver, LinuxTarget::Uinput).expect("prepared");
-        let result = ModeControllerRuntime::new(
+        let prepared = prepare_realization(&Driver, RealizationTarget::Evdev).expect("prepared");
+        let result = ControllerRuntime::new(
             OtherDriver,
             Sink {
                 fail: false,

@@ -2,27 +2,28 @@
 //! Generic Linux USB gadget transport realization provider.
 #![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
-use std::path::Path;
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
 #[derive(Default)]
 pub struct LinuxUsbGadgetProvider;
 impl NativeProviderFactory for LinuxUsbGadgetProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(LinuxTarget::UsbGadget, false)
+        ProviderCapabilities::for_target(RealizationTarget::UsbTransportValidation, false)
     }
-    fn preflight(&self) -> Result<(), ProviderPreflightError> {
+    fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
         if !cfg!(target_os = "linux") {
             return Err(ProviderPreflightError::UnsupportedPlatform {
-                target: LinuxTarget::UsbGadget,
+                target: RealizationTarget::UsbTransportValidation,
             });
         }
-        if !Path::new("/sys/kernel/config/usb_gadget").is_dir() {
-            return Err(ProviderPreflightError::MissingConfigfs);
-        }
-        let has_udc = Path::new("/sys/class/udc")
-            .read_dir()
-            .is_ok_and(|mut entries| entries.next().is_some());
-        if !has_udc {
-            return Err(ProviderPreflightError::MissingUsbDeviceController);
+        let NativeControllerRealization::UsbTransportValidation(specification) =
+            &request.realization
+        else {
+            return Ok(());
+        };
+        check_endpoint(&specification.input_endpoint_path)?;
+        if let Some(path) = &specification.reverse_endpoint_path {
+            check_endpoint(path)?;
         }
         Ok(())
     }
@@ -35,29 +36,39 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
             .map_err(|e| ProviderError::Unsupported {
                 reason: e.to_string(),
             })?;
-        if !matches!(request.realization, NativeControllerRealization::Usb(_)) {
+        self.preflight(&request)?;
+        if !matches!(
+            request.realization,
+            NativeControllerRealization::UsbTransportValidation(_)
+        ) {
             return Err(ProviderError::Unsupported {
                 reason: "USB gadget requires USB realization".into(),
             });
         }
         Ok(Box::new(Session {
-            state: ProviderState::NotOpen,
+            state: ProviderState::Open,
             sent: 0,
         }))
     }
+}
+fn check_endpoint(path: &str) -> Result<(), ProviderPreflightError> {
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map(|_| ())
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound => {
+                ProviderPreflightError::MissingPreparedEndpoint { path: path.into() }
+            }
+            _ => ProviderPreflightError::PreparedEndpointAccessDenied { path: path.into() },
+        })
 }
 struct Session {
     state: ProviderState,
     sent: u64,
 }
 impl NativeProviderSession for Session {
-    fn open(&mut self) -> Result<(), ProviderError> {
-        if self.state == ProviderState::Closed {
-            return Err(ProviderError::Closed);
-        }
-        self.state = ProviderState::Open;
-        Ok(())
-    }
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
         if self.state != ProviderState::Open {
             return Err(ProviderError::Closed);
@@ -85,6 +96,7 @@ impl NativeProviderSession for Session {
             frames_sent: self.sent,
             reverse_events_drained: 0,
             write_failures: 0,
+            lifecycle_events: 0,
             last_error: None,
         }
     }
@@ -98,39 +110,32 @@ impl NativeProviderSession for Session {
 mod tests {
     use super::*;
 
-    fn request() -> ProviderOpenRequest {
+    fn missing_endpoint_request() -> ProviderOpenRequest {
         ProviderOpenRequest {
             session: RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.usb"),
-                target: LinuxTarget::UsbGadget,
-                mode: RealizationMode::HardwareFaithful,
+                target: RealizationTarget::UsbTransportValidation,
             },
             requirements: ProviderRequirements::default(),
-            realization: NativeControllerRealization::Usb(NativeUsbRealization {
-                descriptor: vec![0],
-                input_endpoint: 1,
-                reverse_endpoint: 2,
-                device_name: "test".into(),
-                manufacturer: "test".into(),
-                serial_number: "test".into(),
-                identity: NativeDeviceIdentity {
-                    vendor_id: 1,
-                    product_id: 2,
-                    version: 3,
+            realization: NativeControllerRealization::UsbTransportValidation(
+                NativeUsbTransportValidationRealization {
+                    input_endpoint_path: "/dev/virtualgamepad-test-missing".into(),
+                    reverse_endpoint_path: None,
+                    device_name: "test".into(),
+                    maximum_input_packet_length: 64,
+                    maximum_reverse_packet_length: None,
                 },
-                usb_version: 0x0200,
-                maximum_power_ma: 100,
-                report_length: 64,
-            }),
+            ),
         }
     }
 
     #[test]
     fn accepts_only_transport_frames_after_open() {
-        let provider = LinuxUsbGadgetProvider;
-        let mut session = provider.open(request()).expect("valid USB request");
-        session.open().expect("opens without kernel access");
+        let mut session = Session {
+            state: ProviderState::Open,
+            sent: 0,
+        };
         session
             .send(ProviderFrame::Transport {
                 endpoint: 1,
@@ -146,6 +151,26 @@ mod tests {
         ));
         assert_eq!(session.diagnostics().frames_sent, 1);
         session.close().expect("close succeeds");
-        assert_eq!(session.open(), Err(ProviderError::Closed));
+    }
+
+    #[test]
+    fn missing_preprovisioned_endpoint_is_an_actionable_error() {
+        let error = check_endpoint("/dev/virtualgamepad-test-missing")
+            .expect_err("test endpoint must not exist");
+        assert!(matches!(
+            error,
+            ProviderPreflightError::MissingPreparedEndpoint { .. }
+        ));
+    }
+
+    #[test]
+    fn open_returns_no_session_when_preflight_fails() {
+        let Err(error) = LinuxUsbGadgetProvider.open(missing_endpoint_request()) else {
+            panic!("missing endpoint must fail before a session exists");
+        };
+        assert!(matches!(
+            error,
+            ProviderError::Preflight(ProviderPreflightError::MissingPreparedEndpoint { .. })
+        ));
     }
 }

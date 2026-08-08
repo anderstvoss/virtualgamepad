@@ -12,6 +12,7 @@ publish = false
 [workspace]
 members = [
     "crates/gr-realization-api",
+    "crates/gr-audio-contract",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
     "crates/gr-provider-linux-uinput",
@@ -33,7 +34,7 @@ proptest = "1"
 thiserror = "2"
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -43,6 +44,7 @@ pedantic = { level = "warn", priority = -1 }
 gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "crates/gr-controller-runtime", version = "0.1" }
 gr-realization-api = { path = "crates/gr-realization-api", version = "0.1" }
+gr-audio-contract = { path = "crates/gr-audio-contract", version = "0.1" }
 
 [lints]
 workspace = true

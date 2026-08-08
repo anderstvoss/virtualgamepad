@@ -11,7 +11,11 @@ publish = false
 
 [dependencies]
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
+gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
 thiserror.workspace = true
+
+[dev-dependencies]
+trybuild = "1"
 
 [lints]
 workspace = true

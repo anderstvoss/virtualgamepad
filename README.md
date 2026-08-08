@@ -5,17 +5,22 @@ controllers. It has no runtime profiles, YAML configuration, plugin registry,
 or currently shipped controller constructors.
 
 The core separates controller semantics from host realization. Future
-controller packages choose exact Linux targets and may independently implement
-`HostCompatible` (uinput), `IdentityAccurate` (UHID), and
-`HardwareFaithful` (USB gadget) presentation modes. No mode implies another
+controller packages choose exact Linux realization targets and may independently implement
+`Evdev` (uinput), `Hid` (UHID), and `UsbTransportValidation` (USB gadget).
+No target implies another
 and no provider fallback occurs.
 
 The active workspace contains controller-neutral realization/contracts/runtime
 crates plus Linux uinput, UHID, and USB gadget providers. Retired profile-era
 code is preserved only on archival branches.
 
-The realization policy, including the distinction between normal uinput/UHID
-deployment and USB-gadget hardware validation, is documented in
+uinput and UHID are normal deployment targets on hosts that already expose
+usable device nodes. USB gadget is an explicit, opt-in transport-validation API
+for an already-provisioned lab facility; absence or access failure returns an
+error and never falls back. The library never changes permissions, loads
+kernel modules, or configures the host. Controller audio streams and attached
+devices require separately declared realizations; they are not implied by
+ordinary controller reports. The full policy is documented in
 [docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md) and
 [docs/DEPLOYMENT_AND_VALIDATION.md](docs/DEPLOYMENT_AND_VALIDATION.md).
 
