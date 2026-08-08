@@ -4,12 +4,10 @@
 API. It deliberately has no profile browser, YAML configuration, session
 planner, or automatic provider selection.
 
-It lets a developer choose one curated controller and one explicit Linux
-target, apply normalized controls to local mutable state, and call `commit()`.
-Creation errors are shown verbatim: a target that cannot exactly realize the
-selected controller is rejected rather than downgraded. Typed reverse events
-and `ControllerDiagnostics` are displayed without converting them to generic
-string/map payloads.
+During the realization-mode core migration it exposes no controller selector or
+production creation flow. It remains a buildable reference shell until the
+first curated controller package is restored. Future controller flows will
+select an exact Linux target and never downgrade to another realization mode.
 
 ## Running
 

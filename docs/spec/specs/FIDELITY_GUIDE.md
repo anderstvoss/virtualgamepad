@@ -1,28 +1,20 @@
-# Fidelity guide
+# Realization-mode guide
 
-Fidelity is a creation guarantee, not a best-effort runtime tier.
+Fidelity is an exact host-presentation claim selected by `LinuxTarget`, not a
+best-effort fallback ladder.
 
-A curated controller may be created on a `LinuxTarget` only when its compiled
-module supplies a complete realization for that target and the provider can
-honor every declared requirement. The library returns `CreationError` before
-returning a handle when identity, transport, reverse output, descriptors,
-feature reports, or host prerequisites are incomplete. It never substitutes a
-generic evdev device for a requested native controller.
+| Mode | Typical Linux target | Claim |
+|---|---|---|
+| `HostCompatible` | uinput | Generic Linux input/force-feedback presentation. |
+| `IdentityAccurate` | UHID | Local HID identity, descriptor, and report behavior. |
+| `HardwareFaithful` | USB gadget transport | Device-role transport and topology behavior. |
 
-Current supported combinations are:
+Modes are independent. A controller may support any subset, and a request for
+one mode never falls back to another. Native and normalized controller commands
+retain their meaning in every supported mode. Controller-specific operations
+that are unavailable in a selected mode return a recoverable error without
+mutating state.
 
-| Controller | uinput | UHID | USB transport |
-|---|---:|---:|---:|
-| Generic Gamepad | complete compatibility realization | unsupported | unsupported |
-| Xbox 360 | complete compatibility realization | unsupported | unsupported |
-| DualSense | unsupported | complete identity-aware realization | complete USB realization where host prerequisites exist |
-| Steam Controller | unsupported | unsupported | unsupported |
-
-“Unsupported” is intentional: the corresponding creation function remains in
-the stable curated API but returns a precise error until a complete provider
-realization is implemented and accepted. Privileged hardware validation is a
-separate release gate and never weakens hermetic tests.
-
-The detailed acceptance criteria are in
-[CONTROLLER_NATIVE_API_SPEC.md](../implementation/CONTROLLER_NATIVE_API_SPEC.md)
-and [DEVICE_SPEC_VALIDATION_PLAN.md](../validation/DEVICE_SPEC_VALIDATION_PLAN.md).
+No curated controllers are exposed while the independent-mode core migration
+is in progress. Controller packages will publish their own exact target matrix
+only after reviewed implementation and validation.

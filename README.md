@@ -8,62 +8,27 @@ plugin host.
 The public API is intentionally breaking before 1.0. Its source of truth is
 the [controller-native API specification](docs/spec/implementation/CONTROLLER_NATIVE_API_SPEC.md).
 
-## Supported creation paths
+## Realization-mode core migration
 
-Callers must choose a Linux target explicitly. Creation never falls back to a
-different target or a less faithful device.
+The public product is temporarily core-only while curated controller packages
+are rebuilt. It exposes no production controller constructors during this
+pre-1.0 migration. Steam Controller 1 is not an active target; its preserved
+source lives on `archive/steam-controller-1`.
 
-| Controller | `Uinput` | `Uhid` | `UsbTransport` |
-|---|---:|---:|---:|
-| Generic Gamepad | compatibility | rejected | rejected |
-| Xbox 360 | compatibility | rejected | rejected |
-| DualSense | rejected | identity-aware | USB gadget |
-| Steam Controller | rejected | rejected | rejected |
+Future controllers select an exact Linux target and therefore one independent
+host-realization mode: `HostCompatible` (uinput), `IdentityAccurate` (UHID),
+or `HardwareFaithful` (USB gadget transport). These are not fallback tiers.
+They affect how the host sees a controller, not the controller's typed
+normalized/native command vocabulary.
 
-Steam Controller has a typed compiled API, but creation currently returns an
-actionable error because no Linux provider realizes its complete declared
-surface. Windows and macOS do not expose controller creation APIs.
+## Controller contract
 
-## Using the API
-
-State changes are local, validated, and atomic. `commit()` submits the complete
-current state. A rejected update preserves the prior state; a failed commit
-keeps the controller dirty and available for retry.
-
-```rust,no_run
-use virtualgamepad::{
-    ControlUpdate, CreationOptions, DualSenseControl, FaceButton, LinuxTarget,
-    create_dualsense,
-};
-
-let mut controller = create_dualsense(CreationOptions::new(LinuxTarget::Uhid))?;
-
-// Normalized labels are spatial and portable.
-controller.apply(ControlUpdate::FaceButton {
-    button: FaceButton::South,
-    pressed: true,
-})?;
-
-// Native labels are explicit controller-specific types.
-controller.set_native(DualSenseControl::Cross, true)?;
-if let Err(error) = controller.commit() {
-    eprintln!("commit remains retryable: {error}");
-}
-
-let diagnostics = controller.diagnostics();
-assert_eq!(diagnostics.controller, virtualgamepad::ControllerKind::DualSense);
-controller.close()?;
-# Ok::<(), Box<dyn std::error::Error>>(())
-```
-
-Normalized names use physical positions such as
-`FaceButton::{North, South, East, West}`. Native names use types such as
-`DualSenseControl::Cross` and `XboxControl::A`; ambiguous methods such as
-`button_x` are deliberately absent.
-
-Reverse output is delivered through bounded typed subscriptions. Callback
-panics cancel only that subscription, slow callbacks do not run on the commit
-path, and delivery health is available through `diagnostics()`.
+Restored controllers will use mutable typed state and explicit `commit()`.
+Normalized labels use spatial positions; native labels are explicit
+controller-specific types. The same operations retain their meaning in every
+supported realization mode. A feature unavailable in the selected mode returns
+a recoverable error without changing state; a failed commit stays dirty and is
+retryable.
 
 ## Linux prerequisites
 

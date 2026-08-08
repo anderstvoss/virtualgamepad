@@ -10,10 +10,10 @@ Applications configure creation with the strongly typed `CreationOptions`:
 - the slow-callback diagnostic threshold is explicit;
 - future host setup controls must be typed fields with documented defaults.
 
-Controller type is selected by the creation function, such as
-`create_dualsense` or `create_xbox360`. Controller state is configured through
-that handle's normalized and native typed methods, then submitted with an
-explicit `commit()`.
+The current core-only product exposes no controller creation functions.
+Restored controller packages will select type through a typed creation function
+and state through normalized/native typed methods followed by explicit
+`commit()`.
 
 YAML is permitted only for sanitized test fixtures and human-readable report
 snapshots. Loading YAML must never affect runtime controller definitions,

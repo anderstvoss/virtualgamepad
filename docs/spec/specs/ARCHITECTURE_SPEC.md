@@ -5,21 +5,22 @@ The authoritative architecture is
 
 `virtualgamepad` is divided into four one-way layers:
 
-1. `gr-controller-contract` defines normalized controls, lifecycle errors,
-   realization requirements, and controller/provider contracts.
-2. `gr-controller-runtime` implements atomic local updates, dirty tracking,
+1. `gr-realization-api` defines controller-neutral Linux targets, independent
+   realization modes, prepared OS realizations, and provider contracts.
+2. `gr-controller-contract` defines normalized controls, lifecycle errors,
+   realization manifests, and controller contracts.
+3. `gr-controller-runtime` implements atomic local updates, dirty tracking,
    retry-safe commits, and terminal closure without controller-family logic.
-3. `gr-controllers` owns every compiled controller's state, native controls,
-   validation, report codecs, reverse events, identity, descriptors, and exact
-   realization data.
-4. Linux providers own kernel or transport I/O. They receive an immutable
+4. Future controller packages own compiled controller state, native controls,
+   validation, report codecs, reverse events, and realization data.
+5. Linux providers own kernel or transport I/O. They receive an immutable
    controller realization and encoded frames; they do not choose controller
    semantics.
 
-The root crate supplies the closed public handle enum and four concrete
-creation functions. A caller selects `LinuxTarget` explicitly. Creation first
-proves that the controller module supplies that exact realization and that the
-provider satisfies all declared requirements. There is no automatic fallback.
+The current root crate is core-only while controller packages are rebuilt. A
+future constructor selects `LinuxTarget` explicitly. Creation proves that the
+controller supplies the exact independent realization mode and target; there
+is no automatic fallback.
 
 The normal root dependency graph excludes the legacy profile registry,
 planner, session actor, translator dispatch, and YAML configuration. Retained
