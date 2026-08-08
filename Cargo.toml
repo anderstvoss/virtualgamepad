@@ -14,25 +14,6 @@ members = [
     "crates/gr-realization-api",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
-    "crates/gr-controllers",
-    "crates/gr-core",
-    "crates/gr-profiles",
-    "crates/gr-config",
-    "crates/gr-session-options",
-    "crates/gr-runtime-model",
-    "crates/gr-backend-api",
-    "crates/gr-planner",
-    "crates/gr-translators",
-    "crates/gr-session",
-    "crates/gr-host-bridge",
-    "crates/gr-provider-linux-uinput",
-    "crates/gr-provider-linux-uhid",
-    "crates/gr-provider-linux-transport",
-    "crates/gr-provider-windows-hid",
-    "crates/gr-provider-macos-hid",
-    "crates/gr-testkit",
-    "crates/gr-cli",
-    "demo",
 ]
 resolver = "3"
 
@@ -66,38 +47,10 @@ unsafe_code = "forbid"
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
-[features]
-default = [
-    "provider-linux-uinput",
-    "provider-linux-uhid",
-    "provider-linux-transport",
-    "provider-windows-hid",
-    "provider-macos-hid",
-]
-provider-linux-uinput = ["dep:gr-provider-linux-uinput"]
-provider-linux-uhid = ["dep:gr-provider-linux-uhid"]
-provider-linux-transport = ["dep:gr-provider-linux-transport"]
-provider-windows-hid = ["dep:gr-provider-windows-hid"]
-provider-macos-hid = ["dep:gr-provider-macos-hid"]
-
-[target.'cfg(target_os = "linux")'.dependencies]
-gr-backend-api = { path = "crates/gr-backend-api", version = "0.1", default-features = false }
+[dependencies]
 gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "crates/gr-controller-runtime", version = "0.1" }
-gr-controllers = { path = "crates/gr-controllers", version = "0.1" }
-gr-core = { path = "crates/gr-core", version = "0.1" }
-gr-provider-linux-uinput = { path = "crates/gr-provider-linux-uinput", optional = true, default-features = false }
-gr-provider-linux-uhid = { path = "crates/gr-provider-linux-uhid", optional = true, default-features = false }
-gr-provider-linux-transport = { path = "crates/gr-provider-linux-transport", optional = true, default-features = false }
-
-[target.'cfg(target_os = "windows")'.dependencies]
-gr-provider-windows-hid = { path = "crates/gr-provider-windows-hid", optional = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-gr-provider-macos-hid = { path = "crates/gr-provider-macos-hid", optional = true }
+gr-realization-api = { path = "crates/gr-realization-api", version = "0.1" }
 
 [lints]
 workspace = true
-
-[dev-dependencies]
-trybuild.workspace = true
