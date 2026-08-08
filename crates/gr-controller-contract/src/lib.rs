@@ -23,23 +23,8 @@ pub enum DpadDirection {
     Left,
     Right,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Stick {
-    Left,
-    Right,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Trigger {
-    Left,
-    Right,
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StickPosition {
-    pub x: i16,
-    pub y: i16,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ControlUpdate {
+pub enum DigitalControlUpdate {
     FaceButton {
         button: FaceButton,
         pressed: bool,
@@ -48,14 +33,55 @@ pub enum ControlUpdate {
         direction: DpadDirection,
         pressed: bool,
     },
-    Stick {
-        stick: Stick,
-        position: StickPosition,
-    },
-    Trigger {
-        trigger: Trigger,
-        value: u16,
-    },
+}
+
+/// Read-only Linux presentation for one digital controller input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DigitalControlSurface {
+    pub control: &'static str,
+    pub event_code: u16,
+}
+
+/// Read-only Linux absolute-axis presentation. Numeric values are target
+/// presentation values, never a controller's semantic state domain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbsoluteAxisSurface {
+    pub control: &'static str,
+    pub event_code: u16,
+    pub minimum: i32,
+    pub maximum: i32,
+    pub neutral: i32,
+    pub flat: i32,
+}
+
+/// Read-only output channel advertised by a prepared controller target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutputSurface {
+    pub name: &'static str,
+    pub event_type: u16,
+    pub event_code: u16,
+}
+
+/// Target-specific limitation documented by the owning controller package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TargetRestriction {
+    pub feature: &'static str,
+    pub reason: &'static str,
+}
+
+/// Common immutable portion of a concrete controller's target presentation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ControllerSurface {
+    pub target: RealizationTarget,
+    pub digital_controls: &'static [DigitalControlSurface],
+    pub axes: &'static [AbsoluteAxisSurface],
+    pub outputs: &'static [OutputSurface],
+    pub restrictions: &'static [TargetRestriction],
+}
+
+/// Implemented by concrete typed controller-surface descriptors.
+pub trait ControllerSurfaceInfo {
+    fn common_surface(&self) -> &ControllerSurface;
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -138,10 +164,10 @@ pub trait TargetAwareControllerDriver: RealizationControllerDefinition {
     type State: Clone + Send + 'static;
     type Frame: Send + 'static;
     fn neutral_state(&self) -> Self::State;
-    fn apply_normalized(
+    fn apply_digital(
         &self,
         state: &mut Self::State,
-        update: ControlUpdate,
+        update: DigitalControlUpdate,
     ) -> Result<(), ControlError>;
     fn validate_state(
         &self,

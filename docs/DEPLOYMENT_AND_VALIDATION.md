@@ -9,6 +9,13 @@ Applications create local virtual controllers through explicit deployable
 targets. A selected target creates a controller only when the controller
 declares that realization and the host passes preflight.
 
+After creation, applications should inspect the concrete controller's typed
+target surface before translating their own values to Linux-facing ranges. The
+surface records exact event codes, axis ranges, neutral values, output
+channels, and restrictions for that controller/target pair. It does not change
+the controller's typed state API and does not imply a universal numeric range
+across controller families.
+
 ### uinput (`Evdev`)
 
 uinput is the generic Linux host presentation. A controller may use every

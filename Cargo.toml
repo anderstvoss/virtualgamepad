@@ -15,9 +15,11 @@ members = [
     "crates/gr-audio-contract",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
+    "crates/gr-curated-controllers",
     "crates/gr-provider-linux-uinput",
     "crates/gr-provider-linux-uhid",
     "crates/gr-provider-linux-transport",
+    "demo",
 ]
 resolver = "3"
 
@@ -45,6 +47,7 @@ gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.
 gr-controller-runtime = { path = "crates/gr-controller-runtime", version = "0.1" }
 gr-realization-api = { path = "crates/gr-realization-api", version = "0.1" }
 gr-audio-contract = { path = "crates/gr-audio-contract", version = "0.1" }
+gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1" }
 
 [lints]
 workspace = true

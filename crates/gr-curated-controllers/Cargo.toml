@@ -1,0 +1,22 @@
+[package]
+name = "gr-curated-controllers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
+gr-controller-runtime = { path = "../gr-controller-runtime", version = "0.1" }
+gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
+gr-provider-linux-uinput = { path = "../gr-provider-linux-uinput", version = "0.1" }
+
+[dev-dependencies]
+proptest.workspace = true
+trybuild = "1"
+
+[lints]
+workspace = true

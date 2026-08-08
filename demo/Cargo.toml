@@ -1,0 +1,18 @@
+[package]
+name = "virtualgamepad-demo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "virtualgamepad-demo"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.31", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+virtualgamepad = { path = "..", version = "0.1" }
+
+[lints]
+workspace = true

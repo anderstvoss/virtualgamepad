@@ -110,3 +110,41 @@ feature availability for every declared target.
 
 See [deployment and hardware validation](DEPLOYMENT_AND_VALIDATION.md) for
 operator responsibilities and the security boundary.
+
+## Controller-native state and target surfaces
+
+Curated controllers do not inherit from a mutable base-gamepad state. Each
+compiled controller package owns its semantic state, native controls, numeric
+domains, validation, codecs, reverse-output decoding, and target declarations.
+This is intentional: a controller's physical controls and report semantics are
+not an optional feature bag. A DualSense touch surface, a Joy-Con IR camera,
+a Wii Remote expansion port, and an Atari Jaguar keypad must remain native
+types rather than nullable fields on another controller.
+
+The only shared input vocabulary is digital spatial convenience: face-button
+position and D-pad direction. It maps to controller-native labels such as
+`Cross` and `A`, but it never provides generic sticks, triggers, touch,
+motion, or sensor values. Those values use controller-native, range-validated
+newtypes and their documented native numeric domains. This library does not
+normalize numeric values across controller families.
+
+Each created concrete controller exposes an immutable typed target surface.
+It describes the selected Linux presentation: evdev codes, axis minimum and
+maximum, neutral value, flat/dead-zone value, outputs, and documented target
+restrictions. The surface lets an embedding application adapt a controller's
+native values to its actual Linux presentation without treating presentation
+metadata as a second mutable state API. A small common read-only surface view
+is available for heterogeneous inspection; controller-specific surface detail
+remains typed and concrete.
+
+State changes are transactional. A concrete handle edits a cloned candidate,
+validates it against its selected target, and replaces live state only on
+success. Rejected edits leave both state and dirty status unchanged. A commit
+encodes the complete native state; failed sends retain a valid dirty state for
+retry. Core/runtime/provider crates must not branch on a controller family or
+interpret controller-native values.
+
+Shared helper types are permitted only when their semantics and units are
+identical. Examples include bounded values, timestamps, or a proven common
+transport primitive. They must never impose state layout, feature availability,
+or numeric conversion policy on a controller package.
