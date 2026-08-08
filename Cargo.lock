@@ -1094,6 +1094,7 @@ name = "gr-controller-runtime"
 version = "0.1.0"
 dependencies = [
  "gr-controller-contract",
+ "gr-realization-api",
  "proptest",
  "thiserror 2.0.19",
 ]

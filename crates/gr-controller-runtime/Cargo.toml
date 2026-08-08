@@ -11,6 +11,7 @@ publish = false
 
 [dependencies]
 gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
+gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
 thiserror.workspace = true
 
 [dev-dependencies]
