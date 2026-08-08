@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 //! Generic Linux uinput realization provider.
+#![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
 
 #[derive(Default)]
@@ -78,5 +79,57 @@ impl NativeProviderSession for Session {
     fn close(&mut self) -> Result<(), ProviderError> {
         self.state = ProviderState::Closed;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request() -> ProviderOpenRequest {
+        ProviderOpenRequest {
+            session: RealizationSessionId(1),
+            selection: RealizationSelection {
+                controller: ControllerId::new("test.uinput"),
+                target: LinuxTarget::Uinput,
+                mode: RealizationMode::HostCompatible,
+            },
+            requirements: ProviderRequirements::default(),
+            realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                device_name: "test".into(),
+                identity: NativeDeviceIdentity {
+                    vendor_id: 1,
+                    product_id: 2,
+                    version: 3,
+                },
+                event_codes: vec![],
+                key_codes: vec![],
+                absolute_axes: vec![],
+                force_feedback_codes: vec![],
+            }),
+        }
+    }
+
+    #[test]
+    fn accepts_only_evdev_frames_after_open() {
+        let provider = LinuxUinputProvider;
+        let mut session = provider.open(request()).expect("valid evdev request");
+        assert_eq!(
+            session.send(ProviderFrame::Evdev(vec![])),
+            Err(ProviderError::Closed)
+        );
+        session.open().expect("opens without kernel access");
+        session
+            .send(ProviderFrame::Evdev(vec![]))
+            .expect("evdev frame");
+        assert!(matches!(
+            session.send(ProviderFrame::Transport {
+                endpoint: 1,
+                bytes: vec![]
+            }),
+            Err(ProviderError::Unsupported { .. })
+        ));
+        assert_eq!(session.diagnostics().frames_sent, 1);
+        session.close().expect("close is idempotent");
     }
 }

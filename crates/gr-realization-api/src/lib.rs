@@ -348,14 +348,17 @@ pub enum ProviderError {
 pub struct ProviderOpenRequest {
     pub session: RealizationSessionId,
     pub selection: RealizationSelection,
+    /// Generic requirements declared by the selected realization manifest.
+    pub requirements: ProviderRequirements,
     pub realization: NativeControllerRealization,
 }
 impl ProviderOpenRequest {
+    #[allow(clippy::missing_errors_doc)]
     pub fn validate(&self) -> Result<(), RealizationError> {
         validate_provider(
             self.selection,
             ProviderCapabilities::for_target(self.realization.target(), true),
-            ProviderRequirements::default(),
+            self.requirements,
         )
     }
 }
@@ -367,6 +370,7 @@ impl<T: Extend<ProviderReverseEvent>> ProviderReverseEventSink for T {
         self.extend(std::iter::once(event));
     }
 }
+#[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderSession: Send {
     fn open(&mut self) -> Result<(), ProviderError>;
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError>;
@@ -378,6 +382,7 @@ pub trait NativeProviderSession: Send {
     fn diagnostics(&self) -> ProviderDiagnostics;
     fn close(&mut self) -> Result<(), ProviderError>;
 }
+#[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderFactory: Send + Sync {
     fn capabilities(&self) -> ProviderCapabilities;
     fn open(

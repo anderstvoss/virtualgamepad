@@ -109,6 +109,7 @@ pub trait RealizationControllerDefinition: Send + Sync + 'static {
     fn controller_id(&self) -> ControllerId;
     fn realization_manifest(&self) -> RealizationManifest;
 }
+#[allow(clippy::missing_errors_doc)]
 pub trait ModeAwareControllerDriver: RealizationControllerDefinition {
     type State: Clone + Send + 'static;
     type Frame: Send + 'static;
@@ -150,6 +151,7 @@ pub enum ManifestError {
         target: LinuxTarget,
     },
 }
+#[allow(clippy::missing_errors_doc)]
 pub fn select_realization(
     definition: &dyn RealizationControllerDefinition,
     target: LinuxTarget,
