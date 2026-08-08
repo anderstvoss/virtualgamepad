@@ -6,7 +6,7 @@ use gr_realization_api::*;
 pub struct LinuxUsbGadgetProvider;
 impl NativeProviderFactory for LinuxUsbGadgetProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(LinuxTarget::UsbGadget, true)
+        ProviderCapabilities::for_target(LinuxTarget::UsbGadget, false)
     }
     fn open(
         &self,
@@ -34,6 +34,9 @@ struct Session {
 }
 impl NativeProviderSession for Session {
     fn open(&mut self) -> Result<(), ProviderError> {
+        if self.state == ProviderState::Closed {
+            return Err(ProviderError::Closed);
+        }
         self.state = ProviderState::Open;
         Ok(())
     }
@@ -125,5 +128,6 @@ mod tests {
         ));
         assert_eq!(session.diagnostics().frames_sent, 1);
         session.close().expect("close succeeds");
+        assert_eq!(session.open(), Err(ProviderError::Closed));
     }
 }

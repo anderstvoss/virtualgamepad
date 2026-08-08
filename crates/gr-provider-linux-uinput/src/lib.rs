@@ -7,7 +7,7 @@ use gr_realization_api::*;
 pub struct LinuxUinputProvider;
 impl NativeProviderFactory for LinuxUinputProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(LinuxTarget::Uinput, true)
+        ProviderCapabilities::for_target(LinuxTarget::Uinput, false)
     }
     fn open(
         &self,
@@ -133,5 +133,15 @@ mod tests {
         ));
         assert_eq!(session.diagnostics().frames_sent, 1);
         session.close().expect("close is idempotent");
+    }
+
+    #[test]
+    fn rejects_reverse_output_requirements_until_reverse_delivery_exists() {
+        let mut request = request();
+        request.requirements.requires_reverse_output = true;
+        let Err(error) = LinuxUinputProvider.open(request) else {
+            panic!("stub provider has no reverse delivery");
+        };
+        assert!(matches!(error, ProviderError::Unsupported { .. }));
     }
 }
