@@ -6,6 +6,7 @@
 //! Linux-kernel implementation knowledge. Controllers prepare realization
 //! data; providers validate and consume it.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use thiserror::Error;
@@ -194,6 +195,195 @@ pub fn validate_provider(
         });
     }
     Ok(())
+}
+
+/// Monotonic identifier for one provider session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RealizationSessionId(pub u64);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeDeviceIdentity {
+    pub vendor_id: u16,
+    pub product_id: u16,
+    pub version: u16,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeAbsoluteAxis {
+    pub code: u16,
+    pub minimum: i32,
+    pub maximum: i32,
+    pub flat: i32,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeEvdevRealization {
+    pub device_name: String,
+    pub identity: NativeDeviceIdentity,
+    pub event_codes: Vec<u16>,
+    pub key_codes: Vec<u16>,
+    pub absolute_axes: Vec<NativeAbsoluteAxis>,
+    pub force_feedback_codes: Vec<u16>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeHidRealization {
+    pub bus_type: u16,
+    pub device_name: String,
+    pub physical_path: String,
+    pub unique_id: String,
+    pub identity: NativeDeviceIdentity,
+    pub descriptor: Vec<u8>,
+    pub numbered_output_reports: bool,
+    pub numbered_feature_reports: bool,
+    pub feature_report_responses: BTreeMap<u8, Vec<u8>>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeUsbRealization {
+    pub descriptor: Vec<u8>,
+    pub input_endpoint: u8,
+    pub reverse_endpoint: u8,
+    pub device_name: String,
+    pub manufacturer: String,
+    pub serial_number: String,
+    pub identity: NativeDeviceIdentity,
+    pub usb_version: u16,
+    pub maximum_power_ma: u16,
+    pub report_length: u16,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeControllerRealization {
+    Evdev(NativeEvdevRealization),
+    Hid(NativeHidRealization),
+    Usb(NativeUsbRealization),
+}
+impl NativeControllerRealization {
+    #[must_use]
+    pub const fn target(&self) -> LinuxTarget {
+        match self {
+            Self::Evdev(_) => LinuxTarget::Uinput,
+            Self::Hid(_) => LinuxTarget::Uhid,
+            Self::Usb(_) => LinuxTarget::UsbGadget,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderFrame {
+    Evdev(Vec<EvdevEvent>),
+    HidInput {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    HidFeature {
+        report_id: u8,
+        bytes: Vec<u8>,
+    },
+    Transport {
+        endpoint: u8,
+        bytes: Vec<u8>,
+    },
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EvdevEvent {
+    pub event_type: u16,
+    pub code: u16,
+    pub value: i32,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RawReverseEvent {
+    Evdev(Vec<EvdevEvent>),
+    HidOutput {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    HidFeature {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    Transport {
+        endpoint: u8,
+        bytes: Vec<u8>,
+    },
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderReverseEvent {
+    pub session: RealizationSessionId,
+    pub sequence: u64,
+    pub event: RawReverseEvent,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderState {
+    NotOpen,
+    Open,
+    Closed,
+    Failed,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderDiagnostics {
+    pub state: ProviderState,
+    pub frames_sent: u64,
+    pub reverse_events_drained: u64,
+    pub write_failures: u64,
+    pub last_error: Option<String>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventReadiness {
+    AlwaysPoll,
+    NoReverseEvents,
+}
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum ProviderError {
+    #[error("provider open failed: {reason}")]
+    Open { reason: String },
+    #[error("provider write failed: {reason}")]
+    Write { reason: String },
+    #[error("provider read failed: {reason}")]
+    Read { reason: String },
+    #[error("provider is closed")]
+    Closed,
+    #[error("provider does not support this realization or frame: {reason}")]
+    Unsupported { reason: String },
+    #[error("provider would block")]
+    WouldBlock,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderOpenRequest {
+    pub session: RealizationSessionId,
+    pub selection: RealizationSelection,
+    pub realization: NativeControllerRealization,
+}
+impl ProviderOpenRequest {
+    pub fn validate(&self) -> Result<(), RealizationError> {
+        validate_provider(
+            self.selection,
+            ProviderCapabilities::for_target(self.realization.target(), true),
+            ProviderRequirements::default(),
+        )
+    }
+}
+pub trait ProviderReverseEventSink {
+    fn push(&mut self, event: ProviderReverseEvent);
+}
+impl<T: Extend<ProviderReverseEvent>> ProviderReverseEventSink for T {
+    fn push(&mut self, event: ProviderReverseEvent) {
+        self.extend(std::iter::once(event));
+    }
+}
+pub trait NativeProviderSession: Send {
+    fn open(&mut self) -> Result<(), ProviderError>;
+    fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError>;
+    fn drain_reverse_events(
+        &mut self,
+        out: &mut dyn ProviderReverseEventSink,
+    ) -> Result<(), ProviderError>;
+    fn readiness(&self) -> EventReadiness;
+    fn diagnostics(&self) -> ProviderDiagnostics;
+    fn close(&mut self) -> Result<(), ProviderError>;
+}
+pub trait NativeProviderFactory: Send + Sync {
+    fn capabilities(&self) -> ProviderCapabilities;
+    fn open(
+        &self,
+        request: ProviderOpenRequest,
+    ) -> Result<Box<dyn NativeProviderSession>, ProviderError>;
 }
 
 #[cfg(test)]
