@@ -2,11 +2,29 @@
 //! Generic Linux USB gadget transport realization provider.
 #![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
+use std::path::Path;
 #[derive(Default)]
 pub struct LinuxUsbGadgetProvider;
 impl NativeProviderFactory for LinuxUsbGadgetProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::for_target(LinuxTarget::UsbGadget, false)
+    }
+    fn preflight(&self) -> Result<(), ProviderPreflightError> {
+        if !cfg!(target_os = "linux") {
+            return Err(ProviderPreflightError::UnsupportedPlatform {
+                target: LinuxTarget::UsbGadget,
+            });
+        }
+        if !Path::new("/sys/kernel/config/usb_gadget").is_dir() {
+            return Err(ProviderPreflightError::MissingConfigfs);
+        }
+        let has_udc = Path::new("/sys/class/udc")
+            .read_dir()
+            .is_ok_and(|mut entries| entries.next().is_some());
+        if !has_udc {
+            return Err(ProviderPreflightError::MissingUsbDeviceController);
+        }
+        Ok(())
     }
     fn open(
         &self,

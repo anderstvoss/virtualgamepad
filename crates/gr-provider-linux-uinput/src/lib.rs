@@ -2,12 +2,17 @@
 //! Generic Linux uinput realization provider.
 #![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
 
 #[derive(Default)]
 pub struct LinuxUinputProvider;
 impl NativeProviderFactory for LinuxUinputProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::for_target(LinuxTarget::Uinput, false)
+    }
+    fn preflight(&self) -> Result<(), ProviderPreflightError> {
+        check_device_node(LinuxTarget::Uinput, "/dev/uinput")
     }
     fn open(
         &self,
@@ -30,6 +35,27 @@ impl NativeProviderFactory for LinuxUinputProvider {
             failures: 0,
         }))
     }
+}
+
+fn check_device_node(target: LinuxTarget, path: &str) -> Result<(), ProviderPreflightError> {
+    if !cfg!(target_os = "linux") {
+        return Err(ProviderPreflightError::UnsupportedPlatform { target });
+    }
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map(|_| ())
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound => ProviderPreflightError::MissingDeviceNode {
+                target,
+                path: path.into(),
+            },
+            _ => ProviderPreflightError::AccessDenied {
+                target,
+                path: path.into(),
+            },
+        })
 }
 struct Session {
     id: RealizationSessionId,
@@ -143,5 +169,15 @@ mod tests {
             panic!("stub provider has no reverse delivery");
         };
         assert!(matches!(error, ProviderError::Unsupported { .. }));
+    }
+
+    #[test]
+    fn missing_node_is_an_actionable_preflight_error() {
+        let error = check_device_node(LinuxTarget::Uinput, "/dev/virtualgamepad-test-missing")
+            .expect_err("test path must not exist");
+        assert!(matches!(
+            error,
+            ProviderPreflightError::MissingDeviceNode { .. }
+        ));
     }
 }

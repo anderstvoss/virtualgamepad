@@ -2,11 +2,16 @@
 //! Generic Linux UHID realization provider.
 #![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
+use std::fs::OpenOptions;
+use std::io::ErrorKind;
 #[derive(Default)]
 pub struct LinuxUhidProvider;
 impl NativeProviderFactory for LinuxUhidProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities::for_target(LinuxTarget::Uhid, false)
+    }
+    fn preflight(&self) -> Result<(), ProviderPreflightError> {
+        check_device_node(LinuxTarget::Uhid, "/dev/uhid")
     }
     fn open(
         &self,
@@ -27,6 +32,27 @@ impl NativeProviderFactory for LinuxUhidProvider {
             sent: 0,
         }))
     }
+}
+
+fn check_device_node(target: LinuxTarget, path: &str) -> Result<(), ProviderPreflightError> {
+    if !cfg!(target_os = "linux") {
+        return Err(ProviderPreflightError::UnsupportedPlatform { target });
+    }
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .map(|_| ())
+        .map_err(|error| match error.kind() {
+            ErrorKind::NotFound => ProviderPreflightError::MissingDeviceNode {
+                target,
+                path: path.into(),
+            },
+            _ => ProviderPreflightError::AccessDenied {
+                target,
+                path: path.into(),
+            },
+        })
 }
 struct Session {
     state: ProviderState,
@@ -129,5 +155,15 @@ mod tests {
         assert_eq!(session.diagnostics().frames_sent, 1);
         session.close().expect("close succeeds");
         assert_eq!(session.open(), Err(ProviderError::Closed));
+    }
+
+    #[test]
+    fn missing_node_is_an_actionable_preflight_error() {
+        let error = check_device_node(LinuxTarget::Uhid, "/dev/virtualgamepad-test-missing")
+            .expect_err("test path must not exist");
+        assert!(matches!(
+            error,
+            ProviderPreflightError::MissingDeviceNode { .. }
+        ));
     }
 }

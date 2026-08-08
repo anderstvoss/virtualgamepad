@@ -16,8 +16,8 @@ pub use gr_realization_api::{
     ControllerId, DeploymentTarget, EventReadiness, HardwareValidationTarget, LinuxTarget,
     NativeControllerRealization, NativeProviderFactory, NativeProviderSession,
     NativeRealizationError, ProviderCapabilities, ProviderDiagnostics, ProviderError,
-    ProviderFrame, ProviderOpenRequest, ProviderOpenValidationError, ProviderRequirements,
-    ProviderReverseEvent, ProviderReverseEventSink, ProviderState, RawReverseEvent,
-    RealizationError, RealizationMode, RealizationModeSet, RealizationSelection,
+    ProviderFrame, ProviderOpenRequest, ProviderOpenValidationError, ProviderPreflightError,
+    ProviderRequirements, ProviderReverseEvent, ProviderReverseEventSink, ProviderState,
+    RawReverseEvent, RealizationError, RealizationMode, RealizationModeSet, RealizationSelection,
     RealizationSessionId, validate_provider,
 };

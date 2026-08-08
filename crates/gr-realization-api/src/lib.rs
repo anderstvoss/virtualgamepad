@@ -493,6 +493,24 @@ pub enum ProviderError {
     #[error("provider would block")]
     WouldBlock,
 }
+
+/// Host prerequisite failure discovered before a provider session opens.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProviderPreflightError {
+    #[error("{target} is unavailable on this platform")]
+    UnsupportedPlatform { target: LinuxTarget },
+    #[error("{target} requires device node `{path}`")]
+    MissingDeviceNode { target: LinuxTarget, path: String },
+    #[error("{target} cannot access device node `{path}`")]
+    AccessDenied { target: LinuxTarget, path: String },
+    #[error("USB gadget validation requires a mounted configfs gadget root")]
+    MissingConfigfs,
+    #[error("USB gadget validation requires a peripheral-capable USB Device Controller")]
+    MissingUsbDeviceController,
+    #[error("USB gadget validation requires administrative authority")]
+    InsufficientAuthority,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderOpenRequest {
     pub session: RealizationSessionId,
@@ -558,6 +576,13 @@ pub trait NativeProviderSession: Send {
 #[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderFactory: Send + Sync {
     fn capabilities(&self) -> ProviderCapabilities;
+    /// Check host prerequisites without opening or mutating a provider session.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProviderPreflightError`] when the selected host facility is
+    /// absent or inaccessible to the current process.
+    fn preflight(&self) -> Result<(), ProviderPreflightError>;
     fn open(
         &self,
         request: ProviderOpenRequest,
