@@ -14,6 +14,9 @@ members = [
     "crates/gr-realization-api",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
+    "crates/gr-provider-linux-uinput",
+    "crates/gr-provider-linux-uhid",
+    "crates/gr-provider-linux-transport",
 ]
 resolver = "3"
 
