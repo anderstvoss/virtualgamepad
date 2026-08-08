@@ -13,9 +13,11 @@ impl NativeProviderFactory for LinuxUinputProvider {
         &self,
         request: ProviderOpenRequest,
     ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
-        request.validate().map_err(|e| ProviderError::Unsupported {
-            reason: e.to_string(),
-        })?;
+        request
+            .validate_against(self.capabilities())
+            .map_err(|e| ProviderError::Unsupported {
+                reason: e.to_string(),
+            })?;
         let NativeControllerRealization::Evdev(_) = request.realization else {
             return Err(ProviderError::Unsupported {
                 reason: "uinput requires evdev realization".into(),

@@ -14,8 +14,9 @@ pub use gr_controller_contract::{
 pub use gr_controller_runtime::{FrameSink, ModeControllerRuntime};
 pub use gr_realization_api::{
     ControllerId, EventReadiness, LinuxTarget, NativeControllerRealization, NativeProviderFactory,
-    NativeProviderSession, ProviderCapabilities, ProviderDiagnostics, ProviderError, ProviderFrame,
-    ProviderOpenRequest, ProviderRequirements, ProviderReverseEvent, ProviderReverseEventSink,
-    ProviderState, RawReverseEvent, RealizationError, RealizationMode, RealizationModeSet,
-    RealizationSelection, RealizationSessionId, validate_provider,
+    NativeProviderSession, NativeRealizationError, ProviderCapabilities, ProviderDiagnostics,
+    ProviderError, ProviderFrame, ProviderOpenRequest, ProviderOpenValidationError,
+    ProviderRequirements, ProviderReverseEvent, ProviderReverseEventSink, ProviderState,
+    RawReverseEvent, RealizationError, RealizationMode, RealizationModeSet, RealizationSelection,
+    RealizationSessionId, validate_provider,
 };

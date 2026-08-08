@@ -263,6 +263,125 @@ impl NativeControllerRealization {
             Self::Usb(_) => LinuxTarget::UsbGadget,
         }
     }
+
+    /// Validate the provider-neutral shape before any host I/O begins.
+    ///
+    /// This checks only transport-independent structure. Controller packages
+    /// remain responsible for semantic report and descriptor correctness.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NativeRealizationError`] when required provider-neutral data
+    /// is empty, duplicated, or structurally inconsistent.
+    pub fn validate(&self) -> Result<(), NativeRealizationError> {
+        match self {
+            Self::Evdev(specification) => {
+                if specification.device_name.is_empty() {
+                    return Err(NativeRealizationError::EmptyDeviceName {
+                        target: LinuxTarget::Uinput,
+                    });
+                }
+                if has_duplicate(&specification.event_codes) {
+                    return Err(NativeRealizationError::DuplicateEvdevEventCode);
+                }
+                if has_duplicate(&specification.key_codes) {
+                    return Err(NativeRealizationError::DuplicateEvdevKeyCode);
+                }
+                for (index, axis) in specification.absolute_axes.iter().enumerate() {
+                    if axis.minimum > axis.maximum {
+                        return Err(NativeRealizationError::InvalidEvdevAxisRange {
+                            code: axis.code,
+                            minimum: axis.minimum,
+                            maximum: axis.maximum,
+                        });
+                    }
+                    if specification.absolute_axes[..index]
+                        .iter()
+                        .any(|previous| previous.code == axis.code)
+                    {
+                        return Err(NativeRealizationError::DuplicateEvdevAxisCode {
+                            code: axis.code,
+                        });
+                    }
+                }
+            }
+            Self::Hid(specification) => {
+                if specification.device_name.is_empty() {
+                    return Err(NativeRealizationError::EmptyDeviceName {
+                        target: LinuxTarget::Uhid,
+                    });
+                }
+                if specification.descriptor.is_empty() {
+                    return Err(NativeRealizationError::EmptyHidDescriptor);
+                }
+            }
+            Self::Usb(specification) => {
+                if specification.device_name.is_empty() {
+                    return Err(NativeRealizationError::EmptyDeviceName {
+                        target: LinuxTarget::UsbGadget,
+                    });
+                }
+                if specification.descriptor.is_empty() {
+                    return Err(NativeRealizationError::EmptyUsbDescriptor);
+                }
+                if specification.input_endpoint == 0 || specification.reverse_endpoint == 0 {
+                    return Err(NativeRealizationError::InvalidUsbEndpoint {
+                        endpoint: if specification.input_endpoint == 0 {
+                            specification.input_endpoint
+                        } else {
+                            specification.reverse_endpoint
+                        },
+                    });
+                }
+                if specification.input_endpoint == specification.reverse_endpoint {
+                    return Err(NativeRealizationError::DuplicateUsbEndpoint {
+                        endpoint: specification.input_endpoint,
+                    });
+                }
+                if specification.report_length == 0 {
+                    return Err(NativeRealizationError::EmptyUsbReportLength);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn has_duplicate(values: &[u16]) -> bool {
+    values
+        .iter()
+        .enumerate()
+        .any(|(index, value)| values[..index].contains(value))
+}
+
+/// Structural defect in prepared provider realization data.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum NativeRealizationError {
+    #[error("{target} realization requires a non-empty device name")]
+    EmptyDeviceName { target: LinuxTarget },
+    #[error("evdev event codes contain a duplicate")]
+    DuplicateEvdevEventCode,
+    #[error("evdev key codes contain a duplicate")]
+    DuplicateEvdevKeyCode,
+    #[error("evdev absolute axis {code} is declared more than once")]
+    DuplicateEvdevAxisCode { code: u16 },
+    #[error("evdev absolute axis {code} has invalid range {minimum}..{maximum}")]
+    InvalidEvdevAxisRange {
+        code: u16,
+        minimum: i32,
+        maximum: i32,
+    },
+    #[error("UHID realization requires a non-empty HID descriptor")]
+    EmptyHidDescriptor,
+    #[error("USB gadget realization requires a non-empty descriptor")]
+    EmptyUsbDescriptor,
+    #[error("USB gadget endpoint {endpoint} is invalid")]
+    InvalidUsbEndpoint { endpoint: u8 },
+    #[error("USB gadget endpoint {endpoint} is used for both directions")]
+    DuplicateUsbEndpoint { endpoint: u8 },
+    #[error("USB gadget realization requires a non-zero report length")]
+    EmptyUsbReportLength,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -353,14 +472,38 @@ pub struct ProviderOpenRequest {
     pub realization: NativeControllerRealization,
 }
 impl ProviderOpenRequest {
-    #[allow(clippy::missing_errors_doc)]
-    pub fn validate(&self) -> Result<(), RealizationError> {
-        validate_provider(
-            self.selection,
-            ProviderCapabilities::for_target(self.realization.target(), true),
-            self.requirements,
-        )
+    /// Validate this request against the exact provider that will open it.
+    ///
+    /// # Errors
+    ///
+    /// Returns a target/capability mismatch or structural realization error
+    /// before the provider performs host I/O.
+    pub fn validate_against(
+        &self,
+        capabilities: ProviderCapabilities,
+    ) -> Result<(), ProviderOpenValidationError> {
+        validate_provider(self.selection, capabilities, self.requirements)?;
+        self.realization.validate()?;
+        if self.selection.target != self.realization.target() {
+            return Err(RealizationError::TargetModeMismatch {
+                target: self.selection.target,
+                requested_mode: self.selection.mode,
+                actual_mode: self.realization.target().mode(),
+            }
+            .into());
+        }
+        Ok(())
     }
+}
+
+/// Error before a provider session opens.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ProviderOpenValidationError {
+    #[error(transparent)]
+    Realization(#[from] RealizationError),
+    #[error(transparent)]
+    Specification(#[from] NativeRealizationError),
 }
 pub trait ProviderReverseEventSink {
     fn push(&mut self, event: ProviderReverseEvent);
@@ -394,9 +537,35 @@ pub trait NativeProviderFactory: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::{
-        ControllerId, LinuxTarget, ProviderCapabilities, ProviderRequirements, RealizationError,
-        RealizationMode, RealizationModeSet, RealizationSelection, validate_provider,
+        ControllerId, LinuxTarget, NativeControllerRealization, NativeDeviceIdentity,
+        NativeEvdevRealization, NativeRealizationError, ProviderCapabilities, ProviderOpenRequest,
+        ProviderOpenValidationError, ProviderRequirements, RealizationError, RealizationMode,
+        RealizationModeSet, RealizationSelection, validate_provider,
     };
+
+    fn uinput_request() -> ProviderOpenRequest {
+        ProviderOpenRequest {
+            session: super::RealizationSessionId(1),
+            selection: RealizationSelection {
+                controller: ControllerId::new("test.provider"),
+                target: LinuxTarget::Uinput,
+                mode: RealizationMode::HostCompatible,
+            },
+            requirements: ProviderRequirements::default(),
+            realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                device_name: "test".into(),
+                identity: NativeDeviceIdentity {
+                    vendor_id: 1,
+                    product_id: 2,
+                    version: 3,
+                },
+                event_codes: vec![],
+                key_codes: vec![],
+                absolute_axes: vec![],
+                force_feedback_codes: vec![],
+            }),
+        }
+    }
 
     #[test]
     fn targets_have_exact_independent_modes() {
@@ -452,6 +621,41 @@ mod tests {
         assert!(matches!(
             error,
             RealizationError::MissingReverseOutput { .. }
+        ));
+    }
+
+    #[test]
+    fn open_validation_uses_the_actual_provider_capabilities() {
+        uinput_request()
+            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .expect("no reverse output is required");
+
+        let mut request = uinput_request();
+        request.requirements.requires_reverse_output = true;
+        let error = request
+            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .expect_err("provider cannot satisfy reverse output");
+        assert!(matches!(
+            error,
+            ProviderOpenValidationError::Realization(RealizationError::MissingReverseOutput { .. })
+        ));
+    }
+
+    #[test]
+    fn malformed_realization_is_rejected_before_open() {
+        let mut request = uinput_request();
+        let NativeControllerRealization::Evdev(specification) = &mut request.realization else {
+            unreachable!("test creates evdev realization");
+        };
+        specification.device_name.clear();
+        let error = request
+            .validate_against(ProviderCapabilities::for_target(LinuxTarget::Uinput, false))
+            .expect_err("empty name is invalid");
+        assert!(matches!(
+            error,
+            ProviderOpenValidationError::Specification(NativeRealizationError::EmptyDeviceName {
+                target: LinuxTarget::Uinput
+            })
         ));
     }
 }

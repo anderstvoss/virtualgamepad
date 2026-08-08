@@ -12,9 +12,11 @@ impl NativeProviderFactory for LinuxUhidProvider {
         &self,
         request: ProviderOpenRequest,
     ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
-        request.validate().map_err(|e| ProviderError::Unsupported {
-            reason: e.to_string(),
-        })?;
+        request
+            .validate_against(self.capabilities())
+            .map_err(|e| ProviderError::Unsupported {
+                reason: e.to_string(),
+            })?;
         if !matches!(request.realization, NativeControllerRealization::Hid(_)) {
             return Err(ProviderError::Unsupported {
                 reason: "UHID requires HID realization".into(),

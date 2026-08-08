@@ -12,9 +12,11 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
         &self,
         request: ProviderOpenRequest,
     ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
-        request.validate().map_err(|e| ProviderError::Unsupported {
-            reason: e.to_string(),
-        })?;
+        request
+            .validate_against(self.capabilities())
+            .map_err(|e| ProviderError::Unsupported {
+                reason: e.to_string(),
+            })?;
         if !matches!(request.realization, NativeControllerRealization::Usb(_)) {
             return Err(ProviderError::Unsupported {
                 reason: "USB gadget requires USB realization".into(),
