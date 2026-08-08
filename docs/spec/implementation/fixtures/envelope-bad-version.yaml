@@ -1,7 +1,0 @@
-fixture: virtualgamepad/v2
-kind: input-frame
-id: envelope-bad-version
-profile_id: placeholder-profile
-notes: |
-  Invalid schema version sample for Phase 0.
-payload: {}

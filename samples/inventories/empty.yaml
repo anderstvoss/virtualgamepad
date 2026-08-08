@@ -1,8 +1,0 @@
-fixture: virtualgamepad/v1
-kind: backend-inventory
-id: empty
-notes: |
-  Phase 5 planner inventory: no providers available. Used to exercise
-  structured planner rejection output.
-payload:
-  entries: []
