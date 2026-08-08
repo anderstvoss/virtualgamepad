@@ -260,16 +260,30 @@ pub trait ModeAwareControllerDriver: RealizationControllerDefinition {
     type Frame: Send + 'static;
 
     fn neutral_state(&self) -> Self::State;
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] for unsupported or invalid updates.
     fn apply_normalized(
         &self,
         state: &mut Self::State,
         update: ControlUpdate,
     ) -> Result<(), ControlError>;
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when state is invalid or cannot be faithfully
+    /// exposed in `selection`.
     fn validate_state(
         &self,
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<(), ControlError>;
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when valid state cannot be encoded for the
+    /// selected realization.
     fn encode(
         &self,
         selection: RealizationSelection,
@@ -305,6 +319,11 @@ pub enum ManifestError {
 /// Validate manifest shape and select one exact target realization.
 ///
 /// This never selects an alternate target or mode.
+///
+/// # Errors
+///
+/// Returns [`ManifestError`] for an invalid manifest or unsupported exact
+/// target.
 pub fn select_realization(
     definition: &dyn RealizationControllerDefinition,
     target: ModeLinuxTarget,

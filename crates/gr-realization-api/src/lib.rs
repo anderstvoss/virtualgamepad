@@ -171,6 +171,11 @@ pub enum RealizationError {
 /// Validate an exact prepared selection against a provider promise.
 ///
 /// No fallback or alternate target selection is attempted here.
+///
+/// # Errors
+///
+/// Returns [`RealizationError`] when the selected target/mode differs from the
+/// provider promise or a declared generic provider prerequisite is absent.
 pub fn validate_provider(
     selection: RealizationSelection,
     provider: ProviderCapabilities,

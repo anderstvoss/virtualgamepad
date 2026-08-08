@@ -70,6 +70,12 @@ where
         }
     }
 
+    /// Apply one normalized semantic update.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] when closed, unsupported, invalid, or
+    /// unavailable in this runtime's selected realization mode.
     pub fn apply(&mut self, update: ControlUpdate) -> Result<(), ControlError> {
         if self.closed {
             return Err(ControlError::Closed);
@@ -82,6 +88,12 @@ where
         Ok(())
     }
 
+    /// Atomically edit typed state under the selected realization mode.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ControlError`] from the edit or mode-aware full-state
+    /// validation without replacing current state.
     pub fn update_state<F>(&mut self, update: F) -> Result<(), ControlError>
     where
         F: FnOnce(&mut D::State) -> Result<(), ControlError>,
@@ -97,6 +109,11 @@ where
         Ok(())
     }
 
+    /// Encode and send the current state.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommitError`] while preserving dirty retryable state.
     pub fn commit(&mut self) -> Result<(), CommitError> {
         if self.closed {
             return Err(CommitError::Closed);
@@ -515,7 +532,7 @@ mod tests {
             RealizationMode::HostCompatible => LinuxTarget::Uinput,
             RealizationMode::IdentityAccurate => LinuxTarget::Uhid,
             RealizationMode::HardwareFaithful => LinuxTarget::UsbGadget,
-            _ => LinuxTarget::Uinput,
+            _ => unreachable!("synthetic test only uses known realization modes"),
         };
         ModeControllerRuntime::new(
             ModeDriver,
