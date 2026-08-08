@@ -7,6 +7,11 @@
 //! those details through [`ControllerDefinition`].
 
 use std::fmt;
+
+use gr_realization_api::{
+    ControllerId, LinuxTarget as ModeLinuxTarget, ProviderRequirements, RealizationMode,
+    RealizationModeSet, RealizationSelection,
+};
 use thiserror::Error;
 
 /// A curated controller family known to the application.
@@ -203,6 +208,147 @@ pub trait ControllerDriver: ControllerDefinition {
     fn encode(&self, state: &Self::State) -> Result<Self::Frame, ControlError>;
 }
 
+/// Immutable controller-owned declaration for one independent realization mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealizationManifestEntry {
+    pub target: ModeLinuxTarget,
+    pub mode: RealizationMode,
+    pub provider_requirements: ProviderRequirements,
+    /// Modes where the entry's controller-specific feature surface is faithful.
+    pub available_features: RealizationModeSet,
+}
+
+/// Static manifest of exact host realizations provided by one controller.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RealizationManifest {
+    entries: &'static [RealizationManifestEntry],
+}
+
+impl RealizationManifest {
+    #[must_use]
+    pub const fn new(entries: &'static [RealizationManifestEntry]) -> Self {
+        Self { entries }
+    }
+
+    #[must_use]
+    pub const fn entries(&self) -> &'static [RealizationManifestEntry] {
+        self.entries
+    }
+
+    #[must_use]
+    pub fn supported_modes(&self) -> RealizationModeSet {
+        self.entries
+            .iter()
+            .fold(RealizationModeSet::EMPTY, |modes, entry| {
+                modes.union(RealizationModeSet::singleton(entry.mode))
+            })
+    }
+}
+
+/// A mode-aware compiled controller definition.
+///
+/// This contract is separate from the retired profile-era path. Future
+/// controller packages implement it without changing the generic runtime.
+pub trait RealizationControllerDefinition: Send + Sync + 'static {
+    fn controller_id(&self) -> ControllerId;
+    fn realization_manifest(&self) -> RealizationManifest;
+}
+
+/// Mode-aware controller driver used by the independent-realization runtime.
+pub trait ModeAwareControllerDriver: RealizationControllerDefinition {
+    type State: Clone + Send + 'static;
+    type Frame: Send + 'static;
+
+    fn neutral_state(&self) -> Self::State;
+    fn apply_normalized(
+        &self,
+        state: &mut Self::State,
+        update: ControlUpdate,
+    ) -> Result<(), ControlError>;
+    fn validate_state(
+        &self,
+        selection: RealizationSelection,
+        state: &Self::State,
+    ) -> Result<(), ControlError>;
+    fn encode(
+        &self,
+        selection: RealizationSelection,
+        state: &Self::State,
+    ) -> Result<Self::Frame, ControlError>;
+}
+
+/// Manifest construction or exact-target selection failure.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ManifestError {
+    #[error("controller `{controller}` declares no realization modes")]
+    Empty { controller: ControllerId },
+    #[error("controller `{controller}` declares target {target} more than once")]
+    DuplicateTarget {
+        controller: ControllerId,
+        target: ModeLinuxTarget,
+    },
+    #[error("controller `{controller}` declares {mode} for {target}, which realizes {actual_mode}")]
+    TargetModeMismatch {
+        controller: ControllerId,
+        target: ModeLinuxTarget,
+        mode: RealizationMode,
+        actual_mode: RealizationMode,
+    },
+    #[error("controller `{controller}` has no realization for {target}")]
+    UnsupportedTarget {
+        controller: ControllerId,
+        target: ModeLinuxTarget,
+    },
+}
+
+/// Validate manifest shape and select one exact target realization.
+///
+/// This never selects an alternate target or mode.
+pub fn select_realization(
+    definition: &dyn RealizationControllerDefinition,
+    target: ModeLinuxTarget,
+) -> Result<(RealizationSelection, RealizationManifestEntry), ManifestError> {
+    let controller = definition.controller_id();
+    let manifest = definition.realization_manifest();
+    if manifest.entries().is_empty() {
+        return Err(ManifestError::Empty { controller });
+    }
+    for (index, entry) in manifest.entries().iter().enumerate() {
+        if entry.mode != entry.target.mode() {
+            return Err(ManifestError::TargetModeMismatch {
+                controller,
+                target: entry.target,
+                mode: entry.mode,
+                actual_mode: entry.target.mode(),
+            });
+        }
+        if manifest.entries()[..index]
+            .iter()
+            .any(|previous| previous.target == entry.target)
+        {
+            return Err(ManifestError::DuplicateTarget {
+                controller,
+                target: entry.target,
+            });
+        }
+    }
+    let entry = manifest
+        .entries()
+        .iter()
+        .copied()
+        .find(|entry| entry.target == target)
+        .ok_or(ManifestError::UnsupportedTarget { controller, target })?;
+    Ok((
+        RealizationSelection {
+            controller,
+            target,
+            mode: entry.mode,
+        },
+        entry,
+    ))
+}
+
 /// Errors caused by an invalid or incompatible control update.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum ControlError {
@@ -227,6 +373,11 @@ pub enum ControlError {
         control: &'static str,
         index: usize,
         exclusive_maximum: usize,
+    },
+    #[error("operation is unavailable in {selected_mode}; available in {available_in:?}")]
+    UnavailableInRealizationMode {
+        selected_mode: RealizationMode,
+        available_in: RealizationModeSet,
     },
     #[error("controller is closed")]
     Closed,
@@ -277,8 +428,13 @@ pub enum CommitError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ControllerDefinition, ControllerKind, LinuxTarget, ProviderCapabilities,
-        RealizationRequirements, validate_realization,
+        ControllerDefinition, ControllerKind, LinuxTarget, ManifestError, ProviderCapabilities,
+        RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+        RealizationRequirements, select_realization, validate_realization,
+    };
+    use gr_realization_api::{
+        ControllerId, LinuxTarget as ModeLinuxTarget, ProviderRequirements, RealizationMode,
+        RealizationModeSet,
     };
 
     struct IdentityController;
@@ -314,5 +470,65 @@ mod tests {
         )
         .expect_err("uinput lacks identity");
         assert!(error.to_string().contains("identity-aware"));
+    }
+
+    struct HardwareOnly;
+    impl RealizationControllerDefinition for HardwareOnly {
+        fn controller_id(&self) -> ControllerId {
+            ControllerId::new("test.hardware-only")
+        }
+
+        fn realization_manifest(&self) -> RealizationManifest {
+            static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
+                target: ModeLinuxTarget::UsbGadget,
+                mode: RealizationMode::HardwareFaithful,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                available_features: RealizationModeSet::singleton(
+                    RealizationMode::HardwareFaithful,
+                ),
+            }];
+            RealizationManifest::new(&ENTRIES)
+        }
+    }
+
+    #[test]
+    fn independent_manifest_accepts_hardware_only_controller() {
+        let (selection, entry) = select_realization(&HardwareOnly, ModeLinuxTarget::UsbGadget)
+            .expect("hardware-only controllers are valid");
+        assert_eq!(selection.mode, RealizationMode::HardwareFaithful);
+        assert_eq!(entry.mode, RealizationMode::HardwareFaithful);
+        assert!(matches!(
+            select_realization(&HardwareOnly, ModeLinuxTarget::Uhid),
+            Err(ManifestError::UnsupportedTarget { .. })
+        ));
+    }
+
+    struct InvalidManifest;
+    impl RealizationControllerDefinition for InvalidManifest {
+        fn controller_id(&self) -> ControllerId {
+            ControllerId::new("test.invalid")
+        }
+
+        fn realization_manifest(&self) -> RealizationManifest {
+            static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
+                target: ModeLinuxTarget::Uinput,
+                mode: RealizationMode::IdentityAccurate,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                available_features: RealizationModeSet::EMPTY,
+            }];
+            RealizationManifest::new(&ENTRIES)
+        }
+    }
+
+    #[test]
+    fn manifest_rejects_target_mode_mismatch() {
+        assert!(matches!(
+            select_realization(&InvalidManifest, ModeLinuxTarget::Uinput),
+            Err(ManifestError::TargetModeMismatch { .. })
+        ));
     }
 }
