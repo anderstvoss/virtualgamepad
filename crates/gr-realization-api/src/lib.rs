@@ -211,6 +211,12 @@ pub struct NativeEvdevRealization {
     pub event_codes: Vec<u16>,
     pub key_codes: Vec<u16>,
     pub absolute_axes: Vec<NativeAbsoluteAxis>,
+    /// Exact relative axes for an explicitly declared pointer companion.
+    pub relative_axes: Vec<u16>,
+    /// Exact LED capability codes for an explicitly declared companion.
+    pub led_codes: Vec<u16>,
+    /// Exact switch capability codes for an explicitly declared companion.
+    pub switch_codes: Vec<u16>,
     pub force_feedback_codes: Vec<u16>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,6 +279,15 @@ impl NativeControllerRealization {
                 }
                 if has_duplicate(&specification.key_codes) {
                     return Err(NativeRealizationError::DuplicateEvdevKeyCode);
+                }
+                if has_duplicate(&specification.relative_axes) {
+                    return Err(NativeRealizationError::DuplicateEvdevRelativeAxisCode);
+                }
+                if has_duplicate(&specification.led_codes) {
+                    return Err(NativeRealizationError::DuplicateEvdevLedCode);
+                }
+                if has_duplicate(&specification.switch_codes) {
+                    return Err(NativeRealizationError::DuplicateEvdevSwitchCode);
                 }
                 for (index, axis) in specification.absolute_axes.iter().enumerate() {
                     if axis.minimum > axis.maximum {
@@ -343,6 +358,12 @@ pub enum NativeRealizationError {
     DuplicateEvdevEventCode,
     #[error("evdev key codes contain a duplicate")]
     DuplicateEvdevKeyCode,
+    #[error("evdev relative axis codes contain a duplicate")]
+    DuplicateEvdevRelativeAxisCode,
+    #[error("evdev LED codes contain a duplicate")]
+    DuplicateEvdevLedCode,
+    #[error("evdev switch codes contain a duplicate")]
+    DuplicateEvdevSwitchCode,
     #[error("evdev absolute axis {code} is declared more than once")]
     DuplicateEvdevAxisCode { code: u16 },
     #[error("evdev absolute axis {code} has invalid range {minimum}..{maximum}")]
@@ -602,6 +623,9 @@ mod tests {
                 event_codes: vec![],
                 key_codes: vec![],
                 absolute_axes: vec![],
+                relative_axes: vec![],
+                led_codes: vec![],
+                switch_codes: vec![],
                 force_feedback_codes: vec![],
             }),
         }

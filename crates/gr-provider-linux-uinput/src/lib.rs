@@ -382,6 +382,9 @@ mod linux_io {
         for key in &spec.key_codes {
             set_bit(fd, 101, *key).map_err(|error| context(error, "UI_SET_KEYBIT", *key))?;
         }
+        for axis in &spec.relative_axes {
+            set_bit(fd, 102, *axis).map_err(|error| context(error, "UI_SET_RELBIT", *axis))?;
+        }
         for axis in &spec.absolute_axes {
             set_bit(fd, 103, axis.code)
                 .map_err(|error| context(error, "UI_SET_ABSBIT", axis.code))?;
@@ -406,6 +409,12 @@ mod linux_io {
         }
         for effect in &spec.force_feedback_codes {
             set_bit(fd, 107, *effect).map_err(|error| context(error, "UI_SET_FFBIT", *effect))?;
+        }
+        for led in &spec.led_codes {
+            set_bit(fd, 105, *led).map_err(|error| context(error, "UI_SET_LEDBIT", *led))?;
+        }
+        for switch in &spec.switch_codes {
+            set_bit(fd, 109, *switch).map_err(|error| context(error, "UI_SET_SWBIT", *switch))?;
         }
         let mut setup = UinputSetup {
             id: InputId {
@@ -662,6 +671,9 @@ mod integration_tests {
                 event_codes: vec![1],
                 key_codes: vec![304],
                 absolute_axes: vec![],
+                relative_axes: vec![],
+                led_codes: vec![],
+                switch_codes: vec![],
                 force_feedback_codes: vec![],
             }),
         };
@@ -802,6 +814,9 @@ mod seam_tests {
                 event_codes: vec![1],
                 key_codes: vec![304],
                 absolute_axes: vec![],
+                relative_axes: vec![],
+                led_codes: vec![],
+                switch_codes: vec![],
                 force_feedback_codes: vec![],
             }),
         }

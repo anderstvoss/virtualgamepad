@@ -1,10 +1,20 @@
 #![forbid(unsafe_code)]
 //! Target-aware local controller state runtime.
+mod compound;
+mod reverse_delivery;
+
+pub use compound::{
+    ComponentDiagnostics, ComponentFrame, ComponentId, ComponentOpen, CompoundDiagnostics,
+    CompoundOpenError, CompoundSession, CompoundSessionError,
+};
 use gr_controller_contract::{
     CommitError, ControlError, DigitalControlUpdate, ManifestError, PreparedRealization,
     TargetAwareControllerDriver,
 };
 use gr_realization_api::RealizationSelection;
+pub use reverse_delivery::{
+    CallbackDiagnostics, ReplyError, ReplyInbox, ReplyToken, ReverseSubscription, SubscriptionError,
+};
 
 #[allow(clippy::missing_errors_doc)]
 pub trait FrameSink: Send {

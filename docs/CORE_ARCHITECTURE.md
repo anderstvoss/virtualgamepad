@@ -52,8 +52,10 @@ Examples of target mechanisms are intentionally descriptive rather than
 prescriptive:
 
 - uinput may realize controller-oriented evdev input and output capabilities
-  wherever they faithfully represent the controller; it does not create
-  keyboard or mouse injection devices.
+  wherever they faithfully represent the controller. A controller-declared
+  keyboard or pointer companion is permitted only through that controller's
+  explicit opt-in creation option; the root library exposes no standalone
+  keyboard or mouse injection constructor.
 - UHID may realize local HID descriptors, identity, input reports, output
   reports, and feature-report exchanges. It is not a USB or Bluetooth
   device-role claim.
@@ -148,3 +150,25 @@ Shared helper types are permitted only when their semantics and units are
 identical. Examples include bounded values, timestamps, or a proven common
 transport primitive. They must never impose state layout, feature availability,
 or numeric conversion policy on a controller package.
+
+## Compound controller presentations and reverse transactions
+
+A curated controller may have one primary host device plus explicitly enabled
+companion devices. The runtime owns the ordered provider sessions, preflights
+all of them before opening any, rolls back a partial open in reverse order,
+and closes all components exactly once. A logical commit sends complete frames
+in deterministic component order. This preserves retry safety but does not
+claim atomic operating-system visibility across multiple devices.
+
+Companions are controller-declared and controller-owned: callers choose only
+the typed companion options exposed by that controller package. They cannot
+supply arbitrary event codes, mappings, device paths, or a standalone generic
+keyboard/pointer device. The library still never changes host permissions,
+udev policy, modules, or configuration.
+
+Reverse events are delivered through bounded typed callback subscriptions
+outside the commit path. Each subscription is isolated, so a slow or panicking
+consumer is recorded and contained without blocking input or other
+controllers. Reply-required reverse requests use typed one-shot reply tokens;
+duplicate, closed, or full replies fail recoverably. Controller packages own
+request decoding, attachment protocols, and reply payload semantics.

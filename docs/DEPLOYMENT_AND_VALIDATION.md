@@ -25,11 +25,11 @@ additional axes, multitouch-style input, lighting, motion, haptics, and force
 feedback when the prepared realization and Linux mechanism support them. This
 list is illustrative, not exhaustive.
 
-The uinput provider is deliberately limited to controller-oriented devices;
-it does not create keyboard or mouse injection devices. The provider must not
-assume that a feature is unavailable merely because it is uncommon in a
-generic gamepad. A controller package declares and tests each faithful evdev
-realization.
+The uinput provider configures only the prepared event classes and codes. A
+controller package may declare a keyboard or pointer companion only through a
+typed, explicit opt-in controller creation option; the library does not expose
+standalone generic injection constructors or caller-configured key maps. A
+controller package declares and tests each faithful evdev realization.
 
 The deployment provider opens and configures only an already-accessible
 `/dev/uinput` node. It creates process-owned devices, writes complete evdev

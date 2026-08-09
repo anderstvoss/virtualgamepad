@@ -491,6 +491,9 @@ fn realization() -> NativeControllerRealization {
                 flat: axis.flat,
             })
             .collect(),
+        relative_axes: vec![],
+        led_codes: vec![],
+        switch_codes: vec![],
         force_feedback_codes: vec![0x50],
     })
 }
