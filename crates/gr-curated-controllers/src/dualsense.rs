@@ -1098,6 +1098,9 @@ impl DualSenseController {
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        // UHID name metadata is not the USB product descriptor used by
+        // OpenPuck. `hid-playstation` only materializes the virtual sensor
+        // device with this established UHID identity.
         device_name: "Virtual DualSense".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
@@ -1149,6 +1152,12 @@ fn dualsense_feature_responses(
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
     const FEATURE: u8 = 0;
+    // OpenPuck answers SDL's raw capability probe even though it is not used
+    // by hid-playstation. The response advertises sensors, lightbar, and
+    // vibration to Steam's user-space DualSense path.
+    let mut capabilities = vec![0_u8; 48];
+    capabilities[0] = 0x03;
+    capabilities[2..6].copy_from_slice(&[0x28, 0x01, 0x00, 0x0e]);
     let mut calibration = vec![0_u8; 41];
     calibration[0] = 0x05;
     // Consistent synthetic calibration values. `hid-playstation` uses these
@@ -1194,18 +1203,23 @@ fn dualsense_feature_responses(
     // to select the complete USB controller path. 2.24 is the first version
     // with the current compatible-rumble behavior.
     firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
-    [(0x05, calibration), (0x09, pairing), (0x20, firmware)]
-        .into_iter()
-        .map(|(report_id, bytes)| {
-            (
-                NativeHidReportKey {
-                    report_id,
-                    report_type: FEATURE,
-                },
-                bytes,
-            )
-        })
-        .collect()
+    [
+        (0x03, capabilities),
+        (0x05, calibration),
+        (0x09, pairing),
+        (0x20, firmware),
+    ]
+    .into_iter()
+    .map(|(report_id, bytes)| {
+        (
+            NativeHidReportKey {
+                report_id,
+                report_type: FEATURE,
+            },
+            bytes,
+        )
+    })
+    .collect()
 }
 
 fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization {
@@ -1510,6 +1524,8 @@ mod tests {
         assert!(realization.numbered_output_reports);
         assert!(realization.numbered_feature_reports);
         assert_eq!(realization.descriptor.len(), 273);
+        assert_eq!(realization.device_name, "Virtual DualSense");
+        assert_eq!(realization.identity.version, 1);
         assert!(
             realization
                 .descriptor
@@ -1522,7 +1538,7 @@ mod tests {
                 .windows(2)
                 .any(|item| item == [0x85, 0x02])
         );
-        for report_id in [0x05, 0x09, 0x20] {
+        for report_id in [0x03, 0x05, 0x09, 0x20] {
             let bytes = realization
                 .feature_report_responses
                 .get(&NativeHidReportKey {
@@ -1532,6 +1548,15 @@ mod tests {
                 .expect("DualSense Linux probe reply");
             assert_eq!(bytes[0], report_id);
         }
+        let capabilities = realization
+            .feature_report_responses
+            .get(&NativeHidReportKey {
+                report_id: 0x03,
+                report_type: 0,
+            })
+            .expect("DualSense SDL capability reply");
+        assert_eq!(capabilities.len(), 48);
+        assert_eq!(&capabilities[2..6], &[0x28, 0x01, 0x00, 0x0e]);
         let firmware = realization
             .feature_report_responses
             .get(&NativeHidReportKey {

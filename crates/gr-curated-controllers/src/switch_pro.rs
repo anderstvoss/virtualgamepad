@@ -622,7 +622,8 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,
             product_id: 0x2009,
-            version: 1,
+            // OpenPuck and physical USB Pro Controllers advertise 2.20.
+            version: 0x0220,
         },
         descriptor: DESC.to_vec(),
         numbered_input_reports: true,
@@ -1003,6 +1004,17 @@ mod tests {
             unpack_y(&bytes[8..11]) >= 4094,
             "negative public Y must become high Switch-wire Y so Linux reports up"
         );
+    }
+
+    #[test]
+    fn hid_identity_matches_openpuck_usb_personality() {
+        let NativeControllerRealization::Hid(realization) = hid(RealizationSessionId(1)) else {
+            unreachable!()
+        };
+        assert_eq!(realization.device_name, "Pro Controller");
+        assert_eq!(realization.identity.vendor_id, 0x057e);
+        assert_eq!(realization.identity.product_id, 0x2009);
+        assert_eq!(realization.identity.version, 0x0220);
     }
 
     #[test]
