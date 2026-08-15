@@ -1,7 +1,7 @@
-# Deployment and realization levels
+# Deployment and hardware validation
 
-This guide defines the project's three selectable realization levels. It does
-not authorize an ordinary application process to change the host.
+This guide distinguishes normal library deployment from hardware-transport
+validation. It does not authorize the library to change the host.
 
 ## Deployable library targets
 
@@ -64,28 +64,29 @@ kernel `START`, `STOP`, `OPEN`, and `CLOSE` notifications are diagnostic only,
 so they do not invalidate a controller session or change its polling contract.
 It never changes host setup.
 
-## USB gadget through `dummy_hcd` (`UsbGadget`)
+## Explicit USB gadget API
 
-`UsbGadget` is the third deployable realization level. It creates a ConfigFS
-HID gadget and binds it to `dummy_hcd`, which supplies an entirely software
-USB host and UDC in the same VM. Linux and Steam therefore see a USB HID
-controller, but no physical device-mode hardware or external cable is used.
-It is intended to make USB/HID topology and controller-specific capabilities
-available to normal controller creation, subject to the privileged service
-boundary below.
+USB gadget (`UsbTransportValidation`) remains a separate, explicitly named library
+API for transport validation. A caller may request it when its environment
+already exposes a suitable gadget facility and attached lab hardware. It exists
+to establish claims about USB enumeration, descriptors, interface topology,
+endpoint behavior, external-host interaction, timing, reconnect, and class
+interfaces. It is not an ordinary deployment option and is not required for
+normal applications using this library.
 
-A controller may implement evdev, UHID, USB gadget, or any combination. Each
-creation request chooses exactly one declared level; missing `dummy_hcd`,
-ConfigFS/HID-gadget support, service authority, or device endpoints is a typed
-creation error, never a fallback to evdev or UHID. USB gadget does not define a
-different controller API: packages retain one typed state and implement the
-full target-specific codec and reverse-output surface.
+A controller may be USB-validation-only. Such a controller is admitted through
+the explicit USB API, not normal deployable creation, until it declares uinput
+or UHID realization. If the selected host lacks the prepared gadget endpoint,
+peripheral-capable hardware, authority, or other declared prerequisite,
+creation returns a typed error and no controller/session. It never falls back
+to uinput or UHID. USB validation does not define a different controller API or
+a universal feature set: controller packages still declare exactly what they
+can faithfully represent at that target.
 
-The DualSense proof of concept confirmed Steam gyro input through this level
-with the same descriptor, feature fixtures, wire-axis mapping, and 250 Hz
-cadence that failed to become visible via UHID. That makes the USB topology a
-required product-level alternative, not merely transport validation. See
-[the POC finding](POC_DUMMY_HCD_DUALSENSE.md#confirmed-finding-2026-08-15).
+The library only consumes a gadget facility an operator has already prepared.
+It opens only controller-declared, pre-existing endpoint paths and reports
+their absence as an error. It must not create configfs functions, bind a UDC,
+or perform any preparation that may cause host configuration or module loading.
 
 ## Audio and attached-device scope
 
@@ -105,7 +106,7 @@ realization contracts.
 | Rumble, lighting, mute, volume, jack/attachment state | Controller-native reverse reports, evdev output where faithfully representable, or HID output/feature reports. |
 | Headset/controller playback and microphone capture | A separate, controller-declared host audio realization with actual capture/render streams. Neither uinput nor UHID alone provides it. |
 | Plug-in keyboard/chatpad | A controller-native attached-device protocol and a faithful transport realization; never generic host keyboard injection. |
-| In-VM USB topology and controller-specific HID behavior | The `UsbGadget` realization through `dummy_hcd`. |
+| Physical accessory topology | An explicit USB transport-validation realization, when the prepared lab facility supports it. |
 
 This is feature-open: the table identifies necessary kinds of realization, not
 a ceiling on provider capability. A controller may faithfully implement a
@@ -114,11 +115,10 @@ target-unavailable error when it cannot.
 
 ## Host-security boundary
 
-The controller library and GUI remain unprivileged. `UsbGadget` operations are
-performed by a narrowly scoped, privileged virtualgamepad gadget service that
-owns module loading, ConfigFS, UDC binding, `/dev/hidgN`, and cleanup. The
-service exposes only controller lifecycle/report operations over an internal
-IPC boundary; it does not grant callers arbitrary ConfigFS or root access.
+The library never escalates privileges or changes host configuration. In
+particular, it does not install udev rules, alter ACLs or ownership, load
+kernel modules, mount configfs, bind a USB Device Controller, or invoke
+`sudo`.
 
 An operator is responsible for preparing a host before calling the relevant
 API:
@@ -127,13 +127,15 @@ API:
 | --- | --- |
 | uinput | A usable `/dev/uinput` node, required kernel support, and existing access for the application user. |
 | UHID | A usable `/dev/uhid` node, required kernel support, and existing access for the application user. |
-| USB gadget | The privileged gadget service, `dummy_hcd`, `libcomposite`, HID gadget support, mounted ConfigFS, and service-owned `/dev/hidgN`. No physical UDC is required. |
+| USB gadget validation | A pre-provisioned, usable gadget endpoint backed by a peripheral-capable USB Device Controller, plus existing access for the application user. |
 
-The uinput and UHID providers run as ordinary processes after normal device
-access is granted. The USB-gadget service is the sole privileged component. A
-provider preflight must report typed, actionable errors such as unavailable
-service, missing `dummy_hcd`, unsupported HID gadget facility, unavailable
-ConfigFS, or cleanup failure. It must never try a different realization.
+The uinput and UHID providers can run as ordinary processes only after that
+access has been granted by existing host policy. USB gadget validation commonly
+requires a lab host, but the library itself still operates only with the access
+already delegated to its caller. A provider preflight must report typed,
+actionable errors such as access denied, missing prepared endpoint, unsupported
+kernel facility, missing UDC, or insufficient authority. It must never try a
+different provider or weaken the requested realization.
 
 ## Acceptance requirements
 

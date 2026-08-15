@@ -7,8 +7,7 @@ DualSense; their constructors require explicit Linux target selection.
 
 The core separates controller semantics from host realization. Future
 controller packages choose exact Linux realization targets and may independently implement
-`Evdev` (uinput), `Hid` (UHID), and `UsbGadget` (a software USB gadget bound to
-`dummy_hcd`).
+`Evdev` (uinput), `Hid` (UHID), and `UsbTransportValidation` (USB gadget).
 No target implies another
 and no provider fallback occurs.
 
@@ -16,12 +15,13 @@ The active workspace contains controller-neutral realization/contracts/runtime
 crates plus Linux uinput, UHID, and USB gadget providers. Retired profile-era
 code is preserved only on archival branches.
 
-The project direction is three peer creation levels: evdev, UHID, and an
-in-VM USB-gadget backend that uses `dummy_hcd`, not a physical UDC. Each
-controller must be able to declare any subset of those levels, and creation
-must select one exact level with no fallback. The current `UsbTransportValidation`
-API is transitional and will be replaced by that deployable `UsbGadget` level.
-The full policy is documented in
+uinput and UHID are normal deployment targets on hosts that already expose
+usable device nodes. USB gadget is an explicit, opt-in transport-validation API
+for an already-provisioned lab facility; absence or access failure returns an
+error and never falls back. The library never changes permissions, loads
+kernel modules, or configures the host. Controller audio streams and attached
+devices require separately declared realizations; they are not implied by
+ordinary controller reports. The full policy is documented in
 [docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md) and
 [docs/DEPLOYMENT_AND_VALIDATION.md](docs/DEPLOYMENT_AND_VALIDATION.md).
 
