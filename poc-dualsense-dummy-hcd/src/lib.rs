@@ -20,11 +20,6 @@ const CONFIGFS: &str = "/sys/kernel/config/usb_gadget";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
 
-const CONFIGFS_VENDOR: &str = "0x054c";
-const CONFIGFS_PRODUCT: &str = "0x0ce6";
-const CONFIGFS_BCD_DEVICE: &str = "0x0110";
-const CONFIGFS_BCD_USB: &str = "0x0200";
-
 /// Linux's `usb_hidg_report`, kept local because this POC needs the gadget ABI.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -427,13 +422,10 @@ impl Drop for Gadget {
 
 fn setup_configfs(root: &Path, identity: &Identity) -> io::Result<()> {
     fs::create_dir(root)?;
-    // ConfigFS parses numeric attributes with base autodetection. These must
-    // be explicit hexadecimal strings: bare `054c` is not a valid octal
-    // number and fails with EINVAL.
-    write(root.join("idVendor"), CONFIGFS_VENDOR)?;
-    write(root.join("idProduct"), CONFIGFS_PRODUCT)?;
-    write(root.join("bcdDevice"), CONFIGFS_BCD_DEVICE)?;
-    write(root.join("bcdUSB"), CONFIGFS_BCD_USB)?;
+    write(root.join("idVendor"), "054c")?;
+    write(root.join("idProduct"), "0ce6")?;
+    write(root.join("bcdDevice"), "0110")?;
+    write(root.join("bcdUSB"), "0200")?;
     let strings = root.join("strings/0x409");
     fs::create_dir_all(&strings)?;
     write(
@@ -486,10 +478,8 @@ fn cleanup_root(root: &Path) -> io::Result<()> {
     tryit(fs::remove_dir(root), &mut first);
     first.map_or(Ok(()), Err)
 }
-fn write(path: impl AsRef<Path>, value: &str) -> io::Result<()> {
-    let path = path.as_ref();
+fn write(path: PathBuf, value: &str) -> io::Result<()> {
     fs::write(path, value)
-        .map_err(|error| io::Error::new(error.kind(), format!("write {}: {error}", path.display())))
 }
 fn device_nodes(prefix: &str) -> io::Result<Vec<PathBuf>> {
     let mut nodes = fs::read_dir("/dev")?
@@ -540,13 +530,6 @@ mod tests {
         assert_eq!((VID, PID, BCD_DEVICE), (0x054c, 0x0ce6, 0x0110));
         assert_eq!(DESCRIPTOR.len(), 273);
         assert!(DESCRIPTOR.windows(2).any(|w| w == [0x85, 0x20]));
-    }
-    #[test]
-    fn configfs_identity_uses_unambiguous_hexadecimal_values() {
-        assert_eq!(CONFIGFS_VENDOR, "0x054c");
-        assert_eq!(CONFIGFS_PRODUCT, "0x0ce6");
-        assert_eq!(CONFIGFS_BCD_DEVICE, "0x0110");
-        assert_eq!(CONFIGFS_BCD_USB, "0x0200");
     }
     #[test]
     fn feature_fixtures_have_expected_ids_lengths_and_versions() {
