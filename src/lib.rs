@@ -1,33 +1,42 @@
 #![forbid(unsafe_code)]
 
-//! Core contracts for future compiled virtual-controller packages.
-//!
-//! This pre-1.0 migration intentionally exposes no production controller
-//! constructors. Controller packages will add typed creation APIs after they
-//! implement and validate their own independent realization manifests.
+//! Curated virtual-controller API and provider-neutral core contracts.
 
+pub use gr_audio_contract::{
+    AudioBackendFactory, AudioDirection, AudioError, AudioFormat, AudioSession,
+    AudioSidecarRequirement, AudioStreamRequirement, ChannelLayout, ClockRequirement, RouteIntent,
+};
 pub use gr_controller_contract::{
-    CommitError, ControlError, ControlUpdate, DpadDirection, FaceButton, ManifestError,
-    ModeAwareControllerDriver, RealizationControllerDefinition, RealizationManifest,
-    RealizationManifestEntry, Stick, StickPosition, Trigger, select_realization,
+    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
+    DigitalControlSurface, DigitalControlUpdate, DpadDirection, FaceButton, ManifestError,
+    OutputSurface, PreparedRealization, RealizationControllerDefinition, RealizationManifest,
+    RealizationManifestEntry, RealizationValidationStatus, TargetAwareControllerDriver,
+    TargetRestriction, prepare_deployment_realization, prepare_realization,
+    prepare_transport_validation_realization,
 };
-pub use gr_controller_runtime::{FrameSink, ModeControllerRuntime};
+pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
+pub use gr_curated_controllers::{
+    BatteryLevel, BatteryState, CreationOptions, DualSenseAxis, DualSenseControl,
+    DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseOutputEvent,
+    DualSenseState, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
+    DualShock4OutputEvent, DualShock4State, DualShock4Surface, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, DualShock4UsbOptions, GenericGamepadAxis,
+    GenericGamepadControl, GenericGamepadController, GenericGamepadOutputEvent,
+    GenericGamepadState, GenericGamepadSurface, GenericGamepadTrigger, MotionSample, SwitchProAxis,
+    SwitchProControl, SwitchProController, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProState, SwitchProSurface, SwitchProUsbOptions, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Controller, Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_dualshock4_usb, create_generic_gamepad,
+    create_switch_pro, create_switch_pro_usb, create_xbox360,
+};
 pub use gr_realization_api::{
-    ControllerId, LinuxTarget, ProviderCapabilities, ProviderRequirements, RealizationError,
-    RealizationMode, RealizationModeSet, RealizationSelection, validate_provider,
+    ControllerId, DeploymentTarget, EventReadiness, NativeControllerRealization,
+    NativeHidReportKey, NativeProviderFactory, NativeProviderSession, NativeRealizationError,
+    NativeUsbCompositeEndpoint, NativeUsbCompositeRealization, ProviderCapabilities,
+    ProviderDiagnostics, ProviderError, ProviderFrame, ProviderOpenRequest,
+    ProviderOpenValidationError, ProviderPreflightError, ProviderRequirements,
+    ProviderReverseEvent, ProviderReverseEventSink, ProviderState, RawReverseEvent,
+    RealizationError, RealizationSelection, RealizationSessionId, RealizationTarget,
+    RealizationTargetSet, TransportValidationTarget, validate_provider,
 };
-
-/// The active product has no compiled controller packages during the core
-/// migration.
-#[must_use]
-pub const fn has_curated_controllers() -> bool {
-    false
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn core_only_product_does_not_advertise_controller_constructors() {
-        assert!(!super::has_curated_controllers());
-    }
-}

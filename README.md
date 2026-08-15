@@ -1,45 +1,41 @@
-# VirtualGamepad
+# virtualgamepad
 
-`virtualgamepad` is a Rust library for creating a small, curated set of Linux
-virtual controllers through controller-specific, strongly typed APIs. It is a
-compiled controller emulator—not a YAML profile engine, runtime registry, or
-plugin host.
+`virtualgamepad` is a pre-1.0 Rust foundation for reviewed, compiled virtual
+controllers. It has no runtime profiles, YAML configuration, or plugin
+registry. The current curated packages are Generic Gamepad, Xbox 360, and
+DualSense; their constructors require explicit Linux target selection.
 
-The public API is intentionally breaking before 1.0. Its source of truth is
-the [controller-native API specification](docs/spec/implementation/CONTROLLER_NATIVE_API_SPEC.md).
+The core separates controller semantics from host realization. Future
+controller packages choose exact Linux realization targets and may independently implement
+`Evdev` (uinput), `Hid` (UHID), and `UsbTransportValidation` (USB gadget).
+No target implies another
+and no provider fallback occurs.
 
-## Realization-mode core migration
+The active workspace contains controller-neutral realization/contracts/runtime
+crates plus Linux uinput, UHID, and USB gadget providers. Retired profile-era
+code is preserved only on archival branches.
 
-The public product is temporarily core-only while curated controller packages
-are rebuilt. It exposes no production controller constructors during this
-pre-1.0 migration. Steam Controller 1 is not an active target; its preserved
-source lives on `archive/steam-controller-1`.
+uinput and UHID are normal deployment targets on hosts that already expose
+usable device nodes. USB gadget is an explicit, opt-in transport-validation API
+for an already-provisioned lab facility; absence or access failure returns an
+error and never falls back. The library never changes permissions, loads
+kernel modules, or configures the host. Controller audio streams and attached
+devices require separately declared realizations; they are not implied by
+ordinary controller reports. The full policy is documented in
+[docs/CORE_ARCHITECTURE.md](docs/CORE_ARCHITECTURE.md) and
+[docs/DEPLOYMENT_AND_VALIDATION.md](docs/DEPLOYMENT_AND_VALIDATION.md).
 
-Future controllers select an exact Linux target and therefore one independent
-host-realization mode: `HostCompatible` (uinput), `IdentityAccurate` (UHID),
-or `HardwareFaithful` (USB gadget transport). These are not fallback tiers.
-They affect how the host sees a controller, not the controller's typed
-normalized/native command vocabulary.
+Each concrete controller has native typed state and numeric domains. The
+library does not normalize stick, trigger, touch, or sensor values across
+families. After creation, a controller's typed `surface()` describes its exact
+Linux presentation—event codes, axis ranges, neutral values, outputs, and
+target restrictions—so embedding applications can adapt without guessing.
+Common spatial face-button and D-pad labels are available only for digital
+convenience; native controller controls remain explicit types.
 
-## Controller contract
-
-Restored controllers will use mutable typed state and explicit `commit()`.
-Normalized labels use spatial positions; native labels are explicit
-controller-specific types. The same operations retain their meaning in every
-supported realization mode. A feature unavailable in the selected mode returns
-a recoverable error without changing state; a failed commit stays dirty and is
-retryable.
-
-## Linux prerequisites
-
-- `Uinput` requires access to `/dev/uinput`.
-- `Uhid` requires access to `/dev/uhid`.
-- `UsbTransport` requires a peripheral-capable USB controller, configfs gadget
-  support, an available UDC, and the permissions needed to configure it.
-
-Missing Cargo provider features, unsupported controller/target pairs, and host
-open failures produce distinct creation errors. See the
-[demo](demo/README.md) for a reference consumer.
+See the [controller-package architecture](docs/spec/implementation/CONTROLLER_PACKAGE_ARCHITECTURE.md)
+and [family modeling guide](docs/spec/implementation/CONTROLLER_FAMILY_MODELING.md)
+before adding a curated controller.
 
 ## Development
 
@@ -50,17 +46,3 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 gitleaks detect
 ```
-
-Compile-fail tests enforce controller-specific API boundaries. Property tests
-exercise mapping and lifecycle invariants. Raw reverse reports and generated
-control sequences have dedicated [`cargo-fuzz` targets](fuzz/README.md).
-Privileged Linux device tests remain separate from the hermetic suite.
-
-Record user-visible changes in [CHANGELOG.md](CHANGELOG.md). Repository setup
-and security checks are documented in [docs/REPO-SETUP.md](docs/REPO-SETUP.md),
-[docs/HARDENING-CHECKLIST.md](docs/HARDENING-CHECKLIST.md), and
-[SECURITY.md](SECURITY.md).
-
-## License
-
-[AGPL-3.0-only](LICENSE)

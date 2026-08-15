@@ -1,0 +1,13 @@
+error[E0308]: mismatched types
+ --> tests/ui/deployment_rejects_usb_validation.rs:5:56
+  |
+5 |     let _ = prepare_deployment_realization(controller, TransportValidationTarget::UsbGadget);
+  |             ------------------------------             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `DeploymentTarget`, found `TransportValidationTarget`
+  |             |
+  |             arguments to this function are incorrect
+  |
+note: function defined here
+ --> src/lib.rs
+  |
+  | pub fn prepare_deployment_realization(
+  |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
