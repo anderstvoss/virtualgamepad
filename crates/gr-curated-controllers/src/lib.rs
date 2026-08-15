@@ -133,7 +133,7 @@ mod integration_tests {
     use gr_realization_api::{DeploymentTarget, RealizationSessionId};
     use std::{
         collections::BTreeSet,
-        fs,
+        env, fs,
         io::Read,
         os::unix::fs::OpenOptionsExt,
         path::PathBuf,
@@ -736,6 +736,64 @@ mod integration_tests {
         ] {
             assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
         }
+    }
+
+    #[test]
+    #[ignore = "requires a running Steam client and VIRTUALGAMEPAD_STEAM_CONSOLE_LOG"]
+    fn dualsense_steam_hidapi_opens_the_session_specific_controller() {
+        let log_path = PathBuf::from(
+            env::var("VIRTUALGAMEPAD_STEAM_CONSOLE_LOG")
+                .expect("set VIRTUALGAMEPAD_STEAM_CONSOLE_LOG to Steam's console_log.txt"),
+        );
+        let initial_length = usize::try_from(
+            fs::metadata(&log_path)
+                .expect("read Steam console log metadata")
+                .len(),
+        )
+        .expect("Steam console log fits address space");
+        let session = RealizationSessionId(408);
+        let mut controller = create_dualsense(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session,
+        })
+        .expect("DualSense UHID creation");
+        poll_dualsense_for(&mut controller, Duration::from_secs(1), || {});
+        let hidraw = virtual_dualsense_hidraw_path(session)
+            .expect("Linux did not create the virtual DualSense hidraw node");
+        let expected = format!(
+            "serial virtualgamepad-dualsense-session-{}, interface -1, interface_class 0, interface_subclass 0, interface_protocol 0, usage page 0x0001, usage 0x0005, path = {}, driver = SDL_JOYSTICK_HIDAPI_PS5 (ENABLED)",
+            session.0,
+            hidraw.display()
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut steam_section = String::new();
+        while Instant::now() < deadline {
+            controller
+                .set_motion(MotionSample {
+                    gyroscope: [1_000, -2_000, 3_000],
+                    accelerometer: [-4_000, 5_000, -6_000],
+                })
+                .expect("motion update");
+            controller.commit().expect("motion commit");
+            controller
+                .poll_output(&mut |_| {})
+                .expect("Steam HIDAPI output polling");
+            let log = fs::read_to_string(&log_path).expect("read Steam console log");
+            let start = initial_length.min(log.len());
+            steam_section = log[start..].to_owned();
+            if let Some(offset) = steam_section.find(&expected) {
+                let controller_section = &steam_section[offset..];
+                if controller_section.contains("!! Steam controller device opened") {
+                    controller.close();
+                    return;
+                }
+            }
+            thread::sleep(Duration::from_millis(4));
+        }
+        controller.close();
+        panic!(
+            "Steam did not open the session-specific DualSense through its enabled PS5 HIDAPI driver; expected {expected:?}, new log section: {steam_section}"
+        );
     }
 
     #[test]

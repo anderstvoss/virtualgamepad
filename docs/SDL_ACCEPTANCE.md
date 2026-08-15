@@ -31,3 +31,27 @@ The probe deliberately has no Cargo dependency on SDL. Steam Input validation
 is interactive and must not be represented as an ordinary CI pass. The current
 repository has no SDL3 development package installed, so this gate remains a
 supported-host prerequisite rather than an ordinary automated test.
+
+## Steam physical/virtual A/B
+
+With Steam running and its `console_log.txt` available, run the opt-in virtual
+Steam gate with a session-specific controller:
+
+```bash
+VIRTUALGAMEPAD_STEAM_CONSOLE_LOG=/path/to/console_log.txt \
+  sg input -c 'cargo test -p gr-curated-controllers \
+    dualsense_steam_hidapi_opens_the_session_specific_controller \
+    -- --ignored --nocapture'
+```
+
+Then compare Steam's most recent physical and virtual discovery blocks without
+relying on their similarly named input devices:
+
+```bash
+scripts/steam-controller-ab-report.sh /path/to/console_log.txt \
+  /dev/hidrawPHYSICAL /dev/hidrawVIRTUAL
+```
+
+Both blocks must select `SDL_JOYSTICK_HIDAPI_PS5 (ENABLED)` and show their own
+hidraw path. The virtual gate also requires Steam to open the controller after
+the exact session serial appears in the log.
