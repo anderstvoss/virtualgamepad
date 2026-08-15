@@ -237,10 +237,6 @@ pub fn preflight() -> Preflight {
         out.errors
             .push("ConfigFS is not mounted at /sys/kernel/config".into());
     }
-    if !Path::new(CONFIGFS).is_dir() {
-        out.errors
-            .push("USB gadget ConfigFS is unavailable at /sys/kernel/config/usb_gadget".into());
-    }
     if !Path::new("/lib/modules").is_dir() {
         out.errors.push("kernel modules are unavailable".into());
     }
@@ -281,6 +277,13 @@ impl Gadget {
             if !status.success() {
                 return Err(io::Error::other(format!("modprobe {module} failed")));
             }
+        }
+        // `libcomposite` creates this ConfigFS subtree. Checking it before
+        // module loading incorrectly rejected a correctly mounted ConfigFS.
+        if !Path::new(CONFIGFS).is_dir() {
+            return Err(io::Error::other(
+                "libcomposite loaded but USB gadget ConfigFS is unavailable at /sys/kernel/config/usb_gadget",
+            ));
         }
         let root = Path::new(CONFIGFS).join(GADGET_NAME);
         if root.exists() {
