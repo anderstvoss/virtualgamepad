@@ -161,6 +161,7 @@ pub struct DualSenseState {
     buttons: [bool; 9],
     touches: [Option<DualSenseTouchContact>; 2],
     motion: MotionSample,
+    input_sequence: u8,
     sensor_timestamp: u32,
     battery: BatteryState,
 }
@@ -175,9 +176,14 @@ impl Default for DualSenseState {
             buttons: [false; 9],
             touches: [None, None],
             motion: MotionSample {
+                // The provider deliberately makes no orientation assumption.
+                // Applications that model gravity may publish it explicitly.
                 accelerometer: [0; 3],
                 gyroscope: [0; 3],
             },
+            // The USB report's sequence byte distinguishes the initial
+            // controller state from an unchanging stale packet.
+            input_sequence: 1,
             sensor_timestamp: 0,
             battery: BatteryState::default(),
         }
@@ -233,9 +239,9 @@ impl DualSenseState {
 
 fn advance_sensor_timestamp(state: &mut DualSenseState) {
     // DualSense reports timestamps in 0.33 µs units. A monotonically
-    // advancing synthetic timestamp keeps the Linux sensor input stream
-    // meaningful when motion is driven from the demo.
-    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(3_000);
+    // advancing 4 ms timestamp matches its advertised 250 Hz USB sensor rate.
+    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(12_000);
+    state.input_sequence = state.input_sequence.wrapping_add(1);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -658,6 +664,7 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
         state.triggers.0.raw(),
         state.triggers.1.raw(),
     ]);
+    bytes[6] = state.input_sequence;
     bytes[7] = dualsense_hat(state.dpad)
         | (u8::from(state.face[2]) << 4)
         | (u8::from(state.face[0]) << 5)
@@ -672,7 +679,19 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
     bytes[9] = u8::from(state.buttons[4])
         | (u8::from(state.buttons[5]) << 1)
         | (u8::from(state.buttons[8]) << 2);
-    for (offset, value) in state.motion.gyroscope.into_iter().enumerate() {
+    // OpenPuck's DualSense USB personality follows the Linux hid-playstation
+    // wire frame: the physical sensor axes are emitted as X, Z, -Y.  Keeping
+    // this conversion at the encoder boundary makes MotionSample an explicit
+    // application coordinate system and prevents a GUI orientation default
+    // from leaking into the HID protocol.
+    for (offset, value) in [
+        state.motion.gyroscope[0],
+        state.motion.gyroscope[2],
+        state.motion.gyroscope[1].wrapping_neg(),
+    ]
+    .into_iter()
+    .enumerate()
+    {
         bytes[15 + offset * 2..17 + offset * 2].copy_from_slice(&value.to_le_bytes());
     }
     for (offset, value) in state.motion.accelerometer.into_iter().enumerate() {
@@ -1171,6 +1190,10 @@ fn dualsense_feature_responses(
     firmware[0] = 0x20;
     firmware[24] = 1;
     firmware[28] = 1;
+    // SDL and Steam use the DualSense feature/update version at this offset
+    // to select the complete USB controller path. 2.24 is the first version
+    // with the current compatible-rumble behavior.
+    firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
     [(0x05, calibration), (0x09, pairing), (0x20, firmware)]
         .into_iter()
         .map(|(report_id, bytes)| {
@@ -1437,8 +1460,10 @@ mod tests {
         };
         assert_eq!(report_id, Some(1));
         assert_eq!(bytes.len(), 63);
+        assert_eq!(bytes[6], 1);
         assert_eq!(bytes[7], 0x28); // neutral hat plus Cross.
-        assert_eq!(&bytes[15..21], &[1, 0, 254, 255, 3, 0]);
+        // The USB gyro wire order is X, Z, -Y (OpenPuck / hid-playstation).
+        assert_eq!(&bytes[15..21], &[1, 0, 3, 0, 2, 0]);
         assert_eq!(&bytes[21..27], &[252, 255, 5, 0, 250, 255]);
         assert_eq!(&bytes[27..31], &3_000_u32.to_le_bytes());
         assert_eq!(bytes[9] & 0x04, 0x04);
@@ -1507,6 +1532,14 @@ mod tests {
                 .expect("DualSense Linux probe reply");
             assert_eq!(bytes[0], report_id);
         }
+        let firmware = realization
+            .feature_report_responses
+            .get(&NativeHidReportKey {
+                report_id: 0x20,
+                report_type: 0,
+            })
+            .expect("DualSense firmware feature");
+        assert_eq!(&firmware[44..46], &0x0224_u16.to_le_bytes());
     }
 
     #[test]
@@ -1533,6 +1566,12 @@ mod tests {
             assert!((scale - 64.0).abs() < f32::EPSILON);
         }
         for (plus, minus) in [(23, 25), (27, 29), (31, 33)] {
+            // SDL's DualSense HID path accepts a calibrated accelerometer
+            // only when this yields one raw count per reported raw count.
+            let range = i32::from(sample(plus)) - i32::from(sample(minus));
+            assert_eq!(range, 16_384);
+        }
+        for (plus, minus) in [(23, 25), (27, 29), (31, 33)] {
             assert_eq!(i32::from(sample(plus)) - i32::from(sample(minus)), 16_384);
         }
     }
@@ -1557,10 +1596,24 @@ mod tests {
     fn motion_updates_advance_the_sensor_timestamp_and_wrap_safely() {
         let mut state = DualSenseState::default();
         advance_sensor_timestamp(&mut state);
-        assert_eq!(state.sensor_timestamp, 3_000);
-        state.sensor_timestamp = u32::MAX - 1_000;
+        assert_eq!(state.sensor_timestamp, 12_000);
+        assert_eq!(state.input_sequence, 2);
+        state.sensor_timestamp = u32::MAX - 4_000;
+        state.input_sequence = u8::MAX;
         advance_sensor_timestamp(&mut state);
-        assert_eq!(state.sensor_timestamp, 1_999);
+        assert_eq!(state.sensor_timestamp, 7_999);
+        assert_eq!(state.input_sequence, 0);
+    }
+
+    #[test]
+    fn neutral_motion_makes_no_orientation_assumption() {
+        assert_eq!(
+            DualSenseState::default().motion(),
+            MotionSample {
+                gyroscope: [0; 3],
+                accelerometer: [0; 3],
+            }
+        );
     }
 
     #[test]

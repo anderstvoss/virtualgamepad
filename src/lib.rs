@@ -18,11 +18,17 @@ pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, CreationOptions, DualSenseAxis, DualSenseControl,
     DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseOutputEvent,
-    DualSenseState, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, GenericGamepadAxis,
+    DualSenseState, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
+    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
+    DualShock4OutputEvent, DualShock4State, DualShock4Surface, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, DualShock4UsbOptions, GenericGamepadAxis,
     GenericGamepadControl, GenericGamepadController, GenericGamepadOutputEvent,
-    GenericGamepadState, GenericGamepadSurface, GenericGamepadTrigger, MotionSample, TouchSlot,
-    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
-    Xbox360Surface, Xbox360Trigger, create_dualsense, create_generic_gamepad, create_xbox360,
+    GenericGamepadState, GenericGamepadSurface, GenericGamepadTrigger, MotionSample, SwitchProAxis,
+    SwitchProControl, SwitchProController, SwitchProMotionSample, SwitchProOutputEvent,
+    SwitchProState, SwitchProSurface, SwitchProUsbOptions, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Controller, Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_dualshock4_usb, create_generic_gamepad,
+    create_switch_pro, create_switch_pro_usb, create_xbox360,
 };
 pub use gr_realization_api::{
     ControllerId, DeploymentTarget, EventReadiness, NativeControllerRealization,

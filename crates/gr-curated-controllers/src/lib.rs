@@ -7,7 +7,9 @@
 
 mod common;
 pub mod dualsense;
+pub mod dualshock4;
 pub mod generic_gamepad;
+pub mod switch_pro;
 pub mod xbox360;
 
 use gr_controller_contract::ControlError;
@@ -85,9 +87,20 @@ pub use dualsense::{
     DualSenseTrigger, DualSenseUsbOptions, MotionSample, TouchSlot, create_dualsense,
     create_dualsense_usb,
 };
+pub use dualshock4::{
+    DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
+    DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, DualShock4UsbOptions,
+    create_dualshock4, create_dualshock4_usb,
+};
 pub use generic_gamepad::{
     GenericGamepadAxis, GenericGamepadControl, GenericGamepadController, GenericGamepadOutputEvent,
     GenericGamepadState, GenericGamepadSurface, GenericGamepadTrigger, create_generic_gamepad,
+};
+pub use switch_pro::{
+    SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
+    SwitchProOutputEvent, SwitchProState, SwitchProSurface, SwitchProUsbOptions, create_switch_pro,
+    create_switch_pro_usb,
 };
 pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
@@ -154,18 +167,28 @@ mod integration_tests {
         input_node_count_containing(fragment) > 0
     }
 
-    fn virtual_dualsense_hidraw_path() -> Option<PathBuf> {
+    fn virtual_dualsense_hidraw_path(session: RealizationSessionId) -> Option<PathBuf> {
+        let expected_physical_path = format!(
+            "HID_PHYS=virtualgamepad/uhid/dualsense/session-{}",
+            session.0
+        );
         let entries = fs::read_dir("/sys/class/hidraw").ok()?;
         for entry in entries.flatten() {
-            let device = fs::canonicalize(entry.path().join("device")).ok()?;
+            let Ok(device) = fs::canonicalize(entry.path().join("device")) else {
+                continue;
+            };
             if !device
                 .to_string_lossy()
                 .contains("/devices/virtual/misc/uhid/")
             {
                 continue;
             }
-            let uevent = fs::read_to_string(device.join("uevent")).ok()?;
-            if uevent.contains("HID_ID=0003:0000054C:00000CE6") {
+            let Ok(uevent) = fs::read_to_string(device.join("uevent")) else {
+                continue;
+            };
+            if uevent.contains("HID_ID=0003:0000054C:00000CE6")
+                && uevent.contains(&expected_physical_path)
+            {
                 return Some(PathBuf::from("/dev").join(entry.file_name()));
             }
         }
@@ -235,6 +258,26 @@ mod integration_tests {
             .expect("DualSense touch update");
         dualsense.commit().expect("DualSense changed commit");
         dualsense.close();
+
+        let mut dualshock4 = create_dualshock4(options(204)).expect("DualShock 4 creation");
+        dualshock4
+            .set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("DualShock 4 update");
+        dualshock4.commit().expect("DualShock 4 changed commit");
+        dualshock4.close();
+
+        let mut switch_pro = create_switch_pro(options(205)).expect("Switch Pro creation");
+        switch_pro
+            .set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("Switch Pro update");
+        switch_pro.commit().expect("Switch Pro changed commit");
+        switch_pro.close();
     }
 
     #[test]
@@ -385,9 +428,10 @@ mod integration_tests {
     #[test]
     #[ignore = "requires /dev/uhid plus read access to the generated hidraw node"]
     fn dualsense_hid_delivers_steam_facing_motion_reports() {
+        let session = RealizationSessionId(403);
         let mut controller = create_dualsense(CreationOptions {
             target: DeploymentTarget::Hid,
-            session: RealizationSessionId(403),
+            session,
         })
         .expect("DualSense UHID creation");
         assert!(
@@ -395,7 +439,7 @@ mod integration_tests {
             "DualSense creation must flush the initial full input report before Steam probes it"
         );
         poll_dualsense_for(&mut controller, Duration::from_secs(3), || {});
-        let hidraw = virtual_dualsense_hidraw_path()
+        let hidraw = virtual_dualsense_hidraw_path(session)
             .expect("Linux did not create the virtual DualSense hidraw node");
         let mut hidraw = fs::OpenOptions::new()
             .read(true)
@@ -404,34 +448,44 @@ mod integration_tests {
             .unwrap_or_else(|error| panic!("Steam cannot open {}: {error}", hidraw.display()));
         let _ = read_hid_reports(&mut hidraw); // Ignore the initial neutral report.
 
-        controller
-            .set_motion(MotionSample {
-                gyroscope: [1_000, -2_000, 3_000],
-                accelerometer: [-4_000, 5_000, -6_000],
-            })
-            .expect("motion update");
-        controller.commit().expect("motion commit");
-
-        let deadline = Instant::now() + Duration::from_secs(2);
+        let motion = MotionSample {
+            gyroscope: [1_000, -2_000, 3_000],
+            accelerometer: [-4_000, 5_000, -6_000],
+        };
+        let deadline = Instant::now() + Duration::from_millis(500);
         let mut reports = Vec::new();
         while Instant::now() < deadline {
+            controller.set_motion(motion).expect("motion update");
+            controller.commit().expect("motion commit");
+            controller
+                .poll_output(&mut |_| {})
+                .expect("Steam probe polling must remain live during motion");
             reports.extend(read_hid_reports(&mut hidraw));
-            if reports.iter().any(|report| {
+            thread::sleep(Duration::from_millis(4));
+        }
+        let motion_timestamps = reports
+            .iter()
+            .filter(|report| {
                 report[0] == 0x01
                     && report[16..22] == [0xe8, 0x03, 0x30, 0xf8, 0xb8, 0x0b]
                     && report[22..28] == [0x60, 0xf0, 0x88, 0x13, 0x90, 0xe8]
-                    && u32::from_le_bytes(report[28..32].try_into().expect("timestamp")) > 0
-            }) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(10));
-        }
+            })
+            .map(|report| u32::from_le_bytes(report[28..32].try_into().expect("timestamp")))
+            .collect::<Vec<_>>();
         assert!(
-            reports.iter().any(|report| report[0] == 0x01
-                && report[16..22] == [0xe8, 0x03, 0x30, 0xf8, 0xb8, 0x0b]
-                && report[22..28] == [0x60, 0xf0, 0x88, 0x13, 0x90, 0xe8]
-                && u32::from_le_bytes(report[28..32].try_into().expect("timestamp")) > 0),
-            "Steam-facing HID stream lacked the requested motion report: {reports:?}"
+            motion_timestamps.len() >= 20,
+            "Steam-facing HID stream stopped during sustained motion: {reports:?}"
+        );
+        assert!(
+            motion_timestamps
+                .windows(2)
+                .all(|timestamps| timestamps[0] != timestamps[1]),
+            "sustained motion reports reused sensor timestamps: {motion_timestamps:?}"
+        );
+        assert!(
+            virtual_dualsense_hidraw_path(session).is_some()
+                && input_node_exists_containing("Virtual DualSense Motion Sensors"),
+            "DualSense ceased to be detectable during sustained motion"
         );
         controller.close();
     }
