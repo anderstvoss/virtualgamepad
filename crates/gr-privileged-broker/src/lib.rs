@@ -259,10 +259,12 @@ impl BrokerRegistry {
         bytes: &[u8],
     ) -> Result<(), BrokerError> {
         self.policy.send_input(peer, session, bytes)?;
-        self.sessions
+        let result = self
+            .sessions
             .get_mut(&session)
             .ok_or(BrokerError::UnknownSession { session })?
-            .send_input(bytes)
+            .send_input(bytes);
+        self.terminal_on_host_error(peer, session, result)
     }
 
     pub fn poll_reverse(
@@ -271,10 +273,12 @@ impl BrokerRegistry {
         session: RealizationSessionId,
     ) -> Result<Option<Vec<u8>>, BrokerError> {
         self.policy.diagnostics(peer, session)?;
-        self.sessions
+        let result = self
+            .sessions
             .get_mut(&session)
             .ok_or(BrokerError::UnknownSession { session })?
-            .poll_reverse()
+            .poll_reverse();
+        self.terminal_on_host_error(peer, session, result)
     }
 
     pub fn diagnostics(
@@ -302,6 +306,21 @@ impl BrokerRegistry {
         for (_, mut host) in std::mem::take(&mut self.sessions) {
             let _ = host.close();
         }
+    }
+
+    fn terminal_on_host_error<T>(
+        &mut self,
+        peer: u32,
+        session: RealizationSessionId,
+        result: Result<T, BrokerError>,
+    ) -> Result<T, BrokerError> {
+        if result.is_err() {
+            let _ = self.policy.close(peer, session);
+            if let Some(mut host) = self.sessions.remove(&session) {
+                let _ = host.close();
+            }
+        }
+        result
     }
 }
 
@@ -426,10 +445,17 @@ mod tests {
     struct FakeHost {
         closed: Arc<Mutex<u8>>,
         output: Option<Vec<u8>>,
+        fail_send: bool,
     }
     impl HostSession for FakeHost {
         fn send_input(&mut self, _: &[u8]) -> Result<(), BrokerError> {
-            Ok(())
+            if self.fail_send {
+                Err(BrokerError::Host {
+                    reason: "fake write failure".into(),
+                })
+            } else {
+                Ok(())
+            }
         }
         fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError> {
             Ok(self.output.take())
@@ -455,6 +481,7 @@ mod tests {
             Ok(Box::new(FakeHost {
                 closed: Arc::clone(&self.closed),
                 output: Some(vec![2, 3]),
+                fail_send: false,
             }))
         }
     }
@@ -550,6 +577,36 @@ mod tests {
         assert_eq!(registry.poll_reverse(1000, session).unwrap(), None);
         assert_eq!(registry.diagnostics(1000, session).unwrap(), b"fake");
         registry.close(1000, session).unwrap();
+        assert_eq!(*closed.lock().unwrap(), 1);
+        assert!(matches!(
+            registry.send_input(1000, session, &[0; 64]),
+            Err(BrokerError::UnknownSession { .. })
+        ));
+    }
+
+    #[test]
+    fn failed_host_write_closes_and_invalidates_the_capability() {
+        let closed = Arc::new(Mutex::new(0));
+        let mut registry = BrokerRegistry::new(vec![1000]);
+        let session = RealizationSessionId(1);
+        registry
+            .policy
+            .open(
+                1000,
+                session,
+                RealizationTarget::DummyHcd,
+                CompiledControllerKind::DualSense,
+            )
+            .unwrap();
+        registry.sessions.insert(
+            session,
+            Box::new(FakeHost {
+                closed: Arc::clone(&closed),
+                output: None,
+                fail_send: true,
+            }),
+        );
+        assert!(registry.send_input(1000, session, &[0; 64]).is_err());
         assert_eq!(*closed.lock().unwrap(), 1);
         assert!(matches!(
             registry.send_input(1000, session, &[0; 64]),
