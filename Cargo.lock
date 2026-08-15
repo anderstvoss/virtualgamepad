@@ -1879,6 +1879,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "poc-dualsense-dummy-hcd"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "libc",
+]
+
+[[package]]
 name = "polling"
 version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -20,6 +20,7 @@ members = [
     "crates/gr-provider-linux-uhid",
     "crates/gr-provider-linux-transport",
     "demo",
+    "poc-dualsense-dummy-hcd",
 ]
 resolver = "3"
 
