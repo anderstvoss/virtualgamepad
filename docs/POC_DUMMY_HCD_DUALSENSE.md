@@ -42,3 +42,18 @@ from `bcdDevice`, controller open, and subsequent feature/motion polling. Compar
 a physical controller by serial and USB topology. Matching discovery plus Steam Controller Test
 gyro mapping is evidence that USB topology, rather than UHID report encoding, was the missing
 condition.
+
+## Confirmed finding (2026-08-15)
+
+The POC was run in this VM and Steam's Controller Test detected changing DualSense gyro input.
+Linux enumerated the `dummy_hcd` device as USB `054c:0ce6`, release `1.10`, then registered the
+gamepad, motion-sensor, and touchpad devices. The POC used the same DualSense descriptor, feature
+responses, `X, Z, -Y` gyro wire mapping, explicit zero-neutral acceleration, and 250 Hz motion
+cadence as the production HID implementation.
+
+Therefore the missing gyro in Steam's UHID realization is **not** explained by that input-report
+layout, feature fixture set, axis mapping, or report cadence. The remaining investigation belongs
+at the UHID-versus-USB topology boundary: how SDL/Steam associates the Linux motion sensor with a
+controller originating from `BUS_VIRTUAL`/UHID, rather than a USB HID interface. This POC does not
+establish that a physical USB gadget will behave identically; `dummy_hcd` remains a same-VM
+software USB experiment.
