@@ -40,15 +40,20 @@ pub(crate) const fn dpad_index(direction: DpadDirection) -> usize {
     }
 }
 
-pub(crate) struct ProviderSessionSink(Box<dyn NativeProviderSession>);
+pub(crate) struct ProviderSessionSink {
+    session: Box<dyn NativeProviderSession>,
+    closed: bool,
+}
 
 impl FrameSink for ProviderSessionSink {
     type Frame = ProviderFrame;
 
     fn send(&mut self, frame: ProviderFrame) -> Result<(), CommitError> {
-        self.0.send(frame).map_err(|error| CommitError::Backend {
-            reason: error.to_string(),
-        })
+        self.session
+            .send(frame)
+            .map_err(|error| CommitError::Backend {
+                reason: error.to_string(),
+            })
     }
 }
 
@@ -58,7 +63,7 @@ impl ProviderSessionSink {
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
         let mut events: Vec<ProviderReverseEvent> = Vec::new();
-        match self.0.drain_reverse_events(&mut events) {
+        match self.session.drain_reverse_events(&mut events) {
             Ok(()) => {}
             Err(ProviderError::WouldBlock) => return Ok(()),
             Err(error) => return Err(error),
@@ -70,7 +75,19 @@ impl ProviderSessionSink {
     }
 
     pub(crate) fn reply(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
-        self.0.send(frame)
+        self.session.send(frame)
+    }
+
+    pub(crate) fn close(&mut self) {
+        if !self.closed && self.session.close().is_ok() {
+            self.closed = true;
+        }
+    }
+}
+
+impl Drop for ProviderSessionSink {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 
@@ -106,10 +123,16 @@ where
             });
         }
     };
-    ControllerRuntime::new(driver, ProviderSessionSink(session), prepared).map_err(|error| {
-        ProviderError::Open {
-            reason: error.to_string(),
-        }
+    ControllerRuntime::new(
+        driver,
+        ProviderSessionSink {
+            session,
+            closed: false,
+        },
+        prepared,
+    )
+    .map_err(|error| ProviderError::Open {
+        reason: error.to_string(),
     })
 }
 
@@ -138,10 +161,16 @@ where
         realization,
     };
     let session = LinuxUsbGadgetProvider.open(request)?;
-    ControllerRuntime::new(driver, ProviderSessionSink(session), prepared).map_err(|error| {
-        ProviderError::Open {
-            reason: error.to_string(),
-        }
+    ControllerRuntime::new(
+        driver,
+        ProviderSessionSink {
+            session,
+            closed: false,
+        },
+        prepared,
+    )
+    .map_err(|error| ProviderError::Open {
+        reason: error.to_string(),
     })
 }
 
@@ -215,5 +244,69 @@ pub(crate) fn unavailable(target: gr_realization_api::RealizationTarget) -> Cont
     ControlError::UnavailableInRealization {
         selected_target: target,
         available_in: gr_realization_api::RealizationTargetSet::EMPTY,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use gr_realization_api::{EventReadiness, ProviderDiagnostics, ProviderState};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    struct ClosingSession(Arc<AtomicUsize>);
+
+    impl NativeProviderSession for ClosingSession {
+        fn send(&mut self, _: ProviderFrame) -> Result<(), ProviderError> {
+            Ok(())
+        }
+
+        fn drain_reverse_events(
+            &mut self,
+            _: &mut dyn gr_realization_api::ProviderReverseEventSink,
+        ) -> Result<(), ProviderError> {
+            Err(ProviderError::WouldBlock)
+        }
+
+        fn readiness(&self) -> EventReadiness {
+            EventReadiness::NoReverseEvents
+        }
+
+        fn diagnostics(&self) -> ProviderDiagnostics {
+            ProviderDiagnostics {
+                state: ProviderState::Open,
+                frames_sent: 0,
+                reverse_events_drained: 0,
+                write_failures: 0,
+                lifecycle_events: 0,
+                last_error: None,
+            }
+        }
+
+        fn close(&mut self) -> Result<(), ProviderError> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn provider_session_is_destroyed_once_on_explicit_close_or_drop() {
+        let closes = Arc::new(AtomicUsize::new(0));
+        let mut sink = ProviderSessionSink {
+            session: Box::new(ClosingSession(Arc::clone(&closes))),
+            closed: false,
+        };
+        sink.close();
+        drop(sink);
+        assert_eq!(closes.load(Ordering::SeqCst), 1);
+
+        let dropped = ProviderSessionSink {
+            session: Box::new(ClosingSession(Arc::clone(&closes))),
+            closed: false,
+        };
+        drop(dropped);
+        assert_eq!(closes.load(Ordering::SeqCst), 2);
     }
 }

@@ -509,6 +509,7 @@ impl Xbox360Controller {
         self.0.commit()
     }
     pub fn close(&mut self) {
+        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
     pub fn poll_output(

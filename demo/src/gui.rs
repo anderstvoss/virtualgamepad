@@ -288,6 +288,13 @@ impl App {
             (!self.controllers.is_empty()).then(|| index.min(self.controllers.len() - 1));
     }
 }
+impl Drop for App {
+    fn drop(&mut self) {
+        for named in &mut self.controllers {
+            named.controller.close();
+        }
+    }
+}
 impl eframe::App for App {
     #[allow(clippy::too_many_lines)] // Coordinates the independent demo panels.
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
