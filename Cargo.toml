@@ -13,6 +13,7 @@ publish = false
 members = [
     "crates/gr-realization-api",
     "crates/gr-dualsense-wire",
+    "crates/gr-controller-wire",
     "crates/gr-audio-contract",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",

@@ -140,6 +140,9 @@ fn target_tag(target: RealizationTarget) -> Option<u8> {
 fn controller_tag(controller: CompiledControllerKind) -> u8 {
     match controller {
         CompiledControllerKind::DualSense => 1,
+        CompiledControllerKind::DualShock4 => 2,
+        CompiledControllerKind::SwitchPro => 3,
+        CompiledControllerKind::Xbox360 => 4,
     }
 }
 

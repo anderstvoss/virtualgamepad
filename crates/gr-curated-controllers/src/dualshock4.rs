@@ -8,6 +8,7 @@ use gr_controller_contract::{
     TargetAwareControllerDriver, TargetRestriction,
 };
 use gr_controller_runtime::ControllerRuntime;
+use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
     ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
@@ -649,61 +650,27 @@ fn advance_ds4_timing(state: &mut DualShock4State) {
     }
 }
 
-const DESC: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
-    0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0x05, 0x09, 0x19, 0x01, 0x29,
-    0x0e, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x0e, 0x81, 0x02, 0x06, 0x00, 0xff, 0x75, 0x06,
-    0x95, 0x01, 0x81, 0x02, 0x05, 0x01, 0x09, 0x33, 0x09, 0x34, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75,
-    0x08, 0x95, 0x02, 0x81, 0x02, 0x06, 0x00, 0xff, 0x95, 0x36, 0x81, 0x02, 0x85, 0x05, 0x95, 0x1f,
-    0x91, 0x02, 0x85, 0x02, 0x95, 0x24, 0xb1, 0x02, 0x85, 0x12, 0x95, 0x0f, 0xb1, 0x02, 0x85, 0xa3,
-    0x95, 0x30, 0xb1, 0x02, 0xc0,
-];
 fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
-    let mut cal = vec![0; 37];
-    cal[0] = 2;
-    for o in [7, 11, 15] {
-        cal[o..o + 2].copy_from_slice(&32_000i16.to_le_bytes());
-    }
-    for o in [9, 13, 17] {
-        cal[o..o + 2].copy_from_slice(&(-32_000i16).to_le_bytes());
-    }
-    // hid-playstation scales gyro samples by the sum of these two fields.
-    // Leaving them zero materializes the motion device but normalizes every
-    // gyro sample to zero.
-    cal[19..21].copy_from_slice(&2_000i16.to_le_bytes());
-    cal[21..23].copy_from_slice(&2_000i16.to_le_bytes());
-    for o in [23, 27, 31] {
-        cal[o..o + 2].copy_from_slice(&8_192i16.to_le_bytes());
-    }
-    for o in [25, 29, 33] {
-        cal[o..o + 2].copy_from_slice(&(-8_192i16).to_le_bytes());
-    }
-    let mut mac = vec![0; 16];
-    mac[0] = 0x12;
-    mac[1..7].copy_from_slice(&[
+    dualshock4_feature_responses([
         2,
         0,
         0,
         0,
         (session.0 & 255) as u8,
         ((session.0 >> 8) & 255) as u8,
-    ]);
-    let mut fw = vec![0; 49];
-    fw[0] = 0xa3;
-    fw[1] = 1;
-    [(2, cal), (0x12, mac), (0xa3, fw)]
-        .into_iter()
-        .map(|(report_id, bytes)| {
-            (
-                NativeHidReportKey {
-                    report_id,
-                    report_type: F,
-                },
-                bytes,
-            )
-        })
-        .collect()
+    ])
+    .into_iter()
+    .map(|(report_id, bytes)| {
+        (
+            NativeHidReportKey {
+                report_id,
+                report_type: F,
+            },
+            bytes,
+        )
+    })
+    .collect()
 }
 fn hid(session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
@@ -718,7 +685,7 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
             product_id: 0x05c4,
             version: 0x0120,
         },
-        descriptor: DESC.to_vec(),
+        descriptor: DUALSHOCK4_USB_DESCRIPTOR.to_vec(),
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,

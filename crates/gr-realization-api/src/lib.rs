@@ -217,6 +217,9 @@ pub struct NativeHidReportKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompiledControllerKind {
     DualSense,
+    DualShock4,
+    SwitchPro,
+    Xbox360,
 }
 
 /// A privileged broker creates the fixed USB gadget for this controller kind.
