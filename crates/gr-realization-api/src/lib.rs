@@ -401,10 +401,6 @@ pub enum ProviderFrame {
         request_id: u32,
         status: i32,
     },
-    Transport {
-        endpoint: u8,
-        bytes: Vec<u8>,
-    },
     DummyHcdInput(Vec<u8>),
     BtvirtInput(Vec<u8>),
 }
@@ -439,10 +435,6 @@ pub enum RawReverseEvent {
     ForceFeedbackErase {
         request_id: u32,
         effect_id: u32,
-    },
-    Transport {
-        endpoint: u8,
-        bytes: Vec<u8>,
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -509,12 +501,6 @@ pub enum ProviderPreflightError {
         target: RealizationTarget,
         path: String,
     },
-    #[error("USB transport validation requires prepared endpoint `{path}`")]
-    MissingPreparedEndpoint { path: String },
-    #[error("USB gadget validation requires a peripheral-capable USB Device Controller")]
-    MissingUsbDeviceController,
-    #[error("USB transport validation endpoint `{path}` cannot be accessed")]
-    PreparedEndpointAccessDenied { path: String },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderOpenRequest {

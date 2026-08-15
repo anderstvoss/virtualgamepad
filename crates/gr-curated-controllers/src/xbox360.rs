@@ -573,7 +573,6 @@ impl Xbox360Controller {
                         report_type,
                         bytes,
                     },
-                    RawReverseEvent::Transport { .. } => return,
                 };
                 callback(output);
             })

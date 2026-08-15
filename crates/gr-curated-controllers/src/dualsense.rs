@@ -17,8 +17,6 @@ use gr_realization_api::{
 };
 use std::collections::BTreeMap;
 
-const DUALSENSE_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
-
 /// `DualSense` stick-axis value (`0..=255`, neutral `128`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DualSenseAxis(u8);
@@ -1049,19 +1047,6 @@ impl DualSenseController {
                         report_type,
                         bytes,
                     },
-                    RawReverseEvent::Transport {
-                        endpoint,
-                        mut bytes,
-                    } if endpoint == DUALSENSE_USB_HID_OUTPUT_ENDPOINT => {
-                        let report_id = bytes.first().copied();
-                        if report_id.is_some() {
-                            bytes.remove(0);
-                        }
-                        DualSenseOutputEvent::HidOutput(decode_dualsense_hid_output(
-                            report_id, bytes,
-                        ))
-                    }
-                    RawReverseEvent::Transport { .. } => return,
                 };
                 callback(output);
             })

@@ -18,8 +18,6 @@ use gr_realization_api::{
     RealizationSessionId, RealizationTarget,
 };
 
-pub const SWITCH_PRO_USB_HID_INPUT_ENDPOINT: u8 = 0x81;
-pub const SWITCH_PRO_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SwitchProAxis(i16);
 impl SwitchProAxis {
@@ -358,22 +356,10 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         if sel.target == RealizationTarget::Evdev {
             return Ok(switch_evdev_frame(s));
         }
-        let ProviderFrame::HidInput {
-            report_id,
-            mut bytes,
-        } = switch_frame(s)
-        else {
+        let ProviderFrame::HidInput { report_id, bytes } = switch_frame(s) else {
             unreachable!()
         };
-        if sel.target == RealizationTarget::Uhid {
-            bytes.insert(0, report_id.unwrap_or(0x30));
-            Ok(ProviderFrame::Transport {
-                endpoint: SWITCH_PRO_USB_HID_INPUT_ENDPOINT,
-                bytes,
-            })
-        } else {
-            Ok(ProviderFrame::HidInput { report_id, bytes })
-        }
+        Ok(ProviderFrame::HidInput { report_id, bytes })
     }
 }
 fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
@@ -795,10 +781,6 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
     fn from(e: RawReverseEvent) -> Self {
         match e {
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
-            RawReverseEvent::Transport { bytes, .. } => Self::Output {
-                report_id: bytes.first().copied(),
-                bytes,
-            },
             RawReverseEvent::HidGetReportRequest {
                 request_id,
                 report_id,
@@ -863,9 +845,7 @@ mod tests {
                 &SwitchProState::default(),
             )
             .unwrap();
-        assert!(
-            matches!(f,ProviderFrame::Transport{endpoint:0x81,bytes}if bytes.len()==64&&bytes[0]==0x30)
-        );
+        assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(0x30),bytes}if bytes.len()==63));
     }
 
     #[test]

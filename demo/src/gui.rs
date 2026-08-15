@@ -6,16 +6,14 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, CreationOptions, RealizationTarget, DigitalControlUpdate,
-    DpadDirection, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput,
-    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
-    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, FaceButton, GenericGamepadAxis,
-    GenericGamepadControl, GenericGamepadController, GenericGamepadTrigger, MotionSample,
-    RealizationSessionId, RealizationTarget, SwitchProAxis, SwitchProControl, SwitchProController,
-    SwitchProMotionSample, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller,
-    Xbox360OutputEvent, Xbox360Trigger, create_dualsense, create_dualshock4,
-    create_generic_gamepad, create_switch_pro, create_xbox360,
+    BatteryLevel, BatteryState, CreationOptions, DigitalControlUpdate, DpadDirection,
+    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
+    DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationSessionId,
+    RealizationTarget, SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
+    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -54,15 +52,13 @@ fn status_after_runtime_failure(name: &str, error: String) -> ControllerLifecycl
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Generic,
     Xbox360,
     DualSense,
     DualShock4,
     SwitchPro,
 }
 impl Kind {
-    const ALL: [Self; 5] = [
-        Self::Generic,
+    const ALL: [Self; 4] = [
         Self::Xbox360,
         Self::DualSense,
         Self::DualShock4,
@@ -70,7 +66,6 @@ impl Kind {
     ];
     const fn label(self) -> &'static str {
         match self {
-            Self::Generic => "Generic Gamepad",
             Self::Xbox360 => "Xbox 360",
             Self::DualSense => "DualSense",
             Self::DualShock4 => "DualShock 4",
@@ -79,7 +74,6 @@ impl Kind {
     }
 }
 enum Controller {
-    Generic(GenericGamepadController),
     Xbox(Xbox360Controller),
     DualSense(DualSenseController),
     DualShock4(DualShock4Controller),
@@ -216,7 +210,6 @@ impl Controller {
 
     fn commit(&mut self) -> Result<(), String> {
         let result = match self {
-            Self::Generic(controller) => controller.commit(),
             Self::Xbox(controller) => controller.commit(),
             Self::DualSense(controller) => controller.commit(),
             Self::DualShock4(controller) => controller.commit(),
@@ -226,7 +219,6 @@ impl Controller {
     }
     fn close(&mut self) {
         match self {
-            Self::Generic(controller) => controller.close(),
             Self::Xbox(controller) => controller.close(),
             Self::DualSense(controller) => controller.close(),
             Self::DualShock4(controller) => controller.close(),
@@ -235,7 +227,6 @@ impl Controller {
     }
     fn is_dirty(&self) -> bool {
         match self {
-            Self::Generic(controller) => controller.is_dirty(),
             Self::Xbox(controller) => controller.is_dirty(),
             Self::DualSense(controller) => controller.is_dirty(),
             Self::DualShock4(controller) => controller.is_dirty(),
@@ -249,40 +240,6 @@ impl Controller {
         indicators: &mut ReverseIndicators,
     ) -> Result<(), String> {
         let result: Result<(), String> = match self {
-            Self::Generic(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match event {
-                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackUpload {
-                                request_id,
-                                ..
-                            } => {
-                                indicators.rumble_pulse();
-                                replies.push((request_id, true));
-                            }
-                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackErase {
-                                request_id,
-                                ..
-                            } => replies.push((request_id, false)),
-                            _ => {}
-                        }
-                        log.push(format!("Generic: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    }
-                }
-                Ok(())
-            }
             Self::Xbox(controller) => {
                 let mut replies = Vec::new();
                 controller
@@ -385,7 +342,7 @@ impl Controller {
         result
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
-        if matches!(self, Self::Generic(_) | Self::Xbox(_) | Self::DualSense(_)) {
+        if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
             let battery = self.battery();
             ui.group(|ui| {
                 ui.label("Battery emulation");
@@ -407,7 +364,6 @@ impl Controller {
             });
         }
         match self {
-            Self::Generic(controller) => draw_generic(ui, controller),
             Self::Xbox(controller) => draw_xbox(ui, controller),
             Self::DualSense(controller) => draw_dualsense(ui, controller),
             Self::DualShock4(controller) => draw_dualshock4(ui, controller),
@@ -416,7 +372,6 @@ impl Controller {
     }
     fn battery(&self) -> BatteryState {
         match self {
-            Self::Generic(controller) => controller.state().battery(),
             Self::Xbox(controller) => controller.state().battery(),
             Self::DualSense(controller) => controller.state().battery(),
             Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
@@ -424,7 +379,6 @@ impl Controller {
     }
     fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), String> {
         match self {
-            Self::Generic(controller) => controller.set_battery_exposed(exposed),
             Self::Xbox(controller) => controller.set_battery_exposed(exposed),
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
@@ -433,7 +387,6 @@ impl Controller {
     }
     fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
-            Self::Generic(controller) => controller.set_battery_level(level),
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
@@ -454,7 +407,7 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
-            kind: Kind::Generic,
+            kind: Kind::Xbox360,
             target: RealizationTarget::Evdev,
             name_draft: String::new(),
             next_session: 1,
@@ -481,7 +434,6 @@ impl App {
             session: RealizationSessionId(self.next_session),
         };
         let result = match self.kind {
-            Kind::Generic => create_generic_gamepad(options).map(Controller::Generic),
             Kind::Xbox360 => create_xbox360(options).map(Controller::Xbox),
             Kind::DualSense => create_dualsense(options).map(Controller::DualSense),
             Kind::DualShock4 => create_dualshock4(options).map(Controller::DualShock4),
@@ -598,6 +550,16 @@ impl eframe::App for App {
                         RealizationTarget::Uhid,
                         target_label(RealizationTarget::Uhid),
                     );
+                    ui.selectable_value(
+                        &mut self.target,
+                        RealizationTarget::DummyHcd,
+                        target_label(RealizationTarget::DummyHcd),
+                    );
+                    ui.selectable_value(
+                        &mut self.target,
+                        RealizationTarget::Btvirt,
+                        target_label(RealizationTarget::Btvirt),
+                    );
                 });
             let default_name = self.next_default_name();
             ui.add(
@@ -606,7 +568,7 @@ impl eframe::App for App {
                     .desired_width(f32::INFINITY),
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID is research-backed and requires operator-enabled /dev/uhid access.");
+            ui.small("UHID requires /dev/uhid access. DummyHcd and Btvirt require the administrator-installed broker service.");
             if ui.button("Create").clicked() {
                 self.create();
             }
@@ -717,6 +679,8 @@ const fn target_label(target: RealizationTarget) -> &'static str {
     match target {
         RealizationTarget::Evdev => "Evdev / uinput",
         RealizationTarget::Uhid => "HID / UHID",
+        RealizationTarget::DummyHcd => "USB / dummy_hcd",
+        RealizationTarget::Btvirt => "Bluetooth / btvirt",
         _ => "Unknown target",
     }
 }
@@ -927,76 +891,6 @@ fn dualsense_axis_to_pad(value: u8) -> i16 {
 fn dualsense_axis_from_pad(value: i16) -> u8 {
     u8::try_from((i32::from(value) / 257 + 128).clamp(0, 255))
         .expect("clamped DualSense axis fits u8")
-}
-fn draw_generic(ui: &mut egui::Ui, controller: &mut GenericGamepadController) {
-    surface(ui, controller.surface());
-    digital_controls(ui, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Select", GenericGamepadControl::Select),
-                ("Start", GenericGamepadControl::Start),
-                ("Guide", GenericGamepadControl::Guide),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = left_x.raw();
-    let mut y = left_y.raw();
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = right_x.raw();
-    let mut right_y = right_y.raw();
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Left stick", &mut x, &mut y) {
-                    let _ = controller
-                        .set_left_stick(GenericGamepadAxis::new(x), GenericGamepadAxis::new(y));
-                }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(GenericGamepadControl::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Right stick", &mut right_x, &mut right_y) {
-                    let _ = controller.set_right_stick(
-                        GenericGamepadAxis::new(right_x),
-                        GenericGamepadAxis::new(right_y),
-                    );
-                }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(GenericGamepadControl::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "Left trigger", &mut left)
-        | momentary_trigger(ui, "Right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(
-            GenericGamepadTrigger::new(left),
-            GenericGamepadTrigger::new(right),
-        );
-    }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "Left shoulder", |pressed| {
-            let _ = controller.set_native(GenericGamepadControl::LeftShoulder, pressed);
-        });
-        hold(ui, "Right shoulder", |pressed| {
-            let _ = controller.set_native(GenericGamepadControl::RightShoulder, pressed);
-        });
-    });
 }
 fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     surface(ui, controller.surface());

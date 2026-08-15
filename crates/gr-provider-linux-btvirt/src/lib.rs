@@ -1,7 +1,9 @@
 #![forbid(unsafe_code)]
-//! Client-side provider for the fixed-purpose privileged btvirt broker.
+//! Client-side provider for the fixed-purpose privileged `btvirt` broker.
 
 #![allow(clippy::wildcard_imports)]
+#![allow(clippy::needless_pass_by_value, clippy::struct_field_names)]
+use gr_privileged_broker::{BROKER_SOCKET_PATH, BrokerClient, BrokerClientError, BrokerSession};
 use gr_realization_api::*;
 
 #[derive(Default)]
@@ -16,18 +18,8 @@ impl NativeProviderFactory for LinuxBtvirtProvider {
                 target: RealizationTarget::Btvirt,
             });
         }
-        if !matches!(
-            request.realization,
-            NativeControllerRealization::Btvirt(NativeBtvirtRealization {
-                controller: CompiledControllerKind::DualSense
-            })
-        ) {
-            return Err(ProviderPreflightError::MissingDeviceNode {
-                target: RealizationTarget::Btvirt,
-                path: "/run/virtualgamepad/broker.sock".into(),
-            });
-        }
-        Ok(())
+        require_dualsense(request)?;
+        BrokerClient::connect().map(|_| ()).map_err(preflight_error)
     }
     fn open(
         &self,
@@ -38,41 +30,116 @@ impl NativeProviderFactory for LinuxBtvirtProvider {
             .map_err(|error| ProviderError::Unsupported {
                 reason: error.to_string(),
             })?;
-        self.preflight(&request)?;
+        require_dualsense(&request).map_err(ProviderError::Preflight)?;
+        let mut broker = BrokerClient::connect().map_err(open_error)?;
+        let broker_session = broker
+            .open(RealizationTarget::Btvirt, CompiledControllerKind::DualSense)
+            .map_err(open_error)?;
         Ok(Box::new(Session {
+            broker,
+            broker_session,
             state: ProviderState::Open,
             sent: 0,
+            reverse: 0,
+            session: request.session,
         }))
     }
 }
+fn require_dualsense(request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+    if matches!(
+        request.realization,
+        NativeControllerRealization::Btvirt(NativeBtvirtRealization {
+            controller: CompiledControllerKind::DualSense
+        })
+    ) {
+        Ok(())
+    } else {
+        Err(ProviderPreflightError::MissingDeviceNode {
+            target: RealizationTarget::Btvirt,
+            path: BROKER_SOCKET_PATH.into(),
+        })
+    }
+}
+fn preflight_error(error: BrokerClientError) -> ProviderPreflightError {
+    match error {
+        BrokerClientError::Unavailable(error)
+            if error.kind() == std::io::ErrorKind::PermissionDenied =>
+        {
+            ProviderPreflightError::AccessDenied {
+                target: RealizationTarget::Btvirt,
+                path: BROKER_SOCKET_PATH.into(),
+            }
+        }
+        _ => ProviderPreflightError::MissingDeviceNode {
+            target: RealizationTarget::Btvirt,
+            path: BROKER_SOCKET_PATH.into(),
+        },
+    }
+}
+fn open_error(error: BrokerClientError) -> ProviderError {
+    ProviderError::Open {
+        reason: error.to_string(),
+    }
+}
 struct Session {
+    broker: BrokerClient,
+    broker_session: BrokerSession,
     state: ProviderState,
     sent: u64,
+    reverse: u64,
+    session: RealizationSessionId,
 }
 impl NativeProviderSession for Session {
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
         if self.state != ProviderState::Open {
             return Err(ProviderError::Closed);
         }
-        match frame {
-            ProviderFrame::BtvirtInput(bytes) if bytes.len() == 78 => {
-                self.sent += 1;
-                Ok(())
-            }
-            _ => Err(ProviderError::Unsupported {
+        let ProviderFrame::BtvirtInput(bytes) = frame else {
+            return Err(ProviderError::Unsupported {
                 reason: "btvirt accepts only exact 78-byte DualSense Bluetooth input reports"
                     .into(),
-            }),
+            });
+        };
+        if bytes.len() != 78 {
+            return Err(ProviderError::Unsupported {
+                reason: "btvirt accepts only exact 78-byte DualSense Bluetooth input reports"
+                    .into(),
+            });
         }
+        self.broker
+            .send_input(self.broker_session, &bytes)
+            .map_err(|error| ProviderError::Write {
+                reason: error.to_string(),
+            })?;
+        self.sent += 1;
+        Ok(())
     }
     fn drain_reverse_events(
         &mut self,
-        _: &mut dyn ProviderReverseEventSink,
+        out: &mut dyn ProviderReverseEventSink,
     ) -> Result<(), ProviderError> {
-        if self.state == ProviderState::Open {
-            Err(ProviderError::WouldBlock)
-        } else {
-            Err(ProviderError::Closed)
+        if self.state != ProviderState::Open {
+            return Err(ProviderError::Closed);
+        }
+        match self
+            .broker
+            .poll_reverse(self.broker_session)
+            .map_err(|error| ProviderError::Read {
+                reason: error.to_string(),
+            })? {
+            Some(bytes) => {
+                self.reverse += 1;
+                out.push(ProviderReverseEvent {
+                    session: self.session,
+                    sequence: self.reverse,
+                    event: RawReverseEvent::HidOutput {
+                        report_id: bytes.first().copied(),
+                        bytes,
+                    },
+                });
+                Ok(())
+            }
+            None => Err(ProviderError::WouldBlock),
         }
     }
     fn readiness(&self) -> EventReadiness {
@@ -82,35 +149,22 @@ impl NativeProviderSession for Session {
         ProviderDiagnostics {
             state: self.state,
             frames_sent: self.sent,
-            reverse_events_drained: 0,
+            reverse_events_drained: self.reverse,
             write_failures: 0,
             lifecycle_events: 0,
             last_error: None,
         }
     }
     fn close(&mut self) -> Result<(), ProviderError> {
+        if self.state == ProviderState::Closed {
+            return Ok(());
+        }
+        self.broker
+            .close(self.broker_session)
+            .map_err(|error| ProviderError::Write {
+                reason: error.to_string(),
+            })?;
         self.state = ProviderState::Closed;
         Ok(())
-    }
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn rejects_non_bluetooth_sized_input() {
-        let mut session = Session {
-            state: ProviderState::Open,
-            sent: 0,
-        };
-        assert!(
-            session
-                .send(ProviderFrame::BtvirtInput(vec![0; 64]))
-                .is_err()
-        );
-        assert!(
-            session
-                .send(ProviderFrame::BtvirtInput(vec![0; 78]))
-                .is_ok()
-        );
     }
 }

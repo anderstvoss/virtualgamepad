@@ -16,9 +16,6 @@ use gr_realization_api::{
 };
 use std::collections::BTreeMap;
 
-pub const DUALSHOCK4_USB_HID_INPUT_ENDPOINT: u8 = 0x81;
-pub const DUALSHOCK4_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DualShock4Axis(u8);
 impl DualShock4Axis {
@@ -478,14 +475,13 @@ impl TargetAwareControllerDriver for DualShock4Definition {
         if selection.target == RealizationTarget::Uhid {
             let ProviderFrame::HidInput {
                 report_id: Some(id),
-                mut bytes,
+                bytes,
             } = frame
             else {
                 unreachable!()
             };
-            bytes.insert(0, id);
-            Ok(ProviderFrame::Transport {
-                endpoint: DUALSHOCK4_USB_HID_INPUT_ENDPOINT,
+            Ok(ProviderFrame::HidInput {
+                report_id: Some(id),
                 bytes,
             })
         } else {
@@ -888,13 +884,6 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
             RawReverseEvent::HidOutput { report_id, bytes } => {
                 Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
             }
-            RawReverseEvent::Transport { mut bytes, .. } => {
-                let report_id = bytes.first().copied();
-                if report_id.is_some() {
-                    bytes.remove(0);
-                }
-                Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
-            }
             RawReverseEvent::HidGetReportRequest {
                 request_id,
                 report_id,
@@ -981,9 +970,7 @@ mod tests {
                 &DualShock4State::default(),
             )
             .unwrap();
-        assert!(
-            matches!(f,ProviderFrame::Transport{endpoint:0x81,bytes}if bytes.len()==64&&bytes[0]==1)
-        );
+        assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(1),bytes}if bytes.len()==63));
     }
 
     #[test]

@@ -21,6 +21,7 @@ members = [
     "crates/gr-privileged-broker",
     "crates/gr-provider-linux-dummy-hcd",
     "crates/gr-provider-linux-btvirt",
+    "demo",
 ]
 resolver = "3"
 
@@ -33,6 +34,7 @@ repository = "https://github.com/anderstvoss/virtualgamepad"
 authors = ["Anders Voss <anderstvoss@gmail.com>"]
 
 [workspace.dependencies]
+libc = "0.2"
 proptest = "1"
 thiserror = "2"
 
