@@ -320,6 +320,11 @@ impl Gadget {
         write(root.join("UDC"), &udc)?;
         let hidg = wait_new_node("hidg", &known_hidg, Duration::from_secs(5))?;
         let host_hidraw = wait_optional_new_node("hidraw", &known_hidraw, Duration::from_secs(5))?;
+        // `hid-playstation` creates gamepad, motion, and touch input nodes
+        // shortly after hidraw. Let that second udev phase complete first.
+        if host_hidraw.is_some() {
+            std::thread::sleep(Duration::from_millis(250));
+        }
         let input_events = device_nodes("event")?
             .into_iter()
             .filter(|node| !known_events.contains(node))
@@ -472,7 +477,15 @@ fn setup_configfs(root: &Path, identity: &Identity) -> io::Result<()> {
         write(function.join("interval"), "1")?;
     }
     fs::write(function.join("report_desc"), DESCRIPTOR)?;
-    std::os::unix::fs::symlink("../../functions/hid.poc", config.join("hid.poc"))
+    // ConfigFS resolves link targets in the kernel. An absolute target avoids
+    // the ENOENT produced by the relative target on newer kernels.
+    let link = config.join("hid.poc");
+    std::os::unix::fs::symlink(&function, &link).map_err(|error| {
+        io::Error::new(
+            error.kind(),
+            format!("link {} to {}: {error}", link.display(), function.display()),
+        )
+    })
 }
 fn cleanup_root(root: &Path) -> io::Result<()> {
     if !root.exists() {
@@ -491,14 +504,33 @@ fn cleanup_root(root: &Path) -> io::Result<()> {
         fs::remove_file(root.join("configs/c.1/hid.poc")),
         &mut first,
     );
+    // ConfigFS attributes are virtual files, so `remove_dir_all` is rejected.
+    // Remove only the POC's groups in dependency order.
+    tryit(fs::remove_dir(root.join("functions/hid.poc")), &mut first);
     tryit(
-        fs::remove_dir_all(root.join("functions/hid.poc")),
+        fs::remove_dir(root.join("configs/c.1/strings/0x409")),
         &mut first,
     );
-    tryit(fs::remove_dir_all(root.join("configs/c.1")), &mut first);
-    tryit(fs::remove_dir_all(root.join("strings")), &mut first);
+    tryit(fs::remove_dir(root.join("configs/c.1/strings")), &mut first);
+    tryit(fs::remove_dir(root.join("configs/c.1")), &mut first);
+    tryit(fs::remove_dir(root.join("strings/0x409")), &mut first);
+    tryit(fs::remove_dir(root.join("strings")), &mut first);
     tryit(fs::remove_dir(root), &mut first);
-    first.map_or(Ok(()), Err)
+    // Some ConfigFS removal calls return EPERM after the kernel has already
+    // removed their parent during teardown. The final owned-root state is the
+    // authoritative result: only surface an error if it remains.
+    if root.exists() {
+        return first.map_or_else(
+            || {
+                Err(io::Error::other(format!(
+                    "POC gadget remains at {}",
+                    root.display()
+                )))
+            },
+            Err,
+        );
+    }
+    Ok(())
 }
 fn write(path: impl AsRef<Path>, value: &str) -> io::Result<()> {
     let path = path.as_ref();
