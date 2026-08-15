@@ -39,7 +39,10 @@ mod integration_tests {
     use super::*;
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
     use gr_realization_api::{DeploymentTarget, RealizationSessionId};
-    use std::{fs, thread, time::Duration};
+    use std::{
+        fs, thread,
+        time::{Duration, Instant},
+    };
 
     fn input_node_exists(name: &str) -> bool {
         let Ok(entries) = fs::read_dir("/sys/class/input") else {
@@ -49,6 +52,34 @@ mod integration_tests {
             fs::read_to_string(entry.path().join("name"))
                 .is_ok_and(|observed| observed.trim() == name)
         })
+    }
+
+    fn input_node_count_containing(fragment: &str) -> usize {
+        let Ok(entries) = fs::read_dir("/sys/class/input") else {
+            return 0;
+        };
+        entries
+            .flatten()
+            .filter(|entry| {
+                fs::read_to_string(entry.path().join("name"))
+                    .is_ok_and(|observed| observed.contains(fragment))
+            })
+            .count()
+    }
+
+    fn poll_dualsense_for(
+        controller: &mut DualSenseController,
+        duration: Duration,
+        mut after_poll: impl FnMut(),
+    ) {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            controller
+                .poll_output(&mut |_| {})
+                .expect("UHID output polling must remain live");
+            after_poll();
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 
     #[test]
@@ -151,18 +182,23 @@ mod integration_tests {
     #[test]
     #[ignore = "requires /dev/uhid and a Linux input subsystem"]
     fn dualsense_hid_materializes_and_survives_the_host_probe_interval() {
+        let initial_nodes = input_node_count_containing("DualSense");
         let mut controller = create_dualsense(CreationOptions {
             target: DeploymentTarget::Hid,
             session: RealizationSessionId(401),
         })
         .expect("DualSense UHID creation");
         controller.commit().expect("initial DualSense input report");
+        let mut appeared = false;
+        poll_dualsense_for(&mut controller, Duration::from_secs(3), || {
+            appeared |= input_node_count_containing("DualSense") > initial_nodes;
+        });
+        let diagnostics = controller.provider_diagnostics();
         assert!(
-            input_node_exists("Virtual DualSense"),
-            "UHID device did not materialize an input node"
+            diagnostics.reverse_events_drained >= 3,
+            "Linux did not complete the required DualSense feature probes: {diagnostics:?}"
         );
-
-        thread::sleep(Duration::from_secs(3));
+        assert!(appeared, "UHID device never materialized an input node");
 
         controller
             .set_digital(DigitalControlUpdate::FaceButton {
@@ -171,8 +207,9 @@ mod integration_tests {
             })
             .expect("post-probe state update");
         controller.commit().expect("post-probe input report");
+        poll_dualsense_for(&mut controller, Duration::from_secs(3), || {});
         assert!(
-            input_node_exists("Virtual DualSense"),
+            input_node_count_containing("DualSense") > initial_nodes,
             "DualSense input node disappeared during the host probe interval"
         );
         controller.close();

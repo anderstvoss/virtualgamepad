@@ -78,6 +78,10 @@ impl ProviderSessionSink {
         self.session.send(frame)
     }
 
+    pub(crate) fn diagnostics(&self) -> gr_realization_api::ProviderDiagnostics {
+        self.session.diagnostics()
+    }
+
     pub(crate) fn close(&mut self) {
         if !self.closed && self.session.close().is_ok() {
             self.closed = true;
