@@ -634,7 +634,7 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
-        device_name: "Virtual Switch Pro Controller".into(),
+        device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,
             product_id: 0x2009,

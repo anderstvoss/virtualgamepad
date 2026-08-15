@@ -137,6 +137,7 @@ mod integration_tests {
         io::Read,
         os::unix::fs::OpenOptionsExt,
         path::PathBuf,
+        process::Command,
         thread,
         time::{Duration, Instant},
     };
@@ -214,6 +215,22 @@ mod integration_tests {
             let path = PathBuf::from("/dev/input").join(&event);
             let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
             (name.contains(fragment) && !before_creation.contains(&path)).then_some(path)
+        })
+    }
+
+    fn newly_created_input_event_path_named(
+        name: &str,
+        before_creation: &BTreeSet<PathBuf>,
+    ) -> Option<PathBuf> {
+        let entries = fs::read_dir("/sys/class/input").ok()?;
+        entries.flatten().find_map(|entry| {
+            let event = entry.file_name();
+            if !event.to_string_lossy().starts_with("event") {
+                return None;
+            }
+            let path = PathBuf::from("/dev/input").join(&event);
+            let observed = fs::read_to_string(entry.path().join("device/name")).ok()?;
+            (observed.trim() == name && !before_creation.contains(&path)).then_some(path)
         })
     }
 
@@ -529,7 +546,7 @@ mod integration_tests {
         .expect("DualSense evdev creation");
         controller.commit().expect("initial evdev report");
         assert!(
-            input_node_exists("Virtual DualSense"),
+            input_node_exists("DualSense Wireless Controller"),
             "evdev device did not materialize an input node"
         );
 
@@ -543,7 +560,7 @@ mod integration_tests {
             .expect("post-probe state update");
         controller.commit().expect("post-probe evdev report");
         assert!(
-            input_node_exists("Virtual DualSense"),
+            input_node_exists("DualSense Wireless Controller"),
             "evdev input node disappeared during the host probe interval"
         );
         controller.close();
@@ -630,6 +647,95 @@ mod integration_tests {
             "DualSense ceased to be detectable during sustained motion"
         );
         controller.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uhid, SDL3 development files, and a Linux HIDAPI backend"]
+    fn dualsense_hidapi_reports_gyro_on_its_own_hidraw_path() {
+        let session = RealizationSessionId(407);
+        let input_events_before = input_event_paths();
+        let mut controller = create_dualsense(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session,
+        })
+        .expect("DualSense UHID creation");
+        poll_dualsense_for(&mut controller, Duration::from_secs(1), || {});
+        let hidraw = virtual_dualsense_hidraw_path(session)
+            .expect("Linux did not create the virtual DualSense hidraw node");
+        let evdev = newly_created_input_event_path_named(
+            "DualSense Wireless Controller",
+            &input_events_before,
+        )
+        .expect("hid-playstation did not create the virtual DualSense gamepad event device");
+        let probe = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../scripts/run-sdl3-gamepad-probe.sh");
+        let evdev_output = Command::new(&probe)
+            .arg(&evdev)
+            .env("SDL_JOYSTICK_HIDAPI", "0")
+            .output()
+            .expect("run SDL3 evdev probe");
+        assert!(
+            evdev_output.status.success(),
+            "SDL3 evdev probe failed: {}",
+            String::from_utf8_lossy(&evdev_output.stderr)
+        );
+        let evdev_stdout = String::from_utf8_lossy(&evdev_output.stdout);
+        for expected in [
+            &format!("path={}", evdev.display()),
+            "open=1 selected=1",
+            "sensor=gyro present=1 enable=1 rate=0.0",
+            "sensor=accel present=1 enable=1 rate=0.0",
+        ] {
+            assert!(
+                evdev_stdout.contains(expected),
+                "missing {expected:?}: {evdev_stdout}"
+            );
+        }
+        let output = thread::scope(|scope| {
+            let worker = scope.spawn(|| {
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while Instant::now() < deadline {
+                    controller
+                        .set_motion(MotionSample {
+                            gyroscope: [1_000, -2_000, 3_000],
+                            accelerometer: [-4_000, 5_000, -6_000],
+                        })
+                        .expect("motion update");
+                    controller.commit().expect("motion commit");
+                    controller
+                        .poll_output(&mut |_| {})
+                        .expect("SDL HIDAPI output polling");
+                    thread::sleep(Duration::from_millis(4));
+                }
+            });
+            let output = Command::new(probe)
+                .arg(&hidraw)
+                .arg("100")
+                .env("SDL_JOYSTICK_HIDAPI", "1")
+                .output()
+                .expect("run SDL3 HIDAPI probe");
+            worker.join().expect("motion worker");
+            output
+        });
+        controller.close();
+        assert!(
+            output.status.success(),
+            "SDL3 probe failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(&format!("path={}", hidraw.display()))
+                && stdout.contains("open=1 selected=1"),
+            "SDL3 did not open the session-specific virtual hidraw device: {stdout}"
+        );
+        for expected in [
+            "sensor=gyro present=1 enable=1 rate=250.0",
+            "sensor=accel present=1 enable=1 rate=250.0",
+            "sensor-event=2 values=",
+        ] {
+            assert!(stdout.contains(expected), "missing {expected:?}: {stdout}");
+        }
     }
 
     #[test]

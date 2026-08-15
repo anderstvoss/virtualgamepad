@@ -739,7 +739,7 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
-        device_name: "Virtual DualShock 4".into(),
+        device_name: "Wireless Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
             product_id: 0x05c4,

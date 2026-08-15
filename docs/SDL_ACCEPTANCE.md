@@ -19,8 +19,10 @@ Each target must pass this supported-host gate:
 
 1. Install current SDL3 development/runtime support and start Steam Input.
 2. Create one UHID controller at a time; do not leave the evdev sibling active.
-3. Run `scripts/run-sdl3-gamepad-probe.sh` and record the controller's SDL
-   identity, GUID, gamepad type, and bindings.
+3. Run `scripts/run-sdl3-gamepad-probe.sh /dev/hidrawN 1000`, substituting the
+   session-specific hidraw path, and record the controller's SDL identity,
+   GUID, gamepad type, sensor availability/rate, and sensor events. The path
+   argument prevents a physical reference controller from being selected.
 4. In Steam's controller test surface, verify detection and every standard
    control. For targets that declare HID output reports, exercise supported
    rumble/LED output and retain the typed reverse-event log.

@@ -1098,7 +1098,7 @@ impl DualSenseController {
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
-        device_name: "Virtual DualSense".into(),
+        device_name: "DualSense Wireless Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
             product_id: 0x0ce6,

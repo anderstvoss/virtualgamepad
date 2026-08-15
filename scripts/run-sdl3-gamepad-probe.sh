@@ -8,6 +8,8 @@ fi
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 binary="${TMPDIR:-/tmp}/virtualgamepad-sdl3-gamepad-probe"
-cc -std=c17 -Wall -Wextra -Werror "$script_dir/sdl3-gamepad-probe.c" \
-  $(pkg-config --cflags --libs sdl3) -o "$binary"
-exec "$binary"
+if [ ! -x "$binary" ] || [ "$script_dir/sdl3-gamepad-probe.c" -nt "$binary" ]; then
+  cc -std=c17 -Wall -Wextra -Werror "$script_dir/sdl3-gamepad-probe.c" \
+    $(pkg-config --cflags --libs sdl3) -o "$binary"
+fi
+exec "$binary" "$@"
