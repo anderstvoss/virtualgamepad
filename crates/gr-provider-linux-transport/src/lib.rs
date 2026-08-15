@@ -60,6 +60,41 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
             });
         }
         let endpoints = match request.realization {
+            NativeControllerRealization::UsbTransportValidation(specification) => {
+                let mut endpoints = BTreeMap::new();
+                let input = endpoint_open_options(NativeUsbEndpointDirection::DeviceToHost)
+                    .open(&specification.input_endpoint_path)
+                    .map_err(|error| ProviderError::Open {
+                        reason: error.to_string(),
+                    })?;
+                endpoints.insert(
+                    0x81,
+                    EndpointFile {
+                        file: input,
+                        direction: NativeUsbEndpointDirection::DeviceToHost,
+                        maximum_packet_length: specification.maximum_input_packet_length,
+                    },
+                );
+                if let (Some(path), Some(maximum_packet_length)) = (
+                    specification.reverse_endpoint_path,
+                    specification.maximum_reverse_packet_length,
+                ) {
+                    let reverse = endpoint_open_options(NativeUsbEndpointDirection::HostToDevice)
+                        .open(path)
+                        .map_err(|error| ProviderError::Open {
+                            reason: error.to_string(),
+                        })?;
+                    endpoints.insert(
+                        0x01,
+                        EndpointFile {
+                            file: reverse,
+                            direction: NativeUsbEndpointDirection::HostToDevice,
+                            maximum_packet_length,
+                        },
+                    );
+                }
+                endpoints
+            }
             NativeControllerRealization::UsbComposite(specification) => specification
                 .endpoints
                 .into_iter()
@@ -81,7 +116,7 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
                         })
                 })
                 .collect::<Result<BTreeMap<_, _>, _>>()?,
-            _ => BTreeMap::new(),
+            _ => unreachable!("USB realization was checked above"),
         };
         Ok(Box::new(Session {
             realization_id: request.session,
