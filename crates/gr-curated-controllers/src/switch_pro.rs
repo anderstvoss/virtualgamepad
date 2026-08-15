@@ -601,11 +601,12 @@ const DESC: &[u8] = &[
     0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x80, 0x09, 5, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85,
     0x82, 0x09, 6, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0xc0,
 ];
-fn hid(session: RealizationSessionId) -> NativeControllerRealization {
+fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Hid(NativeHidRealization {
         bus_type: 3,
         device_name: "Pro Controller".into(),
-        physical_path: format!("virtualgamepad/uhid/switch-pro/session-{}", session.0),
+        // `common::create` appends the realization session exactly once.
+        physical_path: "virtualgamepad/uhid/switch-pro".into(),
         unique_id: "virtualgamepad-switch-pro".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,

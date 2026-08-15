@@ -167,6 +167,42 @@ mod integration_tests {
         input_node_count_containing(fragment) > 0
     }
 
+    fn input_event_path_containing(fragment: &str, physical_path: &str) -> Option<PathBuf> {
+        let entries = fs::read_dir("/sys/class/input").ok()?;
+        entries.flatten().find_map(|entry| {
+            let event = entry.file_name();
+            if !event.to_string_lossy().starts_with("event") {
+                return None;
+            }
+            let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
+            let physical = fs::read_to_string(entry.path().join("device/phys")).ok()?;
+            if name.contains(fragment) && physical.trim() == physical_path {
+                Some(PathBuf::from("/dev/input").join(entry.file_name()))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn read_input_events(file: &mut fs::File) -> Vec<(u16, u16, i32)> {
+        let mut events = Vec::new();
+        let mut bytes = [0_u8; 24]; // Linux `struct input_event` on supported 64-bit hosts.
+        loop {
+            match file.read(&mut bytes) {
+                Ok(0) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Ok(24) => events.push((
+                    u16::from_ne_bytes([bytes[16], bytes[17]]),
+                    u16::from_ne_bytes([bytes[18], bytes[19]]),
+                    i32::from_ne_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]),
+                )),
+                Ok(count) => panic!("truncated Linux input event ({count} bytes)"),
+                Err(error) => panic!("read Linux input event: {error}"),
+            }
+        }
+        events
+    }
+
     fn virtual_dualsense_hidraw_path(session: RealizationSessionId) -> Option<PathBuf> {
         let expected_physical_path = format!(
             "HID_PHYS=virtualgamepad/uhid/dualsense/session-{}",
@@ -552,7 +588,7 @@ mod integration_tests {
     }
 
     #[test]
-    #[ignore = "requires /dev/uhid and the Linux Nintendo HID driver"]
+    #[ignore = "requires /dev/uhid, /dev/input read access, and the Linux Nintendo HID driver"]
     fn switch_pro_host_handshake_enables_timed_imu_streaming() {
         let session = RealizationSessionId(405);
         let mut controller = create_switch_pro(CreationOptions {
@@ -568,6 +604,41 @@ mod integration_tests {
         assert!(
             controller.state().stream_enabled(),
             "host never completed the Switch Pro 0x30 report-mode handshake"
+        );
+        let physical_path = format!("virtualgamepad/uhid/switch-pro/session-{}", session.0);
+        let imu_path = input_event_path_containing("Pro Controller (IMU)", &physical_path)
+            .expect("hid-nintendo did not create the virtual Switch Pro IMU event device");
+        let mut imu = match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0o4_000)
+            .open(&imu_path)
+        {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "skipping Switch IMU event assertion: no read access to {}",
+                    imu_path.display()
+                );
+                controller.close();
+                return;
+            }
+            Err(error) => panic!("cannot open {}: {error}", imu_path.display()),
+        };
+        let _ = read_input_events(&mut imu);
+        let motion = SwitchProMotionSample {
+            accelerometer: [0; 3],
+            gyroscope: [1_000, -2_000, 3_000],
+        };
+        poll_for(Duration::from_millis(100), || {
+            controller.set_motion(motion).expect("motion update");
+            controller.refresh_motion().expect("motion refresh");
+        });
+        let imu_events = read_input_events(&mut imu);
+        assert!(
+            imu_events.iter().any(|(event_type, code, value)| {
+                *event_type == 3 && matches!(*code, 3..=5) && *value != 0
+            }),
+            "Switch Pro IMU device received no non-zero gyro event: {imu_events:?}"
         );
         assert_ne!(
             controller.state().motion_report_counter(),

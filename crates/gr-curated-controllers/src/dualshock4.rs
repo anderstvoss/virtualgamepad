@@ -711,7 +711,8 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
-        physical_path: format!("virtualgamepad/uhid/dualshock4/session-{}", session.0),
+        // `common::create` appends the realization session exactly once.
+        physical_path: "virtualgamepad/uhid/dualshock4".into(),
         unique_id: "virtualgamepad-dualshock4".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
