@@ -1360,6 +1360,36 @@ mod tests {
     }
 
     #[test]
+    fn broker_targets_use_distinct_fixed_transport_frames() {
+        let state = DualSenseState::default();
+        let dummy = DualSenseDefinition
+            .encode(
+                RealizationSelection {
+                    controller: DualSenseDefinition.controller_id(),
+                    target: RealizationTarget::DummyHcd,
+                },
+                &state,
+            )
+            .expect("dummy_hcd frame");
+        assert!(
+            matches!(dummy, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
+        );
+
+        let bluetooth = DualSenseDefinition
+            .encode(
+                RealizationSelection {
+                    controller: DualSenseDefinition.controller_id(),
+                    target: RealizationTarget::Btvirt,
+                },
+                &state,
+            )
+            .expect("Bluetooth frame");
+        assert!(
+            matches!(bluetooth, ProviderFrame::BtvirtInput(bytes) if bytes.len() == 78 && bytes[0] == 0x31)
+        );
+    }
+
+    #[test]
     fn hid_battery_is_hidden_by_default_and_live_when_enabled() {
         let mut state = DualSenseState::default();
         let report = |state: &DualSenseState| {
