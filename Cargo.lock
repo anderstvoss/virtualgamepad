@@ -935,6 +935,7 @@ version = "0.1.0"
 dependencies = [
  "gr-controller-contract",
  "gr-controller-runtime",
+ "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
  "gr-realization-api",
  "proptest",

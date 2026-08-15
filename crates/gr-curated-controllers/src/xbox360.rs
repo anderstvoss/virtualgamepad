@@ -5,11 +5,11 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
     DigitalControlSurface, DigitalControlUpdate, FaceButton, OutputSurface,
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    TargetAwareControllerDriver, TargetRestriction,
+    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeEvdevRealization, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
@@ -244,6 +244,7 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
+static HID_OUTPUTS: [OutputSurface; 0] = [];
 static RESTRICTIONS: [TargetRestriction; 2] = [
     TargetRestriction {
         feature: "headset-audio",
@@ -257,9 +258,20 @@ static RESTRICTIONS: [TargetRestriction; 2] = [
 static SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
         target: RealizationTarget::Evdev,
+        validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        restrictions: &RESTRICTIONS,
+    },
+};
+static HID_SURFACE: Xbox360Surface = Xbox360Surface {
+    common: ControllerSurface {
+        target: RealizationTarget::Hid,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
     },
 };
@@ -270,13 +282,22 @@ impl RealizationControllerDefinition for Xbox360Definition {
         ControllerId::new("virtualgamepad.xbox360")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-            target: RealizationTarget::Evdev,
-            provider_requirements: ProviderRequirements {
-                requires_reverse_output: false,
+        static ENTRIES: [RealizationManifestEntry; 2] = [
+            RealizationManifestEntry {
+                target: RealizationTarget::Evdev,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                audio_sidecar: None,
             },
-            audio_sidecar: None,
-        }];
+            RealizationManifestEntry {
+                target: RealizationTarget::Hid,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                audio_sidecar: None,
+            },
+        ];
         RealizationManifest::new(&ENTRIES)
     }
 }
@@ -306,7 +327,10 @@ impl TargetAwareControllerDriver for Xbox360Definition {
         selection: RealizationSelection,
         _: &Self::State,
     ) -> Result<(), ControlError> {
-        if selection.target == RealizationTarget::Evdev {
+        if matches!(
+            selection.target,
+            RealizationTarget::Evdev | RealizationTarget::Hid
+        ) {
             Ok(())
         } else {
             Err(common::unavailable(selection.target))
@@ -314,9 +338,25 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     }
     fn encode(
         &self,
-        _: RealizationSelection,
+        selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
+        if selection.target == RealizationTarget::Hid {
+            let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
+            return Ok(common::hid_gamepad_frame(
+                state.face,
+                state.dpad,
+                &state.buttons,
+                [
+                    byte(state.left.0.raw()),
+                    byte(state.left.1.raw()),
+                    byte(state.right.0.raw()),
+                    byte(state.right.1.raw()),
+                    state.triggers.0.raw(),
+                    state.triggers.1.raw(),
+                ],
+            ));
+        }
         let mut events = Vec::new();
         for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
             events.push(EvdevEvent {
@@ -388,9 +428,30 @@ impl TargetAwareControllerDriver for Xbox360Definition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Xbox360OutputEvent {
-    ForceFeedbackUpload { request_id: u32, effect: Vec<u8> },
-    ForceFeedbackErase { request_id: u32, effect_id: u32 },
+    ForceFeedbackUpload {
+        request_id: u32,
+        effect: Vec<u8>,
+    },
+    ForceFeedbackErase {
+        request_id: u32,
+        effect_id: u32,
+    },
     ProviderEvent(Vec<EvdevEvent>),
+    HidOutput {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    HidGetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+    },
+    HidSetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+        bytes: Vec<u8>,
+    },
 }
 pub struct Xbox360Controller(ControllerRuntime<Xbox360Definition, common::ProviderSessionSink>);
 impl Xbox360Controller {
@@ -400,7 +461,10 @@ impl Xbox360Controller {
     }
     #[must_use]
     pub const fn surface(&self) -> &'static Xbox360Surface {
-        &SURFACE
+        match self.0.selection().target {
+            RealizationTarget::Hid => &HID_SURFACE,
+            _ => &SURFACE,
+        }
     }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
@@ -465,11 +529,52 @@ impl Xbox360Controller {
                         effect_id,
                     },
                     RawReverseEvent::Evdev(events) => Xbox360OutputEvent::ProviderEvent(events),
-                    _ => return,
+                    RawReverseEvent::HidOutput { report_id, bytes } => {
+                        Xbox360OutputEvent::HidOutput { report_id, bytes }
+                    }
+                    RawReverseEvent::HidGetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                    } => Xbox360OutputEvent::HidGetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                    },
+                    RawReverseEvent::HidSetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                        bytes,
+                    } => Xbox360OutputEvent::HidSetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                        bytes,
+                    },
+                    RawReverseEvent::Transport { .. } => return,
                 };
                 callback(output);
             })
         })
+    }
+    pub fn reply_get_report(
+        &mut self,
+        request_id: u32,
+        status: i16,
+        bytes: Vec<u8>,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::HidGetReportReply {
+                request_id,
+                status,
+                bytes,
+            })
+        })
+    }
+    pub fn reply_set_report(&mut self, request_id: u32, status: i16) -> Result<(), ProviderError> {
+        self.0
+            .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
 }
 fn realization() -> NativeControllerRealization {
@@ -497,8 +602,21 @@ fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
+fn hid_realization() -> NativeControllerRealization {
+    // Local HID identity only; physical Xbox/xpad USB behavior requires USB gadget.
+    common::hid_realization("Virtual Xbox 360", 0x045e, 0x028e)
+}
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ProviderError> {
-    common::create_evdev(Xbox360Definition, realization(), options).map(Xbox360Controller)
+    let realization = match options.target {
+        DeploymentTarget::Evdev => realization(),
+        DeploymentTarget::Hid => hid_realization(),
+        _ => {
+            return Err(ProviderError::Unsupported {
+                reason: "unknown deployment target".into(),
+            });
+        }
+    };
+    common::create(Xbox360Definition, realization, options).map(Xbox360Controller)
 }
 
 #[cfg(test)]
@@ -526,5 +644,20 @@ mod tests {
     fn surface_keeps_xbox_dead_zones_visible_to_callers() {
         assert_eq!(SURFACE.common.axes[0].flat, 7849);
         assert_eq!(SURFACE.common.axes[3].flat, 8689);
+    }
+
+    #[test]
+    fn hid_surface_is_explicitly_research_backed() {
+        assert_eq!(
+            HID_SURFACE.common.validation_status,
+            RealizationValidationStatus::ResearchBacked
+        );
+        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Hid);
+        assert!(HID_SURFACE.common.outputs.is_empty());
+        assert!(
+            !Xbox360Definition.realization_manifest().entries()[1]
+                .provider_requirements
+                .requires_reverse_output
+        );
     }
 }

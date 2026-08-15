@@ -69,10 +69,22 @@ pub struct TargetRestriction {
     pub reason: &'static str,
 }
 
+/// Confidence level for a controller's selected host presentation.
+///
+/// A realization is never promoted to physical fidelity merely because it
+/// advertises a familiar identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealizationValidationStatus {
+    ResearchBacked,
+    HostValidated,
+    PhysicallyValidated,
+}
+
 /// Common immutable portion of a concrete controller's target presentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ControllerSurface {
     pub target: RealizationTarget,
+    pub validation_status: RealizationValidationStatus,
     pub digital_controls: &'static [DigitalControlSurface],
     pub axes: &'static [AbsoluteAxisSurface],
     pub outputs: &'static [OutputSurface],

@@ -227,9 +227,22 @@ pub struct NativeHidRealization {
     pub unique_id: String,
     pub identity: NativeDeviceIdentity,
     pub descriptor: Vec<u8>,
+    pub numbered_input_reports: bool,
     pub numbered_output_reports: bool,
     pub numbered_feature_reports: bool,
-    pub feature_report_responses: BTreeMap<u8, Vec<u8>>,
+    /// Static `GET_REPORT` replies indexed by the exact HID report identity.
+    pub feature_report_responses: BTreeMap<NativeHidReportKey, Vec<u8>>,
+}
+
+/// Exact HID report identity used for static feature replies.
+///
+/// UHID supplies the report type independently from the report ID, so using
+/// the ID alone would incorrectly answer a request for a different report
+/// class that happened to reuse that ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NativeHidReportKey {
+    pub report_id: u8,
+    pub report_type: u8,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeUsbTransportValidationRealization {
@@ -316,6 +329,24 @@ impl NativeControllerRealization {
                 if specification.descriptor.is_empty() {
                     return Err(NativeRealizationError::EmptyHidDescriptor);
                 }
+                if specification.descriptor.len() > 4096 {
+                    return Err(NativeRealizationError::HidDescriptorTooLarge);
+                }
+                if specification
+                    .feature_report_responses
+                    .values()
+                    .any(|response| response.len() > 4096)
+                {
+                    return Err(NativeRealizationError::HidFeatureResponseTooLarge);
+                }
+                if !specification.numbered_feature_reports
+                    && specification
+                        .feature_report_responses
+                        .keys()
+                        .any(|key| key.report_id != 0)
+                {
+                    return Err(NativeRealizationError::HidUnnumberedFeatureHasReportId);
+                }
             }
             Self::UsbTransportValidation(specification) => {
                 if specification.device_name.is_empty() {
@@ -374,6 +405,12 @@ pub enum NativeRealizationError {
     },
     #[error("UHID realization requires a non-empty HID descriptor")]
     EmptyHidDescriptor,
+    #[error("UHID descriptor exceeds the Linux UHID report limit")]
+    HidDescriptorTooLarge,
+    #[error("UHID static feature response exceeds the Linux UHID report limit")]
+    HidFeatureResponseTooLarge,
+    #[error("an unnumbered UHID feature report must use report ID zero")]
+    HidUnnumberedFeatureHasReportId,
     #[error("USB transport validation endpoint path is empty (reverse={reverse})")]
     EmptyUsbEndpointPath { reverse: bool },
     #[error("USB transport validation packet length is zero (reverse={reverse})")]
@@ -385,10 +422,6 @@ pub enum ProviderFrame {
     Evdev(Vec<EvdevEvent>),
     HidInput {
         report_id: Option<u8>,
-        bytes: Vec<u8>,
-    },
-    HidFeature {
-        report_id: u8,
         bytes: Vec<u8>,
     },
     HidGetReportReply {
@@ -423,10 +456,6 @@ pub struct EvdevEvent {
 pub enum RawReverseEvent {
     Evdev(Vec<EvdevEvent>),
     HidOutput {
-        report_id: Option<u8>,
-        bytes: Vec<u8>,
-    },
-    HidFeature {
         report_id: Option<u8>,
         bytes: Vec<u8>,
     },

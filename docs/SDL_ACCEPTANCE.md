@@ -1,0 +1,31 @@
+# SDL and Steam Input acceptance
+
+UHID controller targets are research-backed until a reference-device comparison
+promotes their surface metadata. A familiar VID/PID alone is never a physical
+controller-fidelity claim.
+
+| Target | Current status | Scope of the claim |
+| --- | --- | --- |
+| Generic Gamepad / UHID | ResearchBacked | Project-defined input-only standard HID gamepad using provisional `1209:0001`; it is not an ID-allocation claim. |
+| Xbox 360 / UHID | ResearchBacked | Local input-only HID identity and standard controls. XInput, xpad, rumble, and Xbox USB protocol fidelity require USB gadget work. |
+| DualSense / UHID | ResearchBacked | USB-style numbered HID descriptor; forward sticks, triggers, buttons, touch, and IMU bytes; typed/raw decoding of output `0x02`. Descriptor/report parity and SDL-native advanced features remain subject to reference-device comparison. |
+
+Before promoting any entry, compare its descriptor, neutral and full-state
+reports, initialization exchanges, reverse reports, and observed SDL/Steam
+behavior against a reference controller. `HostValidated` means the supported
+host gate passed; `PhysicallyValidated` requires that comparison.
+
+Each target must pass this supported-host gate:
+
+1. Install current SDL3 development/runtime support and start Steam Input.
+2. Create one UHID controller at a time; do not leave the evdev sibling active.
+3. Run `scripts/run-sdl3-gamepad-probe.sh` and record the controller's SDL
+   identity, GUID, gamepad type, and bindings.
+4. In Steam's controller test surface, verify detection and every standard
+   control. For targets that declare HID output reports, exercise supported
+   rumble/LED output and retain the typed reverse-event log.
+
+The probe deliberately has no Cargo dependency on SDL. Steam Input validation
+is interactive and must not be represented as an ordinary CI pass. The current
+repository has no SDL3 development package installed, so this gate remains a
+supported-host prerequisite rather than an ordinary automated test.

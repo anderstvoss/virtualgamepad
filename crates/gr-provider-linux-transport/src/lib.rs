@@ -143,8 +143,8 @@ mod tests {
             })
             .expect("transport frame");
         assert!(matches!(
-            session.send(ProviderFrame::HidFeature {
-                report_id: 1,
+            session.send(ProviderFrame::HidInput {
+                report_id: None,
                 bytes: vec![]
             }),
             Err(ProviderError::Unsupported { .. })

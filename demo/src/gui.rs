@@ -1,11 +1,16 @@
-use eframe::egui;
+use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
+use std::time::{Duration, Instant};
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
     CreationOptions, DeploymentTarget, DigitalControlUpdate, DpadDirection, DualSenseAxis,
-    DualSenseController, DualSenseTouchContact, DualSenseTrigger, FaceButton, GenericGamepadAxis,
-    GenericGamepadController, GenericGamepadTrigger, RealizationSessionId, TouchSlot, Xbox360Axis,
-    Xbox360Controller, Xbox360Trigger, create_dualsense, create_generic_gamepad, create_xbox360,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    DualSenseTouchContact, DualSenseTrigger, FaceButton, GenericGamepadAxis, GenericGamepadControl,
+    GenericGamepadController, GenericGamepadTrigger, MotionSample, RealizationSessionId,
+    RealizationTarget, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller,
+    Xbox360OutputEvent, Xbox360Trigger, create_dualsense, create_generic_gamepad, create_xbox360,
 };
+
+const OUTPUT_LOG_LIMIT: usize = 200;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -28,6 +33,35 @@ enum Controller {
     Xbox(Xbox360Controller),
     DualSense(DualSenseController),
 }
+
+struct NamedController {
+    kind: Kind,
+    name: String,
+    controller: Controller,
+    indicators: ReverseIndicators,
+}
+
+#[derive(Default)]
+struct ReverseIndicators {
+    led: Option<[u8; 3]>,
+    rumble_until: Option<Instant>,
+    rumble_active: bool,
+    rumble_started: Option<Instant>,
+}
+impl ReverseIndicators {
+    fn rumble_pulse(&mut self) {
+        self.rumble_until = Some(Instant::now() + Duration::from_millis(750));
+    }
+    fn set_rumble(&mut self, active: bool) {
+        if active && !self.rumble_active {
+            self.rumble_started = Some(Instant::now());
+        }
+        self.rumble_active = active;
+        if active {
+            self.rumble_until = None;
+        }
+    }
+}
 impl Controller {
     fn commit(&mut self) -> Result<(), String> {
         match self {
@@ -44,17 +78,47 @@ impl Controller {
             Self::DualSense(controller) => controller.close(),
         }
     }
-    fn poll_output(&mut self, log: &mut Vec<String>) -> Result<(), String> {
+    fn is_dirty(&self) -> bool {
         match self {
-            Self::Generic(controller) => {
-                controller.poll_output(&mut |event| log.push(format!("Generic: {event:?}")))
-            }
-            Self::Xbox(controller) => {
-                controller.poll_output(&mut |event| log.push(format!("Xbox 360: {event:?}")))
-            }
-            Self::DualSense(controller) => {
-                controller.poll_output(&mut |event| log.push(format!("DualSense: {event:?}")))
-            }
+            Self::Generic(controller) => controller.is_dirty(),
+            Self::Xbox(controller) => controller.is_dirty(),
+            Self::DualSense(controller) => controller.is_dirty(),
+        }
+    }
+    fn poll_output(
+        &mut self,
+        log: &mut Vec<String>,
+        indicators: &mut ReverseIndicators,
+    ) -> Result<(), String> {
+        match self {
+            Self::Generic(controller) => controller.poll_output(&mut |event| {
+                if matches!(
+                    event,
+                    virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackUpload { .. }
+                ) {
+                    indicators.rumble_pulse();
+                }
+                log.push(format!("Generic: {event:?}"));
+            }),
+            Self::Xbox(controller) => controller.poll_output(&mut |event| {
+                if matches!(event, Xbox360OutputEvent::ForceFeedbackUpload { .. }) {
+                    indicators.rumble_pulse();
+                }
+                log.push(format!("Xbox 360: {event:?}"));
+            }),
+            Self::DualSense(controller) => controller.poll_output(&mut |event| {
+                if let DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+                    right_motor,
+                    left_motor,
+                    lightbar_rgb,
+                    ..
+                }) = &event
+                {
+                    indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
+                    indicators.led = Some(*lightbar_rgb);
+                }
+                log.push(format!("DualSense: {event:?}"));
+            }),
         }
         .map_err(|error| error.to_string())
     }
@@ -68,8 +132,11 @@ impl Controller {
 }
 pub struct App {
     kind: Kind,
+    target: DeploymentTarget,
+    name_draft: String,
     next_session: u64,
-    controllers: Vec<Controller>,
+    controllers: Vec<NamedController>,
+    selected_controller: Option<usize>,
     error: Option<String>,
     output_log: Vec<String>,
 }
@@ -77,17 +144,29 @@ impl Default for App {
     fn default() -> Self {
         Self {
             kind: Kind::Generic,
+            target: DeploymentTarget::Evdev,
+            name_draft: String::new(),
             next_session: 1,
             controllers: vec![],
+            selected_controller: None,
             error: None,
             output_log: vec![],
         }
     }
 }
 impl App {
+    fn next_default_name(&self) -> String {
+        let number = self
+            .controllers
+            .iter()
+            .filter(|controller| controller.kind == self.kind)
+            .count();
+        format!("{} {number}", self.kind.label())
+    }
+
     fn create(&mut self) {
         let options = CreationOptions {
-            target: DeploymentTarget::Evdev,
+            target: self.target,
             session: RealizationSessionId(self.next_session),
         };
         let result = match self.kind {
@@ -97,7 +176,19 @@ impl App {
         };
         match result {
             Ok(controller) => {
-                self.controllers.push(controller);
+                let name = if self.name_draft.trim().is_empty() {
+                    self.next_default_name()
+                } else {
+                    self.name_draft.trim().to_owned()
+                };
+                self.controllers.push(NamedController {
+                    kind: self.kind,
+                    name,
+                    controller,
+                    indicators: ReverseIndicators::default(),
+                });
+                self.selected_controller = Some(self.controllers.len() - 1);
+                self.name_draft.clear();
                 self.next_session += 1;
                 self.error = None;
             }
@@ -106,7 +197,21 @@ impl App {
     }
 }
 impl eframe::App for App {
+    #[allow(clippy::too_many_lines)] // Coordinates the independent demo panels.
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        for named in &mut self.controllers {
+            if let Err(error) = named
+                .controller
+                .poll_output(&mut self.output_log, &mut named.indicators)
+            {
+                self.error = Some(error);
+            }
+        }
+        if self.output_log.len() > OUTPUT_LOG_LIMIT {
+            let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
+            self.output_log.drain(..excess);
+        }
+        ctx.request_repaint_after(Duration::from_millis(50));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -116,88 +221,199 @@ impl eframe::App for App {
                         ui.selectable_value(&mut self.kind, kind, kind.label());
                     }
                 });
-            ui.label("Target: Evdev / uinput (default)");
-            ui.small("UHID requires operator-enabled access. USB is explicit hardware validation.");
+            egui::ComboBox::from_label("Target")
+                .selected_text(target_label(self.target))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.target,
+                        DeploymentTarget::Evdev,
+                        target_label(DeploymentTarget::Evdev),
+                    );
+                    ui.selectable_value(
+                        &mut self.target,
+                        DeploymentTarget::Hid,
+                        target_label(DeploymentTarget::Hid),
+                    );
+                });
+            let default_name = self.next_default_name();
+            ui.add(
+                egui::TextEdit::singleline(&mut self.name_draft)
+                    .hint_text(default_name)
+                    .desired_width(f32::INFINITY),
+            )
+            .on_hover_text("Optional name. Leave empty for the automatic controller name.");
+            ui.small("UHID is research-backed and requires operator-enabled /dev/uhid access.");
             if ui.button("Create").clicked() {
                 self.create();
             }
+            ui.separator();
+            ui.label("Controllers");
+            ui.horizontal_wrapped(|ui| {
+                for (index, controller) in self.controllers.iter().enumerate() {
+                    if ui
+                        .selectable_label(self.selected_controller == Some(index), &controller.name)
+                        .clicked()
+                    {
+                        self.selected_controller = Some(index);
+                    }
+                }
+            });
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::RED, error);
             }
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Live controllers");
-            let mut remove = None;
-            for (index, controller) in self.controllers.iter_mut().enumerate() {
-                ui.group(|ui| {
-                    ui.heading(format!("Controller {}", index + 1));
-                    controller.draw(ui);
-                    if ui.button("Commit current full state").clicked() {
-                        if let Err(error) = controller.commit() {
-                            self.error = Some(error);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.heading("Live controllers");
+                    let mut remove = None;
+                    if let Some(index) = self
+                        .selected_controller
+                        .filter(|index| *index < self.controllers.len())
+                    {
+                        let named = &mut self.controllers[index];
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Controller name:");
+                                ui.text_edit_singleline(&mut named.name);
+                            });
+                            draw_reverse_indicators(ui, &named.indicators);
+                            named.controller.draw(ui);
+                            if named.controller.is_dirty() {
+                                if let Err(error) = named.controller.commit() {
+                                    self.error = Some(error);
+                                }
+                            }
+                            ui.small("Input changes are sent automatically.");
+                            if ui.button("Close").clicked() {
+                                named.controller.close();
+                                remove = Some(index);
+                            }
+                        });
+                    } else {
+                        ui.small("Create a controller, then select its tab.");
+                    }
+                    if let Some(index) = remove {
+                        self.controllers.remove(index);
+                        self.selected_controller = None;
+                        if !self.controllers.is_empty() {
+                            self.selected_controller = Some(index.min(self.controllers.len() - 1));
                         }
                     }
-                    if ui.button("Poll typed output").clicked() {
-                        if let Err(error) = controller.poll_output(&mut self.output_log) {
-                            self.error = Some(error);
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        ui.heading("Live typed reverse output");
+                        if ui.button("Clear").clicked() {
+                            self.output_log.clear();
                         }
+                    });
+                    ui.small("Polling every 50 ms while the demo is open.");
+                    if self.output_log.is_empty() {
+                        ui.small("No reverse output received.");
                     }
-                    if ui.button("Close").clicked() {
-                        controller.close();
-                        remove = Some(index);
+                    for entry in self.output_log.iter().rev().take(20) {
+                        ui.monospace(entry);
                     }
                 });
-            }
-            if let Some(index) = remove {
-                self.controllers.remove(index);
-            }
-            ui.separator();
-            ui.heading("Typed reverse output");
-            if self.output_log.is_empty() {
-                ui.small("No reverse output received.");
-            }
-            for entry in self.output_log.iter().rev().take(20) {
-                ui.monospace(entry);
-            }
         });
     }
 }
 
-fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)) {
+const fn target_label(target: DeploymentTarget) -> &'static str {
+    match target {
+        DeploymentTarget::Evdev => "Evdev / uinput",
+        DeploymentTarget::Hid => "HID / UHID",
+        _ => "Unknown target",
+    }
+}
+
+fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     ui.horizontal(|ui| {
-        for (label, button) in [
-            ("South", FaceButton::South),
-            ("East", FaceButton::East),
-            ("West", FaceButton::West),
-            ("North", FaceButton::North),
-        ] {
-            if ui.button(label).clicked() {
-                set(DigitalControlUpdate::FaceButton {
-                    button,
-                    pressed: true,
-                });
-            }
-        }
-    });
-    ui.horizontal(|ui| {
-        for (label, direction) in [
-            ("Up", DpadDirection::Up),
-            ("Down", DpadDirection::Down),
-            ("Left", DpadDirection::Left),
-            ("Right", DpadDirection::Right),
-        ] {
-            if ui.button(label).clicked() {
-                set(DigitalControlUpdate::Dpad {
-                    direction,
-                    pressed: true,
-                });
-            }
-        }
+        ui.label("Reverse effects:");
+        let led = indicators.led.unwrap_or([30, 30, 30]);
+        let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+        ui.painter()
+            .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
+        ui.label("LED");
+
+        let remaining = indicators
+            .rumble_until
+            .map(|until| until.saturating_duration_since(Instant::now()))
+            .unwrap_or_default();
+        let active = indicators.rumble_active || !remaining.is_zero();
+        let (rumble_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+        let phase = if indicators.rumble_active {
+            indicators
+                .rumble_started
+                .map(|started| started.elapsed().as_secs_f32() * 8.0)
+                .unwrap_or_default()
+                .sin()
+                .abs()
+        } else {
+            (remaining.as_secs_f32() * 8.0).sin().abs()
+        };
+        let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
+        ui.painter().circle_filled(
+            rumble_rect.center(),
+            radius,
+            if active {
+                Color32::from_rgb(220, 80, 80)
+            } else {
+                Color32::DARK_GRAY
+            },
+        );
+        ui.label("Rumble");
     });
 }
+
+fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)) {
+    ui.group(|ui| {
+        ui.label("Face buttons");
+        ui.horizontal_wrapped(|ui| {
+            for (label, button) in [
+                ("South", FaceButton::South),
+                ("East", FaceButton::East),
+                ("West", FaceButton::West),
+                ("North", FaceButton::North),
+            ] {
+                hold(ui, label, |pressed| {
+                    set(DigitalControlUpdate::FaceButton { button, pressed });
+                });
+            }
+        });
+        ui.label("D-pad");
+        ui.horizontal_wrapped(|ui| {
+            for (label, direction) in [
+                ("Up", DpadDirection::Up),
+                ("Down", DpadDirection::Down),
+                ("Left", DpadDirection::Left),
+                ("Right", DpadDirection::Right),
+            ] {
+                hold(ui, label, |pressed| {
+                    set(DigitalControlUpdate::Dpad { direction, pressed });
+                });
+            }
+        });
+    });
+}
+
+fn hold(ui: &mut egui::Ui, label: &str, mut set: impl FnMut(bool)) {
+    let response = ui.add(Button::new(label));
+    let held = response.is_pointer_button_down_on();
+    let previous = ui
+        .data(|data| data.get_temp::<bool>(response.id))
+        .unwrap_or(false);
+    if held != previous {
+        ui.data_mut(|data| data.insert_temp(response.id, held));
+        set(held);
+    }
+}
 fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
-    ui.collapsing("Selected evdev surface", |ui| {
+    ui.collapsing("Selected target surface", |ui| {
         let surface = surface.common_surface();
+        ui.label(format!("Target: {}", surface.target));
+        ui.label(format!("Evidence: {:?}", surface.validation_status));
         ui.label(format!(
             "{} axes, {} digital controls, {} output channels",
             surface.axes.len(),
@@ -218,129 +434,384 @@ fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
         }
     });
 }
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
+    ui.vertical(|ui| {
+        ui.label(label);
+        let (rect, response) = ui.allocate_exact_size(Vec2::splat(112.0), Sense::click_and_drag());
+        ui.painter().rect_stroke(
+            rect,
+            2.0,
+            Stroke::new(1.0, Color32::GRAY),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().line_segment(
+            [
+                Pos2::new(rect.left(), rect.center().y),
+                Pos2::new(rect.right(), rect.center().y),
+            ],
+            Stroke::new(1.0, Color32::DARK_GRAY),
+        );
+        ui.painter().line_segment(
+            [
+                Pos2::new(rect.center().x, rect.top()),
+                Pos2::new(rect.center().x, rect.bottom()),
+            ],
+            Stroke::new(1.0, Color32::DARK_GRAY),
+        );
+        let pointer = Pos2::new(
+            rect.center().x + f32::from(*x) / 32768.0 * rect.width() / 2.0,
+            rect.center().y + f32::from(*y) / 32768.0 * rect.height() / 2.0,
+        );
+        ui.painter()
+            .circle_filled(pointer, 5.0, Color32::LIGHT_BLUE);
+        let mut changed = false;
+        if response.is_pointer_button_down_on() {
+            if let Some(position) = response.interact_pointer_pos() {
+                let next_x = (((position.x - rect.center().x) / (rect.width() / 2.0))
+                    .clamp(-1.0, 1.0)
+                    * 32767.0) as i16;
+                let next_y = (((position.y - rect.center().y) / (rect.height() / 2.0))
+                    .clamp(-1.0, 1.0)
+                    * 32767.0) as i16;
+                changed = *x != next_x || *y != next_y;
+                *x = next_x;
+                *y = next_y;
+            }
+        } else if response.drag_stopped() || response.clicked() {
+            changed = *x != 0 || *y != 0;
+            *x = 0;
+            *y = 0;
+        }
+        ui.monospace(format!("x={x} y={y}"));
+        changed
+    })
+    .inner
+}
+
+fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u8) -> bool {
+    let response = ui.add(egui::Slider::new(value, 0..=255).text(label));
+    let mut changed = response.changed();
+    if response.drag_stopped() || response.clicked() {
+        changed |= *value != 0;
+        *value = 0;
+    }
+    changed
+}
+
+fn momentary_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
+    let response = ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label));
+    let mut changed = response.changed();
+    if response.drag_stopped() || response.clicked() {
+        changed |= *value != 0;
+        *value = 0;
+    }
+    changed
+}
+
+fn dualsense_axis_to_pad(value: u8) -> i16 {
+    i16::try_from((i32::from(value) - 128) * 257).expect("DualSense axis fits signed pad")
+}
+
+fn dualsense_axis_from_pad(value: i16) -> u8 {
+    u8::try_from((i32::from(value) / 257 + 128).clamp(0, 255))
+        .expect("clamped DualSense axis fits u8")
+}
 fn draw_generic(ui: &mut egui::Ui, controller: &mut GenericGamepadController) {
     surface(ui, controller.surface());
     digital_controls(ui, |update| {
         let _ = controller.set_digital(update);
     });
+    ui.group(|ui| {
+        ui.label("Additional buttons");
+        ui.horizontal_wrapped(|ui| {
+            for (label, control) in [
+                ("Select", GenericGamepadControl::Select),
+                ("Start", GenericGamepadControl::Start),
+                ("Guide", GenericGamepadControl::Guide),
+            ] {
+                hold(ui, label, |pressed| {
+                    let _ = controller.set_native(control, pressed);
+                });
+            }
+        });
+    });
     let (left_x, left_y) = controller.state().left_stick();
-    let mut x = i32::from(left_x.raw());
-    let mut y = i32::from(left_y.raw());
-    if ui
-        .add(egui::Slider::new(&mut x, -32768..=32767).text("Left X"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut y, -32768..=32767).text("Left Y"))
-            .changed()
-    {
-        let _ = controller.set_left_stick(
-            GenericGamepadAxis::new(i16::try_from(x).expect("slider is bounded to i16")),
-            GenericGamepadAxis::new(i16::try_from(y).expect("slider is bounded to i16")),
-        );
-    }
+    let mut x = left_x.raw();
+    let mut y = left_y.raw();
+    let (right_x, right_y) = controller.state().right_stick();
+    let mut right_x = right_x.raw();
+    let mut right_y = right_y.raw();
+    ui.group(|ui| {
+        ui.label("Sticks");
+        ui.horizontal_wrapped(|ui| {
+            ui.vertical(|ui| {
+                if axis_pad(ui, "Left stick", &mut x, &mut y) {
+                    let _ = controller
+                        .set_left_stick(GenericGamepadAxis::new(x), GenericGamepadAxis::new(y));
+                }
+                hold(ui, "Left stick press", |pressed| {
+                    let _ = controller.set_native(GenericGamepadControl::LeftStickPress, pressed);
+                });
+            });
+            ui.vertical(|ui| {
+                if axis_pad(ui, "Right stick", &mut right_x, &mut right_y) {
+                    let _ = controller.set_right_stick(
+                        GenericGamepadAxis::new(right_x),
+                        GenericGamepadAxis::new(right_y),
+                    );
+                }
+                hold(ui, "Right stick press", |pressed| {
+                    let _ = controller.set_native(GenericGamepadControl::RightStickPress, pressed);
+                });
+            });
+        });
+    });
     let (left, right) = controller.state().triggers();
-    let mut left = i32::from(left.raw());
-    let mut right = i32::from(right.raw());
-    if ui
-        .add(egui::Slider::new(&mut left, 0..=255).text("Left trigger"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut right, 0..=255).text("Right trigger"))
-            .changed()
+    let mut left = left.raw();
+    let mut right = right.raw();
+    if momentary_trigger(ui, "Left trigger", &mut left)
+        | momentary_trigger(ui, "Right trigger", &mut right)
     {
         let _ = controller.set_triggers(
-            GenericGamepadTrigger::new(u8::try_from(left).expect("slider is bounded to u8")),
-            GenericGamepadTrigger::new(u8::try_from(right).expect("slider is bounded to u8")),
+            GenericGamepadTrigger::new(left),
+            GenericGamepadTrigger::new(right),
         );
     }
+    ui.horizontal_wrapped(|ui| {
+        hold(ui, "Left shoulder", |pressed| {
+            let _ = controller.set_native(GenericGamepadControl::LeftShoulder, pressed);
+        });
+        hold(ui, "Right shoulder", |pressed| {
+            let _ = controller.set_native(GenericGamepadControl::RightShoulder, pressed);
+        });
+    });
 }
 fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     surface(ui, controller.surface());
     digital_controls(ui, |update| {
         let _ = controller.set_digital(update);
     });
+    ui.group(|ui| {
+        ui.label("Additional buttons");
+        ui.horizontal_wrapped(|ui| {
+            for (label, control) in [
+                ("Back", Xbox360Control::Back),
+                ("Start", Xbox360Control::Start),
+                ("Guide", Xbox360Control::Guide),
+            ] {
+                hold(ui, label, |pressed| {
+                    let _ = controller.set_native(control, pressed);
+                });
+            }
+        });
+    });
     let (left_x, left_y) = controller.state().left_stick();
-    let mut x = i32::from(left_x.raw());
-    let mut y = i32::from(left_y.raw());
-    if ui
-        .add(egui::Slider::new(&mut x, -32768..=32767).text("Xbox left X"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut y, -32768..=32767).text("Xbox left Y"))
-            .changed()
-    {
-        let _ = controller.set_left_stick(
-            Xbox360Axis::new(i16::try_from(x).expect("slider is bounded to i16")),
-            Xbox360Axis::new(i16::try_from(y).expect("slider is bounded to i16")),
-        );
-    }
+    let mut x = left_x.raw();
+    let mut y = left_y.raw();
+    let (right_x, right_y) = controller.state().right_stick();
+    let mut right_x = right_x.raw();
+    let mut right_y = right_y.raw();
+    ui.group(|ui| {
+        ui.label("Sticks");
+        ui.horizontal_wrapped(|ui| {
+            ui.vertical(|ui| {
+                if axis_pad(ui, "Xbox left stick", &mut x, &mut y) {
+                    let _ = controller.set_left_stick(Xbox360Axis::new(x), Xbox360Axis::new(y));
+                }
+                hold(ui, "Left stick press", |pressed| {
+                    let _ = controller.set_native(Xbox360Control::LeftStickPress, pressed);
+                });
+            });
+            ui.vertical(|ui| {
+                if axis_pad(ui, "Xbox right stick", &mut right_x, &mut right_y) {
+                    let _ = controller
+                        .set_right_stick(Xbox360Axis::new(right_x), Xbox360Axis::new(right_y));
+                }
+                hold(ui, "Right stick press", |pressed| {
+                    let _ = controller.set_native(Xbox360Control::RightStickPress, pressed);
+                });
+            });
+        });
+    });
     let (left, right) = controller.state().triggers();
-    let mut left = i32::from(left.raw());
-    let mut right = i32::from(right.raw());
-    if ui
-        .add(egui::Slider::new(&mut left, 0..=255).text("Xbox left trigger"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut right, 0..=255).text("Xbox right trigger"))
-            .changed()
+    let mut left = left.raw();
+    let mut right = right.raw();
+    if momentary_trigger(ui, "Xbox left trigger", &mut left)
+        | momentary_trigger(ui, "Xbox right trigger", &mut right)
     {
-        let _ = controller.set_triggers(
-            Xbox360Trigger::new(u8::try_from(left).expect("slider is bounded to u8")),
-            Xbox360Trigger::new(u8::try_from(right).expect("slider is bounded to u8")),
-        );
+        let _ = controller.set_triggers(Xbox360Trigger::new(left), Xbox360Trigger::new(right));
     }
+    ui.horizontal_wrapped(|ui| {
+        hold(ui, "Left shoulder", |pressed| {
+            let _ = controller.set_native(Xbox360Control::LeftShoulder, pressed);
+        });
+        hold(ui, "Right shoulder", |pressed| {
+            let _ = controller.set_native(Xbox360Control::RightShoulder, pressed);
+        });
+    });
 }
+#[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
 fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
     surface(ui, controller.surface());
     digital_controls(ui, |update| {
         let _ = controller.set_digital(update);
     });
+    ui.group(|ui| {
+        ui.label("Additional buttons");
+        ui.horizontal_wrapped(|ui| {
+            for (label, control) in [
+                ("Create", DualSenseControl::Create),
+                ("Options", DualSenseControl::Options),
+                ("PlayStation", DualSenseControl::PlayStation),
+                ("Touchpad click", DualSenseControl::TouchpadClick),
+            ] {
+                hold(ui, label, |pressed| {
+                    let _ = controller.set_native(control, pressed);
+                });
+            }
+        });
+    });
     let (left_x, left_y) = controller.state().left_stick();
-    let mut x = i32::from(left_x.raw());
-    let mut y = i32::from(left_y.raw());
-    if ui
-        .add(egui::Slider::new(&mut x, 0..=255).text("DualSense left X"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut y, 0..=255).text("DualSense left Y"))
-            .changed()
-    {
-        let _ = controller.set_left_stick(
-            DualSenseAxis::new(u8::try_from(x).expect("slider is bounded to u8")),
-            DualSenseAxis::new(u8::try_from(y).expect("slider is bounded to u8")),
-        );
-    }
+    let mut x = dualsense_axis_to_pad(left_x.raw());
+    let mut y = dualsense_axis_to_pad(left_y.raw());
+    let (right_x, right_y) = controller.state().right_stick();
+    let mut right_x = dualsense_axis_to_pad(right_x.raw());
+    let mut right_y = dualsense_axis_to_pad(right_y.raw());
+    ui.group(|ui| {
+        ui.label("Sticks");
+        ui.horizontal_wrapped(|ui| {
+            ui.vertical(|ui| {
+                if axis_pad(ui, "DualSense left stick", &mut x, &mut y) {
+                    let _ = controller.set_left_stick(
+                        DualSenseAxis::new(dualsense_axis_from_pad(x)),
+                        DualSenseAxis::new(dualsense_axis_from_pad(y)),
+                    );
+                }
+                hold(ui, "Left stick press", |pressed| {
+                    let _ = controller.set_native(DualSenseControl::LeftStickPress, pressed);
+                });
+            });
+            ui.vertical(|ui| {
+                if axis_pad(ui, "DualSense right stick", &mut right_x, &mut right_y) {
+                    let _ = controller.set_right_stick(
+                        DualSenseAxis::new(dualsense_axis_from_pad(right_x)),
+                        DualSenseAxis::new(dualsense_axis_from_pad(right_y)),
+                    );
+                }
+                hold(ui, "Right stick press", |pressed| {
+                    let _ = controller.set_native(DualSenseControl::RightStickPress, pressed);
+                });
+            });
+        });
+    });
     let (left, right) = controller.state().triggers();
-    let mut left = i32::from(left.raw());
-    let mut right = i32::from(right.raw());
-    if ui
-        .add(egui::Slider::new(&mut left, 0..=255).text("DualSense left trigger"))
-        .changed()
-        || ui
-            .add(egui::Slider::new(&mut right, 0..=255).text("DualSense right trigger"))
-            .changed()
+    let mut left = left.raw();
+    let mut right = right.raw();
+    if momentary_trigger(ui, "DualSense left trigger", &mut left)
+        | momentary_trigger(ui, "DualSense right trigger", &mut right)
     {
-        let _ = controller.set_triggers(
-            DualSenseTrigger::new(u8::try_from(left).expect("slider is bounded to u8")),
-            DualSenseTrigger::new(u8::try_from(right).expect("slider is bounded to u8")),
-        );
+        let _ = controller.set_triggers(DualSenseTrigger::new(left), DualSenseTrigger::new(right));
     }
-    ui.collapsing("Touchpad", |ui| {
-        let mut x = 0_i32;
-        let mut y = 0_i32;
-        ui.add(egui::Slider::new(&mut x, 0..=1919).text("Touch X"));
-        ui.add(egui::Slider::new(&mut y, 0..=941).text("Touch Y"));
-        if ui.button("Set first touch").clicked() {
-            if let Ok(contact) = DualSenseTouchContact::new(
-                0,
-                u16::try_from(x).expect("slider is bounded to u16"),
-                u16::try_from(y).expect("slider is bounded to u16"),
-            ) {
+    ui.horizontal_wrapped(|ui| {
+        hold(ui, "L1", |pressed| {
+            let _ = controller.set_native(DualSenseControl::L1, pressed);
+        });
+        hold(ui, "R1", |pressed| {
+            let _ = controller.set_native(DualSenseControl::R1, pressed);
+        });
+    });
+    ui.group(|ui| {
+        ui.label("Touchpad");
+        draw_touchpad(ui, controller);
+        draw_touch_slot(ui, controller, TouchSlot::Second, 1, "Second contact");
+    });
+    if controller.surface().common().target == RealizationTarget::Hid {
+        ui.group(|ui| {
+            ui.label("UHID motion report");
+            let motion = controller.state().motion();
+            let mut gyro = motion.gyroscope;
+            let mut accelerometer = motion.accelerometer;
+            let mut changed = false;
+            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
+                changed |= momentary_motion_axis(ui, label, value);
+            }
+            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
+                .into_iter()
+                .zip(&mut accelerometer)
+            {
+                changed |= momentary_motion_axis(ui, label, value);
+            }
+            if changed {
+                let motion = MotionSample {
+                    gyroscope: gyro,
+                    accelerometer,
+                };
+                let _ = controller.set_motion(motion);
+            }
+        });
+    }
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
+    ui.small("Click and drag to emulate the first physical touch contact.");
+    let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
+    ui.painter().rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0, Color32::GRAY),
+        egui::StrokeKind::Inside,
+    );
+    if response.is_pointer_button_down_on() {
+        if let Some(position) = response.interact_pointer_pos() {
+            let x = ((position.x - rect.left()) / rect.width() * 1919.0).clamp(0.0, 1919.0) as u16;
+            let y = ((position.y - rect.top()) / rect.height() * 941.0).clamp(0.0, 941.0) as u16;
+            if let Ok(contact) = DualSenseTouchContact::new(0, x, y) {
                 let _ = controller.set_touch(TouchSlot::First, Some(contact));
             }
         }
-        if ui.button("Clear first touch").clicked() {
-            let _ = controller.set_touch(TouchSlot::First, None);
+    } else if response.drag_stopped() || response.clicked() {
+        let _ = controller.set_touch(TouchSlot::First, None);
+    }
+    for (slot, color) in [
+        (TouchSlot::First, Color32::LIGHT_BLUE),
+        (TouchSlot::Second, Color32::LIGHT_GREEN),
+    ] {
+        if let Some(contact) = controller.state().touch(slot) {
+            let x = rect.left() + f32::from(contact.x()) / 1919.0 * rect.width();
+            let y = rect.top() + f32::from(contact.y()) / 941.0 * rect.height();
+            ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
+        }
+    }
+}
+
+fn draw_touch_slot(
+    ui: &mut egui::Ui,
+    controller: &mut DualSenseController,
+    slot: TouchSlot,
+    id: u8,
+    label: &str,
+) {
+    let contact = controller.state().touch(slot);
+    let mut x = i32::from(contact.map_or(0, DualSenseTouchContact::x));
+    let mut y = i32::from(contact.map_or(0, DualSenseTouchContact::y));
+    ui.group(|ui| {
+        ui.label(label);
+        ui.add(egui::Slider::new(&mut x, 0..=1919).text("X"));
+        ui.add(egui::Slider::new(&mut y, 0..=941).text("Y"));
+        if ui.button("Set touch").clicked() {
+            if let Ok(contact) = DualSenseTouchContact::new(
+                id,
+                u16::try_from(x).expect("slider is bounded to u16"),
+                u16::try_from(y).expect("slider is bounded to u16"),
+            ) {
+                let _ = controller.set_touch(slot, Some(contact));
+            }
+        }
+        if ui.button("Clear touch").clicked() {
+            let _ = controller.set_touch(slot, None);
         }
     });
 }

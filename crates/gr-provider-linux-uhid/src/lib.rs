@@ -113,9 +113,9 @@ struct Session {
     failures: u64,
     lifecycle_events: u64,
     last_error: Option<String>,
+    numbered_input_reports: bool,
     numbered_output_reports: bool,
-    numbered_feature_reports: bool,
-    static_features: std::collections::BTreeMap<u8, Vec<u8>>,
+    static_features: std::collections::BTreeMap<NativeHidReportKey, Vec<u8>>,
 }
 impl Session {
     fn new(
@@ -132,8 +132,8 @@ impl Session {
             failures: 0,
             lifecycle_events: 0,
             last_error: None,
+            numbered_input_reports: specification.numbered_input_reports,
             numbered_output_reports: specification.numbered_output_reports,
-            numbered_feature_reports: specification.numbered_feature_reports,
             static_features: specification.feature_report_responses,
         }
     }
@@ -144,10 +144,15 @@ impl NativeProviderSession for Session {
             return Err(ProviderError::Closed);
         }
         let result = match frame {
-            ProviderFrame::HidInput { report_id, bytes } => self.io.input(report_id, &bytes),
-            ProviderFrame::HidFeature { report_id, bytes } => self
-                .io
-                .input(self.numbered_feature_reports.then_some(report_id), &bytes),
+            ProviderFrame::HidInput { report_id, bytes } => {
+                if self.numbered_input_reports == report_id.is_some() {
+                    self.io.input(report_id, &bytes)
+                } else {
+                    Err(ProviderError::Unsupported {
+                        reason: "HID input report ID does not match realization numbering".into(),
+                    })
+                }
+            }
             ProviderFrame::HidGetReportReply {
                 request_id,
                 status,
@@ -199,7 +204,10 @@ impl NativeProviderSession for Session {
                 report_id,
                 report_type,
             } => {
-                if let Some(bytes) = self.static_features.get(&report_id) {
+                if let Some(bytes) = self.static_features.get(&NativeHidReportKey {
+                    report_id,
+                    report_type,
+                }) {
                     self.io.get_reply(id, 0, bytes)?;
                     self.reverse += 1;
                     return Ok(());
@@ -534,6 +542,7 @@ mod integration_tests {
                     version: 1,
                 },
                 descriptor: vec![0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0xc0],
+                numbered_input_reports: false,
                 numbered_output_reports: false,
                 numbered_feature_reports: false,
                 feature_report_responses: BTreeMap::new(),
@@ -618,9 +627,18 @@ mod seam_tests {
                 version: 3,
             },
             descriptor: vec![1],
+            numbered_input_reports: true,
             numbered_output_reports: true,
             numbered_feature_reports: true,
-            feature_report_responses: [(4, vec![9])].into_iter().collect(),
+            feature_report_responses: [(
+                NativeHidReportKey {
+                    report_id: 4,
+                    report_type: 3,
+                },
+                vec![9],
+            )]
+            .into_iter()
+            .collect(),
         }
     }
     fn request() -> ProviderOpenRequest {
@@ -668,15 +686,15 @@ mod seam_tests {
         let mut session = Session::new(Box::new(io), RealizationSessionId(8), specification());
         assert!(
             session
-                .send(ProviderFrame::HidFeature {
-                    report_id: 3,
+                .send(ProviderFrame::HidInput {
+                    report_id: Some(3),
                     bytes: vec![5]
                 })
                 .is_err()
         );
         session
-            .send(ProviderFrame::HidFeature {
-                report_id: 3,
+            .send(ProviderFrame::HidInput {
+                report_id: Some(3),
                 bytes: vec![5],
             })
             .expect("retry input");

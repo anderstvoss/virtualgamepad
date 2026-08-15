@@ -5,11 +5,11 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
     DigitalControlSurface, DigitalControlUpdate, DpadDirection, FaceButton, OutputSurface,
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    TargetAwareControllerDriver, TargetRestriction,
+    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeEvdevRealization, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
@@ -256,6 +256,7 @@ static GENERIC_OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
+static GENERIC_HID_OUTPUTS: [OutputSurface; 0] = [];
 static GENERIC_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "controller-specific sensors",
     reason: "the generic gamepad package declares no sensor surface",
@@ -263,9 +264,20 @@ static GENERIC_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
 static GENERIC_SURFACE: GenericGamepadSurface = GenericGamepadSurface {
     common: ControllerSurface {
         target: RealizationTarget::Evdev,
+        validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &GENERIC_DIGITAL,
         axes: &GENERIC_AXES,
         outputs: &GENERIC_OUTPUTS,
+        restrictions: &GENERIC_RESTRICTIONS,
+    },
+};
+static GENERIC_HID_SURFACE: GenericGamepadSurface = GenericGamepadSurface {
+    common: ControllerSurface {
+        target: RealizationTarget::Hid,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &GENERIC_DIGITAL,
+        axes: &GENERIC_AXES,
+        outputs: &GENERIC_HID_OUTPUTS,
         restrictions: &GENERIC_RESTRICTIONS,
     },
 };
@@ -276,13 +288,22 @@ impl RealizationControllerDefinition for GenericGamepadDefinition {
         ControllerId::new("virtualgamepad.generic")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-            target: RealizationTarget::Evdev,
-            provider_requirements: ProviderRequirements {
-                requires_reverse_output: false,
+        static ENTRIES: [RealizationManifestEntry; 2] = [
+            RealizationManifestEntry {
+                target: RealizationTarget::Evdev,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                audio_sidecar: None,
             },
-            audio_sidecar: None,
-        }];
+            RealizationManifestEntry {
+                target: RealizationTarget::Hid,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: false,
+                },
+                audio_sidecar: None,
+            },
+        ];
         RealizationManifest::new(&ENTRIES)
     }
 }
@@ -312,7 +333,10 @@ impl TargetAwareControllerDriver for GenericGamepadDefinition {
         selection: RealizationSelection,
         _: &Self::State,
     ) -> Result<(), ControlError> {
-        if selection.target == RealizationTarget::Evdev {
+        if matches!(
+            selection.target,
+            RealizationTarget::Evdev | RealizationTarget::Hid
+        ) {
             Ok(())
         } else {
             Err(common::unavailable(selection.target))
@@ -320,9 +344,25 @@ impl TargetAwareControllerDriver for GenericGamepadDefinition {
     }
     fn encode(
         &self,
-        _: RealizationSelection,
+        selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
+        if selection.target == RealizationTarget::Hid {
+            let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
+            return Ok(common::hid_gamepad_frame(
+                state.face,
+                state.dpad,
+                &state.buttons,
+                [
+                    byte(state.left.0.raw()),
+                    byte(state.left.1.raw()),
+                    byte(state.right.0.raw()),
+                    byte(state.right.1.raw()),
+                    state.triggers.0.raw(),
+                    state.triggers.1.raw(),
+                ],
+            ));
+        }
         let mut events = Vec::new();
         for (code, pressed) in FACE_CODES.into_iter().zip(state.face) {
             events.push(EvdevEvent {
@@ -395,9 +435,30 @@ impl TargetAwareControllerDriver for GenericGamepadDefinition {
 /// Reverse output specific to the Generic Gamepad package.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GenericGamepadOutputEvent {
-    ForceFeedbackUpload { request_id: u32, effect: Vec<u8> },
-    ForceFeedbackErase { request_id: u32, effect_id: u32 },
+    ForceFeedbackUpload {
+        request_id: u32,
+        effect: Vec<u8>,
+    },
+    ForceFeedbackErase {
+        request_id: u32,
+        effect_id: u32,
+    },
     ProviderEvent(Vec<EvdevEvent>),
+    HidOutput {
+        report_id: Option<u8>,
+        bytes: Vec<u8>,
+    },
+    HidGetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+    },
+    HidSetReportRequest {
+        request_id: u32,
+        report_id: u8,
+        report_type: u8,
+        bytes: Vec<u8>,
+    },
 }
 
 pub struct GenericGamepadController(
@@ -410,7 +471,10 @@ impl GenericGamepadController {
     }
     #[must_use]
     pub const fn surface(&self) -> &'static GenericGamepadSurface {
-        &GENERIC_SURFACE
+        match self.0.selection().target {
+            RealizationTarget::Hid => &GENERIC_HID_SURFACE,
+            _ => &GENERIC_SURFACE,
+        }
     }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
@@ -485,11 +549,52 @@ impl GenericGamepadController {
                     RawReverseEvent::Evdev(events) => {
                         GenericGamepadOutputEvent::ProviderEvent(events)
                     }
-                    _ => return,
+                    RawReverseEvent::HidOutput { report_id, bytes } => {
+                        GenericGamepadOutputEvent::HidOutput { report_id, bytes }
+                    }
+                    RawReverseEvent::HidGetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                    } => GenericGamepadOutputEvent::HidGetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                    },
+                    RawReverseEvent::HidSetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                        bytes,
+                    } => GenericGamepadOutputEvent::HidSetReportRequest {
+                        request_id,
+                        report_id,
+                        report_type,
+                        bytes,
+                    },
+                    RawReverseEvent::Transport { .. } => return,
                 };
                 callback(output);
             })
         })
+    }
+    pub fn reply_get_report(
+        &mut self,
+        request_id: u32,
+        status: i16,
+        bytes: Vec<u8>,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::HidGetReportReply {
+                request_id,
+                status,
+                bytes,
+            })
+        })
+    }
+    pub fn reply_set_report(&mut self, request_id: u32, status: i16) -> Result<(), ProviderError> {
+        self.0
+            .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
 }
 
@@ -521,11 +626,23 @@ fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
+fn hid_realization() -> NativeControllerRealization {
+    // 0x1209:0001 is a provisional development identity, not an allocation claim.
+    common::hid_realization("VirtualGamepad Generic", 0x1209, 0x0001)
+}
 pub fn create_generic_gamepad(
     options: CreationOptions,
 ) -> Result<GenericGamepadController, ProviderError> {
-    common::create_evdev(GenericGamepadDefinition, realization(), options)
-        .map(GenericGamepadController)
+    let realization = match options.target {
+        DeploymentTarget::Evdev => realization(),
+        DeploymentTarget::Hid => hid_realization(),
+        _ => {
+            return Err(ProviderError::Unsupported {
+                reason: "unknown deployment target".into(),
+            });
+        }
+    };
+    common::create(GenericGamepadDefinition, realization, options).map(GenericGamepadController)
 }
 
 #[cfg(test)]
@@ -562,5 +679,35 @@ mod tests {
     fn surface_reports_native_evdev_ranges() {
         assert_eq!(GENERIC_SURFACE.common.axes[0].minimum, -32768);
         assert_eq!(GENERIC_SURFACE.common.axes[2].maximum, 255);
+    }
+
+    #[test]
+    fn hid_surface_and_frame_are_explicitly_research_backed() {
+        assert_eq!(
+            GENERIC_HID_SURFACE.common.validation_status,
+            RealizationValidationStatus::ResearchBacked
+        );
+        let frame = GenericGamepadDefinition
+            .encode(
+                RealizationSelection {
+                    controller: GenericGamepadDefinition.controller_id(),
+                    target: RealizationTarget::Hid,
+                },
+                &GenericGamepadState::default(),
+            )
+            .expect("HID frame");
+        assert_eq!(
+            frame,
+            ProviderFrame::HidInput {
+                report_id: None,
+                bytes: vec![0, 0, 8, 128, 128, 128, 128, 0, 0],
+            }
+        );
+        assert!(GENERIC_HID_SURFACE.common.outputs.is_empty());
+        assert!(
+            !GenericGamepadDefinition.realization_manifest().entries()[1]
+                .provider_requirements
+                .requires_reverse_output
+        );
     }
 }
