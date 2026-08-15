@@ -2,8 +2,13 @@
 //! Generic Linux USB gadget transport realization provider.
 #![allow(clippy::wildcard_imports)]
 use gr_realization_api::*;
-use std::fs::OpenOptions;
-use std::io::ErrorKind;
+#[cfg(target_os = "linux")]
+use std::os::unix::fs::OpenOptionsExt;
+use std::{
+    collections::BTreeMap,
+    fs::{File, OpenOptions},
+    io::{ErrorKind, Read, Write},
+};
 #[derive(Default)]
 pub struct LinuxUsbGadgetProvider;
 impl NativeProviderFactory for LinuxUsbGadgetProvider {
@@ -16,14 +21,22 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
                 target: RealizationTarget::UsbTransportValidation,
             });
         }
-        let NativeControllerRealization::UsbTransportValidation(specification) =
-            &request.realization
-        else {
-            return Ok(());
-        };
-        check_endpoint(&specification.input_endpoint_path)?;
-        if let Some(path) = &specification.reverse_endpoint_path {
-            check_endpoint(path)?;
+        match &request.realization {
+            NativeControllerRealization::UsbTransportValidation(specification) => {
+                check_endpoint(
+                    &specification.input_endpoint_path,
+                    NativeUsbEndpointDirection::DeviceToHost,
+                )?;
+                if let Some(path) = &specification.reverse_endpoint_path {
+                    check_endpoint(path, NativeUsbEndpointDirection::HostToDevice)?;
+                }
+            }
+            NativeControllerRealization::UsbComposite(specification) => {
+                for endpoint in &specification.endpoints {
+                    check_endpoint(&endpoint.path, endpoint.direction)?;
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -40,21 +53,65 @@ impl NativeProviderFactory for LinuxUsbGadgetProvider {
         if !matches!(
             request.realization,
             NativeControllerRealization::UsbTransportValidation(_)
+                | NativeControllerRealization::UsbComposite(_)
         ) {
             return Err(ProviderError::Unsupported {
                 reason: "USB gadget requires USB realization".into(),
             });
         }
+        let endpoints = match request.realization {
+            NativeControllerRealization::UsbComposite(specification) => specification
+                .endpoints
+                .into_iter()
+                .map(|endpoint| {
+                    endpoint_open_options(endpoint.direction)
+                        .open(&endpoint.path)
+                        .map(|file| {
+                            (
+                                endpoint.address,
+                                EndpointFile {
+                                    file,
+                                    direction: endpoint.direction,
+                                    maximum_packet_length: endpoint.maximum_packet_length,
+                                },
+                            )
+                        })
+                        .map_err(|error| ProviderError::Open {
+                            reason: error.to_string(),
+                        })
+                })
+                .collect::<Result<BTreeMap<_, _>, _>>()?,
+            _ => BTreeMap::new(),
+        };
         Ok(Box::new(Session {
+            realization_id: request.session,
             state: ProviderState::Open,
             sent: 0,
+            reverse_events_drained: 0,
+            endpoints,
         }))
     }
 }
-fn check_endpoint(path: &str) -> Result<(), ProviderPreflightError> {
-    OpenOptions::new()
-        .read(true)
-        .write(true)
+fn endpoint_open_options(direction: NativeUsbEndpointDirection) -> OpenOptions {
+    let mut options = OpenOptions::new();
+    match direction {
+        NativeUsbEndpointDirection::DeviceToHost => {
+            options.write(true);
+        }
+        NativeUsbEndpointDirection::HostToDevice => {
+            options.read(true);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    options.custom_flags(0o4000); // O_NONBLOCK; avoid stalling controller polling.
+    options
+}
+
+fn check_endpoint(
+    path: &str,
+    direction: NativeUsbEndpointDirection,
+) -> Result<(), ProviderPreflightError> {
+    endpoint_open_options(direction)
         .open(path)
         .map(|_| ())
         .map_err(|error| match error.kind() {
@@ -65,17 +122,47 @@ fn check_endpoint(path: &str) -> Result<(), ProviderPreflightError> {
         })
 }
 struct Session {
+    realization_id: RealizationSessionId,
     state: ProviderState,
     sent: u64,
+    reverse_events_drained: u64,
+    endpoints: BTreeMap<u8, EndpointFile>,
+}
+struct EndpointFile {
+    file: File,
+    direction: NativeUsbEndpointDirection,
+    maximum_packet_length: u16,
 }
 impl NativeProviderSession for Session {
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
         if self.state != ProviderState::Open {
             return Err(ProviderError::Closed);
         }
-        if !matches!(frame, ProviderFrame::Transport { .. }) {
+        let ProviderFrame::Transport { endpoint, bytes } = frame else {
             return Err(ProviderError::Unsupported {
                 reason: "USB gadget accepts transport packets only".into(),
+            });
+        };
+        if let Some(endpoint_file) = self.endpoints.get_mut(&endpoint) {
+            if endpoint_file.direction != NativeUsbEndpointDirection::DeviceToHost {
+                return Err(ProviderError::Unsupported {
+                    reason: "USB transport endpoint is host-to-device".into(),
+                });
+            }
+            if bytes.len() > usize::from(endpoint_file.maximum_packet_length) {
+                return Err(ProviderError::Write {
+                    reason: "USB transport packet exceeds declared endpoint maximum".into(),
+                });
+            }
+            endpoint_file
+                .file
+                .write_all(&bytes)
+                .map_err(|error| ProviderError::Write {
+                    reason: error.to_string(),
+                })?;
+        } else if !self.endpoints.is_empty() {
+            return Err(ProviderError::Unsupported {
+                reason: "USB composite endpoint is not declared".into(),
             });
         }
         self.sent += 1;
@@ -83,18 +170,58 @@ impl NativeProviderSession for Session {
     }
     fn drain_reverse_events(
         &mut self,
-        _: &mut dyn ProviderReverseEventSink,
+        sink: &mut dyn ProviderReverseEventSink,
     ) -> Result<(), ProviderError> {
-        Err(ProviderError::WouldBlock)
+        let mut drained = 0_u64;
+        for (address, endpoint) in &mut self.endpoints {
+            if endpoint.direction != NativeUsbEndpointDirection::HostToDevice {
+                continue;
+            }
+            let mut bytes = vec![0_u8; usize::from(endpoint.maximum_packet_length)];
+            match endpoint.file.read(&mut bytes) {
+                Ok(0) => {}
+                Ok(length) => {
+                    bytes.truncate(length);
+                    sink.push(ProviderReverseEvent {
+                        session: self.realization_id,
+                        sequence: self.reverse_events_drained + drained,
+                        event: RawReverseEvent::Transport {
+                            endpoint: *address,
+                            bytes,
+                        },
+                    });
+                    drained += 1;
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+                Err(error) => {
+                    return Err(ProviderError::Read {
+                        reason: error.to_string(),
+                    });
+                }
+            }
+        }
+        if drained == 0 {
+            return Err(ProviderError::WouldBlock);
+        }
+        self.reverse_events_drained += drained;
+        Ok(())
     }
     fn readiness(&self) -> EventReadiness {
-        EventReadiness::NoReverseEvents
+        if self
+            .endpoints
+            .values()
+            .any(|endpoint| endpoint.direction == NativeUsbEndpointDirection::HostToDevice)
+        {
+            EventReadiness::AlwaysPoll
+        } else {
+            EventReadiness::NoReverseEvents
+        }
     }
     fn diagnostics(&self) -> ProviderDiagnostics {
         ProviderDiagnostics {
             state: self.state,
             frames_sent: self.sent,
-            reverse_events_drained: 0,
+            reverse_events_drained: self.reverse_events_drained,
             write_failures: 0,
             lifecycle_events: 0,
             last_error: None,
@@ -133,8 +260,11 @@ mod tests {
     #[test]
     fn accepts_only_transport_frames_after_open() {
         let mut session = Session {
+            realization_id: RealizationSessionId(1),
             state: ProviderState::Open,
             sent: 0,
+            reverse_events_drained: 0,
+            endpoints: BTreeMap::new(),
         };
         session
             .send(ProviderFrame::Transport {
@@ -155,8 +285,11 @@ mod tests {
 
     #[test]
     fn missing_preprovisioned_endpoint_is_an_actionable_error() {
-        let error = check_endpoint("/dev/virtualgamepad-test-missing")
-            .expect_err("test endpoint must not exist");
+        let error = check_endpoint(
+            "/dev/virtualgamepad-test-missing",
+            NativeUsbEndpointDirection::DeviceToHost,
+        )
+        .expect_err("test endpoint must not exist");
         assert!(matches!(
             error,
             ProviderPreflightError::MissingPreparedEndpoint { .. }

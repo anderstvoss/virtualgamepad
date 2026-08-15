@@ -27,7 +27,8 @@ pub use gr_curated_controllers::{
 pub use gr_realization_api::{
     ControllerId, DeploymentTarget, EventReadiness, NativeControllerRealization,
     NativeHidReportKey, NativeProviderFactory, NativeProviderSession, NativeRealizationError,
-    ProviderCapabilities, ProviderDiagnostics, ProviderError, ProviderFrame, ProviderOpenRequest,
+    NativeUsbCompositeEndpoint, NativeUsbCompositeRealization, ProviderCapabilities,
+    ProviderDiagnostics, ProviderError, ProviderFrame, ProviderOpenRequest,
     ProviderOpenValidationError, ProviderPreflightError, ProviderRequirements,
     ProviderReverseEvent, ProviderReverseEventSink, ProviderState, RawReverseEvent,
     RealizationError, RealizationSelection, RealizationSessionId, RealizationTarget,

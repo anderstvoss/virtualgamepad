@@ -2,14 +2,17 @@ use crate::CreationOptions;
 use gr_controller_contract::{
     CommitError, ControlError, DpadDirection, FaceButton, PreparedRealization,
     TargetAwareControllerDriver, prepare_deployment_realization,
+    prepare_transport_validation_realization,
 };
 use gr_controller_runtime::{ControllerRuntime, FrameSink};
+use gr_provider_linux_transport::LinuxUsbGadgetProvider;
 use gr_provider_linux_uhid::LinuxUhidProvider;
 use gr_provider_linux_uinput::LinuxUinputProvider;
 use gr_realization_api::{
     DeploymentTarget, NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization,
     NativeProviderFactory, NativeProviderSession, ProviderError, ProviderFrame,
-    ProviderOpenRequest, ProviderReverseEvent, RawReverseEvent,
+    ProviderOpenRequest, ProviderReverseEvent, RawReverseEvent, RealizationSessionId,
+    TransportValidationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -103,6 +106,38 @@ where
             });
         }
     };
+    ControllerRuntime::new(driver, ProviderSessionSink(session), prepared).map_err(|error| {
+        ProviderError::Open {
+            reason: error.to_string(),
+        }
+    })
+}
+
+/// Open a controller over an operator-provisioned physical USB gadget.
+///
+/// This deliberately selects the transport-validation target and only opens
+/// endpoint paths supplied in `realization`; it never configures configfs,
+/// binds a UDC, loads modules, or changes permissions.
+pub(crate) fn create_usb<D>(
+    driver: D,
+    realization: NativeControllerRealization,
+    session: RealizationSessionId,
+) -> Result<ControllerRuntime<D, ProviderSessionSink>, ProviderError>
+where
+    D: TargetAwareControllerDriver<Frame = ProviderFrame>,
+{
+    let prepared: PreparedRealization =
+        prepare_transport_validation_realization(&driver, TransportValidationTarget::UsbGadget)
+            .map_err(|error| ProviderError::Unsupported {
+                reason: error.to_string(),
+            })?;
+    let request = ProviderOpenRequest {
+        session,
+        selection: prepared.selection(),
+        requirements: prepared.entry().provider_requirements,
+        realization,
+    };
+    let session = LinuxUsbGadgetProvider.open(request)?;
     ControllerRuntime::new(driver, ProviderSessionSink(session), prepared).map_err(|error| {
         ProviderError::Open {
             reason: error.to_string(),

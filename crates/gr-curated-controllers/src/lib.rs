@@ -22,7 +22,8 @@ pub struct CreationOptions {
 pub use dualsense::{
     DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput,
     DualSenseOutputEvent, DualSenseState, DualSenseSurface, DualSenseTouchContact,
-    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
+    DualSenseTrigger, DualSenseUsbOptions, MotionSample, TouchSlot, create_dualsense,
+    create_dualsense_usb,
 };
 pub use generic_gamepad::{
     GenericGamepadAxis, GenericGamepadControl, GenericGamepadController, GenericGamepadOutputEvent,

@@ -254,11 +254,40 @@ pub struct NativeUsbTransportValidationRealization {
     pub maximum_input_packet_length: u16,
     pub maximum_reverse_packet_length: Option<u16>,
 }
+/// USB transfer direction, viewed from the gadget device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeUsbEndpointDirection {
+    /// Packets flow from the gadget to the USB host.
+    DeviceToHost,
+    /// Packets flow from the USB host to the gadget.
+    HostToDevice,
+}
+
+/// Operator-provisioned endpoint in a physical USB composite gadget.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeUsbCompositeEndpoint {
+    /// USB endpoint address, including the USB direction bit.
+    pub address: u8,
+    /// Direction declared by the pre-provisioned gadget function.
+    pub direction: NativeUsbEndpointDirection,
+    pub path: String,
+    pub maximum_packet_length: u16,
+}
+
+/// Physical USB composite realization consumed from an existing gadget setup.
+///
+/// The library neither creates gadget functions nor changes UDC/configfs state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NativeUsbCompositeRealization {
+    pub device_name: String,
+    pub endpoints: Vec<NativeUsbCompositeEndpoint>,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeControllerRealization {
     Evdev(NativeEvdevRealization),
     Hid(NativeHidRealization),
     UsbTransportValidation(NativeUsbTransportValidationRealization),
+    UsbComposite(NativeUsbCompositeRealization),
 }
 impl NativeControllerRealization {
     #[must_use]
@@ -266,7 +295,9 @@ impl NativeControllerRealization {
         match self {
             Self::Evdev(_) => RealizationTarget::Evdev,
             Self::Hid(_) => RealizationTarget::Hid,
-            Self::UsbTransportValidation(_) => RealizationTarget::UsbTransportValidation,
+            Self::UsbTransportValidation(_) | Self::UsbComposite(_) => {
+                RealizationTarget::UsbTransportValidation
+            }
         }
     }
 
@@ -279,6 +310,7 @@ impl NativeControllerRealization {
     ///
     /// Returns [`NativeRealizationError`] when required provider-neutral data
     /// is empty, duplicated, or structurally inconsistent.
+    #[allow(clippy::too_many_lines)] // Validation intentionally mirrors realization variants.
     pub fn validate(&self) -> Result<(), NativeRealizationError> {
         match self {
             Self::Evdev(specification) => {
@@ -367,6 +399,39 @@ impl NativeControllerRealization {
                     return Err(NativeRealizationError::EmptyUsbPacketLength { reverse: true });
                 }
             }
+            Self::UsbComposite(specification) => {
+                if specification.device_name.is_empty() {
+                    return Err(NativeRealizationError::EmptyDeviceName {
+                        target: RealizationTarget::UsbTransportValidation,
+                    });
+                }
+                if specification.endpoints.is_empty() {
+                    return Err(NativeRealizationError::EmptyUsbCompositeEndpoints);
+                }
+                for (index, endpoint) in specification.endpoints.iter().enumerate() {
+                    if endpoint.address % 16 == 0
+                        || endpoint.path.is_empty()
+                        || (endpoint.address & 0x80 != 0)
+                            != matches!(
+                                endpoint.direction,
+                                NativeUsbEndpointDirection::DeviceToHost
+                            )
+                    {
+                        return Err(NativeRealizationError::InvalidUsbCompositeEndpoint);
+                    }
+                    if endpoint.maximum_packet_length == 0 {
+                        return Err(NativeRealizationError::EmptyUsbPacketLength {
+                            reverse: false,
+                        });
+                    }
+                    if specification.endpoints[..index]
+                        .iter()
+                        .any(|previous| previous.address == endpoint.address)
+                    {
+                        return Err(NativeRealizationError::DuplicateUsbCompositeEndpoint);
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -415,6 +480,12 @@ pub enum NativeRealizationError {
     EmptyUsbEndpointPath { reverse: bool },
     #[error("USB transport validation packet length is zero (reverse={reverse})")]
     EmptyUsbPacketLength { reverse: bool },
+    #[error("USB composite realization requires at least one endpoint")]
+    EmptyUsbCompositeEndpoints,
+    #[error("USB composite endpoint is invalid")]
+    InvalidUsbCompositeEndpoint,
+    #[error("USB composite endpoint address is declared more than once")]
+    DuplicateUsbCompositeEndpoint,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -770,6 +841,32 @@ mod tests {
             ProviderOpenValidationError::Specification(NativeRealizationError::EmptyDeviceName {
                 target: RealizationTarget::Evdev
             })
+        ));
+    }
+
+    #[test]
+    fn composite_usb_requires_distinct_bounded_endpoints() {
+        let realization =
+            NativeControllerRealization::UsbComposite(NativeUsbCompositeRealization {
+                device_name: "DualSense composite".into(),
+                endpoints: vec![
+                    NativeUsbCompositeEndpoint {
+                        address: 0x81,
+                        direction: NativeUsbEndpointDirection::DeviceToHost,
+                        path: "/dev/gadget-hid-in".into(),
+                        maximum_packet_length: 64,
+                    },
+                    NativeUsbCompositeEndpoint {
+                        address: 0x81,
+                        direction: NativeUsbEndpointDirection::DeviceToHost,
+                        path: "/dev/gadget-audio".into(),
+                        maximum_packet_length: 192,
+                    },
+                ],
+            });
+        assert!(matches!(
+            realization.validate(),
+            Err(NativeRealizationError::DuplicateUsbCompositeEndpoint)
         ));
     }
 }
