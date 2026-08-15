@@ -440,11 +440,19 @@ mod tests {
 
     struct FakeHost {
         operations: RefCell<Vec<String>>,
+        fail_write_suffix: Option<&'static str>,
     }
     impl FakeHost {
         fn new() -> Self {
             Self {
                 operations: RefCell::new(Vec::new()),
+                fail_write_suffix: None,
+            }
+        }
+        fn failing_write(suffix: &'static str) -> Self {
+            Self {
+                operations: RefCell::new(Vec::new()),
+                fail_write_suffix: Some(suffix),
             }
         }
         fn record(&self, operation: &str, path: &Path) {
@@ -476,6 +484,12 @@ mod tests {
         }
         fn write(&self, path: &Path, _: &[u8]) -> Result<(), std::io::Error> {
             self.record("write", path);
+            if self
+                .fail_write_suffix
+                .is_some_and(|suffix| path.to_string_lossy().ends_with(suffix))
+            {
+                return Err(std::io::Error::other("injected write failure"));
+            }
             Ok(())
         }
         fn symlink(&self, _: &Path, link: &Path) -> Result<(), std::io::Error> {
@@ -565,6 +579,18 @@ mod tests {
         assert!(
             unbind < unlink,
             "cleanup unbinds before removing the function link"
+        );
+    }
+
+    #[test]
+    fn fake_host_rolls_back_a_partial_configfs_setup() {
+        let host = FakeHost::failing_write("/report_desc");
+        let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
+        assert!(setup(&host, &root, "VG-DS5-0000000000000001").is_err());
+        cleanup(&host, &root).unwrap();
+        assert_eq!(
+            host.operations.into_inner().last(),
+            Some(&format!("rmdir:{}", root.display()))
         );
     }
 
