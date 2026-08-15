@@ -2,12 +2,13 @@ use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::time::{Duration, Instant};
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    CreationOptions, DeploymentTarget, DigitalControlUpdate, DpadDirection, DualSenseAxis,
-    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
-    DualSenseTouchContact, DualSenseTrigger, FaceButton, GenericGamepadAxis, GenericGamepadControl,
-    GenericGamepadController, GenericGamepadTrigger, MotionSample, RealizationSessionId,
-    RealizationTarget, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller,
-    Xbox360OutputEvent, Xbox360Trigger, create_dualsense, create_generic_gamepad, create_xbox360,
+    BatteryLevel, BatteryState, CreationOptions, DeploymentTarget, DigitalControlUpdate,
+    DpadDirection, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput,
+    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, FaceButton, GenericGamepadAxis,
+    GenericGamepadControl, GenericGamepadController, GenericGamepadTrigger, MotionSample,
+    RealizationSessionId, RealizationTarget, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
+    create_generic_gamepad, create_xbox360,
 };
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -220,11 +221,53 @@ impl Controller {
         result
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
+        let battery = self.battery();
+        ui.group(|ui| {
+            ui.label("Battery emulation");
+            let mut exposed = battery.is_exposed();
+            if ui.checkbox(&mut exposed, "Expose battery").changed() {
+                let _ = self.set_battery_exposed(exposed);
+            }
+            if exposed {
+                let mut level = battery.level().percent();
+                if ui
+                    .add(egui::Slider::new(&mut level, 0..=100).text("Battery level (%)"))
+                    .changed()
+                {
+                    if let Ok(level) = BatteryLevel::new(level) {
+                        let _ = self.set_battery_level(level);
+                    }
+                }
+            }
+        });
         match self {
             Self::Generic(controller) => draw_generic(ui, controller),
             Self::Xbox(controller) => draw_xbox(ui, controller),
             Self::DualSense(controller) => draw_dualsense(ui, controller),
         }
+    }
+    fn battery(&self) -> BatteryState {
+        match self {
+            Self::Generic(controller) => controller.state().battery(),
+            Self::Xbox(controller) => controller.state().battery(),
+            Self::DualSense(controller) => controller.state().battery(),
+        }
+    }
+    fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), String> {
+        match self {
+            Self::Generic(controller) => controller.set_battery_exposed(exposed),
+            Self::Xbox(controller) => controller.set_battery_exposed(exposed),
+            Self::DualSense(controller) => controller.set_battery_exposed(exposed),
+        }
+        .map_err(|error| error.to_string())
+    }
+    fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
+        match self {
+            Self::Generic(controller) => controller.set_battery_level(level),
+            Self::Xbox(controller) => controller.set_battery_level(level),
+            Self::DualSense(controller) => controller.set_battery_level(level),
+        }
+        .map_err(|error| error.to_string())
     }
 }
 pub struct App {

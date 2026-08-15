@@ -1,6 +1,6 @@
 //! Generic gamepad with an intentionally generic, but still native, state.
 
-use crate::{CreationOptions, common};
+use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
     DigitalControlSurface, DigitalControlUpdate, DpadDirection, FaceButton, OutputSurface,
@@ -71,6 +71,7 @@ pub struct GenericGamepadState {
     right: (GenericGamepadAxis, GenericGamepadAxis),
     triggers: (GenericGamepadTrigger, GenericGamepadTrigger),
     buttons: [bool; 7],
+    battery: BatteryState,
 }
 impl Default for GenericGamepadState {
     fn default() -> Self {
@@ -81,6 +82,7 @@ impl Default for GenericGamepadState {
             right: (GenericGamepadAxis(0), GenericGamepadAxis(0)),
             triggers: (GenericGamepadTrigger(0), GenericGamepadTrigger(0)),
             buttons: [false; 7],
+            battery: BatteryState::default(),
         }
     }
 }
@@ -96,6 +98,10 @@ impl GenericGamepadState {
     #[must_use]
     pub const fn triggers(&self) -> (GenericGamepadTrigger, GenericGamepadTrigger) {
         self.triggers
+    }
+    #[must_use]
+    pub const fn battery(&self) -> BatteryState {
+        self.battery
     }
     #[must_use]
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
@@ -483,6 +489,20 @@ impl GenericGamepadController {
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
     }
+    /// Enable or hide the semantic battery state without recreating the controller.
+    pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_exposed(exposed);
+            Ok(())
+        })
+    }
+    /// Update the semantic battery percentage without recreating the controller.
+    pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_level(level);
+            Ok(())
+        })
+    }
     pub fn set_native(
         &mut self,
         control: GenericGamepadControl,
@@ -667,6 +687,18 @@ pub fn create_generic_gamepad(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn battery_state_is_available_in_the_generic_controller_model() {
+        let mut state = GenericGamepadState::default();
+        assert!(!state.battery().is_exposed());
+        state.battery.set_exposed(true);
+        state
+            .battery
+            .set_level(BatteryLevel::new(42).expect("battery level"));
+        assert!(state.battery().is_exposed());
+        assert_eq!(state.battery().level().percent(), 42);
+    }
 
     #[test]
     fn digital_mapping_and_native_state_are_independent_of_other_controllers() {

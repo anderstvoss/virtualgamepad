@@ -1,6 +1,6 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
-use crate::{CreationOptions, common};
+use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
     DigitalControlSurface, DigitalControlUpdate, FaceButton, OutputSurface,
@@ -162,6 +162,7 @@ pub struct DualSenseState {
     touches: [Option<DualSenseTouchContact>; 2],
     motion: MotionSample,
     sensor_timestamp: u32,
+    battery: BatteryState,
 }
 impl Default for DualSenseState {
     fn default() -> Self {
@@ -178,6 +179,7 @@ impl Default for DualSenseState {
                 gyroscope: [0; 3],
             },
             sensor_timestamp: 0,
+            battery: BatteryState::default(),
         }
     }
 }
@@ -201,6 +203,10 @@ impl DualSenseState {
     #[must_use]
     pub const fn motion(&self) -> MotionSample {
         self.motion
+    }
+    #[must_use]
+    pub const fn battery(&self) -> BatteryState {
+        self.battery
     }
     #[must_use]
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
@@ -674,10 +680,24 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
     }
     bytes[27..31].copy_from_slice(&state.sensor_timestamp.to_le_bytes());
     encode_hid_touches(&mut bytes[32..40], state.touches);
+    // hid-playstation consumes status[0] at report byte 52. Keeping battery
+    // exposure disabled represents an externally powered, fully charged
+    // controller; enabling it reports the caller-supplied 10% wire bucket.
+    bytes[52] = dualsense_battery_status(state.battery);
     ProviderFrame::HidInput {
         report_id: Some(0x01),
         bytes,
     }
+}
+
+fn dualsense_battery_status(battery: BatteryState) -> u8 {
+    if !battery.is_exposed() {
+        return 0x20; // Fully charged / externally powered.
+    }
+    // The wire format has ten-percent buckets. Round up so a non-zero caller
+    // value never gets presented to the host as an empty battery.
+    let level = battery.level().percent();
+    level.saturating_add(9).div_euclid(10).min(10)
 }
 
 fn dualsense_hat(dpad: [bool; 4]) -> u8 {
@@ -915,6 +935,20 @@ impl DualSenseController {
         self.0.update_state(|state| {
             state.motion = motion;
             advance_sensor_timestamp(state);
+            Ok(())
+        })
+    }
+    /// Enable or hide the emulated battery without recreating the controller.
+    pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_exposed(exposed);
+            Ok(())
+        })
+    }
+    /// Update the emulated battery percentage without recreating the controller.
+    pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_level(level);
             Ok(())
         })
     }
@@ -1385,6 +1419,34 @@ mod tests {
         assert_eq!(bytes[9] & 0x04, 0x04);
         assert_eq!(&bytes[32..36], &[9, 0x45, 0x13, 0x2a]);
         assert_eq!(bytes[36], 0x80);
+    }
+
+    #[test]
+    fn hid_battery_is_hidden_by_default_and_live_when_enabled() {
+        let mut state = DualSenseState::default();
+        let report = |state: &DualSenseState| {
+            let ProviderFrame::HidInput { bytes, .. } = dualsense_hid_input_report(state) else {
+                panic!("DualSense HID report must be an input frame");
+            };
+            bytes
+        };
+        // Avoid the historical all-zero status, which Linux reports as a
+        // nearly empty, discharging battery.
+        assert_eq!(report(&state)[52], 0x20);
+
+        state.battery.set_exposed(true);
+        state
+            .battery
+            .set_level(BatteryLevel::new(1).expect("battery level"));
+        assert_eq!(report(&state)[52], 1, "non-zero levels round up");
+
+        state
+            .battery
+            .set_level(BatteryLevel::new(57).expect("battery level"));
+        assert_eq!(report(&state)[52], 6);
+
+        state.battery.set_exposed(false);
+        assert_eq!(report(&state)[52], 0x20, "live hide restores powered mode");
     }
 
     #[test]

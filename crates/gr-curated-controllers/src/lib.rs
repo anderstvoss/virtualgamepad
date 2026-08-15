@@ -10,6 +10,7 @@ pub mod dualsense;
 pub mod generic_gamepad;
 pub mod xbox360;
 
+use gr_controller_contract::ControlError;
 use gr_realization_api::{DeploymentTarget, RealizationSessionId};
 
 /// Options for ordinary Linux controller creation.
@@ -17,6 +18,65 @@ use gr_realization_api::{DeploymentTarget, RealizationSessionId};
 pub struct CreationOptions {
     pub target: DeploymentTarget,
     pub session: RealizationSessionId,
+}
+
+/// Battery percentage shared by every curated controller family.
+///
+/// Battery exposure is live state rather than a creation option: callers can
+/// model changing between an externally powered controller and a wireless
+/// controller without disrupting an active provider session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatteryLevel(u8);
+impl BatteryLevel {
+    #[must_use]
+    pub const fn percent(self) -> u8 {
+        self.0
+    }
+
+    pub fn new(percent: u8) -> Result<Self, ControlError> {
+        if percent > 100 {
+            return Err(ControlError::ValueOutOfRange {
+                control: "battery level",
+                value: u32::from(percent),
+                maximum: 100,
+            });
+        }
+        Ok(Self(percent))
+    }
+}
+
+/// Semantic battery state shared by all curated controller families.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BatteryState {
+    exposed: bool,
+    level: BatteryLevel,
+}
+impl Default for BatteryState {
+    fn default() -> Self {
+        Self {
+            exposed: false,
+            level: BatteryLevel(100),
+        }
+    }
+}
+impl BatteryState {
+    #[must_use]
+    pub const fn is_exposed(self) -> bool {
+        self.exposed
+    }
+
+    #[must_use]
+    pub const fn level(self) -> BatteryLevel {
+        self.level
+    }
+
+    pub(crate) fn set_exposed(&mut self, exposed: bool) {
+        self.exposed = exposed;
+    }
+
+    pub(crate) fn set_level(&mut self, level: BatteryLevel) {
+        self.level = level;
+    }
 }
 
 pub use dualsense::{
@@ -33,6 +93,25 @@ pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
     Xbox360Surface, Xbox360Trigger, create_xbox360,
 };
+
+#[cfg(test)]
+mod battery_tests {
+    use super::*;
+
+    #[test]
+    fn battery_level_accepts_the_full_percentage_domain_only() {
+        assert_eq!(BatteryLevel::new(0).expect("empty battery").percent(), 0);
+        assert_eq!(BatteryLevel::new(100).expect("full battery").percent(), 100);
+        assert!(BatteryLevel::new(101).is_err());
+    }
+
+    #[test]
+    fn battery_state_defaults_to_hidden_and_full() {
+        let battery = BatteryState::default();
+        assert!(!battery.is_exposed());
+        assert_eq!(battery.level().percent(), 100);
+    }
+}
 
 #[cfg(test)]
 mod integration_tests {

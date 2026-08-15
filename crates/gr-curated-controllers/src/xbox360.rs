@@ -1,6 +1,6 @@
 //! Xbox 360 controller with XInput-native numeric domains.
 
-use crate::{CreationOptions, common};
+use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
     DigitalControlSurface, DigitalControlUpdate, FaceButton, OutputSurface,
@@ -65,6 +65,7 @@ pub struct Xbox360State {
     right: (Xbox360Axis, Xbox360Axis),
     triggers: (Xbox360Trigger, Xbox360Trigger),
     buttons: [bool; 7],
+    battery: BatteryState,
 }
 impl Default for Xbox360State {
     fn default() -> Self {
@@ -75,6 +76,7 @@ impl Default for Xbox360State {
             right: (Xbox360Axis(0), Xbox360Axis(0)),
             triggers: (Xbox360Trigger(0), Xbox360Trigger(0)),
             buttons: [false; 7],
+            battery: BatteryState::default(),
         }
     }
 }
@@ -90,6 +92,10 @@ impl Xbox360State {
     #[must_use]
     pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger) {
         self.triggers
+    }
+    #[must_use]
+    pub const fn battery(&self) -> BatteryState {
+        self.battery
     }
     #[must_use]
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
@@ -473,6 +479,20 @@ impl Xbox360Controller {
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
     }
+    /// Enable or hide the semantic battery state without recreating the controller.
+    pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_exposed(exposed);
+            Ok(())
+        })
+    }
+    /// Update the semantic battery percentage without recreating the controller.
+    pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
+        self.0.update_state(|state| {
+            state.battery.set_level(level);
+            Ok(())
+        })
+    }
     pub fn set_native(
         &mut self,
         control: Xbox360Control,
@@ -641,6 +661,18 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn battery_state_is_available_in_the_xbox_controller_model() {
+        let mut state = Xbox360State::default();
+        assert!(!state.battery().is_exposed());
+        state.battery.set_exposed(true);
+        state
+            .battery
+            .set_level(BatteryLevel::new(42).expect("battery level"));
+        assert!(state.battery().is_exposed());
+        assert_eq!(state.battery().level().percent(), 42);
+    }
 
     #[test]
     fn native_a_and_spatial_south_share_one_physical_button() {
