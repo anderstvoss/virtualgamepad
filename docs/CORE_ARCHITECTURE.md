@@ -18,15 +18,21 @@ three independent targets:
 | --- | --- | --- |
 | `Evdev` | uinput | Normal local deployment through Linux evdev. |
 | `Hid` | UHID | Normal local deployment with HID identity and report behavior. |
-| `UsbTransportValidation` | USB gadget | Explicit, opt-in transport-validation API; unavailable hardware is a creation error. |
+| `UsbGadget` | ConfigFS HID gadget + `dummy_hcd` | Normal, privileged in-VM deployment through the Linux USB/HID stack. |
 
-Targets are not an ordered ladder and do not imply each other. A controller
-may implement any non-empty subset, including only hardware validation. Normal
-creation selects an exact deployable target. USB-gadget use is deliberately
-available through a separate, explicit library API for callers that have an
-already-provisioned gadget-capable host; it fails with a typed preflight or
-open error when that facility is absent or inaccessible. No selection falls
-back to another provider or target.
+These three targets are peer realization levels, not an ordered ladder, and
+do not imply each other. A controller may implement any non-empty subset;
+creation selects one exact level. `UsbGadget` is intentionally an in-VM
+software USB device: it binds the controller's ConfigFS gadget to `dummy_hcd`,
+whose software UDC and host make Linux enumerate it as USB in the same VM. It
+does not require a physical UDC or external cable. No selection falls back to
+another provider or target.
+
+The currently named `UsbTransportValidation` API is transitional. It must
+migrate to the deployable `UsbGadget` target without changing controller
+semantic state or allowing a controller to bypass target-specific validation.
+Until that migration lands, it must not be described as the intended product
+architecture.
 
 ## Feature-complete intent is controller-defined
 
@@ -59,10 +65,11 @@ prescriptive:
 - UHID may realize local HID descriptors, identity, input reports, output
   reports, and feature-report exchanges. It is not a USB or Bluetooth
   device-role claim.
-- USB gadget validates actual USB enumeration, endpoint and interface topology,
-  external-host interaction, and transport behavior. It is required only to
-  make those hardware claims, not to unlock a generic controller feature by
-  definition.
+- `UsbGadget` realizes actual in-VM USB enumeration, endpoint/interface
+  topology, HID feature exchanges, and controller-specific reports. It may
+  expose native behavior that evdev cannot faithfully express, including HID
+  feature reports, firmware/pairing identity, adaptive triggers, LEDs, and
+  Steam's dedicated HIDAPI controller path.
 
 Audio and attached accessories are separate from ordinary controller input and
 output. A native HID report may represent jack presence, mute, volume, audio
@@ -111,7 +118,7 @@ the package. It must document its host prerequisites and
 feature availability for every declared target.
 
 See [deployment and hardware validation](DEPLOYMENT_AND_VALIDATION.md) for
-operator responsibilities and the security boundary.
+the `dummy_hcd` service boundary and operator responsibilities.
 
 ## Controller-native state and target surfaces
 
