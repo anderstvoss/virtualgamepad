@@ -308,7 +308,10 @@ mod integration_tests {
             session: RealizationSessionId(401),
         })
         .expect("DualSense UHID creation");
-        controller.commit().expect("initial DualSense input report");
+        assert!(
+            !controller.is_dirty(),
+            "DualSense creation must flush the initial full input report before Steam probes it"
+        );
         let mut appeared = false;
         poll_dualsense_for(&mut controller, Duration::from_secs(3), || {
             appeared |= input_node_count_containing("DualSense") > initial_nodes;
@@ -387,7 +390,10 @@ mod integration_tests {
             session: RealizationSessionId(403),
         })
         .expect("DualSense UHID creation");
-        controller.commit().expect("initial DualSense input report");
+        assert!(
+            !controller.is_dirty(),
+            "DualSense creation must flush the initial full input report before Steam probes it"
+        );
         poll_dualsense_for(&mut controller, Duration::from_secs(3), || {});
         let hidraw = virtual_dualsense_hidraw_path()
             .expect("Linux did not create the virtual DualSense hidraw node");

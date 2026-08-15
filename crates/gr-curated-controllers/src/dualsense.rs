@@ -1215,7 +1215,15 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
             });
         }
     };
-    common::create(DualSenseDefinition, realization, options).map(DualSenseController)
+    let mut controller = common::create(DualSenseDefinition, realization, options)?;
+    // SDL/Steam only waits briefly for the first full USB report while it
+    // decides whether a DualSense supports enhanced input (including gyro).
+    // Flush neutral state before returning so callers cannot accidentally
+    // defer that report until a later UI/event-loop commit.
+    controller.commit().map_err(|error| ProviderError::Open {
+        reason: format!("send initial DualSense input report: {error}"),
+    })?;
+    Ok(DualSenseController(controller))
 }
 
 /// Create a DualSense-compatible physical USB composite controller.
