@@ -144,6 +144,7 @@ pub enum DualSenseControl {
     Options,
     PlayStation,
     TouchpadClick,
+    MicrophoneMute,
     LeftStickPress,
     RightStickPress,
 }
@@ -157,9 +158,10 @@ pub struct DualSenseState {
     left: (DualSenseAxis, DualSenseAxis),
     right: (DualSenseAxis, DualSenseAxis),
     triggers: (DualSenseTrigger, DualSenseTrigger),
-    buttons: [bool; 8],
+    buttons: [bool; 9],
     touches: [Option<DualSenseTouchContact>; 2],
     motion: MotionSample,
+    sensor_timestamp: u32,
 }
 impl Default for DualSenseState {
     fn default() -> Self {
@@ -169,12 +171,13 @@ impl Default for DualSenseState {
             left: (DualSenseAxis::neutral(), DualSenseAxis::neutral()),
             right: (DualSenseAxis::neutral(), DualSenseAxis::neutral()),
             triggers: (DualSenseTrigger(0), DualSenseTrigger(0)),
-            buttons: [false; 8],
+            buttons: [false; 9],
             touches: [None, None],
             motion: MotionSample {
                 accelerometer: [0; 3],
                 gyroscope: [0; 3],
             },
+            sensor_timestamp: 0,
         }
     }
 }
@@ -215,10 +218,18 @@ impl DualSenseState {
             DualSenseControl::Options => self.buttons[3] = pressed,
             DualSenseControl::PlayStation => self.buttons[4] = pressed,
             DualSenseControl::TouchpadClick => self.buttons[5] = pressed,
+            DualSenseControl::MicrophoneMute => self.buttons[8] = pressed,
             DualSenseControl::LeftStickPress => self.buttons[6] = pressed,
             DualSenseControl::RightStickPress => self.buttons[7] = pressed,
         }
     }
+}
+
+fn advance_sensor_timestamp(state: &mut DualSenseState) {
+    // DualSense reports timestamps in 0.33 µs units. A monotonically
+    // advancing synthetic timestamp keeps the Linux sensor input stream
+    // meaningful when motion is driven from the demo.
+    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(3_000);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -652,13 +663,16 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
         | (u8::from(state.buttons[3]) << 5)
         | (u8::from(state.buttons[6]) << 6)
         | (u8::from(state.buttons[7]) << 7);
-    bytes[9] = u8::from(state.buttons[4]) | (u8::from(state.buttons[5]) << 1);
+    bytes[9] = u8::from(state.buttons[4])
+        | (u8::from(state.buttons[5]) << 1)
+        | (u8::from(state.buttons[8]) << 2);
     for (offset, value) in state.motion.gyroscope.into_iter().enumerate() {
         bytes[15 + offset * 2..17 + offset * 2].copy_from_slice(&value.to_le_bytes());
     }
     for (offset, value) in state.motion.accelerometer.into_iter().enumerate() {
         bytes[21 + offset * 2..23 + offset * 2].copy_from_slice(&value.to_le_bytes());
     }
+    bytes[27..31].copy_from_slice(&state.sensor_timestamp.to_le_bytes());
     encode_hid_touches(&mut bytes[32..40], state.touches);
     ProviderFrame::HidInput {
         report_id: Some(0x01),
@@ -785,6 +799,7 @@ pub enum DualSenseHidOutput {
         left_motor: u8,
         right_trigger_effect: [u8; 11],
         left_trigger_effect: [u8; 11],
+        mute_button_led: bool,
         player_leds: u8,
         lightbar_rgb: [u8; 3],
     },
@@ -807,6 +822,7 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
             left_motor: raw[3],
             right_trigger_effect,
             left_trigger_effect,
+            mute_button_led: raw[8] != 0,
             player_leds: raw[43],
             lightbar_rgb: [raw[44], raw[45], raw[46]],
             raw,
@@ -898,6 +914,7 @@ impl DualSenseController {
         }
         self.0.update_state(|state| {
             state.motion = motion;
+            advance_sensor_timestamp(state);
             Ok(())
         })
     }
@@ -1069,7 +1086,9 @@ const DUALSENSE_USB_DESCRIPTOR: &[u8] = &[
     0xc0,
 ];
 
-fn dualsense_feature_responses() -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn dualsense_feature_responses(
+    session: RealizationSessionId,
+) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1082,7 +1101,21 @@ fn dualsense_feature_responses() -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     calibration[21..23].copy_from_slice(&1_i16.to_le_bytes());
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
-    pairing[1..7].copy_from_slice(&[0x02, 0x56, 0x47, 0x50, 0x00, 0x01]);
+    // `hid-playstation` de-duplicates DualSense connections by this address.
+    // Generate an ephemeral locally-administered unicast address so separate
+    // virtual sessions never impersonate the same physical controller. It is
+    // not read from hardware, persisted, or used outside this process.
+    let process = u64::from(std::process::id());
+    let process_bytes = process.to_le_bytes();
+    let session_bytes = session.0.to_le_bytes();
+    pairing[1..7].copy_from_slice(&[
+        0x02,
+        process_bytes[0],
+        process_bytes[1],
+        process_bytes[2],
+        session_bytes[0],
+        session_bytes[1],
+    ]);
     let mut firmware = vec![0_u8; 64];
     firmware[0] = 0x20;
     firmware[24] = 1;
@@ -1101,7 +1134,7 @@ fn dualsense_feature_responses() -> BTreeMap<NativeHidReportKey, Vec<u8>> {
         .collect()
 }
 
-fn hid_realization() -> NativeControllerRealization {
+fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization {
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Hid(NativeHidRealization {
@@ -1118,13 +1151,13 @@ fn hid_realization() -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: dualsense_feature_responses(),
+        feature_report_responses: dualsense_feature_responses(session),
     })
 }
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ProviderError> {
     let realization = match options.target {
         DeploymentTarget::Evdev => realization(),
-        DeploymentTarget::Hid => hid_realization(),
+        DeploymentTarget::Hid => hid_realization(options.session),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -1336,6 +1369,8 @@ mod tests {
             gyroscope: [1, -2, 3],
             accelerometer: [-4, 5, -6],
         };
+        state.sensor_timestamp = 3_000;
+        state.set_native(DualSenseControl::MicrophoneMute, true);
         state.touches[0] = Some(DualSenseTouchContact::new(9, 0x345, 0x2a1).expect("contact"));
         let ProviderFrame::HidInput { report_id, bytes } = dualsense_hid_input_report(&state)
         else {
@@ -1346,13 +1381,17 @@ mod tests {
         assert_eq!(bytes[7], 0x28); // neutral hat plus Cross.
         assert_eq!(&bytes[15..21], &[1, 0, 254, 255, 3, 0]);
         assert_eq!(&bytes[21..27], &[252, 255, 5, 0, 250, 255]);
+        assert_eq!(&bytes[27..31], &3_000_u32.to_le_bytes());
+        assert_eq!(bytes[9] & 0x04, 0x04);
         assert_eq!(&bytes[32..36], &[9, 0x45, 0x13, 0x2a]);
         assert_eq!(bytes[36], 0x80);
     }
 
     #[test]
     fn hid_realization_declares_dualsense_report_ids() {
-        let NativeControllerRealization::Hid(realization) = hid_realization() else {
+        let NativeControllerRealization::Hid(realization) =
+            hid_realization(RealizationSessionId(1))
+        else {
             panic!("DualSense HID realization");
         };
         assert!(realization.numbered_input_reports);
@@ -1384,11 +1423,38 @@ mod tests {
     }
 
     #[test]
+    fn pairing_feature_uses_a_distinct_local_identity_per_session() {
+        let pairing = |session| {
+            dualsense_feature_responses(RealizationSessionId(session))
+                .remove(&NativeHidReportKey {
+                    report_id: 0x09,
+                    report_type: 0,
+                })
+                .expect("pairing feature")
+        };
+        let first = pairing(1);
+        let second = pairing(2);
+        assert_eq!(first[1] & 0x03, 0x02, "locally administered unicast MAC");
+        assert_ne!(&first[1..7], &second[1..7]);
+    }
+
+    #[test]
+    fn motion_updates_advance_the_sensor_timestamp_and_wrap_safely() {
+        let mut state = DualSenseState::default();
+        advance_sensor_timestamp(&mut state);
+        assert_eq!(state.sensor_timestamp, 3_000);
+        state.sensor_timestamp = u32::MAX - 1_000;
+        advance_sensor_timestamp(&mut state);
+        assert_eq!(state.sensor_timestamp, 1_999);
+    }
+
+    #[test]
     fn known_usb_output_exposes_effect_fields_and_preserves_raw_bytes() {
         let mut raw = vec![0_u8; 47];
         raw[0..4].copy_from_slice(&[0x03, 0x04, 0x33, 0x44]);
         raw[10..21].copy_from_slice(&[1; 11]);
         raw[21..32].copy_from_slice(&[2; 11]);
+        raw[8] = 1;
         raw[43..47].copy_from_slice(&[0x1f, 0x11, 0x22, 0x33]);
         assert_eq!(
             decode_dualsense_hid_output(Some(2), raw.clone()),
@@ -1400,6 +1466,7 @@ mod tests {
                 left_motor: 0x44,
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
+                mute_button_led: true,
                 player_leds: 0x1f,
                 lightbar_rgb: [0x11, 0x22, 0x33],
             }

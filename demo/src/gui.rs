@@ -56,6 +56,7 @@ struct NamedController {
 #[derive(Default)]
 struct ReverseIndicators {
     led: Option<[u8; 3]>,
+    mute_led: Option<bool>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
     rumble_started: Option<Instant>,
@@ -190,10 +191,12 @@ impl Controller {
                                 right_motor,
                                 left_motor,
                                 lightbar_rgb,
+                                mute_button_led,
                                 ..
                             }) => {
                                 indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
                                 indicators.led = Some(*lightbar_rgb);
+                                indicators.mute_led = Some(*mute_button_led);
                             }
                             _ => {}
                         }
@@ -453,6 +456,18 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         ui.painter()
             .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
         ui.label("LED");
+
+        let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+        ui.painter().circle_filled(
+            mute_rect.center(),
+            7.0,
+            if indicators.mute_led == Some(true) {
+                Color32::from_rgb(255, 130, 40)
+            } else {
+                Color32::DARK_GRAY
+            },
+        );
+        ui.label("Mute LED");
 
         let remaining = indicators
             .rumble_until
@@ -783,6 +798,7 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
                 ("Options", DualSenseControl::Options),
                 ("PlayStation", DualSenseControl::PlayStation),
                 ("Touchpad click", DualSenseControl::TouchpadClick),
+                ("Microphone mute", DualSenseControl::MicrophoneMute),
             ] {
                 hold(ui, label, |pressed| {
                     let _ = controller.set_native(control, pressed);
