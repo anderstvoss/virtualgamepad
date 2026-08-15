@@ -9,12 +9,13 @@ levels:
 | --- | --- | --- | --- |
 | `Evdev` | uinput | Ordinary process with `/dev/uinput` access | Generic Linux input/output. |
 | `Hid` | UHID | Ordinary process with `/dev/uhid` access | Local HID descriptors and reports. |
-| `UsbGadget` | ConfigFS HID gadget bound to `dummy_hcd` | Privileged gadget service; ordinary callers use IPC | In-VM USB/HID topology and controller-specific host behavior. |
+| `UsbGadget` | ConfigFS HID gadget bound to `dummy_hcd` | Privileged gadget service; ordinary callers use IPC | Same-host USB/HID topology and controller-specific host behavior. |
 
 `dummy_hcd` is deliberately the product backend for `UsbGadget`; a physical
 USB Device Controller is not required. It creates a software UDC and USB host
-inside the same VM. A later physical-UDC backend may reuse gadget codecs, but
-is a separate external-device feature and not a prerequisite for this level.
+inside the same Linux kernel and works on bare metal as well as in a VM. A
+later physical-UDC backend may reuse gadget codecs, but is a separate
+external-device feature and not a prerequisite for this level.
 
 ## Controller and creation requirements
 
@@ -82,7 +83,7 @@ authority.
 
 The existing `UsbTransportValidation` naming and pre-provisioned-endpoint model
 is transitional. Replace it with a first-class `UsbGadget` target and provider
-that creates the in-VM gadget. Keep USB protocol/report encoders controller
+that creates the same-host software gadget. Keep USB protocol/report encoders controller
 owned; do not couple controller semantic state to ConfigFS mechanics.
 
 ## Acceptance bar
