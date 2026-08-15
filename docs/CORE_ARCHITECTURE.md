@@ -12,20 +12,19 @@ they never select or branch on a controller family.
 A controller has one typed semantic state and one control vocabulary. A
 realization controls how a host sees that controller; it never selects a
 different input API or changes the meaning of a control. Linux targets map to
-three independent targets:
+four independent peer targets:
 
 | Realization target | Linux mechanism | Product role |
 | --- | --- | --- |
 | `Evdev` | uinput | Normal local deployment through Linux evdev. |
-| `Hid` | UHID | Normal local deployment with HID identity and report behavior. |
-| `UsbTransportValidation` | USB gadget | Explicit, opt-in transport-validation API; unavailable hardware is a creation error. |
+| `Uhid` | UHID | Local HID realization with curated identity, reports, and reverse behavior. |
+| `DummyHcd` | dummy_hcd + ConfigFS | Broker-owned USB attachment emulation for curated controllers. |
+| `Btvirt` | project-extended btvirt | Broker-owned Bluetooth attachment emulation for curated controllers. |
 
 Targets are not an ordered ladder and do not imply each other. A controller
-may implement any non-empty subset, including only hardware validation. Normal
-creation selects an exact deployable target. USB-gadget use is deliberately
-available through a separate, explicit library API for callers that have an
-already-provisioned gadget-capable host; it fails with a typed preflight or
-open error when that facility is absent or inaccessible. No selection falls
+may implement any non-empty subset. Normal creation selects one exact target.
+`DummyHcd` and `Btvirt` are privileged broker-backed attachment targets; an
+unavailable broker or host facility returns a typed error. No selection falls
 back to another provider or target.
 
 ## Feature-complete intent is controller-defined
@@ -59,10 +58,9 @@ prescriptive:
 - UHID may realize local HID descriptors, identity, input reports, output
   reports, and feature-report exchanges. It is not a USB or Bluetooth
   device-role claim.
-- USB gadget validates actual USB enumeration, endpoint and interface topology,
-  external-host interaction, and transport behavior. It is required only to
-  make those hardware claims, not to unlock a generic controller feature by
-  definition.
+- `DummyHcd` validates curated USB attachment behavior, including enumeration,
+  feature requests, and reverse output. `Btvirt` validates curated Bluetooth
+  attachment behavior through the administrator-pinned bridge package.
 
 Audio and attached accessories are separate from ordinary controller input and
 output. A native HID report may represent jack presence, mute, volume, audio
