@@ -11,7 +11,10 @@ use std::{
     os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
     path::{Path, PathBuf},
     process::Command,
-    sync::{Mutex, OnceLock},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -27,6 +30,7 @@ const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
+static NEXT_GADGET_ID: AtomicU64 = AtomicU64::new(1);
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
 // the static feature IDs replied to below. It is intentionally not client input.
 #[repr(C)]
@@ -46,7 +50,7 @@ pub struct DummyHcdSession {
     closed: bool,
 }
 impl DummyHcdSession {
-    pub fn open(session: u64) -> Result<Self, BrokerError> {
+    pub fn open(_session: u64) -> Result<Self, BrokerError> {
         if !Path::new(CONFIGFS).is_dir() {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
@@ -60,8 +64,12 @@ impl DummyHcdSession {
                 return Err(host("allowlisted kernel module could not load"));
             }
         }
-        let serial = format!("VG-DS5-{session:016x}");
-        let root = Path::new(CONFIGFS).join(format!("virtualgamepad-{session:016x}"));
+        let gadget_id = NEXT_GADGET_ID.fetch_add(1, Ordering::Relaxed);
+        if gadget_id == u64::MAX {
+            return Err(host("dummy_hcd gadget identifier space is exhausted"));
+        }
+        let serial = format!("VG-DS5-{gadget_id:016x}");
+        let root = Path::new(CONFIGFS).join(format!("virtualgamepad-{gadget_id:016x}"));
         if root.exists() {
             return Err(host("generated gadget root already exists"));
         }
