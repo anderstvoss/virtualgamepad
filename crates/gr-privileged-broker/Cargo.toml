@@ -7,6 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+gr-dualsense-wire = { path = "../gr-dualsense-wire", version = "0.1" }
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
 libc.workspace = true
 thiserror.workspace = true

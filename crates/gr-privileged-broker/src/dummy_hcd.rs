@@ -3,6 +3,7 @@
 #![allow(unsafe_code)]
 
 use crate::{BrokerError, HostSession};
+use gr_dualsense_wire::{USB_DESCRIPTOR, USB_REPORT_LENGTH, feature_responses};
 use std::{
     fs::{self, File, OpenOptions},
     io::{Read, Write},
@@ -14,23 +15,11 @@ use std::{
 };
 
 const CONFIGFS: &str = "/sys/kernel/config/usb_gadget";
-const REPORT_LENGTH: usize = 64;
+const REPORT_LENGTH: usize = USB_REPORT_LENGTH;
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
 // the static feature IDs replied to below. It is intentionally not client input.
-const DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
-    0x09, 0x33, 0x09, 0x34, 0x15, 0, 0x26, 0xff, 0, 0x75, 8, 0x95, 6, 0x81, 2, 0x06, 0, 0xff, 0x09,
-    0x20, 0x95, 1, 0x81, 2, 0x05, 1, 0x09, 0x39, 0x15, 0, 0x25, 7, 0x35, 0, 0x46, 0x3b, 1, 0x65,
-    0x14, 0x75, 4, 0x95, 1, 0x81, 0x42, 0x65, 0, 0x05, 9, 0x19, 1, 0x29, 0x0f, 0x15, 0, 0x25, 1,
-    0x75, 1, 0x95, 0x0f, 0x81, 2, 0x06, 0, 0xff, 0x09, 0x21, 0x95, 0x0d, 0x81, 2, 0x06, 0, 0xff,
-    0x09, 0x22, 0x15, 0, 0x26, 0xff, 0, 0x75, 8, 0x95, 0x34, 0x81, 2, 0x85, 2, 0x09, 0x23, 0x95,
-    0x2f, 0x91, 2, 0x85, 5, 0x09, 0x33, 0x95, 0x28, 0xb1, 2, 0x85, 8, 0x09, 0x34, 0x95, 0x2f, 0xb1,
-    2, 0x85, 9, 0x09, 0x24, 0x95, 0x13, 0xb1, 2, 0x85, 0x0a, 0x09, 0x25, 0x95, 0x1a, 0xb1, 2, 0x85,
-    0x20, 0x09, 0x26, 0x95, 0x3f, 0xb1, 2, 0xc0,
-];
-
 #[repr(C)]
 struct FeatureReply {
     report_id: u8,
@@ -54,10 +43,9 @@ impl DummyHcdSession {
         let known_udc = names("/sys/class/udc")?;
         let known_hidg = nodes("hidg")?;
         for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
-            let status = Command::new("/sbin/modprobe")
+            let status = Command::new("/usr/sbin/modprobe")
                 .arg(module)
                 .status()
-                .or_else(|_| Command::new("modprobe").arg(module).status())
                 .map_err(io)?;
             if !status.success() {
                 return Err(host("allowlisted kernel module could not load"));
@@ -103,33 +91,8 @@ impl DummyHcdSession {
         }
     }
     fn features(&self) -> Vec<(u8, Vec<u8>)> {
-        let mut cap = vec![0; 48];
-        cap[0] = 3;
-        cap[2..6].copy_from_slice(&[0x28, 1, 0, 0x0e]);
-        let mut cal = vec![0; 41];
-        cal[0] = 5;
-        for o in [7, 11, 15] {
-            cal[o..o + 2].copy_from_slice(&32_000_i16.to_le_bytes());
-        }
-        for o in [9, 13, 17] {
-            cal[o..o + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
-        }
-        let mut pair = vec![0; 20];
-        pair[0] = 9;
-        pair[1] = 2;
-        pair[2..7].copy_from_slice(&[
-            2,
-            self.serial.as_bytes()[0],
-            self.serial.as_bytes()[1],
-            self.serial.as_bytes()[2],
-            self.serial.as_bytes()[3],
-        ]);
-        let mut fw = vec![0; 64];
-        fw[0] = 0x20;
-        fw[24] = 1;
-        fw[28] = 1;
-        fw[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
-        vec![(3, cap), (5, cal), (9, pair), (0x20, fw)]
+        let serial = self.serial.as_bytes();
+        feature_responses([2, serial[0], serial[1], serial[2], serial[3]])
     }
     fn reply(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
         if data.len() > REPORT_LENGTH {
@@ -229,7 +192,7 @@ fn setup(root: &Path, serial: &str) -> Result<(), BrokerError> {
     write(function.join("protocol"), "0")?;
     write(function.join("subclass"), "0")?;
     write(function.join("report_length"), "64")?;
-    fs::write(function.join("report_desc"), DESCRIPTOR).map_err(io)?;
+    fs::write(function.join("report_desc"), USB_DESCRIPTOR).map_err(io)?;
     std::os::unix::fs::symlink(
         "../../functions/hid.dualsense",
         config.join("hid.dualsense"),

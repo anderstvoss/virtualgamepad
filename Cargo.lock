@@ -928,6 +928,7 @@ version = "0.1.0"
 dependencies = [
  "gr-controller-contract",
  "gr-controller-runtime",
+ "gr-dualsense-wire",
  "gr-provider-linux-btvirt",
  "gr-provider-linux-dummy-hcd",
  "gr-provider-linux-uhid",
@@ -937,9 +938,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gr-dualsense-wire"
+version = "0.1.0"
+
+[[package]]
 name = "gr-privileged-broker"
 version = "0.1.0"
 dependencies = [
+ "gr-dualsense-wire",
  "gr-realization-api",
  "libc",
  "thiserror 2.0.19",
