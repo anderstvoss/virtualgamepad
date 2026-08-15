@@ -1137,10 +1137,10 @@ fn dualsense_feature_responses(
     // make it take its broken-device fallback and prevent reliable motion
     // handling by host software. No physical controller data is captured.
     for offset in [7, 11, 15] {
-        calibration[offset..offset + 2].copy_from_slice(&1_000_i16.to_le_bytes());
+        calibration[offset..offset + 2].copy_from_slice(&32_000_i16.to_le_bytes());
     }
     for offset in [9, 13, 17] {
-        calibration[offset..offset + 2].copy_from_slice(&(-1_000_i16).to_le_bytes());
+        calibration[offset..offset + 2].copy_from_slice(&(-32_000_i16).to_le_bytes());
     }
     calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
     calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
@@ -1515,8 +1515,14 @@ mod tests {
         for (plus, minus) in [(7, 9), (11, 13), (15, 17)] {
             assert_eq!(
                 i32::from(sample(plus)).abs() + i32::from(sample(minus)).abs(),
-                2_000
+                64_000
             );
+            // SDL accepts DualSense hardware calibration only when its gyro
+            // scale is close to 64 raw counts per degree/second.
+            let speed_2x = i16::try_from(speed_2x).expect("synthetic speed fits i16");
+            let scale = f32::from(speed_2x) * 1_024.0
+                / (f32::from(sample(plus)) - f32::from(sample(minus)));
+            assert!((scale - 64.0).abs() < f32::EPSILON);
         }
         for (plus, minus) in [(23, 25), (27, 29), (31, 33)] {
             assert_eq!(i32::from(sample(plus)) - i32::from(sample(minus)), 16_384);
