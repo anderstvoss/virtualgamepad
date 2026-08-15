@@ -132,6 +132,7 @@ mod integration_tests {
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
     use gr_realization_api::{DeploymentTarget, RealizationSessionId};
     use std::{
+        collections::BTreeSet,
         fs,
         io::Read,
         os::unix::fs::OpenOptionsExt,
@@ -184,6 +185,38 @@ mod integration_tests {
         })
     }
 
+    fn input_event_paths() -> BTreeSet<PathBuf> {
+        let Ok(entries) = fs::read_dir("/sys/class/input") else {
+            return BTreeSet::new();
+        };
+        entries
+            .flatten()
+            .filter_map(|entry| {
+                let event = entry.file_name();
+                if !event.to_string_lossy().starts_with("event") {
+                    return None;
+                }
+                Some(PathBuf::from("/dev/input").join(event))
+            })
+            .collect()
+    }
+
+    fn newly_created_input_event_path_containing(
+        fragment: &str,
+        before_creation: &BTreeSet<PathBuf>,
+    ) -> Option<PathBuf> {
+        let entries = fs::read_dir("/sys/class/input").ok()?;
+        entries.flatten().find_map(|entry| {
+            let event = entry.file_name();
+            if !event.to_string_lossy().starts_with("event") {
+                return None;
+            }
+            let path = PathBuf::from("/dev/input").join(&event);
+            let name = fs::read_to_string(entry.path().join("device/name")).ok()?;
+            (name.contains(fragment) && !before_creation.contains(&path)).then_some(path)
+        })
+    }
+
     fn read_input_events(file: &mut fs::File) -> Vec<(u16, u16, i32)> {
         let mut events = Vec::new();
         let mut bytes = [0_u8; 24]; // Linux `struct input_event` on supported 64-bit hosts.
@@ -201,6 +234,33 @@ mod integration_tests {
             }
         }
         events
+    }
+
+    fn open_input_event(path: &PathBuf) -> Option<fs::File> {
+        match fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0o4_000)
+            .open(path)
+        {
+            Ok(file) => Some(file),
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!(
+                    "skipping Linux input event assertion: no read access to {}",
+                    path.display()
+                );
+                None
+            }
+            Err(error) => panic!("cannot open {}: {error}", path.display()),
+        }
+    }
+
+    fn assert_nonzero_gyro_events(device: &str, events: &[(u16, u16, i32)]) {
+        assert!(
+            events.iter().any(|(event_type, code, value)| {
+                *event_type == 3 && matches!(*code, 3..=5) && *value != 0
+            }),
+            "{device} received no non-zero gyro event: {events:?}"
+        );
     }
 
     fn virtual_dualsense_hidraw_path(session: RealizationSessionId) -> Option<PathBuf> {
@@ -493,6 +553,7 @@ mod integration_tests {
     #[ignore = "requires /dev/uhid plus read access to the generated hidraw node"]
     fn dualsense_hid_delivers_steam_facing_motion_reports() {
         let session = RealizationSessionId(403);
+        let input_events_before = input_event_paths();
         let mut controller = create_dualsense(CreationOptions {
             target: DeploymentTarget::Hid,
             session,
@@ -511,6 +572,15 @@ mod integration_tests {
             .open(&hidraw)
             .unwrap_or_else(|error| panic!("Steam cannot open {}: {error}", hidraw.display()));
         let _ = read_hid_reports(&mut hidraw); // Ignore the initial neutral report.
+        let sensor_path = newly_created_input_event_path_containing(
+            "Virtual DualSense Motion Sensors",
+            &input_events_before,
+        )
+        .expect("hid-playstation did not create the virtual DualSense motion event device");
+        let mut sensors = open_input_event(&sensor_path);
+        if let Some(sensors) = &mut sensors {
+            let _ = read_input_events(sensors); // Ignore initial state events.
+        }
 
         let motion = MotionSample {
             gyroscope: [1_000, -2_000, 3_000],
@@ -547,6 +617,12 @@ mod integration_tests {
                 .all(|timestamps| timestamps[0] != timestamps[1]),
             "sustained motion reports reused sensor timestamps: {motion_timestamps:?}"
         );
+        if let Some(sensors) = &mut sensors {
+            assert_nonzero_gyro_events(
+                "DualSense motion sensor device",
+                &read_input_events(sensors),
+            );
+        }
         assert!(
             virtual_dualsense_hidraw_path(session).is_some()
                 && input_node_exists_containing("Virtual DualSense Motion Sensors"),
@@ -556,11 +632,13 @@ mod integration_tests {
     }
 
     #[test]
-    #[ignore = "requires /dev/uhid and the Linux PlayStation HID driver"]
+    #[ignore = "requires /dev/uhid, /dev/input read access, and the Linux PlayStation HID driver"]
     fn dualshock4_hid_materializes_a_timed_motion_and_touch_device() {
+        let session = RealizationSessionId(404);
+        let input_events_before = input_event_paths();
         let mut controller = create_dualshock4(CreationOptions {
             target: DeploymentTarget::Hid,
-            session: RealizationSessionId(404),
+            session,
         })
         .expect("DualShock 4 UHID creation");
         controller
@@ -584,6 +662,28 @@ mod integration_tests {
                 && input_node_exists("Wireless Controller Touchpad"),
             "DS4 did not materialize its motion and touch input devices"
         );
+        let sensor_path = newly_created_input_event_path_containing(
+            "Wireless Controller Motion Sensors",
+            &input_events_before,
+        )
+        .expect("hid-playstation did not create the virtual DS4 motion event device");
+        let mut sensors = open_input_event(&sensor_path);
+        if let Some(sensors) = &mut sensors {
+            let _ = read_input_events(sensors); // Ignore initial state events.
+            poll_for(Duration::from_millis(100), || {
+                controller
+                    .set_motion(DualShock4MotionSample {
+                        accelerometer: [0; 3],
+                        gyroscope: [4_000, -5_000, 6_000],
+                    })
+                    .expect("motion update");
+                controller.commit().expect("motion commit");
+            });
+            assert_nonzero_gyro_events(
+                "DualShock 4 motion sensor device",
+                &read_input_events(sensors),
+            );
+        }
         controller.close();
     }
 
@@ -608,21 +708,9 @@ mod integration_tests {
         let physical_path = format!("virtualgamepad/uhid/switch-pro/session-{}", session.0);
         let imu_path = input_event_path_containing("Pro Controller (IMU)", &physical_path)
             .expect("hid-nintendo did not create the virtual Switch Pro IMU event device");
-        let mut imu = match fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(0o4_000)
-            .open(&imu_path)
-        {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!(
-                    "skipping Switch IMU event assertion: no read access to {}",
-                    imu_path.display()
-                );
-                controller.close();
-                return;
-            }
-            Err(error) => panic!("cannot open {}: {error}", imu_path.display()),
+        let Some(mut imu) = open_input_event(&imu_path) else {
+            controller.close();
+            return;
         };
         let _ = read_input_events(&mut imu);
         let motion = SwitchProMotionSample {
@@ -634,12 +722,7 @@ mod integration_tests {
             controller.refresh_motion().expect("motion refresh");
         });
         let imu_events = read_input_events(&mut imu);
-        assert!(
-            imu_events.iter().any(|(event_type, code, value)| {
-                *event_type == 3 && matches!(*code, 3..=5) && *value != 0
-            }),
-            "Switch Pro IMU device received no non-zero gyro event: {imu_events:?}"
-        );
+        assert_nonzero_gyro_events("Switch Pro IMU device", &imu_events);
         assert_ne!(
             controller.state().motion_report_counter(),
             counter_before,
