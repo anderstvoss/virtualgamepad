@@ -13,6 +13,23 @@
 - Do not use real user data or private logs as fixtures.
 - Use fake or sanitized test fixtures.
 
+## Comprehensive Regression Testing
+
+- Every fixed bug requires a regression test at the lowest practical seam.
+  Hardware-only symptoms must have a deterministic fake-provider or protocol
+  test that covers the triggering request sequence and the expected cleanup.
+- Test lifecycle boundaries explicitly: creation, host probe/reverse events,
+  repeated polling, per-controller removal, application shutdown, and
+  idempotent cleanup.
+- For UI behavior, extract small deterministic selection or lifecycle helpers
+  and test arbitrary positions and lists larger than the visible viewport.
+  Do not rely solely on manual GUI verification.
+- For transport protocols, test every declared report type and the exact
+  success/error acknowledgement sent for each request. A host request must
+  never be left pending across a polling cycle.
+- Preserve prior regressions when expanding behavior; add focused tests rather
+  than deleting or weakening existing coverage.
+
 ## Agent Memory
 
 Per-project agent auto-memory lives at `.agents/memory/` in the repo.

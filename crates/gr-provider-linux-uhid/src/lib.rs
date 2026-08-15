@@ -18,6 +18,10 @@ const UHID_SET_REPORT: u32 = 13;
 const UHID_SET_REPORT_REPLY: u32 = 14;
 const UHID_DATA_MAX: usize = 4096;
 const UHID_EVENT_SIZE: usize = 4 + 280 + UHID_DATA_MAX;
+/// Linux `-EOPNOTSUPP`: a valid negative UHID request status for an
+/// unsupported feature probe. Returning it is preferable to leaving the host
+/// request pending until its timeout expires.
+const UHID_STATUS_UNSUPPORTED: i16 = -95;
 
 #[derive(Default)]
 pub struct LinuxUhidProvider;
@@ -212,23 +216,32 @@ impl NativeProviderSession for Session {
                     self.reverse += 1;
                     return Ok(());
                 }
-                RawReverseEvent::HidGetReportRequest {
-                    request_id: id,
-                    report_id,
-                    report_type,
-                }
+                self.io
+                    .get_reply(id, UHID_STATUS_UNSUPPORTED, &[])
+                    .inspect_err(|error| {
+                        self.failures += 1;
+                        self.last_error = Some(error.to_string());
+                    })?;
+                self.reverse += 1;
+                return Ok(());
             }
             linux_io::Event::Set {
                 id,
                 report_id,
                 report_type,
                 bytes,
-            } => RawReverseEvent::HidSetReportRequest {
-                request_id: id,
-                report_id,
-                report_type,
-                bytes,
-            },
+            } => {
+                self.io.set_reply(id, 0).inspect_err(|error| {
+                    self.failures += 1;
+                    self.last_error = Some(error.to_string());
+                })?;
+                RawReverseEvent::HidSetReportRequest {
+                    request_id: id,
+                    report_id,
+                    report_type,
+                    bytes,
+                }
+            }
             linux_io::Event::Lifecycle => {
                 self.lifecycle_events += 1;
                 return Ok(());
@@ -570,7 +583,8 @@ mod seam_tests {
     #[derive(Default)]
     struct Record {
         inputs: Vec<(Option<u8>, Vec<u8>)>,
-        replies: Vec<u32>,
+        get_replies: Vec<(u32, i16, Vec<u8>)>,
+        set_replies: Vec<(u32, i16)>,
         destroys: usize,
     }
     struct FakeIo {
@@ -587,11 +601,20 @@ mod seam_tests {
                 .push((id, bytes.to_vec()));
             self.input_results.pop_front().unwrap_or(Ok(()))
         }
-        fn get_reply(&mut self, id: u32, _: i16, _: &[u8]) -> Result<(), ProviderError> {
-            self.record.lock().expect("record").replies.push(id);
+        fn get_reply(&mut self, id: u32, status: i16, bytes: &[u8]) -> Result<(), ProviderError> {
+            self.record
+                .lock()
+                .expect("record")
+                .get_replies
+                .push((id, status, bytes.to_vec()));
             Ok(())
         }
-        fn set_reply(&mut self, _: u32, _: i16) -> Result<(), ProviderError> {
+        fn set_reply(&mut self, id: u32, status: i16) -> Result<(), ProviderError> {
+            self.record
+                .lock()
+                .expect("record")
+                .set_replies
+                .push((id, status));
             Ok(())
         }
         fn read_event(&mut self) -> Result<linux_io::Event, ProviderError> {
@@ -671,6 +694,17 @@ mod seam_tests {
                     report_id: 4,
                     report_type: 3,
                 }),
+                Ok(linux_io::Event::Get {
+                    id: 78,
+                    report_id: 99,
+                    report_type: 3,
+                }),
+                Ok(linux_io::Event::Set {
+                    id: 79,
+                    report_id: 2,
+                    report_type: 2,
+                    bytes: vec![1, 2, 3],
+                }),
                 Ok(linux_io::Event::Output {
                     bytes: vec![6, 1, 2],
                 }),
@@ -703,16 +737,36 @@ mod seam_tests {
             .drain_reverse_events(&mut events)
             .expect("static reply");
         assert!(events.is_empty());
+        session
+            .drain_reverse_events(&mut events)
+            .expect("unsupported probe reply");
+        assert!(events.is_empty());
+        session
+            .drain_reverse_events(&mut events)
+            .expect("set-report acknowledgement");
+        assert!(matches!(
+            events[0].event,
+            RawReverseEvent::HidSetReportRequest {
+                request_id: 79,
+                report_id: 2,
+                report_type: 2,
+                ref bytes,
+            } if bytes == &[1, 2, 3]
+        ));
         session.drain_reverse_events(&mut events).expect("output");
         assert!(
-            matches!(events[0].event, RawReverseEvent::HidOutput { report_id: Some(6), ref bytes } if bytes == &[1, 2])
+            matches!(events[1].event, RawReverseEvent::HidOutput { report_id: Some(6), ref bytes } if bytes == &[1, 2])
         );
         let observed = record.lock().expect("record");
         assert_eq!(
             observed.inputs,
             vec![(Some(3), vec![5]), (Some(3), vec![5])]
         );
-        assert_eq!(observed.replies, vec![77]);
+        assert_eq!(
+            observed.get_replies,
+            vec![(77, 0, vec![9]), (78, -95, vec![])]
+        );
+        assert_eq!(observed.set_replies, vec![(79, 0)]);
         drop(observed);
         session.close().expect("close");
         assert!(matches!(

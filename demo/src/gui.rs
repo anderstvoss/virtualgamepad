@@ -12,6 +12,18 @@ use virtualgamepad::{
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 
+fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
+    0..controller_count
+}
+
+fn selection_after_removal(remaining_count: usize, removed_index: usize) -> Option<usize> {
+    if remaining_count == 0 {
+        None
+    } else {
+        Some(removed_index.min(remaining_count - 1))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
     Generic,
@@ -284,8 +296,7 @@ impl App {
         }
         self.controllers[index].controller.close();
         self.controllers.remove(index);
-        self.selected_controller =
-            (!self.controllers.is_empty()).then(|| index.min(self.controllers.len() - 1));
+        self.selected_controller = selection_after_removal(self.controllers.len(), index);
     }
 }
 impl Drop for App {
@@ -351,7 +362,8 @@ impl eframe::App for App {
             egui::ScrollArea::vertical()
                 .max_height(260.0)
                 .show(ui, |ui| {
-                    for (index, controller) in self.controllers.iter().enumerate() {
+                    for index in controller_tab_indices(self.controllers.len()) {
+                        let controller = &self.controllers[index];
                         ui.horizontal(|ui| {
                             if ui
                                 .selectable_label(
@@ -919,4 +931,26 @@ fn draw_touch_slot(
             let _ = controller.set_touch(slot, None);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removing_any_tab_selects_the_nearest_remaining_controller() {
+        assert_eq!(selection_after_removal(0, 0), None);
+        assert_eq!(selection_after_removal(2, 0), Some(0));
+        assert_eq!(selection_after_removal(2, 1), Some(1));
+        assert_eq!(selection_after_removal(2, 2), Some(1));
+    }
+
+    #[test]
+    fn tab_list_keeps_controllers_beyond_the_third_position() {
+        assert_eq!(
+            controller_tab_indices(4).collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(controller_tab_indices(12).count(), 12);
+    }
 }
