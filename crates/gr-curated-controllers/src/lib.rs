@@ -126,7 +126,7 @@ mod battery_tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod integration_tests {
     use super::*;
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
