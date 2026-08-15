@@ -7,7 +7,7 @@
 
 use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
-    btvirt_bridge::BtvirtSession, read_message, write_message,
+    btvirt_bridge::BtvirtSession, dummy_hcd::DummyHcdSession, read_message, write_message,
 };
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::{
@@ -92,16 +92,14 @@ impl HostSessionFactory for DaemonFactory {
         &self,
         target: RealizationTarget,
         controller: CompiledControllerKind,
-        _: RealizationSessionId,
+        session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
         if controller != CompiledControllerKind::DualSense {
             return Err(BrokerError::UnsupportedController { target, controller });
         }
         match target {
             RealizationTarget::Btvirt => Ok(Box::new(BtvirtSession::open()?)),
-            RealizationTarget::DummyHcd => Err(BrokerError::Host {
-                reason: "dummy_hcd adapter is not installed".into(),
-            }),
+            RealizationTarget::DummyHcd => Ok(Box::new(DummyHcdSession::open(session.0)?)),
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
     }

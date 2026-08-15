@@ -13,6 +13,7 @@ use std::os::unix::net::UnixStream;
 use thiserror::Error;
 
 pub mod btvirt_bridge;
+pub mod dummy_hcd;
 
 /// Broker-owned host resource. Implementations are never constructed by an
 /// application client and must make `close` safe to repeat after partial open.
