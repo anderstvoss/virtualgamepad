@@ -306,9 +306,7 @@ mod tests {
     #[test]
     #[ignore = "requires root, ConfigFS, and dummy_hcd kernel support"]
     fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
-        if unsafe { libc::geteuid() } != 0 {
-            return;
-        }
+        assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let mut session = DummyHcdSession::open(0xdecaf).expect("open dummy_hcd session");
         let root = session.root.clone();
         assert!(root.is_dir());
