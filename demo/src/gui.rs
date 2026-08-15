@@ -75,6 +75,21 @@ impl ReverseIndicators {
             self.rumble_until = None;
         }
     }
+    fn apply_dualsense_usb_output(
+        &mut self,
+        right_motor: u8,
+        left_motor: u8,
+        lightbar_rgb: Option<[u8; 3]>,
+        mute_button_led: Option<bool>,
+    ) {
+        self.set_rumble(right_motor != 0 || left_motor != 0);
+        if let Some(lightbar_rgb) = lightbar_rgb {
+            self.led = Some(lightbar_rgb);
+        }
+        if let Some(mute_button_led) = mute_button_led {
+            self.mute_led = Some(mute_button_led);
+        }
+    }
 }
 impl Controller {
     fn commit(&mut self) -> Result<(), String> {
@@ -195,9 +210,12 @@ impl Controller {
                                 mute_button_led,
                                 ..
                             }) => {
-                                indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
-                                indicators.led = Some(*lightbar_rgb);
-                                indicators.mute_led = Some(*mute_button_led);
+                                indicators.apply_dualsense_usb_output(
+                                    *right_motor,
+                                    *left_motor,
+                                    *lightbar_rgb,
+                                    *mute_button_led,
+                                );
                             }
                             _ => {}
                         }
@@ -1011,5 +1029,18 @@ mod tests {
             vec![0, 1, 2, 3]
         );
         assert_eq!(controller_tab_indices(12).count(), 12);
+    }
+
+    #[test]
+    fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
+        let mut indicators = ReverseIndicators {
+            led: Some([0x11, 0x22, 0x33]),
+            mute_led: Some(true),
+            ..ReverseIndicators::default()
+        };
+        indicators.apply_dualsense_usb_output(0x40, 0x20, None, None);
+        assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
+        assert_eq!(indicators.mute_led, Some(true));
+        assert!(indicators.rumble_active);
     }
 }

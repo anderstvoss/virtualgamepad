@@ -819,9 +819,12 @@ pub enum DualSenseHidOutput {
         left_motor: u8,
         right_trigger_effect: [u8; 11],
         left_trigger_effect: [u8; 11],
-        mute_button_led: bool,
-        player_leds: u8,
-        lightbar_rgb: [u8; 3],
+        /// Present only when the host set the mic-mute LED valid bit.
+        mute_button_led: Option<bool>,
+        /// Present only when the host set the player-indicator valid bit.
+        player_leds: Option<u8>,
+        /// Present only when the host set the lightbar valid bit.
+        lightbar_rgb: Option<[u8; 3]>,
     },
     Unknown {
         report_id: Option<u8>,
@@ -842,9 +845,9 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
             left_motor: raw[3],
             right_trigger_effect,
             left_trigger_effect,
-            mute_button_led: raw[8] != 0,
-            player_leds: raw[43],
-            lightbar_rgb: [raw[44], raw[45], raw[46]],
+            mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
+            player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
+            lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
         };
     }
@@ -1513,7 +1516,7 @@ mod tests {
     #[test]
     fn known_usb_output_exposes_effect_fields_and_preserves_raw_bytes() {
         let mut raw = vec![0_u8; 47];
-        raw[0..4].copy_from_slice(&[0x03, 0x04, 0x33, 0x44]);
+        raw[0..4].copy_from_slice(&[0x03, 0x15, 0x33, 0x44]);
         raw[10..21].copy_from_slice(&[1; 11]);
         raw[21..32].copy_from_slice(&[2; 11]);
         raw[8] = 1;
@@ -1523,16 +1526,36 @@ mod tests {
             DualSenseHidOutput::UsbOutput {
                 raw,
                 valid_flag0: 0x03,
-                valid_flag1: 0x04,
+                valid_flag1: 0x15,
                 right_motor: 0x33,
                 left_motor: 0x44,
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
-                mute_button_led: true,
-                player_leds: 0x1f,
-                lightbar_rgb: [0x11, 0x22, 0x33],
+                mute_button_led: Some(true),
+                player_leds: Some(0x1f),
+                lightbar_rgb: Some([0x11, 0x22, 0x33]),
             }
         );
+    }
+
+    #[test]
+    fn rumble_only_output_does_not_claim_a_lightbar_or_mute_led_update() {
+        let mut raw = vec![0_u8; 47];
+        raw[0] = 0x01; // compatible vibration is the only valid field
+        raw[2] = 0x55;
+        raw[3] = 0x66;
+        raw[44..47].copy_from_slice(&[0, 0, 0]);
+        assert!(matches!(
+            decode_dualsense_hid_output(Some(0x02), raw),
+            DualSenseHidOutput::UsbOutput {
+                right_motor: 0x55,
+                left_motor: 0x66,
+                mute_button_led: None,
+                player_leds: None,
+                lightbar_rgb: None,
+                ..
+            }
+        ));
     }
 
     proptest! {
