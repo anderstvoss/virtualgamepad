@@ -783,7 +783,26 @@ mod seam_tests {
 #[cfg(not(target_os = "linux"))]
 mod linux_io {
     use super::*;
-    pub enum Event {}
+    // Keep the reverse-event shape available to the platform-neutral session
+    // dispatcher. `open_node` still rejects this provider outside Linux, so no
+    // non-Linux backend is implied by these declarations.
+    pub enum Event {
+        Output {
+            bytes: Vec<u8>,
+        },
+        Get {
+            id: u32,
+            report_id: u8,
+            report_type: u8,
+        },
+        Set {
+            id: u32,
+            report_id: u8,
+            report_type: u8,
+            bytes: Vec<u8>,
+        },
+        Lifecycle,
+    }
     pub fn open_node() -> Result<File, ProviderPreflightError> {
         Err(ProviderPreflightError::UnsupportedPlatform {
             target: RealizationTarget::Hid,
