@@ -90,10 +90,76 @@ impl DummyHcdHost for LinuxDummyHcdHost {
 
 pub struct DummyHcdSession {
     root: PathBuf,
-    file: File,
+    io: Box<dyn HidGadgetIo>,
     serial: String,
     udc: String,
     closed: bool,
+}
+
+enum HidGadgetEvent {
+    None,
+    Output(Vec<u8>),
+    GetReport(u8),
+}
+
+trait HidGadgetIo: Send {
+    fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError>;
+    fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError>;
+    fn reply_feature(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError>;
+}
+
+struct LinuxHidGadgetIo {
+    file: File,
+}
+impl HidGadgetIo for LinuxHidGadgetIo {
+    fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
+        self.file.write_all(report).map_err(io)
+    }
+    fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError> {
+        let mut poll = libc::pollfd {
+            fd: self.file.as_raw_fd(),
+            events: libc::POLLIN | libc::POLLPRI,
+            revents: 0,
+        };
+        if unsafe { libc::poll(&raw mut poll, 1, 0) } <= 0 {
+            return Ok(HidGadgetEvent::None);
+        }
+        if poll.revents & libc::POLLPRI != 0 {
+            let mut id = 0;
+            if unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_GET_REPORT_ID, &mut id) } >= 0 {
+                return Ok(HidGadgetEvent::GetReport(id));
+            }
+        }
+        if poll.revents & libc::POLLIN != 0 {
+            let mut bytes = [0; REPORT_LENGTH];
+            return match self.file.read(&mut bytes) {
+                Ok(count) if count > 0 => Ok(HidGadgetEvent::Output(bytes[..count].to_vec())),
+                Ok(_) => Ok(HidGadgetEvent::None),
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    Ok(HidGadgetEvent::None)
+                }
+                Err(error) => Err(io(error)),
+            };
+        }
+        Ok(HidGadgetEvent::None)
+    }
+    fn reply_feature(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
+        if data.len() > REPORT_LENGTH {
+            return Err(host("feature response exceeds HID gadget limit"));
+        }
+        let mut reply = FeatureReply {
+            report_id: id,
+            userspace_req: u8::from(userspace),
+            length: u16::try_from(data.len()).map_err(|_| host("feature length"))?,
+            data: [0; REPORT_LENGTH],
+            padding: [0; 4],
+        };
+        reply.data[..data.len()].copy_from_slice(data);
+        if unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_WRITE_GET_REPORT, &reply) } < 0 {
+            return Err(io(std::io::Error::last_os_error()));
+        }
+        Ok(())
+    }
 }
 impl DummyHcdSession {
     pub fn open(_session: u64) -> Result<Self, BrokerError> {
@@ -133,7 +199,7 @@ impl DummyHcdSession {
             wait_until_writable(&file)?;
             Ok(Self {
                 root: root.clone(),
-                file,
+                io: Box::new(LinuxHidGadgetIo { file }),
                 serial,
                 udc,
                 closed: false,
@@ -160,23 +226,7 @@ impl DummyHcdSession {
         feature_responses([2, serial[0], serial[1], serial[2], serial[3]])
     }
     fn reply(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
-        if data.len() > REPORT_LENGTH {
-            return Err(host("feature response exceeds HID gadget limit"));
-        }
-        let mut reply = FeatureReply {
-            report_id: id,
-            userspace_req: u8::from(userspace),
-            length: u16::try_from(data.len()).map_err(|_| host("feature length"))?,
-            data: [0; REPORT_LENGTH],
-            padding: [0; 4],
-        };
-        reply.data[..data.len()].copy_from_slice(data);
-        let result = unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_WRITE_GET_REPORT, &reply) };
-        if result < 0 {
-            Err(io(std::io::Error::last_os_error()))
-        } else {
-            Ok(())
-        }
+        self.io.reply_feature(id, data, userspace)
     }
 }
 impl HostSession for DummyHcdSession {
@@ -184,21 +234,13 @@ impl HostSession for DummyHcdSession {
         if report.len() != REPORT_LENGTH {
             return Err(host("dummy_hcd report length must be 64"));
         }
-        self.file.write_all(report).map_err(io)
+        self.io.send_input(report)
     }
     fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError> {
-        let mut poll = libc::pollfd {
-            fd: self.file.as_raw_fd(),
-            events: libc::POLLIN | libc::POLLPRI,
-            revents: 0,
-        };
-        if unsafe { libc::poll(&raw mut poll, 1, 0) } <= 0 {
-            return Ok(None);
-        }
-        if poll.revents & libc::POLLPRI != 0 {
-            let mut id = 0;
-            let result = unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_GET_REPORT_ID, &mut id) };
-            if result >= 0 {
+        match self.io.poll()? {
+            HidGadgetEvent::None => Ok(None),
+            HidGadgetEvent::Output(bytes) => Ok(Some(bytes)),
+            HidGadgetEvent::GetReport(id) => {
                 if let Some((_, data)) = self
                     .features()
                     .into_iter()
@@ -206,18 +248,9 @@ impl HostSession for DummyHcdSession {
                 {
                     self.reply(id, &data, true)?;
                 }
+                Ok(None)
             }
         }
-        if poll.revents & libc::POLLIN != 0 {
-            let mut bytes = [0; REPORT_LENGTH];
-            match self.file.read(&mut bytes) {
-                Ok(count) if count > 0 => return Ok(Some(bytes[..count].to_vec())),
-                Ok(_) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
-                Err(e) => return Err(io(e)),
-            }
-        }
-        Ok(None)
     }
     fn diagnostics(&self) -> Vec<u8> {
         format!("dummy_hcd:{}", self.root.display()).into_bytes()
@@ -436,7 +469,42 @@ fn host(reason: &str) -> BrokerError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use std::{cell::RefCell, collections::VecDeque, sync::Arc};
+
+    type FeatureReplyRecord = (u8, Vec<u8>, bool);
+
+    #[derive(Clone, Default)]
+    struct FakeHidGadget {
+        events: Arc<Mutex<VecDeque<HidGadgetEvent>>>,
+        input: Arc<Mutex<Vec<Vec<u8>>>>,
+        replies: Arc<Mutex<Vec<FeatureReplyRecord>>>,
+    }
+    impl HidGadgetIo for FakeHidGadget {
+        fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
+            self.input.lock().unwrap().push(report.to_vec());
+            Ok(())
+        }
+        fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError> {
+            Ok(self
+                .events
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or(HidGadgetEvent::None))
+        }
+        fn reply_feature(
+            &mut self,
+            id: u8,
+            data: &[u8],
+            userspace: bool,
+        ) -> Result<(), BrokerError> {
+            self.replies
+                .lock()
+                .unwrap()
+                .push((id, data.to_vec(), userspace));
+            Ok(())
+        }
+    }
 
     struct FakeHost {
         operations: RefCell<Vec<String>>,
@@ -592,6 +660,35 @@ mod tests {
             host.operations.into_inner().last(),
             Some(&format!("rmdir:{}", root.display()))
         );
+    }
+
+    #[test]
+    fn fake_hid_gadget_covers_input_feature_reply_and_reverse_output() {
+        let gadget = FakeHidGadget::default();
+        gadget.events.lock().unwrap().extend([
+            HidGadgetEvent::GetReport(5),
+            HidGadgetEvent::Output(vec![2, 7]),
+        ]);
+        let mut session = DummyHcdSession {
+            root: PathBuf::from("/unused"),
+            io: Box::new(gadget.clone()),
+            serial: "VG-DS5-0000000000000001".into(),
+            udc: String::new(),
+            closed: true,
+        };
+        assert!(session.send_input(&[0; REPORT_LENGTH - 1]).is_err());
+        session.send_input(&[0; REPORT_LENGTH]).unwrap();
+        assert_eq!(
+            gadget.input.lock().unwrap().as_slice(),
+            &vec![[0; REPORT_LENGTH].to_vec()]
+        );
+        assert_eq!(session.poll_reverse().unwrap(), None);
+        let replies = gadget.replies.lock().unwrap();
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].0, 5);
+        assert!(replies[0].2);
+        drop(replies);
+        assert_eq!(session.poll_reverse().unwrap(), Some(vec![2, 7]));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # Deployment and validation
 
-The four realization targets are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
+The three realization targets are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.
 
@@ -25,6 +25,15 @@ systemctl enable --now virtualgamepad-broker.socket
 ```
 
 The service intentionally has no network listener. Its protocol only permits opening compiled DualSense sessions, fixed-size input, bounded reverse-output polling, close, and diagnostics. Session handles are broker-created, connection-bound, and invalid after disconnect or restart.
+
+## Demo validation
+
+For an interactive local check, run `cargo run -p virtualgamepad-demo`, select
+`DualSense` and `USB / dummy_hcd`, then create the controller. The create panel
+shows whether the broker socket is reachable; creation continues to provide the
+authoritative authorization and host-preflight error. The DualSense panel can
+exercise buttons, sticks, triggers, touch, battery, and USB motion reports at
+250 Hz. Its diagnostics and reverse-output indicators show host activity.
 
 ## Host validation
 

@@ -1,4 +1,5 @@
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
+use gr_privileged_broker::BrokerClient;
 use std::{
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
@@ -19,6 +20,27 @@ use virtualgamepad::{
 const OUTPUT_LOG_LIMIT: usize = 200;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+
+fn dualsense_motion_target(target: RealizationTarget) -> bool {
+    matches!(
+        target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    )
+}
+
+fn dualsense_motion_target_label(target: RealizationTarget) -> &'static str {
+    if target == RealizationTarget::Uhid {
+        "UHID motion report"
+    } else {
+        "DummyHcd USB motion report"
+    }
+}
+
+fn dummy_hcd_broker_status() -> Result<(), String> {
+    BrokerClient::connect()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
 
 const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
@@ -174,7 +196,7 @@ impl ReverseIndicators {
 }
 impl Controller {
     fn needs_motion_refresh(&self) -> bool {
-        matches!(self, Self::DualSense(controller) if controller.surface().common().target == RealizationTarget::Uhid)
+        matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
             || matches!(self, Self::DualShock4(controller) if controller.surface().common().target == RealizationTarget::Uhid)
             || matches!(self, Self::SwitchPro(controller) if controller.surface().common().target == RealizationTarget::Uhid)
     }
@@ -182,7 +204,7 @@ impl Controller {
     fn refresh_motion(&mut self) -> Result<(), String> {
         match self {
             Self::DualSense(controller)
-                if controller.surface().common().target == RealizationTarget::Uhid =>
+                if dualsense_motion_target(controller.surface().common().target) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -564,6 +586,25 @@ impl eframe::App for App {
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
             ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
+            if self.target == RealizationTarget::DummyHcd {
+                match dummy_hcd_broker_status() {
+                    Ok(()) => {
+                        ui.colored_label(
+                            Color32::GREEN,
+                            "DummyHcd broker socket is reachable. Create DualSense to attach a USB device.",
+                        );
+                    }
+                    Err(error) => {
+                        ui.colored_label(
+                            Color32::RED,
+                            format!("DummyHcd broker unavailable: {error}"),
+                        );
+                    }
+                }
+                ui.small(
+                    "Test flow: select DualSense, create it, then exercise buttons, touch, motion, and host-output indicators.",
+                );
+            }
             if ui.button("Create").clicked() {
                 self.create();
             }
@@ -1026,9 +1067,10 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
         draw_touchpad(ui, controller);
         draw_touch_slot(ui, controller, TouchSlot::Second, 1, "Second contact");
     });
-    if controller.surface().common().target == RealizationTarget::Uhid {
+    let target = controller.surface().common().target;
+    if dualsense_motion_target(target) {
         ui.group(|ui| {
-            ui.label("UHID motion report");
+            ui.label(dualsense_motion_target_label(target));
             let diagnostics = controller.provider_diagnostics();
             ui.small(format!(
                 "HID reports sent: {}; host requests handled: {}",
@@ -1353,6 +1395,21 @@ mod tests {
     #[test]
     fn motion_worker_uses_the_advertised_250_hz_interval() {
         assert_eq!(motion_worker_interval(), Duration::from_millis(4));
+    }
+
+    #[test]
+    fn dualsense_motion_refresh_is_available_for_uhid_and_dummy_hcd() {
+        assert!(dualsense_motion_target(RealizationTarget::Uhid));
+        assert!(dualsense_motion_target(RealizationTarget::DummyHcd));
+        assert!(!dualsense_motion_target(RealizationTarget::Evdev));
+        assert_eq!(
+            dualsense_motion_target_label(RealizationTarget::Uhid),
+            "UHID motion report"
+        );
+        assert_eq!(
+            dualsense_motion_target_label(RealizationTarget::DummyHcd),
+            "DummyHcd USB motion report"
+        );
     }
 
     #[test]

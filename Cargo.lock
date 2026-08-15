@@ -2622,6 +2622,7 @@ name = "virtualgamepad-demo"
 version = "0.1.0"
 dependencies = [
  "eframe",
+ "gr-privileged-broker",
  "virtualgamepad",
 ]
 
