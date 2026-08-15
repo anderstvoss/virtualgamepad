@@ -146,6 +146,10 @@ mod integration_tests {
             .count()
     }
 
+    fn input_node_exists_containing(fragment: &str) -> bool {
+        input_node_count_containing(fragment) > 0
+    }
+
     fn poll_dualsense_for(
         controller: &mut DualSenseController,
         duration: Duration,
@@ -278,6 +282,10 @@ mod integration_tests {
             "Linux did not complete the required DualSense feature probes: {diagnostics:?}"
         );
         assert!(appeared, "UHID device never materialized an input node");
+        assert!(
+            input_node_exists_containing("Virtual DualSense Motion Sensors"),
+            "a valid calibration feature must let hid-playstation create the motion device"
+        );
 
         controller
             .set_digital(DigitalControlUpdate::FaceButton {
@@ -285,11 +293,21 @@ mod integration_tests {
                 pressed: true,
             })
             .expect("post-probe state update");
+        controller
+            .set_motion(MotionSample {
+                gyroscope: [1_000, -1_000, 500],
+                accelerometer: [8_192, 0, -8_192],
+            })
+            .expect("post-probe motion update");
         controller.commit().expect("post-probe input report");
         poll_dualsense_for(&mut controller, Duration::from_secs(3), || {});
         assert!(
             input_node_count_containing("DualSense") > initial_nodes,
             "DualSense input node disappeared during the host probe interval"
+        );
+        assert!(
+            input_node_exists_containing("Virtual DualSense Motion Sensors"),
+            "motion sensor node disappeared after a non-zero DualSense motion report"
         );
         controller.close();
     }

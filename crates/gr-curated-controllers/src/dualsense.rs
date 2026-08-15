@@ -1132,10 +1132,24 @@ fn dualsense_feature_responses(
     const FEATURE: u8 = 0;
     let mut calibration = vec![0_u8; 41];
     calibration[0] = 0x05;
-    // Neutral, non-device-specific calibration values. These preserve the
-    // documented feature shape without copying any connected controller data.
-    calibration[19..21].copy_from_slice(&1_i16.to_le_bytes());
-    calibration[21..23].copy_from_slice(&1_i16.to_le_bytes());
+    // Consistent synthetic calibration values. `hid-playstation` uses these
+    // fields to derive per-axis denominators; zero-filled placeholder values
+    // make it take its broken-device fallback and prevent reliable motion
+    // handling by host software. No physical controller data is captured.
+    for offset in [7, 11, 15] {
+        calibration[offset..offset + 2].copy_from_slice(&1_000_i16.to_le_bytes());
+    }
+    for offset in [9, 13, 17] {
+        calibration[offset..offset + 2].copy_from_slice(&(-1_000_i16).to_le_bytes());
+    }
+    calibration[19..21].copy_from_slice(&2_000_i16.to_le_bytes());
+    calibration[21..23].copy_from_slice(&2_000_i16.to_le_bytes());
+    for offset in [23, 27, 31] {
+        calibration[offset..offset + 2].copy_from_slice(&8_192_i16.to_le_bytes());
+    }
+    for offset in [25, 29, 33] {
+        calibration[offset..offset + 2].copy_from_slice(&(-8_192_i16).to_le_bytes());
+    }
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
     // `hid-playstation` de-duplicates DualSense connections by this address.
@@ -1484,6 +1498,28 @@ mod tests {
                 })
                 .expect("DualSense Linux probe reply");
             assert_eq!(bytes[0], report_id);
+        }
+    }
+
+    #[test]
+    fn calibration_feature_has_non_zero_motion_denominators() {
+        let calibration = dualsense_feature_responses(RealizationSessionId(1))
+            .remove(&NativeHidReportKey {
+                report_id: 0x05,
+                report_type: 0,
+            })
+            .expect("DualSense calibration feature");
+        let sample = |offset| i16::from_le_bytes([calibration[offset], calibration[offset + 1]]);
+        let speed_2x = i32::from(sample(19)) + i32::from(sample(21));
+        assert_eq!(speed_2x, 4_000);
+        for (plus, minus) in [(7, 9), (11, 13), (15, 17)] {
+            assert_eq!(
+                i32::from(sample(plus)).abs() + i32::from(sample(minus)).abs(),
+                2_000
+            );
+        }
+        for (plus, minus) in [(23, 25), (27, 29), (31, 33)] {
+            assert_eq!(i32::from(sample(plus)) - i32::from(sample(minus)), 16_384);
         }
     }
 
