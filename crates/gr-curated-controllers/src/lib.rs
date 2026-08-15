@@ -225,6 +225,14 @@ mod integration_tests {
         }
     }
 
+    fn poll_for(duration: Duration, mut poll: impl FnMut()) {
+        let deadline = Instant::now() + duration;
+        while Instant::now() < deadline {
+            poll();
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     #[test]
     #[ignore = "requires ordinary-user /dev/uinput access"]
     fn all_evdev_controllers_create_commit_changed_state_and_close() {
@@ -467,7 +475,8 @@ mod integration_tests {
             .iter()
             .filter(|report| {
                 report[0] == 0x01
-                    && report[16..22] == [0xe8, 0x03, 0x30, 0xf8, 0xb8, 0x0b]
+                    // OpenPuck / hid-playstation wire axes: X, Z, -Y.
+                    && report[16..22] == [0xe8, 0x03, 0xb8, 0x0b, 0xd0, 0x07]
                     && report[22..28] == [0x60, 0xf0, 0x88, 0x13, 0x90, 0xe8]
             })
             .map(|report| u32::from_le_bytes(report[28..32].try_into().expect("timestamp")))
@@ -486,6 +495,57 @@ mod integration_tests {
             virtual_dualsense_hidraw_path(session).is_some()
                 && input_node_exists_containing("Virtual DualSense Motion Sensors"),
             "DualSense ceased to be detectable during sustained motion"
+        );
+        controller.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uhid and the Linux PlayStation HID driver"]
+    fn dualshock4_hid_materializes_a_timed_motion_and_touch_device() {
+        let mut controller = create_dualshock4(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session: RealizationSessionId(404),
+        })
+        .expect("DualShock 4 UHID creation");
+        controller
+            .set_touch(
+                DualShock4TouchSlot::First,
+                Some(DualShock4TouchContact::new(1, 960, 471).expect("native touch")),
+            )
+            .expect("touch update");
+        poll_for(Duration::from_secs(1), || {
+            controller
+                .set_motion(DualShock4MotionSample {
+                    accelerometer: [1_000, 2_000, 3_000],
+                    gyroscope: [4_000, 5_000, 6_000],
+                })
+                .expect("motion update");
+            controller.commit().expect("motion commit");
+            controller.poll_output(&mut |_| {}).expect("output poll");
+        });
+        assert!(
+            input_node_exists_containing("Wireless Controller Motion Sensors")
+                && input_node_exists("Wireless Controller Touchpad"),
+            "DS4 did not materialize its motion and touch input devices"
+        );
+        controller.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uhid and the Linux Nintendo HID driver"]
+    fn switch_pro_host_handshake_enables_timed_imu_streaming() {
+        let mut controller = create_switch_pro(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session: RealizationSessionId(405),
+        })
+        .expect("Switch Pro UHID creation");
+        poll_for(Duration::from_secs(3), || {
+            controller.poll_output(&mut |_| {}).expect("output poll");
+            controller.refresh_motion().expect("motion refresh");
+        });
+        assert!(
+            controller.state().stream_enabled(),
+            "host never completed the Switch Pro 0x30 report-mode handshake"
         );
         controller.close();
     }

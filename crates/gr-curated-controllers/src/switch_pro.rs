@@ -435,10 +435,12 @@ fn switch_frame(s: &SwitchProState) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[0] = s.timer;
     b[1] = 0x80;
+    // Switch button bits name the printed Nintendo labels, while the public
+    // face controls name their physical positions.  A is South and B is East.
     b[2] = u8::from(s.face[2])
         | (u8::from(s.face[3]) << 1)
-        | (u8::from(s.face[0]) << 2)
-        | (u8::from(s.face[1]) << 3)
+        | (u8::from(s.face[1]) << 2)
+        | (u8::from(s.face[0]) << 3)
         | (u8::from(s.buttons[1]) << 6)
         | (u8::from(s.buttons[3]) << 7);
     b[3] = u8::from(s.buttons[4])
@@ -478,16 +480,123 @@ fn switch_frame(s: &SwitchProState) -> ProviderFrame {
         bytes: b,
     }
 }
+
+fn switch_input_prefix(state: &SwitchProState) -> [u8; 12] {
+    let ProviderFrame::HidInput { bytes, .. } = switch_frame(state) else {
+        unreachable!("Switch frame is always HID input")
+    };
+    bytes[..12].try_into().expect("Switch input prefix length")
+}
+
+fn switch_usb_reply(command: u8) -> ProviderFrame {
+    let mut bytes = vec![0; 63];
+    bytes[0] = command;
+    if command == 1 {
+        bytes[2] = 3; // Pro Controller
+        bytes[3..9].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
+    }
+    ProviderFrame::HidInput {
+        report_id: Some(0x81),
+        bytes,
+    }
+}
+
+fn switch_spi_byte(address: u32) -> u8 {
+    const IMU_CAL: [u8; 24] = [
+        0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0, 0, 0x3b, 0x34, 0x3b, 0x34,
+        0x3b, 0x34,
+    ];
+    // OpenPuck's neutral 12-bit calibration, packed as six values per stick.
+    const STICK_CAL: [u8; 18] = [
+        0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87, 0x70,
+        0x08, 0x87, 0x70,
+    ];
+    if let Some(offset) = address
+        .checked_sub(0x6020)
+        .and_then(|offset| usize::try_from(offset).ok())
+    {
+        return IMU_CAL.get(offset).copied().unwrap_or(0xff);
+    }
+    if let Some(offset) = address
+        .checked_sub(0x603d)
+        .and_then(|offset| usize::try_from(offset).ok())
+    {
+        return STICK_CAL.get(offset).copied().unwrap_or(0xff);
+    }
+    0xff
+}
+
+fn switch_subcommand_reply(
+    state: &SwitchProState,
+    subcommand: u8,
+    arguments: &[u8],
+) -> (ProviderFrame, bool) {
+    let mut bytes = vec![0; 63];
+    bytes[..12].copy_from_slice(&switch_input_prefix(state));
+    bytes[13] = subcommand;
+    let mut enable_stream = false;
+    match subcommand {
+        0x02 => {
+            bytes[12] = 0x82;
+            bytes[14..18].copy_from_slice(&[3, 0x48, 3, 2]);
+            bytes[18..24].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
+            bytes[24] = 1;
+            bytes[25] = 1;
+        }
+        0x10 if arguments.len() >= 5 => {
+            bytes[12] = 0x90;
+            bytes[14..19].copy_from_slice(&arguments[..5]);
+            let address =
+                u32::from_le_bytes(arguments[..4].try_into().expect("four-byte SPI address"));
+            for (index, byte) in bytes[19..]
+                .iter_mut()
+                .take(usize::from(arguments[4]))
+                .enumerate()
+            {
+                *byte = switch_spi_byte(
+                    address.wrapping_add(u32::try_from(index).expect("SPI reply index fits u32")),
+                );
+            }
+        }
+        0x03 if arguments.first() == Some(&0x30) => {
+            bytes[12] = 0x80;
+            enable_stream = true;
+        }
+        0x04 => {
+            bytes[12] = 0x83;
+            bytes[14..20].copy_from_slice(&[0, 0xcc, 0, 0xee, 0, 0xff]);
+        }
+        0x21 => bytes[12] = 0xa0,
+        _ => bytes[12] = 0x80,
+    }
+    (
+        ProviderFrame::HidInput {
+            report_id: Some(0x21),
+            bytes,
+        },
+        enable_stream,
+    )
+}
+// Complete USB descriptor used by OpenPuck's Pro Controller personality.
+// In particular 0x21/0x81 must be declared as input reports or Linux drops
+// the handshake replies before hid-nintendo can observe them.
 const DESC: &[u8] = &[
-    0x05, 0x01, 0x15, 0, 0x09, 0x04, 0xa1, 1, 0x85, 0x30, 0x05, 1, 0x05, 9, 0x19, 1, 0x29, 0x0e,
-    0x15, 0, 0x25, 1, 0x75, 1, 0x95, 0x0e, 0x81, 2, 0x75, 8, 0x95, 0x31, 0x81, 3, 0x85, 0x21, 0x95,
-    0x3f, 0x81, 3, 0x85, 1, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x10, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x80,
-    0x95, 0x3f, 0x91, 0x83, 0xc0,
+    0x05, 0x01, 0x15, 0, 0x09, 0x04, 0xa1, 1, 0x85, 0x30, 0x05, 1, 0x05, 9, 0x19, 1, 0x29, 0x0a,
+    0x15, 0, 0x25, 1, 0x75, 1, 0x95, 0x0a, 0x55, 0, 0x65, 0, 0x81, 2, 0x05, 9, 0x19, 0x0b, 0x29,
+    0x0e, 0x15, 0, 0x25, 1, 0x75, 1, 0x95, 4, 0x81, 2, 0x75, 1, 0x95, 2, 0x81, 3, 0x0b, 1, 0, 1, 0,
+    0xa1, 0, 0x0b, 0x30, 0, 1, 0, 0x0b, 0x31, 0, 1, 0, 0x0b, 0x32, 0, 1, 0, 0x0b, 0x35, 0, 1, 0,
+    0x15, 0, 0x27, 0xff, 0xff, 0, 0, 0x75, 0x10, 0x95, 4, 0x81, 2, 0xc0, 0x0b, 0x39, 0, 1, 0, 0x15,
+    0, 0x25, 7, 0x35, 0, 0x46, 0x3b, 1, 0x65, 0x14, 0x75, 4, 0x95, 1, 0x81, 0x42, 0x05, 9, 0x19,
+    0x0f, 0x29, 0x12, 0x15, 0, 0x25, 1, 0x75, 1, 0x95, 4, 0x81, 2, 0x75, 8, 0x95, 0x34, 0x81, 3,
+    0x06, 0, 0xff, 0x85, 0x21, 0x09, 1, 0x75, 8, 0x95, 0x3f, 0x81, 3, 0x85, 0x81, 0x09, 2, 0x75, 8,
+    0x95, 0x3f, 0x81, 3, 0x85, 1, 0x09, 3, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x10, 0x09, 4,
+    0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x80, 0x09, 5, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85,
+    0x82, 0x09, 6, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0xc0,
 ];
 fn hid() -> NativeControllerRealization {
     NativeControllerRealization::Hid(NativeHidRealization {
         bus_type: 3,
-        device_name: "Virtual Switch Pro Controller".into(),
+        device_name: "Pro Controller".into(),
         physical_path: "virtualgamepad/uhid/switch-pro".into(),
         unique_id: "virtualgamepad-switch-pro".into(),
         identity: NativeDeviceIdentity {
@@ -607,20 +716,41 @@ impl SwitchProController {
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
+        let mut events = Vec::new();
+        self.0
+            .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
         let mut enable = false;
-        self.0.with_sink(|sink| {
-            sink.drain(&mut |event| {
-                if let RawReverseEvent::HidOutput {
+        let state = self.0.state().clone();
+        let mut replies = Vec::new();
+        for event in events {
+            match &event {
+                RawReverseEvent::HidOutput {
+                    report_id: Some(0x80),
+                    bytes,
+                } if !bytes.is_empty() => replies.push(switch_usb_reply(bytes[0])),
+                RawReverseEvent::HidOutput {
                     report_id: Some(1),
                     bytes,
-                } = &event
-                {
-                    if bytes.len() >= 11 && bytes[10] == 3 && bytes[11] == 0x30 {
-                        enable = true;
-                    }
+                } if bytes.len() >= 10 => {
+                    let (reply, stream) = switch_subcommand_reply(&state, bytes[9], &bytes[10..]);
+                    replies.push(reply);
+                    enable |= stream;
                 }
-                callback(SwitchProOutputEvent::from(event));
-            })
+                RawReverseEvent::HidSetReportRequest { request_id, .. } => {
+                    replies.push(ProviderFrame::HidSetReportReply {
+                        request_id: *request_id,
+                        status: 0,
+                    });
+                }
+                _ => {}
+            }
+            callback(SwitchProOutputEvent::from(event));
+        }
+        self.0.with_sink(|sink| {
+            for reply in replies {
+                sink.reply(reply)?;
+            }
+            Ok::<(), ProviderError>(())
         })?;
         if enable {
             self.0
@@ -794,6 +924,57 @@ mod tests {
             events
                 .iter()
                 .any(|event| event.code == 313 && event.value == 1)
+        );
+    }
+
+    #[test]
+    fn face_positions_use_the_nintendo_a_b_x_y_wire_bits() {
+        let state = SwitchProState {
+            face: [true, true, true, true],
+            ..Default::default()
+        };
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2] & 0x0f, 0x0f);
+        let state = SwitchProState {
+            face: [true, false, false, false], // South / A
+            ..Default::default()
+        };
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2] & 0x0f, 0b1000);
+        let state = SwitchProState {
+            face: [false, true, false, false], // East / B
+            ..Default::default()
+        };
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2] & 0x0f, 0b0100);
+    }
+
+    #[test]
+    fn steam_style_subcommands_receive_full_replies_and_enable_motion() {
+        let state = SwitchProState::default();
+        let (device_info, enabled) = switch_subcommand_reply(&state, 0x02, &[]);
+        assert!(!enabled);
+        assert!(
+            matches!(device_info, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes.len() == 63 && bytes[12] == 0x82 && bytes[13] == 0x02)
+        );
+        let (mode, enabled) = switch_subcommand_reply(&state, 0x03, &[0x30]);
+        assert!(enabled);
+        assert!(
+            matches!(mode, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x80 && bytes[13] == 0x03)
+        );
+        assert!(
+            matches!(switch_usb_reply(2), ProviderFrame::HidInput { report_id: Some(0x81), bytes } if bytes.len() == 63 && bytes[0] == 2)
+        );
+        let (calibration, enabled) = switch_subcommand_reply(&state, 0x10, &[0x20, 0x60, 0, 0, 6]);
+        assert!(!enabled);
+        assert!(
+            matches!(calibration, ProviderFrame::HidInput { report_id: Some(0x21), bytes } if bytes[12] == 0x90 && bytes[14..25] == [0x20, 0x60, 0, 0, 6, 0, 0, 0, 0, 0, 0])
         );
     }
 }

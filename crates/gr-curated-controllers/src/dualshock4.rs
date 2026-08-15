@@ -129,6 +129,10 @@ pub struct DualShock4State {
     touch_sequence: u8,
     motion: DualShock4MotionSample,
     sequence: u8,
+    /// Sensor time is expressed in the DS4's 5.33µs wire units.  The Linux
+    /// `PlayStation` driver uses it to advance `MSC_TIMESTAMP`; leaving it at
+    /// zero makes every sample appear to have the same time.
+    sensor_timestamp: u16,
     battery: BatteryState,
 }
 impl Default for DualShock4State {
@@ -147,6 +151,7 @@ impl Default for DualShock4State {
                 gyroscope: [0; 3],
             },
             sequence: 0,
+            sensor_timestamp: 0,
             battery: BatteryState::default(),
         }
     }
@@ -537,6 +542,7 @@ fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
     b[6] = (state.sequence << 4) | u8::from(state.buttons[4]) | (u8::from(state.buttons[5]) << 1);
     b[7] = state.triggers.0.raw();
     b[8] = state.triggers.1.raw();
+    b[9..11].copy_from_slice(&state.sensor_timestamp.to_le_bytes());
     for (i, v) in [
         state.motion.gyroscope[0],
         state.motion.gyroscope[2],
@@ -575,6 +581,16 @@ fn encode_ds4_touches(bytes: &mut [u8], touches: [Option<DualShock4TouchContact>
             }
             None => bytes[offset] = 0x80,
         }
+    }
+}
+
+fn advance_ds4_timing(state: &mut DualShock4State) {
+    state.sequence = state.sequence.wrapping_add(1);
+    // 4 ms at 5.33 µs/tick. This matches the motion worker cadence and lets
+    // hid-playstation produce monotonically timed samples.
+    state.sensor_timestamp = state.sensor_timestamp.wrapping_add(750);
+    if state.touches.iter().any(Option::is_some) {
+        state.touch_sequence = state.touch_sequence.wrapping_add(1);
     }
 }
 
@@ -626,7 +642,8 @@ fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u
 fn hid(session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Hid(NativeHidRealization {
         bus_type: 3,
-        device_name: "Virtual DualShock 4".into(),
+        // Match the product name advertised by a physical DS4 and OpenPuck.
+        device_name: "Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/dualshock4".into(),
         unique_id: "virtualgamepad-dualshock4".into(),
         identity: NativeDeviceIdentity {
@@ -728,7 +745,7 @@ impl DualShock4Controller {
     pub fn set_motion(&mut self, m: DualShock4MotionSample) -> Result<(), ControlError> {
         self.0.update_state(|s| {
             s.motion = m;
-            s.sequence = s.sequence.wrapping_add(1);
+            advance_ds4_timing(s);
             Ok(())
         })
     }
@@ -975,6 +992,25 @@ mod tests {
                 .iter()
                 .any(|event| event.code == 5 && event.value == 60)
         );
+    }
+
+    #[test]
+    fn motion_refresh_advances_the_ds4_sensor_and_touch_timestamps() {
+        let mut state = DualShock4State {
+            touches: [
+                Some(DualShock4TouchContact::new(1, 100, 200).expect("touch")),
+                None,
+            ],
+            ..Default::default()
+        };
+        state.sensor_timestamp = 100;
+        state.touch_sequence = 4;
+        advance_ds4_timing(&mut state);
+        let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(u16::from_le_bytes([bytes[9], bytes[10]]), 850);
+        assert_eq!(bytes[33], 5);
     }
 
     #[test]
