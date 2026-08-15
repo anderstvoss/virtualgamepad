@@ -336,9 +336,17 @@ mod tests {
         let Err(error) = LinuxUsbGadgetProvider.open(missing_endpoint_request()) else {
             panic!("missing endpoint must fail before a session exists");
         };
+        #[cfg(target_os = "linux")]
         assert!(matches!(
             error,
             ProviderError::Preflight(ProviderPreflightError::MissingPreparedEndpoint { .. })
+        ));
+        #[cfg(not(target_os = "linux"))]
+        assert!(matches!(
+            error,
+            ProviderError::Preflight(ProviderPreflightError::UnsupportedPlatform {
+                target: RealizationTarget::UsbTransportValidation
+            })
         ));
     }
 }
