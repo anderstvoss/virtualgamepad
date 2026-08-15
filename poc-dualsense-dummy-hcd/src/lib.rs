@@ -298,7 +298,21 @@ impl Gadget {
             ));
         }
         let identity = Identity::ephemeral();
-        setup_configfs(&root, &identity)?;
+        if let Err(error) = setup_configfs(&root, &identity) {
+            let cleanup = cleanup_root(&root);
+            return Err(match cleanup {
+                Ok(()) => io::Error::new(
+                    error.kind(),
+                    format!("ConfigFS setup failed and partial POC gadget was removed: {error}"),
+                ),
+                Err(cleanup_error) => io::Error::new(
+                    error.kind(),
+                    format!(
+                        "ConfigFS setup failed: {error}; partial POC cleanup also failed: {cleanup_error}"
+                    ),
+                ),
+            });
+        }
         let udc = fs::read_dir("/sys/class/udc")?
             .find_map(Result::ok)
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
