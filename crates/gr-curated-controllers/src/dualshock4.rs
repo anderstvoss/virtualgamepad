@@ -680,6 +680,17 @@ fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u
     for o in [9, 13, 17] {
         cal[o..o + 2].copy_from_slice(&(-32_000i16).to_le_bytes());
     }
+    // hid-playstation scales gyro samples by the sum of these two fields.
+    // Leaving them zero materializes the motion device but normalizes every
+    // gyro sample to zero.
+    cal[19..21].copy_from_slice(&2_000i16.to_le_bytes());
+    cal[21..23].copy_from_slice(&2_000i16.to_le_bytes());
+    for o in [23, 27, 31] {
+        cal[o..o + 2].copy_from_slice(&8_192i16.to_le_bytes());
+    }
+    for o in [25, 29, 33] {
+        cal[o..o + 2].copy_from_slice(&(-8_192i16).to_le_bytes());
+    }
     let mut mac = vec![0; 16];
     mac[0] = 0x12;
     mac[1..7].copy_from_slice(&[

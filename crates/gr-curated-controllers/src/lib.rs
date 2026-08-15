@@ -588,6 +588,7 @@ mod integration_tests {
         };
         let deadline = Instant::now() + Duration::from_millis(500);
         let mut reports = Vec::new();
+        let mut sensor_events = Vec::new();
         while Instant::now() < deadline {
             controller.set_motion(motion).expect("motion update");
             controller.commit().expect("motion commit");
@@ -595,6 +596,9 @@ mod integration_tests {
                 .poll_output(&mut |_| {})
                 .expect("Steam probe polling must remain live during motion");
             reports.extend(read_hid_reports(&mut hidraw));
+            if let Some(sensors) = &mut sensors {
+                sensor_events.extend(read_input_events(sensors));
+            }
             thread::sleep(Duration::from_millis(4));
         }
         let motion_timestamps = reports
@@ -617,11 +621,8 @@ mod integration_tests {
                 .all(|timestamps| timestamps[0] != timestamps[1]),
             "sustained motion reports reused sensor timestamps: {motion_timestamps:?}"
         );
-        if let Some(sensors) = &mut sensors {
-            assert_nonzero_gyro_events(
-                "DualSense motion sensor device",
-                &read_input_events(sensors),
-            );
+        if sensors.is_some() {
+            assert_nonzero_gyro_events("DualSense motion sensor device", &sensor_events);
         }
         assert!(
             virtual_dualsense_hidraw_path(session).is_some()
