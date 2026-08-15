@@ -42,6 +42,52 @@ struct FeatureReply {
     padding: [u8; 4],
 }
 
+trait DummyHcdHost {
+    fn is_dir(&self, path: &Path) -> bool;
+    fn exists(&self, path: &Path) -> bool;
+    fn load_module(&self, module: &str) -> Result<bool, std::io::Error>;
+    fn create_dir(&self, path: &Path) -> Result<(), std::io::Error>;
+    fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error>;
+    fn write(&self, path: &Path, value: &[u8]) -> Result<(), std::io::Error>;
+    fn symlink(&self, target: &Path, link: &Path) -> Result<(), std::io::Error>;
+    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error>;
+    fn remove_dir(&self, path: &Path) -> Result<(), std::io::Error>;
+}
+
+struct LinuxDummyHcdHost;
+impl DummyHcdHost for LinuxDummyHcdHost {
+    fn is_dir(&self, path: &Path) -> bool {
+        path.is_dir()
+    }
+    fn exists(&self, path: &Path) -> bool {
+        path.exists()
+    }
+    fn load_module(&self, module: &str) -> Result<bool, std::io::Error> {
+        Command::new("/usr/sbin/modprobe")
+            .arg(module)
+            .status()
+            .map(|status| status.success())
+    }
+    fn create_dir(&self, path: &Path) -> Result<(), std::io::Error> {
+        fs::create_dir(path)
+    }
+    fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
+        fs::create_dir_all(path)
+    }
+    fn write(&self, path: &Path, value: &[u8]) -> Result<(), std::io::Error> {
+        fs::write(path, value)
+    }
+    fn symlink(&self, target: &Path, link: &Path) -> Result<(), std::io::Error> {
+        std::os::unix::fs::symlink(target, link)
+    }
+    fn remove_file(&self, path: &Path) -> Result<(), std::io::Error> {
+        fs::remove_file(path)
+    }
+    fn remove_dir(&self, path: &Path) -> Result<(), std::io::Error> {
+        fs::remove_dir(path)
+    }
+}
+
 pub struct DummyHcdSession {
     root: PathBuf,
     file: File,
@@ -51,16 +97,13 @@ pub struct DummyHcdSession {
 }
 impl DummyHcdSession {
     pub fn open(_session: u64) -> Result<Self, BrokerError> {
-        if !Path::new(CONFIGFS).is_dir() {
+        let linux = LinuxDummyHcdHost;
+        if !linux.is_dir(Path::new(CONFIGFS)) {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
         let known_hidg = nodes("hidg")?;
         for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
-            let status = Command::new("/usr/sbin/modprobe")
-                .arg(module)
-                .status()
-                .map_err(io)?;
-            if !status.success() {
+            if !linux.load_module(module).map_err(io)? {
                 return Err(host("allowlisted kernel module could not load"));
             }
         }
@@ -70,15 +113,15 @@ impl DummyHcdSession {
         }
         let serial = format!("VG-DS5-{gadget_id:016x}");
         let root = Path::new(CONFIGFS).join(format!("virtualgamepad-{gadget_id:016x}"));
-        if root.exists() {
+        if linux.exists(&root) {
             return Err(host("generated gadget root already exists"));
         }
         let mut reserved_udc = None;
         let result = (|| {
-            setup(&root, &serial)?;
+            setup(&linux, &root, &serial)?;
             let udc = reserve_dummy_udc()?;
             reserved_udc = Some(udc.clone());
-            write(root.join("UDC"), &udc)?;
+            write(&linux, &root.join("UDC"), &udc)?;
             wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
             let file = OpenOptions::new()
@@ -107,7 +150,7 @@ impl DummyHcdSession {
                 if let Some(udc) = reserved_udc {
                     release_dummy_udc(&udc);
                 }
-                let _ = cleanup(&root);
+                let _ = cleanup(&linux, &root);
                 Err(error)
             }
         }
@@ -181,7 +224,7 @@ impl HostSession for DummyHcdSession {
     }
     fn close(&mut self) -> Result<(), BrokerError> {
         if !self.closed {
-            let result = cleanup(&self.root);
+            let result = cleanup(&LinuxDummyHcdHost, &self.root);
             release_dummy_udc(&self.udc);
             self.closed = true;
             result?;
@@ -194,44 +237,51 @@ impl Drop for DummyHcdSession {
         let _ = self.close();
     }
 }
-fn setup(root: &Path, serial: &str) -> Result<(), BrokerError> {
-    fs::create_dir(root).map_err(io)?;
-    write(root.join("idVendor"), USB_VENDOR_ID)?;
-    write(root.join("idProduct"), USB_PRODUCT_ID)?;
-    write(root.join("bcdDevice"), USB_DEVICE_BCD)?;
-    write(root.join("bcdUSB"), USB_BCD)?;
+fn setup(host: &impl DummyHcdHost, root: &Path, serial: &str) -> Result<(), BrokerError> {
+    host.create_dir(root).map_err(io)?;
+    write(host, &root.join("idVendor"), USB_VENDOR_ID)?;
+    write(host, &root.join("idProduct"), USB_PRODUCT_ID)?;
+    write(host, &root.join("bcdDevice"), USB_DEVICE_BCD)?;
+    write(host, &root.join("bcdUSB"), USB_BCD)?;
     let strings = root.join("strings/0x409");
-    fs::create_dir_all(&strings).map_err(io)?;
+    host.create_dir_all(&strings).map_err(io)?;
     write(
-        strings.join("manufacturer"),
+        host,
+        &strings.join("manufacturer"),
         "Sony Interactive Entertainment",
     )?;
-    write(strings.join("product"), "DualSense Wireless Controller")?;
-    write(strings.join("serialnumber"), serial)?;
+    write(
+        host,
+        &strings.join("product"),
+        "DualSense Wireless Controller",
+    )?;
+    write(host, &strings.join("serialnumber"), serial)?;
     let config = root.join("configs/c.1");
-    fs::create_dir_all(config.join("strings/0x409")).map_err(io)?;
-    write(config.join("MaxPower"), "250")?;
+    host.create_dir_all(&config.join("strings/0x409"))
+        .map_err(io)?;
+    write(host, &config.join("MaxPower"), "250")?;
     let function = root.join("functions/hid.dualsense");
-    fs::create_dir(&function).map_err(io)?;
-    write(function.join("protocol"), "0")?;
-    write(function.join("subclass"), "0")?;
-    write(function.join("report_length"), "64")?;
-    fs::write(function.join("report_desc"), USB_DESCRIPTOR).map_err(io)?;
+    host.create_dir(&function).map_err(io)?;
+    write(host, &function.join("protocol"), "0")?;
+    write(host, &function.join("subclass"), "0")?;
+    write(host, &function.join("report_length"), "64")?;
+    host.write(&function.join("report_desc"), USB_DESCRIPTOR)
+        .map_err(io)?;
     // ConfigFS resolves the link source when the link is created, rather than
     // as a normal filesystem symlink resolved from `configs/c.1`. The source
     // must consequently be the fixed, session-owned function path.
-    std::os::unix::fs::symlink(
-        root.join("functions/hid.dualsense"),
-        config.join("hid.dualsense"),
+    host.symlink(
+        &root.join("functions/hid.dualsense"),
+        &config.join("hid.dualsense"),
     )
     .map_err(io)?;
     Ok(())
 }
-fn cleanup(root: &Path) -> Result<(), BrokerError> {
+fn cleanup(io_host: &impl DummyHcdHost, root: &Path) -> Result<(), BrokerError> {
     if !is_owned_root(root) {
         return Err(host("refusing cleanup outside owned gadget root"));
     }
-    if !root.exists() {
+    if !io_host.exists(root) {
         return Ok(());
     }
     let mut first = None;
@@ -240,13 +290,13 @@ fn cleanup(root: &Path) -> Result<(), BrokerError> {
     // this session created, in dependency order; removing recursively tries
     // to unlink ConfigFS attributes and leaves a partial gadget behind.
     for result in [
-        fs::write(root.join("UDC"), ""),
-        fs::remove_file(root.join("configs/c.1/hid.dualsense")),
-        fs::remove_dir(root.join("functions/hid.dualsense")),
-        fs::remove_dir(root.join("configs/c.1/strings/0x409")),
-        fs::remove_dir(root.join("configs/c.1")),
-        fs::remove_dir(root.join("strings/0x409")),
-        fs::remove_dir(root),
+        io_host.write(&root.join("UDC"), b""),
+        io_host.remove_file(&root.join("configs/c.1/hid.dualsense")),
+        io_host.remove_dir(&root.join("functions/hid.dualsense")),
+        io_host.remove_dir(&root.join("configs/c.1/strings/0x409")),
+        io_host.remove_dir(&root.join("configs/c.1")),
+        io_host.remove_dir(&root.join("strings/0x409")),
+        io_host.remove_dir(root),
     ] {
         if let Err(error) = result {
             if error.kind() != std::io::ErrorKind::NotFound && first.is_none() {
@@ -368,8 +418,8 @@ fn wait_until_writable(file: &File) -> Result<(), BrokerError> {
     }
     Err(host("dummy_hcd HID endpoint did not become writable"))
 }
-fn write(path: PathBuf, value: &str) -> Result<(), BrokerError> {
-    fs::write(path, value).map_err(io)
+fn write(host: &impl DummyHcdHost, path: &Path, value: &str) -> Result<(), BrokerError> {
+    host.write(path, value.as_bytes()).map_err(io)
 }
 #[allow(clippy::needless_pass_by_value)]
 fn io(error: std::io::Error) -> BrokerError {
@@ -386,6 +436,61 @@ fn host(reason: &str) -> BrokerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+
+    struct FakeHost {
+        operations: RefCell<Vec<String>>,
+    }
+    impl FakeHost {
+        fn new() -> Self {
+            Self {
+                operations: RefCell::new(Vec::new()),
+            }
+        }
+        fn record(&self, operation: &str, path: &Path) {
+            self.operations
+                .borrow_mut()
+                .push(format!("{operation}:{}", path.display()));
+        }
+    }
+    impl DummyHcdHost for FakeHost {
+        fn is_dir(&self, _: &Path) -> bool {
+            true
+        }
+        fn exists(&self, _: &Path) -> bool {
+            true
+        }
+        fn load_module(&self, module: &str) -> Result<bool, std::io::Error> {
+            self.operations
+                .borrow_mut()
+                .push(format!("module:{module}"));
+            Ok(true)
+        }
+        fn create_dir(&self, path: &Path) -> Result<(), std::io::Error> {
+            self.record("mkdir", path);
+            Ok(())
+        }
+        fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error> {
+            self.record("mkdir-all", path);
+            Ok(())
+        }
+        fn write(&self, path: &Path, _: &[u8]) -> Result<(), std::io::Error> {
+            self.record("write", path);
+            Ok(())
+        }
+        fn symlink(&self, _: &Path, link: &Path) -> Result<(), std::io::Error> {
+            self.record("symlink", link);
+            Ok(())
+        }
+        fn remove_file(&self, path: &Path) -> Result<(), std::io::Error> {
+            self.record("unlink", path);
+            Ok(())
+        }
+        fn remove_dir(&self, path: &Path) -> Result<(), std::io::Error> {
+            self.record("rmdir", path);
+            Ok(())
+        }
+    }
     #[test]
     fn shared_fixture_has_full_descriptor_and_motion_calibration() {
         assert_eq!(USB_DESCRIPTOR.len(), 273);
@@ -403,19 +508,63 @@ mod tests {
     }
     #[test]
     fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
-        assert!(cleanup(Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
-        assert!(cleanup(Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
+        let host = LinuxDummyHcdHost;
+        assert!(cleanup(&host, Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
+        assert!(cleanup(&host, Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
         assert!(
-            cleanup(Path::new(
-                "/sys/kernel/config/usb_gadget/virtualgamepad-deadbeef"
-            ))
+            cleanup(
+                &host,
+                Path::new("/sys/kernel/config/usb_gadget/virtualgamepad-deadbeef")
+            )
             .is_err()
         );
         assert!(
-            cleanup(Path::new(
-                "/sys/kernel/config/usb_gadget/virtualgamepad-0000000000000001/child"
-            ))
+            cleanup(
+                &host,
+                Path::new("/sys/kernel/config/usb_gadget/virtualgamepad-0000000000000001/child")
+            )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn fake_host_covers_configfs_creation_and_dependency_ordered_cleanup() {
+        let host = FakeHost::new();
+        let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
+        setup(&host, &root, "VG-DS5-0000000000000001").unwrap();
+        cleanup(&host, &root).unwrap();
+        let operations = host.operations.into_inner();
+        assert_eq!(
+            operations.first(),
+            Some(&format!("mkdir:{}", root.display()))
+        );
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation.ends_with("/report_desc"))
+        );
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation.ends_with("/hid.dualsense"))
+        );
+        assert_eq!(
+            operations.last(),
+            Some(&format!("rmdir:{}", root.display()))
+        );
+        let unbind = operations
+            .iter()
+            .position(|operation| operation == &format!("write:{}/UDC", root.display()))
+            .unwrap();
+        let unlink = operations
+            .iter()
+            .position(|operation| {
+                operation == &format!("unlink:{}/configs/c.1/hid.dualsense", root.display())
+            })
+            .unwrap();
+        assert!(
+            unbind < unlink,
+            "cleanup unbinds before removing the function link"
         );
     }
 
