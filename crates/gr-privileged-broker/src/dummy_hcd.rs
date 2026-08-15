@@ -8,7 +8,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
+    os::fd::AsRawFd,
     path::{Path, PathBuf},
     process::{self, Command},
     sync::{
@@ -29,11 +29,6 @@ const USB_DEVICE_BCD: &str = "0x0110";
 const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
-// A DummyHcd interrupt endpoint can be temporarily full while Steam performs
-// its initial HID probes. That is flow control, not a broken attachment. A
-// later 250 Hz DualSense state frame supersedes a skipped frame, so preserve
-// the session rather than turning this transient condition into a disconnect.
-const INPUT_WRITE_TIMEOUT: Duration = Duration::from_millis(25);
 const HOST_DRIVER_SETTLE_TIME: Duration = Duration::from_millis(500);
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 static NEXT_GADGET_ID: OnceLock<AtomicU64> = OnceLock::new();
@@ -136,11 +131,7 @@ struct LinuxHidGadgetIo {
 }
 impl HidGadgetIo for LinuxHidGadgetIo {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
-        let fd = self.file.as_raw_fd();
-        let _delivered = write_input_with_retry(&mut self.file, report, |remaining| {
-            wait_until_writable_fd(fd, remaining)
-        })?;
-        Ok(())
+        write_input_exact(&mut self.file, report)
     }
     fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError> {
         let mut poll = libc::pollfd {
@@ -205,7 +196,7 @@ impl DummyHcdSession {
         if gadget_id == u64::MAX {
             return Err(host("dummy_hcd gadget identifier space is exhausted"));
         }
-        let serial = format!("VG-DS5-{gadget_id:016x}");
+        let serial = format!("VG-POC-DS5-{gadget_id:016x}");
         let root = Path::new(CONFIGFS).join(format!("virtualgamepad-{gadget_id:016x}"));
         if linux.exists(&root) {
             return Err(host("generated gadget root already exists"));
@@ -227,10 +218,8 @@ impl DummyHcdSession {
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .custom_flags(libc::O_NONBLOCK)
                 .open(hidg)
                 .map_err(io)?;
-            wait_until_writable(&file)?;
             Ok(Self {
                 root: root.clone(),
                 io: Box::new(LinuxHidGadgetIo { file }),
@@ -257,7 +246,11 @@ impl DummyHcdSession {
     }
     fn features(&self) -> Vec<(u8, Vec<u8>)> {
         let serial = self.serial.as_bytes();
-        feature_responses([2, serial[0], serial[1], serial[2], serial[3]])
+        feature_responses(
+            serial[..5]
+                .try_into()
+                .expect("fixed DualSense serial prefix"),
+        )
     }
     fn reply(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
         self.io.reply_feature(id, data, userspace)
@@ -502,63 +495,8 @@ fn wait_until_configured(udc: &str) -> Result<(), BrokerError> {
 fn is_configured_state(value: &str) -> bool {
     value.trim() == "configured"
 }
-fn wait_until_writable(file: &File) -> Result<(), BrokerError> {
-    if wait_until_writable_for(file, Duration::from_secs(5))? {
-        Ok(())
-    } else {
-        Err(host("dummy_hcd HID endpoint did not become writable"))
-    }
-}
-fn wait_until_writable_for(file: &File, timeout: Duration) -> Result<bool, BrokerError> {
-    wait_until_writable_fd(file.as_raw_fd(), timeout)
-}
-fn wait_until_writable_fd(fd: std::os::fd::RawFd, timeout: Duration) -> Result<bool, BrokerError> {
-    let start = Instant::now();
-    while start.elapsed() < timeout {
-        let mut poll = libc::pollfd {
-            fd,
-            events: libc::POLLOUT,
-            revents: 0,
-        };
-        let remaining = timeout
-            .saturating_sub(start.elapsed())
-            .min(Duration::from_millis(5));
-        let timeout_ms = i32::try_from(remaining.as_millis())
-            .unwrap_or(i32::MAX)
-            .max(1);
-        let result = unsafe { libc::poll(&raw mut poll, 1, timeout_ms) };
-        if result < 0 {
-            return Err(io(std::io::Error::last_os_error()));
-        }
-        if poll.revents & libc::POLLOUT != 0 {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-fn write_input_with_retry(
-    writer: &mut impl Write,
-    report: &[u8],
-    mut wait: impl FnMut(Duration) -> Result<bool, BrokerError>,
-) -> Result<bool, BrokerError> {
-    let start = Instant::now();
-    loop {
-        match writer.write(report) {
-            Ok(count) if count == report.len() => return Ok(true),
-            Ok(_) => {
-                return Err(host(
-                    "dummy_hcd HID endpoint accepted a partial input report",
-                ));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                let remaining = INPUT_WRITE_TIMEOUT.saturating_sub(start.elapsed());
-                if remaining.is_zero() || !wait(remaining)? {
-                    return Ok(false);
-                }
-            }
-            Err(error) => return Err(io(error)),
-        }
-    }
+fn write_input_exact(writer: &mut impl Write, report: &[u8]) -> Result<(), BrokerError> {
+    writer.write_all(report).map_err(io)
 }
 fn write(host: &impl DummyHcdHost, path: &Path, value: &str) -> Result<(), BrokerError> {
     host.write(path, value.as_bytes()).map_err(io)
@@ -842,30 +780,38 @@ mod tests {
     }
 
     #[test]
-    fn input_write_retries_a_transient_busy_hid_endpoint() {
+    fn blocking_input_write_completes_a_short_hid_write() {
         let mut writer = RetryWriter {
-            outcomes: [Err(std::io::ErrorKind::WouldBlock), Ok(REPORT_LENGTH)].into(),
+            outcomes: [Ok(1), Ok(REPORT_LENGTH - 1)].into(),
         };
-        let mut waits = 0;
-        assert!(
-            write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| {
-                waits += 1;
-                Ok(true)
-            })
-            .expect("a ready endpoint accepts the retried report")
-        );
-        assert_eq!(waits, 1);
+        write_input_exact(&mut writer, &[0; REPORT_LENGTH])
+            .expect("blocking HID delivery writes the complete report");
     }
 
     #[test]
-    fn input_write_skips_a_hid_endpoint_that_stays_temporarily_busy() {
+    fn blocking_input_write_preserves_a_real_hid_error() {
         let mut writer = RetryWriter {
             outcomes: [Err(std::io::ErrorKind::WouldBlock)].into(),
         };
-        assert!(
-            !write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| Ok(false))
-                .expect("temporary endpoint backpressure is non-terminal")
-        );
+        assert!(write_input_exact(&mut writer, &[0; REPORT_LENGTH]).is_err());
+    }
+
+    #[test]
+    fn pairing_feature_matches_the_poc_serial_prefix_without_an_extra_byte() {
+        let session = DummyHcdSession {
+            root: PathBuf::from("/unused"),
+            io: Box::new(FakeHidGadget::default()),
+            serial: "VG-POC-DS5-0000000000000001".into(),
+            udc: String::new(),
+            closed: true,
+        };
+        let pairing = session
+            .features()
+            .into_iter()
+            .find(|(id, _)| *id == 9)
+            .expect("DualSense pairing feature")
+            .1;
+        assert_eq!(&pairing[..7], &[9, 2, b'V', b'G', b'-', b'P', b'O']);
     }
 
     #[test]

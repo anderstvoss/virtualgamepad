@@ -943,19 +943,9 @@ fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u8) -> bool {
     changed
 }
 
-fn reset_momentary_motion_axis(value: &mut i16, rest: i16) -> bool {
-    let changed = *value != rest;
-    *value = rest;
-    changed
-}
-
-fn momentary_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16, rest: i16) -> bool {
-    let response = ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label));
-    let mut changed = response.changed();
-    if response.drag_stopped() {
-        changed |= reset_momentary_motion_axis(value, rest);
-    }
-    changed
+fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
+    ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label))
+        .changed()
 }
 
 fn dualsense_axis_to_pad(value: u8) -> i16 {
@@ -1124,13 +1114,13 @@ fn draw_dualsense(
             let mut accelerometer = motion.accelerometer;
             let mut changed = false;
             for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                changed |= momentary_motion_axis(ui, label, value, 0);
+                changed |= latched_motion_axis(ui, label, value);
             }
             for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
                 .into_iter()
                 .zip(&mut accelerometer)
             {
-                changed |= momentary_motion_axis(ui, label, value, 0);
+                changed |= latched_motion_axis(ui, label, value);
             }
             if changed {
                 let motion = MotionSample {
@@ -1209,20 +1199,20 @@ fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
     ui.group(|ui| {
         ui.label("UHID motion report");
         ui.small(
-            "Motion controls are momentary and return to zero; no gravity orientation is implied.",
+            "Motion controls retain their value; zero remains neutral with no implied gravity.",
         );
         let motion = controller.state().motion();
         let mut gyro = motion.gyroscope;
         let mut accel = motion.accelerometer;
         let mut changed = false;
         for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
             .into_iter()
             .zip(&mut accel)
         {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         if changed {
             let _ = controller.set_motion(DualShock4MotionSample {
@@ -1352,13 +1342,13 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
         let mut accel = motion.accelerometer;
         let mut changed = false;
         for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
             .into_iter()
             .zip(&mut accel)
         {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         if changed {
             let _ = controller.set_motion(SwitchProMotionSample {
@@ -1474,14 +1464,6 @@ mod tests {
             dualsense_motion_target_label(RealizationTarget::DummyHcd),
             "DummyHcd USB motion report"
         );
-    }
-
-    #[test]
-    fn accel_z_returns_to_gui_neutral_without_publishing_gravity() {
-        let mut value = -12_000;
-        assert!(reset_momentary_motion_axis(&mut value, 0));
-        assert_eq!(value, 0);
-        assert!(!reset_momentary_motion_axis(&mut value, 0));
     }
 
     #[test]
