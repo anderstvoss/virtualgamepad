@@ -843,14 +843,25 @@ fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)
 
 fn hold(ui: &mut egui::Ui, label: &str, mut set: impl FnMut(bool)) {
     let response = ui.add(Button::new(label));
-    let held = response.is_pointer_button_down_on();
     let previous = ui
         .data(|data| data.get_temp::<bool>(response.id))
         .unwrap_or(false);
-    if held != previous {
-        ui.data_mut(|data| data.insert_temp(response.id, held));
-        set(held);
+    if let Some(next) = next_hold_state(
+        previous,
+        response.is_pointer_button_down_on(),
+        response.clicked(),
+    ) {
+        ui.data_mut(|data| data.insert_temp(response.id, next));
+        set(next);
     }
+}
+
+fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<bool> {
+    // A quick click may begin and end between rendered frames. Keep that click
+    // pressed for one complete frame so HID consumers observe a rising edge;
+    // the following frame emits the corresponding release.
+    let next = pointer_down || clicked;
+    (next != previous).then_some(next)
 }
 fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
     ui.collapsing("Selected target surface", |ui| {
@@ -1121,6 +1132,10 @@ fn draw_dualsense(
                 .zip(&mut accelerometer)
             {
                 changed |= latched_motion_axis(ui, label, value);
+            }
+            if ui.button("Reset gyro to neutral").clicked() {
+                gyro = [0; 3];
+                changed = true;
             }
             if changed {
                 let motion = MotionSample {
@@ -1428,6 +1443,14 @@ mod tests {
         assert_eq!(repaint_interval(0), Duration::from_millis(50));
         assert_eq!(repaint_interval(1), Duration::from_millis(4));
         assert_eq!(repaint_interval(8), Duration::from_millis(4));
+    }
+
+    #[test]
+    fn quick_button_click_is_held_for_one_report_before_release() {
+        assert_eq!(next_hold_state(false, false, true), Some(true));
+        assert_eq!(next_hold_state(true, false, false), Some(false));
+        assert_eq!(next_hold_state(false, false, false), None);
+        assert_eq!(next_hold_state(true, true, false), None);
     }
 
     #[test]
