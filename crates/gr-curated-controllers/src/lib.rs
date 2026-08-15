@@ -39,6 +39,17 @@ mod integration_tests {
     use super::*;
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
     use gr_realization_api::{DeploymentTarget, RealizationSessionId};
+    use std::{fs, thread, time::Duration};
+
+    fn input_node_exists(name: &str) -> bool {
+        let Ok(entries) = fs::read_dir("/sys/class/input") else {
+            return false;
+        };
+        entries.flatten().any(|entry| {
+            fs::read_to_string(entry.path().join("name"))
+                .is_ok_and(|observed| observed.trim() == name)
+        })
+    }
 
     #[test]
     #[ignore = "requires ordinary-user /dev/uinput access"]
@@ -135,5 +146,65 @@ mod integration_tests {
         second.commit().expect("second commit");
         first.close();
         second.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uhid and a Linux input subsystem"]
+    fn dualsense_hid_materializes_and_survives_the_host_probe_interval() {
+        let mut controller = create_dualsense(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session: RealizationSessionId(401),
+        })
+        .expect("DualSense UHID creation");
+        controller.commit().expect("initial DualSense input report");
+        assert!(
+            input_node_exists("Virtual DualSense"),
+            "UHID device did not materialize an input node"
+        );
+
+        thread::sleep(Duration::from_secs(3));
+
+        controller
+            .set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("post-probe state update");
+        controller.commit().expect("post-probe input report");
+        assert!(
+            input_node_exists("Virtual DualSense"),
+            "DualSense input node disappeared during the host probe interval"
+        );
+        controller.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uinput and a Linux input subsystem"]
+    fn dualsense_evdev_materializes_and_survives_the_host_probe_interval() {
+        let mut controller = create_dualsense(CreationOptions {
+            target: DeploymentTarget::Evdev,
+            session: RealizationSessionId(402),
+        })
+        .expect("DualSense evdev creation");
+        controller.commit().expect("initial evdev report");
+        assert!(
+            input_node_exists("Virtual DualSense"),
+            "evdev device did not materialize an input node"
+        );
+
+        thread::sleep(Duration::from_secs(3));
+
+        controller
+            .set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("post-probe state update");
+        controller.commit().expect("post-probe evdev report");
+        assert!(
+            input_node_exists("Virtual DualSense"),
+            "evdev input node disappeared during the host probe interval"
+        );
+        controller.close();
     }
 }
