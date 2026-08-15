@@ -302,4 +302,24 @@ mod tests {
         assert!(cleanup(Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
         assert!(cleanup(Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
     }
+
+    #[test]
+    #[ignore = "requires root, ConfigFS, and dummy_hcd kernel support"]
+    fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
+        if unsafe { libc::geteuid() } != 0 {
+            return;
+        }
+        let mut session = DummyHcdSession::open(0xdecaf).expect("open dummy_hcd session");
+        let root = session.root.clone();
+        assert!(root.is_dir());
+        session
+            .send_input(&[0; REPORT_LENGTH])
+            .expect("input report");
+        let _ = session.poll_reverse().expect("reverse poll");
+        session.close().expect("close dummy_hcd session");
+        assert!(
+            !root.exists(),
+            "cleanup left the owned ConfigFS gadget behind"
+        );
+    }
 }
