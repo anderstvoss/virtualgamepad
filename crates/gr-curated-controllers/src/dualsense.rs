@@ -1194,11 +1194,14 @@ fn dualsense_feature_responses(
     ]);
     let mut firmware = vec![0_u8; 64];
     firmware[0] = 0x20;
+    // OpenPuck's PS5 USB personality exposes non-zero hardware and firmware
+    // versions at these report offsets.
     firmware[24] = 1;
     firmware[28] = 1;
-    // SDL and Steam use the DualSense feature/update version at this offset
-    // to select the complete USB controller path. 2.24 is the first version
-    // with the current compatible-rumble behavior.
+    // Current SDL/Steam HIDAPI accepts the USB controller path only with this
+    // feature/update version populated. OpenPuck leaves this reserved field
+    // zero, so retain this host-observed compatibility extension separately
+    // from its hardware/firmware version bytes above.
     firmware[44..46].copy_from_slice(&0x0224_u16.to_le_bytes());
     [
         (0x03, capabilities),
@@ -1561,6 +1564,8 @@ mod tests {
                 report_type: 0,
             })
             .expect("DualSense firmware feature");
+        assert_eq!(&firmware[24..28], &1_u32.to_le_bytes());
+        assert_eq!(&firmware[28..32], &1_u32.to_le_bytes());
         assert_eq!(&firmware[44..46], &0x0224_u16.to_le_bytes());
     }
 
