@@ -49,9 +49,10 @@ relying on their similarly named input devices:
 
 ```bash
 scripts/steam-controller-ab-report.sh /path/to/console_log.txt \
-  /dev/hidrawPHYSICAL /dev/hidrawVIRTUAL
+  /dev/hidrawPHYSICAL virtualgamepad-dualsense-session-408
 ```
 
-Both blocks must select `SDL_JOYSTICK_HIDAPI_PS5 (ENABLED)` and show their own
-hidraw path. The virtual gate also requires Steam to open the controller after
-the exact session serial appears in the log.
+Both blocks must select `SDL_JOYSTICK_HIDAPI_PS5 (ENABLED)`. The virtual session
+serial, rather than its hidraw path, identifies it after teardown because the
+kernel can reuse hidraw node numbers. The virtual gate also requires Steam to
+open the controller after the exact session serial appears in the log.
