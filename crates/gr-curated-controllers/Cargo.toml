@@ -14,11 +14,11 @@ gr-controller-runtime = { path = "../gr-controller-runtime", version = "0.1" }
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
 gr-provider-linux-uinput = { path = "../gr-provider-linux-uinput", version = "0.1" }
 gr-provider-linux-uhid = { path = "../gr-provider-linux-uhid", version = "0.1" }
-gr-provider-linux-transport = { path = "../gr-provider-linux-transport", version = "0.1" }
+gr-provider-linux-dummy-hcd = { path = "../gr-provider-linux-dummy-hcd", version = "0.1" }
+gr-provider-linux-btvirt = { path = "../gr-provider-linux-btvirt", version = "0.1" }
 
 [dev-dependencies]
 proptest.workspace = true
-trybuild = "1"
 
 [lints]
 workspace = true

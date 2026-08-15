@@ -12,11 +12,10 @@ use gr_controller_contract::{
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization,
-    NativeUsbCompositeRealization, NativeUsbEndpointDirection, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, ProviderError,
+    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationSessionId, RealizationTarget,
 };
 
 pub const SWITCH_PRO_USB_HID_INPUT_ENDPOINT: u8 = 0x81;
@@ -50,11 +49,6 @@ pub enum SwitchProControl {
     Capture,
     LeftStickPress,
     RightStickPress,
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SwitchProUsbOptions {
-    pub session: RealizationSessionId,
-    pub composite: NativeUsbCompositeRealization,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SwitchProState {
@@ -271,7 +265,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
 };
 static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Hid,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -281,7 +275,7 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
 };
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::UsbTransportValidation,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -304,14 +298,14 @@ impl RealizationControllerDefinition for SwitchProDefinition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::UsbTransportValidation,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -349,9 +343,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
     ) -> Result<(), ControlError> {
         if matches!(
             sel.target,
-            RealizationTarget::Evdev
-                | RealizationTarget::Hid
-                | RealizationTarget::UsbTransportValidation
+            RealizationTarget::Evdev | RealizationTarget::Uhid
         ) {
             Ok(())
         } else {
@@ -373,7 +365,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         else {
             unreachable!()
         };
-        if sel.target == RealizationTarget::UsbTransportValidation {
+        if sel.target == RealizationTarget::Uhid {
             bytes.insert(0, report_id.unwrap_or(0x30));
             Ok(ProviderFrame::Transport {
                 endpoint: SWITCH_PRO_USB_HID_INPUT_ENDPOINT,
@@ -613,7 +605,7 @@ const DESC: &[u8] = &[
     0x82, 0x09, 6, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0xc0,
 ];
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
-    NativeControllerRealization::Hid(NativeHidRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         device_name: "Pro Controller".into(),
         // `common::create` appends the realization session exactly once.
@@ -671,7 +663,7 @@ impl SwitchProController {
     pub fn surface(&self) -> &'static SwitchProSurface {
         match self.0.selection().target {
             RealizationTarget::Evdev => &EVDEV_SURFACE,
-            RealizationTarget::Hid => &HID_SURFACE,
+            RealizationTarget::Uhid => &HID_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -828,8 +820,8 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
 }
 pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, ProviderError> {
     let realization = match o.target {
-        DeploymentTarget::Evdev => evdev_realization(),
-        DeploymentTarget::Hid => hid(o.session),
+        RealizationTarget::Evdev => evdev_realization(),
+        RealizationTarget::Uhid => hid(o.session),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -837,27 +829,6 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
         }
     };
     common::create(SwitchProDefinition, realization, o).map(SwitchProController)
-}
-pub fn create_switch_pro_usb(o: SwitchProUsbOptions) -> Result<SwitchProController, ProviderError> {
-    if !o.composite.endpoints.iter().any(|e| {
-        e.address == 0x81
-            && e.direction == NativeUsbEndpointDirection::DeviceToHost
-            && e.maximum_packet_length >= 64
-    }) || !o.composite.endpoints.iter().any(|e| {
-        e.address == 1
-            && e.direction == NativeUsbEndpointDirection::HostToDevice
-            && e.maximum_packet_length >= 64
-    }) {
-        return Err(ProviderError::Unsupported {
-            reason: "Switch Pro USB composite lacks HID endpoints".into(),
-        });
-    }
-    common::create_usb(
-        SwitchProDefinition,
-        NativeControllerRealization::UsbComposite(o.composite),
-        o.session,
-    )
-    .map(SwitchProController)
 }
 #[cfg(test)]
 mod tests {
@@ -887,7 +858,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: SwitchProDefinition.controller_id(),
-                    target: RealizationTarget::UsbTransportValidation,
+                    target: RealizationTarget::Uhid,
                 },
                 &SwitchProState::default(),
             )
@@ -1008,7 +979,7 @@ mod tests {
 
     #[test]
     fn hid_identity_matches_openpuck_usb_personality() {
-        let NativeControllerRealization::Hid(realization) = hid(RealizationSessionId(1)) else {
+        let NativeControllerRealization::Uhid(realization) = hid(RealizationSessionId(1)) else {
             unreachable!()
         };
         assert_eq!(realization.device_name, "Pro Controller");

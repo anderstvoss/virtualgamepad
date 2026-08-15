@@ -1,17 +1,13 @@
 [package]
-name = "gr-controller-contract"
+name = "gr-privileged-broker"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-repository.workspace = true
-authors.workspace = true
-description = "Controller-agnostic contracts for virtualgamepad."
 publish = false
 
 [dependencies]
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
-gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
 thiserror.workspace = true
 
 [lints]

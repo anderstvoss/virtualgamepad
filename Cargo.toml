@@ -18,8 +18,9 @@ members = [
     "crates/gr-curated-controllers",
     "crates/gr-provider-linux-uinput",
     "crates/gr-provider-linux-uhid",
-    "crates/gr-provider-linux-transport",
-    "demo",
+    "crates/gr-privileged-broker",
+    "crates/gr-provider-linux-dummy-hcd",
+    "crates/gr-provider-linux-btvirt",
 ]
 resolver = "3"
 

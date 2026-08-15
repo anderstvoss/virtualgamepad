@@ -9,7 +9,7 @@ use gr_controller_contract::{
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeEvdevRealization, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
@@ -273,7 +273,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
 };
 static HID_SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Hid,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -297,7 +297,7 @@ impl RealizationControllerDefinition for Xbox360Definition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
@@ -335,7 +335,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev | RealizationTarget::Hid
+            RealizationTarget::Evdev | RealizationTarget::Uhid
         ) {
             Ok(())
         } else {
@@ -347,7 +347,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
-        if selection.target == RealizationTarget::Hid {
+        if selection.target == RealizationTarget::Uhid {
             let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
             return Ok(common::hid_gamepad_frame(
                 state.face,
@@ -468,7 +468,7 @@ impl Xbox360Controller {
     #[must_use]
     pub const fn surface(&self) -> &'static Xbox360Surface {
         match self.0.selection().target {
-            RealizationTarget::Hid => &HID_SURFACE,
+            RealizationTarget::Uhid => &HID_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -647,8 +647,8 @@ fn hid_realization() -> NativeControllerRealization {
 }
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ProviderError> {
     let realization = match options.target {
-        DeploymentTarget::Evdev => realization(),
-        DeploymentTarget::Hid => hid_realization(),
+        RealizationTarget::Evdev => realization(),
+        RealizationTarget::Uhid => hid_realization(),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -703,7 +703,7 @@ mod tests {
             HID_SURFACE.common.validation_status,
             RealizationValidationStatus::ResearchBacked
         );
-        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Hid);
+        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Uhid);
         assert!(HID_SURFACE.common.outputs.is_empty());
         assert!(
             !Xbox360Definition.realization_manifest().entries()[1]

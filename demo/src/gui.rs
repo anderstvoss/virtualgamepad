@@ -6,7 +6,7 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, CreationOptions, DeploymentTarget, DigitalControlUpdate,
+    BatteryLevel, BatteryState, CreationOptions, RealizationTarget, DigitalControlUpdate,
     DpadDirection, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput,
     DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
     DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
@@ -180,15 +180,15 @@ impl ReverseIndicators {
 }
 impl Controller {
     fn needs_motion_refresh(&self) -> bool {
-        matches!(self, Self::DualSense(controller) if controller.surface().common().target == RealizationTarget::Hid)
-            || matches!(self, Self::DualShock4(controller) if controller.surface().common().target == RealizationTarget::Hid)
-            || matches!(self, Self::SwitchPro(controller) if controller.surface().common().target == RealizationTarget::Hid)
+        matches!(self, Self::DualSense(controller) if controller.surface().common().target == RealizationTarget::Uhid)
+            || matches!(self, Self::DualShock4(controller) if controller.surface().common().target == RealizationTarget::Uhid)
+            || matches!(self, Self::SwitchPro(controller) if controller.surface().common().target == RealizationTarget::Uhid)
     }
 
     fn refresh_motion(&mut self) -> Result<(), String> {
         match self {
             Self::DualSense(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if controller.surface().common().target == RealizationTarget::Uhid =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -196,7 +196,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if controller.surface().common().target == RealizationTarget::Uhid =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -204,7 +204,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if controller.surface().common().target == RealizationTarget::Uhid =>
             {
                 controller
                     .refresh_motion()
@@ -443,7 +443,7 @@ impl Controller {
 }
 pub struct App {
     kind: Kind,
-    target: DeploymentTarget,
+    target: RealizationTarget,
     name_draft: String,
     next_session: u64,
     controllers: Vec<NamedController>,
@@ -455,7 +455,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             kind: Kind::Generic,
-            target: DeploymentTarget::Evdev,
+            target: RealizationTarget::Evdev,
             name_draft: String::new(),
             next_session: 1,
             controllers: vec![],
@@ -590,13 +590,13 @@ impl eframe::App for App {
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut self.target,
-                        DeploymentTarget::Evdev,
-                        target_label(DeploymentTarget::Evdev),
+                        RealizationTarget::Evdev,
+                        target_label(RealizationTarget::Evdev),
                     );
                     ui.selectable_value(
                         &mut self.target,
-                        DeploymentTarget::Hid,
-                        target_label(DeploymentTarget::Hid),
+                        RealizationTarget::Uhid,
+                        target_label(RealizationTarget::Uhid),
                     );
                 });
             let default_name = self.next_default_name();
@@ -713,10 +713,10 @@ impl eframe::App for App {
     }
 }
 
-const fn target_label(target: DeploymentTarget) -> &'static str {
+const fn target_label(target: RealizationTarget) -> &'static str {
     match target {
-        DeploymentTarget::Evdev => "Evdev / uinput",
-        DeploymentTarget::Hid => "HID / UHID",
+        RealizationTarget::Evdev => "Evdev / uinput",
+        RealizationTarget::Uhid => "HID / UHID",
         _ => "Unknown target",
     }
 }
@@ -1138,7 +1138,7 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
         draw_touchpad(ui, controller);
         draw_touch_slot(ui, controller, TouchSlot::Second, 1, "Second contact");
     });
-    if controller.surface().common().target == RealizationTarget::Hid {
+    if controller.surface().common().target == RealizationTarget::Uhid {
         ui.group(|ui| {
             ui.label("UHID motion report");
             let diagnostics = controller.provider_diagnostics();

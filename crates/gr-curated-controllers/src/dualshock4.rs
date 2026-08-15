@@ -9,11 +9,10 @@ use gr_controller_contract::{
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
-    NativeUsbCompositeRealization, NativeUsbEndpointDirection, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationSessionId, RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -110,11 +109,6 @@ pub enum DualShock4Control {
     TouchpadClick,
     LeftStickPress,
     RightStickPress,
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DualShock4UsbOptions {
-    pub session: RealizationSessionId,
-    pub composite: NativeUsbCompositeRealization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -386,7 +380,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static HID_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Hid,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -396,7 +390,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::UsbTransportValidation,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -420,14 +414,14 @@ impl RealizationControllerDefinition for DualShock4Definition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::UsbTransportValidation,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -465,9 +459,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev
-                | RealizationTarget::Hid
-                | RealizationTarget::UsbTransportValidation
+            RealizationTarget::Evdev | RealizationTarget::Uhid
         ) {
             Ok(())
         } else {
@@ -483,7 +475,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
             return Ok(ds4_evdev_frame(state));
         }
         let frame = ds4_frame(state);
-        if selection.target == RealizationTarget::UsbTransportValidation {
+        if selection.target == RealizationTarget::Uhid {
             let ProviderFrame::HidInput {
                 report_id: Some(id),
                 mut bytes,
@@ -718,7 +710,7 @@ fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u
         .collect()
 }
 fn hid(session: RealizationSessionId) -> NativeControllerRealization {
-    NativeControllerRealization::Hid(NativeHidRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
@@ -782,7 +774,7 @@ impl DualShock4Controller {
     pub const fn surface(&self) -> &'static DualShock4Surface {
         match self.0.selection().target {
             RealizationTarget::Evdev => &EVDEV_SURFACE,
-            RealizationTarget::Hid => &HID_SURFACE,
+            RealizationTarget::Uhid => &HID_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -924,8 +916,8 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
 }
 pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controller, ProviderError> {
     let realization = match options.target {
-        DeploymentTarget::Evdev => evdev_realization(),
-        DeploymentTarget::Hid => hid(options.session),
+        RealizationTarget::Evdev => evdev_realization(),
+        RealizationTarget::Uhid => hid(options.session),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -933,37 +925,13 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
         }
     };
     let mut c = common::create(DualShock4Definition, realization, options)?;
-    if options.target == DeploymentTarget::Hid {
+    if options.target == RealizationTarget::Uhid {
         c.commit().map_err(|e| ProviderError::Open {
             reason: e.to_string(),
         })?;
     }
     Ok(DualShock4Controller(c))
 }
-pub fn create_dualshock4_usb(
-    options: DualShock4UsbOptions,
-) -> Result<DualShock4Controller, ProviderError> {
-    if !options.composite.endpoints.iter().any(|e| {
-        e.address == DUALSHOCK4_USB_HID_INPUT_ENDPOINT
-            && e.direction == NativeUsbEndpointDirection::DeviceToHost
-            && e.maximum_packet_length >= 64
-    }) || !options.composite.endpoints.iter().any(|e| {
-        e.address == DUALSHOCK4_USB_HID_OUTPUT_ENDPOINT
-            && e.direction == NativeUsbEndpointDirection::HostToDevice
-            && e.maximum_packet_length >= 64
-    }) {
-        return Err(ProviderError::Unsupported {
-            reason: "DualShock 4 USB composite lacks HID endpoints".into(),
-        });
-    }
-    common::create_usb(
-        DualShock4Definition,
-        NativeControllerRealization::UsbComposite(options.composite),
-        options.session,
-    )
-    .map(DualShock4Controller)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1008,7 +976,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: DualShock4Definition.controller_id(),
-                    target: RealizationTarget::UsbTransportValidation,
+                    target: RealizationTarget::Uhid,
                 },
                 &DualShock4State::default(),
             )

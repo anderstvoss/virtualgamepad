@@ -27,7 +27,7 @@ const UHID_STATUS_UNSUPPORTED: i16 = -95;
 pub struct LinuxUhidProvider;
 impl NativeProviderFactory for LinuxUhidProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(RealizationTarget::Hid, true)
+        ProviderCapabilities::for_target(RealizationTarget::Uhid, true)
     }
     fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
         LiveLinuxIoFactory.preflight(request)
@@ -51,7 +51,7 @@ impl LinuxUhidProvider {
                 reason: error.to_string(),
             })?;
         factory.preflight(&request)?;
-        let NativeControllerRealization::Hid(specification) = request.realization else {
+        let NativeControllerRealization::Uhid(specification) = request.realization else {
             return Err(ProviderError::Unsupported {
                 reason: "UHID requires HID realization".into(),
             });
@@ -312,11 +312,11 @@ mod linux_io {
             .open("/dev/uhid")
             .map_err(|error| match error.kind() {
                 ErrorKind::NotFound => ProviderPreflightError::MissingDeviceNode {
-                    target: RealizationTarget::Hid,
+                    target: RealizationTarget::Uhid,
                     path: "/dev/uhid".into(),
                 },
                 _ => ProviderPreflightError::AccessDenied {
-                    target: RealizationTarget::Hid,
+                    target: RealizationTarget::Uhid,
                     path: "/dev/uhid".into(),
                 },
             })
@@ -541,10 +541,10 @@ mod integration_tests {
             session: RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uhid.integration"),
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
             },
             requirements: ProviderRequirements::default(),
-            realization: NativeControllerRealization::Hid(NativeHidRealization {
+            realization: NativeControllerRealization::Uhid(NativeHidRealization {
                 bus_type: 0x03,
                 device_name: "virtualgamepad integration test".into(),
                 physical_path: String::new(),
@@ -669,10 +669,10 @@ mod seam_tests {
             session: RealizationSessionId(8),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uhid"),
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
             },
             requirements: ProviderRequirements::default(),
-            realization: NativeControllerRealization::Hid(specification()),
+            realization: NativeControllerRealization::Uhid(specification()),
         }
     }
 
@@ -805,7 +805,7 @@ mod linux_io {
     }
     pub fn open_node() -> Result<File, ProviderPreflightError> {
         Err(ProviderPreflightError::UnsupportedPlatform {
-            target: RealizationTarget::Hid,
+            target: RealizationTarget::Uhid,
         })
     }
     pub fn create(_: &mut File, _: &NativeHidRealization) -> Result<(), ProviderError> {

@@ -8,17 +8,16 @@
 mod common;
 pub mod dualsense;
 pub mod dualshock4;
-pub mod generic_gamepad;
 pub mod switch_pro;
 pub mod xbox360;
 
 use gr_controller_contract::ControlError;
-use gr_realization_api::{DeploymentTarget, RealizationSessionId};
+use gr_realization_api::{RealizationSessionId, RealizationTarget};
 
-/// Options for ordinary Linux controller creation.
+/// Options for one exact curated realization target.
 #[derive(Debug, Clone, Copy)]
 pub struct CreationOptions {
-    pub target: DeploymentTarget,
+    pub target: RealizationTarget,
     pub session: RealizationSessionId,
 }
 
@@ -84,23 +83,16 @@ impl BatteryState {
 pub use dualsense::{
     DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput,
     DualSenseOutputEvent, DualSenseState, DualSenseSurface, DualSenseTouchContact,
-    DualSenseTrigger, DualSenseUsbOptions, MotionSample, TouchSlot, create_dualsense,
-    create_dualsense_usb,
+    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
     DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, DualShock4UsbOptions,
-    create_dualshock4, create_dualshock4_usb,
-};
-pub use generic_gamepad::{
-    GenericGamepadAxis, GenericGamepadControl, GenericGamepadController, GenericGamepadOutputEvent,
-    GenericGamepadState, GenericGamepadSurface, GenericGamepadTrigger, create_generic_gamepad,
+    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
-    SwitchProOutputEvent, SwitchProState, SwitchProSurface, SwitchProUsbOptions, create_switch_pro,
-    create_switch_pro_usb,
+    SwitchProOutputEvent, SwitchProState, SwitchProSurface, create_switch_pro,
 };
 pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
@@ -126,11 +118,11 @@ mod battery_tests {
     }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, target_os = "linux", any()))]
 mod integration_tests {
     use super::*;
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
-    use gr_realization_api::{DeploymentTarget, RealizationSessionId};
+    use gr_realization_api::{RealizationSessionId, RealizationTarget};
     use std::{
         collections::BTreeSet,
         env, fs,
@@ -350,7 +342,7 @@ mod integration_tests {
     #[ignore = "requires ordinary-user /dev/uinput access"]
     fn all_evdev_controllers_create_commit_changed_state_and_close() {
         let options = |session| CreationOptions {
-            target: DeploymentTarget::Evdev,
+            target: RealizationTarget::Evdev,
             session: RealizationSessionId(session),
         };
 
@@ -405,7 +397,7 @@ mod integration_tests {
     #[ignore = "requires pre-provisioned /dev/uhid access"]
     fn all_hid_controllers_create_commit_changed_state_and_close() {
         let options = |session| CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session: RealizationSessionId(session),
         };
 
@@ -460,7 +452,7 @@ mod integration_tests {
     #[ignore = "requires pre-provisioned /dev/uhid access"]
     fn multiple_hid_controllers_remain_open_concurrently() {
         let options = |session| CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session: RealizationSessionId(session),
         };
         let mut first = create_generic_gamepad(options(301)).expect("first HID controller");
@@ -488,7 +480,7 @@ mod integration_tests {
     fn dualsense_hid_materializes_and_survives_the_host_probe_interval() {
         let initial_nodes = input_node_count_containing("DualSense");
         let mut controller = create_dualsense(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session: RealizationSessionId(401),
         })
         .expect("DualSense UHID creation");
@@ -540,7 +532,7 @@ mod integration_tests {
     #[ignore = "requires /dev/uinput and a Linux input subsystem"]
     fn dualsense_evdev_materializes_and_survives_the_host_probe_interval() {
         let mut controller = create_dualsense(CreationOptions {
-            target: DeploymentTarget::Evdev,
+            target: RealizationTarget::Evdev,
             session: RealizationSessionId(402),
         })
         .expect("DualSense evdev creation");
@@ -572,7 +564,7 @@ mod integration_tests {
         let session = RealizationSessionId(403);
         let input_events_before = input_event_paths();
         let mut controller = create_dualsense(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session,
         })
         .expect("DualSense UHID creation");
@@ -655,7 +647,7 @@ mod integration_tests {
         let session = RealizationSessionId(407);
         let input_events_before = input_event_paths();
         let mut controller = create_dualsense(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session,
         })
         .expect("DualSense UHID creation");
@@ -753,7 +745,7 @@ mod integration_tests {
         .expect("Steam console log fits address space");
         let session = RealizationSessionId(408);
         let mut controller = create_dualsense(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session,
         })
         .expect("DualSense UHID creation");
@@ -802,7 +794,7 @@ mod integration_tests {
         let session = RealizationSessionId(404);
         let input_events_before = input_event_paths();
         let mut controller = create_dualshock4(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session,
         })
         .expect("DualShock 4 UHID creation");
@@ -857,7 +849,7 @@ mod integration_tests {
     fn switch_pro_host_handshake_enables_timed_imu_streaming() {
         let session = RealizationSessionId(405);
         let mut controller = create_switch_pro(CreationOptions {
-            target: DeploymentTarget::Hid,
+            target: RealizationTarget::Uhid,
             session,
         })
         .expect("Switch Pro UHID creation");

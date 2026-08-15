@@ -9,13 +9,15 @@ use gr_controller_contract::{
 };
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
-    NativeUsbCompositeRealization, NativeUsbEndpointDirection, ProviderError, ProviderFrame,
+    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeBtvirtRealization,
+    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
+    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
     RealizationTarget,
 };
 use std::collections::BTreeMap;
+
+const DUALSENSE_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
 
 /// `DualSense` stick-axis value (`0..=255`, neutral `128`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,21 +119,6 @@ pub enum DualSenseFeature {
 
 /// Endpoints expected from the operator-provisioned `DualSense` USB gadget.
 ///
-/// Addresses include the USB direction bit. The HID pair is used by this
-/// crate; the audio pair and control endpoint are validated as part of the
-/// composite facility and remain available to an application audio bridge.
-pub const DUALSENSE_USB_HID_INPUT_ENDPOINT: u8 = 0x81;
-pub const DUALSENSE_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
-pub const DUALSENSE_USB_AUDIO_CAPTURE_ENDPOINT: u8 = 0x82;
-pub const DUALSENSE_USB_AUDIO_PLAYBACK_ENDPOINT: u8 = 0x02;
-pub const DUALSENSE_USB_AUDIO_CONTROL_ENDPOINT: u8 = 0x03;
-
-/// Explicit physical-PC USB creation options.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DualSenseUsbOptions {
-    pub session: RealizationSessionId,
-    pub composite: NativeUsbCompositeRealization,
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DualSenseControl {
     Cross,
@@ -242,6 +229,17 @@ fn advance_sensor_timestamp(state: &mut DualSenseState) {
     // advancing 4 ms timestamp matches its advertised 250 Hz USB sensor rate.
     state.sensor_timestamp = state.sensor_timestamp.wrapping_add(12_000);
     state.input_sequence = state.input_sequence.wrapping_add(1);
+}
+
+fn bluetooth_crc(bytes: &[u8]) -> u32 {
+    let mut crc = !0_u32;
+    for byte in std::iter::once(&0xa1_u8).chain(bytes.iter()) {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (u32::from(crc & 1 != 0) * 0xedb8_8320);
+        }
+    }
+    !crc
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -460,7 +458,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
 };
 static HID_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Hid,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -480,7 +478,7 @@ static USB_RESTRICTIONS: [TargetRestriction; 2] = [
 ];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
-        target: RealizationTarget::UsbTransportValidation,
+        target: RealizationTarget::DummyHcd,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -495,7 +493,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 3] = [
+        static ENTRIES: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
@@ -504,14 +502,21 @@ impl RealizationControllerDefinition for DualSenseDefinition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::UsbTransportValidation,
+                target: RealizationTarget::DummyHcd,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::Btvirt,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -550,8 +555,9 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
         if matches!(
             selection.target,
             RealizationTarget::Evdev
-                | RealizationTarget::Hid
-                | RealizationTarget::UsbTransportValidation
+                | RealizationTarget::Uhid
+                | RealizationTarget::DummyHcd
+                | RealizationTarget::Btvirt
         ) {
             Ok(())
         } else {
@@ -563,10 +569,10 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
-        if selection.target == RealizationTarget::Hid {
+        if selection.target == RealizationTarget::Uhid {
             return Ok(dualsense_hid_input_report(state));
         }
-        if selection.target == RealizationTarget::UsbTransportValidation {
+        if selection.target == RealizationTarget::DummyHcd {
             let ProviderFrame::HidInput {
                 report_id: Some(report_id),
                 mut bytes,
@@ -575,10 +581,18 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
                 unreachable!("DualSense USB input report is numbered")
             };
             bytes.insert(0, report_id);
-            return Ok(ProviderFrame::Transport {
-                endpoint: DUALSENSE_USB_HID_INPUT_ENDPOINT,
-                bytes,
-            });
+            return Ok(ProviderFrame::DummyHcdInput(bytes));
+        }
+        if selection.target == RealizationTarget::Btvirt {
+            let ProviderFrame::HidInput { bytes, .. } = dualsense_hid_input_report(state) else {
+                unreachable!()
+            };
+            let mut bluetooth = vec![0_u8; 78];
+            bluetooth[0] = 0x31;
+            bluetooth[2..65].copy_from_slice(&bytes);
+            let crc = bluetooth_crc(&bluetooth[..74]);
+            bluetooth[74..].copy_from_slice(&crc.to_le_bytes());
+            return Ok(ProviderFrame::BtvirtInput(bluetooth));
         }
         let mut events = Vec::new();
         for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
@@ -881,8 +895,8 @@ impl DualSenseController {
     #[must_use]
     pub const fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
-            RealizationTarget::Hid => &HID_SURFACE,
-            RealizationTarget::UsbTransportValidation => &USB_SURFACE,
+            RealizationTarget::Uhid => &HID_SURFACE,
+            RealizationTarget::DummyHcd | RealizationTarget::Btvirt => &USB_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -948,10 +962,7 @@ impl DualSenseController {
         })
     }
     pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError> {
-        if !matches!(
-            self.0.selection().target,
-            RealizationTarget::Hid | RealizationTarget::UsbTransportValidation
-        ) {
+        if !matches!(self.0.selection().target, RealizationTarget::Uhid) {
             return Err(common::unavailable(self.0.selection().target));
         }
         self.0.update_state(|state| {
@@ -978,10 +989,7 @@ impl DualSenseController {
         match feature {
             DualSenseFeature::Touch => Ok(()),
             DualSenseFeature::Motion
-                if matches!(
-                    self.0.selection().target,
-                    RealizationTarget::Hid | RealizationTarget::UsbTransportValidation
-                ) =>
+                if matches!(self.0.selection().target, RealizationTarget::Uhid) =>
             {
                 Ok(())
             }
@@ -1225,7 +1233,7 @@ fn dualsense_feature_responses(
 fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization {
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
-    NativeControllerRealization::Hid(NativeHidRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 0x03,
         device_name: "DualSense Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/dualsense".into(),
@@ -1244,8 +1252,16 @@ fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization
 }
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ProviderError> {
     let realization = match options.target {
-        DeploymentTarget::Evdev => realization(),
-        DeploymentTarget::Hid => hid_realization(options.session),
+        RealizationTarget::Evdev => realization(),
+        RealizationTarget::Uhid => hid_realization(options.session),
+        RealizationTarget::DummyHcd => {
+            NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                controller: CompiledControllerKind::DualSense,
+            })
+        }
+        RealizationTarget::Btvirt => NativeControllerRealization::Btvirt(NativeBtvirtRealization {
+            controller: CompiledControllerKind::DualSense,
+        }),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -1263,152 +1279,10 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
     Ok(DualSenseController(controller))
 }
 
-/// Create a DualSense-compatible physical USB composite controller.
-///
-/// The caller must provision the gadget and supply its endpoint files. This
-/// function only validates and opens those files, so it is safe to use from a
-/// non-privileged process with delegated endpoint access.
-pub fn create_dualsense_usb(
-    options: DualSenseUsbOptions,
-) -> Result<DualSenseController, ProviderError> {
-    validate_dualsense_composite(&options.composite)?;
-    common::create_usb(
-        DualSenseDefinition,
-        NativeControllerRealization::UsbComposite(options.composite),
-        options.session,
-    )
-    .map(DualSenseController)
-}
-
-fn validate_dualsense_composite(
-    composite: &NativeUsbCompositeRealization,
-) -> Result<(), ProviderError> {
-    const REQUIRED: [(u8, NativeUsbEndpointDirection, u16); 5] = [
-        (
-            DUALSENSE_USB_HID_INPUT_ENDPOINT,
-            NativeUsbEndpointDirection::DeviceToHost,
-            64,
-        ),
-        (
-            DUALSENSE_USB_HID_OUTPUT_ENDPOINT,
-            NativeUsbEndpointDirection::HostToDevice,
-            64,
-        ),
-        (
-            DUALSENSE_USB_AUDIO_CAPTURE_ENDPOINT,
-            NativeUsbEndpointDirection::DeviceToHost,
-            1,
-        ),
-        (
-            DUALSENSE_USB_AUDIO_PLAYBACK_ENDPOINT,
-            NativeUsbEndpointDirection::HostToDevice,
-            1,
-        ),
-        (
-            DUALSENSE_USB_AUDIO_CONTROL_ENDPOINT,
-            NativeUsbEndpointDirection::HostToDevice,
-            1,
-        ),
-    ];
-    for (address, direction, minimum_packet_length) in REQUIRED {
-        if !composite.endpoints.iter().any(|endpoint| {
-            endpoint.address == address
-                && endpoint.direction == direction
-                && endpoint.maximum_packet_length >= minimum_packet_length
-        }) {
-            return Err(ProviderError::Unsupported {
-                reason: format!("DualSense USB composite lacks endpoint {address:#04x}"),
-            });
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;
-
-    fn composite_endpoint(
-        address: u8,
-        direction: NativeUsbEndpointDirection,
-        maximum_packet_length: u16,
-    ) -> gr_realization_api::NativeUsbCompositeEndpoint {
-        gr_realization_api::NativeUsbCompositeEndpoint {
-            address,
-            direction,
-            path: format!("/operator-provisioned/{address:02x}"),
-            maximum_packet_length,
-        }
-    }
-
-    fn complete_composite() -> NativeUsbCompositeRealization {
-        NativeUsbCompositeRealization {
-            device_name: "DualSense composite".into(),
-            endpoints: vec![
-                composite_endpoint(
-                    DUALSENSE_USB_HID_INPUT_ENDPOINT,
-                    NativeUsbEndpointDirection::DeviceToHost,
-                    64,
-                ),
-                composite_endpoint(
-                    DUALSENSE_USB_HID_OUTPUT_ENDPOINT,
-                    NativeUsbEndpointDirection::HostToDevice,
-                    64,
-                ),
-                composite_endpoint(
-                    DUALSENSE_USB_AUDIO_CAPTURE_ENDPOINT,
-                    NativeUsbEndpointDirection::DeviceToHost,
-                    192,
-                ),
-                composite_endpoint(
-                    DUALSENSE_USB_AUDIO_PLAYBACK_ENDPOINT,
-                    NativeUsbEndpointDirection::HostToDevice,
-                    192,
-                ),
-                composite_endpoint(
-                    DUALSENSE_USB_AUDIO_CONTROL_ENDPOINT,
-                    NativeUsbEndpointDirection::HostToDevice,
-                    8,
-                ),
-            ],
-        }
-    }
-
-    #[test]
-    fn physical_usb_requires_the_complete_directed_endpoint_bundle() {
-        validate_dualsense_composite(&complete_composite()).expect("complete endpoint bundle");
-
-        let mut missing_output = complete_composite();
-        missing_output
-            .endpoints
-            .retain(|endpoint| endpoint.address != DUALSENSE_USB_HID_OUTPUT_ENDPOINT);
-        assert!(validate_dualsense_composite(&missing_output).is_err());
-
-        let mut wrong_direction = complete_composite();
-        wrong_direction.endpoints[1].direction = NativeUsbEndpointDirection::DeviceToHost;
-        assert!(validate_dualsense_composite(&wrong_direction).is_err());
-    }
-
-    #[test]
-    fn physical_usb_input_is_numbered_and_sent_to_hid_in() {
-        let frame = DualSenseDefinition
-            .encode(
-                RealizationSelection {
-                    controller: DualSenseDefinition.controller_id(),
-                    target: RealizationTarget::UsbTransportValidation,
-                },
-                &DualSenseState::default(),
-            )
-            .expect("USB input frame");
-        assert!(matches!(
-            frame,
-            ProviderFrame::Transport {
-                endpoint: DUALSENSE_USB_HID_INPUT_ENDPOINT,
-                bytes,
-            } if bytes.len() == 64 && bytes[0] == 0x01
-        ));
-    }
 
     #[test]
     fn touch_validation_rejects_without_state_mutation() {
@@ -1454,7 +1328,7 @@ mod tests {
             HID_SURFACE.common.validation_status,
             RealizationValidationStatus::ResearchBacked
         );
-        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Hid);
+        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Uhid);
     }
 
     #[test]
@@ -1515,7 +1389,7 @@ mod tests {
 
     #[test]
     fn hid_realization_declares_dualsense_report_ids() {
-        let NativeControllerRealization::Hid(realization) =
+        let NativeControllerRealization::Uhid(realization) =
             hid_realization(RealizationSessionId(1))
         else {
             panic!("DualSense HID realization");
