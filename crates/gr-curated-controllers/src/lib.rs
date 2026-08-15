@@ -119,7 +119,11 @@ mod integration_tests {
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
     use gr_realization_api::{DeploymentTarget, RealizationSessionId};
     use std::{
-        fs, thread,
+        fs,
+        io::Read,
+        os::unix::fs::OpenOptionsExt,
+        path::PathBuf,
+        thread,
         time::{Duration, Instant},
     };
 
@@ -148,6 +152,39 @@ mod integration_tests {
 
     fn input_node_exists_containing(fragment: &str) -> bool {
         input_node_count_containing(fragment) > 0
+    }
+
+    fn virtual_dualsense_hidraw_path() -> Option<PathBuf> {
+        let entries = fs::read_dir("/sys/class/hidraw").ok()?;
+        for entry in entries.flatten() {
+            let device = fs::canonicalize(entry.path().join("device")).ok()?;
+            if !device
+                .to_string_lossy()
+                .contains("/devices/virtual/misc/uhid/")
+            {
+                continue;
+            }
+            let uevent = fs::read_to_string(device.join("uevent")).ok()?;
+            if uevent.contains("HID_ID=0003:0000054C:00000CE6") {
+                return Some(PathBuf::from("/dev").join(entry.file_name()));
+            }
+        }
+        None
+    }
+
+    fn read_hid_reports(file: &mut fs::File) -> Vec<Vec<u8>> {
+        let mut reports = Vec::new();
+        let mut bytes = [0_u8; 64];
+        loop {
+            match file.read(&mut bytes) {
+                Ok(0) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
+                Ok(64) => reports.push(bytes.to_vec()),
+                Ok(count) => panic!("truncated DualSense HID report ({count} bytes)"),
+                Err(error) => panic!("read DualSense HID report: {error}"),
+            }
+        }
+        reports
     }
 
     fn poll_dualsense_for(
@@ -338,6 +375,57 @@ mod integration_tests {
         assert!(
             input_node_exists("Virtual DualSense"),
             "evdev input node disappeared during the host probe interval"
+        );
+        controller.close();
+    }
+
+    #[test]
+    #[ignore = "requires /dev/uhid plus read access to the generated hidraw node"]
+    fn dualsense_hid_delivers_steam_facing_motion_reports() {
+        let mut controller = create_dualsense(CreationOptions {
+            target: DeploymentTarget::Hid,
+            session: RealizationSessionId(403),
+        })
+        .expect("DualSense UHID creation");
+        controller.commit().expect("initial DualSense input report");
+        poll_dualsense_for(&mut controller, Duration::from_secs(3), || {});
+        let hidraw = virtual_dualsense_hidraw_path()
+            .expect("Linux did not create the virtual DualSense hidraw node");
+        let mut hidraw = fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(0o4_000) // O_NONBLOCK; opening never waits for an event.
+            .open(&hidraw)
+            .unwrap_or_else(|error| panic!("Steam cannot open {}: {error}", hidraw.display()));
+        let _ = read_hid_reports(&mut hidraw); // Ignore the initial neutral report.
+
+        controller
+            .set_motion(MotionSample {
+                gyroscope: [1_000, -2_000, 3_000],
+                accelerometer: [-4_000, 5_000, -6_000],
+            })
+            .expect("motion update");
+        controller.commit().expect("motion commit");
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let mut reports = Vec::new();
+        while Instant::now() < deadline {
+            reports.extend(read_hid_reports(&mut hidraw));
+            if reports.iter().any(|report| {
+                report[0] == 0x01
+                    && report[16..22] == [0xe8, 0x03, 0x30, 0xf8, 0xb8, 0x0b]
+                    && report[22..28] == [0x60, 0xf0, 0x88, 0x13, 0x90, 0xe8]
+                    && u32::from_le_bytes(report[28..32].try_into().expect("timestamp")) > 0
+            }) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            reports.iter().any(|report| report[0] == 0x01
+                && report[16..22] == [0xe8, 0x03, 0x30, 0xf8, 0xb8, 0x0b]
+                && report[22..28] == [0x60, 0xf0, 0x88, 0x13, 0x90, 0xe8]
+                && u32::from_le_bytes(report[28..32].try_into().expect("timestamp")) > 0),
+            "Steam-facing HID stream lacked the requested motion report: {reports:?}"
         );
         controller.close();
     }
