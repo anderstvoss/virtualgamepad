@@ -101,6 +101,10 @@ impl SwitchProState {
     pub const fn stream_enabled(&self) -> bool {
         self.stream_enabled
     }
+    #[must_use]
+    pub const fn motion_report_counter(&self) -> u8 {
+        self.timer
+    }
     fn set_native(&mut self, c: SwitchProControl, p: bool) {
         match c {
             SwitchProControl::L => self.buttons[0] = p,
@@ -421,7 +425,11 @@ fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
     ProviderFrame::Evdev(events)
 }
 fn stick(v: i16) -> u16 {
-    u16::try_from((i32::from(v) + 32_768).clamp(0, 65_535)).expect("clamped stick domain")
+    // The Switch wire format is twelve-bit (0..=4095), not a truncated
+    // sixteen-bit Linux axis.  Truncating the latter made center land at zero
+    // and produced erratic stick positions.
+    u16::try_from(((i32::from(v) + 32_768) * 4095 + 32_767) / 65_535)
+        .expect("scaled Switch stick domain")
 }
 #[allow(clippy::cast_possible_truncation)] // Packing intentionally takes low eight/four bits.
 fn pack(out: &mut [u8], x: i16, y: i16) {
@@ -435,12 +443,12 @@ fn switch_frame(s: &SwitchProState) -> ProviderFrame {
     let mut b = vec![0; 63];
     b[0] = s.timer;
     b[1] = 0x80;
-    // Switch button bits name the printed Nintendo labels, while the public
-    // face controls name their physical positions.  A is South and B is East.
+    // `FaceButton` follows the host gamepad layout, so its South/East controls
+    // map to Nintendo B/A respectively (the printed labels are reversed).
     b[2] = u8::from(s.face[2])
         | (u8::from(s.face[3]) << 1)
-        | (u8::from(s.face[1]) << 2)
-        | (u8::from(s.face[0]) << 3)
+        | (u8::from(s.face[0]) << 2)
+        | (u8::from(s.face[1]) << 3)
         | (u8::from(s.buttons[1]) << 6)
         | (u8::from(s.buttons[3]) << 7);
     b[3] = u8::from(s.buttons[4])
@@ -593,11 +601,11 @@ const DESC: &[u8] = &[
     0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85, 0x80, 0x09, 5, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0x85,
     0x82, 0x09, 6, 0x75, 8, 0x95, 0x3f, 0x91, 0x83, 0xc0,
 ];
-fn hid() -> NativeControllerRealization {
+fn hid(session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Hid(NativeHidRealization {
         bus_type: 3,
         device_name: "Pro Controller".into(),
-        physical_path: "virtualgamepad/uhid/switch-pro".into(),
+        physical_path: format!("virtualgamepad/uhid/switch-pro/session-{}", session.0),
         unique_id: "virtualgamepad-switch-pro".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,
@@ -808,7 +816,7 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
 pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, ProviderError> {
     let realization = match o.target {
         DeploymentTarget::Evdev => evdev_realization(),
-        DeploymentTarget::Hid => hid(),
+        DeploymentTarget::Hid => hid(o.session),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -928,7 +936,7 @@ mod tests {
     }
 
     #[test]
-    fn face_positions_use_the_nintendo_a_b_x_y_wire_bits() {
+    fn host_face_positions_use_the_nintendo_a_b_x_y_wire_bits() {
         let state = SwitchProState {
             face: [true, true, true, true],
             ..Default::default()
@@ -938,21 +946,30 @@ mod tests {
         };
         assert_eq!(bytes[2] & 0x0f, 0x0f);
         let state = SwitchProState {
-            face: [true, false, false, false], // South / A
-            ..Default::default()
-        };
-        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
-            unreachable!()
-        };
-        assert_eq!(bytes[2] & 0x0f, 0b1000);
-        let state = SwitchProState {
-            face: [false, true, false, false], // East / B
+            face: [true, false, false, false], // South / B
             ..Default::default()
         };
         let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
             unreachable!()
         };
         assert_eq!(bytes[2] & 0x0f, 0b0100);
+        let state = SwitchProState {
+            face: [false, true, false, false], // East / A
+            ..Default::default()
+        };
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        assert_eq!(bytes[2] & 0x0f, 0b1000);
+    }
+
+    #[test]
+    fn switch_stick_packing_has_a_centered_twelve_bit_domain() {
+        let mut packed = [0; 3];
+        pack(&mut packed, 0, 0);
+        assert_eq!(packed, [0, 0x08, 0x80]);
+        pack(&mut packed, i16::MIN, i16::MAX);
+        assert_eq!(packed, [0, 0xf0, 0xff]);
     }
 
     #[test]

@@ -256,7 +256,7 @@ static DIGITAL: [DigitalControlSurface; 12] = [
         event_code: 319,
     },
 ];
-static AXES: [AbsoluteAxisSurface; 8] = [
+static AXES: [AbsoluteAxisSurface; 12] = [
     AbsoluteAxisSurface {
         control: "left-stick-x",
         event_code: 0,
@@ -321,6 +321,38 @@ static AXES: [AbsoluteAxisSurface; 8] = [
         neutral: 0,
         flat: 0,
     },
+    AbsoluteAxisSurface {
+        control: "touch-slot",
+        event_code: 47,
+        minimum: 0,
+        maximum: 1,
+        neutral: 0,
+        flat: 0,
+    },
+    AbsoluteAxisSurface {
+        control: "touch-tracking-id",
+        event_code: 57,
+        minimum: -1,
+        maximum: 127,
+        neutral: -1,
+        flat: 0,
+    },
+    AbsoluteAxisSurface {
+        control: "touch-x",
+        event_code: 53,
+        minimum: 0,
+        maximum: 1919,
+        neutral: 0,
+        flat: 0,
+    },
+    AbsoluteAxisSurface {
+        control: "touch-y",
+        event_code: 54,
+        minimum: 0,
+        maximum: 941,
+        neutral: 0,
+        flat: 0,
+    },
 ];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "dualshock4-rumble",
@@ -331,10 +363,14 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 2] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 3] = [
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful DualShock 4 IMU presentation",
+    },
+    TargetRestriction {
+        feature: "battery reporting",
+        reason: "uinput cannot create the physical DualShock 4 power-supply device",
     },
     RESTRICTIONS[0],
 ];
@@ -466,7 +502,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
     }
 }
 fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
-    let mut events = Vec::with_capacity(22);
+    let mut events = Vec::with_capacity(31);
     for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
@@ -500,6 +536,37 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
             value,
         });
     }
+    for (slot, contact) in state.touches.into_iter().enumerate() {
+        events.push(EvdevEvent {
+            event_type: common::EV_ABS,
+            code: 47, // ABS_MT_SLOT
+            value: i32::try_from(slot).expect("two DS4 touch slots fit i32"),
+        });
+        events.push(EvdevEvent {
+            event_type: common::EV_ABS,
+            code: 57, // ABS_MT_TRACKING_ID
+            value: contact.map_or(-1, |contact| i32::from(contact.id())),
+        });
+        if let Some(contact) = contact {
+            events.extend([
+                EvdevEvent {
+                    event_type: common::EV_ABS,
+                    code: 53, // ABS_MT_POSITION_X
+                    value: i32::from(contact.x()),
+                },
+                EvdevEvent {
+                    event_type: common::EV_ABS,
+                    code: 54, // ABS_MT_POSITION_Y
+                    value: i32::from(contact.y()),
+                },
+            ]);
+        }
+    }
+    events.push(EvdevEvent {
+        event_type: common::EV_KEY,
+        code: 330, // BTN_TOUCH
+        value: i32::from(state.touches.iter().any(Option::is_some)),
+    });
     events.push(EvdevEvent {
         event_type: common::EV_SYN,
         code: common::SYN_REPORT,
@@ -644,7 +711,7 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
-        physical_path: "virtualgamepad/uhid/dualshock4".into(),
+        physical_path: format!("virtualgamepad/uhid/dualshock4/session-{}", session.0),
         unique_id: "virtualgamepad-dualshock4".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
@@ -667,7 +734,11 @@ fn evdev_realization() -> NativeControllerRealization {
             version: 0x0120,
         },
         event_codes: vec![common::EV_KEY, common::EV_ABS, common::EV_FF],
-        key_codes: DIGITAL.iter().map(|control| control.event_code).collect(),
+        key_codes: DIGITAL
+            .iter()
+            .map(|control| control.event_code)
+            .chain([330]) // BTN_TOUCH
+            .collect(),
         absolute_axes: AXES
             .iter()
             .map(|axis| NativeAbsoluteAxis {
@@ -1030,6 +1101,32 @@ mod tests {
         assert_eq!(bytes[33], 7);
         assert_eq!(&bytes[34..38], &[9, 0x45, 0x13, 0x2a]);
         assert_eq!(bytes[38], 0x80);
+    }
+
+    #[test]
+    fn evdev_preserves_ds4_touch_contacts_when_the_provider_supports_them() {
+        let state = DualShock4State {
+            touches: [
+                Some(DualShock4TouchContact::new(7, 1_234, 567).expect("touch")),
+                None,
+            ],
+            ..Default::default()
+        };
+        let ProviderFrame::Evdev(events) = ds4_evdev_frame(&state) else {
+            unreachable!()
+        };
+        assert!(events.iter().any(|event| {
+            event.event_type == common::EV_ABS && event.code == 57 && event.value == 7
+        }));
+        assert!(events.iter().any(|event| {
+            event.event_type == common::EV_ABS && event.code == 53 && event.value == 1_234
+        }));
+        assert!(events.iter().any(|event| {
+            event.event_type == common::EV_ABS && event.code == 54 && event.value == 567
+        }));
+        assert!(events.iter().any(|event| {
+            event.event_type == common::EV_KEY && event.code == 330 && event.value == 1
+        }));
     }
 
     #[test]

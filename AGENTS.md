@@ -30,6 +30,15 @@
 - Preserve prior regressions when expanding behavior; add focused tests rather
   than deleting or weakening existing coverage.
 
+## Controller Realization Parity
+
+- Every controller realization must preserve the controller's user-facing
+  controls and outputs across `Hid`, `Evdev`, and USB validation where the
+  provider can represent them.
+- A provider-specific limitation must be explicit in the target surface,
+  include its technical reason, and have a regression test. Do not silently
+  drop a HID feature from the evdev realization.
+
 ## Agent Memory
 
 Per-project agent auto-memory lives at `.agents/memory/` in the repo.

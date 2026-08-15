@@ -1367,9 +1367,12 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
     ui.group(|ui| {
         ui.label("Switch Pro motion report");
         ui.small(if controller.state().stream_enabled() {
-            "Host selected report mode 0x30; streaming at 250 Hz."
+            format!(
+                "Host selected report mode 0x30; streaming at 250 Hz (frame counter: {}).",
+                controller.state().motion_report_counter()
+            )
         } else {
-            "Waiting for the host to select report mode 0x30."
+            "Waiting for the host to select report mode 0x30.".to_owned()
         });
         let motion = controller.state().motion();
         let mut gyro = motion.gyroscope;

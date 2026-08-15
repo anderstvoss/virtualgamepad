@@ -321,6 +321,26 @@ mod integration_tests {
             .expect("DualSense update");
         dualsense.commit().expect("DualSense changed commit");
         dualsense.close();
+
+        let mut dualshock4 = create_dualshock4(options(204)).expect("DualShock 4 creation");
+        dualshock4
+            .set_touch(
+                DualShock4TouchSlot::First,
+                Some(DualShock4TouchContact::new(1, 100, 100).expect("touch")),
+            )
+            .expect("DualShock 4 touch update");
+        dualshock4.commit().expect("DualShock 4 changed commit");
+        dualshock4.close();
+
+        let mut switch_pro = create_switch_pro(options(205)).expect("Switch Pro creation");
+        switch_pro
+            .set_digital(DigitalControlUpdate::FaceButton {
+                button: FaceButton::South,
+                pressed: true,
+            })
+            .expect("Switch Pro update");
+        switch_pro.commit().expect("Switch Pro changed commit");
+        switch_pro.close();
     }
 
     #[test]
@@ -534,11 +554,13 @@ mod integration_tests {
     #[test]
     #[ignore = "requires /dev/uhid and the Linux Nintendo HID driver"]
     fn switch_pro_host_handshake_enables_timed_imu_streaming() {
+        let session = RealizationSessionId(405);
         let mut controller = create_switch_pro(CreationOptions {
             target: DeploymentTarget::Hid,
-            session: RealizationSessionId(405),
+            session,
         })
         .expect("Switch Pro UHID creation");
+        let counter_before = controller.state().motion_report_counter();
         poll_for(Duration::from_secs(3), || {
             controller.poll_output(&mut |_| {}).expect("output poll");
             controller.refresh_motion().expect("motion refresh");
@@ -546,6 +568,11 @@ mod integration_tests {
         assert!(
             controller.state().stream_enabled(),
             "host never completed the Switch Pro 0x30 report-mode handshake"
+        );
+        assert_ne!(
+            controller.state().motion_report_counter(),
+            counter_before,
+            "Switch Pro report counter did not advance while streaming"
         );
         controller.close();
     }
