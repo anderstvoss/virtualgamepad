@@ -463,8 +463,19 @@ fn switch_frame(s: &SwitchProState) -> ProviderFrame {
         | (u8::from(s.dpad[2]) << 3)
         | (u8::from(s.buttons[0]) << 6)
         | (u8::from(s.buttons[2]) << 7);
-    pack(&mut b[5..8], s.left.0.raw(), s.left.1.raw());
-    pack(&mut b[8..11], s.right.0.raw(), s.right.1.raw());
+    // hid-nintendo negates the packed Switch Y axes before publishing Linux
+    // `ABS_Y`/`ABS_RY`. The public API follows that Linux convention (positive
+    // means down), so compensate only at the Switch wire boundary.
+    pack(
+        &mut b[5..8],
+        s.left.0.raw(),
+        s.left.1.raw().saturating_neg(),
+    );
+    pack(
+        &mut b[8..11],
+        s.right.0.raw(),
+        s.right.1.raw().saturating_neg(),
+    );
     b[11] = 9;
     let ax = s.motion.accelerometer[1] / 4;
     let ay = s.motion.accelerometer[0].wrapping_neg() / 4;
@@ -971,6 +982,27 @@ mod tests {
         assert_eq!(packed, [0, 0x08, 0x80]);
         pack(&mut packed, i16::MIN, i16::MAX);
         assert_eq!(packed, [0, 0xf0, 0xff]);
+    }
+
+    #[test]
+    fn switch_hid_wire_y_compensates_for_hid_nintendo_inversion() {
+        let state = SwitchProState {
+            left: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MAX)),
+            right: (SwitchProAxis::new(0), SwitchProAxis::new(i16::MIN)),
+            ..Default::default()
+        };
+        let ProviderFrame::HidInput { bytes, .. } = switch_frame(&state) else {
+            unreachable!()
+        };
+        let unpack_y = |packed: &[u8]| u16::from(packed[1] >> 4) | (u16::from(packed[2]) << 4);
+        assert!(
+            unpack_y(&bytes[5..8]) <= 1,
+            "positive public Y must become low Switch-wire Y so Linux reports down"
+        );
+        assert!(
+            unpack_y(&bytes[8..11]) >= 4094,
+            "negative public Y must become high Switch-wire Y so Linux reports up"
+        );
     }
 
     #[test]
