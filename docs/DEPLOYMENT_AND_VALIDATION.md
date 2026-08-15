@@ -89,6 +89,12 @@ cadence that failed to become visible via UHID. That makes the USB topology a
 required product-level alternative, not merely transport validation. See
 [the POC finding](POC_DUMMY_HCD_DUALSENSE.md#confirmed-finding-2026-08-15).
 
+Bluetooth is outside this three-level design. A virtual Bluetooth HID device
+would require a distinct peripheral realization with pairing/bonding and
+Classic HID or HID-over-GATT protocol support; `btvirt` only emulates HCI
+controllers for testing and is not a drop-in controller peripheral. See the
+[Bluetooth boundary](THREE_LEVEL_REALIZATION_DIRECTION.md#bluetooth-boundary-and-future-direction).
+
 ## Audio and attached-device scope
 
 Controller reports and audio streams are distinct capabilities. For example,

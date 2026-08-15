@@ -98,3 +98,20 @@ The DualSense POC established the initial acceptance evidence: Steam detected
 live gyro through the `dummy_hcd` USB path while UHID did not, with the same
 controller report protocol. This makes USB topology a first-class realization
 requirement.
+
+## Bluetooth boundary and future direction
+
+Bluetooth attachment is not provided by evdev, UHID, or `UsbGadget`.
+`btvirt` is conceptually analogous to `dummy_hcd`: it emulates Bluetooth HCI
+controllers for same-host testing, just as `dummy_hcd` emulates USB host/UDC
+controllers. It does **not** by itself impersonate a paired Bluetooth
+controller.
+
+A future Bluetooth-peripheral realization would be a fourth, separate level.
+It must implement the controller-side Bluetooth attachment protocol:
+advertising/discoverability, identity, pairing, encryption/bonding, and either
+Classic Bluetooth HID or BLE HID-over-GATT, plus controller-specific input,
+feature, and output traffic. `btvirt` may support its test harness, while a
+real-radio deployment would additionally require an adapter capable of the
+peripheral role. It must use the same least-privilege service model and must
+not be conflated with the three committed realization levels.
