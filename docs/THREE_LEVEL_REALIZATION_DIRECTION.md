@@ -41,6 +41,45 @@ and `/dev/hidgN`; it communicates through a narrow typed IPC API. It must use
 unique process-owned gadget names and serials, report lifecycle and cleanup
 failure explicitly, and never remove resources it did not create.
 
+## Security posture: one-time privileged loader, unprivileged clients
+
+The USB-gadget realization must not be implemented by giving the GUI, library,
+or end user passwordless `sudo`. A machine administrator performs a one-time
+installation that creates a dedicated service account and a privileged
+`virtualgamepad-gadget` service. That service is the only process allowed to
+load the required modules, mount/check ConfigFS, create the project-owned
+gadget tree, bind `dummy_hcd`, and open `/dev/hidgN`.
+
+The service's authority is intentionally narrow:
+
+- It manages only modules required for this backend (`dummy_hcd`,
+  `libcomposite`, and HID gadget support), and must not unload modules it did
+  not load.
+- It creates and removes only gadgets beneath a project-owned ConfigFS prefix,
+  using per-session names and locally administered ephemeral serials.
+- It accepts only compiled controller kinds, validated realization data, and
+  bounded report payloads. Callers cannot submit arbitrary ConfigFS paths,
+  descriptors, module names, shell commands, UDC names, or filesystem paths.
+- It authenticates IPC peers using local OS credentials and authorizes only a
+  configured user/group. Its Unix socket is not world-writable and is never
+  exposed over the network.
+- It treats client disconnect, malformed frames, report-write failure, and
+  service restart as terminal session events, then performs idempotent cleanup.
+- It emits auditable lifecycle records without recording controller input,
+  private host logs, or report payloads by default.
+
+The GUI and controller library connect to that Unix socket as an ordinary user.
+They can request `create`, `commit input`, `poll reverse output`, and `close`
+for their own opaque session handles only. They cannot gain a shell, invoke
+`sudo`, alter system policy, access another client's session, or control
+physical USB hardware through this interface.
+
+Service installation, upgrades, and removal remain administrator actions.
+The service should start on demand or boot, preflight the kernel capabilities,
+and return typed unavailability errors when `dummy_hcd` or ConfigFS is absent.
+It must fail closed rather than falling back to UHID/evdev or broadening client
+authority.
+
 The existing `UsbTransportValidation` naming and pre-provisioned-endpoint model
 is transitional. Replace it with a first-class `UsbGadget` target and provider
 that creates the in-VM gadget. Keep USB protocol/report encoders controller

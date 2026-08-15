@@ -120,6 +120,14 @@ owns module loading, ConfigFS, UDC binding, `/dev/hidgN`, and cleanup. The
 service exposes only controller lifecycle/report operations over an internal
 IPC boundary; it does not grant callers arbitrary ConfigFS or root access.
 
+An administrator installs and configures that service once. Normal users must
+not receive passwordless `sudo`, direct write access to ConfigFS, module-load
+authority, or broad `/dev` permissions. The service uses a local credentialed
+Unix socket restricted to an allowed group and accepts only compiled controller
+types, bounded reports, and project-owned gadget resources. It never accepts
+arbitrary paths, descriptors, shell commands, module names, or UDC selection
+from clients. See the full [least-privilege service policy](THREE_LEVEL_REALIZATION_DIRECTION.md#security-posture-one-time-privileged-loader-unprivileged-clients).
+
 An operator is responsible for preparing a host before calling the relevant
 API:
 
