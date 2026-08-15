@@ -42,6 +42,14 @@ fn dummy_hcd_broker_status() -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+fn repaint_interval(controller_count: usize) -> Duration {
+    if controller_count == 0 {
+        IDLE_REPAINT_INTERVAL
+    } else {
+        DUALSENSE_MOTION_INTERVAL
+    }
+}
+
 const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
 }
@@ -552,7 +560,7 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
-        ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
+        ctx.request_repaint_after(repaint_interval(self.controllers.len()));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -1398,6 +1406,13 @@ mod tests {
     #[test]
     fn motion_worker_uses_the_advertised_250_hz_interval() {
         assert_eq!(motion_worker_interval(), Duration::from_millis(4));
+    }
+
+    #[test]
+    fn live_controllers_poll_reverse_output_at_the_usb_cadence() {
+        assert_eq!(repaint_interval(0), Duration::from_millis(50));
+        assert_eq!(repaint_interval(1), Duration::from_millis(4));
+        assert_eq!(repaint_interval(8), Duration::from_millis(4));
     }
 
     #[test]

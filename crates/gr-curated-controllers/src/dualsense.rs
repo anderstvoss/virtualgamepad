@@ -848,7 +848,7 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
         right_trigger_effect.copy_from_slice(&raw[10..21]);
         let mut left_trigger_effect = [0_u8; 11];
         left_trigger_effect.copy_from_slice(&raw[21..32]);
-        let valid_flag2 = raw[41];
+        let valid_flag2 = raw[38];
         let vibration_enabled = raw[0] & 0x01 != 0 || valid_flag2 & 0x04 != 0;
         return DualSenseHidOutput::UsbOutput {
             valid_flag0: raw[0],
@@ -1547,6 +1547,23 @@ mod tests {
             DualSenseHidOutput::UsbOutput {
                 right_motor: None,
                 left_motor: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn v2_vibration_uses_the_dualsense_valid_flag2_offset() {
+        let mut raw = vec![0_u8; 47];
+        raw[2] = 0x55;
+        raw[3] = 0x66;
+        raw[38] = 0x04;
+        assert!(matches!(
+            decode_dualsense_hid_output(Some(0x02), raw),
+            DualSenseHidOutput::UsbOutput {
+                valid_flag2: 0x04,
+                right_motor: Some(0x55),
+                left_motor: Some(0x66),
                 ..
             }
         ));

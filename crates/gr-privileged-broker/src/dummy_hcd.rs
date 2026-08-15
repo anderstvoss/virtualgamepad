@@ -30,6 +30,7 @@ const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
 const INPUT_WRITE_TIMEOUT: Duration = Duration::from_millis(25);
+const HOST_DRIVER_SETTLE_TIME: Duration = Duration::from_millis(500);
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 static NEXT_GADGET_ID: AtomicU64 = AtomicU64::new(1);
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
@@ -172,6 +173,7 @@ impl DummyHcdSession {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
         let known_hidg = nodes("hidg")?;
+        let known_hidraw = nodes("hidraw")?;
         for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
             if !linux.load_module(module).map_err(io)? {
                 return Err(host("allowlisted kernel module could not load"));
@@ -194,6 +196,12 @@ impl DummyHcdSession {
             write(&linux, &root.join("UDC"), &udc)?;
             wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
+            let _hidraw = wait_node("hidraw", &known_hidraw)?;
+            // The POC established that hid-playstation registers the gamepad,
+            // motion, and touch nodes shortly after hidraw. Do not expose a
+            // session to the unprivileged client until that host-side phase
+            // has completed.
+            thread::sleep(HOST_DRIVER_SETTLE_TIME);
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
@@ -302,6 +310,11 @@ fn setup(host: &impl DummyHcdHost, root: &Path, serial: &str) -> Result<(), Brok
     write(host, &function.join("protocol"), "0")?;
     write(host, &function.join("subclass"), "0")?;
     write(host, &function.join("report_length"), "64")?;
+    if host.exists(&function.join("interval")) {
+        // Match the POC's explicit interrupt polling interval rather than
+        // inheriting f_hid's slower default endpoint interval.
+        write(host, &function.join("interval"), "1")?;
+    }
     host.write(&function.join("report_desc"), USB_DESCRIPTOR)
         .map_err(io)?;
     // ConfigFS resolves the link source when the link is created, rather than
@@ -398,7 +411,14 @@ fn is_owned_root(root: &Path) -> bool {
             })
 }
 fn nodes(prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
-    let mut nodes = fs::read_dir("/dev")
+    device_nodes("/dev", prefix)
+}
+#[cfg(test)]
+fn input_nodes(prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
+    device_nodes("/dev/input", prefix)
+}
+fn device_nodes(directory: &str, prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
+    let mut nodes = fs::read_dir(directory)
         .map_err(io)?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
@@ -411,9 +431,16 @@ fn nodes(prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
     Ok(nodes)
 }
 fn wait_node(prefix: &str, known: &[PathBuf]) -> Result<PathBuf, BrokerError> {
+    wait_new_node("/dev", prefix, known)
+}
+#[cfg(test)]
+fn wait_input_node(prefix: &str, known: &[PathBuf]) -> Result<PathBuf, BrokerError> {
+    wait_new_node("/dev/input", prefix, known)
+}
+fn wait_new_node(directory: &str, prefix: &str, known: &[PathBuf]) -> Result<PathBuf, BrokerError> {
     let start = Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
-        if let Some(path) = nodes(prefix)?
+        if let Some(path) = device_nodes(directory, prefix)?
             .into_iter()
             .find(|path| !known.contains(path))
         {
@@ -421,7 +448,7 @@ fn wait_node(prefix: &str, known: &[PathBuf]) -> Result<PathBuf, BrokerError> {
         }
         thread::sleep(Duration::from_millis(50));
     }
-    Err(host("new HID gadget node did not appear"))
+    Err(host("new host device node did not appear"))
 }
 fn wait_until_configured(udc: &str) -> Result<(), BrokerError> {
     let state = Path::new("/sys/class/udc").join(udc).join("state");
@@ -687,6 +714,12 @@ mod tests {
         assert!(
             operations
                 .iter()
+                .any(|operation| operation.ends_with("/functions/hid.dualsense/interval")),
+            "a supported HID ConfigFS interval is pinned to the POC value"
+        );
+        assert!(
+            operations
+                .iter()
                 .any(|operation| operation.ends_with("/hid.dualsense"))
         );
         assert_eq!(
@@ -826,12 +859,15 @@ mod tests {
     fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
+        let known_input_events = input_nodes("event").expect("list pre-existing input nodes");
         let mut session = DummyHcdSession::open(0xdecaf).expect("open dummy_hcd session");
         let root = session.root.clone();
         assert!(root.is_dir());
         session
             .send_input(&[0; REPORT_LENGTH])
             .expect("input report");
+        let _input_event = wait_input_node("event", &known_input_events)
+            .expect("DualSense host input node appears after the initial report");
         let _ = session.poll_reverse().expect("reverse poll");
         let hidraw = wait_node("hidraw", &known_hidraw).expect("new DualSense hidraw node");
         let calibration = thread::spawn(move || {

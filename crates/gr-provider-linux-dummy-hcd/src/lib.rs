@@ -139,10 +139,7 @@ impl NativeProviderSession for Session {
                 out.push(ProviderReverseEvent {
                     session: self.session,
                     sequence: self.reverse,
-                    event: RawReverseEvent::HidOutput {
-                        report_id: bytes.first().copied(),
-                        bytes,
-                    },
+                    event: decode_hid_output(bytes)?,
                 });
                 Ok(())
             }
@@ -173,5 +170,34 @@ impl NativeProviderSession for Session {
             })?;
         self.state = ProviderState::Closed;
         Ok(())
+    }
+}
+
+fn decode_hid_output(bytes: Vec<u8>) -> Result<RawReverseEvent, ProviderError> {
+    let Some((&report_id, payload)) = bytes.split_first() else {
+        return Err(ProviderError::Read {
+            reason: "dummy_hcd output report omitted its report ID".into(),
+        });
+    };
+    Ok(RawReverseEvent::HidOutput {
+        report_id: Some(report_id),
+        bytes: payload.to_vec(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dummy_hcd_output_separates_the_usb_report_id_from_its_payload() {
+        assert_eq!(
+            decode_hid_output(vec![0x02, 0x01, 0x04, 0x30]),
+            Ok(RawReverseEvent::HidOutput {
+                report_id: Some(0x02),
+                bytes: vec![0x01, 0x04, 0x30],
+            })
+        );
+        assert!(decode_hid_output(Vec::new()).is_err());
     }
 }
