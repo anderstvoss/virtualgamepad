@@ -278,3 +278,28 @@ fn host(reason: &str) -> BrokerError {
         reason: reason.into(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shared_fixture_has_full_descriptor_and_motion_calibration() {
+        assert_eq!(USB_DESCRIPTOR.len(), 273);
+        let features = feature_responses([2, 1, 2, 3, 4]);
+        assert_eq!(
+            features
+                .iter()
+                .map(|(id, data)| (*id, data.len()))
+                .collect::<Vec<_>>(),
+            vec![(3, 48), (5, 41), (9, 20), (0x20, 64)]
+        );
+        let calibration = &features[1].1;
+        assert_ne!(&calibration[7..9], &[0, 0]);
+        assert_ne!(&calibration[23..25], &[0, 0]);
+    }
+    #[test]
+    fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
+        assert!(cleanup(Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
+        assert!(cleanup(Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
+    }
+}

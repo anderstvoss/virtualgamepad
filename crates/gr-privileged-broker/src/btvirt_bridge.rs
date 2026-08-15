@@ -2,6 +2,7 @@
 
 use crate::{BrokerError, HostSession};
 use std::{
+    fs,
     io::{Read, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
@@ -54,6 +55,7 @@ pub struct BtvirtSession {
 }
 impl BtvirtSession {
     pub fn open() -> Result<Self, BrokerError> {
+        verify_executable(BTVIRT_EXECUTABLE)?;
         let mut child = Command::new(BTVIRT_EXECUTABLE)
             .args(["--broker-stdio", "--protocol=1", "--controller=dualsense"])
             .stdin(Stdio::piped())
@@ -81,6 +83,23 @@ impl BtvirtSession {
             closed: false,
         })
     }
+}
+fn verify_executable(path: &str) -> Result<(), BrokerError> {
+    let metadata = fs::metadata(path).map_err(host_io)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if !metadata.is_file()
+            || metadata.uid() != 0
+            || metadata.mode() & 0o022 != 0
+            || metadata.mode() & 0o111 == 0
+        {
+            return Err(BrokerError::Host {
+                reason: "btvirt bridge executable has unsafe ownership or mode".into(),
+            });
+        }
+    }
+    Ok(())
 }
 impl HostSession for BtvirtSession {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
@@ -133,5 +152,9 @@ mod tests {
         write_frame(&mut bytes, 2, &[1; 78]).unwrap();
         assert_eq!(read_frame(&mut bytes.as_slice()).unwrap(), (2, vec![1; 78]));
         assert!(write_frame(&mut Vec::new(), 2, &[0; 129]).is_err());
+    }
+    #[test]
+    fn missing_bridge_is_rejected_before_process_launch() {
+        assert!(verify_executable("/definitely-not-a-virtualgamepad-bridge").is_err());
     }
 }
