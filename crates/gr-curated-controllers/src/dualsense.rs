@@ -10,8 +10,9 @@ use gr_controller_contract::{
 use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
     ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, ProviderError,
-    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
+    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
+    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -915,6 +916,24 @@ impl DualSenseController {
         self.0
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
+    pub fn reply_force_feedback_upload(
+        &mut self,
+        request_id: u32,
+        status: i32,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::ForceFeedbackUploadReply { request_id, status })
+        })
+    }
+    pub fn reply_force_feedback_erase(
+        &mut self,
+        request_id: u32,
+        status: i32,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::ForceFeedbackEraseReply { request_id, status })
+        })
+    }
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -924,7 +943,7 @@ fn realization() -> NativeControllerRealization {
             product_id: 0x0ce6,
             version: 1,
         },
-        event_codes: vec![common::EV_KEY, common::EV_ABS],
+        event_codes: vec![common::EV_KEY, common::EV_ABS, common::EV_FF],
         key_codes: DIGITAL.iter().map(|control| control.event_code).collect(),
         absolute_axes: AXES
             .iter()
@@ -951,8 +970,44 @@ const DUALSENSE_USB_DESCRIPTOR: &[u8] = &[
     0x08, 0x95, 0x34, 0x81, 0x02, 0x85, 0x02, 0x09, 0x23, 0x95, 0x2f, 0x91, 0x02, 0x85, 0x05, 0x09,
     0x33, 0x95, 0x28, 0xb1, 0x02, 0x85, 0x08, 0x09, 0x34, 0x95, 0x2f, 0xb1, 0x02, 0x85, 0x09, 0x09,
     0x24, 0x95, 0x13, 0xb1, 0x02, 0x85, 0x0a, 0x09, 0x25, 0x95, 0x1a, 0xb1, 0x02, 0x85, 0x20, 0x09,
-    0x26, 0x95, 0x3f, 0xb1, 0x02, 0xc0,
+    0x26, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x21, 0x09, 0x27, 0x95, 0x04, 0xb1, 0x02, 0x85, 0x22, 0x09,
+    0x40, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x80, 0x09, 0x28, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x81, 0x09,
+    0x29, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x82, 0x09, 0x2a, 0x95, 0x09, 0xb1, 0x02, 0x85, 0x83, 0x09,
+    0x2b, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x84, 0x09, 0x2c, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0x85, 0x09,
+    0x2d, 0x95, 0x02, 0xb1, 0x02, 0x85, 0xa0, 0x09, 0x2e, 0x95, 0x01, 0xb1, 0x02, 0x85, 0xe0, 0x09,
+    0x2f, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf0, 0x09, 0x30, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf1, 0x09,
+    0x31, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf2, 0x09, 0x32, 0x95, 0x0f, 0xb1, 0x02, 0x85, 0xf4, 0x09,
+    0x35, 0x95, 0x3f, 0xb1, 0x02, 0x85, 0xf5, 0x09, 0x36, 0x95, 0x03, 0xb1, 0x02, 0xc0,
 ];
+
+fn dualsense_feature_responses() -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+    const FEATURE: u8 = 3;
+    let mut calibration = vec![0_u8; 41];
+    calibration[0] = 0x05;
+    // Neutral, non-device-specific calibration values. These preserve the
+    // documented feature shape without copying any connected controller data.
+    calibration[19..21].copy_from_slice(&1_i16.to_le_bytes());
+    calibration[21..23].copy_from_slice(&1_i16.to_le_bytes());
+    let mut pairing = vec![0_u8; 20];
+    pairing[0] = 0x09;
+    pairing[1..7].copy_from_slice(&[0x02, 0x56, 0x47, 0x50, 0x00, 0x01]);
+    let mut firmware = vec![0_u8; 64];
+    firmware[0] = 0x20;
+    firmware[24] = 1;
+    firmware[28] = 1;
+    [(0x05, calibration), (0x09, pairing), (0x20, firmware)]
+        .into_iter()
+        .map(|(report_id, bytes)| {
+            (
+                NativeHidReportKey {
+                    report_id,
+                    report_type: FEATURE,
+                },
+                bytes,
+            )
+        })
+        .collect()
+}
 
 fn hid_realization() -> NativeControllerRealization {
     // USB HID report structure is based on public research and the Linux
@@ -971,7 +1026,7 @@ fn hid_realization() -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: BTreeMap::new(),
+        feature_report_responses: dualsense_feature_responses(),
     })
 }
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ProviderError> {
@@ -1080,6 +1135,16 @@ mod tests {
                 .windows(2)
                 .any(|item| item == [0x85, 0x02])
         );
+        for report_id in [0x05, 0x09, 0x20] {
+            let bytes = realization
+                .feature_report_responses
+                .get(&NativeHidReportKey {
+                    report_id,
+                    report_type: 3,
+                })
+                .expect("DualSense Linux probe reply");
+            assert_eq!(bytes[0], report_id);
+        }
     }
 
     #[test]

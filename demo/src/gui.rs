@@ -64,12 +64,12 @@ impl ReverseIndicators {
 }
 impl Controller {
     fn commit(&mut self) -> Result<(), String> {
-        match self {
+        let result = match self {
             Self::Generic(controller) => controller.commit(),
             Self::Xbox(controller) => controller.commit(),
             Self::DualSense(controller) => controller.commit(),
-        }
-        .map_err(|error| error.to_string())
+        };
+        result.map_err(|error| error.to_string())
     }
     fn close(&mut self) {
         match self {
@@ -85,42 +85,124 @@ impl Controller {
             Self::DualSense(controller) => controller.is_dirty(),
         }
     }
+    #[allow(clippy::too_many_lines)] // Acknowledgements must stay adjacent to typed decoding.
     fn poll_output(
         &mut self,
         log: &mut Vec<String>,
         indicators: &mut ReverseIndicators,
     ) -> Result<(), String> {
-        match self {
-            Self::Generic(controller) => controller.poll_output(&mut |event| {
-                if matches!(
-                    event,
-                    virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackUpload { .. }
-                ) {
-                    indicators.rumble_pulse();
+        let result: Result<(), String> = match self {
+            Self::Generic(controller) => {
+                let mut replies = Vec::new();
+                controller
+                    .poll_output(&mut |event| {
+                        match event {
+                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackUpload {
+                                request_id,
+                                ..
+                            } => {
+                                indicators.rumble_pulse();
+                                replies.push((request_id, true));
+                            }
+                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackErase {
+                                request_id,
+                                ..
+                            } => replies.push((request_id, false)),
+                            _ => {}
+                        }
+                        log.push(format!("Generic: {event:?}"));
+                    })
+                    .map_err(|error| error.to_string())?;
+                for (request_id, upload) in replies {
+                    if upload {
+                        controller
+                            .reply_force_feedback_upload(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    } else {
+                        controller
+                            .reply_force_feedback_erase(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    }
                 }
-                log.push(format!("Generic: {event:?}"));
-            }),
-            Self::Xbox(controller) => controller.poll_output(&mut |event| {
-                if matches!(event, Xbox360OutputEvent::ForceFeedbackUpload { .. }) {
-                    indicators.rumble_pulse();
+                Ok(())
+            }
+            Self::Xbox(controller) => {
+                let mut replies = Vec::new();
+                controller
+                    .poll_output(&mut |event| {
+                        match event {
+                            Xbox360OutputEvent::ForceFeedbackUpload { request_id, .. } => {
+                                indicators.rumble_pulse();
+                                replies.push((request_id, true));
+                            }
+                            Xbox360OutputEvent::ForceFeedbackErase { request_id, .. } => {
+                                replies.push((request_id, false));
+                            }
+                            _ => {}
+                        }
+                        log.push(format!("Xbox 360: {event:?}"));
+                    })
+                    .map_err(|error| error.to_string())?;
+                for (request_id, upload) in replies {
+                    if upload {
+                        controller
+                            .reply_force_feedback_upload(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    } else {
+                        controller
+                            .reply_force_feedback_erase(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    }
                 }
-                log.push(format!("Xbox 360: {event:?}"));
-            }),
-            Self::DualSense(controller) => controller.poll_output(&mut |event| {
-                if let DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
-                    right_motor,
-                    left_motor,
-                    lightbar_rgb,
-                    ..
-                }) = &event
-                {
-                    indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
-                    indicators.led = Some(*lightbar_rgb);
+                Ok(())
+            }
+            Self::DualSense(controller) => {
+                let mut replies = Vec::new();
+                controller
+                    .poll_output(&mut |event| {
+                        match &event {
+                            DualSenseOutputEvent::ConventionalForceFeedbackUpload {
+                                request_id,
+                                ..
+                            } => {
+                                indicators.rumble_pulse();
+                                replies.push((*request_id, true));
+                            }
+                            DualSenseOutputEvent::ConventionalForceFeedbackErase {
+                                request_id,
+                                ..
+                            } => {
+                                replies.push((*request_id, false));
+                            }
+                            DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+                                right_motor,
+                                left_motor,
+                                lightbar_rgb,
+                                ..
+                            }) => {
+                                indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
+                                indicators.led = Some(*lightbar_rgb);
+                            }
+                            _ => {}
+                        }
+                        log.push(format!("DualSense: {event:?}"));
+                    })
+                    .map_err(|error| error.to_string())?;
+                for (request_id, upload) in replies {
+                    if upload {
+                        controller
+                            .reply_force_feedback_upload(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    } else {
+                        controller
+                            .reply_force_feedback_erase(request_id, 0)
+                            .map_err(|error| error.to_string())?;
+                    }
                 }
-                log.push(format!("DualSense: {event:?}"));
-            }),
-        }
-        .map_err(|error| error.to_string())
+                Ok(())
+            }
+        };
+        result
     }
     fn draw(&mut self, ui: &mut egui::Ui) {
         match self {
@@ -195,10 +277,21 @@ impl App {
             Err(error) => self.error = Some(error.to_string()),
         }
     }
+
+    fn remove_controller(&mut self, index: usize) {
+        if index >= self.controllers.len() {
+            return;
+        }
+        self.controllers[index].controller.close();
+        self.controllers.remove(index);
+        self.selected_controller =
+            (!self.controllers.is_empty()).then(|| index.min(self.controllers.len() - 1));
+    }
 }
 impl eframe::App for App {
     #[allow(clippy::too_many_lines)] // Coordinates the independent demo panels.
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        let mut remove = None;
         for named in &mut self.controllers {
             if let Err(error) = named
                 .controller
@@ -248,16 +341,30 @@ impl eframe::App for App {
             }
             ui.separator();
             ui.label("Controllers");
-            ui.horizontal_wrapped(|ui| {
-                for (index, controller) in self.controllers.iter().enumerate() {
-                    if ui
-                        .selectable_label(self.selected_controller == Some(index), &controller.name)
-                        .clicked()
-                    {
-                        self.selected_controller = Some(index);
+            egui::ScrollArea::vertical()
+                .max_height(260.0)
+                .show(ui, |ui| {
+                    for (index, controller) in self.controllers.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            if ui
+                                .selectable_label(
+                                    self.selected_controller == Some(index),
+                                    &controller.name,
+                                )
+                                .clicked()
+                            {
+                                self.selected_controller = Some(index);
+                            }
+                            if ui
+                                .small_button("×")
+                                .on_hover_text("Remove controller")
+                                .clicked()
+                            {
+                                remove = Some(index);
+                            }
+                        });
                     }
-                }
-            });
+                });
             if let Some(error) = &self.error {
                 ui.colored_label(egui::Color32::RED, error);
             }
@@ -267,7 +374,6 @@ impl eframe::App for App {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.heading("Live controllers");
-                    let mut remove = None;
                     if let Some(index) = self
                         .selected_controller
                         .filter(|index| *index < self.controllers.len())
@@ -286,20 +392,9 @@ impl eframe::App for App {
                                 }
                             }
                             ui.small("Input changes are sent automatically.");
-                            if ui.button("Close").clicked() {
-                                named.controller.close();
-                                remove = Some(index);
-                            }
                         });
                     } else {
                         ui.small("Create a controller, then select its tab.");
-                    }
-                    if let Some(index) = remove {
-                        self.controllers.remove(index);
-                        self.selected_controller = None;
-                        if !self.controllers.is_empty() {
-                            self.selected_controller = Some(index.min(self.controllers.len() - 1));
-                        }
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
@@ -317,6 +412,9 @@ impl eframe::App for App {
                     }
                 });
         });
+        if let Some(index) = remove {
+            self.remove_controller(index);
+        }
     }
 }
 

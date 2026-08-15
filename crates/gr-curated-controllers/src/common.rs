@@ -16,6 +16,7 @@ use std::collections::BTreeMap;
 pub(crate) const EV_SYN: u16 = 0;
 pub(crate) const EV_KEY: u16 = 1;
 pub(crate) const EV_ABS: u16 = 3;
+pub(crate) const EV_FF: u16 = 21;
 pub(crate) const SYN_REPORT: u16 = 0;
 
 pub(crate) const fn face_index(button: FaceButton) -> usize {

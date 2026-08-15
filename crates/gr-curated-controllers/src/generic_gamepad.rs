@@ -596,6 +596,24 @@ impl GenericGamepadController {
         self.0
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
+    pub fn reply_force_feedback_upload(
+        &mut self,
+        request_id: u32,
+        status: i32,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::ForceFeedbackUploadReply { request_id, status })
+        })
+    }
+    pub fn reply_force_feedback_erase(
+        &mut self,
+        request_id: u32,
+        status: i32,
+    ) -> Result<(), ProviderError> {
+        self.0.with_sink(|sink| {
+            sink.reply(ProviderFrame::ForceFeedbackEraseReply { request_id, status })
+        })
+    }
 }
 
 fn realization() -> NativeControllerRealization {
