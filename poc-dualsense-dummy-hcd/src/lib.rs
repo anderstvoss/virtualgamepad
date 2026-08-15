@@ -538,7 +538,12 @@ fn write(path: impl AsRef<Path>, value: &str) -> io::Result<()> {
         .map_err(|error| io::Error::new(error.kind(), format!("write {}: {error}", path.display())))
 }
 fn device_nodes(prefix: &str) -> io::Result<Vec<PathBuf>> {
-    let mut nodes = fs::read_dir("/dev")?
+    let directory = if prefix == "event" {
+        "/dev/input"
+    } else {
+        "/dev"
+    };
+    let mut nodes = fs::read_dir(directory)?
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| {
