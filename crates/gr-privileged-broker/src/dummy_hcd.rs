@@ -16,6 +16,12 @@ use std::{
 
 const CONFIGFS: &str = "/sys/kernel/config/usb_gadget";
 const REPORT_LENGTH: usize = USB_REPORT_LENGTH;
+// ConfigFS uses base-0 numeric parsing for these attributes. Keep the `0x`
+// prefix: a bare `054c` is not a valid decimal vendor ID.
+const USB_VENDOR_ID: &str = "0x054c";
+const USB_PRODUCT_ID: &str = "0x0ce6";
+const USB_DEVICE_BCD: &str = "0x0110";
+const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
@@ -40,7 +46,6 @@ impl DummyHcdSession {
         if !Path::new(CONFIGFS).is_dir() {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
-        let known_udc = names("/sys/class/udc")?;
         let known_hidg = nodes("hidg")?;
         for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
             let status = Command::new("/usr/sbin/modprobe")
@@ -58,11 +63,9 @@ impl DummyHcdSession {
         }
         let result = (|| {
             setup(&root, &serial)?;
-            let udc = names("/sys/class/udc")?
-                .into_iter()
-                .find(|name| !known_udc.contains(name))
-                .ok_or_else(|| host("dummy_hcd did not create a new UDC"))?;
+            let udc = available_dummy_udc()?;
             write(root.join("UDC"), &udc)?;
+            wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
             let file = OpenOptions::new()
                 .read(true)
@@ -70,6 +73,7 @@ impl DummyHcdSession {
                 .custom_flags(libc::O_NONBLOCK)
                 .open(hidg)
                 .map_err(io)?;
+            wait_until_writable(&file)?;
             Ok(Self {
                 root: root.clone(),
                 file,
@@ -172,10 +176,10 @@ impl Drop for DummyHcdSession {
 }
 fn setup(root: &Path, serial: &str) -> Result<(), BrokerError> {
     fs::create_dir(root).map_err(io)?;
-    write(root.join("idVendor"), "054c")?;
-    write(root.join("idProduct"), "0ce6")?;
-    write(root.join("bcdDevice"), "0110")?;
-    write(root.join("bcdUSB"), "0200")?;
+    write(root.join("idVendor"), USB_VENDOR_ID)?;
+    write(root.join("idProduct"), USB_PRODUCT_ID)?;
+    write(root.join("bcdDevice"), USB_DEVICE_BCD)?;
+    write(root.join("bcdUSB"), USB_BCD)?;
     let strings = root.join("strings/0x409");
     fs::create_dir_all(&strings).map_err(io)?;
     write(
@@ -193,8 +197,11 @@ fn setup(root: &Path, serial: &str) -> Result<(), BrokerError> {
     write(function.join("subclass"), "0")?;
     write(function.join("report_length"), "64")?;
     fs::write(function.join("report_desc"), USB_DESCRIPTOR).map_err(io)?;
+    // ConfigFS resolves the link source when the link is created, rather than
+    // as a normal filesystem symlink resolved from `configs/c.1`. The source
+    // must consequently be the fixed, session-owned function path.
     std::os::unix::fs::symlink(
-        "../../functions/hid.dualsense",
+        root.join("functions/hid.dualsense"),
         config.join("hid.dualsense"),
     )
     .map_err(io)?;
@@ -212,12 +219,17 @@ fn cleanup(root: &Path) -> Result<(), BrokerError> {
         return Ok(());
     }
     let mut first = None;
+    // ConfigFS owns the intermediate `functions`, `configs`, and `strings`
+    // groups. They are not removable directories. Remove only objects that
+    // this session created, in dependency order; removing recursively tries
+    // to unlink ConfigFS attributes and leaves a partial gadget behind.
     for result in [
         fs::write(root.join("UDC"), ""),
         fs::remove_file(root.join("configs/c.1/hid.dualsense")),
-        fs::remove_dir_all(root.join("functions/hid.dualsense")),
-        fs::remove_dir_all(root.join("configs/c.1")),
-        fs::remove_dir_all(root.join("strings")),
+        fs::remove_dir(root.join("functions/hid.dualsense")),
+        fs::remove_dir(root.join("configs/c.1/strings/0x409")),
+        fs::remove_dir(root.join("configs/c.1")),
+        fs::remove_dir(root.join("strings/0x409")),
         fs::remove_dir(root),
     ] {
         if let Err(error) = result {
@@ -237,6 +249,21 @@ fn names(path: &str) -> Result<Vec<String>, BrokerError> {
                 .map_err(io)
         })
         .collect()
+}
+fn available_dummy_udc() -> Result<String, BrokerError> {
+    let bound = fs::read_dir(CONFIGFS)
+        .map_err(io)?
+        .filter_map(Result::ok)
+        .filter_map(|entry| fs::read_to_string(entry.path().join("UDC")).ok())
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    select_dummy_udc(names("/sys/class/udc")?, &bound)
+        .ok_or_else(|| host("no unused dummy_hcd UDC is available"))
+}
+fn select_dummy_udc(udcs: Vec<String>, bound: &[String]) -> Option<String> {
+    udcs.into_iter()
+        .find(|name| name.starts_with("dummy_udc.") && !bound.contains(name))
 }
 fn nodes(prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
     let mut nodes = fs::read_dir("/dev")
@@ -263,6 +290,38 @@ fn wait_node(prefix: &str, known: &[PathBuf]) -> Result<PathBuf, BrokerError> {
         thread::sleep(Duration::from_millis(50));
     }
     Err(host("new HID gadget node did not appear"))
+}
+fn wait_until_configured(udc: &str) -> Result<(), BrokerError> {
+    let state = Path::new("/sys/class/udc").join(udc).join("state");
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if fs::read_to_string(&state).is_ok_and(|value| is_configured_state(&value)) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(host("dummy_hcd host did not configure the gadget"))
+}
+fn is_configured_state(value: &str) -> bool {
+    value.trim() == "configured"
+}
+fn wait_until_writable(file: &File) -> Result<(), BrokerError> {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        let mut poll = libc::pollfd {
+            fd: file.as_raw_fd(),
+            events: libc::POLLOUT,
+            revents: 0,
+        };
+        let result = unsafe { libc::poll(&raw mut poll, 1, 50) };
+        if result < 0 {
+            return Err(io(std::io::Error::last_os_error()));
+        }
+        if poll.revents & libc::POLLOUT != 0 {
+            return Ok(());
+        }
+    }
+    Err(host("dummy_hcd HID endpoint did not become writable"))
 }
 fn write(path: PathBuf, value: &str) -> Result<(), BrokerError> {
     fs::write(path, value).map_err(io)
@@ -301,6 +360,45 @@ mod tests {
     fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
         assert!(cleanup(Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
         assert!(cleanup(Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
+    }
+
+    #[test]
+    fn configfs_usb_identity_uses_explicit_hexadecimal_values() {
+        assert_eq!(USB_VENDOR_ID, "0x054c");
+        assert_eq!(USB_PRODUCT_ID, "0x0ce6");
+        assert_eq!(USB_DEVICE_BCD, "0x0110");
+        assert_eq!(USB_BCD, "0x0200");
+    }
+
+    #[test]
+    fn configfs_link_source_is_the_session_owned_function() {
+        let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
+        assert_eq!(
+            root.join("functions/hid.dualsense"),
+            Path::new(CONFIGFS).join("virtualgamepad-0000000000000001/functions/hid.dualsense")
+        );
+    }
+
+    #[test]
+    fn selects_only_an_unbound_dummy_hcd_udc() {
+        assert_eq!(
+            select_dummy_udc(
+                vec!["dwc2.0".into(), "dummy_udc.0".into(), "dummy_udc.1".into()],
+                &["dummy_udc.0".into()],
+            ),
+            Some("dummy_udc.1".into())
+        );
+        assert_eq!(
+            select_dummy_udc(vec!["dwc2.0".into()], &[]),
+            None,
+            "real hardware UDCs are never candidates"
+        );
+    }
+
+    #[test]
+    fn only_the_configured_udc_state_accepts_input_delivery() {
+        assert!(is_configured_state("configured\n"));
+        assert!(!is_configured_state("not attached\n"));
     }
 
     #[test]

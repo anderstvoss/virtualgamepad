@@ -6,7 +6,9 @@ ListenStream=/run/virtualgamepad/broker.sock
 SocketUser=root
 SocketGroup=virtualgamepad
 SocketMode=0660
-DirectoryMode=0750
+# The socket itself is group-restricted. The parent needs execute-only access
+# for that group to reach its known fixed pathname; it remains non-listable.
+DirectoryMode=0711
 RemoveOnStop=true
 
 [Install]

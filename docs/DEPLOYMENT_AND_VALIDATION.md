@@ -8,6 +8,11 @@ The four realization targets are peers. A controller is created only for the exa
 
 `DummyHcd` and `Btvirt` require the root-owned `virtualgamepad-broker` service. Unprivileged clients use the fixed group-restricted Unix socket `/run/virtualgamepad/broker.sock`. The broker independently authenticates every client with `SO_PEERCRED` and accepts only administrator-authorized UIDs from `/etc/virtualgamepad/broker.conf`:
 
+The socket directory is traversal-only (`root:root 0711`) so members of the
+socket group can reach its fixed pathname without gaining directory listing
+access. The socket remains `root:virtualgamepad 0660`; both that group check
+and the broker's UID authorization must succeed.
+
 ```ini
 # One entry per local application UID.
 allow_uid=1000
