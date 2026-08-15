@@ -12,6 +12,27 @@ use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use thiserror::Error;
 
+pub mod btvirt_bridge;
+
+/// Broker-owned host resource. Implementations are never constructed by an
+/// application client and must make `close` safe to repeat after partial open.
+pub trait HostSession: Send {
+    fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError>;
+    fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError>;
+    fn diagnostics(&self) -> Vec<u8>;
+    fn close(&mut self) -> Result<(), BrokerError>;
+}
+
+/// Creates the exact fixed-purpose host resource for a compiled controller.
+pub trait HostSessionFactory: Send + Sync {
+    fn open(
+        &self,
+        target: RealizationTarget,
+        controller: CompiledControllerKind,
+        session: RealizationSessionId,
+    ) -> Result<Box<dyn HostSession>, BrokerError>;
+}
+
 /// The only broker endpoint accepted by unprivileged providers.
 pub const BROKER_SOCKET_PATH: &str = "/run/virtualgamepad/broker.sock";
 const PROTOCOL_VERSION: u16 = 1;
@@ -183,6 +204,110 @@ pub enum BrokerError {
     },
     #[error("malformed broker request")]
     MalformedRequest,
+    #[error("privileged host session failed: {reason}")]
+    Host { reason: String },
+}
+
+/// Broker-owned session registry. Capabilities are allocated only after the
+/// factory has opened its resource, and all removal paths invoke `close`.
+pub struct BrokerRegistry {
+    policy: BrokerPolicy,
+    sessions: BTreeMap<RealizationSessionId, Box<dyn HostSession>>,
+    next: u64,
+}
+
+impl BrokerRegistry {
+    #[must_use]
+    pub fn new(allowed_peers: Vec<u32>) -> Self {
+        Self {
+            policy: BrokerPolicy::new(allowed_peers),
+            sessions: BTreeMap::new(),
+            next: 1,
+        }
+    }
+
+    pub fn open(
+        &mut self,
+        peer: u32,
+        target: RealizationTarget,
+        controller: CompiledControllerKind,
+        factory: &dyn HostSessionFactory,
+    ) -> Result<RealizationSessionId, BrokerError> {
+        let session = RealizationSessionId(self.next);
+        self.next = self
+            .next
+            .checked_add(1)
+            .ok_or(BrokerError::MalformedRequest)?;
+        self.policy.open(peer, session, target, controller)?;
+        match factory.open(target, controller, session) {
+            Ok(host) => {
+                self.sessions.insert(session, host);
+                Ok(session)
+            }
+            Err(error) => {
+                let _ = self.policy.close(peer, session);
+                Err(error)
+            }
+        }
+    }
+
+    pub fn send_input(
+        &mut self,
+        peer: u32,
+        session: RealizationSessionId,
+        bytes: &[u8],
+    ) -> Result<(), BrokerError> {
+        self.policy.send_input(peer, session, bytes)?;
+        self.sessions
+            .get_mut(&session)
+            .ok_or(BrokerError::UnknownSession { session })?
+            .send_input(bytes)
+    }
+
+    pub fn poll_reverse(
+        &mut self,
+        peer: u32,
+        session: RealizationSessionId,
+    ) -> Result<Option<Vec<u8>>, BrokerError> {
+        self.policy.diagnostics(peer, session)?;
+        self.sessions
+            .get_mut(&session)
+            .ok_or(BrokerError::UnknownSession { session })?
+            .poll_reverse()
+    }
+
+    pub fn diagnostics(
+        &self,
+        peer: u32,
+        session: RealizationSessionId,
+    ) -> Result<Vec<u8>, BrokerError> {
+        self.policy.diagnostics(peer, session)?;
+        Ok(self
+            .sessions
+            .get(&session)
+            .ok_or(BrokerError::UnknownSession { session })?
+            .diagnostics())
+    }
+
+    pub fn close(&mut self, peer: u32, session: RealizationSessionId) -> Result<(), BrokerError> {
+        self.policy.close(peer, session)?;
+        if let Some(mut host) = self.sessions.remove(&session) {
+            host.close()?;
+        }
+        Ok(())
+    }
+
+    pub fn close_all(&mut self) {
+        for (_, mut host) in std::mem::take(&mut self.sessions) {
+            let _ = host.close();
+        }
+    }
+}
+
+impl Drop for BrokerRegistry {
+    fn drop(&mut self) {
+        self.close_all();
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -295,6 +420,43 @@ impl BrokerPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
+
+    struct FakeHost {
+        closed: Arc<Mutex<u8>>,
+        output: Option<Vec<u8>>,
+    }
+    impl HostSession for FakeHost {
+        fn send_input(&mut self, _: &[u8]) -> Result<(), BrokerError> {
+            Ok(())
+        }
+        fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError> {
+            Ok(self.output.take())
+        }
+        fn diagnostics(&self) -> Vec<u8> {
+            b"fake".to_vec()
+        }
+        fn close(&mut self) -> Result<(), BrokerError> {
+            *self.closed.lock().unwrap() += 1;
+            Ok(())
+        }
+    }
+    struct FakeFactory {
+        closed: Arc<Mutex<u8>>,
+    }
+    impl HostSessionFactory for FakeFactory {
+        fn open(
+            &self,
+            _: RealizationTarget,
+            _: CompiledControllerKind,
+            _: RealizationSessionId,
+        ) -> Result<Box<dyn HostSession>, BrokerError> {
+            Ok(Box::new(FakeHost {
+                closed: Arc::clone(&self.closed),
+                output: Some(vec![2, 3]),
+            }))
+        }
+    }
 
     #[test]
     fn protocol_round_trip_and_malformed_lengths_are_deterministic() {
@@ -361,6 +523,35 @@ mod tests {
         broker.close(1000, session).unwrap();
         assert!(matches!(
             broker.diagnostics(1000, session),
+            Err(BrokerError::UnknownSession { .. })
+        ));
+    }
+
+    #[test]
+    fn registry_owns_host_lifecycle_and_reverse_events() {
+        let closed = Arc::new(Mutex::new(0));
+        let factory = FakeFactory {
+            closed: Arc::clone(&closed),
+        };
+        let mut registry = BrokerRegistry::new(vec![1000]);
+        let session = registry
+            .open(
+                1000,
+                RealizationTarget::DummyHcd,
+                CompiledControllerKind::DualSense,
+                &factory,
+            )
+            .unwrap();
+        assert_eq!(
+            registry.poll_reverse(1000, session).unwrap(),
+            Some(vec![2, 3])
+        );
+        assert_eq!(registry.poll_reverse(1000, session).unwrap(), None);
+        assert_eq!(registry.diagnostics(1000, session).unwrap(), b"fake");
+        registry.close(1000, session).unwrap();
+        assert_eq!(*closed.lock().unwrap(), 1);
+        assert!(matches!(
+            registry.send_input(1000, session, &[0; 64]),
             Err(BrokerError::UnknownSession { .. })
         ));
     }

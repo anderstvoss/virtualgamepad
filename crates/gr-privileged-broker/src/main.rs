@@ -6,7 +6,8 @@
 //! identities from a client.
 
 use gr_privileged_broker::{
-    BROKER_SOCKET_PATH, BrokerError, BrokerPolicy, read_message, write_message,
+    BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
+    btvirt_bridge::BtvirtSession, read_message, write_message,
 };
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::{
@@ -85,12 +86,32 @@ fn configured_uids(config: Option<&str>) -> Result<Vec<u32>, io::Error> {
     Ok(uids)
 }
 
+struct DaemonFactory;
+impl HostSessionFactory for DaemonFactory {
+    fn open(
+        &self,
+        target: RealizationTarget,
+        controller: CompiledControllerKind,
+        _: RealizationSessionId,
+    ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
+        if controller != CompiledControllerKind::DualSense {
+            return Err(BrokerError::UnsupportedController { target, controller });
+        }
+        match target {
+            RealizationTarget::Btvirt => Ok(Box::new(BtvirtSession::open()?)),
+            RealizationTarget::DummyHcd => Err(BrokerError::Host {
+                reason: "dummy_hcd adapter is not installed".into(),
+            }),
+            _ => Err(BrokerError::UnsupportedController { target, controller }),
+        }
+    }
+}
+
 fn serve(mut stream: UnixStream, allowed: Vec<u32>) -> Result<(), io::Error> {
     let peer = peer_uid(&stream)?;
-    let mut policy = BrokerPolicy::new(allowed);
-    let mut next_session = 1_u64;
+    let mut registry = BrokerRegistry::new(allowed);
     while let Ok((tag, body)) = read_message(&mut stream) {
-        let reply = dispatch(&mut policy, peer, &mut next_session, tag, &body);
+        let reply = dispatch(&mut registry, peer, tag, &body);
         match reply {
             Ok(body) => write_message(&mut stream, 0x80, &body)?,
             Err(error) => write_message(&mut stream, 0x81, error.to_string().as_bytes())?,
@@ -100,9 +121,8 @@ fn serve(mut stream: UnixStream, allowed: Vec<u32>) -> Result<(), io::Error> {
 }
 
 fn dispatch(
-    policy: &mut BrokerPolicy,
+    registry: &mut BrokerRegistry,
     peer: u32,
-    next: &mut u64,
     tag: u8,
     body: &[u8],
 ) -> Result<Vec<u8>, BrokerError> {
@@ -119,30 +139,41 @@ fn dispatch(
             if *controller != 1 {
                 return Err(BrokerError::MalformedRequest);
             }
-            let session = RealizationSessionId(*next);
-            *next = next.checked_add(1).ok_or(BrokerError::MalformedRequest)?;
-            policy.open(peer, session, target, CompiledControllerKind::DualSense)?;
+            let session = registry.open(
+                peer,
+                target,
+                CompiledControllerKind::DualSense,
+                &DaemonFactory,
+            )?;
             Ok(session.0.to_le_bytes().to_vec())
         }
         2 => {
             let (session, report) = split_session(body)?;
-            policy.send_input(peer, session, report)?;
+            registry.send_input(peer, session, report)?;
             Ok(Vec::new())
         }
-        3 | 5 => {
+        3 => {
             let (session, remaining) = split_session(body)?;
             if !remaining.is_empty() {
                 return Err(BrokerError::MalformedRequest);
             }
-            policy.diagnostics(peer, session)?;
-            Ok(Vec::new())
+            registry
+                .poll_reverse(peer, session)
+                .map(Option::unwrap_or_default)
+        }
+        5 => {
+            let (session, remaining) = split_session(body)?;
+            if !remaining.is_empty() {
+                return Err(BrokerError::MalformedRequest);
+            }
+            registry.diagnostics(peer, session)
         }
         4 => {
             let (session, remaining) = split_session(body)?;
             if !remaining.is_empty() {
                 return Err(BrokerError::MalformedRequest);
             }
-            policy.close(peer, session)?;
+            registry.close(peer, session)?;
             Ok(Vec::new())
         }
         _ => Err(BrokerError::MalformedRequest),
