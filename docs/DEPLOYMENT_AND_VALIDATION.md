@@ -68,10 +68,8 @@ It never changes host setup.
 
 `UsbGadget` is the third deployable realization level. It creates a ConfigFS
 HID gadget and binds it to `dummy_hcd`, which supplies an entirely software
-USB host and UDC in the same Linux kernel. Linux and Steam therefore see a USB
-HID controller, but no physical device-mode hardware or external cable is
-used. This works on bare-metal Linux and in VMs; it does not depend on VM
-features.
+USB host and UDC in the same VM. Linux and Steam therefore see a USB HID
+controller, but no physical device-mode hardware or external cable is used.
 It is intended to make USB/HID topology and controller-specific capabilities
 available to normal controller creation, subject to the privileged service
 boundary below.
@@ -107,7 +105,7 @@ realization contracts.
 | Rumble, lighting, mute, volume, jack/attachment state | Controller-native reverse reports, evdev output where faithfully representable, or HID output/feature reports. |
 | Headset/controller playback and microphone capture | A separate, controller-declared host audio realization with actual capture/render streams. Neither uinput nor UHID alone provides it. |
 | Plug-in keyboard/chatpad | A controller-native attached-device protocol and a faithful transport realization; never generic host keyboard injection. |
-| Same-host USB topology and controller-specific HID behavior | The `UsbGadget` realization through `dummy_hcd`. |
+| In-VM USB topology and controller-specific HID behavior | The `UsbGadget` realization through `dummy_hcd`. |
 
 This is feature-open: the table identifies necessary kinds of realization, not
 a ceiling on provider capability. A controller may faithfully implement a

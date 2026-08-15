@@ -55,5 +55,5 @@ Therefore the missing gyro in Steam's UHID realization is **not** explained by t
 layout, feature fixture set, axis mapping, or report cadence. The remaining investigation belongs
 at the UHID-versus-USB topology boundary: how SDL/Steam associates the Linux motion sensor with a
 controller originating from `BUS_VIRTUAL`/UHID, rather than a USB HID interface. This POC does not
-establish that a physical USB gadget will behave identically; `dummy_hcd` remains a same-host
-software USB experiment. It works on bare metal as well as in a VM.
+establish that a physical USB gadget will behave identically; `dummy_hcd` remains a same-VM
+software USB experiment.

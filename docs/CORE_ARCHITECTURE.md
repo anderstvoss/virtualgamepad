@@ -18,15 +18,14 @@ three independent targets:
 | --- | --- | --- |
 | `Evdev` | uinput | Normal local deployment through Linux evdev. |
 | `Hid` | UHID | Normal local deployment with HID identity and report behavior. |
-| `UsbGadget` | ConfigFS HID gadget + `dummy_hcd` | Normal, privileged same-host deployment through the Linux USB/HID stack. |
+| `UsbGadget` | ConfigFS HID gadget + `dummy_hcd` | Normal, privileged in-VM deployment through the Linux USB/HID stack. |
 
 These three targets are peer realization levels, not an ordered ladder, and
 do not imply each other. A controller may implement any non-empty subset;
-creation selects one exact level. `UsbGadget` is intentionally a same-host
+creation selects one exact level. `UsbGadget` is intentionally an in-VM
 software USB device: it binds the controller's ConfigFS gadget to `dummy_hcd`,
-whose software UDC and host make Linux enumerate it as USB in the same kernel.
-It works on bare-metal Linux as well as in a VM; it does not require VM
-features, a physical UDC, or an external cable. No selection falls back to
+whose software UDC and host make Linux enumerate it as USB in the same VM. It
+does not require a physical UDC or external cable. No selection falls back to
 another provider or target.
 
 The currently named `UsbTransportValidation` API is transitional. It must
@@ -66,7 +65,7 @@ prescriptive:
 - UHID may realize local HID descriptors, identity, input reports, output
   reports, and feature-report exchanges. It is not a USB or Bluetooth
   device-role claim.
-- `UsbGadget` realizes actual same-host USB enumeration, endpoint/interface
+- `UsbGadget` realizes actual in-VM USB enumeration, endpoint/interface
   topology, HID feature exchanges, and controller-specific reports. It may
   expose native behavior that evdev cannot faithfully express, including HID
   feature reports, firmware/pairing identity, adaptive triggers, LEDs, and

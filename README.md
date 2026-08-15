@@ -17,7 +17,7 @@ crates plus Linux uinput, UHID, and USB gadget providers. Retired profile-era
 code is preserved only on archival branches.
 
 The project direction is three peer creation levels: evdev, UHID, and an
-same-host software USB-gadget backend that uses `dummy_hcd`, not a physical UDC. Each
+in-VM USB-gadget backend that uses `dummy_hcd`, not a physical UDC. Each
 controller must be able to declare any subset of those levels, and creation
 must select one exact level with no fallback. The current `UsbTransportValidation`
 API is transitional and will be replaced by that deployable `UsbGadget` level.
