@@ -116,6 +116,33 @@ struct NamedController {
     controller: Arc<Mutex<Controller>>,
     indicators: ReverseIndicators,
     motion_worker: Option<MotionWorker>,
+    second_touch: LatchedTouch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LatchedTouch {
+    active: bool,
+    x: u16,
+    y: u16,
+}
+
+impl Default for LatchedTouch {
+    fn default() -> Self {
+        Self {
+            active: false,
+            x: 960,
+            y: 470,
+        }
+    }
+}
+
+impl LatchedTouch {
+    fn contact(self, id: u8) -> Option<DualSenseTouchContact> {
+        self.active
+            .then(|| DualSenseTouchContact::new(id, self.x, self.y))
+            .transpose()
+            .expect("latched touch coordinates are bounded by the GUI sliders")
+    }
 }
 
 struct MotionWorker {
@@ -374,7 +401,7 @@ impl Controller {
         };
         result
     }
-    fn draw(&mut self, ui: &mut egui::Ui) {
+    fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
         if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
             let battery = self.battery();
             ui.group(|ui| {
@@ -398,7 +425,7 @@ impl Controller {
         }
         match self {
             Self::Xbox(controller) => draw_xbox(ui, controller),
-            Self::DualSense(controller) => draw_dualsense(ui, controller),
+            Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
             Self::DualShock4(controller) => draw_dualshock4(ui, controller),
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
         }
@@ -487,6 +514,7 @@ impl App {
                     controller,
                     indicators: ReverseIndicators::default(),
                     motion_worker,
+                    second_touch: LatchedTouch::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
@@ -684,7 +712,7 @@ impl eframe::App for App {
                                 .lock()
                                 .map_err(|_| "controller mutex poisoned while drawing".to_owned())
                                 .and_then(|mut controller| {
-                                    controller.draw(ui);
+                                    controller.draw(ui, &mut named.second_touch);
                                     if controller.is_dirty() {
                                         controller.commit()?;
                                     }
@@ -1003,7 +1031,11 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     });
 }
 #[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
-fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
+fn draw_dualsense(
+    ui: &mut egui::Ui,
+    controller: &mut DualSenseController,
+    second_touch: &mut LatchedTouch,
+) {
     surface(ui, controller.surface());
     digital_controls(ui, |update| {
         let _ = controller.set_digital(update);
@@ -1076,7 +1108,7 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
     ui.group(|ui| {
         ui.label("Touchpad");
         draw_touchpad(ui, controller);
-        draw_touch_slot(ui, controller, TouchSlot::Second, 1, "Second contact");
+        draw_latched_touch_slot(ui, controller, TouchSlot::Second, 1, second_touch);
     });
     let target = controller.surface().common().target;
     if dualsense_motion_target(target) {
@@ -1370,31 +1402,24 @@ fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
     }
 }
 
-fn draw_touch_slot(
+fn draw_latched_touch_slot(
     ui: &mut egui::Ui,
     controller: &mut DualSenseController,
     slot: TouchSlot,
     id: u8,
-    label: &str,
+    touch: &mut LatchedTouch,
 ) {
-    let contact = controller.state().touch(slot);
-    let mut x = i32::from(contact.map_or(0, DualSenseTouchContact::x));
-    let mut y = i32::from(contact.map_or(0, DualSenseTouchContact::y));
     ui.group(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut x, 0..=1919).text("X"));
-        ui.add(egui::Slider::new(&mut y, 0..=941).text("Y"));
-        if ui.button("Set touch").clicked() {
-            if let Ok(contact) = DualSenseTouchContact::new(
-                id,
-                u16::try_from(x).expect("slider is bounded to u16"),
-                u16::try_from(y).expect("slider is bounded to u16"),
-            ) {
-                let _ = controller.set_touch(slot, Some(contact));
-            }
-        }
-        if ui.button("Clear touch").clicked() {
-            let _ = controller.set_touch(slot, None);
+        ui.label("Second contact");
+        let mut changed = ui.checkbox(&mut touch.active, "Active").changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut touch.x, 0..=1919).text("X"))
+            .changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut touch.y, 0..=941).text("Y"))
+            .changed();
+        if changed {
+            let _ = controller.set_touch(slot, touch.contact(id));
         }
     });
 }
@@ -1413,6 +1438,27 @@ mod tests {
         assert_eq!(repaint_interval(0), Duration::from_millis(50));
         assert_eq!(repaint_interval(1), Duration::from_millis(4));
         assert_eq!(repaint_interval(8), Duration::from_millis(4));
+    }
+
+    #[test]
+    fn second_touch_latches_its_coordinates_while_inactive() {
+        let mut touch = LatchedTouch {
+            active: true,
+            x: 123,
+            y: 456,
+        };
+        assert_eq!(
+            touch.contact(1),
+            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
+        );
+        touch.active = false;
+        assert_eq!(touch.contact(1), None);
+        assert_eq!((touch.x, touch.y), (123, 456));
+        touch.active = true;
+        assert_eq!(
+            touch.contact(1),
+            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
+        );
     }
 
     #[test]

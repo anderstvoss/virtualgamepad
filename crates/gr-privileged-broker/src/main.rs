@@ -7,7 +7,8 @@
 
 use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
-    dummy_hcd::DummyHcdSession, read_message, write_message,
+    dummy_hcd::{DummyHcdSession, cleanup_stale_sessions},
+    read_message, write_message,
 };
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::{
@@ -21,6 +22,7 @@ use std::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    cleanup_stale_sessions()?;
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let config = arguments
         .windows(2)

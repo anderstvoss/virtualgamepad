@@ -10,7 +10,7 @@ use std::{
     io::{Read, Write},
     os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
     path::{Path, PathBuf},
-    process::Command,
+    process::{self, Command},
     sync::{
         Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -29,10 +29,14 @@ const USB_DEVICE_BCD: &str = "0x0110";
 const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
+// A DummyHcd interrupt endpoint can be temporarily full while Steam performs
+// its initial HID probes. That is flow control, not a broken attachment. A
+// later 250 Hz DualSense state frame supersedes a skipped frame, so preserve
+// the session rather than turning this transient condition into a disconnect.
 const INPUT_WRITE_TIMEOUT: Duration = Duration::from_millis(25);
 const HOST_DRIVER_SETTLE_TIME: Duration = Duration::from_millis(500);
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
-static NEXT_GADGET_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_GADGET_ID: OnceLock<AtomicU64> = OnceLock::new();
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
 // the static feature IDs replied to below. It is intentionally not client input.
 #[repr(C)]
@@ -98,6 +102,23 @@ pub struct DummyHcdSession {
     closed: bool,
 }
 
+/// Recover `ConfigFS` gadget roots left by a broker process that systemd stopped
+/// before Rust could run session destructors. Only fixed-format project roots
+/// directly below the dedicated `ConfigFS` gadget directory are eligible.
+pub fn cleanup_stale_sessions() -> Result<(), BrokerError> {
+    let host = LinuxDummyHcdHost;
+    if !host.is_dir(Path::new(CONFIGFS)) {
+        return Ok(());
+    }
+    for entry in fs::read_dir(CONFIGFS).map_err(io)? {
+        let root = entry.map_err(io)?.path();
+        if is_owned_root(&root) {
+            cleanup(&host, &root)?;
+        }
+    }
+    Ok(())
+}
+
 enum HidGadgetEvent {
     None,
     Output(Vec<u8>),
@@ -116,9 +137,10 @@ struct LinuxHidGadgetIo {
 impl HidGadgetIo for LinuxHidGadgetIo {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
         let fd = self.file.as_raw_fd();
-        write_input_with_retry(&mut self.file, report, |remaining| {
+        let _delivered = write_input_with_retry(&mut self.file, report, |remaining| {
             wait_until_writable_fd(fd, remaining)
-        })
+        })?;
+        Ok(())
     }
     fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError> {
         let mut poll = libc::pollfd {
@@ -179,7 +201,7 @@ impl DummyHcdSession {
                 return Err(host("allowlisted kernel module could not load"));
             }
         }
-        let gadget_id = NEXT_GADGET_ID.fetch_add(1, Ordering::Relaxed);
+        let gadget_id = next_gadget_id()?;
         if gadget_id == u64::MAX {
             return Err(host("dummy_hcd gadget identifier space is exhausted"));
         }
@@ -240,6 +262,17 @@ impl DummyHcdSession {
     fn reply(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
         self.io.reply_feature(id, data, userspace)
     }
+}
+
+fn next_gadget_id() -> Result<u64, BrokerError> {
+    // ConfigFS survives a broker restart. Namespace the monotonically
+    // allocated suffix by process ID so a new broker (or root integration
+    // process) never mistakes a still-live predecessor's root for its own.
+    // The ID remains a fixed-width hexadecimal broker-issued name.
+    NEXT_GADGET_ID
+        .get_or_init(|| AtomicU64::new(u64::from(process::id()) << 32))
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| host("dummy_hcd gadget identifier space is exhausted"))
 }
 impl HostSession for DummyHcdSession {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
@@ -305,6 +338,11 @@ fn setup(host: &impl DummyHcdHost, root: &Path, serial: &str) -> Result<(), Brok
     host.create_dir_all(&config.join("strings/0x409"))
         .map_err(io)?;
     write(host, &config.join("MaxPower"), "250")?;
+    write(
+        host,
+        &config.join("strings/0x409/configuration"),
+        "DualSense dummy_hcd",
+    )?;
     let function = root.join("functions/hid.dualsense");
     host.create_dir(&function).map_err(io)?;
     write(host, &function.join("protocol"), "0")?;
@@ -502,11 +540,11 @@ fn write_input_with_retry(
     writer: &mut impl Write,
     report: &[u8],
     mut wait: impl FnMut(Duration) -> Result<bool, BrokerError>,
-) -> Result<(), BrokerError> {
+) -> Result<bool, BrokerError> {
     let start = Instant::now();
     loop {
         match writer.write(report) {
-            Ok(count) if count == report.len() => return Ok(()),
+            Ok(count) if count == report.len() => return Ok(true),
             Ok(_) => {
                 return Err(host(
                     "dummy_hcd HID endpoint accepted a partial input report",
@@ -515,7 +553,7 @@ fn write_input_with_retry(
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 let remaining = INPUT_WRITE_TIMEOUT.saturating_sub(start.elapsed());
                 if remaining.is_zero() || !wait(remaining)? {
-                    return Err(host("dummy_hcd HID endpoint stayed busy"));
+                    return Ok(false);
                 }
             }
             Err(error) => return Err(io(error)),
@@ -696,6 +734,20 @@ mod tests {
     }
 
     #[test]
+    fn stale_recovery_namespace_excludes_unrelated_configfs_gadgets() {
+        assert!(is_owned_root(Path::new(
+            "/sys/kernel/config/usb_gadget/virtualgamepad-0123456789abcdef"
+        )));
+        for root in [
+            "/sys/kernel/config/usb_gadget/virtualgamepad-0123456789abcde",
+            "/sys/kernel/config/usb_gadget/other-gadget",
+            "/sys/kernel/config/usb_gadget/virtualgamepad-0123456789abcdef/child",
+        ] {
+            assert!(!is_owned_root(Path::new(root)), "must not recover {root}");
+        }
+    }
+
+    #[test]
     fn fake_host_covers_configfs_creation_and_dependency_ordered_cleanup() {
         let host = FakeHost::new();
         let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
@@ -716,6 +768,12 @@ mod tests {
                 .iter()
                 .any(|operation| operation.ends_with("/functions/hid.dualsense/interval")),
             "a supported HID ConfigFS interval is pinned to the POC value"
+        );
+        assert!(
+            operations
+                .iter()
+                .any(|operation| operation.ends_with("/configs/c.1/strings/0x409/configuration")),
+            "the ConfigFS topology includes the POC's USB configuration string"
         );
         assert!(
             operations
@@ -789,20 +847,25 @@ mod tests {
             outcomes: [Err(std::io::ErrorKind::WouldBlock), Ok(REPORT_LENGTH)].into(),
         };
         let mut waits = 0;
-        write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| {
-            waits += 1;
-            Ok(true)
-        })
-        .expect("a ready endpoint accepts the retried report");
+        assert!(
+            write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| {
+                waits += 1;
+                Ok(true)
+            })
+            .expect("a ready endpoint accepts the retried report")
+        );
         assert_eq!(waits, 1);
     }
 
     #[test]
-    fn input_write_rejects_a_hid_endpoint_that_stays_busy() {
+    fn input_write_skips_a_hid_endpoint_that_stays_temporarily_busy() {
         let mut writer = RetryWriter {
             outcomes: [Err(std::io::ErrorKind::WouldBlock)].into(),
         };
-        assert!(write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| Ok(false)).is_err());
+        assert!(
+            !write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| Ok(false))
+                .expect("temporary endpoint backpressure is non-terminal")
+        );
     }
 
     #[test]
