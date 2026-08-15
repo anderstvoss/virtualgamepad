@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -59,13 +59,13 @@ jobs:
         # actual cargo invocations honour rust-toolchain.toml at the
         # repo root via rustup, so the pinned channel still drives
         # what runs.
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -128,12 +128,12 @@ jobs:
           echo "MSRV: $MSRV"
 
       - name: Install Rust at MSRV
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ steps.msrv.outputs.msrv }}
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: msrv-${{ steps.msrv.outputs.msrv }}
 
@@ -153,7 +153,7 @@ jobs:
     steps:
       - name: Harden runner
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -177,12 +177,12 @@ jobs:
 
       - name: Install Rust
         # See rust-lint job's Install Rust step for rationale.
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
       - name: Check build
         run: cargo check --workspace --all-targets --all-features
@@ -213,7 +213,7 @@ jobs:
     steps:
       - name: Harden runner
         if: runner.os == 'Linux'
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -264,7 +264,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -288,7 +288,7 @@ jobs:
 
       - name: Install Rust
         # See rust-lint job's Install Rust step for rationale.
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: stable
 
@@ -310,7 +310,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
         with:
           # actions/dependency-review-action fetches the dependency
           # compare from api.github.com, license/advisory lookups via
