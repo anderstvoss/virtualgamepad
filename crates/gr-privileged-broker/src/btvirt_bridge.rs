@@ -5,6 +5,8 @@ use std::{
     fs,
     io::{Read, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    thread,
+    time::Duration,
 };
 
 pub const BTVIRT_EXECUTABLE: &str = "/usr/libexec/virtualgamepad/virtualgamepad-btvirt";
@@ -83,6 +85,16 @@ impl BtvirtSession {
             closed: false,
         })
     }
+
+    fn ensure_alive(&mut self) -> Result<(), BrokerError> {
+        if let Some(status) = self.child.try_wait().map_err(host_io)? {
+            self.closed = true;
+            return Err(BrokerError::Host {
+                reason: format!("btvirt bridge exited with {status}"),
+            });
+        }
+        Ok(())
+    }
 }
 fn verify_executable(path: &str) -> Result<(), BrokerError> {
     let metadata = fs::metadata(path).map_err(host_io)?;
@@ -103,9 +115,11 @@ fn verify_executable(path: &str) -> Result<(), BrokerError> {
 }
 impl HostSession for BtvirtSession {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
+        self.ensure_alive()?;
         write_frame(&mut self.input, 2, report)
     }
     fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError> {
+        self.ensure_alive()?;
         write_frame(&mut self.input, 3, &[])?;
         let (tag, body) = read_frame(&mut self.output)?;
         match tag {
@@ -124,8 +138,15 @@ impl HostSession for BtvirtSession {
     fn close(&mut self) -> Result<(), BrokerError> {
         if !self.closed {
             let _ = write_frame(&mut self.input, 4, &[]);
-            let _ = self.child.kill();
-            let _ = self.child.wait();
+            for _ in 0..10 {
+                if self.child.try_wait().map_err(host_io)?.is_some() {
+                    self.closed = true;
+                    return Ok(());
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            self.child.kill().map_err(host_io)?;
+            let _ = self.child.wait().map_err(host_io)?;
             self.closed = true;
         }
         Ok(())
