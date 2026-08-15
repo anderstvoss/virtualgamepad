@@ -323,7 +323,7 @@ impl Gadget {
         // `hid-playstation` creates gamepad, motion, and touch input nodes
         // shortly after hidraw. Let that second udev phase complete first.
         if host_hidraw.is_some() {
-            std::thread::sleep(Duration::from_millis(250));
+            std::thread::sleep(Duration::from_millis(500));
         }
         let input_events = device_nodes("event")?
             .into_iter()
