@@ -6,39 +6,12 @@ use eframe::egui;
 use poc_dualsense_dummy_hcd::{ControllerState, Gadget, preflight};
 
 #[cfg(target_os = "linux")]
-fn main() {
-    if std::env::args().any(|argument| argument == "--self-test") {
-        match Gadget::create() {
-            Ok(gadget) => {
-                println!(
-                    "created {} via {}; host hidraw: {:?}; input events: {:?}",
-                    gadget.identity.serial,
-                    gadget.hidg.display(),
-                    gadget.host_hidraw,
-                    gadget.input_events
-                );
-                // Give the host driver enough time to issue its feature
-                // probes before deliberately disconnecting the POC.
-                std::thread::sleep(std::time::Duration::from_secs(1));
-                if let Err(error) = gadget.cleanup() {
-                    eprintln!("POC cleanup failed: {error}");
-                    std::process::exit(1);
-                }
-            }
-            Err(error) => {
-                eprintln!("POC self-test failed: {error}");
-                std::process::exit(1);
-            }
-        }
-        return;
-    }
-    if let Err(error) = eframe::run_native(
+fn main() -> Result<(), eframe::Error> {
+    eframe::run_native(
         "DualSense dummy_hcd POC",
         eframe::NativeOptions::default(),
         Box::new(|_| Ok(Box::<App>::default())),
-    ) {
-        eprintln!("POC GUI failed: {error}");
-    }
+    )
 }
 #[cfg(not(target_os = "linux"))]
 fn main() {
