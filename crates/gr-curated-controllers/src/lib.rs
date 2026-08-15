@@ -490,7 +490,7 @@ mod integration_tests {
         );
         assert!(appeared, "UHID device never materialized an input node");
         assert!(
-            input_node_exists_containing("Virtual DualSense Motion Sensors"),
+            input_node_exists_containing("DualSense Wireless Controller Motion Sensors"),
             "a valid calibration feature must let hid-playstation create the motion device"
         );
 
@@ -513,7 +513,7 @@ mod integration_tests {
             "DualSense input node disappeared during the host probe interval"
         );
         assert!(
-            input_node_exists_containing("Virtual DualSense Motion Sensors"),
+            input_node_exists_containing("DualSense Wireless Controller Motion Sensors"),
             "motion sensor node disappeared after a non-zero DualSense motion report"
         );
         controller.close();
@@ -573,7 +573,7 @@ mod integration_tests {
             .unwrap_or_else(|error| panic!("Steam cannot open {}: {error}", hidraw.display()));
         let _ = read_hid_reports(&mut hidraw); // Ignore the initial neutral report.
         let sensor_path = newly_created_input_event_path_containing(
-            "Virtual DualSense Motion Sensors",
+            "DualSense Wireless Controller Motion Sensors",
             &input_events_before,
         )
         .expect("hid-playstation did not create the virtual DualSense motion event device");
@@ -626,7 +626,7 @@ mod integration_tests {
         }
         assert!(
             virtual_dualsense_hidraw_path(session).is_some()
-                && input_node_exists_containing("Virtual DualSense Motion Sensors"),
+                && input_node_exists_containing("DualSense Wireless Controller Motion Sensors"),
             "DualSense ceased to be detectable during sustained motion"
         );
         controller.close();

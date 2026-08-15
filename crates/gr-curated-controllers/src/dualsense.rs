@@ -1098,9 +1098,6 @@ impl DualSenseController {
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
-        // UHID name metadata is not the USB product descriptor used by
-        // OpenPuck. `hid-playstation` only materializes the virtual sensor
-        // device with this established UHID identity.
         device_name: "Virtual DualSense".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
@@ -1227,13 +1224,13 @@ fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Hid(NativeHidRealization {
         bus_type: 0x03,
-        device_name: "Virtual DualSense".into(),
+        device_name: "DualSense Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/dualsense".into(),
         unique_id: "virtualgamepad-dualsense".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
             product_id: 0x0ce6,
-            version: 1,
+            version: 0x0110,
         },
         descriptor: DUALSENSE_USB_DESCRIPTOR.to_vec(),
         numbered_input_reports: true,
@@ -1524,8 +1521,8 @@ mod tests {
         assert!(realization.numbered_output_reports);
         assert!(realization.numbered_feature_reports);
         assert_eq!(realization.descriptor.len(), 273);
-        assert_eq!(realization.device_name, "Virtual DualSense");
-        assert_eq!(realization.identity.version, 1);
+        assert_eq!(realization.device_name, "DualSense Wireless Controller");
+        assert_eq!(realization.identity.version, 0x0110);
         assert!(
             realization
                 .descriptor
