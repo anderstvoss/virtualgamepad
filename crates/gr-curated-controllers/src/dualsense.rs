@@ -822,8 +822,11 @@ pub enum DualSenseHidOutput {
         raw: Vec<u8>,
         valid_flag0: u8,
         valid_flag1: u8,
-        right_motor: u8,
-        left_motor: u8,
+        valid_flag2: u8,
+        /// Present only when the host enables compatible vibration.
+        right_motor: Option<u8>,
+        /// Present only when the host enables compatible vibration.
+        left_motor: Option<u8>,
         right_trigger_effect: [u8; 11],
         left_trigger_effect: [u8; 11],
         /// Present only when the host set the mic-mute LED valid bit.
@@ -845,11 +848,14 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
         right_trigger_effect.copy_from_slice(&raw[10..21]);
         let mut left_trigger_effect = [0_u8; 11];
         left_trigger_effect.copy_from_slice(&raw[21..32]);
+        let valid_flag2 = raw[41];
+        let vibration_enabled = raw[0] & 0x01 != 0 || valid_flag2 & 0x04 != 0;
         return DualSenseHidOutput::UsbOutput {
             valid_flag0: raw[0],
             valid_flag1: raw[1],
-            right_motor: raw[2],
-            left_motor: raw[3],
+            valid_flag2,
+            right_motor: vibration_enabled.then_some(raw[2]),
+            left_motor: vibration_enabled.then_some(raw[3]),
             right_trigger_effect,
             left_trigger_effect,
             mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
@@ -1499,8 +1505,9 @@ mod tests {
                 raw,
                 valid_flag0: 0x03,
                 valid_flag1: 0x15,
-                right_motor: 0x33,
-                left_motor: 0x44,
+                valid_flag2: 0,
+                right_motor: Some(0x33),
+                left_motor: Some(0x44),
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
                 mute_button_led: Some(true),
@@ -1520,11 +1527,26 @@ mod tests {
         assert!(matches!(
             decode_dualsense_hid_output(Some(0x02), raw),
             DualSenseHidOutput::UsbOutput {
-                right_motor: 0x55,
-                left_motor: 0x66,
+                right_motor: Some(0x55),
+                left_motor: Some(0x66),
                 mute_button_led: None,
                 player_leds: None,
                 lightbar_rgb: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn output_without_a_vibration_valid_flag_does_not_claim_rumble() {
+        let mut raw = vec![0_u8; 47];
+        raw[2] = 0x55;
+        raw[3] = 0x66;
+        assert!(matches!(
+            decode_dualsense_hid_output(Some(0x02), raw),
+            DualSenseHidOutput::UsbOutput {
+                right_motor: None,
+                left_motor: None,
                 ..
             }
         ));

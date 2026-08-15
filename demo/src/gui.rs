@@ -180,12 +180,15 @@ impl ReverseIndicators {
     }
     fn apply_dualsense_usb_output(
         &mut self,
-        right_motor: u8,
-        left_motor: u8,
+        right_motor: Option<u8>,
+        left_motor: Option<u8>,
         lightbar_rgb: Option<[u8; 3]>,
         mute_button_led: Option<bool>,
     ) {
-        self.set_rumble(right_motor != 0 || left_motor != 0);
+        self.set_rumble(
+            right_motor.is_some_and(|motor| motor != 0)
+                || left_motor.is_some_and(|motor| motor != 0),
+        );
         if let Some(lightbar_rgb) = lightbar_rgb {
             self.led = Some(lightbar_rgb);
         }
@@ -1455,7 +1458,7 @@ mod tests {
             mute_led: Some(true),
             ..ReverseIndicators::default()
         };
-        indicators.apply_dualsense_usb_output(0x40, 0x20, None, None);
+        indicators.apply_dualsense_usb_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
         assert_eq!(indicators.mute_led, Some(true));
         assert!(indicators.rumble_active);

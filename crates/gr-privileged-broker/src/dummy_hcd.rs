@@ -29,6 +29,7 @@ const USB_DEVICE_BCD: &str = "0x0110";
 const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
+const INPUT_WRITE_TIMEOUT: Duration = Duration::from_millis(25);
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 static NEXT_GADGET_ID: AtomicU64 = AtomicU64::new(1);
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
@@ -113,7 +114,10 @@ struct LinuxHidGadgetIo {
 }
 impl HidGadgetIo for LinuxHidGadgetIo {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
-        self.file.write_all(report).map_err(io)
+        let fd = self.file.as_raw_fd();
+        write_input_with_retry(&mut self.file, report, |remaining| {
+            wait_until_writable_fd(fd, remaining)
+        })
     }
     fn poll(&mut self) -> Result<HidGadgetEvent, BrokerError> {
         let mut poll = libc::pollfd {
@@ -434,22 +438,62 @@ fn is_configured_state(value: &str) -> bool {
     value.trim() == "configured"
 }
 fn wait_until_writable(file: &File) -> Result<(), BrokerError> {
+    if wait_until_writable_for(file, Duration::from_secs(5))? {
+        Ok(())
+    } else {
+        Err(host("dummy_hcd HID endpoint did not become writable"))
+    }
+}
+fn wait_until_writable_for(file: &File, timeout: Duration) -> Result<bool, BrokerError> {
+    wait_until_writable_fd(file.as_raw_fd(), timeout)
+}
+fn wait_until_writable_fd(fd: std::os::fd::RawFd, timeout: Duration) -> Result<bool, BrokerError> {
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(5) {
+    while start.elapsed() < timeout {
         let mut poll = libc::pollfd {
-            fd: file.as_raw_fd(),
+            fd,
             events: libc::POLLOUT,
             revents: 0,
         };
-        let result = unsafe { libc::poll(&raw mut poll, 1, 50) };
+        let remaining = timeout
+            .saturating_sub(start.elapsed())
+            .min(Duration::from_millis(5));
+        let timeout_ms = i32::try_from(remaining.as_millis())
+            .unwrap_or(i32::MAX)
+            .max(1);
+        let result = unsafe { libc::poll(&raw mut poll, 1, timeout_ms) };
         if result < 0 {
             return Err(io(std::io::Error::last_os_error()));
         }
         if poll.revents & libc::POLLOUT != 0 {
-            return Ok(());
+            return Ok(true);
         }
     }
-    Err(host("dummy_hcd HID endpoint did not become writable"))
+    Ok(false)
+}
+fn write_input_with_retry(
+    writer: &mut impl Write,
+    report: &[u8],
+    mut wait: impl FnMut(Duration) -> Result<bool, BrokerError>,
+) -> Result<(), BrokerError> {
+    let start = Instant::now();
+    loop {
+        match writer.write(report) {
+            Ok(count) if count == report.len() => return Ok(()),
+            Ok(_) => {
+                return Err(host(
+                    "dummy_hcd HID endpoint accepted a partial input report",
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                let remaining = INPUT_WRITE_TIMEOUT.saturating_sub(start.elapsed());
+                if remaining.is_zero() || !wait(remaining)? {
+                    return Err(host("dummy_hcd HID endpoint stayed busy"));
+                }
+            }
+            Err(error) => return Err(io(error)),
+        }
+    }
 }
 fn write(host: &impl DummyHcdHost, path: &Path, value: &str) -> Result<(), BrokerError> {
     host.write(path, value.as_bytes()).map_err(io)
@@ -502,6 +546,21 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((id, data.to_vec(), userspace));
+            Ok(())
+        }
+    }
+
+    struct RetryWriter {
+        outcomes: VecDeque<Result<usize, std::io::ErrorKind>>,
+    }
+    impl Write for RetryWriter {
+        fn write(&mut self, _: &[u8]) -> Result<usize, std::io::Error> {
+            self.outcomes
+                .pop_front()
+                .expect("test writer has an outcome")
+                .map_err(std::io::Error::from)
+        }
+        fn flush(&mut self) -> Result<(), std::io::Error> {
             Ok(())
         }
     }
@@ -692,6 +751,28 @@ mod tests {
     }
 
     #[test]
+    fn input_write_retries_a_transient_busy_hid_endpoint() {
+        let mut writer = RetryWriter {
+            outcomes: [Err(std::io::ErrorKind::WouldBlock), Ok(REPORT_LENGTH)].into(),
+        };
+        let mut waits = 0;
+        write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| {
+            waits += 1;
+            Ok(true)
+        })
+        .expect("a ready endpoint accepts the retried report");
+        assert_eq!(waits, 1);
+    }
+
+    #[test]
+    fn input_write_rejects_a_hid_endpoint_that_stays_busy() {
+        let mut writer = RetryWriter {
+            outcomes: [Err(std::io::ErrorKind::WouldBlock)].into(),
+        };
+        assert!(write_input_with_retry(&mut writer, &[0; REPORT_LENGTH], |_| Ok(false)).is_err());
+    }
+
+    #[test]
     fn configfs_usb_identity_uses_explicit_hexadecimal_values() {
         assert_eq!(USB_VENDOR_ID, "0x054c");
         assert_eq!(USB_PRODUCT_ID, "0x0ce6");
@@ -744,6 +825,7 @@ mod tests {
     #[ignore = "requires root, ConfigFS, and dummy_hcd kernel support"]
     fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
+        let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
         let mut session = DummyHcdSession::open(0xdecaf).expect("open dummy_hcd session");
         let root = session.root.clone();
         assert!(root.is_dir());
@@ -751,10 +833,28 @@ mod tests {
             .send_input(&[0; REPORT_LENGTH])
             .expect("input report");
         let _ = session.poll_reverse().expect("reverse poll");
+        let hidraw = wait_node("hidraw", &known_hidraw).expect("new DualSense hidraw node");
+        let calibration = thread::spawn(move || {
+            let file = File::open(hidraw).map_err(|error| error.to_string())?;
+            let mut bytes = [0_u8; REPORT_LENGTH];
+            bytes[0] = 0x05;
+            // HIDIOCGFEATURE(64): query the fixed DualSense calibration
+            // feature exactly as a host gyro setup does through hidraw.
+            let result = unsafe { libc::ioctl(file.as_raw_fd(), 0xc040_4807, bytes.as_mut_ptr()) };
+            if result < 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            Ok::<_, String>(bytes)
+        })
+        .join()
+        .expect("feature request thread did not panic");
         session.close().expect("close dummy_hcd session");
         assert!(
             !root.exists(),
             "cleanup left the owned ConfigFS gadget behind"
         );
+        let calibration = calibration.expect("host retrieves DualSense gyro calibration feature");
+        assert_eq!(calibration[0], 0x05);
+        assert_ne!(&calibration[7..9], &[0, 0]);
     }
 }
