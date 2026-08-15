@@ -14,7 +14,7 @@ use gr_realization_api::{
     NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
     NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    RealizationTarget, RealizationTargetSet,
 };
 use std::collections::BTreeMap;
 
@@ -475,6 +475,15 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     },
 };
 
+const fn motion_targets() -> RealizationTargetSet {
+    RealizationTargetSet::singleton(RealizationTarget::Uhid)
+        .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
+}
+
+const fn supports_motion(target: RealizationTarget) -> bool {
+    motion_targets().contains(target)
+}
+
 pub struct DualSenseDefinition;
 impl RealizationControllerDefinition for DualSenseDefinition {
     fn controller_id(&self) -> ControllerId {
@@ -927,8 +936,11 @@ impl DualSenseController {
         })
     }
     pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError> {
-        if !matches!(self.0.selection().target, RealizationTarget::Uhid) {
-            return Err(common::unavailable(self.0.selection().target));
+        if !supports_motion(self.0.selection().target) {
+            return Err(ControlError::UnavailableInRealization {
+                selected_target: self.0.selection().target,
+                available_in: motion_targets(),
+            });
         }
         self.0.update_state(|state| {
             state.motion = motion;
@@ -953,15 +965,14 @@ impl DualSenseController {
     pub fn feature_available(&self, feature: DualSenseFeature) -> Result<(), ControlError> {
         match feature {
             DualSenseFeature::Touch => Ok(()),
-            DualSenseFeature::Motion
-                if matches!(self.0.selection().target, RealizationTarget::Uhid) =>
-            {
-                Ok(())
-            }
-            DualSenseFeature::Motion
-            | DualSenseFeature::Lightbar
+            DualSenseFeature::Motion if supports_motion(self.0.selection().target) => Ok(()),
+            DualSenseFeature::Lightbar
             | DualSenseFeature::AdaptiveTriggers
             | DualSenseFeature::Audio => Err(common::unavailable(self.0.selection().target)),
+            DualSenseFeature::Motion => Err(ControlError::UnavailableInRealization {
+                selected_target: self.0.selection().target,
+                available_in: motion_targets(),
+            }),
         }
     }
     pub fn commit(&mut self) -> Result<(), CommitError> {
@@ -1301,6 +1312,18 @@ mod tests {
             .expect("dummy_hcd frame");
         assert!(
             matches!(dummy, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
+        );
+    }
+
+    #[test]
+    fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
+        assert!(supports_motion(RealizationTarget::Uhid));
+        assert!(supports_motion(RealizationTarget::DummyHcd));
+        assert!(!supports_motion(RealizationTarget::Evdev));
+        assert_eq!(
+            motion_targets(),
+            RealizationTargetSet::singleton(RealizationTarget::Uhid)
+                .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
         );
     }
 
