@@ -12,20 +12,20 @@ they never select or branch on a controller family.
 A controller has one typed semantic state and one control vocabulary. A
 realization controls how a host sees that controller; it never selects a
 different input API or changes the meaning of a control. Linux targets map to
-four independent peer targets:
+three independent peer targets:
 
 | Realization target | Linux mechanism | Product role |
 | --- | --- | --- |
 | `Evdev` | uinput | Normal local deployment through Linux evdev. |
 | `Uhid` | UHID | Local HID realization with curated identity, reports, and reverse behavior. |
 | `DummyHcd` | dummy_hcd + ConfigFS | Broker-owned USB attachment emulation for curated controllers. |
-| `Btvirt` | project-extended btvirt | Broker-owned Bluetooth attachment emulation for curated controllers. |
 
 Targets are not an ordered ladder and do not imply each other. A controller
 may implement any non-empty subset. Normal creation selects one exact target.
-`DummyHcd` and `Btvirt` are privileged broker-backed attachment targets; an
-unavailable broker or host facility returns a typed error. No selection falls
-back to another provider or target.
+`DummyHcd` is a privileged broker-backed attachment target; an unavailable
+broker or host facility returns a typed error. No selection falls back to
+another provider or target. Bluetooth realization is deferred work on the
+`wip/btvirt` branch and is not a target on this branch.
 
 ## Feature-complete intent is controller-defined
 
@@ -56,11 +56,9 @@ prescriptive:
   explicit opt-in creation option; the root library exposes no standalone
   keyboard or mouse injection constructor.
 - UHID may realize local HID descriptors, identity, input reports, output
-  reports, and feature-report exchanges. It is not a USB or Bluetooth
-  device-role claim.
+  reports, and feature-report exchanges. It is not a USB device-role claim.
 - `DummyHcd` validates curated USB attachment behavior, including enumeration,
-  feature requests, and reverse output. `Btvirt` validates curated Bluetooth
-  attachment behavior through the administrator-pinned bridge package.
+  feature requests, and reverse output.
 
 Audio and attached accessories are separate from ordinary controller input and
 output. A native HID report may represent jack presence, mute, volume, audio

@@ -8,7 +8,6 @@ controller-fidelity claim.
 | --- | --- | --- |
 | DualSense / UHID | ResearchBacked | Curated DualSense HID realization with project-owned descriptor and feature fixtures. |
 | DualSense / DummyHcd | HostValidationRequired | Curated USB attachment realization; validate enumeration, feature exchange, motion, and output on a root-enabled host. |
-| DualSense / Btvirt | HostValidationRequired | Curated Classic HIDP realization; validate discovery, pairing, encrypted attachment, gyro, and output with the pinned bridge package. |
 | Xbox 360 / UHID | ResearchBacked | Local input-only HID identity and standard controls. XInput, xpad, rumble, and Xbox USB protocol fidelity require USB gadget work. |
 
 Before promoting any entry, compare its descriptor, neutral and full-state

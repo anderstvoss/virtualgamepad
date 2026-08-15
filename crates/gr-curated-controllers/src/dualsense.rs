@@ -10,7 +10,7 @@ use gr_controller_contract::{
 use gr_controller_runtime::ControllerRuntime;
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeBtvirtRealization,
+    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
     NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
     NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
@@ -228,17 +228,6 @@ fn advance_sensor_timestamp(state: &mut DualSenseState) {
     // advancing 4 ms timestamp matches its advertised 250 Hz USB sensor rate.
     state.sensor_timestamp = state.sensor_timestamp.wrapping_add(12_000);
     state.input_sequence = state.input_sequence.wrapping_add(1);
-}
-
-fn bluetooth_crc(bytes: &[u8]) -> u32 {
-    let mut crc = !0_u32;
-    for byte in std::iter::once(&0xa1_u8).chain(bytes.iter()) {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (u32::from(crc & 1 != 0) * 0xedb8_8320);
-        }
-    }
-    !crc
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -492,7 +481,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 4] = [
+        static ENTRIES: [RealizationManifestEntry; 3] = [
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
@@ -509,13 +498,6 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::DummyHcd,
-                provider_requirements: ProviderRequirements {
-                    requires_reverse_output: true,
-                },
-                audio_sidecar: None,
-            },
-            RealizationManifestEntry {
-                target: RealizationTarget::Btvirt,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -553,10 +535,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev
-                | RealizationTarget::Uhid
-                | RealizationTarget::DummyHcd
-                | RealizationTarget::Btvirt
+            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
         ) {
             Ok(())
         } else {
@@ -581,17 +560,6 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             };
             bytes.insert(0, report_id);
             return Ok(ProviderFrame::DummyHcdInput(bytes));
-        }
-        if selection.target == RealizationTarget::Btvirt {
-            let ProviderFrame::HidInput { bytes, .. } = dualsense_hid_input_report(state) else {
-                unreachable!()
-            };
-            let mut bluetooth = vec![0_u8; 78];
-            bluetooth[0] = 0x31;
-            bluetooth[2..65].copy_from_slice(&bytes);
-            let crc = bluetooth_crc(&bluetooth[..74]);
-            bluetooth[74..].copy_from_slice(&crc.to_le_bytes());
-            return Ok(ProviderFrame::BtvirtInput(bluetooth));
         }
         let mut events = Vec::new();
         for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
@@ -664,9 +632,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
 }
 
 /// USB-format `DualSense` input report (report ID `0x01`). The byte layout is
-/// taken from the Linux HID `PlayStation` driver's USB report structure; this
-/// project deliberately leaves transport-specific Bluetooth framing out of
-/// the UHID target.
+/// taken from the Linux HID `PlayStation` driver's USB report structure.
 fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
     let mut bytes = vec![0_u8; 63];
     bytes[0..6].copy_from_slice(&[
@@ -895,7 +861,7 @@ impl DualSenseController {
     pub const fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
             RealizationTarget::Uhid => &HID_SURFACE,
-            RealizationTarget::DummyHcd | RealizationTarget::Btvirt => &USB_SURFACE,
+            RealizationTarget::DummyHcd => &USB_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -1224,9 +1190,6 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
                 controller: CompiledControllerKind::DualSense,
             })
         }
-        RealizationTarget::Btvirt => NativeControllerRealization::Btvirt(NativeBtvirtRealization {
-            controller: CompiledControllerKind::DualSense,
-        }),
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -1325,7 +1288,7 @@ mod tests {
     }
 
     #[test]
-    fn broker_targets_use_distinct_fixed_transport_frames() {
+    fn dummy_hcd_uses_the_fixed_usb_transport_frame() {
         let state = DualSenseState::default();
         let dummy = DualSenseDefinition
             .encode(
@@ -1338,19 +1301,6 @@ mod tests {
             .expect("dummy_hcd frame");
         assert!(
             matches!(dummy, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
-        );
-
-        let bluetooth = DualSenseDefinition
-            .encode(
-                RealizationSelection {
-                    controller: DualSenseDefinition.controller_id(),
-                    target: RealizationTarget::Btvirt,
-                },
-                &state,
-            )
-            .expect("Bluetooth frame");
-        assert!(
-            matches!(bluetooth, ProviderFrame::BtvirtInput(bytes) if bytes.len() == 78 && bytes[0] == 0x31)
         );
     }
 

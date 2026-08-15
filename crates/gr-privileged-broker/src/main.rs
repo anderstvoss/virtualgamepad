@@ -2,12 +2,12 @@
 //! Root-owned local broker daemon.
 //!
 //! The daemon intentionally accepts only the protocol defined by its library.
-//! It never accepts descriptors, paths, modules, command lines, or Bluetooth
-//! identities from a client.
+//! It never accepts descriptors, paths, modules, command lines, identities,
+//! or arbitrary host configuration from a client.
 
 use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
-    btvirt_bridge::BtvirtSession, dummy_hcd::DummyHcdSession, read_message, write_message,
+    dummy_hcd::DummyHcdSession, read_message, write_message,
 };
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::{
@@ -98,7 +98,6 @@ impl HostSessionFactory for DaemonFactory {
             return Err(BrokerError::UnsupportedController { target, controller });
         }
         match target {
-            RealizationTarget::Btvirt => Ok(Box::new(BtvirtSession::open()?)),
             RealizationTarget::DummyHcd => Ok(Box::new(DummyHcdSession::open(session.0)?)),
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
@@ -131,7 +130,6 @@ fn dispatch(
             };
             let target = match target {
                 1 => RealizationTarget::DummyHcd,
-                2 => RealizationTarget::Btvirt,
                 _ => return Err(BrokerError::MalformedRequest),
             };
             if *controller != 1 {

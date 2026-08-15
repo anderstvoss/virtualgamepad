@@ -40,7 +40,6 @@ pub enum RealizationTarget {
     Evdev,
     Uhid,
     DummyHcd,
-    Btvirt,
 }
 
 impl fmt::Display for RealizationTarget {
@@ -49,7 +48,6 @@ impl fmt::Display for RealizationTarget {
             Self::Evdev => "linux uinput/evdev",
             Self::Uhid => "linux UHID",
             Self::DummyHcd => "linux dummy_hcd USB gadget",
-            Self::Btvirt => "linux btvirt Bluetooth attachment",
         })
     }
 }
@@ -86,7 +84,6 @@ const fn target_bit(target: RealizationTarget) -> u8 {
         RealizationTarget::Evdev => 1,
         RealizationTarget::Uhid => 2,
         RealizationTarget::DummyHcd => 4,
-        RealizationTarget::Btvirt => 8,
     }
 }
 
@@ -228,17 +225,11 @@ pub struct NativeDummyHcdRealization {
     pub controller: CompiledControllerKind,
 }
 
-/// A privileged broker creates the fixed Bluetooth peripheral for this kind.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct NativeBtvirtRealization {
-    pub controller: CompiledControllerKind,
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeControllerRealization {
     Evdev(NativeEvdevRealization),
     Uhid(NativeHidRealization),
     DummyHcd(NativeDummyHcdRealization),
-    Btvirt(NativeBtvirtRealization),
 }
 impl NativeControllerRealization {
     #[must_use]
@@ -247,7 +238,6 @@ impl NativeControllerRealization {
             Self::Evdev(_) => RealizationTarget::Evdev,
             Self::Uhid(_) => RealizationTarget::Uhid,
             Self::DummyHcd(_) => RealizationTarget::DummyHcd,
-            Self::Btvirt(_) => RealizationTarget::Btvirt,
         }
     }
 
@@ -330,7 +320,7 @@ impl NativeControllerRealization {
                     return Err(NativeRealizationError::HidUnnumberedFeatureHasReportId);
                 }
             }
-            Self::DummyHcd(_) | Self::Btvirt(_) => {}
+            Self::DummyHcd(_) => {}
         }
         Ok(())
     }
@@ -402,7 +392,6 @@ pub enum ProviderFrame {
         status: i32,
     },
     DummyHcdInput(Vec<u8>),
-    BtvirtInput(Vec<u8>),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvdevEvent {
@@ -612,7 +601,6 @@ mod tests {
     fn targets_are_exact_and_independent() {
         assert_ne!(RealizationTarget::Evdev, RealizationTarget::Uhid);
         assert_ne!(RealizationTarget::Uhid, RealizationTarget::DummyHcd);
-        assert_ne!(RealizationTarget::DummyHcd, RealizationTarget::Btvirt);
     }
 
     #[test]

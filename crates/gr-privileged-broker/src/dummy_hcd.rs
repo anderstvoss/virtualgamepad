@@ -5,11 +5,13 @@
 use crate::{BrokerError, HostSession};
 use gr_dualsense_wire::{USB_DESCRIPTOR, USB_REPORT_LENGTH, feature_responses};
 use std::{
+    collections::BTreeSet,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     os::{fd::AsRawFd, unix::fs::OpenOptionsExt},
     path::{Path, PathBuf},
     process::Command,
+    sync::{Mutex, OnceLock},
     thread,
     time::{Duration, Instant},
 };
@@ -24,6 +26,7 @@ const USB_DEVICE_BCD: &str = "0x0110";
 const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
+static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
 // the static feature IDs replied to below. It is intentionally not client input.
 #[repr(C)]
@@ -39,6 +42,7 @@ pub struct DummyHcdSession {
     root: PathBuf,
     file: File,
     serial: String,
+    udc: String,
     closed: bool,
 }
 impl DummyHcdSession {
@@ -61,9 +65,11 @@ impl DummyHcdSession {
         if root.exists() {
             return Err(host("generated gadget root already exists"));
         }
+        let mut reserved_udc = None;
         let result = (|| {
             setup(&root, &serial)?;
-            let udc = available_dummy_udc()?;
+            let udc = reserve_dummy_udc()?;
+            reserved_udc = Some(udc.clone());
             write(root.join("UDC"), &udc)?;
             wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
@@ -78,6 +84,7 @@ impl DummyHcdSession {
                 root: root.clone(),
                 file,
                 serial,
+                udc,
                 closed: false,
             })
         })();
@@ -89,6 +96,9 @@ impl DummyHcdSession {
                 Ok(session)
             }
             Err(error) => {
+                if let Some(udc) = reserved_udc {
+                    release_dummy_udc(&udc);
+                }
                 let _ = cleanup(&root);
                 Err(error)
             }
@@ -163,8 +173,10 @@ impl HostSession for DummyHcdSession {
     }
     fn close(&mut self) -> Result<(), BrokerError> {
         if !self.closed {
-            cleanup(&self.root)?;
+            let result = cleanup(&self.root);
+            release_dummy_udc(&self.udc);
             self.closed = true;
+            result?;
         }
         Ok(())
     }
@@ -208,11 +220,7 @@ fn setup(root: &Path, serial: &str) -> Result<(), BrokerError> {
     Ok(())
 }
 fn cleanup(root: &Path) -> Result<(), BrokerError> {
-    if !root.starts_with(CONFIGFS)
-        || !root
-            .file_name()
-            .is_some_and(|name| name.to_string_lossy().starts_with("virtualgamepad-"))
-    {
+    if !is_owned_root(root) {
         return Err(host("refusing cleanup outside owned gadget root"));
     }
     if !root.exists() {
@@ -250,7 +258,7 @@ fn names(path: &str) -> Result<Vec<String>, BrokerError> {
         })
         .collect()
 }
-fn available_dummy_udc() -> Result<String, BrokerError> {
+fn reserve_dummy_udc() -> Result<String, BrokerError> {
     let bound = fs::read_dir(CONFIGFS)
         .map_err(io)?
         .filter_map(Result::ok)
@@ -258,12 +266,41 @@ fn available_dummy_udc() -> Result<String, BrokerError> {
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
         .collect::<Vec<_>>();
-    select_dummy_udc(names("/sys/class/udc")?, &bound)
-        .ok_or_else(|| host("no unused dummy_hcd UDC is available"))
+    let mut reserved = RESERVED_UDCS
+        .get_or_init(|| Mutex::new(BTreeSet::new()))
+        .lock()
+        .map_err(|_| host("dummy_hcd UDC reservation lock is poisoned"))?;
+    let udc = select_dummy_udc(names("/sys/class/udc")?, &bound, &reserved)
+        .ok_or_else(|| host("no unused dummy_hcd UDC is available"))?;
+    reserved.insert(udc.clone());
+    Ok(udc)
 }
-fn select_dummy_udc(udcs: Vec<String>, bound: &[String]) -> Option<String> {
-    udcs.into_iter()
-        .find(|name| name.starts_with("dummy_udc.") && !bound.contains(name))
+fn release_dummy_udc(udc: &str) {
+    if let Ok(mut reserved) = RESERVED_UDCS
+        .get_or_init(|| Mutex::new(BTreeSet::new()))
+        .lock()
+    {
+        reserved.remove(udc);
+    }
+}
+fn select_dummy_udc(
+    udcs: Vec<String>,
+    bound: &[String],
+    reserved: &BTreeSet<String>,
+) -> Option<String> {
+    udcs.into_iter().find(|name| {
+        name.starts_with("dummy_udc.") && !bound.contains(name) && !reserved.contains(name)
+    })
+}
+fn is_owned_root(root: &Path) -> bool {
+    root.parent() == Some(Path::new(CONFIGFS))
+        && root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(|name| name.strip_prefix("virtualgamepad-"))
+            .is_some_and(|suffix| {
+                suffix.len() == 16 && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
 }
 fn nodes(prefix: &str) -> Result<Vec<PathBuf>, BrokerError> {
     let mut nodes = fs::read_dir("/dev")
@@ -360,6 +397,18 @@ mod tests {
     fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
         assert!(cleanup(Path::new("/tmp/virtualgamepad-0000000000000001")).is_err());
         assert!(cleanup(Path::new("/sys/kernel/config/usb_gadget/not-ours")).is_err());
+        assert!(
+            cleanup(Path::new(
+                "/sys/kernel/config/usb_gadget/virtualgamepad-deadbeef"
+            ))
+            .is_err()
+        );
+        assert!(
+            cleanup(Path::new(
+                "/sys/kernel/config/usb_gadget/virtualgamepad-0000000000000001/child"
+            ))
+            .is_err()
+        );
     }
 
     #[test]
@@ -385,13 +434,23 @@ mod tests {
             select_dummy_udc(
                 vec!["dwc2.0".into(), "dummy_udc.0".into(), "dummy_udc.1".into()],
                 &["dummy_udc.0".into()],
+                &BTreeSet::new(),
             ),
             Some("dummy_udc.1".into())
         );
         assert_eq!(
-            select_dummy_udc(vec!["dwc2.0".into()], &[]),
+            select_dummy_udc(vec!["dwc2.0".into()], &[], &BTreeSet::new()),
             None,
             "real hardware UDCs are never candidates"
+        );
+        assert_eq!(
+            select_dummy_udc(
+                vec!["dummy_udc.0".into()],
+                &[],
+                &BTreeSet::from(["dummy_udc.0".into()]),
+            ),
+            None,
+            "a broker-reserved UDC cannot be selected twice"
         );
     }
 

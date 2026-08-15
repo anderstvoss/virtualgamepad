@@ -555,11 +555,6 @@ impl eframe::App for App {
                         RealizationTarget::DummyHcd,
                         target_label(RealizationTarget::DummyHcd),
                     );
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationTarget::Btvirt,
-                        target_label(RealizationTarget::Btvirt),
-                    );
                 });
             let default_name = self.next_default_name();
             ui.add(
@@ -568,7 +563,7 @@ impl eframe::App for App {
                     .desired_width(f32::INFINITY),
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID requires /dev/uhid access. DummyHcd and Btvirt require the administrator-installed broker service.");
+            ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
             if ui.button("Create").clicked() {
                 self.create();
             }
@@ -680,7 +675,6 @@ const fn target_label(target: RealizationTarget) -> &'static str {
         RealizationTarget::Evdev => "Evdev / uinput",
         RealizationTarget::Uhid => "HID / UHID",
         RealizationTarget::DummyHcd => "USB / dummy_hcd",
-        RealizationTarget::Btvirt => "Bluetooth / btvirt",
         _ => "Unknown target",
     }
 }

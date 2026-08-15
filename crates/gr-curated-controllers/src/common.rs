@@ -4,7 +4,6 @@ use gr_controller_contract::{
     TargetAwareControllerDriver, prepare_realization,
 };
 use gr_controller_runtime::{ControllerRuntime, FrameSink};
-use gr_provider_linux_btvirt::LinuxBtvirtProvider;
 use gr_provider_linux_dummy_hcd::LinuxDummyHcdProvider;
 use gr_provider_linux_uhid::LinuxUhidProvider;
 use gr_provider_linux_uinput::LinuxUinputProvider;
@@ -123,7 +122,6 @@ where
         RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
         RealizationTarget::Uhid => LinuxUhidProvider.open(request)?,
         RealizationTarget::DummyHcd => LinuxDummyHcdProvider.open(request)?,
-        RealizationTarget::Btvirt => LinuxBtvirtProvider.open(request)?,
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown realization target".into(),

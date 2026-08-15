@@ -13,10 +13,10 @@ PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
 ReadWritePaths=/run/virtualgamepad /sys/kernel/config/usb_gadget
-RestrictAddressFamilies=AF_UNIX AF_BLUETOOTH
+RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN
-AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_MODULE CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_MODULE
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_MODULE
 SystemCallArchitectures=native
 Restart=on-failure
 

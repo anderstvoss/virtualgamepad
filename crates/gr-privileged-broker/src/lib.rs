@@ -12,7 +12,6 @@ use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use thiserror::Error;
 
-pub mod btvirt_bridge;
 pub mod dummy_hcd;
 
 /// Broker-owned host resource. Implementations are never constructed by an
@@ -134,7 +133,6 @@ impl BrokerClient {
 fn target_tag(target: RealizationTarget) -> Option<u8> {
     match target {
         RealizationTarget::DummyHcd => Some(1),
-        RealizationTarget::Btvirt => Some(2),
         RealizationTarget::Evdev | RealizationTarget::Uhid | _ => None,
     }
 }
@@ -369,7 +367,7 @@ impl BrokerPolicy {
         if !matches!(
             (target, controller),
             (
-                RealizationTarget::DummyHcd | RealizationTarget::Btvirt,
+                RealizationTarget::DummyHcd,
                 CompiledControllerKind::DualSense
             )
         ) {
@@ -401,7 +399,6 @@ impl BrokerPolicy {
         }
         let expected = match owned.target {
             RealizationTarget::DummyHcd => 64,
-            RealizationTarget::Btvirt => 78,
             _ => unreachable!("only broker targets open"),
         };
         if bytes.len() != expected {
@@ -540,7 +537,7 @@ mod tests {
             .open(
                 1000,
                 session,
-                RealizationTarget::Btvirt,
+                RealizationTarget::DummyHcd,
                 CompiledControllerKind::DualSense,
             )
             .unwrap();

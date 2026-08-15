@@ -21,7 +21,6 @@ members = [
     "crates/gr-provider-linux-uhid",
     "crates/gr-privileged-broker",
     "crates/gr-provider-linux-dummy-hcd",
-    "crates/gr-provider-linux-btvirt",
     "demo",
 ]
 resolver = "3"
