@@ -367,13 +367,7 @@ impl BrokerPolicy {
         if self.allowed_peers.binary_search(&peer).is_err() {
             return Err(BrokerError::Unauthorized { peer });
         }
-        if !matches!(
-            (target, controller),
-            (
-                RealizationTarget::DummyHcd,
-                CompiledControllerKind::DualSense
-            )
-        ) {
+        if target != RealizationTarget::DummyHcd {
             return Err(BrokerError::UnsupportedController { target, controller });
         }
         self.sessions.insert(
@@ -400,9 +394,11 @@ impl BrokerPolicy {
         if owned.peer != peer {
             return Err(BrokerError::WrongOwner { session });
         }
-        let expected = match owned.target {
-            RealizationTarget::DummyHcd => 64,
-            _ => unreachable!("only broker targets open"),
+        let Some(expected) = compiled_report_length(owned.target, owned.controller) else {
+            return Err(BrokerError::UnsupportedController {
+                target: owned.target,
+                controller: owned.controller,
+            });
         };
         if bytes.len() != expected {
             return Err(BrokerError::InvalidReportLength {
@@ -434,6 +430,23 @@ impl BrokerPolicy {
             return Err(BrokerError::WrongOwner { session });
         }
         Ok(owned)
+    }
+}
+
+fn compiled_report_length(
+    target: RealizationTarget,
+    controller: CompiledControllerKind,
+) -> Option<usize> {
+    if target != RealizationTarget::DummyHcd {
+        return None;
+    }
+    match controller {
+        CompiledControllerKind::DualSense
+        | CompiledControllerKind::DualShock4
+        | CompiledControllerKind::SwitchPro => Some(64),
+        // This is a standard HID fallback under the Xbox USB identity. It is
+        // deliberately not presented as the proprietary xpad/XInput wire protocol.
+        CompiledControllerKind::Xbox360 => Some(9),
     }
 }
 
@@ -530,6 +543,32 @@ mod tests {
             Err(BrokerError::InvalidReportLength { .. })
         ));
         assert!(broker.send_input(1000, session, &[0; 64]).is_ok());
+    }
+
+    #[test]
+    fn policy_accepts_only_exact_lengths_for_each_compiled_profile() {
+        let cases = [
+            (CompiledControllerKind::DualSense, 64),
+            (CompiledControllerKind::DualShock4, 64),
+            (CompiledControllerKind::SwitchPro, 64),
+            (CompiledControllerKind::Xbox360, 9),
+        ];
+        for (offset, (controller, report_length)) in cases.into_iter().enumerate() {
+            let mut broker = BrokerPolicy::new(vec![1000]);
+            let session = RealizationSessionId(u64::try_from(offset).unwrap() + 100);
+            broker
+                .open(1000, session, RealizationTarget::DummyHcd, controller)
+                .expect("compiled profile is policy-authorized");
+            assert!(
+                broker
+                    .send_input(1000, session, &vec![0; report_length])
+                    .is_ok()
+            );
+            assert!(matches!(
+                broker.send_input(1000, session, &vec![0; report_length + 1]),
+                Err(BrokerError::InvalidReportLength { .. })
+            ));
+        }
     }
 
     #[test]

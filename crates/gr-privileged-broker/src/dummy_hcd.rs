@@ -1,9 +1,16 @@
-//! Broker-only `ConfigFS` `dummy_hcd` `DualSense` realization.
+//! Broker-only, fixed-profile `ConfigFS` `dummy_hcd` realizations.
 
 #![allow(unsafe_code)]
 
 use crate::{BrokerError, HostSession};
-use gr_dualsense_wire::{USB_DESCRIPTOR, USB_REPORT_LENGTH, feature_responses};
+use gr_controller_wire::{
+    DUALSHOCK4_USB_DESCRIPTOR, STANDARD_GAMEPAD_DESCRIPTOR, SWITCH_PRO_USB_DESCRIPTOR,
+    dualsense::{
+        USB_DESCRIPTOR as DUALSENSE_USB_DESCRIPTOR, feature_responses as dualsense_features,
+    },
+    dualshock4_feature_responses,
+};
+use gr_realization_api::CompiledControllerKind;
 use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions},
@@ -20,16 +27,13 @@ use std::{
 };
 
 const CONFIGFS: &str = "/sys/kernel/config/usb_gadget";
-const REPORT_LENGTH: usize = USB_REPORT_LENGTH;
-// ConfigFS uses base-0 numeric parsing for these attributes. Keep the `0x`
-// prefix: a bare `054c` is not a valid decimal vendor ID.
-const USB_VENDOR_ID: &str = "0x054c";
-const USB_PRODUCT_ID: &str = "0x0ce6";
-const USB_DEVICE_BCD: &str = "0x0110";
+const MAX_REPORT_LENGTH: usize = 64;
 const USB_BCD: &str = "0x0200";
 const HIDG_GET_REPORT_ID: libc::c_ulong = 0x8001_6741;
 const HIDG_WRITE_GET_REPORT: libc::c_ulong = 0x4048_6742;
-const HOST_DRIVER_SETTLE_TIME: Duration = Duration::from_millis(500);
+const DUALSENSE_SETTLE_TIME: Duration = Duration::from_millis(500);
+const DUALSHOCK4_FEATURE_WINDOW: Duration = Duration::from_millis(750);
+const UDC_REBIND_GRACE: Duration = Duration::from_secs(1);
 static RESERVED_UDCS: OnceLock<Mutex<BTreeSet<String>>> = OnceLock::new();
 static NEXT_GADGET_ID: OnceLock<AtomicU64> = OnceLock::new();
 // The fixed DualSense descriptor exposes report 0x01 input, 0x02 output, and
@@ -39,8 +43,87 @@ struct FeatureReply {
     report_id: u8,
     userspace_req: u8,
     length: u16,
-    data: [u8; REPORT_LENGTH],
+    data: [u8; MAX_REPORT_LENGTH],
     padding: [u8; 4],
+}
+
+#[derive(Clone, Copy)]
+struct ControllerProfile {
+    kind: CompiledControllerKind,
+    vendor_id: &'static str,
+    product_id: &'static str,
+    device_bcd: &'static str,
+    manufacturer: &'static str,
+    product: &'static str,
+    serial_prefix: &'static str,
+    descriptor: &'static [u8],
+    report_length: usize,
+}
+
+fn profile(kind: CompiledControllerKind) -> ControllerProfile {
+    // These are compiled profiles, never client-controlled USB metadata.
+    match kind {
+        CompiledControllerKind::DualSense => ControllerProfile {
+            kind,
+            vendor_id: "0x054c",
+            product_id: "0x0ce6",
+            device_bcd: "0x0110",
+            manufacturer: "Sony Interactive Entertainment",
+            product: "DualSense Wireless Controller",
+            serial_prefix: "VG-POC-DS5",
+            descriptor: DUALSENSE_USB_DESCRIPTOR,
+            report_length: 64,
+        },
+        CompiledControllerKind::DualShock4 => ControllerProfile {
+            kind,
+            vendor_id: "0x054c",
+            product_id: "0x05c4",
+            device_bcd: "0x0120",
+            manufacturer: "Sony Computer Entertainment",
+            product: "Wireless Controller",
+            serial_prefix: "VG-POC-DS4",
+            descriptor: DUALSHOCK4_USB_DESCRIPTOR,
+            report_length: 64,
+        },
+        CompiledControllerKind::SwitchPro => ControllerProfile {
+            kind,
+            vendor_id: "0x057e",
+            product_id: "0x2009",
+            device_bcd: "0x0220",
+            manufacturer: "Nintendo Co., Ltd.",
+            product: "Pro Controller",
+            serial_prefix: "VG-POC-SPR",
+            descriptor: SWITCH_PRO_USB_DESCRIPTOR,
+            report_length: 64,
+        },
+        CompiledControllerKind::Xbox360 => ControllerProfile {
+            kind,
+            vendor_id: "0x045e",
+            product_id: "0x028e",
+            device_bcd: "0x0114",
+            manufacturer: "Microsoft",
+            product: "Xbox 360 Controller (HID)",
+            serial_prefix: "VG-POC-X36",
+            descriptor: STANDARD_GAMEPAD_DESCRIPTOR,
+            report_length: 9,
+        },
+    }
+}
+
+fn profile_features(profile: ControllerProfile, serial: &str) -> Vec<(u8, Vec<u8>)> {
+    match profile.kind {
+        CompiledControllerKind::DualSense => dualsense_features(
+            serial.as_bytes()[..5]
+                .try_into()
+                .expect("compiled DualSense serial prefix"),
+        ),
+        CompiledControllerKind::DualShock4 => {
+            let mut identity = [0; 6];
+            identity.copy_from_slice(&serial.as_bytes()[..6]);
+            dualshock4_feature_responses(identity)
+        }
+        CompiledControllerKind::SwitchPro | CompiledControllerKind::Xbox360 => Vec::new(),
+    }
 }
 
 trait DummyHcdHost {
@@ -91,8 +174,10 @@ impl DummyHcdHost for LinuxDummyHcdHost {
 
 pub struct DummyHcdSession {
     root: PathBuf,
+    hidg: PathBuf,
     io: Box<dyn HidGadgetIo>,
     serial: String,
+    profile: ControllerProfile,
     udc: String,
     closed: bool,
 }
@@ -149,7 +234,7 @@ impl HidGadgetIo for LinuxHidGadgetIo {
             }
         }
         if poll.revents & libc::POLLIN != 0 {
-            let mut bytes = [0; REPORT_LENGTH];
+            let mut bytes = [0; MAX_REPORT_LENGTH];
             return match self.file.read(&mut bytes) {
                 Ok(count) if count > 0 => Ok(HidGadgetEvent::Output(bytes[..count].to_vec())),
                 Ok(_) => Ok(HidGadgetEvent::None),
@@ -162,14 +247,14 @@ impl HidGadgetIo for LinuxHidGadgetIo {
         Ok(HidGadgetEvent::None)
     }
     fn reply_feature(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
-        if data.len() > REPORT_LENGTH {
+        if data.len() > MAX_REPORT_LENGTH {
             return Err(host("feature response exceeds HID gadget limit"));
         }
         let mut reply = FeatureReply {
             report_id: id,
             userspace_req: u8::from(userspace),
             length: u16::try_from(data.len()).map_err(|_| host("feature length"))?,
-            data: [0; REPORT_LENGTH],
+            data: [0; MAX_REPORT_LENGTH],
             padding: [0; 4],
         };
         reply.data[..data.len()].copy_from_slice(data);
@@ -180,13 +265,13 @@ impl HidGadgetIo for LinuxHidGadgetIo {
     }
 }
 impl DummyHcdSession {
-    pub fn open(_session: u64) -> Result<Self, BrokerError> {
+    pub fn open(_session: u64, controller: CompiledControllerKind) -> Result<Self, BrokerError> {
         let linux = LinuxDummyHcdHost;
+        let profile = profile(controller);
         if !linux.is_dir(Path::new(CONFIGFS)) {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
         let known_hidg = nodes("hidg")?;
-        let known_hidraw = nodes("hidraw")?;
         for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
             if !linux.load_module(module).map_err(io)? {
                 return Err(host("allowlisted kernel module could not load"));
@@ -196,37 +281,46 @@ impl DummyHcdSession {
         if gadget_id == u64::MAX {
             return Err(host("dummy_hcd gadget identifier space is exhausted"));
         }
-        let serial = format!("VG-POC-DS5-{gadget_id:016x}");
+        let serial = format!("{}-{gadget_id:016x}", profile.serial_prefix);
         let root = Path::new(CONFIGFS).join(format!("virtualgamepad-{gadget_id:016x}"));
         if linux.exists(&root) {
             return Err(host("generated gadget root already exists"));
         }
         let mut reserved_udc = None;
         let result = (|| {
-            setup(&linux, &root, &serial)?;
+            setup(&linux, &root, &serial, profile)?;
             let udc = reserve_dummy_udc()?;
             reserved_udc = Some(udc.clone());
             write(&linux, &root.join("UDC"), &udc)?;
             wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
-            let _hidraw = wait_node("hidraw", &known_hidraw)?;
-            // The POC established that hid-playstation registers the gamepad,
-            // motion, and touch nodes shortly after hidraw. Do not expose a
-            // session to the unprivileged client until that host-side phase
-            // has completed.
-            thread::sleep(HOST_DRIVER_SETTLE_TIME);
             let file = OpenOptions::new()
                 .read(true)
                 .write(true)
-                .open(hidg)
+                .open(&hidg)
                 .map_err(io)?;
-            Ok(Self {
+            let mut session = Self {
                 root: root.clone(),
+                hidg: hidg.clone(),
                 io: Box::new(LinuxHidGadgetIo { file }),
                 serial,
+                profile,
                 udc,
                 closed: false,
-            })
+            };
+            // Sony's hid-playstation driver sends calibration/firmware feature
+            // requests while binding. Service those requests before exposing
+            // the session. Switch must return immediately: hid-nintendo's
+            // controller-info handshake is answered by its curated client.
+            // We intentionally do not discover `hidraw` by pathname because
+            // Linux can reuse its name between sequential dummy sessions.
+            if matches!(
+                controller,
+                CompiledControllerKind::DualSense | CompiledControllerKind::DualShock4
+            ) {
+                session.service_initial_feature_requests()?;
+            }
+            Ok(session)
         })();
         match result {
             Ok(mut session) => {
@@ -245,15 +339,24 @@ impl DummyHcdSession {
         }
     }
     fn features(&self) -> Vec<(u8, Vec<u8>)> {
-        let serial = self.serial.as_bytes();
-        feature_responses(
-            serial[..5]
-                .try_into()
-                .expect("fixed DualSense serial prefix"),
-        )
+        profile_features(self.profile, &self.serial)
     }
     fn reply(&mut self, id: u8, data: &[u8], userspace: bool) -> Result<(), BrokerError> {
         self.io.reply_feature(id, data, userspace)
+    }
+
+    fn service_initial_feature_requests(&mut self) -> Result<(), BrokerError> {
+        let window = match self.profile.kind {
+            CompiledControllerKind::DualSense => DUALSENSE_SETTLE_TIME,
+            CompiledControllerKind::DualShock4 => DUALSHOCK4_FEATURE_WINDOW,
+            CompiledControllerKind::SwitchPro | CompiledControllerKind::Xbox360 => return Ok(()),
+        };
+        let deadline = Instant::now() + window;
+        while Instant::now() < deadline {
+            let _ = self.poll_reverse()?;
+            thread::sleep(Duration::from_millis(5));
+        }
+        Ok(())
     }
 }
 
@@ -269,8 +372,10 @@ fn next_gadget_id() -> Result<u64, BrokerError> {
 }
 impl HostSession for DummyHcdSession {
     fn send_input(&mut self, report: &[u8]) -> Result<(), BrokerError> {
-        if report.len() != REPORT_LENGTH {
-            return Err(host("dummy_hcd report length must be 64"));
+        if report.len() != self.profile.report_length {
+            return Err(host(
+                "dummy_hcd report length does not match the compiled controller profile",
+            ));
         }
         self.io.send_input(report)
     }
@@ -295,10 +400,25 @@ impl HostSession for DummyHcdSession {
     }
     fn close(&mut self) -> Result<(), BrokerError> {
         if !self.closed {
-            let result = cleanup(&LinuxDummyHcdHost, &self.root);
+            let cleanup_result = cleanup(&LinuxDummyHcdHost, &self.root);
+            // A dummy UDC can continue reporting its old configured state for
+            // a short period after ConfigFS unbind. Do not let a subsequent
+            // broker session reuse it until the previous USB attachment has
+            // actually detached, otherwise `/dev/hidgN` can be a stale endpoint.
+            let teardown_result = if cleanup_result.is_ok() {
+                wait_until_node_removed(&self.hidg).map(|()| {
+                    // f_hid removes `/dev/hidgN` before dummy_hcd has finished
+                    // delivering the USB disconnect to the host. Rebinding in
+                    // that window can reuse a shutdown interrupt endpoint.
+                    thread::sleep(UDC_REBIND_GRACE);
+                })
+            } else {
+                Ok(())
+            };
             release_dummy_udc(&self.udc);
             self.closed = true;
-            result?;
+            cleanup_result?;
+            teardown_result?;
         }
         Ok(())
     }
@@ -308,24 +428,21 @@ impl Drop for DummyHcdSession {
         let _ = self.close();
     }
 }
-fn setup(host: &impl DummyHcdHost, root: &Path, serial: &str) -> Result<(), BrokerError> {
+fn setup(
+    host: &impl DummyHcdHost,
+    root: &Path,
+    serial: &str,
+    profile: ControllerProfile,
+) -> Result<(), BrokerError> {
     host.create_dir(root).map_err(io)?;
-    write(host, &root.join("idVendor"), USB_VENDOR_ID)?;
-    write(host, &root.join("idProduct"), USB_PRODUCT_ID)?;
-    write(host, &root.join("bcdDevice"), USB_DEVICE_BCD)?;
+    write(host, &root.join("idVendor"), profile.vendor_id)?;
+    write(host, &root.join("idProduct"), profile.product_id)?;
+    write(host, &root.join("bcdDevice"), profile.device_bcd)?;
     write(host, &root.join("bcdUSB"), USB_BCD)?;
     let strings = root.join("strings/0x409");
     host.create_dir_all(&strings).map_err(io)?;
-    write(
-        host,
-        &strings.join("manufacturer"),
-        "Sony Interactive Entertainment",
-    )?;
-    write(
-        host,
-        &strings.join("product"),
-        "DualSense Wireless Controller",
-    )?;
+    write(host, &strings.join("manufacturer"), profile.manufacturer)?;
+    write(host, &strings.join("product"), profile.product)?;
     write(host, &strings.join("serialnumber"), serial)?;
     let config = root.join("configs/c.1");
     host.create_dir_all(&config.join("strings/0x409"))
@@ -334,26 +451,30 @@ fn setup(host: &impl DummyHcdHost, root: &Path, serial: &str) -> Result<(), Brok
     write(
         host,
         &config.join("strings/0x409/configuration"),
-        "DualSense dummy_hcd",
+        &format!("{} dummy_hcd", profile.product),
     )?;
-    let function = root.join("functions/hid.dualsense");
+    let function = root.join("functions/hid.controller");
     host.create_dir(&function).map_err(io)?;
     write(host, &function.join("protocol"), "0")?;
     write(host, &function.join("subclass"), "0")?;
-    write(host, &function.join("report_length"), "64")?;
+    write(
+        host,
+        &function.join("report_length"),
+        &profile.report_length.to_string(),
+    )?;
     if host.exists(&function.join("interval")) {
         // Match the POC's explicit interrupt polling interval rather than
         // inheriting f_hid's slower default endpoint interval.
         write(host, &function.join("interval"), "1")?;
     }
-    host.write(&function.join("report_desc"), USB_DESCRIPTOR)
+    host.write(&function.join("report_desc"), profile.descriptor)
         .map_err(io)?;
     // ConfigFS resolves the link source when the link is created, rather than
     // as a normal filesystem symlink resolved from `configs/c.1`. The source
     // must consequently be the fixed, session-owned function path.
     host.symlink(
-        &root.join("functions/hid.dualsense"),
-        &config.join("hid.dualsense"),
+        &root.join("functions/hid.controller"),
+        &config.join("hid.controller"),
     )
     .map_err(io)?;
     Ok(())
@@ -372,8 +493,8 @@ fn cleanup(io_host: &impl DummyHcdHost, root: &Path) -> Result<(), BrokerError> 
     // to unlink ConfigFS attributes and leaves a partial gadget behind.
     for result in [
         io_host.write(&root.join("UDC"), b""),
-        io_host.remove_file(&root.join("configs/c.1/hid.dualsense")),
-        io_host.remove_dir(&root.join("functions/hid.dualsense")),
+        io_host.remove_file(&root.join("configs/c.1/hid.controller")),
+        io_host.remove_dir(&root.join("functions/hid.controller")),
         io_host.remove_dir(&root.join("configs/c.1/strings/0x409")),
         io_host.remove_dir(&root.join("configs/c.1")),
         io_host.remove_dir(&root.join("strings/0x409")),
@@ -481,6 +602,19 @@ fn wait_new_node(directory: &str, prefix: &str, known: &[PathBuf]) -> Result<Pat
     }
     Err(host("new host device node did not appear"))
 }
+
+fn wait_until_node_removed(path: &Path) -> Result<(), BrokerError> {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(1) {
+        if !path.exists() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    Err(host(
+        "dummy_hcd HID endpoint did not disappear after unbind",
+    ))
+}
 fn wait_until_configured(udc: &str) -> Result<(), BrokerError> {
     let state = Path::new("/sys/class/udc").join(udc).join("state");
     let start = Instant::now();
@@ -492,6 +626,7 @@ fn wait_until_configured(udc: &str) -> Result<(), BrokerError> {
     }
     Err(host("dummy_hcd host did not configure the gadget"))
 }
+
 fn is_configured_state(value: &str) -> bool {
     value.trim() == "configured"
 }
@@ -637,8 +772,8 @@ mod tests {
     }
     #[test]
     fn shared_fixture_has_full_descriptor_and_motion_calibration() {
-        assert_eq!(USB_DESCRIPTOR.len(), 273);
-        let features = feature_responses([2, 1, 2, 3, 4]);
+        assert_eq!(DUALSENSE_USB_DESCRIPTOR.len(), 273);
+        let features = dualsense_features([2, 1, 2, 3, 4]);
         assert_eq!(
             features
                 .iter()
@@ -649,6 +784,24 @@ mod tests {
         let calibration = &features[1].1;
         assert_ne!(&calibration[7..9], &[0, 0]);
         assert_ne!(&calibration[23..25], &[0, 0]);
+    }
+
+    #[test]
+    fn compiled_profiles_are_fixed_and_report_size_bound() {
+        let expected = [
+            (CompiledControllerKind::DualSense, "0x054c", "0x0ce6", 64),
+            (CompiledControllerKind::DualShock4, "0x054c", "0x05c4", 64),
+            (CompiledControllerKind::SwitchPro, "0x057e", "0x2009", 64),
+            (CompiledControllerKind::Xbox360, "0x045e", "0x028e", 9),
+        ];
+        for (kind, vendor_id, product_id, report_length) in expected {
+            let profile = profile(kind);
+            assert_eq!(profile.vendor_id, vendor_id);
+            assert_eq!(profile.product_id, product_id);
+            assert_eq!(profile.report_length, report_length);
+            assert!(!profile.descriptor.is_empty());
+            assert!(profile.report_length <= MAX_REPORT_LENGTH);
+        }
     }
     #[test]
     fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
@@ -689,7 +842,13 @@ mod tests {
     fn fake_host_covers_configfs_creation_and_dependency_ordered_cleanup() {
         let host = FakeHost::new();
         let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
-        setup(&host, &root, "VG-DS5-0000000000000001").unwrap();
+        setup(
+            &host,
+            &root,
+            "VG-POC-DS5-0000000000000001",
+            profile(CompiledControllerKind::DualSense),
+        )
+        .unwrap();
         cleanup(&host, &root).unwrap();
         let operations = host.operations.into_inner();
         assert_eq!(
@@ -704,7 +863,7 @@ mod tests {
         assert!(
             operations
                 .iter()
-                .any(|operation| operation.ends_with("/functions/hid.dualsense/interval")),
+                .any(|operation| operation.ends_with("/functions/hid.controller/interval")),
             "a supported HID ConfigFS interval is pinned to the POC value"
         );
         assert!(
@@ -716,7 +875,7 @@ mod tests {
         assert!(
             operations
                 .iter()
-                .any(|operation| operation.ends_with("/hid.dualsense"))
+                .any(|operation| operation.ends_with("/hid.controller"))
         );
         assert_eq!(
             operations.last(),
@@ -729,7 +888,7 @@ mod tests {
         let unlink = operations
             .iter()
             .position(|operation| {
-                operation == &format!("unlink:{}/configs/c.1/hid.dualsense", root.display())
+                operation == &format!("unlink:{}/configs/c.1/hid.controller", root.display())
             })
             .unwrap();
         assert!(
@@ -742,7 +901,15 @@ mod tests {
     fn fake_host_rolls_back_a_partial_configfs_setup() {
         let host = FakeHost::failing_write("/report_desc");
         let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
-        assert!(setup(&host, &root, "VG-DS5-0000000000000001").is_err());
+        assert!(
+            setup(
+                &host,
+                &root,
+                "VG-POC-DS5-0000000000000001",
+                profile(CompiledControllerKind::DualSense),
+            )
+            .is_err()
+        );
         cleanup(&host, &root).unwrap();
         assert_eq!(
             host.operations.into_inner().last(),
@@ -759,16 +926,18 @@ mod tests {
         ]);
         let mut session = DummyHcdSession {
             root: PathBuf::from("/unused"),
+            hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(gadget.clone()),
             serial: "VG-DS5-0000000000000001".into(),
+            profile: profile(CompiledControllerKind::DualSense),
             udc: String::new(),
             closed: true,
         };
-        assert!(session.send_input(&[0; REPORT_LENGTH - 1]).is_err());
-        session.send_input(&[0; REPORT_LENGTH]).unwrap();
+        assert!(session.send_input(&[0; MAX_REPORT_LENGTH - 1]).is_err());
+        session.send_input(&[0; MAX_REPORT_LENGTH]).unwrap();
         assert_eq!(
             gadget.input.lock().unwrap().as_slice(),
-            &vec![[0; REPORT_LENGTH].to_vec()]
+            &vec![[0; MAX_REPORT_LENGTH].to_vec()]
         );
         assert_eq!(session.poll_reverse().unwrap(), None);
         let replies = gadget.replies.lock().unwrap();
@@ -780,11 +949,31 @@ mod tests {
     }
 
     #[test]
+    fn xbox_hid_profile_rejects_dualsense_sized_input() {
+        let gadget = FakeHidGadget::default();
+        let mut session = DummyHcdSession {
+            root: PathBuf::from("/unused"),
+            hidg: PathBuf::from("/unused/hidg"),
+            io: Box::new(gadget.clone()),
+            serial: "VG-POC-X36-0000000000000001".into(),
+            profile: profile(CompiledControllerKind::Xbox360),
+            udc: String::new(),
+            closed: true,
+        };
+        assert!(session.send_input(&[0; 64]).is_err());
+        session.send_input(&[0; 9]).expect("fixed Xbox HID report");
+        assert_eq!(
+            gadget.input.lock().unwrap().as_slice(),
+            &vec![[0; 9].to_vec()]
+        );
+    }
+
+    #[test]
     fn blocking_input_write_completes_a_short_hid_write() {
         let mut writer = RetryWriter {
-            outcomes: [Ok(1), Ok(REPORT_LENGTH - 1)].into(),
+            outcomes: [Ok(1), Ok(MAX_REPORT_LENGTH - 1)].into(),
         };
-        write_input_exact(&mut writer, &[0; REPORT_LENGTH])
+        write_input_exact(&mut writer, &[0; MAX_REPORT_LENGTH])
             .expect("blocking HID delivery writes the complete report");
     }
 
@@ -793,15 +982,17 @@ mod tests {
         let mut writer = RetryWriter {
             outcomes: [Err(std::io::ErrorKind::WouldBlock)].into(),
         };
-        assert!(write_input_exact(&mut writer, &[0; REPORT_LENGTH]).is_err());
+        assert!(write_input_exact(&mut writer, &[0; MAX_REPORT_LENGTH]).is_err());
     }
 
     #[test]
     fn pairing_feature_matches_the_poc_serial_prefix_without_an_extra_byte() {
         let session = DummyHcdSession {
             root: PathBuf::from("/unused"),
+            hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(FakeHidGadget::default()),
             serial: "VG-POC-DS5-0000000000000001".into(),
+            profile: profile(CompiledControllerKind::DualSense),
             udc: String::new(),
             closed: true,
         };
@@ -816,9 +1007,10 @@ mod tests {
 
     #[test]
     fn configfs_usb_identity_uses_explicit_hexadecimal_values() {
-        assert_eq!(USB_VENDOR_ID, "0x054c");
-        assert_eq!(USB_PRODUCT_ID, "0x0ce6");
-        assert_eq!(USB_DEVICE_BCD, "0x0110");
+        let dualsense = profile(CompiledControllerKind::DualSense);
+        assert_eq!(dualsense.vendor_id, "0x054c");
+        assert_eq!(dualsense.product_id, "0x0ce6");
+        assert_eq!(dualsense.device_bcd, "0x0110");
         assert_eq!(USB_BCD, "0x0200");
     }
 
@@ -826,8 +1018,8 @@ mod tests {
     fn configfs_link_source_is_the_session_owned_function() {
         let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
         assert_eq!(
-            root.join("functions/hid.dualsense"),
-            Path::new(CONFIGFS).join("virtualgamepad-0000000000000001/functions/hid.dualsense")
+            root.join("functions/hid.controller"),
+            Path::new(CONFIGFS).join("virtualgamepad-0000000000000001/functions/hid.controller")
         );
     }
 
@@ -869,11 +1061,12 @@ mod tests {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
         let known_input_events = input_nodes("event").expect("list pre-existing input nodes");
-        let mut session = DummyHcdSession::open(0xdecaf).expect("open dummy_hcd session");
+        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualSense)
+            .expect("open dummy_hcd session");
         let root = session.root.clone();
         assert!(root.is_dir());
         session
-            .send_input(&[0; REPORT_LENGTH])
+            .send_input(&[0; MAX_REPORT_LENGTH])
             .expect("input report");
         let _input_event = wait_input_node("event", &known_input_events)
             .expect("DualSense host input node appears after the initial report");
@@ -881,7 +1074,7 @@ mod tests {
         let hidraw = wait_node("hidraw", &known_hidraw).expect("new DualSense hidraw node");
         let calibration = thread::spawn(move || {
             let file = File::open(hidraw).map_err(|error| error.to_string())?;
-            let mut bytes = [0_u8; REPORT_LENGTH];
+            let mut bytes = [0_u8; MAX_REPORT_LENGTH];
             bytes[0] = 0x05;
             // HIDIOCGFEATURE(64): query the fixed DualSense calibration
             // feature exactly as a host gyro setup does through hidraw.
@@ -901,5 +1094,50 @@ mod tests {
         let calibration = calibration.expect("host retrieves DualSense gyro calibration feature");
         assert_eq!(calibration[0], 0x05);
         assert_ne!(&calibration[7..9], &[0, 0]);
+    }
+
+    #[test]
+    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    fn root_only_ds4_profile_accepts_its_exact_report() {
+        assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
+        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualShock4)
+            .expect("open DualShock 4 profile");
+        let root = session.root.clone();
+        session
+            .send_input(&[0; 64])
+            .expect("deliver exact DualShock 4 report");
+        session.close().expect("close DualShock 4 profile");
+        assert!(
+            !root.exists(),
+            "cleanup left DualShock 4 ConfigFS resources"
+        );
+    }
+
+    #[test]
+    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    fn root_only_switch_profile_opens_and_cleans_up() {
+        assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
+        // hid-nintendo's controller-info handshake is served by the
+        // unprivileged Switch session after broker open; adapter-only coverage
+        // therefore proves construction/teardown without manufacturing replies.
+        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::SwitchPro)
+            .expect("open Switch Pro profile");
+        let root = session.root.clone();
+        session.close().expect("close Switch Pro profile");
+        assert!(!root.exists(), "cleanup left Switch Pro ConfigFS resources");
+    }
+
+    #[test]
+    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    fn root_only_xbox_hid_profile_accepts_its_exact_report() {
+        assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
+        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::Xbox360)
+            .expect("open Xbox HID profile");
+        let root = session.root.clone();
+        session
+            .send_input(&[0; 9])
+            .expect("deliver exact Xbox standard HID report");
+        session.close().expect("close Xbox HID profile");
+        assert!(!root.exists(), "cleanup left Xbox ConfigFS resources");
     }
 }

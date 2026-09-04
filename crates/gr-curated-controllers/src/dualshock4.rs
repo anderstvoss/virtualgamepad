@@ -10,10 +10,11 @@ use gr_controller_contract::{
 use gr_controller_runtime::ControllerRuntime;
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
-    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
-    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
-    RealizationSessionId, RealizationTarget,
+    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
+    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
+    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
+    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
+    RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -388,7 +389,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::DummyHcd,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -412,7 +413,7 @@ impl RealizationControllerDefinition for DualShock4Definition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::DummyHcd,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -457,7 +458,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid
+            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
         ) {
             Ok(())
         } else {
@@ -486,7 +487,17 @@ impl TargetAwareControllerDriver for DualShock4Definition {
                 bytes,
             })
         } else {
-            Ok(frame)
+            let ProviderFrame::HidInput {
+                report_id: Some(report_id),
+                bytes,
+            } = frame
+            else {
+                unreachable!("DualShock 4 USB reports are numbered")
+            };
+            let mut wire = Vec::with_capacity(bytes.len() + 1);
+            wire.push(report_id);
+            wire.extend_from_slice(&bytes);
+            Ok(ProviderFrame::DummyHcdInput(wire))
         }
     }
 }
@@ -874,6 +885,11 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
     let realization = match options.target {
         RealizationTarget::Evdev => evdev_realization(),
         RealizationTarget::Uhid => hid(options.session),
+        RealizationTarget::DummyHcd => {
+            NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                controller: CompiledControllerKind::DualShock4,
+            })
+        }
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -881,7 +897,10 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
         }
     };
     let mut c = common::create(DualShock4Definition, realization, options)?;
-    if options.target == RealizationTarget::Uhid {
+    if matches!(
+        options.target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    ) {
         c.commit().map_err(|e| ProviderError::Open {
             reason: e.to_string(),
         })?;
@@ -925,6 +944,41 @@ mod tests {
             }][1],
             1
         );
+    }
+
+    #[test]
+    fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
+        let frame = DualShock4Definition
+            .encode(
+                RealizationSelection {
+                    controller: DualShock4Definition.controller_id(),
+                    target: RealizationTarget::DummyHcd,
+                },
+                &DualShock4State::default(),
+            )
+            .expect("DummyHcd DS4 frame");
+        assert!(
+            matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
+        );
+        assert!(
+            DualShock4Definition
+                .realization_manifest()
+                .entries()
+                .iter()
+                .any(|entry| entry.target == RealizationTarget::DummyHcd)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the installed root-owned DummyHcd broker"]
+    fn dummy_hcd_broker_opens_and_delivers_the_initial_ds4_report() {
+        let mut controller = create_dualshock4(CreationOptions {
+            target: RealizationTarget::DummyHcd,
+            session: RealizationSessionId(0x4453_3401),
+        })
+        .expect("open DS4 through the privileged broker");
+        controller.commit().expect("deliver initial DS4 report");
+        controller.close();
     }
     #[test]
     fn usb_frame_is_numbered() {

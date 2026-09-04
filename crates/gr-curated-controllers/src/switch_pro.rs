@@ -13,10 +13,11 @@ use gr_controller_contract::{
 use gr_controller_runtime::ControllerRuntime;
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
-    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, ProviderError,
-    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
-    RealizationSessionId, RealizationTarget,
+    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
+    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
+    NativeEvdevRealization, NativeHidRealization, ProviderError, ProviderFrame,
+    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
+    RealizationTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -274,7 +275,7 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
 };
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::DummyHcd,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -297,7 +298,7 @@ impl RealizationControllerDefinition for SwitchProDefinition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::DummyHcd,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -342,7 +343,7 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
     ) -> Result<(), ControlError> {
         if matches!(
             sel.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid
+            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
         ) {
             Ok(())
         } else {
@@ -360,7 +361,17 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         let ProviderFrame::HidInput { report_id, bytes } = switch_frame(s) else {
             unreachable!()
         };
-        Ok(ProviderFrame::HidInput { report_id, bytes })
+        if sel.target == RealizationTarget::Uhid {
+            Ok(ProviderFrame::HidInput { report_id, bytes })
+        } else {
+            let Some(report_id) = report_id else {
+                unreachable!("Switch USB reports are numbered")
+            };
+            let mut wire = Vec::with_capacity(bytes.len() + 1);
+            wire.push(report_id);
+            wire.extend_from_slice(&bytes);
+            Ok(ProviderFrame::DummyHcdInput(wire))
+        }
     }
 }
 fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
@@ -730,9 +741,10 @@ impl SwitchProController {
             }
             callback(SwitchProOutputEvent::from(event));
         }
+        let target = self.0.selection().target;
         self.0.with_sink(|sink| {
             for reply in replies {
-                sink.reply(reply)?;
+                sink.reply(dummy_hcd_reply(target, reply)?)?;
             }
             Ok::<(), ProviderError>(())
         })?;
@@ -748,6 +760,28 @@ impl SwitchProController {
         }
         Ok(())
     }
+}
+
+fn dummy_hcd_reply(
+    target: RealizationTarget,
+    frame: ProviderFrame,
+) -> Result<ProviderFrame, ProviderError> {
+    if target != RealizationTarget::DummyHcd {
+        return Ok(frame);
+    }
+    let ProviderFrame::HidInput {
+        report_id: Some(report_id),
+        bytes,
+    } = frame
+    else {
+        return Err(ProviderError::Unsupported {
+            reason: "Switch dummy_hcd can reply only with numbered USB input reports".into(),
+        });
+    };
+    let mut wire = Vec::with_capacity(bytes.len() + 1);
+    wire.push(report_id);
+    wire.extend_from_slice(&bytes);
+    Ok(ProviderFrame::DummyHcdInput(wire))
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
@@ -789,13 +823,28 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
     let realization = match o.target {
         RealizationTarget::Evdev => evdev_realization(),
         RealizationTarget::Uhid => hid(o.session),
+        RealizationTarget::DummyHcd => {
+            NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                controller: CompiledControllerKind::SwitchPro,
+            })
+        }
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
             });
         }
     };
-    common::create(SwitchProDefinition, realization, o).map(SwitchProController)
+    let is_dummy_hcd = o.target == RealizationTarget::DummyHcd;
+    let mut controller = common::create(SwitchProDefinition, realization, o)?;
+    if is_dummy_hcd {
+        // A physical USB attachment should expose a neutral 0x30 report as
+        // soon as it appears; host-side controller-info traffic then has a
+        // live interrupt endpoint before the first GUI interaction.
+        controller.commit().map_err(|error| ProviderError::Open {
+            reason: error.to_string(),
+        })?;
+    }
+    Ok(SwitchProController(controller))
 }
 #[cfg(test)]
 mod tests {
@@ -831,6 +880,49 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(0x30),bytes}if bytes.len()==63));
+    }
+
+    #[test]
+    fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
+        let frame = SwitchProDefinition
+            .encode(
+                RealizationSelection {
+                    controller: SwitchProDefinition.controller_id(),
+                    target: RealizationTarget::DummyHcd,
+                },
+                &SwitchProState::default(),
+            )
+            .expect("DummyHcd Switch frame");
+        assert!(
+            matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x30)
+        );
+        assert!(
+            SwitchProDefinition
+                .realization_manifest()
+                .entries()
+                .iter()
+                .any(|entry| entry.target == RealizationTarget::DummyHcd)
+        );
+    }
+
+    #[test]
+    fn dummy_hcd_replies_retain_the_usb_report_id() {
+        let reply = dummy_hcd_reply(RealizationTarget::DummyHcd, switch_usb_reply(2))
+            .expect("DummyHcd reply");
+        assert!(
+            matches!(reply, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x81 && bytes[1] == 2)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the installed root-owned DummyHcd broker"]
+    fn dummy_hcd_broker_opens_the_switch_usb_profile() {
+        let mut controller = create_switch_pro(CreationOptions {
+            target: RealizationTarget::DummyHcd,
+            session: RealizationSessionId(0x5357_4954),
+        })
+        .expect("open Switch Pro through the privileged broker");
+        controller.close();
     }
 
     #[test]

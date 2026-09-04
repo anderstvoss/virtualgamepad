@@ -36,6 +36,13 @@ fn dualsense_motion_target_label(target: RealizationTarget) -> &'static str {
     }
 }
 
+fn motion_refresh_target(target: RealizationTarget) -> bool {
+    matches!(
+        target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    )
+}
+
 fn dummy_hcd_broker_status() -> Result<(), String> {
     BrokerClient::connect()
         .map(|_| ())
@@ -235,8 +242,8 @@ impl ReverseIndicators {
 impl Controller {
     fn needs_motion_refresh(&self) -> bool {
         matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
-            || matches!(self, Self::DualShock4(controller) if controller.surface().common().target == RealizationTarget::Uhid)
-            || matches!(self, Self::SwitchPro(controller) if controller.surface().common().target == RealizationTarget::Uhid)
+            || matches!(self, Self::DualShock4(controller) if motion_refresh_target(controller.surface().common().target))
+            || matches!(self, Self::SwitchPro(controller) if motion_refresh_target(controller.surface().common().target))
     }
 
     fn refresh_motion(&mut self) -> Result<(), String> {
@@ -250,7 +257,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
-                if controller.surface().common().target == RealizationTarget::Uhid =>
+                if motion_refresh_target(controller.surface().common().target) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -258,7 +265,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
-                if controller.surface().common().target == RealizationTarget::Uhid =>
+                if motion_refresh_target(controller.surface().common().target) =>
             {
                 controller
                     .refresh_motion()
@@ -630,7 +637,7 @@ impl eframe::App for App {
                     Ok(()) => {
                         ui.colored_label(
                             Color32::GREEN,
-                            "DummyHcd broker socket is reachable. Create DualSense to attach a USB device.",
+                            "DummyHcd broker socket is reachable. Create a curated controller to attach a USB device.",
                         );
                     }
                     Err(error) => {
@@ -1487,6 +1494,13 @@ mod tests {
             dualsense_motion_target_label(RealizationTarget::DummyHcd),
             "DummyHcd USB motion report"
         );
+    }
+
+    #[test]
+    fn motion_refresh_has_the_same_target_contract_for_all_imu_controllers() {
+        assert!(motion_refresh_target(RealizationTarget::Uhid));
+        assert!(motion_refresh_target(RealizationTarget::DummyHcd));
+        assert!(!motion_refresh_target(RealizationTarget::Evdev));
     }
 
     #[test]

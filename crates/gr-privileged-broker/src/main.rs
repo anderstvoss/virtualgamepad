@@ -22,28 +22,36 @@ use std::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    cleanup_stale_sessions()?;
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let config = arguments
         .windows(2)
         .find_map(|pair| (pair[0] == "--config").then(|| pair[1].clone()));
     let allowed = configured_uids(config.as_deref())?;
-    let listener = if arguments
+    let socket_activated = arguments
         .first()
-        .is_some_and(|argument| argument == "--socket-activation")
-    {
-        // SAFETY: systemd passes its first listening socket as file descriptor 3.
-        unsafe { UnixListener::from_raw_fd(3) }
+        .is_some_and(|argument| argument == "--socket-activation");
+    let listener = if socket_activated {
+        activated_listener()?
     } else {
         let socket = arguments
             .first()
             .cloned()
             .unwrap_or_else(|| BROKER_SOCKET_PATH.into());
         if Path::new(&socket).exists() {
-            fs::remove_file(&socket)?;
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                "refusing to replace an existing broker socket",
+            )
+            .into());
         }
         UnixListener::bind(socket)?
     };
+    // Recovery can remove ConfigFS gadgets, so it is permitted only after a
+    // verified systemd socket activation. A stray manually started binary can
+    // never clean up resources owned by the active service.
+    if socket_activated {
+        cleanup_stale_sessions()?;
+    }
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
@@ -56,6 +64,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+fn activated_listener() -> Result<UnixListener, io::Error> {
+    let expected_pid = std::process::id().to_string();
+    let valid = valid_socket_activation(
+        env::var("LISTEN_PID").ok().as_deref(),
+        env::var("LISTEN_FDS").ok().as_deref(),
+        &expected_pid,
+    );
+    if !valid {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid systemd socket activation environment",
+        ));
+    }
+    // SAFETY: the validated systemd activation contract provides one listening
+    // socket at file descriptor 3 for this process.
+    Ok(unsafe { UnixListener::from_raw_fd(3) })
+}
+
+fn valid_socket_activation(listen_pid: Option<&str>, listen_fds: Option<&str>, pid: &str) -> bool {
+    listen_pid == Some(pid) && listen_fds == Some("1")
 }
 
 fn configured_uids(config: Option<&str>) -> Result<Vec<u32>, io::Error> {
@@ -96,11 +126,10 @@ impl HostSessionFactory for DaemonFactory {
         controller: CompiledControllerKind,
         session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
-        if controller != CompiledControllerKind::DualSense {
-            return Err(BrokerError::UnsupportedController { target, controller });
-        }
         match target {
-            RealizationTarget::DummyHcd => Ok(Box::new(DummyHcdSession::open(session.0)?)),
+            RealizationTarget::DummyHcd => {
+                Ok(Box::new(DummyHcdSession::open(session.0, controller)?))
+            }
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
     }
@@ -134,15 +163,14 @@ fn dispatch(
                 1 => RealizationTarget::DummyHcd,
                 _ => return Err(BrokerError::MalformedRequest),
             };
-            if *controller != 1 {
-                return Err(BrokerError::MalformedRequest);
-            }
-            let session = registry.open(
-                peer,
-                target,
-                CompiledControllerKind::DualSense,
-                &DaemonFactory,
-            )?;
+            let controller = match controller {
+                1 => CompiledControllerKind::DualSense,
+                2 => CompiledControllerKind::DualShock4,
+                3 => CompiledControllerKind::SwitchPro,
+                4 => CompiledControllerKind::Xbox360,
+                _ => return Err(BrokerError::MalformedRequest),
+            };
+            let session = registry.open(peer, target, controller, &DaemonFactory)?;
             Ok(session.0.to_le_bytes().to_vec())
         }
         2 => {
@@ -220,4 +248,17 @@ fn peer_uid(stream: &UnixStream) -> Result<u32, io::Error> {
     // SAFETY: successful `getsockopt` initialized the entire `ucred` value.
     let credential = unsafe { credential.assume_init() };
     Ok(credential.uid)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_socket_activation;
+
+    #[test]
+    fn socket_activation_requires_this_process_and_exactly_one_fd() {
+        assert!(valid_socket_activation(Some("123"), Some("1"), "123"));
+        assert!(!valid_socket_activation(Some("124"), Some("1"), "123"));
+        assert!(!valid_socket_activation(Some("123"), Some("2"), "123"));
+        assert!(!valid_socket_activation(None, Some("1"), "123"));
+    }
 }

@@ -24,17 +24,37 @@ Install `systemd/virtualgamepad-broker.socket` and `systemd/virtualgamepad-broke
 systemctl enable --now virtualgamepad-broker.socket
 ```
 
-The service intentionally has no network listener. Its protocol only permits opening compiled DualSense sessions, fixed-size input, bounded reverse-output polling, close, and diagnostics. Session handles are broker-created, connection-bound, and invalid after disconnect or restart.
+The service intentionally has no network listener. Its protocol only permits
+opening one of the compiled `DualSense`, `DualShock4`, `SwitchPro`, or
+standard-HID `Xbox360` profiles, their exact fixed-size input reports, bounded
+reverse-output polling, close, and diagnostics. Session handles are
+broker-created, connection-bound, and invalid after disconnect or restart.
+Clients cannot supply USB descriptors, identities, module names, ConfigFS
+paths, UDC choices, or report schemas.
+
+The broker validates systemd's `LISTEN_PID`/`LISTEN_FDS` contract before it
+performs stale ConfigFS recovery. A manually invoked broker refuses to replace
+an existing socket and never cleans up service-owned gadgets.
 
 ## Demo validation
 
 For an interactive local check, run `cargo run -p virtualgamepad-demo`, select
-`DualSense` and `USB / dummy_hcd`, then create the controller. The create panel
+one of the curated controllers and `USB / dummy_hcd`, then create it. The create panel
 shows whether the broker socket is reachable; creation continues to provide the
-authoritative authorization and host-preflight error. The DualSense panel can
-exercise buttons, sticks, triggers, touch, battery, and USB motion reports at
-250 Hz. Its diagnostics and reverse-output indicators show host activity.
+authoritative authorization and host-preflight error. The DualSense, DualShock
+4, and Switch Pro panels can exercise buttons, sticks, triggers, touch,
+battery, and USB motion reports at 250 Hz. The Xbox 360 DummyHcd target is a
+best-effort standard-HID USB attachment under the Xbox identity; it is not a
+proprietary XInput/xpad implementation. Diagnostics and reverse-output
+indicators show host activity.
 
 ## Host validation
 
-Root-only integration tests are intentionally ignored in normal test runs. DummyHcd validation covers USB enumeration, HID feature exchange, motion input, reverse output, and resource-only cleanup. SDL/Steam recognition and gyro behavior remain controller-specific acceptance criteria. Bluetooth realization is deferred to `wip/btvirt` and has no installation or validation path on this branch.
+Root-only integration tests are intentionally ignored in normal test runs.
+DummyHcd validation covers USB enumeration, HID feature exchange, motion input,
+reverse output, and resource-only cleanup. The Linux `dummy_hcd` module exposes
+a finite virtual-UDC resource: run controller-specific root tests against a
+fresh attachment, rather than concurrently. SDL/Steam recognition and gyro
+behavior remain controller-specific acceptance criteria. Bluetooth realization
+is deferred to `wip/btvirt` and has no installation or validation path on this
+branch.

@@ -6,7 +6,14 @@
 - `Uhid`: a local HID controller with advanced HID behavior.
 - `DummyHcd`: complete USB attachment emulation for curated controllers.
 
-The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro. DualSense is the first controller curated for the attachment target. `DummyHcd` uses only the root-owned local broker at `/run/virtualgamepad/broker.sock`; applications cannot provide host paths, descriptors, modules, command lines, or report formats. Bluetooth realization is deferred work on the `wip/btvirt` branch and is not currently available.
+The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro.
+Each has a compiled `DummyHcd` USB profile; the Xbox 360 profile is explicitly
+standard HID rather than a claim of proprietary XInput/xpad emulation.
+`DummyHcd` uses only the root-owned local broker at
+`/run/virtualgamepad/broker.sock`; applications cannot provide host paths,
+descriptors, modules, command lines, identities, or report formats. Bluetooth
+realization is deferred work on the `wip/btvirt` branch and is not currently
+available.
 
 See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the privilege boundary, and [architecture](docs/CORE_ARCHITECTURE.md) for the target model.
 
