@@ -12,7 +12,7 @@ use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
     NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
     NativeEvdevRealization, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
-    RealizationSelection, RealizationSessionId, RealizationTarget,
+    RealizationSelection, RealizationTarget,
 };
 
 /// Xbox 360 signed thumb-stick value (`-32768..=32767`).
@@ -713,6 +713,7 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gr_realization_api::RealizationSessionId;
 
     #[test]
     fn battery_state_is_available_in_the_xbox_controller_model() {
