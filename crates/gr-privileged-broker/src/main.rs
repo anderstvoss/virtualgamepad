@@ -5,14 +5,18 @@
 //! It never accepts descriptors, paths, modules, command lines, identities,
 //! or arbitrary host configuration from a client.
 
+#[cfg(target_os = "linux")]
 use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
     dummy_hcd::{DummyHcdSession, cleanup_stale_sessions},
     read_message, write_message,
 };
+#[cfg(target_os = "linux")]
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
+use std::io;
+#[cfg(target_os = "linux")]
 use std::{
-    env, fs, io,
+    env, fs,
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::net::{UnixListener, UnixStream},
@@ -21,6 +25,7 @@ use std::{
     thread,
 };
 
+#[cfg(target_os = "linux")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments = env::args().skip(1).collect::<Vec<_>>();
     let config = arguments
@@ -66,6 +71,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// The broker is intentionally a Linux-only privileged attachment daemon.
+/// Keeping a small fail-closed binary on other targets allows workspace
+/// portability checks to exercise the protocol crate without implying host
+/// support where ConfigFS and `SO_PEERCRED` are unavailable.
+#[cfg(not(target_os = "linux"))]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "gr-privileged-broker requires Linux ConfigFS and SO_PEERCRED",
+    )
+    .into())
+}
+
+#[cfg(target_os = "linux")]
 fn activated_listener() -> Result<UnixListener, io::Error> {
     let expected_pid = std::process::id().to_string();
     let valid = valid_socket_activation(
@@ -84,10 +103,12 @@ fn activated_listener() -> Result<UnixListener, io::Error> {
     Ok(unsafe { UnixListener::from_raw_fd(3) })
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn valid_socket_activation(listen_pid: Option<&str>, listen_fds: Option<&str>, pid: &str) -> bool {
     listen_pid == Some(pid) && listen_fds == Some("1")
 }
 
+#[cfg(target_os = "linux")]
 fn configured_uids(config: Option<&str>) -> Result<Vec<u32>, io::Error> {
     let path = config.unwrap_or("/etc/virtualgamepad/broker.conf");
     let contents = fs::read_to_string(path)?;
@@ -118,7 +139,9 @@ fn configured_uids(config: Option<&str>) -> Result<Vec<u32>, io::Error> {
     Ok(uids)
 }
 
+#[cfg(target_os = "linux")]
 struct DaemonFactory;
+#[cfg(target_os = "linux")]
 impl HostSessionFactory for DaemonFactory {
     fn open(
         &self,
@@ -135,6 +158,7 @@ impl HostSessionFactory for DaemonFactory {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn serve(mut stream: UnixStream, allowed: Vec<u32>) -> Result<(), io::Error> {
     let peer = peer_uid(&stream)?;
     let mut registry = BrokerRegistry::new(allowed);
@@ -148,6 +172,7 @@ fn serve(mut stream: UnixStream, allowed: Vec<u32>) -> Result<(), io::Error> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
 fn dispatch(
     registry: &mut BrokerRegistry,
     peer: u32,
@@ -206,6 +231,7 @@ fn dispatch(
     }
 }
 
+#[cfg(target_os = "linux")]
 fn split_session(body: &[u8]) -> Result<(RealizationSessionId, &[u8]), BrokerError> {
     if body.len() < 8 {
         return Err(BrokerError::MalformedRequest);
@@ -221,6 +247,7 @@ fn split_session(body: &[u8]) -> Result<(RealizationSessionId, &[u8]), BrokerErr
     ))
 }
 
+#[cfg(target_os = "linux")]
 fn peer_uid(stream: &UnixStream) -> Result<u32, io::Error> {
     let mut credential = std::mem::MaybeUninit::<libc::ucred>::zeroed();
     let expected_length = libc::socklen_t::try_from(std::mem::size_of::<libc::ucred>())

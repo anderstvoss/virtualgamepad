@@ -9,9 +9,15 @@
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
+#[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use thiserror::Error;
 
+/// Linux-only ConfigFS and HID-gadget resource owner.
+///
+/// The broker protocol remains testable on every target, but the privileged
+/// attachment implementation is deliberately not built outside Linux.
+#[cfg(target_os = "linux")]
 pub mod dummy_hcd;
 
 /// Broker-owned host resource. Implementations are never constructed by an
@@ -56,14 +62,25 @@ pub struct BrokerSession(pub u64);
 /// Minimal, versioned client for the fixed local broker protocol.
 #[derive(Debug)]
 pub struct BrokerClient {
+    #[cfg(unix)]
     stream: UnixStream,
 }
 
 impl BrokerClient {
     pub fn connect() -> Result<Self, BrokerClientError> {
-        UnixStream::connect(BROKER_SOCKET_PATH)
-            .map(|stream| Self { stream })
-            .map_err(BrokerClientError::Unavailable)
+        #[cfg(unix)]
+        {
+            UnixStream::connect(BROKER_SOCKET_PATH)
+                .map(|stream| Self { stream })
+                .map_err(BrokerClientError::Unavailable)
+        }
+        #[cfg(not(unix))]
+        {
+            Err(BrokerClientError::Unavailable(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "the privileged broker client requires Unix-domain sockets",
+            )))
+        }
     }
 
     pub fn open(
@@ -117,6 +134,7 @@ impl BrokerClient {
         self.request(5, &session.0.to_le_bytes())
     }
 
+    #[cfg(unix)]
     fn request(&mut self, tag: u8, body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
         write_message(&mut self.stream, tag, body).map_err(BrokerClientError::Unavailable)?;
         let (tag, body) = read_message(&mut self.stream).map_err(BrokerClientError::Unavailable)?;
@@ -127,6 +145,15 @@ impl BrokerClient {
             )),
             _ => Err(BrokerClientError::Protocol("unexpected response tag")),
         }
+    }
+
+    #[cfg(not(unix))]
+    fn request(&mut self, tag: u8, body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
+        let _ = (tag, body);
+        Err(BrokerClientError::Unavailable(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the privileged broker client requires Unix-domain sockets",
+        )))
     }
 }
 
