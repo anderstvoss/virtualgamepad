@@ -8,17 +8,15 @@ use gr_controller_contract::{
     TargetAwareControllerDriver, TargetRestriction,
 };
 use gr_controller_runtime::ControllerRuntime;
+use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeDeviceIdentity, NativeEvdevRealization, NativeHidRealization, NativeHidReportKey,
-    NativeUsbCompositeRealization, NativeUsbEndpointDirection, ProviderError, ProviderFrame,
+    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
+    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
+    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
     ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
     RealizationTarget,
 };
 use std::collections::BTreeMap;
-
-pub const DUALSHOCK4_USB_HID_INPUT_ENDPOINT: u8 = 0x81;
-pub const DUALSHOCK4_USB_HID_OUTPUT_ENDPOINT: u8 = 0x01;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DualShock4Axis(u8);
@@ -110,11 +108,6 @@ pub enum DualShock4Control {
     TouchpadClick,
     LeftStickPress,
     RightStickPress,
-}
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DualShock4UsbOptions {
-    pub session: RealizationSessionId,
-    pub composite: NativeUsbCompositeRealization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -386,7 +379,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static HID_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Hid,
+        target: RealizationTarget::Uhid,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -396,7 +389,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::UsbTransportValidation,
+        target: RealizationTarget::DummyHcd,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -420,14 +413,14 @@ impl RealizationControllerDefinition for DualShock4Definition {
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Hid,
+                target: RealizationTarget::DummyHcd,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::UsbTransportValidation,
+                target: RealizationTarget::Uhid,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -465,9 +458,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev
-                | RealizationTarget::Hid
-                | RealizationTarget::UsbTransportValidation
+            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
         ) {
             Ok(())
         } else {
@@ -483,21 +474,30 @@ impl TargetAwareControllerDriver for DualShock4Definition {
             return Ok(ds4_evdev_frame(state));
         }
         let frame = ds4_frame(state);
-        if selection.target == RealizationTarget::UsbTransportValidation {
+        if selection.target == RealizationTarget::Uhid {
             let ProviderFrame::HidInput {
                 report_id: Some(id),
-                mut bytes,
+                bytes,
             } = frame
             else {
                 unreachable!()
             };
-            bytes.insert(0, id);
-            Ok(ProviderFrame::Transport {
-                endpoint: DUALSHOCK4_USB_HID_INPUT_ENDPOINT,
+            Ok(ProviderFrame::HidInput {
+                report_id: Some(id),
                 bytes,
             })
         } else {
-            Ok(frame)
+            let ProviderFrame::HidInput {
+                report_id: Some(report_id),
+                bytes,
+            } = frame
+            else {
+                unreachable!("DualShock 4 USB reports are numbered")
+            };
+            let mut wire = Vec::with_capacity(bytes.len() + 1);
+            wire.push(report_id);
+            wire.extend_from_slice(&bytes);
+            Ok(ProviderFrame::DummyHcdInput(wire))
         }
     }
 }
@@ -661,64 +661,30 @@ fn advance_ds4_timing(state: &mut DualShock4State) {
     }
 }
 
-const DESC: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x85, 0x01, 0x09, 0x30, 0x09, 0x31, 0x09, 0x32, 0x09, 0x35,
-    0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x04, 0x81, 0x02, 0x05, 0x09, 0x19, 0x01, 0x29,
-    0x0e, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x0e, 0x81, 0x02, 0x06, 0x00, 0xff, 0x75, 0x06,
-    0x95, 0x01, 0x81, 0x02, 0x05, 0x01, 0x09, 0x33, 0x09, 0x34, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75,
-    0x08, 0x95, 0x02, 0x81, 0x02, 0x06, 0x00, 0xff, 0x95, 0x36, 0x81, 0x02, 0x85, 0x05, 0x95, 0x1f,
-    0x91, 0x02, 0x85, 0x02, 0x95, 0x24, 0xb1, 0x02, 0x85, 0x12, 0x95, 0x0f, 0xb1, 0x02, 0x85, 0xa3,
-    0x95, 0x30, 0xb1, 0x02, 0xc0,
-];
 fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
-    let mut cal = vec![0; 37];
-    cal[0] = 2;
-    for o in [7, 11, 15] {
-        cal[o..o + 2].copy_from_slice(&32_000i16.to_le_bytes());
-    }
-    for o in [9, 13, 17] {
-        cal[o..o + 2].copy_from_slice(&(-32_000i16).to_le_bytes());
-    }
-    // hid-playstation scales gyro samples by the sum of these two fields.
-    // Leaving them zero materializes the motion device but normalizes every
-    // gyro sample to zero.
-    cal[19..21].copy_from_slice(&2_000i16.to_le_bytes());
-    cal[21..23].copy_from_slice(&2_000i16.to_le_bytes());
-    for o in [23, 27, 31] {
-        cal[o..o + 2].copy_from_slice(&8_192i16.to_le_bytes());
-    }
-    for o in [25, 29, 33] {
-        cal[o..o + 2].copy_from_slice(&(-8_192i16).to_le_bytes());
-    }
-    let mut mac = vec![0; 16];
-    mac[0] = 0x12;
-    mac[1..7].copy_from_slice(&[
+    dualshock4_feature_responses([
         2,
         0,
         0,
         0,
         (session.0 & 255) as u8,
         ((session.0 >> 8) & 255) as u8,
-    ]);
-    let mut fw = vec![0; 49];
-    fw[0] = 0xa3;
-    fw[1] = 1;
-    [(2, cal), (0x12, mac), (0xa3, fw)]
-        .into_iter()
-        .map(|(report_id, bytes)| {
-            (
-                NativeHidReportKey {
-                    report_id,
-                    report_type: F,
-                },
-                bytes,
-            )
-        })
-        .collect()
+    ])
+    .into_iter()
+    .map(|(report_id, bytes)| {
+        (
+            NativeHidReportKey {
+                report_id,
+                report_type: F,
+            },
+            bytes,
+        )
+    })
+    .collect()
 }
 fn hid(session: RealizationSessionId) -> NativeControllerRealization {
-    NativeControllerRealization::Hid(NativeHidRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
@@ -730,7 +696,7 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
             product_id: 0x05c4,
             version: 0x0120,
         },
-        descriptor: DESC.to_vec(),
+        descriptor: DUALSHOCK4_USB_DESCRIPTOR.to_vec(),
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
@@ -782,7 +748,7 @@ impl DualShock4Controller {
     pub const fn surface(&self) -> &'static DualShock4Surface {
         match self.0.selection().target {
             RealizationTarget::Evdev => &EVDEV_SURFACE,
-            RealizationTarget::Hid => &HID_SURFACE,
+            RealizationTarget::Uhid => &HID_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -896,13 +862,6 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
             RawReverseEvent::HidOutput { report_id, bytes } => {
                 Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
             }
-            RawReverseEvent::Transport { mut bytes, .. } => {
-                let report_id = bytes.first().copied();
-                if report_id.is_some() {
-                    bytes.remove(0);
-                }
-                Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
-            }
             RawReverseEvent::HidGetReportRequest {
                 request_id,
                 report_id,
@@ -924,8 +883,13 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
 }
 pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controller, ProviderError> {
     let realization = match options.target {
-        DeploymentTarget::Evdev => evdev_realization(),
-        DeploymentTarget::Hid => hid(options.session),
+        RealizationTarget::Evdev => evdev_realization(),
+        RealizationTarget::Uhid => hid(options.session),
+        RealizationTarget::DummyHcd => {
+            NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                controller: CompiledControllerKind::DualShock4,
+            })
+        }
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown deployment target".into(),
@@ -933,37 +897,16 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
         }
     };
     let mut c = common::create(DualShock4Definition, realization, options)?;
-    if options.target == DeploymentTarget::Hid {
+    if matches!(
+        options.target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    ) {
         c.commit().map_err(|e| ProviderError::Open {
             reason: e.to_string(),
         })?;
     }
     Ok(DualShock4Controller(c))
 }
-pub fn create_dualshock4_usb(
-    options: DualShock4UsbOptions,
-) -> Result<DualShock4Controller, ProviderError> {
-    if !options.composite.endpoints.iter().any(|e| {
-        e.address == DUALSHOCK4_USB_HID_INPUT_ENDPOINT
-            && e.direction == NativeUsbEndpointDirection::DeviceToHost
-            && e.maximum_packet_length >= 64
-    }) || !options.composite.endpoints.iter().any(|e| {
-        e.address == DUALSHOCK4_USB_HID_OUTPUT_ENDPOINT
-            && e.direction == NativeUsbEndpointDirection::HostToDevice
-            && e.maximum_packet_length >= 64
-    }) {
-        return Err(ProviderError::Unsupported {
-            reason: "DualShock 4 USB composite lacks HID endpoints".into(),
-        });
-    }
-    common::create_usb(
-        DualShock4Definition,
-        NativeControllerRealization::UsbComposite(options.composite),
-        options.session,
-    )
-    .map(DualShock4Controller)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1002,20 +945,53 @@ mod tests {
             1
         );
     }
+
+    #[test]
+    fn dummy_hcd_frame_preserves_the_numbered_openpuck_usb_report() {
+        let frame = DualShock4Definition
+            .encode(
+                RealizationSelection {
+                    controller: DualShock4Definition.controller_id(),
+                    target: RealizationTarget::DummyHcd,
+                },
+                &DualShock4State::default(),
+            )
+            .expect("DummyHcd DS4 frame");
+        assert!(
+            matches!(frame, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 1)
+        );
+        assert!(
+            DualShock4Definition
+                .realization_manifest()
+                .entries()
+                .iter()
+                .any(|entry| entry.target == RealizationTarget::DummyHcd)
+        );
+    }
+
+    #[test]
+    #[ignore = "requires the installed root-owned DummyHcd broker"]
+    fn dummy_hcd_broker_opens_and_delivers_the_initial_ds4_report() {
+        let mut controller = create_dualshock4(CreationOptions {
+            target: RealizationTarget::DummyHcd,
+            session: RealizationSessionId(0x4453_3401),
+        })
+        .expect("open DS4 through the privileged broker");
+        controller.commit().expect("deliver initial DS4 report");
+        controller.close();
+    }
     #[test]
     fn usb_frame_is_numbered() {
         let f = DualShock4Definition
             .encode(
                 RealizationSelection {
                     controller: DualShock4Definition.controller_id(),
-                    target: RealizationTarget::UsbTransportValidation,
+                    target: RealizationTarget::Uhid,
                 },
                 &DualShock4State::default(),
             )
             .unwrap();
-        assert!(
-            matches!(f,ProviderFrame::Transport{endpoint:0x81,bytes}if bytes.len()==64&&bytes[0]==1)
-        );
+        assert!(matches!(f,ProviderFrame::HidInput{report_id:Some(1),bytes}if bytes.len()==63));
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
+use gr_privileged_broker::BrokerClient;
 use std::{
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
@@ -6,21 +7,55 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, CreationOptions, DeploymentTarget, DigitalControlUpdate,
-    DpadDirection, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput,
-    DualSenseOutputEvent, DualSenseTouchContact, DualSenseTrigger, DualShock4Axis,
-    DualShock4Control, DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, FaceButton, GenericGamepadAxis,
-    GenericGamepadControl, GenericGamepadController, GenericGamepadTrigger, MotionSample,
-    RealizationSessionId, RealizationTarget, SwitchProAxis, SwitchProControl, SwitchProController,
-    SwitchProMotionSample, TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller,
-    Xbox360OutputEvent, Xbox360Trigger, create_dualsense, create_dualshock4,
-    create_generic_gamepad, create_switch_pro, create_xbox360,
+    BatteryLevel, BatteryState, CreationOptions, DigitalControlUpdate, DpadDirection,
+    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
+    DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationSessionId,
+    RealizationTarget, SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
+    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
+    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
 };
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+
+fn dualsense_motion_target(target: RealizationTarget) -> bool {
+    matches!(
+        target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    )
+}
+
+fn dualsense_motion_target_label(target: RealizationTarget) -> &'static str {
+    if target == RealizationTarget::Uhid {
+        "UHID motion report"
+    } else {
+        "DummyHcd USB motion report"
+    }
+}
+
+fn motion_refresh_target(target: RealizationTarget) -> bool {
+    matches!(
+        target,
+        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+    )
+}
+
+fn dummy_hcd_broker_status() -> Result<(), String> {
+    BrokerClient::connect()
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn repaint_interval(controller_count: usize) -> Duration {
+    if controller_count == 0 {
+        IDLE_REPAINT_INTERVAL
+    } else {
+        DUALSENSE_MOTION_INTERVAL
+    }
+}
 
 const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
@@ -54,15 +89,13 @@ fn status_after_runtime_failure(name: &str, error: String) -> ControllerLifecycl
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
-    Generic,
     Xbox360,
     DualSense,
     DualShock4,
     SwitchPro,
 }
 impl Kind {
-    const ALL: [Self; 5] = [
-        Self::Generic,
+    const ALL: [Self; 4] = [
         Self::Xbox360,
         Self::DualSense,
         Self::DualShock4,
@@ -70,7 +103,6 @@ impl Kind {
     ];
     const fn label(self) -> &'static str {
         match self {
-            Self::Generic => "Generic Gamepad",
             Self::Xbox360 => "Xbox 360",
             Self::DualSense => "DualSense",
             Self::DualShock4 => "DualShock 4",
@@ -79,7 +111,6 @@ impl Kind {
     }
 }
 enum Controller {
-    Generic(GenericGamepadController),
     Xbox(Xbox360Controller),
     DualSense(DualSenseController),
     DualShock4(DualShock4Controller),
@@ -92,6 +123,33 @@ struct NamedController {
     controller: Arc<Mutex<Controller>>,
     indicators: ReverseIndicators,
     motion_worker: Option<MotionWorker>,
+    second_touch: LatchedTouch,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LatchedTouch {
+    active: bool,
+    x: u16,
+    y: u16,
+}
+
+impl Default for LatchedTouch {
+    fn default() -> Self {
+        Self {
+            active: false,
+            x: 960,
+            y: 470,
+        }
+    }
+}
+
+impl LatchedTouch {
+    fn contact(self, id: u8) -> Option<DualSenseTouchContact> {
+        self.active
+            .then(|| DualSenseTouchContact::new(id, self.x, self.y))
+            .transpose()
+            .expect("latched touch coordinates are bounded by the GUI sliders")
+    }
 }
 
 struct MotionWorker {
@@ -164,12 +222,15 @@ impl ReverseIndicators {
     }
     fn apply_dualsense_usb_output(
         &mut self,
-        right_motor: u8,
-        left_motor: u8,
+        right_motor: Option<u8>,
+        left_motor: Option<u8>,
         lightbar_rgb: Option<[u8; 3]>,
         mute_button_led: Option<bool>,
     ) {
-        self.set_rumble(right_motor != 0 || left_motor != 0);
+        self.set_rumble(
+            right_motor.is_some_and(|motor| motor != 0)
+                || left_motor.is_some_and(|motor| motor != 0),
+        );
         if let Some(lightbar_rgb) = lightbar_rgb {
             self.led = Some(lightbar_rgb);
         }
@@ -180,15 +241,15 @@ impl ReverseIndicators {
 }
 impl Controller {
     fn needs_motion_refresh(&self) -> bool {
-        matches!(self, Self::DualSense(controller) if controller.surface().common().target == RealizationTarget::Hid)
-            || matches!(self, Self::DualShock4(controller) if controller.surface().common().target == RealizationTarget::Hid)
-            || matches!(self, Self::SwitchPro(controller) if controller.surface().common().target == RealizationTarget::Hid)
+        matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
+            || matches!(self, Self::DualShock4(controller) if motion_refresh_target(controller.surface().common().target))
+            || matches!(self, Self::SwitchPro(controller) if motion_refresh_target(controller.surface().common().target))
     }
 
     fn refresh_motion(&mut self) -> Result<(), String> {
         match self {
             Self::DualSense(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if dualsense_motion_target(controller.surface().common().target) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -196,7 +257,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if motion_refresh_target(controller.surface().common().target) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -204,7 +265,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
-                if controller.surface().common().target == RealizationTarget::Hid =>
+                if motion_refresh_target(controller.surface().common().target) =>
             {
                 controller
                     .refresh_motion()
@@ -216,7 +277,6 @@ impl Controller {
 
     fn commit(&mut self) -> Result<(), String> {
         let result = match self {
-            Self::Generic(controller) => controller.commit(),
             Self::Xbox(controller) => controller.commit(),
             Self::DualSense(controller) => controller.commit(),
             Self::DualShock4(controller) => controller.commit(),
@@ -226,7 +286,6 @@ impl Controller {
     }
     fn close(&mut self) {
         match self {
-            Self::Generic(controller) => controller.close(),
             Self::Xbox(controller) => controller.close(),
             Self::DualSense(controller) => controller.close(),
             Self::DualShock4(controller) => controller.close(),
@@ -235,7 +294,6 @@ impl Controller {
     }
     fn is_dirty(&self) -> bool {
         match self {
-            Self::Generic(controller) => controller.is_dirty(),
             Self::Xbox(controller) => controller.is_dirty(),
             Self::DualSense(controller) => controller.is_dirty(),
             Self::DualShock4(controller) => controller.is_dirty(),
@@ -249,40 +307,6 @@ impl Controller {
         indicators: &mut ReverseIndicators,
     ) -> Result<(), String> {
         let result: Result<(), String> = match self {
-            Self::Generic(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match event {
-                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackUpload {
-                                request_id,
-                                ..
-                            } => {
-                                indicators.rumble_pulse();
-                                replies.push((request_id, true));
-                            }
-                            virtualgamepad::GenericGamepadOutputEvent::ForceFeedbackErase {
-                                request_id,
-                                ..
-                            } => replies.push((request_id, false)),
-                            _ => {}
-                        }
-                        log.push(format!("Generic: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    }
-                }
-                Ok(())
-            }
             Self::Xbox(controller) => {
                 let mut replies = Vec::new();
                 controller
@@ -384,8 +408,8 @@ impl Controller {
         };
         result
     }
-    fn draw(&mut self, ui: &mut egui::Ui) {
-        if matches!(self, Self::Generic(_) | Self::Xbox(_) | Self::DualSense(_)) {
+    fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
+        if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
             let battery = self.battery();
             ui.group(|ui| {
                 ui.label("Battery emulation");
@@ -407,16 +431,14 @@ impl Controller {
             });
         }
         match self {
-            Self::Generic(controller) => draw_generic(ui, controller),
             Self::Xbox(controller) => draw_xbox(ui, controller),
-            Self::DualSense(controller) => draw_dualsense(ui, controller),
+            Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
             Self::DualShock4(controller) => draw_dualshock4(ui, controller),
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
         }
     }
     fn battery(&self) -> BatteryState {
         match self {
-            Self::Generic(controller) => controller.state().battery(),
             Self::Xbox(controller) => controller.state().battery(),
             Self::DualSense(controller) => controller.state().battery(),
             Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
@@ -424,7 +446,6 @@ impl Controller {
     }
     fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), String> {
         match self {
-            Self::Generic(controller) => controller.set_battery_exposed(exposed),
             Self::Xbox(controller) => controller.set_battery_exposed(exposed),
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
@@ -433,7 +454,6 @@ impl Controller {
     }
     fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
-            Self::Generic(controller) => controller.set_battery_level(level),
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
@@ -443,7 +463,7 @@ impl Controller {
 }
 pub struct App {
     kind: Kind,
-    target: DeploymentTarget,
+    target: RealizationTarget,
     name_draft: String,
     next_session: u64,
     controllers: Vec<NamedController>,
@@ -454,8 +474,8 @@ pub struct App {
 impl Default for App {
     fn default() -> Self {
         Self {
-            kind: Kind::Generic,
-            target: DeploymentTarget::Evdev,
+            kind: Kind::Xbox360,
+            target: RealizationTarget::Evdev,
             name_draft: String::new(),
             next_session: 1,
             controllers: vec![],
@@ -481,7 +501,6 @@ impl App {
             session: RealizationSessionId(self.next_session),
         };
         let result = match self.kind {
-            Kind::Generic => create_generic_gamepad(options).map(Controller::Generic),
             Kind::Xbox360 => create_xbox360(options).map(Controller::Xbox),
             Kind::DualSense => create_dualsense(options).map(Controller::DualSense),
             Kind::DualShock4 => create_dualshock4(options).map(Controller::DualShock4),
@@ -502,6 +521,7 @@ impl App {
                     controller,
                     indicators: ReverseIndicators::default(),
                     motion_worker,
+                    second_touch: LatchedTouch::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
@@ -575,7 +595,7 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
-        ctx.request_repaint_after(IDLE_REPAINT_INTERVAL);
+        ctx.request_repaint_after(repaint_interval(self.controllers.len()));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -590,13 +610,18 @@ impl eframe::App for App {
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut self.target,
-                        DeploymentTarget::Evdev,
-                        target_label(DeploymentTarget::Evdev),
+                        RealizationTarget::Evdev,
+                        target_label(RealizationTarget::Evdev),
                     );
                     ui.selectable_value(
                         &mut self.target,
-                        DeploymentTarget::Hid,
-                        target_label(DeploymentTarget::Hid),
+                        RealizationTarget::Uhid,
+                        target_label(RealizationTarget::Uhid),
+                    );
+                    ui.selectable_value(
+                        &mut self.target,
+                        RealizationTarget::DummyHcd,
+                        target_label(RealizationTarget::DummyHcd),
                     );
                 });
             let default_name = self.next_default_name();
@@ -606,7 +631,26 @@ impl eframe::App for App {
                     .desired_width(f32::INFINITY),
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID is research-backed and requires operator-enabled /dev/uhid access.");
+            ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
+            if self.target == RealizationTarget::DummyHcd {
+                match dummy_hcd_broker_status() {
+                    Ok(()) => {
+                        ui.colored_label(
+                            Color32::GREEN,
+                            "DummyHcd broker socket is reachable. Create a curated controller to attach a USB device.",
+                        );
+                    }
+                    Err(error) => {
+                        ui.colored_label(
+                            Color32::RED,
+                            format!("DummyHcd broker unavailable: {error}"),
+                        );
+                    }
+                }
+                ui.small(
+                    "Test flow: select DualSense, create it, then exercise buttons, touch, motion, and host-output indicators.",
+                );
+            }
             if ui.button("Create").clicked() {
                 self.create();
             }
@@ -675,7 +719,7 @@ impl eframe::App for App {
                                 .lock()
                                 .map_err(|_| "controller mutex poisoned while drawing".to_owned())
                                 .and_then(|mut controller| {
-                                    controller.draw(ui);
+                                    controller.draw(ui, &mut named.second_touch);
                                     if controller.is_dirty() {
                                         controller.commit()?;
                                     }
@@ -713,10 +757,11 @@ impl eframe::App for App {
     }
 }
 
-const fn target_label(target: DeploymentTarget) -> &'static str {
+const fn target_label(target: RealizationTarget) -> &'static str {
     match target {
-        DeploymentTarget::Evdev => "Evdev / uinput",
-        DeploymentTarget::Hid => "HID / UHID",
+        RealizationTarget::Evdev => "Evdev / uinput",
+        RealizationTarget::Uhid => "HID / UHID",
+        RealizationTarget::DummyHcd => "USB / dummy_hcd",
         _ => "Unknown target",
     }
 }
@@ -805,14 +850,25 @@ fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)
 
 fn hold(ui: &mut egui::Ui, label: &str, mut set: impl FnMut(bool)) {
     let response = ui.add(Button::new(label));
-    let held = response.is_pointer_button_down_on();
     let previous = ui
         .data(|data| data.get_temp::<bool>(response.id))
         .unwrap_or(false);
-    if held != previous {
-        ui.data_mut(|data| data.insert_temp(response.id, held));
-        set(held);
+    if let Some(next) = next_hold_state(
+        previous,
+        response.is_pointer_button_down_on(),
+        response.clicked(),
+    ) {
+        ui.data_mut(|data| data.insert_temp(response.id, next));
+        set(next);
     }
+}
+
+fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<bool> {
+    // A quick click may begin and end between rendered frames. Keep that click
+    // pressed for one complete frame so HID consumers observe a rising edge;
+    // the following frame emits the corresponding release.
+    let next = pointer_down || clicked;
+    (next != previous).then_some(next)
 }
 fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
     ui.collapsing("Selected target surface", |ui| {
@@ -905,19 +961,9 @@ fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u8) -> bool {
     changed
 }
 
-fn reset_momentary_motion_axis(value: &mut i16, rest: i16) -> bool {
-    let changed = *value != rest;
-    *value = rest;
-    changed
-}
-
-fn momentary_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16, rest: i16) -> bool {
-    let response = ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label));
-    let mut changed = response.changed();
-    if response.drag_stopped() {
-        changed |= reset_momentary_motion_axis(value, rest);
-    }
-    changed
+fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
+    ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label))
+        .changed()
 }
 
 fn dualsense_axis_to_pad(value: u8) -> i16 {
@@ -927,76 +973,6 @@ fn dualsense_axis_to_pad(value: u8) -> i16 {
 fn dualsense_axis_from_pad(value: i16) -> u8 {
     u8::try_from((i32::from(value) / 257 + 128).clamp(0, 255))
         .expect("clamped DualSense axis fits u8")
-}
-fn draw_generic(ui: &mut egui::Ui, controller: &mut GenericGamepadController) {
-    surface(ui, controller.surface());
-    digital_controls(ui, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Select", GenericGamepadControl::Select),
-                ("Start", GenericGamepadControl::Start),
-                ("Guide", GenericGamepadControl::Guide),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = left_x.raw();
-    let mut y = left_y.raw();
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = right_x.raw();
-    let mut right_y = right_y.raw();
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Left stick", &mut x, &mut y) {
-                    let _ = controller
-                        .set_left_stick(GenericGamepadAxis::new(x), GenericGamepadAxis::new(y));
-                }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(GenericGamepadControl::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Right stick", &mut right_x, &mut right_y) {
-                    let _ = controller.set_right_stick(
-                        GenericGamepadAxis::new(right_x),
-                        GenericGamepadAxis::new(right_y),
-                    );
-                }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(GenericGamepadControl::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "Left trigger", &mut left)
-        | momentary_trigger(ui, "Right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(
-            GenericGamepadTrigger::new(left),
-            GenericGamepadTrigger::new(right),
-        );
-    }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "Left shoulder", |pressed| {
-            let _ = controller.set_native(GenericGamepadControl::LeftShoulder, pressed);
-        });
-        hold(ui, "Right shoulder", |pressed| {
-            let _ = controller.set_native(GenericGamepadControl::RightShoulder, pressed);
-        });
-    });
 }
 fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     surface(ui, controller.surface());
@@ -1063,7 +1039,11 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     });
 }
 #[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
-fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
+fn draw_dualsense(
+    ui: &mut egui::Ui,
+    controller: &mut DualSenseController,
+    second_touch: &mut LatchedTouch,
+) {
     surface(ui, controller.surface());
     digital_controls(ui, |update| {
         let _ = controller.set_digital(update);
@@ -1136,11 +1116,12 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
     ui.group(|ui| {
         ui.label("Touchpad");
         draw_touchpad(ui, controller);
-        draw_touch_slot(ui, controller, TouchSlot::Second, 1, "Second contact");
+        draw_latched_touch_slot(ui, controller, TouchSlot::Second, 1, second_touch);
     });
-    if controller.surface().common().target == RealizationTarget::Hid {
+    let target = controller.surface().common().target;
+    if dualsense_motion_target(target) {
         ui.group(|ui| {
-            ui.label("UHID motion report");
+            ui.label(dualsense_motion_target_label(target));
             let diagnostics = controller.provider_diagnostics();
             ui.small(format!(
                 "HID reports sent: {}; host requests handled: {}",
@@ -1151,13 +1132,17 @@ fn draw_dualsense(ui: &mut egui::Ui, controller: &mut DualSenseController) {
             let mut accelerometer = motion.accelerometer;
             let mut changed = false;
             for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                changed |= momentary_motion_axis(ui, label, value, 0);
+                changed |= latched_motion_axis(ui, label, value);
             }
             for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
                 .into_iter()
                 .zip(&mut accelerometer)
             {
-                changed |= momentary_motion_axis(ui, label, value, 0);
+                changed |= latched_motion_axis(ui, label, value);
+            }
+            if ui.button("Reset gyro to neutral").clicked() {
+                gyro = [0; 3];
+                changed = true;
             }
             if changed {
                 let motion = MotionSample {
@@ -1236,20 +1221,20 @@ fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
     ui.group(|ui| {
         ui.label("UHID motion report");
         ui.small(
-            "Motion controls are momentary and return to zero; no gravity orientation is implied.",
+            "Motion controls retain their value; zero remains neutral with no implied gravity.",
         );
         let motion = controller.state().motion();
         let mut gyro = motion.gyroscope;
         let mut accel = motion.accelerometer;
         let mut changed = false;
         for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
             .into_iter()
             .zip(&mut accel)
         {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         if changed {
             let _ = controller.set_motion(DualShock4MotionSample {
@@ -1379,13 +1364,13 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
         let mut accel = motion.accelerometer;
         let mut changed = false;
         for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
             .into_iter()
             .zip(&mut accel)
         {
-            changed |= momentary_motion_axis(ui, label, value, 0);
+            changed |= latched_motion_axis(ui, label, value);
         }
         if changed {
             let _ = controller.set_motion(SwitchProMotionSample {
@@ -1429,31 +1414,24 @@ fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
     }
 }
 
-fn draw_touch_slot(
+fn draw_latched_touch_slot(
     ui: &mut egui::Ui,
     controller: &mut DualSenseController,
     slot: TouchSlot,
     id: u8,
-    label: &str,
+    touch: &mut LatchedTouch,
 ) {
-    let contact = controller.state().touch(slot);
-    let mut x = i32::from(contact.map_or(0, DualSenseTouchContact::x));
-    let mut y = i32::from(contact.map_or(0, DualSenseTouchContact::y));
     ui.group(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut x, 0..=1919).text("X"));
-        ui.add(egui::Slider::new(&mut y, 0..=941).text("Y"));
-        if ui.button("Set touch").clicked() {
-            if let Ok(contact) = DualSenseTouchContact::new(
-                id,
-                u16::try_from(x).expect("slider is bounded to u16"),
-                u16::try_from(y).expect("slider is bounded to u16"),
-            ) {
-                let _ = controller.set_touch(slot, Some(contact));
-            }
-        }
-        if ui.button("Clear touch").clicked() {
-            let _ = controller.set_touch(slot, None);
+        ui.label("Second contact");
+        let mut changed = ui.checkbox(&mut touch.active, "Active").changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut touch.x, 0..=1919).text("X"))
+            .changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut touch.y, 0..=941).text("Y"))
+            .changed();
+        if changed {
+            let _ = controller.set_touch(slot, touch.contact(id));
         }
     });
 }
@@ -1468,11 +1446,61 @@ mod tests {
     }
 
     #[test]
-    fn accel_z_returns_to_gui_neutral_without_publishing_gravity() {
-        let mut value = -12_000;
-        assert!(reset_momentary_motion_axis(&mut value, 0));
-        assert_eq!(value, 0);
-        assert!(!reset_momentary_motion_axis(&mut value, 0));
+    fn live_controllers_poll_reverse_output_at_the_usb_cadence() {
+        assert_eq!(repaint_interval(0), Duration::from_millis(50));
+        assert_eq!(repaint_interval(1), Duration::from_millis(4));
+        assert_eq!(repaint_interval(8), Duration::from_millis(4));
+    }
+
+    #[test]
+    fn quick_button_click_is_held_for_one_report_before_release() {
+        assert_eq!(next_hold_state(false, false, true), Some(true));
+        assert_eq!(next_hold_state(true, false, false), Some(false));
+        assert_eq!(next_hold_state(false, false, false), None);
+        assert_eq!(next_hold_state(true, true, false), None);
+    }
+
+    #[test]
+    fn second_touch_latches_its_coordinates_while_inactive() {
+        let mut touch = LatchedTouch {
+            active: true,
+            x: 123,
+            y: 456,
+        };
+        assert_eq!(
+            touch.contact(1),
+            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
+        );
+        touch.active = false;
+        assert_eq!(touch.contact(1), None);
+        assert_eq!((touch.x, touch.y), (123, 456));
+        touch.active = true;
+        assert_eq!(
+            touch.contact(1),
+            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
+        );
+    }
+
+    #[test]
+    fn dualsense_motion_refresh_is_available_for_uhid_and_dummy_hcd() {
+        assert!(dualsense_motion_target(RealizationTarget::Uhid));
+        assert!(dualsense_motion_target(RealizationTarget::DummyHcd));
+        assert!(!dualsense_motion_target(RealizationTarget::Evdev));
+        assert_eq!(
+            dualsense_motion_target_label(RealizationTarget::Uhid),
+            "UHID motion report"
+        );
+        assert_eq!(
+            dualsense_motion_target_label(RealizationTarget::DummyHcd),
+            "DummyHcd USB motion report"
+        );
+    }
+
+    #[test]
+    fn motion_refresh_has_the_same_target_contract_for_all_imu_controllers() {
+        assert!(motion_refresh_target(RealizationTarget::Uhid));
+        assert!(motion_refresh_target(RealizationTarget::DummyHcd));
+        assert!(!motion_refresh_target(RealizationTarget::Evdev));
     }
 
     #[test]
@@ -1510,7 +1538,7 @@ mod tests {
             mute_led: Some(true),
             ..ReverseIndicators::default()
         };
-        indicators.apply_dualsense_usb_output(0x40, 0x20, None, None);
+        indicators.apply_dualsense_usb_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
         assert_eq!(indicators.mute_led, Some(true));
         assert!(indicators.rumble_active);

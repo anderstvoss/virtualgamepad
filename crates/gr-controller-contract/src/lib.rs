@@ -4,8 +4,8 @@
 
 use gr_audio_contract::AudioSidecarRequirement;
 use gr_realization_api::{
-    ControllerId, DeploymentTarget, ProviderRequirements, RealizationSelection, RealizationTarget,
-    RealizationTargetSet, TransportValidationTarget,
+    ControllerId, ProviderRequirements, RealizationSelection, RealizationTarget,
+    RealizationTargetSet,
 };
 use thiserror::Error;
 
@@ -219,24 +219,6 @@ pub enum ManifestError {
         driver_controller: ControllerId,
     },
 }
-/// Prepare a realization for ordinary application deployment.
-#[allow(clippy::missing_errors_doc)]
-pub fn prepare_deployment_realization(
-    definition: &dyn RealizationControllerDefinition,
-    target: DeploymentTarget,
-) -> Result<PreparedRealization, ManifestError> {
-    prepare_realization(definition, target.realization_target())
-}
-
-/// Prepare a realization for explicit hardware validation.
-#[allow(clippy::missing_errors_doc)]
-pub fn prepare_transport_validation_realization(
-    definition: &dyn RealizationControllerDefinition,
-    target: TransportValidationTarget,
-) -> Result<PreparedRealization, ManifestError> {
-    prepare_realization(definition, target.realization_target())
-}
-
 #[allow(clippy::missing_errors_doc)]
 pub fn prepare_realization(
     definition: &dyn RealizationControllerDefinition,
@@ -288,7 +270,7 @@ mod tests {
         }
         fn realization_manifest(&self) -> RealizationManifest {
             static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                target: RealizationTarget::UsbTransportValidation,
+                target: RealizationTarget::DummyHcd,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
@@ -299,24 +281,11 @@ mod tests {
     }
     #[test]
     fn independent_hardware_mode_needs_no_lower_mode() {
-        assert!(prepare_realization(&Hardware, RealizationTarget::UsbTransportValidation).is_ok());
+        assert!(prepare_realization(&Hardware, RealizationTarget::DummyHcd).is_ok());
         assert!(matches!(
-            prepare_realization(&Hardware, RealizationTarget::Hid),
+            prepare_realization(&Hardware, RealizationTarget::Uhid),
             Err(ManifestError::UnsupportedTarget { .. })
         ));
-    }
-
-    #[test]
-    fn explicit_usb_validation_prepares_a_hardware_only_controller() {
-        let prepared = prepare_transport_validation_realization(
-            &Hardware,
-            TransportValidationTarget::UsbGadget,
-        )
-        .expect("the explicit USB API admits its declared target");
-        assert_eq!(
-            prepared.selection().target,
-            RealizationTarget::UsbTransportValidation
-        );
     }
 
     #[test]

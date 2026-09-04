@@ -1,18 +1,17 @@
 use crate::CreationOptions;
 use gr_controller_contract::{
     CommitError, ControlError, DpadDirection, FaceButton, PreparedRealization,
-    TargetAwareControllerDriver, prepare_deployment_realization,
-    prepare_transport_validation_realization,
+    TargetAwareControllerDriver, prepare_realization,
 };
 use gr_controller_runtime::{ControllerRuntime, FrameSink};
-use gr_provider_linux_transport::LinuxUsbGadgetProvider;
+use gr_controller_wire::STANDARD_GAMEPAD_DESCRIPTOR;
+use gr_provider_linux_dummy_hcd::LinuxDummyHcdProvider;
 use gr_provider_linux_uhid::LinuxUhidProvider;
 use gr_provider_linux_uinput::LinuxUinputProvider;
 use gr_realization_api::{
-    DeploymentTarget, NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization,
-    NativeProviderFactory, NativeProviderSession, ProviderError, ProviderFrame,
-    ProviderOpenRequest, ProviderReverseEvent, RawReverseEvent, RealizationSessionId,
-    TransportValidationTarget,
+    NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, NativeProviderFactory,
+    NativeProviderSession, ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent,
+    RawReverseEvent, RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -103,11 +102,13 @@ pub(crate) fn create<D>(
 where
     D: TargetAwareControllerDriver<Frame = ProviderFrame>,
 {
-    let prepared: PreparedRealization = prepare_deployment_realization(&driver, options.target)
-        .map_err(|error| ProviderError::Unsupported {
-            reason: error.to_string(),
+    let prepared: PreparedRealization =
+        prepare_realization(&driver, options.target).map_err(|error| {
+            ProviderError::Unsupported {
+                reason: error.to_string(),
+            }
         })?;
-    if let NativeControllerRealization::Hid(specification) = &mut realization {
+    if let NativeControllerRealization::Uhid(specification) = &mut realization {
         let suffix = format!("session-{}", options.session.0);
         specification.physical_path = format!("{}/{}", specification.physical_path, suffix);
         specification.unique_id = format!("{}-{suffix}", specification.unique_id);
@@ -119,11 +120,12 @@ where
         realization,
     };
     let session: Box<dyn NativeProviderSession> = match options.target {
-        DeploymentTarget::Evdev => LinuxUinputProvider.open(request)?,
-        DeploymentTarget::Hid => LinuxUhidProvider.open(request)?,
+        RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
+        RealizationTarget::Uhid => LinuxUhidProvider.open(request)?,
+        RealizationTarget::DummyHcd => LinuxDummyHcdProvider.open(request)?,
         _ => {
             return Err(ProviderError::Unsupported {
-                reason: "unknown deployment target".into(),
+                reason: "unknown realization target".into(),
             });
         }
     };
@@ -140,60 +142,12 @@ where
     })
 }
 
-/// Open a controller over an operator-provisioned physical USB gadget.
-///
-/// This deliberately selects the transport-validation target and only opens
-/// endpoint paths supplied in `realization`; it never configures configfs,
-/// binds a UDC, loads modules, or changes permissions.
-pub(crate) fn create_usb<D>(
-    driver: D,
-    realization: NativeControllerRealization,
-    session: RealizationSessionId,
-) -> Result<ControllerRuntime<D, ProviderSessionSink>, ProviderError>
-where
-    D: TargetAwareControllerDriver<Frame = ProviderFrame>,
-{
-    let prepared: PreparedRealization =
-        prepare_transport_validation_realization(&driver, TransportValidationTarget::UsbGadget)
-            .map_err(|error| ProviderError::Unsupported {
-                reason: error.to_string(),
-            })?;
-    let request = ProviderOpenRequest {
-        session,
-        selection: prepared.selection(),
-        requirements: prepared.entry().provider_requirements,
-        realization,
-    };
-    let session = LinuxUsbGadgetProvider.open(request)?;
-    ControllerRuntime::new(
-        driver,
-        ProviderSessionSink {
-            session,
-            closed: false,
-        },
-        prepared,
-    )
-    .map_err(|error| ProviderError::Open {
-        reason: error.to_string(),
-    })
-}
-
-/// Project-defined HID gamepad report descriptor. It is deliberately a
-/// standard HID surface: controller packages own identities and semantics.
-pub(crate) const STANDARD_GAMEPAD_DESCRIPTOR: &[u8] = &[
-    0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x15, 0x00, 0x25, 0x01, 0x35, 0x00, 0x45, 0x01, 0x75, 0x01,
-    0x95, 0x10, 0x05, 0x09, 0x19, 0x01, 0x29, 0x10, 0x81, 0x02, 0x05, 0x01, 0x25, 0x07, 0x46, 0x3b,
-    0x01, 0x75, 0x04, 0x95, 0x01, 0x65, 0x14, 0x09, 0x39, 0x81, 0x42, 0x65, 0x00, 0x75, 0x04, 0x95,
-    0x01, 0x81, 0x03, 0x15, 0x81, 0x25, 0x7f, 0x75, 0x08, 0x95, 0x06, 0x09, 0x30, 0x09, 0x31, 0x09,
-    0x32, 0x09, 0x33, 0x09, 0x34, 0x09, 0x35, 0x81, 0x02, 0xc0,
-];
-
 pub(crate) fn hid_realization(
     name: &str,
     vendor_id: u16,
     product_id: u16,
 ) -> NativeControllerRealization {
-    NativeControllerRealization::Hid(NativeHidRealization {
+    NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 0x03,
         device_name: name.into(),
         physical_path: "virtualgamepad/uhid".into(),

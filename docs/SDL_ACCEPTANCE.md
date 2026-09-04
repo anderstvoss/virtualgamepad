@@ -6,9 +6,9 @@ controller-fidelity claim.
 
 | Target | Current status | Scope of the claim |
 | --- | --- | --- |
-| Generic Gamepad / UHID | ResearchBacked | Project-defined input-only standard HID gamepad using provisional `1209:0001`; it is not an ID-allocation claim. |
+| DualSense / UHID | ResearchBacked | Curated DualSense HID realization with project-owned descriptor and feature fixtures. |
+| DualSense / DummyHcd | HostValidationRequired | Curated USB attachment realization; validate enumeration, feature exchange, motion, and output on a root-enabled host. |
 | Xbox 360 / UHID | ResearchBacked | Local input-only HID identity and standard controls. XInput, xpad, rumble, and Xbox USB protocol fidelity require USB gadget work. |
-| DualSense / UHID | ResearchBacked | USB-style numbered HID descriptor; forward sticks, triggers, buttons, touch, and IMU bytes; typed/raw decoding of output `0x02`. Descriptor/report parity and SDL-native advanced features remain subject to reference-device comparison. |
 
 Before promoting any entry, compare its descriptor, neutral and full-state
 reports, initialization exchanges, reverse reports, and observed SDL/Steam

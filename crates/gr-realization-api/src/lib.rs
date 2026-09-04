@@ -38,46 +38,16 @@ impl fmt::Display for ControllerId {
 #[non_exhaustive]
 pub enum RealizationTarget {
     Evdev,
-    Hid,
-    UsbTransportValidation,
-}
-
-/// Linux target available to ordinary library deployments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum DeploymentTarget {
-    Evdev,
-    Hid,
-}
-impl DeploymentTarget {
-    #[must_use]
-    pub const fn realization_target(self) -> RealizationTarget {
-        match self {
-            Self::Evdev => RealizationTarget::Evdev,
-            Self::Hid => RealizationTarget::Hid,
-        }
-    }
-}
-
-/// Linux target reserved for explicit hardware-validation sessions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum TransportValidationTarget {
-    UsbGadget,
-}
-impl TransportValidationTarget {
-    #[must_use]
-    pub const fn realization_target(self) -> RealizationTarget {
-        RealizationTarget::UsbTransportValidation
-    }
+    Uhid,
+    DummyHcd,
 }
 
 impl fmt::Display for RealizationTarget {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Evdev => "linux uinput/evdev",
-            Self::Hid => "linux UHID",
-            Self::UsbTransportValidation => "linux USB gadget transport validation",
+            Self::Uhid => "linux UHID",
+            Self::DummyHcd => "linux dummy_hcd USB gadget",
         })
     }
 }
@@ -112,8 +82,8 @@ impl RealizationTargetSet {
 const fn target_bit(target: RealizationTarget) -> u8 {
     match target {
         RealizationTarget::Evdev => 1,
-        RealizationTarget::Hid => 2,
-        RealizationTarget::UsbTransportValidation => 4,
+        RealizationTarget::Uhid => 2,
+        RealizationTarget::DummyHcd => 4,
     }
 }
 
@@ -188,7 +158,7 @@ pub fn validate_provider(
 }
 
 /// Monotonic identifier for one provider session.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RealizationSessionId(pub u64);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,60 +214,33 @@ pub struct NativeHidReportKey {
     pub report_id: u8,
     pub report_type: u8,
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeUsbTransportValidationRealization {
-    /// Existing endpoint supplied by an operator-provisioned gadget facility.
-    pub input_endpoint_path: String,
-    /// Existing reverse endpoint, when the declared realization requires one.
-    pub reverse_endpoint_path: Option<String>,
-    pub device_name: String,
-    pub maximum_input_packet_length: u16,
-    pub maximum_reverse_packet_length: Option<u16>,
-}
-/// USB transfer direction, viewed from the gadget device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NativeUsbEndpointDirection {
-    /// Packets flow from the gadget to the USB host.
-    DeviceToHost,
-    /// Packets flow from the USB host to the gadget.
-    HostToDevice,
+pub enum CompiledControllerKind {
+    DualSense,
+    DualShock4,
+    SwitchPro,
+    Xbox360,
 }
 
-/// Operator-provisioned endpoint in a physical USB composite gadget.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeUsbCompositeEndpoint {
-    /// USB endpoint address, including the USB direction bit.
-    pub address: u8,
-    /// Direction declared by the pre-provisioned gadget function.
-    pub direction: NativeUsbEndpointDirection,
-    pub path: String,
-    pub maximum_packet_length: u16,
+/// A privileged broker creates the fixed USB gadget for this controller kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NativeDummyHcdRealization {
+    pub controller: CompiledControllerKind,
 }
 
-/// Physical USB composite realization consumed from an existing gadget setup.
-///
-/// The library neither creates gadget functions nor changes UDC/configfs state.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NativeUsbCompositeRealization {
-    pub device_name: String,
-    pub endpoints: Vec<NativeUsbCompositeEndpoint>,
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeControllerRealization {
     Evdev(NativeEvdevRealization),
-    Hid(NativeHidRealization),
-    UsbTransportValidation(NativeUsbTransportValidationRealization),
-    UsbComposite(NativeUsbCompositeRealization),
+    Uhid(NativeHidRealization),
+    DummyHcd(NativeDummyHcdRealization),
 }
 impl NativeControllerRealization {
     #[must_use]
     pub const fn target(&self) -> RealizationTarget {
         match self {
             Self::Evdev(_) => RealizationTarget::Evdev,
-            Self::Hid(_) => RealizationTarget::Hid,
-            Self::UsbTransportValidation(_) | Self::UsbComposite(_) => {
-                RealizationTarget::UsbTransportValidation
-            }
+            Self::Uhid(_) => RealizationTarget::Uhid,
+            Self::DummyHcd(_) => RealizationTarget::DummyHcd,
         }
     }
 
@@ -352,10 +295,10 @@ impl NativeControllerRealization {
                     }
                 }
             }
-            Self::Hid(specification) => {
+            Self::Uhid(specification) => {
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: RealizationTarget::Hid,
+                        target: RealizationTarget::Uhid,
                     });
                 }
                 if specification.descriptor.is_empty() {
@@ -380,58 +323,7 @@ impl NativeControllerRealization {
                     return Err(NativeRealizationError::HidUnnumberedFeatureHasReportId);
                 }
             }
-            Self::UsbTransportValidation(specification) => {
-                if specification.device_name.is_empty() {
-                    return Err(NativeRealizationError::EmptyDeviceName {
-                        target: RealizationTarget::UsbTransportValidation,
-                    });
-                }
-                if specification.input_endpoint_path.is_empty() {
-                    return Err(NativeRealizationError::EmptyUsbEndpointPath { reverse: false });
-                }
-                if specification.maximum_input_packet_length == 0 {
-                    return Err(NativeRealizationError::EmptyUsbPacketLength { reverse: false });
-                }
-                if specification.reverse_endpoint_path.as_deref() == Some("") {
-                    return Err(NativeRealizationError::EmptyUsbEndpointPath { reverse: true });
-                }
-                if specification.maximum_reverse_packet_length == Some(0) {
-                    return Err(NativeRealizationError::EmptyUsbPacketLength { reverse: true });
-                }
-            }
-            Self::UsbComposite(specification) => {
-                if specification.device_name.is_empty() {
-                    return Err(NativeRealizationError::EmptyDeviceName {
-                        target: RealizationTarget::UsbTransportValidation,
-                    });
-                }
-                if specification.endpoints.is_empty() {
-                    return Err(NativeRealizationError::EmptyUsbCompositeEndpoints);
-                }
-                for (index, endpoint) in specification.endpoints.iter().enumerate() {
-                    if endpoint.address % 16 == 0
-                        || endpoint.path.is_empty()
-                        || (endpoint.address & 0x80 != 0)
-                            != matches!(
-                                endpoint.direction,
-                                NativeUsbEndpointDirection::DeviceToHost
-                            )
-                    {
-                        return Err(NativeRealizationError::InvalidUsbCompositeEndpoint);
-                    }
-                    if endpoint.maximum_packet_length == 0 {
-                        return Err(NativeRealizationError::EmptyUsbPacketLength {
-                            reverse: false,
-                        });
-                    }
-                    if specification.endpoints[..index]
-                        .iter()
-                        .any(|previous| previous.address == endpoint.address)
-                    {
-                        return Err(NativeRealizationError::DuplicateUsbCompositeEndpoint);
-                    }
-                }
-            }
+            Self::DummyHcd(_) => {}
         }
         Ok(())
     }
@@ -476,16 +368,6 @@ pub enum NativeRealizationError {
     HidFeatureResponseTooLarge,
     #[error("an unnumbered UHID feature report must use report ID zero")]
     HidUnnumberedFeatureHasReportId,
-    #[error("USB transport validation endpoint path is empty (reverse={reverse})")]
-    EmptyUsbEndpointPath { reverse: bool },
-    #[error("USB transport validation packet length is zero (reverse={reverse})")]
-    EmptyUsbPacketLength { reverse: bool },
-    #[error("USB composite realization requires at least one endpoint")]
-    EmptyUsbCompositeEndpoints,
-    #[error("USB composite endpoint is invalid")]
-    InvalidUsbCompositeEndpoint,
-    #[error("USB composite endpoint address is declared more than once")]
-    DuplicateUsbCompositeEndpoint,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -512,10 +394,7 @@ pub enum ProviderFrame {
         request_id: u32,
         status: i32,
     },
-    Transport {
-        endpoint: u8,
-        bytes: Vec<u8>,
-    },
+    DummyHcdInput(Vec<u8>),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvdevEvent {
@@ -548,10 +427,6 @@ pub enum RawReverseEvent {
     ForceFeedbackErase {
         request_id: u32,
         effect_id: u32,
-    },
-    Transport {
-        endpoint: u8,
-        bytes: Vec<u8>,
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -618,12 +493,6 @@ pub enum ProviderPreflightError {
         target: RealizationTarget,
         path: String,
     },
-    #[error("USB transport validation requires prepared endpoint `{path}`")]
-    MissingPreparedEndpoint { path: String },
-    #[error("USB gadget validation requires a peripheral-capable USB Device Controller")]
-    MissingUsbDeviceController,
-    #[error("USB transport validation endpoint `{path}` cannot be accessed")]
-    PreparedEndpointAccessDenied { path: String },
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderOpenRequest {
@@ -733,36 +602,17 @@ mod tests {
 
     #[test]
     fn targets_are_exact_and_independent() {
-        assert_ne!(RealizationTarget::Evdev, RealizationTarget::Hid);
-        assert_ne!(
-            RealizationTarget::Hid,
-            RealizationTarget::UsbTransportValidation
-        );
-    }
-
-    #[test]
-    fn deployment_and_usb_validation_targets_are_explicitly_separate() {
-        assert_eq!(
-            DeploymentTarget::Evdev.realization_target(),
-            RealizationTarget::Evdev
-        );
-        assert_eq!(
-            DeploymentTarget::Hid.realization_target(),
-            RealizationTarget::Hid
-        );
-        assert_eq!(
-            TransportValidationTarget::UsbGadget.realization_target(),
-            RealizationTarget::UsbTransportValidation
-        );
+        assert_ne!(RealizationTarget::Evdev, RealizationTarget::Uhid);
+        assert_ne!(RealizationTarget::Uhid, RealizationTarget::DummyHcd);
     }
 
     #[test]
     fn target_sets_are_unordered_membership_sets() {
-        let targets = RealizationTargetSet::singleton(RealizationTarget::UsbTransportValidation)
+        let targets = RealizationTargetSet::singleton(RealizationTarget::DummyHcd)
             .union(RealizationTargetSet::singleton(RealizationTarget::Evdev));
-        assert!(targets.contains(RealizationTarget::UsbTransportValidation));
+        assert!(targets.contains(RealizationTarget::DummyHcd));
         assert!(targets.contains(RealizationTarget::Evdev));
-        assert!(!targets.contains(RealizationTarget::Hid));
+        assert!(!targets.contains(RealizationTarget::Uhid));
     }
 
     #[test]
@@ -773,7 +623,7 @@ mod tests {
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(RealizationTarget::Hid, true),
+            ProviderCapabilities::for_target(RealizationTarget::Uhid, true),
             ProviderRequirements::default(),
         )
         .expect_err("providers cannot substitute targets");
@@ -784,11 +634,11 @@ mod tests {
     fn provider_validation_checks_reverse_output_separately() {
         let selection = RealizationSelection {
             controller: ControllerId::new("test.identity"),
-            target: RealizationTarget::Hid,
+            target: RealizationTarget::Uhid,
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(RealizationTarget::Hid, false),
+            ProviderCapabilities::for_target(RealizationTarget::Uhid, false),
             ProviderRequirements {
                 requires_reverse_output: true,
             },
@@ -841,32 +691,6 @@ mod tests {
             ProviderOpenValidationError::Specification(NativeRealizationError::EmptyDeviceName {
                 target: RealizationTarget::Evdev
             })
-        ));
-    }
-
-    #[test]
-    fn composite_usb_requires_distinct_bounded_endpoints() {
-        let realization =
-            NativeControllerRealization::UsbComposite(NativeUsbCompositeRealization {
-                device_name: "DualSense composite".into(),
-                endpoints: vec![
-                    NativeUsbCompositeEndpoint {
-                        address: 0x81,
-                        direction: NativeUsbEndpointDirection::DeviceToHost,
-                        path: "/dev/gadget-hid-in".into(),
-                        maximum_packet_length: 64,
-                    },
-                    NativeUsbCompositeEndpoint {
-                        address: 0x81,
-                        direction: NativeUsbEndpointDirection::DeviceToHost,
-                        path: "/dev/gadget-audio".into(),
-                        maximum_packet_length: 192,
-                    },
-                ],
-            });
-        assert!(matches!(
-            realization.validate(),
-            Err(NativeRealizationError::DuplicateUsbCompositeEndpoint)
         ));
     }
 }
