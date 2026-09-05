@@ -4,7 +4,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
 | --- | --- | --- | --- | --- | --- |
-| A | Corpus evidence model | E1 | not_run | unassigned | None |
+| A | Corpus evidence model | E1 | passed | Codex | [EXP-0001](experiments/EXP-0001-corpus-seed.md), [ADR-0003](decisions/ADR-0003-corpus-boundary.md); source/synthetic scope only |
 | B | Controlled bus/host comparison | E3 | not_run | unassigned | None |
 | C | Stateful synchronous protocol contract | E2 | not_run | unassigned | None |
 | D | HID framing boundary | E2 | not_run | unassigned | None |

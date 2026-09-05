@@ -1,0 +1,11 @@
+{
+  "corpus_commit": "9d0d56e3949694e0a2e697188e61dfe1562e5f7a",
+  "generator_version": 1,
+  "inputs": {
+    "fixtures/ds-cross.hex": "cf780dad4726100617c5c663522e37d6927393eca727a52c3285b50597437eda",
+    "fixtures/ds-neutral.hex": "40380fbd97b0adccad7b02aaf75c990ecc323d99d641a2033fa6471ead8cd6fb",
+    "records/fixture/ds-cross.json": "945b5da019d445c4180f98b1487e9170c72eb91e299b3ef1cc6d0e81ac29f3a8",
+    "records/fixture/ds-neutral.json": "371f407f873b016459f8fd44fba329066ad0bb6f3b8017fdeb6a1e8b06676722"
+  },
+  "schema_version": 1
+}

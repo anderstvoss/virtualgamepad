@@ -344,3 +344,38 @@ jobs:
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure
+
+  protocol-corpus:
+    name: Pinned protocol corpus
+    # Private execution remains local. Fork PRs have no corpus credentials;
+    # their ordinary Rust jobs still use checked-in artifacts.
+    if: >-
+      ${{ !github.event.repository.private &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.PROTOCOL_CORPUS_READ_TOKEN }}
+    steps:
+      - name: Require explicit corpus access
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::error::Private corpus validation requires PROTOCOL_CORPUS_READ_TOKEN with corpus contents read access.'
+            exit 1
+          fi
+      - name: Checkout pinned corpus
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+          token: ${{ secrets.PROTOCOL_CORPUS_READ_TOKEN }}
+          persist-credentials: false
+      - name: Validate evidence and adopted revision
+        run: |
+          python3 -m venv .corpus-venv
+          .corpus-venv/bin/pip install -r protocol-corpus/requirements-dev.txt
+          .corpus-venv/bin/python protocol-corpus/tools/validate.py
+          .corpus-venv/bin/python -m unittest discover -s protocol-corpus/tests
+          gh auth setup-git
+          python3 scripts/check-protocol-corpus.py --verify-remote
+          python3 -m unittest discover -s scripts/tests
