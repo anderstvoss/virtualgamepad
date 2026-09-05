@@ -3,6 +3,10 @@
 Thanks for your interest. This project is in early WIP — expect APIs to
 shift. Please read this file end-to-end before opening a PR.
 
+## Architecture overhaul
+
+For protocol/corpus rewrite work, begin with the [architecture execution kit](docs/architecture-overhaul/README.md). Its gate register owns implementation sequencing; its status ledger distinguishes planned work from validated results. Existing repository and PR rules still apply.
+
 ## Development setup
 
 Run once after cloning:
