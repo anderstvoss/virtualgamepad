@@ -158,11 +158,14 @@ class Journal:
         return json.loads(self.path.read_text())
 
     def save(self, value):
+        encoded = json.dumps(value, sort_keys=True)
+        if len(encoded.encode('utf-8')) > 16384:
+            raise ValueError('lease is too large to recover; no journal or ACL change allowed')
         descriptor, name = tempfile.mkstemp(prefix='lease-', dir=STATE)
         temporary = Path(name)
         try:
             with os.fdopen(descriptor, 'w') as stream:
-                json.dump(value, stream, sort_keys=True)
+                stream.write(encoded)
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, self.path)

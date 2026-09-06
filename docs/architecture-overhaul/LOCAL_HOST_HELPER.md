@@ -58,7 +58,8 @@ a package manager, or an installer.
 The helper journals the original ACL and filesystem/device identity before an ACL
 write. It preserves other principals' effective permissions when expanding the
 mask. Repeat grants do not replace the original baseline; status is read-only.
-Interrupted grants can be restored from the journal. Replacement nodes, changed
+Interrupted grants can be restored from the journal. Oversized journals are
+rejected before mutation so every accepted ACL baseline remains recoverable. Replacement nodes, changed
 owners/groups, externally changed ACLs, and malformed journals require operator
 review instead of overwriting another researcher's changes.
 

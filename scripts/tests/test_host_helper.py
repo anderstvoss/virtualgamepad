@@ -130,6 +130,12 @@ class HelperTests(unittest.TestCase):
         HELPER.execute('uhid-restore', UID, host, journal)
         self.assertEqual(host.actions, actions)
 
+    def test_oversized_journal_is_rejected_before_filesystem_mutation(self):
+        with patch.object(HELPER.tempfile, 'mkstemp') as create:
+            with self.assertRaisesRegex(ValueError, 'too large'):
+                HELPER.Journal().save({'payload': 'x' * 20000})
+            create.assert_not_called()
+
     def test_failed_preparation_and_interrupted_grants_recover(self):
         for failure in ['prepare', 'before-write', 'after-write', 'journal']:
             with self.subTest(failure=failure):
