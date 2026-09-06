@@ -3,7 +3,9 @@
 The user authorized this VM for validation provided other research is preserved.
 No persistent enrollment, service enablement, driver rebinding, reboot, shared
 service restart, or kernel replacement is part of this procedure. Host changes
-requiring administration remain blocked because noninteractive sudo is unavailable.
+requiring administration remain blocked until the optional
+[local root-owned helper](LOCAL_HOST_HELPER.md) is installed or an administrator
+applies the reviewed steps directly.
 Machine-specific inventory and rollback records are private, outside Git.
 
 ## First: read-only inventory

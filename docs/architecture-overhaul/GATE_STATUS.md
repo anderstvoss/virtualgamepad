@@ -44,3 +44,8 @@ and live uinput cleanup pass. B/P remain blocked on temporary UHID provisioning 
 controlled consumers; G additionally needs actual reduced-capability execution
 and the recorded kernel-interface decision. No gate is promoted by provisioning
 code or an SDL build. CAP_SYS_ADMIN removal is not yet validated.
+
+The [local development helper](LOCAL_HOST_HELPER.md) provides a one-time,
+UID-scoped installation path for temporary creation access and extensible approved
+module/job operations. Its deterministic tests pass; installation and live grants
+remain pending administrator execution. This does not change B/P/G status.

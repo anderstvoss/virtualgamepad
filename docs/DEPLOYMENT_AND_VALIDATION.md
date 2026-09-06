@@ -113,3 +113,8 @@ the live Gate G reduced-capability test; its necessity is **not established**.
 not a validated default. Test it on the reserved UDC after administrator setup,
 then remove CAP_SYS_ADMIN from the default only when that test passes. No
 permission increase can restore missing gadget control metadata/completion.
+
+An optional [local development helper](architecture-overhaul/LOCAL_HOST_HELPER.md)
+provides temporary creation-device ACLs, approved module loading, and configured
+root-owned validation jobs. It is installed once by an administrator and is not a
+product dependency or a general passwordless-sudo grant.
