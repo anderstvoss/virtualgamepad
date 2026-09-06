@@ -17,7 +17,7 @@ host gate passed; `PhysicallyValidated` requires that comparison.
 
 Each target must pass this supported-host gate:
 
-1. Install current SDL3 development/runtime support and start Steam Input.
+1. Prepare a pinned, private SDL3 development prefix and a usable interactive Steam Input session; record their versions.
 2. Create one UHID controller at a time; do not leave the evdev sibling active.
 3. Run `scripts/run-sdl3-gamepad-probe.sh /dev/hidrawN 1000`, substituting the
    session-specific hidraw path, and record the controller's SDL identity,
@@ -39,9 +39,9 @@ Steam gate with a session-specific controller:
 
 ```bash
 VIRTUALGAMEPAD_STEAM_CONSOLE_LOG=/path/to/console_log.txt \
-  sg input -c 'cargo test -p gr-curated-controllers \
+  cargo test -p gr-curated-controllers \
     dualsense_steam_hidapi_opens_the_session_specific_controller \
-    -- --ignored --nocapture'
+    -- --ignored --nocapture
 ```
 
 Then compare Steam's most recent physical and virtual discovery blocks without
@@ -60,3 +60,19 @@ open the controller after the exact session serial appears in the log.
 ## Stateful-session regression comparison
 
 Compare the baseline revision with the migrated controller on the same provisioned host, using sequential session-specific runs. Both use USB UHID bus metadata; no bus-setting fix is claimed. Include creation-time feature requests, an unchanged-state interval serviced at the documented deadlines, sustained output, consumer CLOSE/OPEN, per-controller removal, and final cleanup. Record kernel/driver/SDL/Steam versions and each evidence axis separately. `gr-hid` and fake-provider tests establish deterministic behavior only; B/P remain blocked until these live comparisons run.
+
+## Scoped development setup
+
+The producer needs only its selected creation node; the consumer needs only the
+created controller's hidraw/event nodes. Inspect existing user-session access
+first. If additional access is required, an administrator grants a temporary
+ACL to the exact verified session nodes and restores previous ACLs afterward.
+Re-enumeration requires identity verification again; node numbers are reusable.
+Do not enroll the test user in the general input group or grant all hidraw nodes.
+
+Pin SDL source revision and build options in the experiment record. Install to
+a private user-owned prefix; scope PKG_CONFIG_PATH and LD_LIBRARY_PATH to the
+probe command, never a shell profile or system loader configuration. The probe
+builds into a fresh private temporary directory and removes it on exit, including
+compiler/probe failure. It is never run as root. Missing Steam or reference
+hardware blocks only that evidence axis; neither is a library dependency.

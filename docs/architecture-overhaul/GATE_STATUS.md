@@ -34,3 +34,13 @@ E0 baseline and reviewed kit are committed (`e3bd06f`); source/host inventories 
 E4 DualSense USB/UHID and E6 DS4/Switch/standard-HID Xbox UHID migration are implemented with fake-provider regressions; see [EXP-0003](experiments/EXP-0003-uhid-migration.md). A live uinput creation/cleanup test passed. B/P live UHID/consumer acceptance remains blocked; this does not promote the existing research-backed surfaces.
 
 E5 broker replacement and E6 compound/audio/Bluetooth/compatibility extensions remain dependent on their own gates. The current frame runtime remains for uinput and the existing compiled broker path. This ledger does not claim completion of the full architecture roadmap. User direction now requires feature branches and PRs; implementation is on `architecture/protocol-session-rewrite`, PR #106, without a push to remote main.
+
+## Host access batch — 2026-09-06
+
+[EXP-0005](experiments/EXP-0005-host-access.md) records read-only preflight, per-provider
+access policy, broker module-loading removal, administrator UDC authorization,
+instance ownership recovery, and private SDL probe preparation. Deterministic tests
+and live uinput cleanup pass. B/P remain blocked on temporary UHID provisioning and
+controlled consumers; G additionally needs actual reduced-capability execution
+and the recorded kernel-interface decision. No gate is promoted by provisioning
+code or an SDL build. CAP_SYS_ADMIN removal is not yet validated.

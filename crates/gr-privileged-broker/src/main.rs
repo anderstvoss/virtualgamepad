@@ -9,6 +9,7 @@
 use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
     dummy_hcd::{DummyHcdSession, cleanup_stale_sessions},
+    host_access::{HostAccess, HostConfig},
     read_message, write_message,
 };
 #[cfg(target_os = "linux")]
@@ -16,12 +17,13 @@ use gr_realization_api::{CompiledControllerKind, RealizationSessionId, Realizati
 use std::io;
 #[cfg(target_os = "linux")]
 use std::{
-    env, fs,
+    env,
     os::{
         fd::{AsRawFd, FromRawFd},
         unix::net::{UnixListener, UnixStream},
     },
     path::Path,
+    sync::Arc,
     thread,
 };
 
@@ -31,7 +33,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = arguments
         .windows(2)
         .find_map(|pair| (pair[0] == "--config").then(|| pair[1].clone()));
-    let allowed = configured_uids(config.as_deref())?;
+    let config = HostConfig::load(Path::new(
+        config
+            .as_deref()
+            .unwrap_or("/etc/virtualgamepad/broker.conf"),
+    ))?;
+    let allowed = config.allowed_uids.clone();
+    let access = Arc::new(HostAccess::acquire(config)?);
     let socket_activated = arguments
         .first()
         .is_some_and(|argument| argument == "--socket-activation");
@@ -55,14 +63,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // verified systemd socket activation. A stray manually started binary can
     // never clean up resources owned by the active service.
     if socket_activated {
-        cleanup_stale_sessions()?;
+        cleanup_stale_sessions(&access)?;
     }
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
                 let allowed = allowed.clone();
+                let access = Arc::clone(&access);
                 thread::spawn(move || {
-                    let _ = serve(stream, allowed);
+                    let _ = serve(stream, allowed, access);
                 });
             }
             Err(error) => eprintln!("broker accept failed: {error}"),
@@ -109,61 +118,35 @@ fn valid_socket_activation(listen_pid: Option<&str>, listen_fds: Option<&str>, p
 }
 
 #[cfg(target_os = "linux")]
-fn configured_uids(config: Option<&str>) -> Result<Vec<u32>, io::Error> {
-    let path = config.unwrap_or("/etc/virtualgamepad/broker.conf");
-    let contents = fs::read_to_string(path)?;
-    let mut uids = Vec::new();
-    for line in contents
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-    {
-        let Some(value) = line.strip_prefix("allow_uid=") else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "unknown broker configuration key",
-            ));
-        };
-        uids.push(
-            value
-                .parse()
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid allow_uid"))?,
-        );
-    }
-    if uids.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "broker configuration authorizes no UIDs",
-        ));
-    }
-    Ok(uids)
-}
-
-#[cfg(target_os = "linux")]
-struct DaemonFactory;
+struct DaemonFactory(Arc<HostAccess>);
 #[cfg(target_os = "linux")]
 impl HostSessionFactory for DaemonFactory {
     fn open(
         &self,
         target: RealizationTarget,
         controller: CompiledControllerKind,
-        session: RealizationSessionId,
+        _session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
         match target {
-            RealizationTarget::DummyHcd => {
-                Ok(Box::new(DummyHcdSession::open(session.0, controller)?))
-            }
+            RealizationTarget::DummyHcd => Ok(Box::new(DummyHcdSession::open_authorized(
+                controller, &self.0,
+            )?)),
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
     }
 }
 
 #[cfg(target_os = "linux")]
-fn serve(mut stream: UnixStream, allowed: Vec<u32>) -> Result<(), io::Error> {
+fn serve(
+    mut stream: UnixStream,
+    allowed: Vec<u32>,
+    access: Arc<HostAccess>,
+) -> Result<(), io::Error> {
     let peer = peer_uid(&stream)?;
+    let factory = DaemonFactory(access);
     let mut registry = BrokerRegistry::new(allowed);
     while let Ok((tag, body)) = read_message(&mut stream) {
-        let reply = dispatch(&mut registry, peer, tag, &body);
+        let reply = dispatch(&mut registry, peer, tag, &body, &factory);
         match reply {
             Ok(body) => write_message(&mut stream, 0x80, &body)?,
             Err(error) => write_message(&mut stream, 0x81, error.to_string().as_bytes())?,
@@ -178,6 +161,7 @@ fn dispatch(
     peer: u32,
     tag: u8,
     body: &[u8],
+    factory: &DaemonFactory,
 ) -> Result<Vec<u8>, BrokerError> {
     match tag {
         1 => {
@@ -195,7 +179,7 @@ fn dispatch(
                 4 => CompiledControllerKind::Xbox360,
                 _ => return Err(BrokerError::MalformedRequest),
             };
-            let session = registry.open(peer, target, controller, &DaemonFactory)?;
+            let session = registry.open(peer, target, controller, factory)?;
             Ok(session.0.to_le_bytes().to_vec())
         }
         2 => {

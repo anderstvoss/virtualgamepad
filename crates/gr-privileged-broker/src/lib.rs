@@ -19,6 +19,8 @@ use thiserror::Error;
 /// attachment implementation is deliberately not built outside Linux.
 #[cfg(target_os = "linux")]
 pub mod dummy_hcd;
+#[cfg(target_os = "linux")]
+pub mod host_access;
 
 /// Broker-owned host resource. Implementations are never constructed by an
 /// application client and must make `close` safe to repeat after partial open.
@@ -619,6 +621,32 @@ mod tests {
             broker.diagnostics(1000, session),
             Err(BrokerError::UnknownSession { .. })
         ));
+    }
+
+    #[test]
+    fn denied_open_never_touches_host_resources() {
+        struct Untouchable;
+        impl HostSessionFactory for Untouchable {
+            fn open(
+                &self,
+                _: RealizationTarget,
+                _: CompiledControllerKind,
+                _: RealizationSessionId,
+            ) -> Result<Box<dyn HostSession>, BrokerError> {
+                panic!("unauthorized request reached the host");
+            }
+        }
+        let mut registry = BrokerRegistry::new(vec![42]);
+        assert!(matches!(
+            registry.open(
+                43,
+                RealizationTarget::DummyHcd,
+                CompiledControllerKind::DualSense,
+                &Untouchable
+            ),
+            Err(BrokerError::Unauthorized { .. })
+        ));
+        assert!(registry.sessions.is_empty());
     }
 
     #[test]

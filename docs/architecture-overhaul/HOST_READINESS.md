@@ -1,6 +1,6 @@
 # Host readiness record
 
-Status: `not_run`. This is a survey worksheet, not a host-setup script. Do not load modules, change permissions/drivers, or create devices merely to fill it out. Record public-safe aliases; keep machine names, serials, MACs, and raw logs out of Git.
+Status: `surveyed`; live B/P/G remain blocked. Historical worksheet entries below are superseded by the dated surveys and EXP-0005. This is not a host-setup script. Do not load modules, change permissions/drivers, or create devices merely to fill it out. Record public-safe aliases; keep machine names, serials, MACs, and raw logs out of Git.
 
 | Area | Record before live work | Current result |
 | --- | --- | --- |
@@ -26,3 +26,12 @@ Owner: Codex. Linux arm64, kernel `6.12.105+deb13-arm64`. The ordinary process c
 B/P and live G are blocked pending a provisioned host. Proposed setup: confirm kernel UHID/uinput/dummy_hcd/ConfigFS support, provision narrowly scoped device access and broker service using the repository deployment procedure, install SDL3 development prerequisites, and supply an interactive Steam session plus a reference-controller alias. Review concrete commands before changing host policy. No modules, permissions, drivers, packages, or devices were changed by this survey.
 
 The live uinput process-owned creation/destruction test subsequently passed using existing ordinary-user access. No host configuration changed. The [provisioning proposal](HOST_PROVISIONING.md) is prepared for review for the remaining UHID/gadget work.
+
+## Scoped preparation — 2026-09-06
+
+The refreshed read-only inventory and exact build outcomes are in
+[EXP-0005](experiments/EXP-0005-host-access.md). ConfigFS is mounted, but its gadget
+subtree is absent. UHID's node alone does not establish misc registration.
+Private SDL input tooling is now built; desktop/Steam acceptance is not established.
+Administrator access remains unavailable, so no temporary ACLs, module loads,
+or service changes were applied. Existing uinput creation/cleanup passed again.

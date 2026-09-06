@@ -33,3 +33,8 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace --all-features
 gitleaks detect
 ```
+
+Host access can be inspected without changes using
+`python3 scripts/host-preflight.py all` (or a complete realization ID). Builds do
+not need device permissions. Opt-in creation access, consumer access, and the
+optional gadget broker have separate [deployment requirements](docs/DEPLOYMENT_AND_VALIDATION.md).
