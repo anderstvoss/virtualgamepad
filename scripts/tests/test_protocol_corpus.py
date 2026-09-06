@@ -45,6 +45,33 @@ class CorpusWorkflow(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'HEAD differs'):
             MODULE.check(self.root)
 
+    def test_remote_rejects_unpublished_revision(self):
+        remote = self.root / 'remote.git'
+        git(self.root, 'init', '--bare', str(remote))
+        git(self.corpus, 'remote', 'add', 'origin', str(remote))
+        git(self.corpus, 'push', 'origin', 'HEAD:main')
+        MODULE.check(self.root, write=True, verify_remote=True)
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '--allow-empty', '-m', 'unpublished')
+        revision = git(self.corpus, 'rev-parse', 'HEAD')
+        git(self.root, 'update-index', '--cacheinfo', '160000,' + revision + ',protocol-corpus')
+        with self.assertRaises(subprocess.CalledProcessError):
+            MODULE.check(self.root, write=True, verify_remote=True)
+
+    def test_recursive_checkout_regenerates(self):
+        MODULE.check(self.root, write=True)
+        (self.root / '.gitmodules').write_text(
+            '[submodule "protocol-corpus"]\n'
+            '\tpath = protocol-corpus\n'
+            '\turl = ' + str(self.corpus) + '\n')
+        git(self.root, 'add', '.gitmodules', 'tests')
+        git(self.root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'synthetic superproject')
+        clone = self.root / 'recursive-clone'
+        git(self.root, '-c', 'protocol.file.allow=always', 'clone', '--recurse-submodules',
+            str(self.root), str(clone))
+        MODULE.check(clone)
+
     def test_dirty_corpus(self):
         (self.corpus / 'untracked.txt').write_text('synthetic')
         with self.assertRaisesRegex(ValueError, 'uncommitted'):

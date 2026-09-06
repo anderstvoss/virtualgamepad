@@ -869,6 +869,12 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
 }
 pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
     /// Service on this readiness source and at `next_service_in`, including idle state.
     #[must_use]
     pub fn readiness(&self) -> Option<gr_hid::Readiness> {

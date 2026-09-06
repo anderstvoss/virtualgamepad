@@ -732,6 +732,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
     /// Service on this readiness source and at `next_service_in`, including idle state.
     #[must_use]
     pub fn readiness(&self) -> Option<gr_hid::Readiness> {

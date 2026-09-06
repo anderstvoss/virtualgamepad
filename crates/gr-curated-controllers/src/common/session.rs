@@ -175,6 +175,12 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Hid { runtime, .. } => runtime.transport().diagnostics(),
         }
     }
+    pub(crate) fn wants_write(&self) -> bool {
+        match &self.backend {
+            Backend::Native(_) => false,
+            Backend::Hid { runtime, .. } => runtime.wants_write(),
+        }
+    }
     pub(crate) fn next_service_in(&self) -> Option<Duration> {
         match &self.backend {
             Backend::Native(_) => Some(Duration::from_millis(4)),

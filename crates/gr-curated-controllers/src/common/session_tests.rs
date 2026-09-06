@@ -202,7 +202,9 @@ fn dualsense_validates_set_before_ack_and_keeps_retry_identity() {
     io.lock().unwrap().fail.push_back(ProviderError::WouldBlock);
     let outputs = rt.service(2).unwrap();
     assert_eq!(outputs.len(), 1);
+    assert!(rt.wants_write());
     rt.service(3).unwrap();
+    assert!(!rt.wants_write());
     let r = io.lock().unwrap();
     assert_eq!(
         r.attempts[r.attempts.len() - 1],

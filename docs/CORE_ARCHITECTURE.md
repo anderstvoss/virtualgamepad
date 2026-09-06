@@ -57,3 +57,5 @@ HID audio controls do not create PCM endpoints. Future controller-owned audio ca
 The independent private protocol corpus is pinned at `protocol-corpus/`. Records distinguish source support, synthetic fixtures, compatibility policy, physical observations, and conflicts. Checked-in test artifacts carry revision and input hashes. Ordinary Cargo builds require no corpus checkout, credentials, or network access to that repository.
 
 Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](architecture-overhaul/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
+
+Descriptor-based callers must watch readability and add writability while `wants_write()` is true, as well as servicing `next_service_in()`. This retries a blocked required reply before its terminal deadline. Polling callers may continue regular bounded service.

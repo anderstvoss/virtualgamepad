@@ -10,7 +10,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
 | F | Host audio coherence | E6 host audio | not_run | unassigned | None |
-| G | Broker capability/startup/latency | Early probe; E5 replacement | not_run | unassigned | None |
+| G | Broker capability/startup/latency | Early probe; E5 replacement | blocked | Codex | [EXP-0004](experiments/EXP-0004-gadget-capability.md); source API lacks full control metadata/completion, live profile unprovisioned |
 | H | USB Audio implementation depth | E6 USB audio | not_run | unassigned | None |
 | I | Realization variant granularity | Affected E6 variants | not_run | unassigned | None |
 | J | Required replies and deadlines | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
