@@ -877,6 +877,7 @@ dependencies = [
  "gr-controller-runtime",
  "gr-controller-wire",
  "gr-dualsense-wire",
+ "gr-hid",
  "gr-provider-linux-dummy-hcd",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
@@ -886,6 +887,10 @@ dependencies = [
 
 [[package]]
 name = "gr-dualsense-wire"
+version = "0.1.0"
+
+[[package]]
+name = "gr-hid"
 version = "0.1.0"
 
 [[package]]

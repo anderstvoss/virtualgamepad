@@ -1,5 +1,8 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
+#[cfg(test)]
+mod protocol;
+
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
