@@ -100,7 +100,7 @@ impl Protocol for DualSenseUsbProtocol {
             ),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
             RequestKind::Set(report) => match Self::accept_output(report) {
-                Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(&report))),
+                Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(report))),
                 Err(error) => (Reply::Set(Err(error)), None),
             },
         }
