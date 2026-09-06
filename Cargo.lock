@@ -916,6 +916,7 @@ dependencies = [
 name = "gr-provider-linux-uhid"
 version = "0.1.0"
 dependencies = [
+ "gr-hid",
  "gr-realization-api",
  "libc",
 ]
@@ -932,6 +933,7 @@ dependencies = [
 name = "gr-realization-api"
 version = "0.1.0"
 dependencies = [
+ "gr-hid",
  "thiserror 2.0.20",
 ]
 

@@ -5,7 +5,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
 | --- | --- | --- | --- | --- | --- |
 | A | Corpus evidence model | E1 | passed | Codex | [EXP-0001](experiments/EXP-0001-corpus-seed.md), [ADR-0003](decisions/ADR-0003-corpus-boundary.md); source/synthetic scope only |
-| B | Controlled bus/host comparison | E3 | not_run | unassigned | None |
+| B | Controlled bus/host comparison | E3 | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); UHID access and supported-host comparison unavailable |
 | C | Stateful synchronous protocol contract | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
@@ -19,7 +19,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | M | Actual BT realization viability | E6 BT bus after L | not_run | unassigned | None |
 | N | Curated compatibility variants | Affected E6 family | not_run | unassigned | None |
 | O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
-| P | Specialized driver behavior | E3 with B | not_run | unassigned | None |
+| P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); UHID access and supported-host comparison unavailable |
 
 ## Update rules
 
@@ -27,4 +27,10 @@ Allowed statuses: `not_run`, `running`, `passed`, `failed`, `blocked`, `not_appl
 
 Record evidence axes independently in each run. A fake-I/O result can pass while live kernel/Steam acceptance remains blocked. When repeated runs disagree, keep every result and report the gate as unresolved rather than selecting the successful run.
 
-E0 preparation has documentation, source/branch inventory, and a passing automated baseline recorded in [BASELINE.md](BASELINE.md) on 2026-09-05. No full batch or architecture gate is signed off. Corpus integration, plan commit, experiment ownership, historical evidence reconciliation, and host survey remain pending; ignored/live acceptance tests were not run.
+## Execution batches — 2026-09-06
+
+E0 baseline and reviewed kit are committed (`e3bd06f`); source/host inventories explicitly retain unrecovered historical evidence. E1 minimal source/synthetic corpus is published and pinned (`18ca773`). E2 deterministic contracts are tested (`7202732`, corrected by `b2f67b2`).
+
+E4 DualSense USB/UHID and E6 DS4/Switch/standard-HID Xbox UHID migration are implemented with fake-provider regressions; see [EXP-0003](experiments/EXP-0003-uhid-migration.md). A live uinput creation/cleanup test passed. B/P live UHID/consumer acceptance remains blocked; this does not promote the existing research-backed surfaces.
+
+E5 broker replacement and E6 compound/audio/Bluetooth/compatibility extensions remain dependent on their own gates. The current frame runtime remains for uinput and the existing compiled broker path. This ledger does not claim completion of the full architecture roadmap. User direction now requires feature branches and PRs; implementation is on `architecture/protocol-session-rewrite`, PR #106, without a push to remote main.

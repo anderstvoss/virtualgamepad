@@ -13,6 +13,8 @@ pub enum ReportType {
     Input,
     Output,
     Feature,
+    /// Preserve an unknown transport report class for an explicit error reply.
+    Other(u8),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,6 +73,7 @@ pub struct Request {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplyError {
+    Busy,
     Unsupported,
     Invalid,
 }
@@ -279,6 +282,10 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
     }
     /// Read-only provider diagnostics; submissions must use the service loop.
     #[must_use]
+    pub const fn protocol(&self) -> &P {
+        &self.protocol
+    }
+    #[must_use]
     pub const fn transport(&self) -> &T {
         &self.transport
     }
@@ -353,7 +360,13 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
                             self.observe(output);
                         }
                     }
-                    HostEvent::Lifecycle(event) => self.protocol.lifecycle(event, now),
+                    HostEvent::Lifecycle(event) => {
+                        if event == Lifecycle::Stop {
+                            self.pending.clear();
+                            self.dirty = true;
+                        }
+                        self.protocol.lifecycle(event, now);
+                    }
                 }
             }
         }

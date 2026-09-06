@@ -1,6 +1,6 @@
 # Deployment and validation
 
-The three realization targets are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
+The implemented realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.
 
@@ -55,6 +55,10 @@ DummyHcd validation covers USB enumeration, HID feature exchange, motion input,
 reverse output, and resource-only cleanup. The Linux `dummy_hcd` module exposes
 a finite virtual-UDC resource: run controller-specific root tests against a
 fresh attachment, rather than concurrently. SDL/Steam recognition and gyro
-behavior remain controller-specific acceptance criteria. Bluetooth realization
-is deferred to `wip/btvirt` and has no installation or validation path on this
-branch.
+behavior remain controller-specific acceptance criteria. Bluetooth realizations require the separate L/M gates and have no supported installation path yet.
+
+## Stateful UHID service and current migration boundary
+
+Applications must service `poll_output` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
+
+The broker still uses its compiled startup feature path. Gate G must prove staged startup, control metadata/completion support, and latency before replacing it with unprivileged dynamic protocol handling. Do not infer gadget control-request parity from UHID tests. See [host prerequisites](architecture-overhaul/HOST_READINESS.md) and the [reviewable provisioning proposal](architecture-overhaul/HOST_PROVISIONING.md).

@@ -32,6 +32,6 @@ pub use gr_realization_api::{
     ProviderDiagnostics, ProviderError, ProviderFrame, ProviderOpenRequest,
     ProviderOpenValidationError, ProviderPreflightError, ProviderRequirements,
     ProviderReverseEvent, ProviderReverseEventSink, ProviderState, RawReverseEvent,
-    RealizationError, RealizationSelection, RealizationSessionId, RealizationTarget,
+    RealizationError, RealizationId, RealizationSelection, RealizationSessionId, RealizationTarget,
     RealizationTargetSet, validate_provider,
 };

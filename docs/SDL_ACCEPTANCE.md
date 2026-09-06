@@ -56,3 +56,7 @@ Both blocks must select `SDL_JOYSTICK_HIDAPI_PS5 (ENABLED)`. The virtual session
 serial, rather than its hidraw path, identifies it after teardown because the
 kernel can reuse hidraw node numbers. The virtual gate also requires Steam to
 open the controller after the exact session serial appears in the log.
+
+## Stateful-session regression comparison
+
+Compare the baseline revision with the migrated controller on the same provisioned host, using sequential session-specific runs. Both use USB UHID bus metadata; no bus-setting fix is claimed. Include creation-time feature requests, an unchanged-state interval serviced at the documented deadlines, sustained output, consumer CLOSE/OPEN, per-controller removal, and final cleanup. Record kernel/driver/SDL/Steam versions and each evidence axis separately. `gr-hid` and fake-provider tests establish deterministic behavior only; B/P remain blocked until these live comparisons run.

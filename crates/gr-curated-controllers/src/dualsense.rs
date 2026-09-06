@@ -1,6 +1,5 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
-#[cfg(test)]
 mod protocol;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
@@ -10,7 +9,6 @@ use gr_controller_contract::{
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -479,8 +477,7 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
 };
 
 const fn motion_targets() -> RealizationTargetSet {
-    RealizationTargetSet::singleton(RealizationTarget::Uhid)
-        .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
+    RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
 }
 
 const fn supports_motion(target: RealizationTarget) -> bool {
@@ -790,6 +787,7 @@ fn encode_touches(events: &mut Vec<EvdevEvent>, touches: [Option<DualSenseTouchC
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualSenseOutputEvent {
+    HidLifecycle(gr_hid::Lifecycle),
     ConventionalForceFeedbackUpload {
         request_id: u32,
         effect: Vec<u8>,
@@ -869,14 +867,29 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
     }
     DualSenseHidOutput::Unknown { report_id, raw }
 }
-pub struct DualSenseController(ControllerRuntime<DualSenseDefinition, common::ProviderSessionSink>);
+pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &DualSenseState {
         self.0.state()
     }
     #[must_use]
-    pub const fn surface(&self) -> &'static DualSenseSurface {
+    pub fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
             RealizationTarget::Uhid => &HID_SURFACE,
             RealizationTarget::DummyHcd => &USB_SURFACE,
@@ -884,12 +897,12 @@ impl DualSenseController {
         }
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     #[must_use]
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
-        self.0.with_sink(|sink| sink.diagnostics())
+        self.0.diagnostics()
     }
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
@@ -988,7 +1001,6 @@ impl DualSenseController {
         self.0.commit()
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
     pub fn poll_output(
@@ -998,6 +1010,9 @@ impl DualSenseController {
         self.0.with_sink(|sink| {
             sink.drain(&mut |event| {
                 let output = match event {
+                    RawReverseEvent::HidLifecycle(event) => {
+                        DualSenseOutputEvent::HidLifecycle(event)
+                    }
                     RawReverseEvent::ForceFeedbackUpload { request_id, effect } => {
                         DualSenseOutputEvent::ConventionalForceFeedbackUpload { request_id, effect }
                     }
@@ -1181,7 +1196,7 @@ fn dualsense_feature_responses(
     .collect()
 }
 
-fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization {
+fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealization {
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Uhid(NativeHidRealization {
@@ -1198,7 +1213,6 @@ fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: dualsense_feature_responses(session),
     })
 }
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ProviderError> {
@@ -1331,8 +1345,7 @@ mod tests {
         assert!(!supports_motion(RealizationTarget::Evdev));
         assert_eq!(
             motion_targets(),
-            RealizationTargetSet::singleton(RealizationTarget::Uhid)
-                .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
+            RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
         );
     }
 
@@ -1389,9 +1402,9 @@ mod tests {
                 .windows(2)
                 .any(|item| item == [0x85, 0x02])
         );
+        let features = dualsense_feature_responses(RealizationSessionId(1));
         for report_id in [0x03, 0x05, 0x09, 0x20] {
-            let bytes = realization
-                .feature_report_responses
+            let bytes = features
                 .get(&NativeHidReportKey {
                     report_id,
                     report_type: 0,
@@ -1399,8 +1412,7 @@ mod tests {
                 .expect("DualSense Linux probe reply");
             assert_eq!(bytes[0], report_id);
         }
-        let capabilities = realization
-            .feature_report_responses
+        let capabilities = features
             .get(&NativeHidReportKey {
                 report_id: 0x03,
                 report_type: 0,
@@ -1408,8 +1420,7 @@ mod tests {
             .expect("DualSense SDL capability reply");
         assert_eq!(capabilities.len(), 48);
         assert_eq!(&capabilities[2..6], &[0x28, 0x01, 0x00, 0x0e]);
-        let firmware = realization
-            .feature_report_responses
+        let firmware = features
             .get(&NativeHidReportKey {
                 report_id: 0x20,
                 report_type: 0,

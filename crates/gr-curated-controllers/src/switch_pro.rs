@@ -10,7 +10,8 @@ use gr_controller_contract::{
     RealizationManifest, RealizationManifestEntry, RealizationValidationStatus,
     TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
+mod protocol;
+
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -90,14 +91,6 @@ impl SwitchProState {
     #[must_use]
     pub const fn motion(&self) -> SwitchProMotionSample {
         self.motion
-    }
-    #[must_use]
-    pub const fn stream_enabled(&self) -> bool {
-        self.stream_enabled
-    }
-    #[must_use]
-    pub const fn motion_report_counter(&self) -> u8 {
-        self.timer
     }
     fn set_native(&mut self, c: SwitchProControl, p: bool) {
         match c {
@@ -603,7 +596,6 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: false,
-        feature_report_responses: std::collections::BTreeMap::default(),
     })
 }
 fn evdev_realization() -> NativeControllerRealization {
@@ -631,14 +623,40 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct SwitchProController(ControllerRuntime<SwitchProDefinition, common::ProviderSessionSink>);
+pub struct SwitchProController(common::ControllerSession<SwitchProDefinition>);
 impl SwitchProController {
+    #[must_use]
+    pub fn stream_enabled(&self) -> bool {
+        self.0
+            .protocol()
+            .map_or(self.0.state().stream_enabled, |p| p.stream_enabled)
+    }
+    #[must_use]
+    pub fn motion_report_counter(&self) -> u8 {
+        self.0.protocol().map_or(self.0.state().timer, |p| p.timer)
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &SwitchProState {
         self.0.state()
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     #[must_use]
@@ -689,6 +707,9 @@ impl SwitchProController {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
+        if self.0.selection().target == RealizationTarget::Uhid {
+            return self.0.commit();
+        }
         if self.0.state().stream_enabled {
             self.0
                 .update_state(|s| {
@@ -704,13 +725,17 @@ impl SwitchProController {
         }
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
     pub fn poll_output(
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
+        if self.0.selection().target == RealizationTarget::Uhid {
+            return self
+                .0
+                .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
+        }
         let mut events = Vec::new();
         self.0
             .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
@@ -785,6 +810,7 @@ fn dummy_hcd_reply(
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
+    HidLifecycle(gr_hid::Lifecycle),
     Output {
         report_id: Option<u8>,
         bytes: Vec<u8>,
@@ -799,6 +825,7 @@ pub enum SwitchProOutputEvent {
 impl From<RawReverseEvent> for SwitchProOutputEvent {
     fn from(e: RawReverseEvent) -> Self {
         match e {
+            RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
                 request_id,

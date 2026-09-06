@@ -1,6 +1,6 @@
 # Architecture overhaul execution kit
 
-Status: planning files prepared; implementation and experiment execution have not begun in this task. The code baseline is recorded in [BASELINE.md](BASELINE.md). These files still require a reviewed commit before other checkouts can rely on them.
+Status: reviewed plan committed as `e3bd06f`; corpus and deterministic protocol foundation committed; production UHID integration and family migration are under review in PR #106 on `architecture/protocol-session-rewrite`. See [gate status](GATE_STATUS.md) for the distinction between implemented behavior and blocked live acceptance. The original code baseline remains recorded in [BASELINE.md](BASELINE.md).
 
 ## Reading order and authority
 

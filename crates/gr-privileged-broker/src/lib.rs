@@ -160,7 +160,7 @@ impl BrokerClient {
 fn target_tag(target: RealizationTarget) -> Option<u8> {
     match target {
         RealizationTarget::DummyHcd => Some(1),
-        RealizationTarget::Evdev | RealizationTarget::Uhid | _ => None,
+        _ => None,
     }
 }
 

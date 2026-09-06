@@ -1,5 +1,9 @@
 //! Stateful USB personality shared by HID presentation and future USB adapters.
-use super::*;
+use super::{
+    BTreeMap, DualSenseDefinition, DualSenseState, NativeHidReportKey, ProviderFrame,
+    RawReverseEvent, RealizationSessionId, common, dualsense_feature_responses,
+    dualsense_hid_input_report,
+};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
@@ -35,16 +39,16 @@ impl DualSenseUsbProtocol {
         }
         Ok(())
     }
-    fn decode(report: &Report) -> DualSenseOutputEvent {
-        DualSenseOutputEvent::HidOutput(decode_dualsense_hid_output(
-            report.id(),
-            report.payload().to_vec(),
-        ))
+    fn decode(report: &Report) -> RawReverseEvent {
+        RawReverseEvent::HidOutput {
+            report_id: report.id(),
+            bytes: report.payload().to_vec(),
+        }
     }
 }
 impl Protocol for DualSenseUsbProtocol {
     type State = DualSenseState;
-    type Output = DualSenseOutputEvent;
+    type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
         DualSenseState::default()
     }
@@ -127,9 +131,17 @@ impl Protocol for DualSenseUsbProtocol {
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }
 
+impl common::HidDriver for DualSenseDefinition {
+    type Hid = DualSenseUsbProtocol;
+    fn hid_protocol(&self, session: RealizationSessionId) -> Self::Hid {
+        DualSenseUsbProtocol::new(session)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BatteryLevel;
     fn fixture(text: &str) -> Vec<u8> {
         text.trim()
             .as_bytes()

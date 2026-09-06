@@ -4,9 +4,11 @@
 //! The only Linux-specific protocol encoding is isolated in `linux_io`; it
 //! neither loads modules nor changes host configuration.
 #![allow(clippy::wildcard_imports)]
+mod transport;
 use gr_realization_api::*;
 use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
+pub use transport::HidTransport;
 
 const UHID_DESTROY: u32 = 1;
 const UHID_OUTPUT: u32 = 6;
@@ -18,10 +20,6 @@ const UHID_SET_REPORT: u32 = 13;
 const UHID_SET_REPORT_REPLY: u32 = 14;
 const UHID_DATA_MAX: usize = 4096;
 const UHID_EVENT_SIZE: usize = 4 + 280 + UHID_DATA_MAX;
-/// Linux `-EOPNOTSUPP`: a valid negative UHID request status for an
-/// unsupported feature probe. Returning it is preferable to leaving the host
-/// request pending until its timeout expires.
-const UHID_STATUS_UNSUPPORTED: i16 = -95;
 
 #[derive(Default)]
 pub struct LinuxUhidProvider;
@@ -57,7 +55,7 @@ impl LinuxUhidProvider {
             });
         };
         let io = factory.open(&specification)?;
-        Ok(Box::new(Session::new(io, request.session, specification)))
+        Ok(Box::new(Session::new(io, request.session, &specification)))
     }
 }
 
@@ -67,6 +65,9 @@ trait LinuxIoFactory: Send + Sync {
     -> Result<Box<dyn LinuxIo>, ProviderError>;
 }
 trait LinuxIo: Send {
+    fn descriptor(&self) -> Option<i32> {
+        None
+    }
     fn input(&mut self, report_id: Option<u8>, bytes: &[u8]) -> Result<(), ProviderError>;
     fn get_reply(&mut self, id: u32, status: i16, bytes: &[u8]) -> Result<(), ProviderError>;
     fn set_reply(&mut self, id: u32, status: i16) -> Result<(), ProviderError>;
@@ -91,6 +92,11 @@ struct LiveLinuxIo {
     file: File,
 }
 impl LinuxIo for LiveLinuxIo {
+    #[cfg(unix)]
+    fn descriptor(&self) -> Option<i32> {
+        use std::os::fd::AsRawFd;
+        Some(self.file.as_raw_fd())
+    }
     fn input(&mut self, report_id: Option<u8>, bytes: &[u8]) -> Result<(), ProviderError> {
         linux_io::input(&mut self.file, report_id, bytes)
     }
@@ -119,13 +125,13 @@ struct Session {
     last_error: Option<String>,
     numbered_input_reports: bool,
     numbered_output_reports: bool,
-    static_features: std::collections::BTreeMap<NativeHidReportKey, Vec<u8>>,
+    pending_request: Option<(u32, bool)>,
 }
 impl Session {
     fn new(
         io: Box<dyn LinuxIo>,
         id: RealizationSessionId,
-        specification: NativeHidRealization,
+        specification: &NativeHidRealization,
     ) -> Self {
         Self {
             io,
@@ -138,8 +144,18 @@ impl Session {
             last_error: None,
             numbered_input_reports: specification.numbered_input_reports,
             numbered_output_reports: specification.numbered_output_reports,
-            static_features: specification.feature_report_responses,
+            pending_request: None,
         }
+    }
+}
+impl Session {
+    fn check_reply(&self, id: u32, get: bool) -> Result<(), ProviderError> {
+        if self.pending_request != Some((id, get)) {
+            return Err(ProviderError::Unsupported {
+                reason: "unknown, duplicate, or wrong-kind HID reply".into(),
+            });
+        }
+        Ok(())
     }
 }
 impl NativeProviderSession for Session {
@@ -161,9 +177,21 @@ impl NativeProviderSession for Session {
                 request_id,
                 status,
                 bytes,
-            } => self.io.get_reply(request_id, status, &bytes),
+            } => {
+                self.check_reply(request_id, true)?;
+                let result = self.io.get_reply(request_id, status, &bytes);
+                if result.is_ok() {
+                    self.pending_request = None;
+                }
+                result
+            }
             ProviderFrame::HidSetReportReply { request_id, status } => {
-                self.io.set_reply(request_id, status)
+                self.check_reply(request_id, false)?;
+                let result = self.io.set_reply(request_id, status);
+                if result.is_ok() {
+                    self.pending_request = None;
+                }
+                result
             }
             _ => Err(ProviderError::Unsupported {
                 reason: "UHID accepts HID input and feature replies only".into(),
@@ -185,6 +213,12 @@ impl NativeProviderSession for Session {
         &mut self,
         out: &mut dyn ProviderReverseEventSink,
     ) -> Result<(), ProviderError> {
+        if self.state != ProviderState::Open {
+            return Err(ProviderError::Closed);
+        }
+        if self.pending_request.is_some() {
+            return Err(ProviderError::WouldBlock);
+        }
         let event = self.io.read_event()?;
         let raw = match event {
             linux_io::Event::Output { bytes } => {
@@ -208,33 +242,21 @@ impl NativeProviderSession for Session {
                 report_id,
                 report_type,
             } => {
-                if let Some(bytes) = self.static_features.get(&NativeHidReportKey {
+                self.pending_request = Some((id, true));
+                RawReverseEvent::HidGetReportRequest {
+                    request_id: id,
                     report_id,
                     report_type,
-                }) {
-                    self.io.get_reply(id, 0, bytes)?;
-                    self.reverse += 1;
-                    return Ok(());
                 }
-                self.io
-                    .get_reply(id, UHID_STATUS_UNSUPPORTED, &[])
-                    .inspect_err(|error| {
-                        self.failures += 1;
-                        self.last_error = Some(error.to_string());
-                    })?;
-                self.reverse += 1;
-                return Ok(());
             }
+
             linux_io::Event::Set {
                 id,
                 report_id,
                 report_type,
                 bytes,
             } => {
-                self.io.set_reply(id, 0).inspect_err(|error| {
-                    self.failures += 1;
-                    self.last_error = Some(error.to_string());
-                })?;
+                self.pending_request = Some((id, false));
                 RawReverseEvent::HidSetReportRequest {
                     request_id: id,
                     report_id,
@@ -242,9 +264,18 @@ impl NativeProviderSession for Session {
                     bytes,
                 }
             }
-            linux_io::Event::Lifecycle => {
+            linux_io::Event::Lifecycle(event) => {
                 self.lifecycle_events += 1;
-                return Ok(());
+                if let gr_hid::Lifecycle::Start {
+                    numbered_input,
+                    numbered_output,
+                    ..
+                } = event
+                {
+                    self.numbered_input_reports = numbered_input;
+                    self.numbered_output_reports = numbered_output;
+                }
+                RawReverseEvent::HidLifecycle(event)
             }
         };
         self.reverse += 1;
@@ -256,7 +287,9 @@ impl NativeProviderSession for Session {
         Ok(())
     }
     fn readiness(&self) -> EventReadiness {
-        EventReadiness::AlwaysPoll
+        self.io
+            .descriptor()
+            .map_or(EventReadiness::AlwaysPoll, EventReadiness::Descriptor)
     }
     fn diagnostics(&self) -> ProviderDiagnostics {
         ProviderDiagnostics {
@@ -273,12 +306,19 @@ impl NativeProviderSession for Session {
             return Ok(());
         }
         self.state = ProviderState::Closed;
+        self.pending_request = None;
         let result = self.io.destroy();
         if let Err(error) = &result {
             self.failures += 1;
             self.last_error = Some(error.to_string());
         }
         result
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let _ = self.close();
     }
 }
 
@@ -302,7 +342,7 @@ mod linux_io {
             report_type: u8,
             bytes: Vec<u8>,
         },
-        Lifecycle,
+        Lifecycle(gr_hid::Lifecycle),
     }
     pub fn open_node() -> Result<File, ProviderPreflightError> {
         OpenOptions::new()
@@ -338,10 +378,19 @@ mod linux_io {
             bytes[offset + 3],
         ])
     }
-    fn write_event(io: &mut File, event: &[u8]) -> Result<(), ProviderError> {
-        io.write_all(event).map_err(|error| ProviderError::Write {
-            reason: error.to_string(),
-        })
+    fn write_event(io: &mut impl Write, event: &[u8]) -> Result<(), ProviderError> {
+        // One kernel write is one UHID event. Never send a short-write suffix as
+        // another event or classify a partially submitted event as retryable.
+        match io.write(event) {
+            Ok(n) if n == event.len() => Ok(()),
+            Ok(_) => Err(ProviderError::Write {
+                reason: "short UHID event write; delivery uncertain".into(),
+            }),
+            Err(error) if error.kind() == ErrorKind::WouldBlock => Err(ProviderError::WouldBlock),
+            Err(error) => Err(ProviderError::Write {
+                reason: error.to_string(),
+            }),
+        }
     }
     fn copy_text(out: &mut [u8], text: &str) {
         let length = text.len().min(out.len().saturating_sub(1));
@@ -472,12 +521,82 @@ mod linux_io {
             UHID_OUTPUT | UHID_GET_REPORT | UHID_SET_REPORT => Err(ProviderError::Read {
                 reason: "truncated UHID event".into(),
             }),
-            _ => Ok(Event::Lifecycle),
+            2 if event.len() >= 12 => {
+                let flags =
+                    u64::from_ne_bytes(event[4..12].try_into().expect("checked START size"));
+                Ok(Event::Lifecycle(gr_hid::Lifecycle::Start {
+                    numbered_feature: flags & 1 != 0,
+                    numbered_output: flags & 2 != 0,
+                    numbered_input: flags & 4 != 0,
+                }))
+            }
+            3 => Ok(Event::Lifecycle(gr_hid::Lifecycle::Stop)),
+            4 => Ok(Event::Lifecycle(gr_hid::Lifecycle::Open)),
+            5 => Ok(Event::Lifecycle(gr_hid::Lifecycle::Close)),
+            _ => Err(ProviderError::Read {
+                reason: "unknown or truncated UHID lifecycle event".into(),
+            }),
         }
     }
 
     #[cfg(test)]
     mod tests {
+        #[test]
+        fn writes_are_single_events_and_only_would_block_is_retryable() {
+            struct Writer {
+                result: u8,
+                calls: usize,
+            }
+            impl std::io::Write for Writer {
+                fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                    self.calls += 1;
+                    match self.result {
+                        0 => Ok(bytes.len()),
+                        1 => Ok(bytes.len() - 1),
+                        _ => Err(std::io::ErrorKind::WouldBlock.into()),
+                    }
+                }
+                fn flush(&mut self) -> std::io::Result<()> {
+                    Ok(())
+                }
+            }
+            for mode in 0..3 {
+                let mut writer = Writer {
+                    result: mode,
+                    calls: 0,
+                };
+                let result = super::write_event(&mut writer, &[1, 2, 3, 4]);
+                match mode {
+                    0 => assert!(result.is_ok()),
+                    1 => assert!(matches!(result, Err(ProviderError::Write { .. }))),
+                    _ => assert_eq!(result, Err(ProviderError::WouldBlock)),
+                }
+                assert_eq!(writer.calls, 1);
+            }
+        }
+        #[test]
+        fn start_preserves_every_numbering_flag_and_lifecycle_edge() {
+            for flags in 0_u64..8 {
+                let mut bytes = 2_u32.to_ne_bytes().to_vec();
+                bytes.extend(flags.to_ne_bytes());
+                assert!(
+                    matches!(super::parse_event(&bytes).unwrap(), super::Event::Lifecycle(gr_hid::Lifecycle::Start {
+                    numbered_input, numbered_output, numbered_feature
+                }) if numbered_input == (flags & 4 != 0) && numbered_output == (flags & 2 != 0) && numbered_feature == (flags & 1 != 0))
+                );
+                assert!(super::parse_event(&bytes[..11]).is_err());
+            }
+            for (id, expected) in [
+                (3_u32, gr_hid::Lifecycle::Stop),
+                (4, gr_hid::Lifecycle::Open),
+                (5, gr_hid::Lifecycle::Close),
+            ] {
+                assert!(
+                    matches!(super::parse_event(&id.to_ne_bytes()).unwrap(), super::Event::Lifecycle(actual) if actual == expected)
+                );
+            }
+        }
+
         use super::*;
 
         #[test]
@@ -532,7 +651,6 @@ mod linux_io {
 #[cfg(all(test, target_os = "linux"))]
 mod integration_tests {
     use super::*;
-    use std::collections::BTreeMap;
 
     #[test]
     #[ignore = "requires pre-provisioned /dev/uhid access"]
@@ -558,7 +676,6 @@ mod integration_tests {
                 numbered_input_reports: false,
                 numbered_output_reports: false,
                 numbered_feature_reports: false,
-                feature_report_responses: BTreeMap::new(),
             }),
         };
         let mut session = LinuxUhidProvider
@@ -653,15 +770,6 @@ mod seam_tests {
             numbered_input_reports: true,
             numbered_output_reports: true,
             numbered_feature_reports: true,
-            feature_report_responses: [(
-                NativeHidReportKey {
-                    report_id: 4,
-                    report_type: 3,
-                },
-                vec![9],
-            )]
-            .into_iter()
-            .collect(),
         }
     }
     fn request() -> ProviderOpenRequest {
@@ -685,7 +793,8 @@ mod seam_tests {
     }
 
     #[test]
-    fn fake_io_covers_numbering_static_replies_and_terminal_close() {
+    #[allow(clippy::too_many_lines)] // One ordered request/reply lifecycle regression.
+    fn fake_io_covers_numbering_owned_replies_and_terminal_close() {
         let record = Arc::new(Mutex::new(Record::default()));
         let io = FakeIo {
             events: VecDeque::from([
@@ -717,7 +826,7 @@ mod seam_tests {
             ]),
             record: Arc::clone(&record),
         };
-        let mut session = Session::new(Box::new(io), RealizationSessionId(8), specification());
+        let mut session = Session::new(Box::new(io), RealizationSessionId(8), &specification());
         assert!(
             session
                 .send(ProviderFrame::HidInput {
@@ -735,17 +844,34 @@ mod seam_tests {
         let mut events = Vec::new();
         session
             .drain_reverse_events(&mut events)
-            .expect("static reply");
-        assert!(events.is_empty());
+            .expect("GET request");
+        assert!(matches!(
+            events[0].event,
+            RawReverseEvent::HidGetReportRequest { request_id: 77, .. }
+        ));
+        assert!(record.lock().unwrap().get_replies.is_empty());
+        session
+            .send(ProviderFrame::HidGetReportReply {
+                request_id: 77,
+                status: 0,
+                bytes: vec![9],
+            })
+            .unwrap();
         session
             .drain_reverse_events(&mut events)
-            .expect("unsupported probe reply");
-        assert!(events.is_empty());
+            .expect("unsupported GET request");
+        session
+            .send(ProviderFrame::HidGetReportReply {
+                request_id: 78,
+                status: -95,
+                bytes: vec![],
+            })
+            .unwrap();
         session
             .drain_reverse_events(&mut events)
             .expect("set-report acknowledgement");
         assert!(matches!(
-            events[0].event,
+            events[2].event,
             RawReverseEvent::HidSetReportRequest {
                 request_id: 79,
                 report_id: 2,
@@ -753,9 +879,24 @@ mod seam_tests {
                 ref bytes,
             } if bytes == &[1, 2, 3]
         ));
+        assert!(record.lock().unwrap().set_replies.is_empty());
+        session
+            .send(ProviderFrame::HidSetReportReply {
+                request_id: 79,
+                status: 0,
+            })
+            .unwrap();
+        assert!(
+            session
+                .send(ProviderFrame::HidSetReportReply {
+                    request_id: 79,
+                    status: 0
+                })
+                .is_err()
+        );
         session.drain_reverse_events(&mut events).expect("output");
         assert!(
-            matches!(events[1].event, RawReverseEvent::HidOutput { report_id: Some(6), ref bytes } if bytes == &[1, 2])
+            matches!(events[3].event, RawReverseEvent::HidOutput { report_id: Some(6), ref bytes } if bytes == &[1, 2])
         );
         let observed = record.lock().expect("record");
         assert_eq!(
@@ -779,6 +920,50 @@ mod seam_tests {
         session.close().expect("repeat close");
         assert_eq!(record.lock().expect("record").destroys, 1);
     }
+    #[test]
+    fn start_flags_override_descriptor_hints_and_drop_closes_once() {
+        let record = Arc::new(Mutex::new(Record::default()));
+        let io = FakeIo {
+            record: record.clone(),
+            input_results: VecDeque::new(),
+            events: VecDeque::from([Ok(linux_io::Event::Lifecycle(gr_hid::Lifecycle::Start {
+                numbered_input: false,
+                numbered_output: false,
+                numbered_feature: false,
+            }))]),
+        };
+        let mut session = Session::new(Box::new(io), RealizationSessionId(8), &specification());
+        let mut events = Vec::new();
+        session.drain_reverse_events(&mut events).unwrap();
+        assert!(matches!(
+            events[0].event,
+            RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
+                numbered_input: false,
+                ..
+            })
+        ));
+        session
+            .send(ProviderFrame::HidInput {
+                report_id: None,
+                bytes: vec![1],
+            })
+            .unwrap();
+        assert!(
+            session
+                .send(ProviderFrame::HidInput {
+                    report_id: Some(1),
+                    bytes: vec![1]
+                })
+                .is_err()
+        );
+        session.close().unwrap();
+        assert_eq!(
+            session.drain_reverse_events(&mut events),
+            Err(ProviderError::Closed)
+        );
+        drop(session);
+        assert_eq!(record.lock().unwrap().destroys, 1);
+    }
 }
 #[cfg(not(target_os = "linux"))]
 mod linux_io {
@@ -801,7 +986,7 @@ mod linux_io {
             report_type: u8,
             bytes: Vec<u8>,
         },
-        Lifecycle,
+        Lifecycle(gr_hid::Lifecycle),
     }
     pub fn open_node() -> Result<File, ProviderPreflightError> {
         Err(ProviderPreflightError::UnsupportedPlatform {
