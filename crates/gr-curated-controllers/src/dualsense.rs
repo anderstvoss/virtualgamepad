@@ -1,5 +1,7 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
+#[cfg(all(test, target_os = "linux"))]
+mod host_probe;
 mod protocol;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};

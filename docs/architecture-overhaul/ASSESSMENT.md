@@ -17,3 +17,10 @@ made UHID reject silent identity truncation. A compact process/creation ordinal
 fits curated phys/uniq fields. This does not change controller-owned pairing
 addresses or claim namespace-independent physical identity. The new opt-in live
 probe validates the production personality beyond the minimal provider test.
+
+The test-only bus apparatus now runs against both the archived baseline and the
+rewrite. Three repetitions per bus/revision all enumerated and cleaned up; USB
+selected playstation and virtual bus selected hid-generic. This narrows the
+remaining B/P work to controlled consumer/binding/reference evidence and observed
+report behavior; it does not diagnose the historical Steam issue. See
+[EXP-0007](experiments/EXP-0007-bus-baseline-comparison.md).

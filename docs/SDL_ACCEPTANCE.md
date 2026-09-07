@@ -90,3 +90,9 @@ binding and input children, and verifies removal after repeated close. It does
 not launch SDL or Steam, alter permissions, or substitute for the acceptance
 steps above. Three repetitions passed on the recorded host; see
 [EXP-0006](architecture-overhaul/experiments/EXP-0006-dualsense-live-startup.md).
+
+A test-only USB/virtual-bus baseline comparison is also available via
+`cargo test -p gr-curated-controllers controlled_bus_startup_probe -- --ignored --nocapture`.
+Its Linux enumeration results are documented in
+[EXP-0007](architecture-overhaul/experiments/EXP-0007-bus-baseline-comparison.md).
+It submits changing motion but does not measure SDL sensor events or Steam behavior.
