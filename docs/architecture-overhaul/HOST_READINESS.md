@@ -35,3 +35,14 @@ subtree is absent. UHID's node alone does not establish misc registration.
 Private SDL input tooling is now built; desktop/Steam acceptance is not established.
 Administrator access remains unavailable, so no temporary ACLs, module loads,
 or service changes were applied. Existing uinput creation/cleanup passed again.
+
+## Updated-helper live result
+
+The reviewed installed helper successfully loaded UHID, waited for udev, granted
+temporary access, and verified its lease. The ordinary-user provider
+creation/input/close test passed. Restoration and repeated restoration passed;
+both helper leases are inactive and the named-user ACL is absent. Existing
+host group policy remains unchanged; the newly loaded module is retained.
+The prior failed lease was already absent before this run, so its special recovery
+path was not validated live. See [EXP-0005](experiments/EXP-0005-host-access.md).
+Controlled B/P consumer comparisons and gadget prerequisites remain outstanding.

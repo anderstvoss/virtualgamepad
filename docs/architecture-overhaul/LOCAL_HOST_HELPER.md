@@ -153,9 +153,16 @@ fixed job arguments, untrusted paths, sudoers syntax and refusal to overwrite
 existing installation files, udev settlement before baseline capture, narrow race
 recovery and policy-preserving executable updates.
 
-Installed status succeeded, but the first live UHID grant exposed a udev ordering
-race: the saved group preceded existing udev policy. The helper refused both grant
-verification and normal restoration and retained its journal. The temporary ACL
-and newly loaded UHID module remain until the updated helper performs recovery.
-Live recovery and controller creation remain pending; this is not a UHID or B/P
-acceptance pass. See [the host experiment](experiments/EXP-0005-host-access.md).
+The first installed grant exposed a udev ordering race, now fixed by waiting before
+baseline capture. After the administrator updated the executable, its hash matched
+the reviewed source. The prior lease, temporary ACL, and UHID registration were
+already absent; their disappearance was not attributed to the update, and the
+special recovery path was not exercised live.
+
+A fresh module load and grant passed with unchanged identity and exact ACL
+verification. The unprivileged UHID creation/input/close test passed. Restoration
+and a second idempotent restore passed; both device leases are inactive and the
+named-user grant is absent. Existing group-access policy remains, and the newly
+loaded module is retained for administrator review. This is basic mechanism
+validation, not B/P or consumer acceptance. See
+[the host experiment](experiments/EXP-0005-host-access.md).

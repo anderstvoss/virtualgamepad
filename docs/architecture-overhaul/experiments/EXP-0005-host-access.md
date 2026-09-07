@@ -95,3 +95,29 @@ Deterministic regressions pass; installed recovery awaits that update. The faile
 lease's temporary ACL and newly loaded module remain recorded, and no controller
 creation test followed the failure. B/P acceptance remains blocked. Existing
 host group-based access is pre-existing policy, not a product permission requirement.
+
+## Updated helper: fresh live UHID validation
+
+After administrator update, installed and source SHA-256 hashes matched. Read-only
+status showed both leases inactive; UHID registration and the previous named-user
+ACL were absent. The cause of this intervening host-state change was not established.
+No recovery command was needed, and no live recovery pass is claimed.
+
+A fresh `uhid-grant` requested module loading and succeeded. Status verified the
+exact granted ACL and no changed identity fields. As the ordinary user:
+
+```bash
+cargo test -p gr-provider-linux-uhid creates_and_destroys_a_process_owned_hid_device -- --ignored
+```
+
+passed (one live test): provider open, minimal input write, and explicit close.
+This test does not independently assert consumer enumeration or full controller
+protocol behavior. `uhid-restore` verified restoration; a second invocation returned
+already restored. Status confirmed both leases inactive. The resulting ACL had no
+named-user grant and reflected existing group read/write policy. No uinput access,
+group membership, udev rules, shared services or consumer settings were changed.
+The newly loaded UHID module remains intentionally retained.
+
+Basic UHID provisioning is validated. Controlled B/P comparisons, SDL/Steam and
+physical evidence, and Gate G remain outstanding. The special race-recovery action
+still has deterministic coverage only.

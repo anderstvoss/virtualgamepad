@@ -40,21 +40,24 @@ E5 broker replacement and E6 compound/audio/Bluetooth/compatibility extensions r
 [EXP-0005](experiments/EXP-0005-host-access.md) records read-only preflight, per-provider
 access policy, broker module-loading removal, administrator UDC authorization,
 instance ownership recovery, and private SDL probe preparation. Deterministic tests
-and live uinput cleanup pass. B/P remain blocked on temporary UHID provisioning and
-controlled consumers; G additionally needs actual reduced-capability execution
+and live uinput cleanup pass. Basic UHID provisioning subsequently passed; B/P remain blocked on
+controlled baseline/rewrite and consumer comparisons; G additionally needs actual reduced-capability execution
 and the recorded kernel-interface decision. No gate is promoted by provisioning
 code or an SDL build. CAP_SYS_ADMIN removal is not yet validated.
 
 The [local development helper](LOCAL_HOST_HELPER.md) provides a one-time,
 UID-scoped installation path for temporary creation access and extensible approved
-module/job operations. Its deterministic tests pass; installed status succeeded, but the first live grant
-requires the recovery documented below. This does not change B/P/G status.
+module/job operations. Its deterministic tests and a fresh installed UHID grant,
+unprivileged creation/input/close, restoration, and idempotent restoration pass.
+The prior failed lease was already absent on resumption, so special udev-race
+recovery remains tested only deterministically. Both device leases are inactive;
+the helper ACL is removed, existing group policy remains, and the newly loaded
+module is retained. See [EXP-0005](experiments/EXP-0005-host-access.md).
 
-### Host-helper recovery prerequisite
+### Next acceptance prerequisites
 
-The first installed UHID grant exposed a udev baseline race; verification and
-restoration refused the changed group, retaining the lease. The fix and narrow
-recovery have deterministic coverage, but installed recovery requires the
-administrator's executable-only helper update. Temporary access and the newly
-loaded module remain tracked; live UHID/B/P acceptance is still blocked. Details:
-[EXP-0005](experiments/EXP-0005-host-access.md#installed-helper-first-registration-race).
+B/P now need controlled baseline-versus-rewrite runs and separate Linux, SDL,
+Steam and physical-reference evidence. Basic creation success does not validate
+controller startup probes or consumer compatibility. G still requires reserved
+gadget resources, reduced-capability execution and its independent protocol API
+decision. Extensions remain gated as recorded above.
