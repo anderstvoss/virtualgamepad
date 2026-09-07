@@ -351,11 +351,19 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 0,
     event_code: 5,
 }];
+static HID_OUTPUTS: [OutputSurface; 2] = [
+    OUTPUTS[0],
+    OutputSurface {
+        name: "RGB lightbar",
+        event_type: 0,
+        event_code: 5,
+    },
+];
 static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 3] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful DualShock 4 IMU presentation",
@@ -363,6 +371,10 @@ static EVDEV_RESTRICTIONS: [TargetRestriction; 3] = [
     TargetRestriction {
         feature: "battery reporting",
         reason: "uinput cannot create the physical DualShock 4 power-supply device",
+    },
+    TargetRestriction {
+        feature: "RGB lightbar",
+        reason: "generic evdev LEDs cannot faithfully express DualShock 4 RGB reports",
     },
     RESTRICTIONS[0],
 ];
@@ -382,7 +394,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
     },
 };
@@ -392,7 +404,7 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
     },
 };
@@ -850,6 +862,8 @@ pub enum DualShock4HidOutput {
         raw: Vec<u8>,
         right_motor: u8,
         left_motor: u8,
+        /// Present only when the host enables the RGB lightbar update.
+        lightbar_rgb: Option<[u8; 3]>,
     },
     Unknown {
         report_id: Option<u8>,
@@ -861,6 +875,11 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
         return DualShock4HidOutput::UsbOutput {
             right_motor: raw[3],
             left_motor: raw[4],
+            lightbar_rgb: if raw[0] & 2 != 0 {
+                raw.get(5..8).map(|bytes| [bytes[0], bytes[1], bytes[2]])
+            } else {
+                None
+            },
             raw,
         };
     }
@@ -1188,6 +1207,52 @@ mod tests {
     }
 
     #[test]
+    fn rgb_surface_is_advertised_for_hid_and_explicitly_limited_for_evdev() {
+        for surface in [&HID_SURFACE, &USB_SURFACE] {
+            assert!(
+                surface
+                    .common
+                    .outputs
+                    .iter()
+                    .any(|output| output.name == "RGB lightbar")
+            );
+        }
+        assert!(
+            !EVDEV_SURFACE
+                .common
+                .outputs
+                .iter()
+                .any(|output| output.name == "RGB lightbar")
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "RGB lightbar"
+                    && restriction.reason.contains("evdev"))
+        );
+    }
+
+    #[test]
+    fn rgb_output_requires_a_valid_flag_and_complete_color() {
+        for (flags, color, expected) in [
+            (2, vec![32, 64, 128], Some([32, 64, 128])),
+            (1, vec![32, 64, 128], None),
+            (2, vec![32, 64], None),
+        ] {
+            let mut raw = vec![flags, 0, 0, 0, 0];
+            raw.extend(color);
+            let DualShock4HidOutput::UsbOutput { lightbar_rgb, .. } =
+                decode_ds4_hid_output(Some(5), raw)
+            else {
+                panic!("missing decoded output")
+            };
+            assert_eq!(lightbar_rgb, expected);
+        }
+    }
+
+    #[test]
     fn usb_rumble_output_decodes_the_ds4_motor_offsets() {
         assert_eq!(
             decode_ds4_hid_output(Some(0x05), vec![0, 0, 0, 0x40, 0x20]),
@@ -1195,6 +1260,7 @@ mod tests {
                 raw: vec![0, 0, 0, 0x40, 0x20],
                 right_motor: 0x40,
                 left_motor: 0x20,
+                lightbar_rgb: None,
             }
         );
     }

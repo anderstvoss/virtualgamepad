@@ -220,7 +220,7 @@ impl ReverseIndicators {
             self.rumble_until = None;
         }
     }
-    fn apply_dualsense_usb_output(
+    fn apply_hid_output(
         &mut self,
         right_motor: Option<u8>,
         left_motor: Option<u8>,
@@ -362,7 +362,7 @@ impl Controller {
                                 mute_button_led,
                                 ..
                             }) => {
-                                indicators.apply_dualsense_usb_output(
+                                indicators.apply_hid_output(
                                     *right_motor,
                                     *left_motor,
                                     *lightbar_rgb,
@@ -393,11 +393,17 @@ impl Controller {
                         DualShock4HidOutput::UsbOutput {
                             right_motor,
                             left_motor,
+                            lightbar_rgb,
                             ..
                         },
                     ) = &event
                     {
-                        indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
+                        indicators.apply_hid_output(
+                            Some(*right_motor),
+                            Some(*left_motor),
+                            *lightbar_rgb,
+                            None,
+                        );
                     }
                     log.push(format!("DualShock 4: {event:?}"));
                 })
@@ -1532,13 +1538,23 @@ mod tests {
     }
 
     #[test]
+    fn ds4_rgb_indicator_updates_and_survives_rumble_only_output() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_hid_output(Some(0), Some(0), Some([32, 64, 128]), None);
+        assert_eq!(indicators.led, Some([32, 64, 128]));
+        indicators.apply_hid_output(Some(64), Some(128), None, None);
+        assert_eq!(indicators.led, Some([32, 64, 128]));
+        assert!(indicators.rumble_active);
+    }
+
+    #[test]
     fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
         let mut indicators = ReverseIndicators {
             led: Some([0x11, 0x22, 0x33]),
             mute_led: Some(true),
             ..ReverseIndicators::default()
         };
-        indicators.apply_dualsense_usb_output(Some(0x40), Some(0x20), None, None);
+        indicators.apply_hid_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
         assert_eq!(indicators.mute_led, Some(true));
         assert!(indicators.rumble_active);

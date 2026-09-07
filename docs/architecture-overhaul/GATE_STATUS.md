@@ -92,7 +92,11 @@ not promoted. Identity and probe failure fixes have deterministic regressions.
 
 The [core acceptance matrix](CORE_ACCEPTANCE.md) is the current family-by-realization
 review record. DS4 now has immutable creation-owned pairing identity and passed
-three concurrent reused-ID sessions with independent removal. Its SDL matrix,
-Switch/Xbox live matrices and current evdev acceptance remain outstanding.
+three concurrent reused-ID sessions with independent removal.
+[EXP-0009](experiments/EXP-0009-family-sdl.md) adds three SDL runs each for DS4,
+Switch and standard-HID Xbox, with explicit output limitations. Xbox neutral
+acceptance exposed and fixed unsigned-axis/routing errors. Current evdev
+acceptance, remaining family concurrency/failure tests and Switch rumble fidelity
+remain outstanding. DS4/Switch evdev force-feedback completion needs review.
 G stays blocked on both reserved setup and the recorded protocol-interface gap;
 no kernel replacement or broad provisioning was attempted.

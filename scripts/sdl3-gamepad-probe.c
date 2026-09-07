@@ -5,7 +5,9 @@
 int main(int argc, char **argv) {
     uint64_t duration = 0;
     bool require_script = argc == 4 && strcmp(argv[3], "--dualsense-script") == 0;
-    bool require_motion = require_script || (argc == 4 && strcmp(argv[3], "--require-motion") == 0);
+    bool motion_script = argc == 4 && strcmp(argv[3], "--motion-gamepad-script") == 0;
+    bool gamepad_script = argc == 4 && strcmp(argv[3], "--gamepad-script") == 0;
+    bool require_motion = require_script || motion_script || (argc == 4 && strcmp(argv[3], "--require-motion") == 0);
     bool initialized = false, passed = false, connected = false;
     bool rumble = false, led = false, neutral_observed = false;
     const char *error = "invalid arguments: expected exact-device-path duration-ms [--require-motion]";
@@ -21,7 +23,7 @@ int main(int argc, char **argv) {
     unsigned button_down = 0, button_up = 0, axis_events = 0, touch_events = 0;
     unsigned down_mask = 0, up_mask = 0, axis_mask = 0;
     ProbeAxis axes[6] = {0};
-    if ((argc != 3 && !require_motion) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
+    if ((argc != 3 && !require_motion && !gamepad_script) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
     if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) { error = "SDL initialization failed"; goto done; }
     initialized = true;
     ids = SDL_GetGamepads(&count);
@@ -88,11 +90,11 @@ int main(int argc, char **argv) {
             error = "required sensor observations missing, invalid or nonmonotonic";
         }
     }
-    if (require_script) {
-        bool controls = neutral_observed && (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && touch_events > 10;
+    if (require_script || motion_script || gamepad_script) {
+        bool controls = neutral_observed && (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && (!require_script || touch_events > 10);
         for (unsigned axis = 0; axis < 6; ++axis)
             controls = controls && probe_axis_swept(&axes[axis], axis >= 4);
-        if (!controls || !rumble || !led) { passed = false; error = "required control sweep or output submission missing"; }
+        if (!controls || (require_script && (!rumble || !led))) { passed = false; error = "required control sweep or output submission missing"; }
     }
  done:
     if (gamepad) SDL_CloseGamepad(gamepad);
@@ -100,6 +102,7 @@ int main(int argc, char **argv) {
     if (initialized) SDL_Quit();
     printf("{\"schema_version\":1,\"consumer\":\"SDL\",\"consumer_version\":%d,\"path\":", SDL_GetVersion());
     probe_json_string(argc > 1 ? argv[1] : "");
+    printf(",\"profile\":"); probe_json_string(argc == 4 ? argv[3] : "diagnostic");
     printf(",\"guid\":"); probe_json_string(guid);
     printf(",\"vendor\":%u,\"product\":%u", vendor, product);
     printf(",\"selected_count\":%d,\"duration_ms\":%llu,\"passed\":%s,\"consumer_closed\":true,\"error\":", matches, (unsigned long long)elapsed, passed ? "true" : "false");

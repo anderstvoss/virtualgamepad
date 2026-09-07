@@ -744,9 +744,9 @@ fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
         [
             byte(state.left.0.raw()),
             byte(state.left.1.raw()),
+            state.triggers.0.raw(),
             byte(state.right.0.raw()),
             byte(state.right.1.raw()),
-            state.triggers.0.raw(),
             state.triggers.1.raw(),
         ],
     )
@@ -756,6 +756,27 @@ fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
 mod tests {
     use super::*;
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn standard_hid_axes_match_unsigned_descriptor_and_trigger_positions() {
+        let axes = |state: &Xbox360State| {
+            let ProviderFrame::HidInput { bytes, .. } = xbox_hid_frame(state) else {
+                panic!("expected HID frame");
+            };
+            assert_eq!(bytes.len(), 9);
+            bytes[3..].to_vec()
+        };
+        assert_eq!(axes(&Xbox360State::default()), [128, 128, 0, 128, 128, 0]);
+        let mut state = Xbox360State {
+            left: (Xbox360Axis(i16::MIN), Xbox360Axis(i16::MAX)),
+            right: (Xbox360Axis(i16::MAX), Xbox360Axis(i16::MIN)),
+            triggers: (Xbox360Trigger(17), Xbox360Trigger(231)),
+            ..Xbox360State::default()
+        };
+        assert_eq!(axes(&state), [0, 255, 17, 255, 0, 231]);
+        state.triggers = (Xbox360Trigger(255), Xbox360Trigger(0));
+        assert_eq!(axes(&state), [0, 255, 255, 255, 0, 0]);
+    }
 
     #[test]
     fn battery_state_is_available_in_the_xbox_controller_model() {

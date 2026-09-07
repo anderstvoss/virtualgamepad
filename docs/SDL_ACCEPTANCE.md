@@ -111,3 +111,18 @@ has been destroyed.
 See [EXP-0008](architecture-overhaul/experiments/EXP-0008-sdl-core.md) for the
 baseline/rewrite measurements, private build recipe and fault tests. These results
 do not promote Steam or physical-fidelity status.
+
+## Existing-family profiles
+
+The private probe also accepts `--motion-gamepad-script` for Switch controls and
+both motion sensors, and `--gamepad-script` for standard-HID Xbox controls. Both
+require observed neutral state, every standard button transition and all six axis
+ranges. They do not require Sony touch/RGB capabilities. The original
+`--dualsense-script` profile also covers DS4; its Rust harness checks typed rumble
+and RGB feedback separately from successful SDL submissions.
+
+The shared ignored integration harness in `dualsense_uhid_live.rs` selects the
+exact run-owned hidraw node for Sony/Switch and event node for standard-HID Xbox.
+It performs three sequential ten-second runs and verifies repeated close and
+removal after each. See [family results](architecture-overhaul/experiments/EXP-0009-family-sdl.md).
+No SDL dependency is added to ordinary Cargo builds.
