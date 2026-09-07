@@ -96,3 +96,18 @@ A test-only USB/virtual-bus baseline comparison is also available via
 Its Linux enumeration results are documented in
 [EXP-0007](architecture-overhaul/experiments/EXP-0007-bus-baseline-comparison.md).
 It submits changing motion but does not measure SDL sensor events or Steam behavior.
+
+## Automated consumer assertions
+
+The probe now requires an exact device path and duration in milliseconds
+(100–60000). It returns nonzero for missing/ambiguous selection or failed required
+observations and emits schema-version-1 JSON. `--require-motion` requires both
+motion sensors; `--dualsense-script` additionally validates the standard control
+sweep and output submission. Successful submission alone is not feedback evidence:
+the ignored Rust acceptance runner verifies typed rumble/RGB output and device
+cleanup separately. Consumer close in probe JSON does not mean the virtual device
+has been destroyed.
+
+See [EXP-0008](architecture-overhaul/experiments/EXP-0008-sdl-core.md) for the
+baseline/rewrite measurements, private build recipe and fault tests. These results
+do not promote Steam or physical-fidelity status.

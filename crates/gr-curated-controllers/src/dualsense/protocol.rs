@@ -19,9 +19,9 @@ pub(crate) struct DualSenseUsbProtocol {
     last_input: Option<Report>,
 }
 impl DualSenseUsbProtocol {
-    pub(crate) fn new(session: RealizationSessionId) -> Self {
+    pub(crate) fn new(identity: [u8; 6]) -> Self {
         Self {
-            features: dualsense_feature_responses(session),
+            features: dualsense_feature_responses(identity),
             sequence: 1,
             next_input: 0,
             active: true,
@@ -133,8 +133,11 @@ impl Protocol for DualSenseUsbProtocol {
 
 impl common::HidDriver for DualSenseDefinition {
     type Hid = DualSenseUsbProtocol;
-    fn hid_protocol(&self, session: RealizationSessionId) -> Self::Hid {
-        DualSenseUsbProtocol::new(session)
+    fn hid_identity(&self) -> Result<[u8; 6], gr_realization_api::ProviderError> {
+        common::creation_identity()
+    }
+    fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
+        DualSenseUsbProtocol::new(identity)
     }
 }
 
@@ -142,6 +145,25 @@ impl common::HidDriver for DualSenseDefinition {
 mod tests {
     use super::*;
     use crate::BatteryLevel;
+    use crate::common::HidDriver;
+    #[test]
+    fn pairing_identity_is_creation_owned_and_stable_across_requests() {
+        let get = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(9),
+        };
+        for session in [7, 7 + (1 << 16)] {
+            let driver = DualSenseDefinition;
+            let mut first = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
+            let mut second = driver.hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
+            let reply = first.request(&get, 0).0;
+            assert_ne!(reply, second.request(&get, 0).0);
+            for now in [1, 100, 10000] {
+                assert_eq!(first.request(&get, now).0, reply);
+            }
+        }
+    }
+
     fn fixture(text: &str) -> Vec<u8> {
         text.trim()
             .as_bytes()
@@ -161,7 +183,7 @@ mod tests {
                 include_str!("../../../../tests/fixtures/protocol-corpus/ds-cross.hex"),
             ),
         ] {
-            let mut p = DualSenseUsbProtocol::new(RealizationSessionId(1));
+            let mut p = DualSenseUsbProtocol::new([2, 1, 2, 3, 4, 5]);
             p.sequence = 0;
             let mut state = p.neutral();
             state.face[0] = cross;
@@ -179,7 +201,7 @@ mod tests {
     }
     #[test]
     fn report_classes_and_declared_features_have_exact_success_or_error() {
-        let mut p = DualSenseUsbProtocol::new(RealizationSessionId(4));
+        let mut p = DualSenseUsbProtocol::new([2, 1, 2, 3, 4, 5]);
         for id in [
             5, 8, 9, 10, 32, 33, 34, 128, 129, 130, 131, 132, 133, 160, 224, 240, 241, 242, 244,
             245,
@@ -226,7 +248,7 @@ mod tests {
     }
     #[test]
     fn autonomous_timestamp_wrap_stop_start_and_reopen() {
-        let mut p = DualSenseUsbProtocol::new(RealizationSessionId(1));
+        let mut p = DualSenseUsbProtocol::new([2, 1, 2, 3, 4, 5]);
         let state = p.neutral();
         p.sequence = 255;
         let a = p.input(&state, u64::from(u32::MAX)).unwrap().remove(0);

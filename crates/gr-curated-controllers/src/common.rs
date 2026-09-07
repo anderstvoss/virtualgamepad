@@ -18,7 +18,7 @@ use gr_realization_api::{
     NativeProviderSession, ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent,
     RawReverseEvent, RealizationTarget,
 };
-pub(crate) use session::{ControllerSession, HidDriver};
+pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
 
 pub(crate) const EV_SYN: u16 = 0;
 pub(crate) const EV_KEY: u16 = 1;

@@ -46,3 +46,13 @@ host group policy remains unchanged; the newly loaded module is retained.
 The prior failed lease was already absent before this run, so its special recovery
 path was not validated live. See [EXP-0005](experiments/EXP-0005-host-access.md).
 Controlled B/P consumer comparisons and gadget prerequisites remain outstanding.
+
+## Current SDL/core state
+
+The previous temporary SDL directory disappeared. Pinned SDL 3.2.0 console/input
+tooling has now been recreated in a private user-owned cache. Scoped Linux/SDL
+DualSense baseline/rewrite acceptance and failure cleanup pass as recorded in
+[EXP-0008](experiments/EXP-0008-sdl-core.md). The installed helper is working;
+no additional provisioning was required for these runs. Earlier survey entries
+are historical and do not describe current access. Steam, physical references
+and reserved gadget resources remain independently unvalidated.

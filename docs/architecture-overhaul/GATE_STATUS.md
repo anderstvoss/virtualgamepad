@@ -78,3 +78,12 @@ USB to playstation and virtual bus to hid-generic, enumerated input/hidraw child
 serviced the semantic script and removed their devices. B/P remain incomplete:
 consumer-observed motion/output, independently varied binding and references were
 not measured. The historical consumer failure was not tested or assigned a cause.
+
+### DualSense Linux/SDL core
+
+[EXP-0008](experiments/EXP-0008-sdl-core.md) records three strong SDL runs per
+baseline/rewrite, standard controls, changing motion/touch, rumble/RGB feedback,
+concurrent repeated IDs and failure cleanup. This measured USB configuration
+passes core Linux/SDL checks. B/P remain incomplete as broad gates: independent
+driver binding, Steam/physical/reference evidence and other family matrices are
+not promoted. Identity and probe failure fixes have deterministic regressions.

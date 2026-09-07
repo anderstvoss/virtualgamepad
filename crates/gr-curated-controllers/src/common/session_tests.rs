@@ -85,7 +85,7 @@ fn rig<D: HidDriver>(
     );
     (
         Runtime::new(
-            driver.hid_protocol(RealizationSessionId(7)),
+            driver.hid_protocol(RealizationSessionId(7), [2, 1, 2, 3, 4, 5]),
             io,
             7,
             Limits::default(),

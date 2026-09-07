@@ -131,7 +131,7 @@ impl Protocol for SwitchUsbProtocol {
 }
 impl common::HidDriver for SwitchProDefinition {
     type Hid = SwitchUsbProtocol;
-    fn hid_protocol(&self, _: RealizationSessionId) -> Self::Hid {
+    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         SwitchUsbProtocol::new()
     }
 }

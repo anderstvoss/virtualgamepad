@@ -68,5 +68,8 @@ session IDs remain application identifiers and may be reused without duplicating
 those transport fields. This identity is process-local and distinguishes concurrent
 processes in the same PID namespace; it is not a physical serial guarantee.
 The provider rejects oversized or embedded-NUL identity strings rather than
-silently truncating them. Controller-owned feature addresses are a separate
-protocol concern and are unchanged by this transport suffix.
+silently truncating them. Controller-owned feature addresses are a separate protocol concern. DualSense
+now acquires a locally administered unicast address from OS entropy before
+provider open, independently of application session IDs. Its personality retains
+the address across GETs/retries; entropy failure rejects creation. Deterministic
+tests inject identities without OS entropy.

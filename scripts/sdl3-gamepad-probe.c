@@ -1,83 +1,107 @@
 #include <SDL3/SDL.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-static void probe_sensor(SDL_Gamepad *gamepad, SDL_SensorType sensor, const char *name) {
-    float values[3] = {0.0f, 0.0f, 0.0f};
-    bool present = SDL_GamepadHasSensor(gamepad, sensor);
-
-    printf("  sensor=%s present=%d", name, present);
-    if (present) {
-        bool enabled = SDL_SetGamepadSensorEnabled(gamepad, sensor, true);
-        printf(" enable=%d rate=%.1f", enabled,
-               SDL_GetGamepadSensorDataRate(gamepad, sensor));
-        if (enabled && SDL_GetGamepadSensorData(gamepad, sensor, values, 3)) {
-            printf(" values=%.6f,%.6f,%.6f", values[0], values[1], values[2]);
-        } else if (!enabled) {
-            printf(" error=%s", SDL_GetError());
-        }
-    }
-    putchar('\n');
-}
+#include <math.h>
+#include "sdl3-probe-contract.h"
 
 int main(int argc, char **argv) {
-    const char *path_filter = argc > 1 ? argv[1] : NULL;
-    Uint64 duration_ms = argc > 2 ? (Uint64)strtoul(argv[2], NULL, 10) : 0;
-    int count = 0;
-    SDL_JoystickID *ids;
-
-    if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) {
-        fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
-        return 1;
-    }
+    uint64_t duration = 0;
+    bool require_script = argc == 4 && strcmp(argv[3], "--dualsense-script") == 0;
+    bool require_motion = require_script || (argc == 4 && strcmp(argv[3], "--require-motion") == 0);
+    bool initialized = false, passed = false, connected = false;
+    bool rumble = false, led = false;
+    const char *error = "invalid arguments: expected exact-device-path duration-ms [--require-motion]";
+    SDL_Gamepad *gamepad = NULL;
+    SDL_JoystickID selected = 0;
+    SDL_JoystickID *ids = NULL;
+    int count = 0, matches = 0;
+    char guid[33] = "";
+    unsigned vendor = 0, product = 0;
+    ProbeSensor sensors[2] = {0};
+    SDL_SensorType types[2] = {SDL_SENSOR_GYRO, SDL_SENSOR_ACCEL};
+    Uint64 started = 0, elapsed = 0;
+    unsigned button_down = 0, button_up = 0, axis_events = 0, touch_events = 0;
+    unsigned down_mask = 0, up_mask = 0, axis_mask = 0;
+    Sint16 axis_min[6] = {0}, axis_max[6] = {0};
+    if ((argc != 3 && !require_motion) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
+    if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) { error = "SDL initialization failed"; goto done; }
+    initialized = true;
     ids = SDL_GetGamepads(&count);
-    if (ids == NULL && count != 0) {
-        fprintf(stderr, "SDL_GetGamepads failed: %s\n", SDL_GetError());
-        SDL_Quit();
-        return 1;
-    }
+    if (ids == NULL) { error = "gamepad enumeration failed"; goto done; }
     for (int index = 0; index < count; ++index) {
-        SDL_JoystickID id = ids[index];
-        const char *path = SDL_GetGamepadPathForID(id);
-        SDL_GUID guid = SDL_GetGamepadGUIDForID(id);
-        char guid_text[33];
-        SDL_GUIDToString(guid, guid_text, sizeof(guid_text));
-        printf("id=%" SDL_PRIs64 " gamepad=%d type=%d vendor=%04x product=%04x version=%04x guid=%s name=%s path=%s\n",
-               (Sint64)id, SDL_IsGamepad(id), (int)SDL_GetGamepadTypeForID(id),
-               SDL_GetGamepadVendorForID(id), SDL_GetGamepadProductForID(id),
-               SDL_GetGamepadProductVersionForID(id), guid_text,
-               SDL_GetGamepadNameForID(id), path ? path : "(none)");
-        if (path_filter != NULL && (path == NULL || strstr(path, path_filter) == NULL)) {
-            continue;
+        if (probe_path_matches(argv[1], SDL_GetGamepadPathForID(ids[index]))) {
+            selected = ids[index];
+            ++matches;
         }
-        {
-            SDL_Gamepad *gamepad = SDL_OpenGamepad(id);
-            if (gamepad == NULL) {
-                printf("  open=0 error=%s\n", SDL_GetError());
-                continue;
+    }
+    if (!probe_unique_match((unsigned)matches)) { error = "expected exactly one matching gamepad"; goto done; }
+    SDL_GUIDToString(SDL_GetGamepadGUIDForID(selected), guid, sizeof(guid));
+    vendor = SDL_GetGamepadVendorForID(selected);
+    product = SDL_GetGamepadProductForID(selected);
+    gamepad = SDL_OpenGamepad(selected);
+    if (gamepad == NULL) { error = "selected gamepad open failed"; goto done; }
+    for (int index = 0; index < 2; ++index) {
+        sensors[index].present = SDL_GamepadHasSensor(gamepad, types[index]);
+        if (sensors[index].present)
+            sensors[index].enabled = SDL_SetGamepadSensorEnabled(gamepad, types[index], true);
+    }
+    rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
+    led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
+    started = SDL_GetTicks();
+    connected = true;
+    while (SDL_GetTicks() - started < duration) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_EVENT_GAMEPAD_REMOVED && event.gdevice.which == selected) connected = false;
+            if (event.type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE && event.gsensor.which == selected) {
+                for (int index = 0; index < 2; ++index)
+                    if (event.gsensor.sensor == (int)types[index]) probe_observe(&sensors[index], event.gsensor.sensor_timestamp, event.gsensor.data);
             }
-            printf("  open=1 selected=1\n");
-            probe_sensor(gamepad, SDL_SENSOR_GYRO, "gyro");
-            probe_sensor(gamepad, SDL_SENSOR_ACCEL, "accel");
-            if (duration_ms != 0) {
-                Uint64 deadline = SDL_GetTicks() + duration_ms;
-                while (SDL_GetTicks() < deadline) {
-                    SDL_Event event;
-                    while (SDL_PollEvent(&event)) {
-                        if (event.type == SDL_EVENT_GAMEPAD_SENSOR_UPDATE && event.gsensor.which == id) {
-                            printf("  sensor-event=%d values=%.6f,%.6f,%.6f timestamp=%" SDL_PRIu64 "\n",
-                                   event.gsensor.sensor, event.gsensor.data[0], event.gsensor.data[1],
-                                   event.gsensor.data[2], event.gsensor.sensor_timestamp);
-                        }
-                    }
-                    SDL_Delay(4);
+            if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && event.gbutton.which == selected) { ++button_down; if (event.gbutton.button < 32) down_mask |= 1u << event.gbutton.button; }
+            if (event.type == SDL_EVENT_GAMEPAD_BUTTON_UP && event.gbutton.which == selected) { ++button_up; if (event.gbutton.button < 32) up_mask |= 1u << event.gbutton.button; }
+            if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && event.gaxis.which == selected) {
+                ++axis_events;
+                if (event.gaxis.axis < 6) {
+                    unsigned axis = event.gaxis.axis;
+                    axis_mask |= 1u << axis;
+                    if (event.gaxis.value < axis_min[axis]) axis_min[axis] = event.gaxis.value;
+                    if (event.gaxis.value > axis_max[axis]) axis_max[axis] = event.gaxis.value;
                 }
             }
-            SDL_CloseGamepad(gamepad);
+            if ((event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) && event.gtouchpad.which == selected) ++touch_events;
+        }
+        if (!connected) break;
+        SDL_Delay(1);
+    }
+    elapsed = SDL_GetTicks() - started;
+    passed = connected;
+    error = connected ? "" : "selected gamepad removed during observation";
+    for (int index = 0; index < 2; ++index) {
+        if ((require_motion && !sensors[index].present) ||
+            (sensors[index].present && (!sensors[index].enabled || sensors[index].invalid || sensors[index].distinct < 10))) {
+            passed = false;
+            error = "required sensor observations missing, invalid or nonmonotonic";
         }
     }
+    if (require_script) {
+        bool controls = (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && touch_events > 10;
+        for (unsigned axis = 0; axis < 6; ++axis)
+            controls = controls && axis_max[axis] > 31000 && axis_min[axis] < (axis < 4 ? -31000 : 1000);
+        if (!controls || !rumble || !led) { passed = false; error = "required control sweep or output submission missing"; }
+    }
+ done:
+    if (gamepad) SDL_CloseGamepad(gamepad);
     SDL_free(ids);
-    SDL_Quit();
-    return 0;
+    if (initialized) SDL_Quit();
+    printf("{\"schema_version\":1,\"consumer\":\"SDL\",\"consumer_version\":%d,\"path\":", SDL_GetVersion());
+    probe_json_string(argc > 1 ? argv[1] : "");
+    printf(",\"guid\":"); probe_json_string(guid);
+    printf(",\"vendor\":%u,\"product\":%u", vendor, product);
+    printf(",\"selected_count\":%d,\"duration_ms\":%llu,\"passed\":%s,\"consumer_closed\":true,\"error\":", matches, (unsigned long long)elapsed, passed ? "true" : "false");
+    probe_json_string(error);
+    printf(",\"button_down_mask\":%u,\"button_up_mask\":%u,\"axis_mask\":%u", down_mask, up_mask, axis_mask);
+    printf(",\"rumble_submitted\":%s,\"led_submitted\":%s,\"button_down\":%u,\"button_up\":%u,\"axis_events\":%u,\"touch_events\":%u,\"sensors\":[", rumble ? "true" : "false", led ? "true" : "false", button_down, button_up, axis_events, touch_events);
+    for (int index = 0; index < 2; ++index) {
+        printf("%s{\"present\":%s,\"enabled\":%s,\"distinct\":%u,\"invalid_timestamps_or_values\":%s}", index ? "," : "", sensors[index].present ? "true" : "false", sensors[index].enabled ? "true" : "false", sensors[index].distinct, sensors[index].invalid ? "true" : "false");
+    }
+    puts("]}");
+    return passed ? 0 : 1;
 }

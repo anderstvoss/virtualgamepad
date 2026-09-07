@@ -927,7 +927,7 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
 }
 impl common::HidDriver for DualShock4Definition {
     type Hid = common::SnapshotProtocol<DualShock4State>;
-    fn hid_protocol(&self, session: RealizationSessionId) -> Self::Hid {
+    fn hid_protocol(&self, session: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         #[allow(clippy::cast_possible_truncation)] // Protocol counters wrap at their declared width.
         fn encode(state: &DualShock4State, now: u64, sequence: u8) -> gr_hid::Report {
             let mut wire = state.clone();

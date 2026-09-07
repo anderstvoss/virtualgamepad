@@ -1124,9 +1124,7 @@ fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-fn dualsense_feature_responses(
-    session: RealizationSessionId,
-) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1160,20 +1158,10 @@ fn dualsense_feature_responses(
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
     // `hid-playstation` de-duplicates DualSense connections by this address.
-    // Generate an ephemeral locally-administered unicast address so separate
-    // virtual sessions never impersonate the same physical controller. It is
-    // not read from hardware, persisted, or used outside this process.
-    let process = u64::from(std::process::id());
-    let process_bytes = process.to_le_bytes();
-    let session_bytes = session.0.to_le_bytes();
-    pairing[1..7].copy_from_slice(&[
-        0x02,
-        process_bytes[0],
-        process_bytes[1],
-        process_bytes[2],
-        session_bytes[0],
-        session_bytes[1],
-    ]);
+    // Creation supplies an ephemeral locally-administered unicast address
+    // from OS entropy. Keep it unchanged for this personality, independently
+    // of caller session IDs. This is not a captured physical address.
+    pairing[1..7].copy_from_slice(&identity);
     let mut firmware = vec![0_u8; 64];
     firmware[0] = 0x20;
     // OpenPuck's PS5 USB personality exposes non-zero hardware and firmware
@@ -1410,7 +1398,7 @@ mod tests {
                 .windows(2)
                 .any(|item| item == [0x85, 0x02])
         );
-        let features = dualsense_feature_responses(RealizationSessionId(1));
+        let features = dualsense_feature_responses([2, 1, 2, 3, 4, 5]);
         for report_id in [0x03, 0x05, 0x09, 0x20] {
             let bytes = features
                 .get(&NativeHidReportKey {
@@ -1441,7 +1429,7 @@ mod tests {
 
     #[test]
     fn calibration_feature_has_non_zero_motion_denominators() {
-        let calibration = dualsense_feature_responses(RealizationSessionId(1))
+        let calibration = dualsense_feature_responses([2, 1, 2, 3, 4, 5])
             .remove(&NativeHidReportKey {
                 report_id: 0x05,
                 report_type: 0,
@@ -1475,16 +1463,16 @@ mod tests {
 
     #[test]
     fn pairing_feature_uses_a_distinct_local_identity_per_session() {
-        let pairing = |session| {
-            dualsense_feature_responses(RealizationSessionId(session))
+        let pairing = |identity| {
+            dualsense_feature_responses(identity)
                 .remove(&NativeHidReportKey {
                     report_id: 0x09,
                     report_type: 0,
                 })
                 .expect("pairing feature")
         };
-        let first = pairing(1);
-        let second = pairing(2);
+        let first = pairing([2, 1, 2, 3, 4, 5]);
+        let second = pairing([2, 1, 2, 3, 4, 6]);
         assert_eq!(first[1] & 0x03, 0x02, "locally administered unicast MAC");
         assert_ne!(&first[1..7], &second[1..7]);
     }

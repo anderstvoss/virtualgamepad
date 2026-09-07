@@ -10,7 +10,14 @@ use std::time::{Duration, Instant};
 
 pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
     type Hid: Protocol<State = Self::State, Output = RawReverseEvent> + Send;
-    fn hid_protocol(&self, session: gr_realization_api::RealizationSessionId) -> Self::Hid;
+    fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
+        Ok([0; 6])
+    }
+    fn hid_protocol(
+        &self,
+        session: gr_realization_api::RealizationSessionId,
+        identity: [u8; 6],
+    ) -> Self::Hid;
 }
 enum Backend<D: HidDriver> {
     Native(ControllerRuntime<D, ProviderSessionSink>),
@@ -38,7 +45,9 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(super) fn hid(driver: D, request: ProviderOpenRequest) -> Result<Self, ProviderError> {
         let selection = request.selection;
-        let protocol = driver.hid_protocol(request.session);
+        // Resolve creation identity before opening any provider resource.
+        let identity = driver.hid_identity()?;
+        let protocol = driver.hid_protocol(request.session, identity);
         let id = request.session.0;
         let transport = LinuxUhidProvider.open_transport(request)?;
         let runtime =
@@ -227,5 +236,36 @@ fn provider_error(error: gr_hid::Error) -> ProviderError {
         ProviderError::Read {
             reason: error.to_string(),
         }
+    }
+}
+
+pub(crate) fn creation_identity() -> Result<[u8; 6], ProviderError> {
+    let mut source = std::fs::File::open("/dev/urandom").map_err(|error| ProviderError::Open {
+        reason: format!("open OS identity entropy: {error}"),
+    })?;
+    read_identity(&mut source)
+}
+
+fn read_identity(source: &mut impl std::io::Read) -> Result<[u8; 6], ProviderError> {
+    let mut identity = [0; 6];
+    source
+        .read_exact(&mut identity)
+        .map_err(|error| ProviderError::Open {
+            reason: format!("read OS identity entropy: {error}"),
+        })?;
+    identity[0] = (identity[0] & 0xfc) | 0x02;
+    Ok(identity)
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+    #[test]
+    fn injected_entropy_is_local_unicast_and_short_reads_fail() {
+        assert_eq!(
+            read_identity(&mut &[255, 1, 2, 3, 4, 5][..]).unwrap(),
+            [254, 1, 2, 3, 4, 5]
+        );
+        assert!(read_identity(&mut &[1, 2][..]).is_err());
     }
 }

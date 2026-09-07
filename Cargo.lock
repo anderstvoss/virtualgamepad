@@ -882,6 +882,7 @@ dependencies = [
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
  "gr-realization-api",
+ "libc",
  "proptest",
 ]
 

@@ -24,3 +24,10 @@ selected playstation and virtual bus selected hid-generic. This narrows the
 remaining B/P work to controlled consumer/binding/reference evidence and observed
 report behavior; it does not diagnose the historical Steam issue. See
 [EXP-0007](experiments/EXP-0007-bus-baseline-comparison.md).
+
+DualSense now passes the scoped baseline/rewrite Linux/SDL control, motion, touch,
+rumble/RGB and cleanup matrix in [EXP-0008](experiments/EXP-0008-sdl-core.md).
+The fail-closed JSON consumer and per-creation pairing identity close independent
+correctness gaps. Repeated-ID concurrent sessions and injected failure cleanup
+also pass. Other families and the remaining gate axes still prevent overall core
+sign-off; this is not completion of the architecture roadmap.

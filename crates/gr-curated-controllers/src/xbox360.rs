@@ -720,7 +720,7 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
 
 impl common::HidDriver for Xbox360Definition {
     type Hid = common::SnapshotProtocol<Xbox360State>;
-    fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId) -> Self::Hid {
+    fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
             common::logical_input(xbox_hid_frame(state))
         }
