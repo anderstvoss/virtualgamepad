@@ -37,6 +37,19 @@ sudo -n /usr/local/libexec/virtualgamepad-host-helper status
 Run normal inventory as yourself: `python3 scripts/host-preflight.py all`. Running
 inventory through sudo observes root access and still does not prepare anything.
 
+## Updating installed code
+
+After reviewing a helper fix, run:
+
+```bash
+sudo /usr/bin/python3 -I scripts/install-host-helper.py --update
+```
+
+This explicitly replaces only the installed executable, under the helper lock.
+It preserves administrator policy, jobs, sudoers and active journals, and rejects
+an unexpected account or unsafe ownership/modes. Updating privileged code still
+requires administrator authentication; the delegated helper cannot update itself.
+
 ## Delegated operations
 
 | Operation | Authority and safeguards |
@@ -44,6 +57,7 @@ inventory through sudo observes root access and still does not prepare anything.
 | `status` | Inspect this helper's active creation-device leases without creating a device. |
 | `uhid-grant` / `uhid-restore` | Prepare only UHID, verify its kernel registration/node identity, grant the installed policy UID temporary read/write access, and restore the recorded ACL. |
 | `uinput-grant` / `uinput-restore` | The same lifecycle for uinput, with a separate lease. Reuse existing access when sufficient rather than calling grant unnecessarily. |
+| `uhid-recover-udev` | Recover the documented first-registration group race only: require the original device, a group-only change, and the exact saved grant; remove that grant and reapply existing udev policy only to UHID. |
 | `module-load NAME` | Load exactly an administrator-approved module name, without parameters. The initial list is uhid, uinput, libcomposite, usb_f_hid, dummy_hcd, and usbmon. No module is loaded by installation. |
 | `run-job NAME` | Execute only a separately approved, root-owned job manifest with fixed arguments and a trusted executable. There are no jobs enabled by default. |
 
@@ -55,13 +69,19 @@ a package manager, or an installer.
 
 ## Device lease and restoration
 
-The helper journals the original ACL and filesystem/device identity before an ACL
+The helper waits for udev to settle before capturing the creation-device baseline.
+A settle timeout leaves permissions untouched. It journals the original ACL and filesystem/device identity before an ACL
 write. It preserves other principals' effective permissions when expanding the
 mask. Repeat grants do not replace the original baseline; status is read-only.
 Interrupted grants can be restored from the journal. Oversized journals are
 rejected before mutation so every accepted ACL baseline remains recoverable. Replacement nodes, changed
 owners/groups, externally changed ACLs, and malformed journals require operator
-review instead of overwriting another researcher's changes.
+review instead of overwriting another researcher's changes. The explicit
+`uhid-recover-udev` exception handles only the observed first-registration race
+with a simple original ACL and a journaled module-load request. Recovery has its
+own persistent phase; failures retain the journal. It does not edit udev rules,
+change groups, or trigger unrelated devices. Existing host policy may itself grant
+creation access; restoring that policy does not revoke pre-existing authority.
 
 After installation the agent can run:
 
@@ -130,6 +150,12 @@ Synthetic tests cover caller/argument rejection, approved module dispatch, ACL m
 preservation, a real ACL encoding round trip on a private synthetic file, interrupted
 grant/journal writes, node/ACL changes, repeated polling, idempotent restoration,
 fixed job arguments, untrusted paths, sudoers syntax and refusal to overwrite
-existing installation files. Installed-root execution and actual UHID lease tests
-remain pending the administrator installation above. No system sudo policy or
-creation-device ACL was changed while building the helper.
+existing installation files, udev settlement before baseline capture, narrow race
+recovery and policy-preserving executable updates.
+
+Installed status succeeded, but the first live UHID grant exposed a udev ordering
+race: the saved group preceded existing udev policy. The helper refused both grant
+verification and normal restoration and retained its journal. The temporary ACL
+and newly loaded UHID module remain until the updated helper performs recovery.
+Live recovery and controller creation remain pending; this is not a UHID or B/P
+acceptance pass. See [the host experiment](experiments/EXP-0005-host-access.md).

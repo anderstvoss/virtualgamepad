@@ -55,7 +55,7 @@ warnings; it was not run against uncontrolled devices. This is build evidence,
 not SDL/Steam acceptance. No Steam process was observed; a display environment
 and launcher exist, but interactive operation/reference hardware remain unverified.
 
-Private ACL/mount/module/unit inventory and build logs remain outside Git. No
+Private ACL/mount/module/unit inventory and build logs remain outside Git. During the initial host-access batch, no
 permissions, group membership, module state, persistent service configuration,
 consumer settings, or shared kernel configuration were changed. Audio/Bluetooth
 and capture preparation remain deferred. The repository's corpus-read CI secret
@@ -75,3 +75,23 @@ workspace tests, Gitleaks, ten Python workflow/tool regressions, private SDL pro
 compilation, and systemd unit syntax verification pass. Hardware-dependent tests
 remain ignored except for the explicitly rerun uinput test. No Rust dependencies
 were added. Configured commit/push hooks are required for delivery.
+
+## Installed helper: first-registration race
+
+Installed-root status succeeded. The first UHID grant loaded the mechanism but
+failed verification: udev changed the node group after the helper captured its
+baseline. Device number, inode and owner remained unchanged; the current ACL
+matched the journaled grant. Normal restoration correctly refused the changed
+identity. Machine-specific journal and existing udev-rule details remain private.
+
+The fix settles udev before baseline capture, adds diagnostic status fields, and
+provides explicit `uhid-recover-udev` reconciliation for this exact journal shape.
+It removes the helper grant before triggering existing policy for UHID alone.
+Unrelated ACL/identity changes still fail closed. Interrupted recovery retains its
+journal. The installer now supports an administrator-authenticated executable-only
+update without resetting policy or active leases.
+
+Deterministic regressions pass; installed recovery awaits that update. The failed
+lease's temporary ACL and newly loaded module remain recorded, and no controller
+creation test followed the failure. B/P acceptance remains blocked. Existing
+host group-based access is pre-existing policy, not a product permission requirement.

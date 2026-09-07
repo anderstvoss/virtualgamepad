@@ -26,15 +26,16 @@ def directory(path):
             raise ValueError('installation parents must be root-owned, non-writable directories, without symlinks')
 
 
-def install_file(path, contents, mode):
+def install_file(path, contents, mode, replace=False):
     directory(path.parent)
     if path.exists() or path.is_symlink():
         metadata = path.lstat()
         if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != mode:
             raise ValueError('existing installation has unexpected ownership/type/mode; inspect it manually')
-        if path.read_bytes() != contents:
+        if path.read_bytes() == contents:
+            return
+        if not replace:
             raise ValueError('existing installation differs; refusing to overwrite administrator changes')
-        return
     descriptor, name = tempfile.mkstemp(prefix='.host-helper-', dir=path.parent)
     temporary = Path(name)
     try:
@@ -43,7 +44,10 @@ def install_file(path, contents, mode):
             stream.flush()
             os.fsync(stream.fileno())
             os.fchmod(stream.fileno(), mode)
-        os.link(temporary, path)  # Atomic no-replace publication.
+        if replace:
+            os.replace(temporary, path)
+        else:
+            os.link(temporary, path)  # Atomic no-replace publication.
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -56,9 +60,31 @@ def sudo_rule(uid):
     return f'# Fixed development helper only; remove this file to revoke delegation.\n#{uid} ALL=(root) NOPASSWD: {EXECUTABLE}\n'.encode()
 
 
+def update_helper(uid, source):
+    # Updating code does not reset policy, job definitions, state or sudoers.
+    for path, mode in [(CONFIG, 0o600), (RULE, 0o440)]:
+        directory(path.parent)
+        metadata = path.lstat()
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != mode:
+            raise ValueError('existing policy/rule ownership is unsafe; update refused')
+    if ('allow_uid=' + str(uid)) not in CONFIG.read_text().splitlines():
+        raise ValueError('update must be invoked by the installed policy account')
+    directory(STATE)
+    if stat.S_IMODE(STATE.stat().st_mode) != 0o700:
+        raise ValueError('helper state must be mode 0700; existing state was not changed')
+    import fcntl
+    descriptor = os.open(STATE / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        install_file(EXECUTABLE, source, 0o755, replace=True)
+    finally:
+        os.close(descriptor)
+
+
 def main():
-    if len(sys.argv) != 1 or os.geteuid() != 0 or not sys.flags.isolated:
-        raise ValueError('run sudo /usr/bin/python3 -I scripts/install-host-helper.py with no arguments')
+    update = sys.argv[1:] == ['--update']
+    if (sys.argv[1:] and not update) or os.geteuid() != 0 or not sys.flags.isolated:
+        raise ValueError('run sudo /usr/bin/python3 -I scripts/install-host-helper.py [--update]')
     value = os.environ.get('SUDO_UID', '')
     if not value.isascii() or not value.isdigit():
         raise ValueError('run through sudo from the intended development account')
@@ -78,6 +104,10 @@ def main():
                    stdin=subprocess.DEVNULL, check=True)
     config = ('allow_uid=' + str(uid) + '\n' + ''.join('allow_module=' + module + '\n'
               for module in ('uhid', 'uinput', 'libcomposite', 'usb_f_hid', 'dummy_hcd', 'usbmon'))).encode()
+    if update:
+        update_helper(uid, source)
+        print('Updated root-owned helper; policy, jobs, sudoers and active journals preserved.')
+        return
     install_file(EXECUTABLE, source, 0o755)
     install_file(CONFIG, config, 0o600)
     directory(CONFIG.parent / 'host-jobs')

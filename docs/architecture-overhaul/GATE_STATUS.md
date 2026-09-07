@@ -47,5 +47,14 @@ code or an SDL build. CAP_SYS_ADMIN removal is not yet validated.
 
 The [local development helper](LOCAL_HOST_HELPER.md) provides a one-time,
 UID-scoped installation path for temporary creation access and extensible approved
-module/job operations. Its deterministic tests pass; installation and live grants
-remain pending administrator execution. This does not change B/P/G status.
+module/job operations. Its deterministic tests pass; installed status succeeded, but the first live grant
+requires the recovery documented below. This does not change B/P/G status.
+
+### Host-helper recovery prerequisite
+
+The first installed UHID grant exposed a udev baseline race; verification and
+restoration refused the changed group, retaining the lease. The fix and narrow
+recovery have deterministic coverage, but installed recovery requires the
+administrator's executable-only helper update. Temporary access and the newly
+loaded module remain tracked; live UHID/B/P acceptance is still blocked. Details:
+[EXP-0005](experiments/EXP-0005-host-access.md#installed-helper-first-registration-race).

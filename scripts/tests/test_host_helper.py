@@ -4,6 +4,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,6 +48,12 @@ class Host:
         self.current = acl
         if self.fail == 'after-write':
             raise OSError('synthetic interrupted writer')
+
+    def refresh_policy(self):
+        self.actions.append('udev-policy')
+        if self.fail == 'udev':
+            raise OSError('synthetic udev failure')
+        self.current = HELPER.acl_text(HELPER.parse_acl('user::rw-\ngroup::rw-\nother::---\n'))
 
     def run(self, arguments):
         self.actions.append(arguments)
@@ -100,6 +107,48 @@ class HelperTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 HELPER.parse_acl(invalid)
 
+    def test_udev_settles_before_baseline_and_timeout_leaves_acl_untouched(self):
+        for fail_settle in [False, True]:
+            with tempfile.TemporaryDirectory() as temporary:
+                class PreparingHost(HELPER.Host):
+                    def __init__(self):
+                        super().__init__()
+                        self.registration = Path(temporary) / 'registration'
+                        self.device = Path(temporary) / 'device'
+                        self.calls = []
+
+                    def run(self, argv, data=None):
+                        self.calls.append(argv)
+                        if argv[0] == '/usr/sbin/modprobe':
+                            self.registration.touch()
+                            self.device.touch()
+                        elif argv[0] == '/usr/bin/udevadm' and fail_settle:
+                            raise OSError('synthetic udev timeout')
+                        return ''
+
+                    def identity(self):
+                        self.calls.append('baseline')
+                        return {'group': 7}
+
+                    def acl(self):
+                        return ORIGINAL
+
+                    def set_acl(self, acl):
+                        self.calls.append('write')
+                        raise OSError('stop synthetic run after baseline')
+
+                host, journal = PreparingHost(), Journal()
+                with self.assertRaises(OSError):
+                    HELPER.execute('uhid-grant', UID, host, journal)
+                self.assertEqual(host.calls[:2], [['/usr/sbin/modprobe', 'uhid'], ['/usr/bin/udevadm', 'settle', '--timeout=10']])
+                if fail_settle:
+                    self.assertNotIn('baseline', host.calls)
+                    self.assertNotIn('write', host.calls)
+                    self.assertEqual(journal.value['phase'], 'preparing')
+                else:
+                    self.assertEqual(journal.value['identity'], {'group': 7})
+                    self.assertIn('write', host.calls)
+
     def test_real_acl_encoding_roundtrip_on_private_synthetic_file(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / 'fixture'
@@ -149,6 +198,43 @@ class HelperTests(unittest.TestCase):
                 HELPER.execute('uhid-restore', UID, host, journal)
                 self.assertEqual(host.current, ORIGINAL)
                 self.assertIsNone(journal.value)
+
+    def test_group_race_recovery_reapplies_policy_and_retries_failed_udev(self):
+        host, journal = Host(), Journal()
+        host.fail = 'after-write'
+        with self.assertRaises(OSError):
+            HELPER.execute('uhid-grant', UID, host, journal)
+        host.node['group'] = 7
+        host.fail = 'udev'
+        with self.assertRaises(OSError):
+            HELPER.execute('uhid-recover-udev', UID, host, journal)
+        self.assertEqual(journal.value['phase'], 'reconciling')
+        self.assertEqual(host.current, ORIGINAL)
+        host.fail = None
+        HELPER.execute('uhid-recover-udev', UID, host, journal)
+        self.assertIsNone(journal.value)
+        self.assertNotIn(('user', str(UID)), HELPER.parse_acl(host.current))
+        self.assertEqual(HELPER.parse_acl(host.current)['group', ''], 'rw-')
+        HELPER.execute('uhid-recover-udev', UID, host, journal)
+
+    def test_group_race_repair_still_refuses_unrelated_changes(self):
+        for change in ['inode', 'acl', 'preexisting-named-acl']:
+            host, journal = Host(), Journal()
+            if change == 'preexisting-named-acl':
+                host.current = HELPER.grant_acl(ORIGINAL, 7)
+            host.fail = 'after-write'
+            with self.assertRaises(OSError):
+                HELPER.execute('uhid-grant', UID, host, journal)
+            host.fail = None
+            host.node['group'] = 7
+            if change == 'inode':
+                host.node['ino'] += 1
+            elif change == 'acl':
+                host.current = HELPER.grant_acl(host.current, 77)
+            actions = list(host.actions)
+            with self.assertRaises(ValueError):
+                HELPER.execute('uhid-recover-udev', UID, host, journal)
+            self.assertEqual(host.actions, actions)
 
     def test_other_research_changes_and_replaced_nodes_are_not_overwritten(self):
         for change in ['node', 'acl', 'owner']:
@@ -202,6 +288,43 @@ class HelperTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
         with self.assertRaises(ValueError):
             INSTALLER.sudo_rule(0)
+
+    def test_update_preserves_policy_and_journals_and_rejects_unsafe_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            config, rule, state, executable = [root / name for name in ('config', 'rule', 'state', 'helper')]
+            config.write_text('allow_uid=42\nallow_job=custom\n')
+            config.chmod(0o600)
+            rule.write_text('existing rule')
+            rule.chmod(0o440)
+            state.mkdir(mode=0o700)
+            journal = state / 'uhid.json'
+            journal.write_text('synthetic active journal')
+            executable.write_bytes(b'old helper')
+            executable.chmod(0o755)
+            original_lstat = Path.lstat
+
+            def root_metadata(path):
+                metadata = original_lstat(path)
+                return SimpleNamespace(st_uid=0, st_mode=metadata.st_mode)
+
+            with patch.multiple(INSTALLER, CONFIG=config, RULE=rule, STATE=state, EXECUTABLE=executable), \
+                    patch.object(INSTALLER, 'directory'), patch.object(Path, 'lstat', root_metadata):
+                INSTALLER.update_helper(42, b'new helper')
+                self.assertEqual(executable.read_bytes(), b'new helper')
+                self.assertEqual(config.read_text(), 'allow_uid=42\nallow_job=custom\n')
+                self.assertEqual(rule.read_text(), 'existing rule')
+                self.assertEqual(journal.read_text(), 'synthetic active journal')
+                with self.assertRaises(ValueError):
+                    INSTALLER.update_helper(43, b'wrong account')
+                state.chmod(0o755)
+                with self.assertRaises(ValueError):
+                    INSTALLER.update_helper(42, b'unsafe state')
+                state.chmod(0o700)
+                rule.chmod(0o666)
+                with self.assertRaises(ValueError):
+                    INSTALLER.update_helper(42, b'unsafe rule')
+                self.assertEqual(executable.read_bytes(), b'new helper')
 
     def test_installer_does_not_overwrite_existing_files(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -15,7 +15,7 @@ EXECUTABLE = Path('/usr/local/libexec/virtualgamepad-host-helper')
 CONFIG = Path('/etc/virtualgamepad/host-helper.conf')
 STATE = Path('/run/virtualgamepad-host-helper')
 ENVIRONMENT = {'PATH': '/usr/sbin:/usr/bin', 'LANG': 'C', 'LC_ALL': 'C'}
-ACTIONS = ('status', 'uhid-grant', 'uhid-restore', 'uinput-grant', 'uinput-restore')
+ACTIONS = ('status', 'uhid-grant', 'uhid-restore', 'uinput-grant', 'uinput-restore', 'uhid-recover-udev')
 
 
 def trusted(path, directory=False):
@@ -121,9 +121,18 @@ class Host:
             loaded = True
         for _ in range(50):
             if self.registration.exists() and self.device.exists():
+                # devtmpfs can expose the node before udev applies ownership,
+                # modes and ACL policy. Capture the baseline only after settling.
+                self.run(['/usr/bin/udevadm', 'settle', '--timeout=10'])
                 return loaded
             time.sleep(0.1)
         raise ValueError('Creation-device registration/node did not appear; no ACL granted')
+
+    def refresh_policy(self):
+        if self.name != 'uhid':
+            raise ValueError('udev reconciliation is limited to UHID')
+        self.run(['/usr/bin/udevadm', 'trigger', '--action=change', str(self.registration.parent)])
+        self.run(['/usr/bin/udevadm', 'settle', '--timeout=10'])
 
     def identity(self):
         metadata = self.device.lstat()
@@ -184,7 +193,7 @@ class Journal:
 def validate_lease(lease, uid):
     if not isinstance(lease, dict) or lease.get('version') != 1 or lease.get('uid') != uid:
         raise ValueError('lease ownership/version mismatch')
-    if lease.get('phase') not in ('preparing', 'prepared', 'granted'):
+    if lease.get('phase') not in ('preparing', 'prepared', 'granted', 'reconciling'):
         raise ValueError('invalid lease phase')
     if lease['phase'] != 'preparing':
         if not isinstance(lease.get('identity'), dict):
@@ -193,14 +202,55 @@ def validate_lease(lease, uid):
             raise ValueError('lease ACL mismatch')
 
 
+def recover_udev(uid, host, journal, lease):
+    if lease is None:
+        return dict(active=False, result='no lease to recover')
+    identity, current = host.identity(), host.acl()
+    base = parse_acl(lease.get('original', ''))
+    # This repair only addresses the observed first-registration race. Broader
+    # ownership/ACL conflicts still require administrator inspection.
+    if set(base) != {('user', ''), ('group', ''), ('other', '')} or not lease.get('module_load_requested'):
+        raise ValueError('not a simple first-registration lease; operator review required')
+    if lease['phase'] == 'prepared':
+        changed = {key for key in lease['identity'] if identity.get(key) != lease['identity'][key]}
+        if changed != {'group'} or current != lease['expected']:
+            raise ValueError('not an isolated group-change race; refusing recovery')
+        lease.update(phase='reconciling', repair_identity=identity)
+        journal.save(lease)
+    if lease['phase'] != 'reconciling' or identity != lease.get('repair_identity'):
+        raise ValueError('recovery identity mismatch')
+    if current not in (lease['original'], lease['expected']):
+        raise ValueError('ACL changed outside the recovery; operator review required')
+    if current != lease['original']:
+        host.set_acl(lease['original'])
+    if host.identity() != lease['repair_identity'] or host.acl() != lease['original']:
+        raise ValueError('ACL/device changed before udev reconciliation; journal retained')
+    host.refresh_policy()
+    if host.identity() != lease['repair_identity']:
+        raise ValueError('device changed during policy restoration; journal retained')
+    journal.clear()
+    return dict(active=False, result='helper ACL removed and existing UHID udev policy reapplied; module retained')
+
+
 def execute(action, uid, host, journal):
     if action not in ACTIONS:
         raise ValueError('unknown action')
     lease = journal.load()
     if lease is not None:
         validate_lease(lease, uid)
+    if action == 'uhid-recover-udev':
+        return recover_udev(uid, host, journal, lease)
     if action == 'status':
-        return dict(active=lease is not None, phase=lease['phase'] if lease else None)
+        result = dict(active=lease is not None, phase=lease['phase'] if lease else None)
+        if lease is not None and lease['phase'] != 'preparing':
+            try:
+                identity, acl = host.identity(), host.acl()
+                result['changed_identity_fields'] = sorted(key for key in lease['identity'] if identity.get(key) != lease['identity'][key])
+                result['acl_matches_original'] = acl == lease['original']
+                result['acl_matches_grant'] = acl == lease['expected']
+            except (OSError, ValueError, subprocess.SubprocessError):
+                result['verification'] = 'device unavailable; journal retained'
+        return result
     if action.endswith('-grant'):
         if lease is not None:
             if lease['phase'] == 'granted' and host.identity() == lease['identity'] and host.acl() == lease['expected']:
@@ -224,6 +274,8 @@ def execute(action, uid, host, journal):
         return dict(active=True, result='temporary creation-device access granted', module_load_requested=lease['module_load_requested'])
     if lease is None:
         return dict(active=False, result='already restored')
+    if lease['phase'] == 'reconciling':
+        raise ValueError('use uhid-recover-udev to complete this policy reconciliation')
     if lease['phase'] != 'preparing':
         if host.identity() != lease['identity']:
             raise ValueError('device identity changed; refusing restoration onto a reused node')
@@ -243,7 +295,7 @@ def parse_action(arguments):
         return arguments[0], None
     if len(arguments) == 2 and arguments[0] in ('module-load', 'run-job') and re.fullmatch(r'[a-z][a-z0-9_-]{0,47}', arguments[1]):
         return arguments[0], arguments[1]
-    raise ValueError('expected status, {uhid|uinput}-{grant|restore}, module-load NAME, or run-job NAME')
+    raise ValueError('expected status, {uhid|uinput}-{grant|restore}, uhid-recover-udev, module-load NAME, or run-job NAME')
 
 
 def run_operation(action, name, policy, host):
