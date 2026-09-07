@@ -100,6 +100,24 @@ impl Drop for ProviderSessionSink {
     }
 }
 
+fn instance_suffix(process: u32, instance: u64) -> String {
+    // UHID phys/uniq fields are 64 bytes including the terminating NUL.
+    format!("p{process:x}-i{instance:x}")
+}
+
+fn next_instance_suffix() -> Result<String, ProviderError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let instance = NEXT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .map_err(|_| ProviderError::Open {
+            reason: "UHID instance identity space exhausted".into(),
+        })?;
+    Ok(instance_suffix(std::process::id(), instance))
+}
+
 pub(crate) fn create<D>(
     driver: D,
     mut realization: NativeControllerRealization,
@@ -115,7 +133,7 @@ where
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
-        let suffix = format!("session-{}", options.session.0);
+        let suffix = next_instance_suffix()?;
         specification.physical_path = format!("{}/{}", specification.physical_path, suffix);
         specification.unique_id = format!("{}-{suffix}", specification.unique_id);
     }
@@ -222,6 +240,26 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    #[test]
+    fn transport_identity_distinguishes_reused_sessions_and_processes() {
+        let longest = instance_suffix(u32::MAX, u64::MAX);
+        for prefix in [
+            "virtualgamepad/uhid/dualsense/",
+            "virtualgamepad-dualsense-",
+            "virtualgamepad/uhid/dualshock4/",
+            "virtualgamepad/uhid/switch-pro/",
+        ] {
+            assert!(prefix.len() + longest.len() < 64);
+        }
+        let first = instance_suffix(10, 0);
+        assert_ne!(first, instance_suffix(11, 0));
+        assert_ne!(first, instance_suffix(10, 1));
+        assert_ne!(
+            next_instance_suffix().unwrap(),
+            next_instance_suffix().unwrap()
+        );
+    }
 
     struct ClosingSession(Arc<AtomicUsize>, bool);
 

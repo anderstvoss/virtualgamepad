@@ -392,9 +392,26 @@ mod linux_io {
             }),
         }
     }
-    fn copy_text(out: &mut [u8], text: &str) {
-        let length = text.len().min(out.len().saturating_sub(1));
-        out[..length].copy_from_slice(&text.as_bytes()[..length]);
+    fn copy_text(out: &mut [u8], text: &str) -> Result<(), ProviderError> {
+        if text.len() >= out.len() || text.as_bytes().contains(&0) {
+            return Err(ProviderError::Open {
+                reason: "UHID identity must fit its NUL-terminated field without truncation".into(),
+            });
+        }
+        out[..text.len()].copy_from_slice(text.as_bytes());
+        Ok(())
+    }
+
+    #[test]
+    fn identity_encoding_rejects_truncation_and_embedded_nul_before_copy() {
+        let mut field = [0_u8; 64];
+        copy_text(&mut field, &"a".repeat(63)).unwrap();
+        assert_eq!(field[63], 0);
+        for invalid in ["b".repeat(64), "é".repeat(32), "prefix\0suffix".into()] {
+            let mut untouched = [0_u8; 64];
+            assert!(copy_text(&mut untouched, &invalid).is_err());
+            assert_eq!(untouched, [0_u8; 64]);
+        }
     }
     pub fn create(io: &mut File, spec: &NativeHidRealization) -> Result<(), ProviderError> {
         if spec.descriptor.len() > UHID_DATA_MAX {
@@ -404,9 +421,9 @@ mod linux_io {
         }
         let mut event = vec![0_u8; UHID_EVENT_SIZE];
         put_u32(&mut event, 0, UHID_CREATE2);
-        copy_text(&mut event[4..132], &spec.device_name);
-        copy_text(&mut event[132..196], &spec.physical_path);
-        copy_text(&mut event[196..260], &spec.unique_id);
+        copy_text(&mut event[4..132], &spec.device_name)?;
+        copy_text(&mut event[132..196], &spec.physical_path)?;
+        copy_text(&mut event[196..260], &spec.unique_id)?;
         put_u16(&mut event, 260, spec.descriptor.len() as u16);
         put_u16(&mut event, 262, spec.bus_type);
         put_u32(&mut event, 264, u32::from(spec.identity.vendor_id));

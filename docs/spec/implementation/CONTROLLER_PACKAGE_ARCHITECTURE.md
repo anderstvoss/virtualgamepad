@@ -60,3 +60,13 @@ UHID packages implement the `gr-hid::Protocol` contract through a controller-own
 The runtime clones personality generation before queue acceptance, retains definitely-unsent bytes, and closes on uncertain delivery. Required SET validation precedes acknowledgement. Optional observations must not own completion tokens. Service readiness and deadlines independently of semantic edits; test idle cadence and startup probes without subscribers.
 
 Compiled manifests declare cohesive `RealizationId` values and static `RealizationTargetSet::new(&[...])` membership. The existing uinput and broker paths retain their earlier frame runtime pending their relevant migration gates. See [current architecture](../../CORE_ARCHITECTURE.md) for implementation boundaries.
+
+## Ephemeral UHID transport identity
+
+UHID phys/uniq values receive a compact process/creation ordinal suffix. Caller
+session IDs remain application identifiers and may be reused without duplicating
+those transport fields. This identity is process-local and distinguishes concurrent
+processes in the same PID namespace; it is not a physical serial guarantee.
+The provider rejects oversized or embedded-NUL identity strings rather than
+silently truncating them. Controller-owned feature addresses are a separate
+protocol concern and are unchanged by this transport suffix.

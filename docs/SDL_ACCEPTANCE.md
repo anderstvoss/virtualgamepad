@@ -76,3 +76,17 @@ probe command, never a shell profile or system loader configuration. The probe
 builds into a fresh private temporary directory and removes it on exit, including
 compiler/probe failure. It is never run as root. Missing Steam or reference
 hardware blocks only that evidence axis; neither is a library dependency.
+
+## Linux startup prerequisite probe
+
+On an already prepared, isolated UHID host, run as the ordinary user:
+
+```bash
+cargo test -p gr-curated-controllers --test dualsense_uhid_live -- --ignored
+```
+
+This services the production personality, checks its process-owned playstation
+binding and input children, and verifies removal after repeated close. It does
+not launch SDL or Steam, alter permissions, or substitute for the acceptance
+steps above. Three repetitions passed on the recorded host; see
+[EXP-0006](architecture-overhaul/experiments/EXP-0006-dualsense-live-startup.md).

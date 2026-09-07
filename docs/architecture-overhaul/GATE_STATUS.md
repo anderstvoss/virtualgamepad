@@ -5,7 +5,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
 | --- | --- | --- | --- | --- | --- |
 | A | Corpus evidence model | E1 | passed | Codex | [EXP-0001](experiments/EXP-0001-corpus-seed.md), [ADR-0003](decisions/ADR-0003-corpus-boundary.md); source/synthetic scope only |
-| B | Controlled bus/host comparison | E3 | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); UHID access and supported-host comparison unavailable |
+| B | Controlled bus/host comparison | E3 | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux USB/UHID startup passes; controlled host/driver comparisons outstanding |
 | C | Stateful synchronous protocol contract | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
@@ -19,7 +19,7 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | M | Actual BT realization viability | E6 BT bus after L | not_run | unassigned | None |
 | N | Curated compatibility variants | Affected E6 family | not_run | unassigned | None |
 | O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
-| P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); UHID access and supported-host comparison unavailable |
+| P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux USB/UHID startup passes; controlled host/driver comparisons outstanding |
 
 ## Update rules
 
@@ -61,3 +61,11 @@ Steam and physical-reference evidence. Basic creation success does not validate
 controller startup probes or consumer compatibility. G still requires reserved
 gadget resources, reduced-capability execution and its independent protocol API
 decision. Extensions remain gated as recorded above.
+
+### Production DualSense kernel startup
+
+[EXP-0006](experiments/EXP-0006-dualsense-live-startup.md) records three successful
+controlled repetitions of production USB/UHID startup, playstation binding, input
+children, idle servicing and observed removal. Initial identity-selector failures
+and their corrections are retained in the record. B/P remain scoped as blocked:
+baseline/bus/driver comparisons and independent consumer evidence are outstanding.

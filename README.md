@@ -18,7 +18,7 @@ See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the pri
 
 ## Servicing controllers
 
-UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `poll_output` on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow.
+UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `poll_output` on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow. UHID transport identities distinguish repeated creations independently of caller session IDs; oversized identity strings are rejected rather than truncated.
 
 `CreationOptions.target` accepts `RealizationId::LINUX_UINPUT`, `LINUX_UHID_USB`, or `LINUX_DUMMY_HCD_USB_HID`. The old target names remain aliases. Required HID replies are protocol-owned; application reply methods cannot override or duplicate them. Switch stream status is available on the controller handle.
 
