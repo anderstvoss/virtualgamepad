@@ -409,7 +409,8 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 4] = [
+static RESTRICTIONS: [TargetRestriction; 5] = [
+    common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no evidenced faithful DualSense IMU presentation",
@@ -496,7 +497,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -789,15 +790,9 @@ fn encode_touches(events: &mut Vec<EvdevEvent>, touches: [Option<DualSenseTouchC
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualSenseOutputEvent {
+    Other,
     HidLifecycle(gr_hid::Lifecycle),
-    ConventionalForceFeedbackUpload {
-        request_id: u32,
-        effect: Vec<u8>,
-    },
-    ConventionalForceFeedbackErase {
-        request_id: u32,
-        effect_id: u32,
-    },
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
     ProviderEvent(Vec<EvdevEvent>),
     HidOutput(DualSenseHidOutput),
     HidGetReportRequest {
@@ -1021,16 +1016,11 @@ impl DualSenseController {
                     RawReverseEvent::HidLifecycle(event) => {
                         DualSenseOutputEvent::HidLifecycle(event)
                     }
-                    RawReverseEvent::ForceFeedbackUpload { request_id, effect } => {
-                        DualSenseOutputEvent::ConventionalForceFeedbackUpload { request_id, effect }
+                    RawReverseEvent::ForceFeedbackUpload { .. }
+                    | RawReverseEvent::ForceFeedbackErase { .. } => DualSenseOutputEvent::Other,
+                    RawReverseEvent::ForceFeedback(event) => {
+                        DualSenseOutputEvent::ForceFeedback(event)
                     }
-                    RawReverseEvent::ForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    } => DualSenseOutputEvent::ConventionalForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    },
                     RawReverseEvent::Evdev(events) => DualSenseOutputEvent::ProviderEvent(events),
                     RawReverseEvent::HidOutput { report_id, bytes } => {
                         DualSenseOutputEvent::HidOutput(decode_dualsense_hid_output(
@@ -1079,24 +1069,6 @@ impl DualSenseController {
     pub fn reply_set_report(&mut self, request_id: u32, status: i16) -> Result<(), ProviderError> {
         self.0
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
-    }
-    pub fn reply_force_feedback_upload(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackUploadReply { request_id, status })
-        })
-    }
-    pub fn reply_force_feedback_erase(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackEraseReply { request_id, status })
-        })
     }
 }
 fn realization() -> NativeControllerRealization {
@@ -1241,6 +1213,30 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                SURFACE.common.outputs[0].event_type,
+                SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
 
     #[test]
     fn touch_validation_rejects_without_state_mutation() {

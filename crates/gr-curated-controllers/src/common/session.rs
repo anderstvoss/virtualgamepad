@@ -32,6 +32,7 @@ pub(crate) struct ControllerSession<D: HidDriver> {
     started: Instant,
     observations: VecDeque<RawReverseEvent>,
     dropped: u64,
+    feedback: super::feedback::Feedback,
 }
 impl<D: HidDriver> ControllerSession<D> {
     pub(super) fn native(runtime: ControllerRuntime<D, ProviderSessionSink>) -> Self {
@@ -41,6 +42,7 @@ impl<D: HidDriver> ControllerSession<D> {
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
+            feedback: super::feedback::Feedback::default(),
         }
     }
     pub(super) fn hid(driver: D, request: ProviderOpenRequest) -> Result<Self, ProviderError> {
@@ -58,6 +60,7 @@ impl<D: HidDriver> ControllerSession<D> {
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
+            feedback: super::feedback::Feedback::default(),
         })
     }
     pub(crate) const fn state(&self) -> &D::State {
@@ -162,6 +165,13 @@ impl<D: HidDriver> ControllerSession<D> {
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
         if let Backend::Native(r) = &mut self.backend {
+            if self.selection.target == gr_realization_api::RealizationTarget::Evdev {
+                let result = r.with_sink(|sink| self.feedback.service(sink, callback));
+                if result.is_err() {
+                    r.close();
+                }
+                return result;
+            }
             return r.with_sink(|sink| sink.drain(callback));
         }
         let result = self.service_hid();
@@ -186,13 +196,17 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(crate) fn wants_write(&self) -> bool {
         match &self.backend {
-            Backend::Native(_) => false,
+            Backend::Native(_) => self.feedback.pending(),
             Backend::Hid { runtime, .. } => runtime.wants_write(),
         }
     }
     pub(crate) fn next_service_in(&self) -> Option<Duration> {
         match &self.backend {
-            Backend::Native(_) => Some(Duration::from_millis(4)),
+            Backend::Native(_) => Some(if self.feedback.pending() {
+                Duration::ZERO
+            } else {
+                Duration::from_millis(4)
+            }),
             Backend::Hid { runtime, .. } => runtime
                 .deadline()
                 .map(|at| Duration::from_micros(at.saturating_sub(self.now()))),
@@ -218,6 +232,7 @@ impl<D: HidDriver> ControllerSession<D> {
             }
     }
     pub(crate) fn close(&mut self) {
+        self.feedback.clear();
         match &mut self.backend {
             Backend::Native(r) => {
                 r.with_sink(ProviderSessionSink::close);

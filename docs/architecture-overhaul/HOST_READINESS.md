@@ -56,3 +56,18 @@ DualSense baseline/rewrite acceptance and failure cleanup pass as recorded in
 no additional provisioning was required for these runs. Earlier survey entries
 are historical and do not describe current access. Steam, physical references
 and reserved gadget resources remain independently unvalidated.
+
+## Current conventional-feedback preparation
+
+Uinput registration was absent at the start of EXP-0010. The installed helper
+loaded only uinput through its existing policy. Existing ordinary-user creation
+and experiment-node access sufficed; no ACL or group changes were needed.
+Four-family conventional-feedback ioctls and cleanup passed. The module remains
+loaded for administrator review and both helper leases remain inactive. This
+supersedes the missing-uinput entry in the earlier core matrix. SDL evdev input
+acceptance remains a separate next step.
+
+The current run reports kernel `6.12.107+deb13-arm64`, unlike the earlier
+`6.12.105` UHID/SDL records. No kernel change or reboot was performed by this task.
+Recheck the recorded UHID/SDL configurations before claiming acceptance on the
+current kernel; preserve the older results with their original host version.

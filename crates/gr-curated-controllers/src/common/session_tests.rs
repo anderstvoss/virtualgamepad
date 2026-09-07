@@ -20,6 +20,8 @@ struct Record {
     fail: VecDeque<ProviderError>,
     closed: bool,
     destroys: usize,
+    burst: usize,
+    read_error: Option<ProviderError>,
 }
 struct Fake(Arc<Mutex<Record>>);
 impl NativeProviderSession for Fake {
@@ -49,6 +51,18 @@ impl NativeProviderSession for Fake {
             sequence: 1,
             event,
         });
+        for _ in 1..r.burst {
+            if let Some(event) = r.events.pop_front() {
+                out.push(ProviderReverseEvent {
+                    session: RealizationSessionId(7),
+                    sequence: 1,
+                    event,
+                });
+            }
+        }
+        if let Some(error) = r.read_error.take() {
+            return Err(error);
+        }
         Ok(())
     }
     fn readiness(&self) -> EventReadiness {
@@ -317,4 +331,396 @@ fn malformed_set_completes_or_closes_in_its_consuming_cycle() {
             ));
         }
     }
+}
+
+fn evdev_rig<D: HidDriver>(driver: D) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
+    let prepared = prepare_realization(&driver, RealizationTarget::Evdev).unwrap();
+    assert!(
+        prepared
+            .entry()
+            .provider_requirements
+            .requires_reverse_output
+    );
+    let record = Arc::new(Mutex::new(Record::default()));
+    let runtime = ControllerRuntime::new(
+        driver,
+        ProviderSessionSink {
+            session: Box::new(Fake(record.clone())),
+            closed: false,
+        },
+        prepared,
+    )
+    .unwrap();
+    (ControllerSession::native(runtime), record)
+}
+fn rumble(id: i16) -> gr_realization_api::ForceFeedbackEffect {
+    gr_realization_api::ForceFeedbackEffect::Rumble(gr_realization_api::RumbleEffect {
+        id,
+        strong: 1234,
+        weak: 5678,
+        length_ms: 321,
+        delay_ms: 17,
+        trigger_button: 0,
+        trigger_interval_ms: 0,
+    })
+}
+fn evdev_poll<D: HidDriver>(
+    session: &mut ControllerSession<D>,
+    record: &Arc<Mutex<Record>>,
+    event: RawReverseEvent,
+) -> Vec<RawReverseEvent> {
+    record.lock().unwrap().events.push_back(event);
+    let mut observations = Vec::new();
+    session
+        .drain(&mut |event| observations.push(event))
+        .unwrap();
+    observations
+}
+fn feedback_cycle<D: HidDriver>(driver: D) {
+    use gr_realization_api::{EvdevEvent, ForceFeedbackEvent};
+    let (mut session, record) = evdev_rig(driver);
+    let effect = rumble(3);
+    let observation = evdev_poll(
+        &mut session,
+        &record,
+        RawReverseEvent::ForceFeedbackUpload {
+            request_id: 99,
+            effect,
+        },
+    );
+    assert_eq!(
+        record.lock().unwrap().sent,
+        vec![ProviderFrame::ForceFeedbackUploadReply {
+            request_id: 99,
+            status: 0,
+        }]
+    );
+    assert_eq!(
+        observation,
+        vec![RawReverseEvent::ForceFeedback(
+            ForceFeedbackEvent::Uploaded {
+                request_id: 99,
+                effect,
+                status: 0,
+            }
+        )]
+    );
+    let play = |value| {
+        RawReverseEvent::Evdev(vec![EvdevEvent {
+            event_type: EV_FF,
+            code: 3,
+            value,
+        }])
+    };
+    // Explicit stop followed by the kernel erase stop are both valid commands.
+    for repetitions in [2, 0, 0] {
+        let observation = evdev_poll(&mut session, &record, play(repetitions));
+        assert!(
+            matches!(&observation[0], RawReverseEvent::ForceFeedback(ForceFeedbackEvent::Playback {
+            effect, repetitions: count,
+        }) if effect.strong == 1234 && effect.weak == 5678 && effect.length_ms == 321
+            && effect.delay_ms == 17 && *count == u32::try_from(repetitions).unwrap())
+        );
+    }
+    evdev_poll(
+        &mut session,
+        &record,
+        RawReverseEvent::ForceFeedbackErase {
+            request_id: 99,
+            effect_id: 3,
+        },
+    );
+    assert_eq!(
+        record.lock().unwrap().sent.last(),
+        Some(&ProviderFrame::ForceFeedbackEraseReply {
+            request_id: 99,
+            status: 0
+        })
+    );
+    assert_eq!(evdev_poll(&mut session, &record, play(1)), vec![play(1)]);
+    for _ in 0..10 {
+        session
+            .drain(&mut |_| panic!("duplicate observation"))
+            .unwrap();
+    }
+    assert_eq!(record.lock().unwrap().sent.len(), 2);
+    session.close();
+    session.close();
+    assert!(matches!(
+        session.drain(&mut |_| panic!("closed callback")),
+        Err(ProviderError::Closed)
+    ));
+    assert!(session.commit().is_err());
+    drop(session);
+    assert_eq!(record.lock().unwrap().destroys, 1);
+}
+#[test]
+fn all_families_complete_evdev_upload_play_stop_erase_in_consuming_poll() {
+    feedback_cycle(DualSenseDefinition);
+    feedback_cycle(DualShock4Definition);
+    feedback_cycle(SwitchProDefinition);
+    feedback_cycle(Xbox360Definition);
+}
+#[test]
+fn evdev_rejects_unsupported_effects_and_invalid_ids_with_exact_errors() {
+    use gr_realization_api::ForceFeedbackEffect;
+    let (mut session, record) = evdev_rig(DualShock4Definition);
+    let ForceFeedbackEffect::Rumble(mut triggered) = rumble(0) else {
+        unreachable!()
+    };
+    triggered.trigger_button = 1;
+    for (effect, status) in [
+        (ForceFeedbackEffect::Unsupported { id: 0, kind: 0x51 }, -95),
+        (rumble(-1), -22),
+        (rumble(64), -22),
+        (ForceFeedbackEffect::Rumble(triggered), -95),
+    ] {
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackUpload {
+                request_id: 7,
+                effect,
+            },
+        );
+        assert_eq!(
+            record.lock().unwrap().sent.last(),
+            Some(&ProviderFrame::ForceFeedbackUploadReply {
+                request_id: 7,
+                status
+            })
+        );
+    }
+    for effect_id in [0, 64, u32::MAX] {
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackErase {
+                request_id: 7,
+                effect_id,
+            },
+        );
+        assert_eq!(
+            record.lock().unwrap().sent.last(),
+            Some(&ProviderFrame::ForceFeedbackEraseReply {
+                request_id: 7,
+                status: -22
+            })
+        );
+    }
+}
+#[test]
+fn evdev_unsent_reply_is_owned_retried_and_observed_exactly_once() {
+    let (mut session, record) = evdev_rig(SwitchProDefinition);
+    record
+        .lock()
+        .unwrap()
+        .fail
+        .push_back(ProviderError::WouldBlock);
+    assert!(
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackUpload {
+                request_id: 42,
+                effect: rumble(0)
+            }
+        )
+        .is_empty()
+    );
+    assert!(session.wants_write());
+    assert_eq!(session.next_service_in(), Some(std::time::Duration::ZERO));
+    let mut seen = Vec::new();
+    session.drain(&mut |event| seen.push(event)).unwrap();
+    assert_eq!(seen.len(), 1);
+    assert!(!session.wants_write());
+    let r = record.lock().unwrap();
+    assert_eq!(r.attempts.len(), 2);
+    assert_eq!(r.attempts[0], r.attempts[1]);
+    assert_eq!(r.sent.len(), 1);
+}
+#[test]
+fn evdev_uncertain_completion_and_exhausted_retries_close_terminally() {
+    for error in [
+        ProviderError::Write {
+            reason: "uncertain ioctl".into(),
+        },
+        ProviderError::WouldBlock,
+    ] {
+        let (mut session, record) = evdev_rig(DualShock4Definition);
+        record
+            .lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::ForceFeedbackUpload {
+                request_id: 1,
+                effect: rumble(0),
+            });
+        for _ in 0..9 {
+            record.lock().unwrap().fail.push_back(error.clone());
+        }
+        let mut failed = false;
+        for _ in 0..9 {
+            if session
+                .drain(&mut |_| panic!("unconfirmed completion"))
+                .is_err()
+            {
+                failed = true;
+                break;
+            }
+        }
+        assert!(failed);
+        assert!(!session.wants_write());
+        assert!(session.update_state(|_| Ok(())).is_err());
+        session.close();
+        session.close();
+        drop(session);
+        assert_eq!(record.lock().unwrap().destroys, 1);
+    }
+}
+#[test]
+fn evdev_effect_ownership_is_independent_across_same_application_ids() {
+    let (mut first, one) = evdev_rig(DualShock4Definition);
+    let (mut second, two) = evdev_rig(DualShock4Definition);
+    evdev_poll(
+        &mut first,
+        &one,
+        RawReverseEvent::ForceFeedbackUpload {
+            request_id: 1,
+            effect: rumble(0),
+        },
+    );
+    evdev_poll(
+        &mut second,
+        &two,
+        RawReverseEvent::ForceFeedbackUpload {
+            request_id: 1,
+            effect: rumble(0),
+        },
+    );
+    first.close();
+    evdev_poll(
+        &mut second,
+        &two,
+        RawReverseEvent::ForceFeedbackErase {
+            request_id: 1,
+            effect_id: 0,
+        },
+    );
+    assert_eq!(
+        two.lock().unwrap().sent.last(),
+        Some(&ProviderFrame::ForceFeedbackEraseReply {
+            request_id: 1,
+            status: 0
+        })
+    );
+    assert_eq!(one.lock().unwrap().destroys, 1);
+    assert_eq!(two.lock().unwrap().destroys, 0);
+}
+
+#[test]
+fn evdev_overflow_and_partial_read_failure_cancel_owned_requests() {
+    for overflow in [false, true] {
+        let (mut session, record) = evdev_rig(SwitchProDefinition);
+        {
+            let mut r = record.lock().unwrap();
+            r.burst = 33;
+            if !overflow {
+                r.read_error = Some(ProviderError::Read {
+                    reason: "removed after begin".into(),
+                });
+            }
+            for request_id in 0..if overflow { 33 } else { 1 } {
+                r.events.push_back(RawReverseEvent::ForceFeedbackUpload {
+                    request_id,
+                    effect: rumble(0),
+                });
+            }
+        }
+        assert!(
+            session
+                .drain(&mut |_| panic!("unconfirmed completion"))
+                .is_err()
+        );
+        assert!(!session.wants_write());
+        session.close();
+        let r = record.lock().unwrap();
+        assert_eq!(r.destroys, 1);
+        assert!(r.sent.is_empty());
+    }
+}
+#[test]
+fn evdev_effect_table_accepts_all_slots_and_updates_without_growing() {
+    let (mut session, record) = evdev_rig(DualShock4Definition);
+    for id in 0..64 {
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackUpload {
+                request_id: 0,
+                effect: rumble(id),
+            },
+        );
+        assert_eq!(
+            record.lock().unwrap().sent.last(),
+            Some(&ProviderFrame::ForceFeedbackUploadReply {
+                request_id: 0,
+                status: 0
+            })
+        );
+    }
+    for _ in 0..100 {
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackUpload {
+                request_id: 0,
+                effect: rumble(63),
+            },
+        );
+    }
+    for effect_id in 0..64 {
+        evdev_poll(
+            &mut session,
+            &record,
+            RawReverseEvent::ForceFeedbackErase {
+                request_id: 0,
+                effect_id,
+            },
+        );
+        assert_eq!(
+            record.lock().unwrap().sent.last(),
+            Some(&ProviderFrame::ForceFeedbackEraseReply {
+                request_id: 0,
+                status: 0
+            })
+        );
+    }
+}
+#[test]
+fn closing_an_unsent_evdev_completion_cannot_resurrect_it() {
+    let (mut session, record) = evdev_rig(Xbox360Definition);
+    record
+        .lock()
+        .unwrap()
+        .fail
+        .push_back(ProviderError::WouldBlock);
+    evdev_poll(
+        &mut session,
+        &record,
+        RawReverseEvent::ForceFeedbackUpload {
+            request_id: 8,
+            effect: rumble(0),
+        },
+    );
+    session.close();
+    session.close();
+    assert!(!session.wants_write());
+    assert!(
+        session
+            .drain(&mut |_| panic!("closed observation"))
+            .is_err()
+    );
+    assert_eq!(record.lock().unwrap().attempts.len(), 1);
+    assert_eq!(record.lock().unwrap().destroys, 1);
 }

@@ -118,3 +118,13 @@ An optional [local development helper](architecture-overhaul/LOCAL_HOST_HELPER.m
 provides temporary creation-device ACLs, approved module loading, and configured
 root-owned validation jobs. It is installed once by an administrator and is not a
 product dependency or a general passwordless-sudo grant.
+
+### Conventional evdev acceptance
+
+`cargo test -p gr-curated-controllers --test evdev_feedback_live
+all_families_complete_live_evdev_feedback -- --ignored --nocapture` (one shell
+command) checks upload/update/play/stop/erase using exact created event nodes.
+Run it as the ordinary user after selected uinput installation and consumer
+access preparation. It needs neither SDL nor a privileged test suite. Full SDL
+input parity remains separate. The demo observes typed playback activity; it no
+longer acknowledges effect uploads or treats storing an effect as playback.

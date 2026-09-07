@@ -20,6 +20,11 @@ See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the pri
 
 UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `poll_output` on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow. UHID transport identities distinguish repeated creations independently of caller session IDs; oversized identity strings are rejected rather than truncated.
 
+Curated uinput sessions also require polling while input is idle. They complete
+conventional force-feedback upload/erase requests internally and expose typed
+`ForceFeedbackEvent` observations and replay commands. Applications no longer
+send manual force-feedback replies. See the [ownership contract](docs/architecture-overhaul/decisions/ADR-0006-conventional-feedback.md).
+
 `CreationOptions.target` accepts `RealizationId::LINUX_UINPUT`, `LINUX_UHID_USB`, or `LINUX_DUMMY_HCD_USB_HID`. The old target names remain aliases. DualSense pairing addresses are generated once per creation from OS entropy and remain stable across protocol retries. Required HID replies are protocol-owned; application reply methods cannot override or duplicate them. Switch stream status is available on the controller handle.
 
 The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. The broker's dynamic protocol migration, composite/audio behavior, and Bluetooth extensions are not complete.

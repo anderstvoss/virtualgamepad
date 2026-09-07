@@ -97,6 +97,9 @@ three concurrent reused-ID sessions with independent removal.
 Switch and standard-HID Xbox, with explicit output limitations. Xbox neutral
 acceptance exposed and fixed unsigned-axis/routing errors. Current evdev
 acceptance, remaining family concurrency/failure tests and Switch rumble fidelity
-remain outstanding. DS4/Switch evdev force-feedback completion needs review.
+remain outstanding. [EXP-0010](experiments/EXP-0010-evdev-feedback.md) closes
+the measured conventional FF completion path for all four families;
+[ADR-0006](decisions/ADR-0006-conventional-feedback.md) records bounded ownership
+and the callback API migration. Full evdev SDL parity remains outstanding.
 G stays blocked on both reserved setup and the recorded protocol-interface gap;
 no kernel replacement or broad provisioning was attempted.

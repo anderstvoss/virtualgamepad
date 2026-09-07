@@ -1,3 +1,4 @@
+mod feedback;
 mod snapshot;
 pub(crate) use snapshot::{SnapshotProtocol, logical_input};
 mod session;
@@ -19,6 +20,18 @@ use gr_realization_api::{
     RawReverseEvent, RealizationTarget,
 };
 pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
+
+pub(crate) const CONVENTIONAL_RUMBLE: [gr_controller_contract::OutputSurface; 1] =
+    [gr_controller_contract::OutputSurface {
+        name: "conventional-rumble",
+        event_type: 21,
+        event_code: 0x50,
+    }];
+pub(crate) const FEEDBACK_RESTRICTION: gr_controller_contract::TargetRestriction =
+    gr_controller_contract::TargetRestriction {
+        feature: "automatic force-feedback trigger",
+        reason: "curated evdev policy accepts 64 replayable rumble effects but does not implement button-triggered playback",
+    };
 
 pub(crate) const EV_SYN: u16 = 0;
 pub(crate) const EV_KEY: u16 = 1;
@@ -66,16 +79,19 @@ impl ProviderSessionSink {
         &mut self,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
-        let mut events: Vec<ProviderReverseEvent> = Vec::new();
-        match self.session.drain_reverse_events(&mut events) {
-            Ok(()) => {}
-            Err(ProviderError::WouldBlock) => return Ok(()),
-            Err(error) => return Err(error),
+        struct Delivery<'a>(&'a mut dyn FnMut(RawReverseEvent));
+        impl gr_realization_api::ProviderReverseEventSink for Delivery<'_> {
+            fn push(&mut self, event: ProviderReverseEvent) {
+                self.0(event.event);
+            }
         }
-        for event in events {
-            callback(event.event);
+        if self.closed {
+            return Err(ProviderError::Closed);
         }
-        Ok(())
+        match self.session.drain_reverse_events(&mut Delivery(callback)) {
+            Err(ProviderError::WouldBlock) => Ok(()),
+            result => result,
+        }
     }
 
     pub(crate) fn reply(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {

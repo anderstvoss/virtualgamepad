@@ -439,6 +439,41 @@ pub struct EvdevEvent {
     pub code: u16,
     pub value: i32,
 }
+/// Transport-neutral Linux conventional rumble upload, with native ABI padding removed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RumbleEffect {
+    pub id: i16,
+    pub strong: u16,
+    pub weak: u16,
+    pub length_ms: u16,
+    pub delay_ms: u16,
+    pub trigger_button: u16,
+    pub trigger_interval_ms: u16,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForceFeedbackEffect {
+    Rumble(RumbleEffect),
+    Unsupported { id: i16, kind: u16 },
+}
+/// Observations of controller-owned completion, or playback commands for stored effects.
+/// Playback carries replay timing; an upload alone does not start a motor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForceFeedbackEvent {
+    Uploaded {
+        request_id: u32,
+        effect: ForceFeedbackEffect,
+        status: i32,
+    },
+    Erased {
+        request_id: u32,
+        effect_id: u32,
+        status: i32,
+    },
+    Playback {
+        effect: RumbleEffect,
+        repetitions: u32,
+    },
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawReverseEvent {
     HidLifecycle(gr_hid::Lifecycle),
@@ -458,9 +493,10 @@ pub enum RawReverseEvent {
         report_type: u8,
         bytes: Vec<u8>,
     },
+    ForceFeedback(ForceFeedbackEvent),
     ForceFeedbackUpload {
         request_id: u32,
-        effect: Vec<u8>,
+        effect: ForceFeedbackEffect,
     },
     ForceFeedbackErase {
         request_id: u32,

@@ -239,7 +239,12 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 2] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
+    common::FEEDBACK_RESTRICTION,
+    TargetRestriction {
+        feature: "HD rumble",
+        reason: "evdev FF_RUMBLE represents two magnitudes, not Switch frequency/amplitude encoding",
+    },
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful Switch Pro IMU presentation",
@@ -252,7 +257,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
     },
 };
@@ -286,7 +291,7 @@ impl RealizationControllerDefinition for SwitchProDefinition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -816,6 +821,8 @@ fn dummy_hcd_reply(
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    ProviderEvent(Vec<EvdevEvent>),
     HidLifecycle(gr_hid::Lifecycle),
     Output {
         report_id: Option<u8>,
@@ -831,6 +838,8 @@ pub enum SwitchProOutputEvent {
 impl From<RawReverseEvent> for SwitchProOutputEvent {
     fn from(e: RawReverseEvent) -> Self {
         match e {
+            RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
+            RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
             RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
@@ -882,6 +891,30 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(EVDEV_SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                EVDEV_SURFACE.common.outputs[0].event_type,
+                EVDEV_SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
+
     #[test]
     fn openpuck_motion_triplicates_and_maps_axes() {
         let s = SwitchProState {
@@ -981,6 +1014,11 @@ mod tests {
             panic!("evdev realization")
         };
         assert_eq!(realization.identity.product_id, 0x2009);
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "HD rumble")
+        );
         assert_eq!(realization.absolute_axes.len(), AXES.len());
     }
 
@@ -1075,6 +1113,11 @@ mod tests {
         assert_eq!(realization.device_name, "Pro Controller");
         assert_eq!(realization.identity.vendor_id, 0x057e);
         assert_eq!(realization.identity.product_id, 0x2009);
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "HD rumble")
+        );
         assert_eq!(realization.identity.version, 0x0220);
     }
 

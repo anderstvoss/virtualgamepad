@@ -265,7 +265,8 @@ static DUMMY_HCD_RESTRICTIONS: [TargetRestriction; 3] = [
         reason: "this best-effort USB attachment is curated standard HID, not the proprietary Xbox USB protocol",
     },
 ];
-static RESTRICTIONS: [TargetRestriction; 2] = [
+static RESTRICTIONS: [TargetRestriction; 3] = [
+    common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "headset-audio",
         reason: "requires a separately declared audio sidecar",
@@ -316,7 +317,7 @@ impl RealizationControllerDefinition for Xbox360Definition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -467,15 +468,9 @@ impl TargetAwareControllerDriver for Xbox360Definition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Xbox360OutputEvent {
+    Other,
     HidLifecycle(gr_hid::Lifecycle),
-    ForceFeedbackUpload {
-        request_id: u32,
-        effect: Vec<u8>,
-    },
-    ForceFeedbackErase {
-        request_id: u32,
-        effect_id: u32,
-    },
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
     ProviderEvent(Vec<EvdevEvent>),
     HidOutput {
         report_id: Option<u8>,
@@ -595,16 +590,11 @@ impl Xbox360Controller {
             sink.drain(&mut |event| {
                 let output = match event {
                     RawReverseEvent::HidLifecycle(event) => Xbox360OutputEvent::HidLifecycle(event),
-                    RawReverseEvent::ForceFeedbackUpload { request_id, effect } => {
-                        Xbox360OutputEvent::ForceFeedbackUpload { request_id, effect }
+                    RawReverseEvent::ForceFeedbackUpload { .. }
+                    | RawReverseEvent::ForceFeedbackErase { .. } => Xbox360OutputEvent::Other,
+                    RawReverseEvent::ForceFeedback(event) => {
+                        Xbox360OutputEvent::ForceFeedback(event)
                     }
-                    RawReverseEvent::ForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    } => Xbox360OutputEvent::ForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    },
                     RawReverseEvent::Evdev(events) => Xbox360OutputEvent::ProviderEvent(events),
                     RawReverseEvent::HidOutput { report_id, bytes } => {
                         Xbox360OutputEvent::HidOutput { report_id, bytes }
@@ -652,24 +642,6 @@ impl Xbox360Controller {
         self.0
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
-    pub fn reply_force_feedback_upload(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackUploadReply { request_id, status })
-        })
-    }
-    pub fn reply_force_feedback_erase(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackEraseReply { request_id, status })
-        })
-    }
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -679,7 +651,7 @@ fn realization() -> NativeControllerRealization {
             product_id: 0x028e,
             version: 1,
         },
-        event_codes: vec![common::EV_KEY, common::EV_ABS],
+        event_codes: vec![common::EV_KEY, common::EV_ABS, common::EV_FF],
         key_codes: DIGITAL.iter().map(|control| control.event_code).collect(),
         absolute_axes: AXES
             .iter()
@@ -756,6 +728,30 @@ fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
 mod tests {
     use super::*;
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                SURFACE.common.outputs[0].event_type,
+                SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
 
     #[test]
     fn standard_hid_axes_match_unsigned_descriptor_and_trigger_positions() {

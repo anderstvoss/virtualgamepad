@@ -27,11 +27,11 @@ pub use gr_curated_controllers::{
     create_dualshock4, create_switch_pro, create_xbox360,
 };
 pub use gr_realization_api::{
-    ControllerId, EventReadiness, NativeControllerRealization, NativeHidReportKey,
-    NativeProviderFactory, NativeProviderSession, NativeRealizationError, ProviderCapabilities,
-    ProviderDiagnostics, ProviderError, ProviderFrame, ProviderOpenRequest,
-    ProviderOpenValidationError, ProviderPreflightError, ProviderRequirements,
-    ProviderReverseEvent, ProviderReverseEventSink, ProviderState, RawReverseEvent,
-    RealizationError, RealizationId, RealizationSelection, RealizationSessionId, RealizationTarget,
-    RealizationTargetSet, validate_provider,
+    ControllerId, EventReadiness, ForceFeedbackEffect, ForceFeedbackEvent,
+    NativeControllerRealization, NativeHidReportKey, NativeProviderFactory, NativeProviderSession,
+    NativeRealizationError, ProviderCapabilities, ProviderDiagnostics, ProviderError,
+    ProviderFrame, ProviderOpenRequest, ProviderOpenValidationError, ProviderPreflightError,
+    ProviderRequirements, ProviderReverseEvent, ProviderReverseEventSink, ProviderState,
+    RawReverseEvent, RealizationError, RealizationId, RealizationSelection, RealizationSessionId,
+    RealizationTarget, RealizationTargetSet, RumbleEffect, validate_provider,
 };

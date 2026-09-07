@@ -73,3 +73,13 @@ acquire a locally administered unicast address from OS entropy before
 provider open, independently of application session IDs. Its personality retains
 the address across GETs/retries; entropy failure rejects creation. Deterministic
 tests inject identities without OS entropy.
+
+## Conventional evdev feedback ownership
+
+All curated evdev controllers service required upload/erase replies internally
+during `poll_output`. `ForceFeedback(ForceFeedbackEvent)` reports completed uploads,
+erasures and playback commands with stored magnitudes and replay timing. Callers
+must remove the old manual force-feedback reply calls. Low-level provider users
+still reply explicitly to typed mechanism requests. See
+[ADR-0006](../../architecture-overhaul/decisions/ADR-0006-conventional-feedback.md)
+for bounded ownership, rejected fields and terminal error behavior.

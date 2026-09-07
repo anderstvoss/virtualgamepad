@@ -220,6 +220,21 @@ impl ReverseIndicators {
             self.rumble_until = None;
         }
     }
+    fn apply_force_feedback(&mut self, event: virtualgamepad::ForceFeedbackEvent) {
+        if let virtualgamepad::ForceFeedbackEvent::Playback {
+            effect,
+            repetitions,
+        } = event
+        {
+            // Activity pulse, not a simulation of replay timing or physical motors.
+            if repetitions != 0 && (effect.strong != 0 || effect.weak != 0) {
+                self.rumble_pulse();
+            } else {
+                self.set_rumble(false);
+                self.rumble_until = None;
+            }
+        }
+    }
     fn apply_hid_output(
         &mut self,
         right_motor: Option<u8>,
@@ -300,93 +315,43 @@ impl Controller {
             Self::SwitchPro(controller) => controller.is_dirty(),
         }
     }
-    #[allow(clippy::too_many_lines)] // Acknowledgements must stay adjacent to typed decoding.
     fn poll_output(
         &mut self,
         log: &mut Vec<String>,
         indicators: &mut ReverseIndicators,
     ) -> Result<(), String> {
         let result: Result<(), String> = match self {
-            Self::Xbox(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match event {
-                            Xbox360OutputEvent::ForceFeedbackUpload { request_id, .. } => {
-                                indicators.rumble_pulse();
-                                replies.push((request_id, true));
-                            }
-                            Xbox360OutputEvent::ForceFeedbackErase { request_id, .. } => {
-                                replies.push((request_id, false));
-                            }
-                            _ => {}
-                        }
-                        log.push(format!("Xbox 360: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
+            Self::Xbox(controller) => controller
+                .poll_output(&mut |event| {
+                    if let Xbox360OutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
                     }
-                }
-                Ok(())
-            }
-            Self::DualSense(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match &event {
-                            DualSenseOutputEvent::ConventionalForceFeedbackUpload {
-                                request_id,
-                                ..
-                            } => {
-                                indicators.rumble_pulse();
-                                replies.push((*request_id, true));
-                            }
-                            DualSenseOutputEvent::ConventionalForceFeedbackErase {
-                                request_id,
-                                ..
-                            } => {
-                                replies.push((*request_id, false));
-                            }
-                            DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
-                                right_motor,
-                                left_motor,
-                                lightbar_rgb,
-                                mute_button_led,
-                                ..
-                            }) => {
-                                indicators.apply_hid_output(
-                                    *right_motor,
-                                    *left_motor,
-                                    *lightbar_rgb,
-                                    *mute_button_led,
-                                );
-                            }
-                            _ => {}
+                    log.push(format!("Xbox 360: {event:?}"));
+                })
+                .map_err(|error| error.to_string()),
+            Self::DualSense(controller) => controller
+                .poll_output(&mut |event| {
+                    match &event {
+                        DualSenseOutputEvent::ForceFeedback(event) => {
+                            indicators.apply_force_feedback(*event);
                         }
-                        log.push(format!("DualSense: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
+                        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+                            right_motor,
+                            left_motor,
+                            lightbar_rgb,
+                            mute_button_led,
+                            ..
+                        }) => indicators.apply_hid_output(
+                            *right_motor,
+                            *left_motor,
+                            *lightbar_rgb,
+                            *mute_button_led,
+                        ),
+                        _ => {}
                     }
-                }
-                Ok(())
-            }
+                    log.push(format!("DualSense: {event:?}"));
+                })
+                .map_err(|error| error.to_string()),
             Self::DualShock4(controller) => controller
                 .poll_output(&mut |event| {
                     if let virtualgamepad::DualShock4OutputEvent::HidOutput(
@@ -405,11 +370,19 @@ impl Controller {
                             None,
                         );
                     }
+                    if let virtualgamepad::DualShock4OutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
+                    }
                     log.push(format!("DualShock 4: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
             Self::SwitchPro(controller) => controller
-                .poll_output(&mut |event| log.push(format!("Switch Pro: {event:?}")))
+                .poll_output(&mut |event| {
+                    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
+                    }
+                    log.push(format!("Switch Pro: {event:?}"));
+                })
                 .map_err(|error| error.to_string()),
         };
         result
@@ -1535,6 +1508,39 @@ mod tests {
             vec![0, 1, 2, 3]
         );
         assert_eq!(controller_tab_indices(12).count(), 12);
+    }
+
+    #[test]
+    fn effect_upload_is_not_playback_and_stop_clears_activity() {
+        use virtualgamepad::{ForceFeedbackEffect, ForceFeedbackEvent, RumbleEffect};
+        let mut indicators = ReverseIndicators::default();
+        let effect = RumbleEffect {
+            id: 0,
+            strong: 1,
+            weak: 2,
+            length_ms: 100,
+            delay_ms: 0,
+            trigger_button: 0,
+            trigger_interval_ms: 0,
+        };
+        indicators.apply_force_feedback(ForceFeedbackEvent::Uploaded {
+            request_id: 7,
+            effect: ForceFeedbackEffect::Rumble(effect),
+            status: 0,
+        });
+        assert!(!indicators.rumble_active);
+        assert!(indicators.rumble_until.is_none());
+        indicators.apply_force_feedback(ForceFeedbackEvent::Playback {
+            effect,
+            repetitions: 1,
+        });
+        assert!(indicators.rumble_until.is_some());
+        indicators.apply_force_feedback(ForceFeedbackEvent::Playback {
+            effect,
+            repetitions: 0,
+        });
+        assert!(!indicators.rumble_active);
+        assert!(indicators.rumble_until.is_none());
     }
 
     #[test]

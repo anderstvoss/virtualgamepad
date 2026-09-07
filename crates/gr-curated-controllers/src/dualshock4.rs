@@ -363,7 +363,8 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
+    common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful DualShock 4 IMU presentation",
@@ -384,7 +385,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
     },
 };
@@ -419,7 +420,7 @@ impl RealizationControllerDefinition for DualShock4Definition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -847,6 +848,8 @@ impl DualShock4Controller {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualShock4OutputEvent {
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    ProviderEvent(Vec<EvdevEvent>),
     HidLifecycle(gr_hid::Lifecycle),
     HidOutput(DualShock4HidOutput),
     HostRequest {
@@ -888,6 +891,8 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
 impl From<RawReverseEvent> for DualShock4OutputEvent {
     fn from(value: RawReverseEvent) -> Self {
         match value {
+            RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
+            RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
             RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => {
                 Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
@@ -974,6 +979,30 @@ impl common::HidDriver for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(EVDEV_SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                EVDEV_SURFACE.common.outputs[0].event_type,
+                EVDEV_SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
+
     #[test]
     fn pairing_requests_keep_injected_creation_identity_not_session_bits() {
         use common::HidDriver;

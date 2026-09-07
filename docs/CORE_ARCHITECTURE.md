@@ -30,7 +30,7 @@ The UHID provider handles CREATE2, INPUT2, output, GET/SET requests and replies,
 
 Input/output/feature classes remain distinct. Logical payloads exclude a numbered report ID; serialization includes it once. Unnumbered reports use no logical ID. START flags are the runtime authority for numbering. STOP, START, consumer OPEN/CLOSE, and terminal library close have distinct meanings. Each request receives a session-scoped ordinal independently of a reusable kernel transaction ID.
 
-The uinput path retains transactional evdev encoding and conventional force-feedback request handling. The existing dummy_hcd path retains its compiled broker startup behavior until Gate G establishes dynamic forwarding capability and latency. This is a migration boundary, not a claim that the broker rewrite is complete. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
+The uinput path retains transactional evdev encoding. Curated controller sessions own conventional force-feedback acceptance, 64 stored effects, bounded completion retries and typed playback observations; uinput only decodes native ABI fields and executes replies. Applications no longer acknowledge curated upload/erase callbacks. See [ADR-0006](architecture-overhaul/decisions/ADR-0006-conventional-feedback.md). The existing dummy_hcd path retains its compiled broker startup behavior until Gate G establishes dynamic forwarding capability and latency. This is a migration boundary, not a claim that the broker rewrite is complete. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
 
 ## State, scheduling, and delivery
 
