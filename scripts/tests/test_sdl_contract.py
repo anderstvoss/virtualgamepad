@@ -21,6 +21,14 @@ int main(void) {
     assert(!probe_path_matches("/dev/hidraw1", NULL));
     assert(!probe_path_matches("", ""));
     assert(!probe_unique_match(0) && probe_unique_match(1) && !probe_unique_match(2));
+    ProbeAxis axis = {0};
+    assert(!probe_axis_swept(&axis, true));
+    probe_axis_observe(&axis, 32767);
+    assert(axis.minimum == 32767 && !probe_axis_swept(&axis, true));
+    probe_axis_observe(&axis, 0);
+    assert(probe_axis_swept(&axis, true) && !probe_axis_swept(&axis, false));
+    probe_axis_observe(&axis, -32768);
+    assert(probe_axis_swept(&axis, false));
     ProbeSensor sensor = {0};
     const float first[3] = {1,2,3}, second[3] = {2,3,4}, invalid_values[3] = {NAN,0,0};
     probe_observe(&sensor, 1, first);

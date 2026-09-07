@@ -156,7 +156,12 @@ fn wait_for_service(controller: &gr_curated_controllers::DualSenseController) {
 }
 
 fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, step: u16) {
-    let value = u8::try_from(step % 256).unwrap();
+    let neutral = step % 1250 < 125;
+    let value = if neutral {
+        128
+    } else {
+        u8::try_from(step % 256).unwrap()
+    };
     for control in [
         DualSenseControl::Cross,
         DualSenseControl::Circle,
@@ -171,7 +176,7 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
         DualSenseControl::RightStickPress,
     ] {
         controller
-            .set_native(control, (step / 100) % 2 == 0)
+            .set_native(control, !neutral && (step / 100) % 2 == 0)
             .unwrap();
     }
     for (index, direction) in [
@@ -186,20 +191,26 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
         controller
             .set_digital(DigitalControlUpdate::Dpad {
                 direction,
-                pressed: usize::from((step / 100) % 5) == index,
+                pressed: !neutral && usize::from((step / 100) % 5) == index,
             })
             .unwrap();
     }
     controller
-        .set_left_stick(DualSenseAxis::new(value), DualSenseAxis::new(255 - value))
+        .set_left_stick(
+            DualSenseAxis::new(value),
+            DualSenseAxis::new(if neutral { 128 } else { 255 - value }),
+        )
         .unwrap();
     controller
-        .set_right_stick(DualSenseAxis::new(255 - value), DualSenseAxis::new(value))
+        .set_right_stick(
+            DualSenseAxis::new(if neutral { 128 } else { 255 - value }),
+            DualSenseAxis::new(value),
+        )
         .unwrap();
     controller
         .set_triggers(
-            DualSenseTrigger::new(value),
-            DualSenseTrigger::new(255 - value),
+            DualSenseTrigger::new(if neutral { 0 } else { value }),
+            DualSenseTrigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
     controller
@@ -211,7 +222,7 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
     controller
         .set_touch(
             TouchSlot::First,
-            if (step / 100) % 2 == 0 {
+            if !neutral && (step / 100) % 2 == 0 {
                 Some(DualSenseTouchContact::new(1, u16::from(value) * 4, 100).unwrap())
             } else {
                 None

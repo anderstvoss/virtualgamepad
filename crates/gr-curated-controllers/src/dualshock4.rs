@@ -660,34 +660,27 @@ fn advance_ds4_timing(state: &mut DualShock4State) {
     }
 }
 
-fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
-    dualshock4_feature_responses([
-        2,
-        0,
-        0,
-        0,
-        (session.0 & 255) as u8,
-        ((session.0 >> 8) & 255) as u8,
-    ])
-    .into_iter()
-    .map(|(report_id, bytes)| {
-        (
-            NativeHidReportKey {
-                report_id,
-                report_type: F,
-            },
-            bytes,
-        )
-    })
-    .collect()
+    dualshock4_feature_responses(identity)
+        .into_iter()
+        .map(|(report_id, bytes)| {
+            (
+                NativeHidReportKey {
+                    report_id,
+                    report_type: F,
+                },
+                bytes,
+            )
+        })
+        .collect()
 }
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
-        // `common::create` appends the realization session exactly once.
+        // `common::create` appends a compact creation identity exactly once.
         physical_path: "virtualgamepad/uhid/dualshock4".into(),
         unique_id: "virtualgamepad-dualshock4".into(),
         identity: NativeDeviceIdentity {
@@ -927,7 +920,10 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
 }
 impl common::HidDriver for DualShock4Definition {
     type Hid = common::SnapshotProtocol<DualShock4State>;
-    fn hid_protocol(&self, session: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
+    fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
+        common::creation_identity()
+    }
+    fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
         #[allow(clippy::cast_possible_truncation)] // Protocol counters wrap at their declared width.
         fn encode(state: &DualShock4State, now: u64, sequence: u8) -> gr_hid::Report {
             let mut wire = state.clone();
@@ -949,7 +945,7 @@ impl common::HidDriver for DualShock4Definition {
             DualShock4State::default(),
             encode,
             validate,
-            features(session),
+            features(identity),
             [true; 3],
             Some(4000),
         )
@@ -959,6 +955,31 @@ impl common::HidDriver for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn pairing_requests_keep_injected_creation_identity_not_session_bits() {
+        use common::HidDriver;
+        use gr_hid::{Protocol, Reply, ReportType, RequestKind};
+        let get = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x12),
+        };
+        for session in [7, 7 + (1 << 16)] {
+            let mut first = DualShock4Definition
+                .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
+            let mut second = DualShock4Definition
+                .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
+            let expected = first.request(&get, 0).0;
+            assert_ne!(expected, second.request(&get, 0).0);
+            let Reply::Get(Ok(report)) = &expected else {
+                panic!("missing pairing reply")
+            };
+            assert_eq!(&report.payload()[..6], &[2, 1, 2, 3, 4, 5]);
+            for now in [1, 100, 10000] {
+                assert_eq!(first.request(&get, now).0, expected);
+            }
+        }
+    }
+
     #[test]
     fn openpuck_ds4_motion_layout_and_feature_reports_are_stable() {
         let s = DualShock4State {
@@ -977,7 +998,7 @@ mod tests {
             &bytes[12..24],
             &[1, 0, 3, 0, 2, 0, 252, 255, 5, 0, 250, 255]
         );
-        let f = features(RealizationSessionId(4));
+        let f = features([2, 0, 0, 0, 4, 0]);
         assert_eq!(
             f[&NativeHidReportKey {
                 report_id: 2,

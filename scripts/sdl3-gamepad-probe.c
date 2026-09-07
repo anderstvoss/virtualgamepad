@@ -7,7 +7,7 @@ int main(int argc, char **argv) {
     bool require_script = argc == 4 && strcmp(argv[3], "--dualsense-script") == 0;
     bool require_motion = require_script || (argc == 4 && strcmp(argv[3], "--require-motion") == 0);
     bool initialized = false, passed = false, connected = false;
-    bool rumble = false, led = false;
+    bool rumble = false, led = false, neutral_observed = false;
     const char *error = "invalid arguments: expected exact-device-path duration-ms [--require-motion]";
     SDL_Gamepad *gamepad = NULL;
     SDL_JoystickID selected = 0;
@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
     Uint64 started = 0, elapsed = 0;
     unsigned button_down = 0, button_up = 0, axis_events = 0, touch_events = 0;
     unsigned down_mask = 0, up_mask = 0, axis_mask = 0;
-    Sint16 axis_min[6] = {0}, axis_max[6] = {0};
+    ProbeAxis axes[6] = {0};
     if ((argc != 3 && !require_motion) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
     if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) { error = "SDL initialization failed"; goto done; }
     initialized = true;
@@ -62,12 +62,19 @@ int main(int argc, char **argv) {
                 if (event.gaxis.axis < 6) {
                     unsigned axis = event.gaxis.axis;
                     axis_mask |= 1u << axis;
-                    if (event.gaxis.value < axis_min[axis]) axis_min[axis] = event.gaxis.value;
-                    if (event.gaxis.value > axis_max[axis]) axis_max[axis] = event.gaxis.value;
+                    probe_axis_observe(&axes[axis], event.gaxis.value);
                 }
             }
             if ((event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) && event.gtouchpad.which == selected) ++touch_events;
         }
+        bool neutral = true;
+        for (int button = 0; button < 15; ++button)
+            neutral = neutral && !SDL_GetGamepadButton(gamepad, (SDL_GamepadButton)button);
+        for (int axis = 0; axis < 6; ++axis) {
+            int value = SDL_GetGamepadAxis(gamepad, (SDL_GamepadAxis)axis);
+            neutral = neutral && value >= -512 && value <= 512;
+        }
+        neutral_observed = neutral_observed || neutral;
         if (!connected) break;
         SDL_Delay(1);
     }
@@ -82,9 +89,9 @@ int main(int argc, char **argv) {
         }
     }
     if (require_script) {
-        bool controls = (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && touch_events > 10;
+        bool controls = neutral_observed && (down_mask & 0x7fff) == 0x7fff && (up_mask & 0x7fff) == 0x7fff && axis_mask == 0x3f && touch_events > 10;
         for (unsigned axis = 0; axis < 6; ++axis)
-            controls = controls && axis_max[axis] > 31000 && axis_min[axis] < (axis < 4 ? -31000 : 1000);
+            controls = controls && probe_axis_swept(&axes[axis], axis >= 4);
         if (!controls || !rumble || !led) { passed = false; error = "required control sweep or output submission missing"; }
     }
  done:
@@ -97,6 +104,7 @@ int main(int argc, char **argv) {
     printf(",\"vendor\":%u,\"product\":%u", vendor, product);
     printf(",\"selected_count\":%d,\"duration_ms\":%llu,\"passed\":%s,\"consumer_closed\":true,\"error\":", matches, (unsigned long long)elapsed, passed ? "true" : "false");
     probe_json_string(error);
+    printf(",\"neutral_observed\":%s", neutral_observed ? "true" : "false");
     printf(",\"button_down_mask\":%u,\"button_up_mask\":%u,\"axis_mask\":%u", down_mask, up_mask, axis_mask);
     printf(",\"rumble_submitted\":%s,\"led_submitted\":%s,\"button_down\":%u,\"button_up\":%u,\"axis_events\":%u,\"touch_events\":%u,\"sensors\":[", rumble ? "true" : "false", led ? "true" : "false", button_down, button_up, axis_events, touch_events);
     for (int index = 0; index < 2; ++index) {

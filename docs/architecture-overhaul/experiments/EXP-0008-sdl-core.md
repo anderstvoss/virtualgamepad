@@ -74,3 +74,18 @@ establish physical fidelity. Microphone mute, adaptive triggers, speaker/audio a
 other outputs without a portable SDL contract are not promoted by the standard
 control sweep. Other families, evdev parity acceptance, corpus delivery checks and
 Gate G remain separate work. PR #106 remains draft pending the full core matrix.
+
+## Acceptance review follow-up
+
+The initial sweep proved control activity but did not explicitly assert observed
+neutral state. Its trigger minima also began at zero, permitting a high-only
+trigger stream to satisfy the low-end criterion. The probe now tracks whether each
+axis has actual samples and computes extrema only from those samples, with a
+regression rejecting high-only and absent streams. The script includes neutral
+holds and SDL asserts all standard buttons released and axes near zero.
+
+A new three-run rewrite sequence passed with these stronger checks, 1827–1857
+distinct samples per sensor, observed neutral state, full control masks and typed
+output/cleanup checks. The corresponding three-run baseline sequence also passed, with 1910–1919
+distinct samples per sensor and observed neutral state. The earlier six-run results
+remain evidence for their earlier criteria rather than being silently upgraded.

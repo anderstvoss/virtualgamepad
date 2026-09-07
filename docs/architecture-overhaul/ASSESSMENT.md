@@ -31,3 +31,10 @@ The fail-closed JSON consumer and per-creation pairing identity close independen
 correctness gaps. Repeated-ID concurrent sessions and injected failure cleanup
 also pass. Other families and the remaining gate axes still prevent overall core
 sign-off; this is not completion of the architecture roadmap.
+
+The family review found and fixed the equivalent DS4 feature-address collision.
+Its injected-identity tests and concurrent kernel sessions pass, while its consumer
+matrix remains pending. [CORE_ACCEPTANCE](CORE_ACCEPTANCE.md) separates these axes
+and lists exact remaining work. SDL acceptance additionally checks an observed
+neutral state and requires actual low-end samples for axis range assertions;
+missing samples no longer inherit a passing zero minimum.

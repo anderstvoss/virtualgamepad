@@ -87,3 +87,12 @@ concurrent repeated IDs and failure cleanup. This measured USB configuration
 passes core Linux/SDL checks. B/P remain incomplete as broad gates: independent
 driver binding, Steam/physical/reference evidence and other family matrices are
 not promoted. Identity and probe failure fixes have deterministic regressions.
+
+### Family review and current core exit
+
+The [core acceptance matrix](CORE_ACCEPTANCE.md) is the current family-by-realization
+review record. DS4 now has immutable creation-owned pairing identity and passed
+three concurrent reused-ID sessions with independent removal. Its SDL matrix,
+Switch/Xbox live matrices and current evdev acceptance remain outstanding.
+G stays blocked on both reserved setup and the recorded protocol-interface gap;
+no kernel replacement or broad provisioning was attempted.

@@ -52,4 +52,13 @@ static inline void probe_observe(ProbeSensor *sensor, uint64_t timestamp, const 
     sensor->timestamp = timestamp;
     sensor->have_sample = true;
 }
+typedef struct { int16_t minimum, maximum; bool observed; } ProbeAxis;
+static inline void probe_axis_observe(ProbeAxis *axis, int16_t value) {
+    if (!axis->observed || value < axis->minimum) axis->minimum = value;
+    if (!axis->observed || value > axis->maximum) axis->maximum = value;
+    axis->observed = true;
+}
+static inline bool probe_axis_swept(const ProbeAxis *axis, bool trigger) {
+    return axis->observed && axis->maximum > 31000 && axis->minimum < (trigger ? 1000 : -31000);
+}
 #endif
