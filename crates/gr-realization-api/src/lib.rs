@@ -6,7 +6,6 @@
 //! Linux-kernel implementation knowledge. Controllers prepare realization
 //! data; providers validate and consume it.
 
-use std::collections::BTreeMap;
 use std::fmt;
 
 use thiserror::Error;
@@ -33,57 +32,112 @@ impl fmt::Display for ControllerId {
     }
 }
 
-/// Exact Linux provider target selected by an application.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum RealizationTarget {
-    Evdev,
-    Uhid,
-    DummyHcd,
+/// One complete host-facing path. IDs are declared by compiled controller packages;
+/// preparation rejects an ID absent from that controller's manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RealizationId(&'static str);
+impl RealizationId {
+    pub const LINUX_UINPUT: Self = Self("linux.uinput");
+    pub const LINUX_UHID_USB: Self = Self("linux.uhid.usb");
+    pub const LINUX_DUMMY_HCD_USB_HID: Self = Self("linux.dummy_hcd.usb-hid");
+    /// Declare a compiled realization ID.
+    ///
+    /// # Panics
+    /// Panics for an empty identifier.
+    #[must_use]
+    pub const fn new(value: &'static str) -> Self {
+        assert!(!value.is_empty(), "realization ID must not be empty");
+        Self(value)
+    }
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+    // Source aliases ease migration; there is no closed enum or numeric tier.
+    #[allow(non_upper_case_globals)]
+    pub const Evdev: Self = Self::LINUX_UINPUT;
+    #[allow(non_upper_case_globals)]
+    pub const Uhid: Self = Self::LINUX_UHID_USB;
+    #[allow(non_upper_case_globals)]
+    pub const DummyHcd: Self = Self::LINUX_DUMMY_HCD_USB_HID;
+    const fn same(self, other: Self) -> bool {
+        let a = self.0.as_bytes();
+        let b = other.0.as_bytes();
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut i = 0;
+        while i < a.len() {
+            if a[i] != b[i] {
+                return false;
+            }
+            i += 1;
+        }
+        true
+    }
 }
-
-impl fmt::Display for RealizationTarget {
+/// Compatibility name for the cohesive realization ID.
+pub type RealizationTarget = RealizationId;
+impl fmt::Display for RealizationId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Evdev => "linux uinput/evdev",
-            Self::Uhid => "linux UHID",
-            Self::DummyHcd => "linux dummy_hcd USB gadget",
-        })
+        formatter.write_str(self.0)
     }
 }
-/// Allocation-free set of independent realization targets.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct RealizationTargetSet(u8);
-
+/// Allocation-free set declared by a compiled controller manifest.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RealizationTargetSet(&'static [RealizationId]);
+impl PartialEq for RealizationTargetSet {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.len() == other.0.len() && self.0.iter().all(|id| other.contains(*id))
+    }
+}
+impl Eq for RealizationTargetSet {}
+impl std::hash::Hash for RealizationTargetSet {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use std::hash::Hasher;
+        let mut sum = 0_u64;
+        for id in self.0 {
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            id.hash(&mut hash);
+            sum = sum.wrapping_add(hash.finish());
+        }
+        sum.hash(state);
+        self.0.len().hash(state);
+    }
+}
 impl RealizationTargetSet {
-    pub const EMPTY: Self = Self(0);
-
+    pub const EMPTY: Self = Self(&[]);
+    /// Declare distinct paths without imposing a global target registry.
+    ///
+    /// # Panics
+    /// Panics when the manifest contains a duplicate ID.
     #[must_use]
-    pub const fn singleton(target: RealizationTarget) -> Self {
-        Self(target_bit(target))
+    pub const fn new(ids: &'static [RealizationId]) -> Self {
+        let mut i = 0;
+        while i < ids.len() {
+            let mut j = 0;
+            while j < i {
+                assert!(!ids[i].same(ids[j]), "duplicate realization ID");
+                j += 1;
+            }
+            i += 1;
+        }
+        Self(ids)
     }
-
     #[must_use]
-    pub const fn union(self, other: Self) -> Self {
-        Self(self.0 | other.0)
+    pub const fn contains(self, target: RealizationId) -> bool {
+        let mut i = 0;
+        while i < self.0.len() {
+            if self.0[i].same(target) {
+                return true;
+            }
+            i += 1;
+        }
+        false
     }
-
-    #[must_use]
-    pub const fn contains(self, target: RealizationTarget) -> bool {
-        self.0 & target_bit(target) != 0
-    }
-
     #[must_use]
     pub const fn is_empty(self) -> bool {
-        self.0 == 0
-    }
-}
-
-const fn target_bit(target: RealizationTarget) -> u8 {
-    match target {
-        RealizationTarget::Evdev => 1,
-        RealizationTarget::Uhid => 2,
-        RealizationTarget::DummyHcd => 4,
+        self.0.is_empty()
     }
 }
 
@@ -200,8 +254,6 @@ pub struct NativeHidRealization {
     pub numbered_input_reports: bool,
     pub numbered_output_reports: bool,
     pub numbered_feature_reports: bool,
-    /// Static `GET_REPORT` replies indexed by the exact HID report identity.
-    pub feature_report_responses: BTreeMap<NativeHidReportKey, Vec<u8>>,
 }
 
 /// Exact HID report identity used for static feature replies.
@@ -307,21 +359,6 @@ impl NativeControllerRealization {
                 if specification.descriptor.len() > 4096 {
                     return Err(NativeRealizationError::HidDescriptorTooLarge);
                 }
-                if specification
-                    .feature_report_responses
-                    .values()
-                    .any(|response| response.len() > 4096)
-                {
-                    return Err(NativeRealizationError::HidFeatureResponseTooLarge);
-                }
-                if !specification.numbered_feature_reports
-                    && specification
-                        .feature_report_responses
-                        .keys()
-                        .any(|key| key.report_id != 0)
-                {
-                    return Err(NativeRealizationError::HidUnnumberedFeatureHasReportId);
-                }
             }
             Self::DummyHcd(_) => {}
         }
@@ -404,6 +441,7 @@ pub struct EvdevEvent {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawReverseEvent {
+    HidLifecycle(gr_hid::Lifecycle),
     Evdev(Vec<EvdevEvent>),
     HidOutput {
         report_id: Option<u8>,
@@ -456,6 +494,7 @@ pub struct ProviderDiagnostics {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventReadiness {
+    Descriptor(i32),
     AlwaysPoll,
     NoReverseEvents,
 }
@@ -572,6 +611,23 @@ pub trait NativeProviderFactory: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn realization_ids_and_sets_are_extensible_without_a_global_enum() {
+        use std::hash::{Hash, Hasher};
+        const FUTURE: RealizationId = RealizationId::new("test.synthetic-compound");
+        let a = RealizationTargetSet::new(&[FUTURE, RealizationId::LINUX_UINPUT]);
+        let b = RealizationTargetSet::new(&[RealizationId::LINUX_UINPUT, FUTURE]);
+        assert_eq!(a, b);
+        assert!(a.contains(FUTURE));
+        assert!(!a.contains(RealizationId::LINUX_UHID_USB));
+        assert_eq!(RealizationId::LINUX_UHID_USB.to_string(), "linux.uhid.usb");
+        let mut ah = std::collections::hash_map::DefaultHasher::new();
+        let mut bh = std::collections::hash_map::DefaultHasher::new();
+        a.hash(&mut ah);
+        b.hash(&mut bh);
+        assert_eq!(ah.finish(), bh.finish());
+    }
+
     use super::*;
 
     fn uinput_request() -> ProviderOpenRequest {
@@ -608,8 +664,8 @@ mod tests {
 
     #[test]
     fn target_sets_are_unordered_membership_sets() {
-        let targets = RealizationTargetSet::singleton(RealizationTarget::DummyHcd)
-            .union(RealizationTargetSet::singleton(RealizationTarget::Evdev));
+        let targets =
+            RealizationTargetSet::new(&[RealizationTarget::DummyHcd, RealizationTarget::Evdev]);
         assert!(targets.contains(RealizationTarget::DummyHcd));
         assert!(targets.contains(RealizationTarget::Evdev));
         assert!(!targets.contains(RealizationTarget::Uhid));

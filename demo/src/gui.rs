@@ -757,7 +757,7 @@ impl eframe::App for App {
     }
 }
 
-const fn target_label(target: RealizationTarget) -> &'static str {
+fn target_label(target: RealizationTarget) -> &'static str {
     match target {
         RealizationTarget::Evdev => "Evdev / uinput",
         RealizationTarget::Uhid => "HID / UHID",
@@ -1351,10 +1351,10 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
     });
     ui.group(|ui| {
         ui.label("Switch Pro motion report");
-        ui.small(if controller.state().stream_enabled() {
+        ui.small(if controller.stream_enabled() {
             format!(
                 "Host selected report mode 0x30; streaming at 250 Hz (frame counter: {}).",
-                controller.state().motion_report_counter()
+                controller.motion_report_counter()
             )
         } else {
             "Waiting for the host to select report mode 0x30.".to_owned()

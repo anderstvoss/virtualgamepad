@@ -7,7 +7,6 @@ use gr_controller_contract::{
     RealizationManifest, RealizationManifestEntry, RealizationValidationStatus,
     TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -683,7 +682,7 @@ fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u
     })
     .collect()
 }
-fn hid(session: RealizationSessionId) -> NativeControllerRealization {
+fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
@@ -700,7 +699,6 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: features(session),
     })
 }
 fn evdev_realization() -> NativeControllerRealization {
@@ -732,20 +730,39 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct DualShock4Controller(
-    ControllerRuntime<DualShock4Definition, common::ProviderSessionSink>,
-);
+pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &DualShock4State {
         self.0.state()
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     #[must_use]
-    pub const fn surface(&self) -> &'static DualShock4Surface {
+    pub fn surface(&self) -> &'static DualShock4Surface {
         match self.0.selection().target {
             RealizationTarget::Evdev => &EVDEV_SURFACE,
             RealizationTarget::Uhid => &HID_SURFACE,
@@ -813,7 +830,6 @@ impl DualShock4Controller {
         self.0.commit()
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
     pub fn poll_output(
@@ -826,6 +842,7 @@ impl DualShock4Controller {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualShock4OutputEvent {
+    HidLifecycle(gr_hid::Lifecycle),
     HidOutput(DualShock4HidOutput),
     HostRequest {
         request_id: u32,
@@ -859,6 +876,7 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
 impl From<RawReverseEvent> for DualShock4OutputEvent {
     fn from(value: RawReverseEvent) -> Self {
         match value {
+            RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => {
                 Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
             }
@@ -907,6 +925,37 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
     }
     Ok(DualShock4Controller(c))
 }
+impl common::HidDriver for DualShock4Definition {
+    type Hid = common::SnapshotProtocol<DualShock4State>;
+    fn hid_protocol(&self, session: RealizationSessionId) -> Self::Hid {
+        #[allow(clippy::cast_possible_truncation)] // Protocol counters wrap at their declared width.
+        fn encode(state: &DualShock4State, now: u64, sequence: u8) -> gr_hid::Report {
+            let mut wire = state.clone();
+            wire.sequence = sequence;
+            wire.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
+            wire.touch_sequence = sequence;
+            common::logical_input(ds4_frame(&wire))
+        }
+        fn validate(report: &gr_hid::Report) -> Result<(), gr_hid::ReplyError> {
+            if report.kind != gr_hid::ReportType::Output || report.id() != Some(5) {
+                return Err(gr_hid::ReplyError::Unsupported);
+            }
+            if report.payload().len() != 31 {
+                return Err(gr_hid::ReplyError::Invalid);
+            }
+            Ok(())
+        }
+        common::SnapshotProtocol::new(
+            DualShock4State::default(),
+            encode,
+            validate,
+            features(session),
+            [true; 3],
+            Some(4000),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

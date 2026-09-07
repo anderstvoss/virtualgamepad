@@ -1,170 +1,61 @@
-# Realization policy and provider-neutral architecture
+# Controller protocol and realization architecture
 
-`virtualgamepad` is a library for statically compiled, curated virtual
-controllers. A controller package owns its typed state, normalized and native
-control APIs, report codecs, reverse-event decoding, and realization manifest.
-The core owns selection, validation, lifecycle, retryable commits, and
-diagnostics. Linux providers own only host I/O for prepared realization data;
-they never select or branch on a controller family.
+`virtualgamepad` is a standalone library for compiled, curated controllers. It does not own slot assignment, routing policy, runtime profiles, arbitrary identity selection, or automatic provider fallback.
 
-## One controller API; independent host realizations
+## Complete realization IDs
 
-A controller has one typed semantic state and one control vocabulary. A
-realization controls how a host sees that controller; it never selects a
-different input API or changes the meaning of a control. Linux targets map to
-three independent peer targets:
+Applications select one complete host-facing path declared by the controller manifest:
 
-| Realization target | Linux mechanism | Product role |
+| ID | Mechanism | Implemented meaning |
 | --- | --- | --- |
-| `Evdev` | uinput | Normal local deployment through Linux evdev. |
-| `Uhid` | UHID | Local HID realization with curated identity, reports, and reverse behavior. |
-| `DummyHcd` | dummy_hcd + ConfigFS | Broker-owned USB attachment emulation for curated controllers. |
+| `linux.uinput` | Linux uinput | Controller-owned evdev controls and supported outputs. |
+| `linux.uhid.usb` | Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
+| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Selectable broker-backed USB HID attachment. |
 
-Targets are not an ordered ladder and do not imply each other. A controller
-may implement any non-empty subset. Normal creation selects one exact target.
-`DummyHcd` is a privileged broker-backed attachment target; an unavailable
-broker or host facility returns a typed error. No selection falls back to
-another provider or target. Bluetooth realization is deferred work on the
-`wip/btvirt` branch and is not a target on this branch.
+`RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain source aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 
-## Feature-complete intent is controller-defined
+## Ownership and data flow
 
-Every provider must target the full controller feature surface that it can
-faithfully realize. There is no universal reduced feature list for uinput,
-UHID, or USB gadget. Additional axes, multitouch, lighting, motion, haptics,
-and force feedback are examples of features that a controller may realize at
-any target when the target's Linux mechanism can represent them faithfully.
-They are not a capability ceiling or a promise that every controller supports
-them.
+```text
+controller-native semantic state
+    -> controller-owned stateful USB personality
+    -> gr-hid runtime and logical HID commands
+    -> Linux UHID transport and kernel envelopes
+    -> host driver / application
+```
 
-Each controller realization manifest declares, for its exact target, the
-prepared OS realization, host prerequisites, codec/report behavior,
-reverse-output support, and typed controller feature surface. The same native
-or normalized operation may be faithfully available in any, all, or none of
-the targets. An operation that the controller family never implements returns
-`UnsupportedControl`. An operation the controller implements but whose chosen
-realization cannot faithfully expose returns `UnavailableInRealization`; its
-candidate state is discarded and the
-controller remains usable.
+DualSense, DualShock 4, Switch Pro, and the standard-HID Xbox 360 presentation use this path for UHID. Personalities own feature values, output acceptance, report sequences, timestamps, cadence, and handshake state. Shared snapshot helpers contain mechanics, with controller-supplied encoders and output validators. They do not select controller families.
 
-Examples of target mechanisms are intentionally descriptive rather than
-prescriptive:
+The UHID provider handles CREATE2, INPUT2, output, GET/SET requests and replies, lifecycle notifications, readiness, and destruction. It contains no feature-response tables or controller-family branches. Required GET/SET processing is synchronous and independent of user callbacks. SET success follows personality validation. Unknown, malformed, and unsupported requests receive explicit errors or terminal cleanup if completion cannot be delivered safely.
 
-- uinput may realize controller-oriented evdev input and output capabilities
-  wherever they faithfully represent the controller. A controller-declared
-  keyboard or pointer companion is permitted only through that controller's
-  explicit opt-in creation option; the root library exposes no standalone
-  keyboard or mouse injection constructor.
-- UHID may realize local HID descriptors, identity, input reports, output
-  reports, and feature-report exchanges. It is not a USB device-role claim.
-- `DummyHcd` validates curated USB attachment behavior, including enumeration,
-  feature requests, and reverse output.
+Input/output/feature classes remain distinct. Logical payloads exclude a numbered report ID; serialization includes it once. Unnumbered reports use no logical ID. START flags are the runtime authority for numbering. STOP, START, consumer OPEN/CLOSE, and terminal library close have distinct meanings. Each request receives a session-scoped ordinal independently of a reusable kernel transaction ID.
 
-Audio and attached accessories are separate from ordinary controller input and
-output. A native HID report may represent jack presence, mute, volume, audio
-routing controls, or an attached accessory's protocol. It does *not* create a
-playback/capture endpoint. Usable headset or controller audio requires a
-separate, controller-declared audio realization with a host audio service and
-its own streams, lifecycle, and permissions. Similarly, a controller-attached
-keyboard is a controller-native accessory protocol, not permission to inject
-arbitrary host keyboard events. A realization may expose either only where it
-can faithfully do so; otherwise the typed operation is target-unavailable.
+The uinput path retains transactional evdev encoding and conventional force-feedback request handling. The existing dummy_hcd path retains its compiled broker startup behavior until Gate G establishes dynamic forwarding capability and latency. This is a migration boundary, not a claim that the broker rewrite is complete. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
 
-## Creation and lifecycle invariants
+## State, scheduling, and delivery
 
-Creation prepares and validates the exact controller/target realization before
-opening host I/O. It verifies the controller manifest, target pairing,
-provider capabilities, realization shape, host prerequisites, and required
-reverse output. Invalid or unavailable realization produces an actionable
-creation/preflight error and no handle.
+Semantic edits clone and validate a candidate. Rejection preserves both accepted state and dirty status. HID timing belongs to the personality; changing motion state is not required to advance idle reports. DualSense and DS4 use the existing 4 ms compatibility cadence; Switch streams after its host handshake. These policies do not establish new physical timing evidence.
 
-Updates are local, cloned-candidate edits. A rejected update does not mutate
-state or mark it dirty. `commit()` submits a full encoded state; a failed
-commit leaves valid state dirty and retryable. Close is terminal even if host
-cleanup reports an error. Reverse output is bounded and isolated from the
-commit path.
+The runtime accepts an entire generated batch into a bounded queue before advancing protocol generation state. A definitely-unsent action retains its exact bytes. Partial success never replays earlier submissions; uncertain delivery terminates the session. Submission does not prove consumer observation or atomic visibility across components.
 
-## Linux provider verification boundary
+Each service call consumes at most one host event and makes a bounded number of submissions. Required replies have a reserved slot and a bounded retry deadline. Input receives service even under sustained requests. Optional output observations have separate bounded storage and an explicit loss counter; they cannot block required replies. Observations remain recoverable after a subsequent service error.
 
-The uinput and UHID crates keep their Linux file-descriptor and ioctl work in
-private live I/O implementations. Each has a separate private factory and
-already-open I/O interface used only to inject deterministic fakes in that
-crate's tests. This is not a public provider extension point and does not
-change controller or runtime contracts. Hermetic tests use it to exercise
-open/configure, short-write, would-block, malformed reverse-data, reply, and
-teardown failures. Ignored host tests remain the separate confirmation that
-the same live implementation works with an operator-provisioned Linux node.
+Call `poll_output` on controller readiness and at `next_service_in()`, even when input is unchanged. `commit()` also services HID work and preserves retryable accepted input when submission is blocked. `readiness()` exposes a borrowed descriptor where available. The caller owns the event loop and must stop using the descriptor after close. The demo continues to poll at its bounded USB cadence.
 
-## Extension rule
+`close()` is terminal. Cleanup is attempted once, including failure; later edits and submissions fail. A host STOP cancels unsent input for that stopped presentation while preserving desired semantic state for START. Consumer CLOSE/OPEN is not terminal library close. Switch stream status and counters are read from the controller handle, not its semantic state snapshot.
 
-Adding a curated controller must not require controller-family changes to the
-core or providers. Its package supplies typed state/features, a non-empty
-independent manifest, target-specific realization specs/codecs, reverse-event
-decoding, and conformance tests. If it declares host audio streams, it also
-supplies an audio sidecar requirement through the backend-neutral audio
-contract; controller-native audio controls and attachment semantics remain in
-the package. It must document its host prerequisites and
-feature availability for every declared target.
+## Feature parity, compounds, and audio
 
-See [deployment and hardware validation](DEPLOYMENT_AND_VALIDATION.md) for
-operator responsibilities and the security boundary.
+Each controller owns typed controls, numeric units, evdev presentation, outputs, and realization limitations. Motion, touch, LEDs, adaptive triggers, battery, and long-lived force-feedback objects must not silently disappear behind a generic gamepad model. Unsupported mappings must include a technical reason and regression coverage. Xbox's USB/HID presentation is explicitly not proprietary XInput/xpad emulation.
 
-## Controller-native state and target surfaces
+Existing compound helpers preserve preflight, reverse-order rollback, per-component identity, and cleanup regressions. Their older full-frame retry interface is not the new HID delivery contract; compound migration and advertised multi-UHID usefulness remain separately gated. Multiple UHID devices are not a composite USB device.
 
-Curated controllers do not inherit from a mutable base-gamepad state. Each
-compiled controller package owns its semantic state, native controls, numeric
-domains, validation, codecs, reverse-output decoding, and target declarations.
-This is intentional: a controller's physical controls and report semantics are
-not an optional feature bag. A DualSense touch surface, a Joy-Con IR camera,
-a Wii Remote expansion port, and an Atari Jaguar keypad must remain native
-types rather than nullable fields on another controller.
+HID audio controls do not create PCM endpoints. Future controller-owned audio can use a coherent host-audio realization or actual USB audio functions through a suitable gadget realization. Neither route is implemented or validated merely by having audio contract types. Gates F/H/I control audio behavior and naming; Bluetooth personalities and actual Bluetooth bus realizations have separate L/M gates.
 
-The only shared input vocabulary is digital spatial convenience: face-button
-position and D-pad direction. It maps to controller-native labels such as
-`Cross` and `A`, but it never provides generic sticks, triggers, touch,
-motion, or sensor values. Those values use controller-native, range-validated
-newtypes and their documented native numeric domains. This library does not
-normalize numeric values across controller families.
+## Evidence and development
 
-Each created concrete controller exposes an immutable typed target surface.
-It describes the selected Linux presentation: evdev codes, axis minimum and
-maximum, neutral value, flat/dead-zone value, outputs, and documented target
-restrictions. The surface lets an embedding application adapt a controller's
-native values to its actual Linux presentation without treating presentation
-metadata as a second mutable state API. A small common read-only surface view
-is available for heterogeneous inspection; controller-specific surface detail
-remains typed and concrete.
+The independent private protocol corpus is pinned at `protocol-corpus/`. Records distinguish source support, synthetic fixtures, compatibility policy, physical observations, and conflicts. Checked-in test artifacts carry revision and input hashes. Ordinary Cargo builds require no corpus checkout, credentials, or network access to that repository.
 
-State changes are transactional. A concrete handle edits a cloned candidate,
-validates it against its selected target, and replaces live state only on
-success. Rejected edits leave both state and dirty status unchanged. A commit
-encodes the complete native state; failed sends retain a valid dirty state for
-retry. Core/runtime/provider crates must not branch on a controller family or
-interpret controller-native values.
+Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](architecture-overhaul/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
 
-Shared helper types are permitted only when their semantics and units are
-identical. Examples include bounded values, timestamps, or a proven common
-transport primitive. They must never impose state layout, feature availability,
-or numeric conversion policy on a controller package.
-
-## Compound controller presentations and reverse transactions
-
-A curated controller may have one primary host device plus explicitly enabled
-companion devices. The runtime owns the ordered provider sessions, preflights
-all of them before opening any, rolls back a partial open in reverse order,
-and closes all components exactly once. A logical commit sends complete frames
-in deterministic component order. This preserves retry safety but does not
-claim atomic operating-system visibility across multiple devices.
-
-Companions are controller-declared and controller-owned: callers choose only
-the typed companion options exposed by that controller package. They cannot
-supply arbitrary event codes, mappings, device paths, or a standalone generic
-keyboard/pointer device. The library still never changes host permissions,
-udev policy, modules, or configuration.
-
-Reverse events are delivered through bounded typed callback subscriptions
-outside the commit path. Each subscription is isolated, so a slow or panicking
-consumer is recorded and contained without blocking input or other
-controllers. Reply-required reverse requests use typed one-shot reply tokens;
-duplicate, closed, or full replies fail recoverably. Controller packages own
-request decoding, attachment protocols, and reply payload semantics.
+Descriptor-based callers must watch readability and add writability while `wants_write()` is true, as well as servicing `next_service_in()`. This retries a blocked required reply before its terminal deadline. Polling callers may continue regular bounded service.

@@ -1,0 +1,2 @@
+# Install only when opting into trusted-user uinput creation access.
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="virtualgamepad-uinput", MODE="0660"

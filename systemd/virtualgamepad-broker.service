@@ -12,11 +12,13 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/run/virtualgamepad /sys/kernel/config/usb_gadget
+ReadWritePaths=/run/virtualgamepad /run/virtualgamepad-state /sys/kernel/config/usb_gadget
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_MODULE
-AmbientCapabilities=CAP_SYS_ADMIN CAP_SYS_MODULE
+# CAP_SYS_ADMIN removal is pending the documented live reduced-capability gate.
+CapabilityBoundingSet=CAP_SYS_ADMIN
+AmbientCapabilities=
+ProtectKernelModules=true
 SystemCallArchitectures=native
 Restart=on-failure
 

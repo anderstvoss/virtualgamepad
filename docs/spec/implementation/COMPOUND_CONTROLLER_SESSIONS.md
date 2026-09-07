@@ -4,6 +4,12 @@ This specification supports curated controllers whose Linux presentation has a
 primary component and optional controller-declared companions. It is not a
 generic composite-controller or input-injection API.
 
+## Migration status
+
+The existing compound helper remains on the earlier frame runtime. The stateful HID runtime represents one component per instance and preserves submission history across partial delivery. Do not reuse the older full-frame retry rule for non-repeatable HID actions. A future compound wrapper must service these instances fairly, preserve component identities, and retain reverse-order rollback/close. Gate E controls advertising specific multi-UHID presentations, not the existence of lifecycle helpers.
+
+Required HID GET/SET completion now belongs to personalities, independent of optional callback subscriptions. The subscription/token machinery below remains relevant to the older native and compound paths; it is not the completion owner for migrated UHID controllers.
+
 ## Components
 
 A controller package supplies ordered component identifiers, prepared provider

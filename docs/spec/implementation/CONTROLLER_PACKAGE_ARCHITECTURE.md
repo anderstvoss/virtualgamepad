@@ -7,7 +7,7 @@ controller package. It is intentionally not a plugin contract.
 
 Each controller module owns its private complete state, typed native controls,
 native numeric value types, normalized digital mapping, target manifest,
-prepared realization, encoder, reverse decoder, typed output event, and typed
+prepared realization, stateful protocol personality, evdev encoder, reverse decoder, typed output event, and typed
 target-surface descriptor. A module may use shared helpers only where values
 have identical units and semantics.
 
@@ -52,3 +52,21 @@ reverse output, retry after failed commit, and terminal closure.
 
 Adding a controller changes only its package, root constructor/re-exports,
 tests, and documentation. It must not change core/runtime/provider logic.
+
+## Stateful HID execution
+
+UHID packages implement the `gr-hid::Protocol` contract through a controller-owned personality. Feature tables are personality data, never provider configuration. Personality state owns report sequence, timing, initialization, and required replies. Logical reports carry a report class, optional nonzero ID, and payload without that ID. Kernel envelopes belong to the adapter.
+
+The runtime clones personality generation before queue acceptance, retains definitely-unsent bytes, and closes on uncertain delivery. Required SET validation precedes acknowledgement. Optional observations must not own completion tokens. Service readiness and deadlines independently of semantic edits; test idle cadence and startup probes without subscribers.
+
+Compiled manifests declare cohesive `RealizationId` values and static `RealizationTargetSet::new(&[...])` membership. The existing uinput and broker paths retain their earlier frame runtime pending their relevant migration gates. See [current architecture](../../CORE_ARCHITECTURE.md) for implementation boundaries.
+
+## Ephemeral UHID transport identity
+
+UHID phys/uniq values receive a compact process/creation ordinal suffix. Caller
+session IDs remain application identifiers and may be reused without duplicating
+those transport fields. This identity is process-local and distinguishes concurrent
+processes in the same PID namespace; it is not a physical serial guarantee.
+The provider rejects oversized or embedded-NUL identity strings rather than
+silently truncating them. Controller-owned feature addresses are a separate
+protocol concern and are unchanged by this transport suffix.

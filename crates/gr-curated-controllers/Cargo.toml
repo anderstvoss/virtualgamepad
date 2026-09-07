@@ -9,6 +9,7 @@ authors.workspace = true
 publish = false
 
 [dependencies]
+gr-hid = { path = "../gr-hid", version = "0.1" }
 gr-controller-wire = { path = "../gr-controller-wire", version = "0.1" }
 gr-dualsense-wire = { path = "../gr-dualsense-wire", version = "0.1" }
 gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }

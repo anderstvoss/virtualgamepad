@@ -7,7 +7,6 @@ use gr_controller_contract::{
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
     NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
@@ -383,20 +382,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
             selection.target,
             RealizationTarget::Uhid | RealizationTarget::DummyHcd
         ) {
-            let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
-            let frame = common::hid_gamepad_frame(
-                state.face,
-                state.dpad,
-                &state.buttons,
-                [
-                    byte(state.left.0.raw()),
-                    byte(state.left.1.raw()),
-                    byte(state.right.0.raw()),
-                    byte(state.right.1.raw()),
-                    state.triggers.0.raw(),
-                    state.triggers.1.raw(),
-                ],
-            );
+            let frame = xbox_hid_frame(state);
             return if selection.target == RealizationTarget::DummyHcd {
                 let ProviderFrame::HidInput {
                     report_id: None,
@@ -481,6 +467,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Xbox360OutputEvent {
+    HidLifecycle(gr_hid::Lifecycle),
     ForceFeedbackUpload {
         request_id: u32,
         effect: Vec<u8>,
@@ -506,14 +493,35 @@ pub enum Xbox360OutputEvent {
         bytes: Vec<u8>,
     },
 }
-pub struct Xbox360Controller(ControllerRuntime<Xbox360Definition, common::ProviderSessionSink>);
+pub struct Xbox360Controller(common::ControllerSession<Xbox360Definition>);
 impl Xbox360Controller {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &Xbox360State {
         self.0.state()
     }
     #[must_use]
-    pub const fn surface(&self) -> &'static Xbox360Surface {
+    pub fn surface(&self) -> &'static Xbox360Surface {
         match self.0.selection().target {
             RealizationTarget::Uhid => &HID_SURFACE,
             RealizationTarget::DummyHcd => &DUMMY_HCD_SURFACE,
@@ -521,7 +529,7 @@ impl Xbox360Controller {
         }
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
@@ -577,7 +585,6 @@ impl Xbox360Controller {
         self.0.commit()
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
     pub fn poll_output(
@@ -587,6 +594,7 @@ impl Xbox360Controller {
         self.0.with_sink(|sink| {
             sink.drain(&mut |event| {
                 let output = match event {
+                    RawReverseEvent::HidLifecycle(event) => Xbox360OutputEvent::HidLifecycle(event),
                     RawReverseEvent::ForceFeedbackUpload { request_id, effect } => {
                         Xbox360OutputEvent::ForceFeedbackUpload { request_id, effect }
                     }
@@ -708,6 +716,40 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
         }
     };
     common::create(Xbox360Definition, realization, options).map(Xbox360Controller)
+}
+
+impl common::HidDriver for Xbox360Definition {
+    type Hid = common::SnapshotProtocol<Xbox360State>;
+    fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId) -> Self::Hid {
+        fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
+            common::logical_input(xbox_hid_frame(state))
+        }
+        common::SnapshotProtocol::new(
+            Xbox360State::default(),
+            encode,
+            |_| Err(gr_hid::ReplyError::Unsupported),
+            std::collections::BTreeMap::new(),
+            [false; 3],
+            None,
+        )
+    }
+}
+
+fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
+    let byte = |value: i16| u8::try_from((i32::from(value) + 32_768) >> 8).unwrap_or(0);
+    common::hid_gamepad_frame(
+        state.face,
+        state.dpad,
+        &state.buttons,
+        [
+            byte(state.left.0.raw()),
+            byte(state.left.1.raw()),
+            byte(state.right.0.raw()),
+            byte(state.right.1.raw()),
+            state.triggers.0.raw(),
+            state.triggers.1.raw(),
+        ],
+    )
 }
 
 #[cfg(test)]
