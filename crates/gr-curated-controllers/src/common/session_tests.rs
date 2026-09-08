@@ -724,3 +724,44 @@ fn closing_an_unsent_evdev_completion_cannot_resurrect_it() {
     assert_eq!(record.lock().unwrap().attempts.len(), 1);
     assert_eq!(record.lock().unwrap().destroys, 1);
 }
+
+fn evdev_face_positions<D: HidDriver>(driver: &D, west: u16, north: u16) {
+    use gr_controller_contract::{DigitalControlUpdate, FaceButton};
+    let selection = gr_realization_api::RealizationSelection {
+        controller: driver.controller_id(),
+        target: RealizationTarget::Evdev,
+    };
+    for (button, code) in [
+        (FaceButton::South, 304),
+        (FaceButton::East, 305),
+        (FaceButton::West, west),
+        (FaceButton::North, north),
+    ] {
+        let mut state = driver.neutral_state();
+        for pressed in [true, false, true, false] {
+            driver
+                .apply_digital(
+                    &mut state,
+                    DigitalControlUpdate::FaceButton { button, pressed },
+                )
+                .unwrap();
+            let ProviderFrame::Evdev(events) = driver.encode(selection, &state).unwrap() else {
+                panic!("evdev")
+            };
+            let active: Vec<_> = events
+                .iter()
+                .filter(|event| event.event_type == EV_KEY && event.value != 0)
+                .map(|event| event.code)
+                .collect();
+            assert_eq!(active, if pressed { vec![code] } else { vec![] });
+        }
+    }
+}
+#[test]
+fn every_evdev_family_preserves_individual_spatial_face_buttons() {
+    evdev_face_positions(&DualSenseDefinition, 308, 307);
+    evdev_face_positions(&DualShock4Definition, 308, 307);
+    evdev_face_positions(&SwitchProDefinition, 308, 307);
+    // xpad retains legacy BTN_X/BTN_Y codes; SDL maps that profile accordingly.
+    evdev_face_positions(&Xbox360Definition, 307, 308);
+}

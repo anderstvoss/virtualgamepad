@@ -103,3 +103,16 @@ the measured conventional FF completion path for all four families;
 and the callback API migration. Full evdev SDL parity remains outstanding.
 G stays blocked on both reserved setup and the recorded protocol-interface gap;
 no kernel replacement or broad provisioning was attempted.
+
+### Incremental evdev SDL acceptance
+
+[EXP-0011](experiments/EXP-0011-evdev-sdl.md) records three passing standard-control
+and conventional-rumble runs each for Switch, Xbox and DualSense. DS4's combined
+touch/gamepad node fails SDL discovery on the tested udev. It retains touch and an
+explicit surface restriction; a controller-owned compound presentation is the
+next implementation prerequisite. Native button/profile fixes have individual
+regressions. Full touch, auxiliary-control and physical fidelity are not inferred.
+
+All four rewrite UHID/SDL profiles also pass three repetitions on kernel 6.12.107
+in EXP-0011. Baseline comparisons and prior fault injection remain scoped to their
+original records; this recheck does not close B/P broadly.

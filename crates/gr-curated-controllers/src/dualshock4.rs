@@ -198,7 +198,15 @@ impl DualShock4Surface {
         &self.common
     }
 }
-static DIGITAL: [DigitalControlSurface; 12] = [
+static DIGITAL: [DigitalControlSurface; 14] = [
+    DigitalControlSurface {
+        control: "l2-button",
+        event_code: 312,
+    },
+    DigitalControlSurface {
+        control: "r2-button",
+        event_code: 313,
+    },
     DigitalControlSurface {
         control: "cross",
         event_code: 304,
@@ -209,11 +217,11 @@ static DIGITAL: [DigitalControlSurface; 12] = [
     },
     DigitalControlSurface {
         control: "square",
-        event_code: 307,
+        event_code: 308,
     },
     DigitalControlSurface {
         control: "triangle",
-        event_code: 308,
+        event_code: 307,
     },
     DigitalControlSurface {
         control: "l1",
@@ -237,15 +245,15 @@ static DIGITAL: [DigitalControlSurface; 12] = [
     },
     DigitalControlSurface {
         control: "touchpad-click",
-        event_code: 317,
+        event_code: 704,
     },
     DigitalControlSurface {
         control: "left-stick-press",
-        event_code: 318,
+        event_code: 317,
     },
     DigitalControlSurface {
         control: "right-stick-press",
-        event_code: 319,
+        event_code: 318,
     },
 ];
 static AXES: [AbsoluteAxisSurface; 12] = [
@@ -363,7 +371,11 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 5] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
+    TargetRestriction {
+        feature: "SDL gamepad discovery",
+        reason: "combined touch/gamepad capabilities are classified as a touchscreen on tested udev; a separate touch presentation is pending",
+    },
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
@@ -515,14 +527,14 @@ impl TargetAwareControllerDriver for DualShock4Definition {
 }
 fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
     let mut events = Vec::with_capacity(31);
-    for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
         });
     }
-    for (code, pressed) in [310, 311, 314, 315, 316, 317, 318, 319]
+    for (code, pressed) in [310, 311, 314, 315, 316, 704, 317, 318]
         .into_iter()
         .zip(state.buttons)
     {
@@ -530,6 +542,13 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
+        });
+    }
+    for (code, value) in [(312, state.triggers.0.raw()), (313, state.triggers.1.raw())] {
+        events.push(EvdevEvent {
+            event_type: common::EV_KEY,
+            code,
+            value: i32::from(value != 0),
         });
     }
     for (code, value) in [
@@ -979,6 +998,86 @@ impl common::HidDriver for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evdev_retains_touch_contacts_and_exposes_combined_node_discovery_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.key_codes.contains(&330));
+        for code in [0, 1, 47, 53, 54, 57] {
+            assert!(spec.absolute_axes.iter().any(|axis| axis.code == code));
+        }
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "SDL gamepad discovery")
+        );
+    }
+
+    #[test]
+    fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
+        let selection = RealizationSelection {
+            controller: DualShock4Definition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (control, code) in [
+            (DualShock4Control::TouchpadClick, 704),
+            (DualShock4Control::LeftStickPress, 317),
+            (DualShock4Control::RightStickPress, 318),
+            (DualShock4Control::PlayStation, 316),
+        ] {
+            let mut state = DualShock4State::default();
+            for pressed in [true, false] {
+                state.set_native(control, pressed);
+                let ProviderFrame::Evdev(events) =
+                    DualShock4Definition.encode(selection, &state).unwrap()
+                else {
+                    panic!("evdev")
+                };
+                let active: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                    .map(|event| event.code)
+                    .collect();
+                assert_eq!(active, if pressed { vec![code] } else { vec![] });
+            }
+        }
+    }
+
+    #[test]
+    fn evdev_sony_mapping_and_digital_triggers_follow_standard_linux_layout() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
+        let selection = RealizationSelection {
+            controller: DualShock4Definition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (left, right, expected) in [
+            (0, 0, vec![]),
+            (1, 0, vec![312]),
+            (0, 255, vec![313]),
+            (255, 255, vec![312, 313]),
+        ] {
+            let state = DualShock4State {
+                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::Evdev(events) =
+                DualShock4Definition.encode(selection, &state).unwrap()
+            else {
+                panic!("evdev")
+            };
+            let active: Vec<_> = events
+                .iter()
+                .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                .map(|event| event.code)
+                .collect();
+            assert_eq!(active, expected);
+        }
+    }
+
     #[test]
     fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
         let NativeControllerRealization::Evdev(spec) = evdev_realization() else {

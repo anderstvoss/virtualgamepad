@@ -133,11 +133,11 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "y",
-        event_code: 307,
+        event_code: 308,
     },
     DigitalControlSurface {
         control: "x",
-        event_code: 308,
+        event_code: 307,
     },
     DigitalControlSurface {
         control: "l",
@@ -169,15 +169,15 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "capture",
-        event_code: 317,
+        event_code: 309,
     },
     DigitalControlSurface {
         control: "left-stick-press",
-        event_code: 318,
+        event_code: 317,
     },
     DigitalControlSurface {
         control: "right-stick-press",
-        event_code: 319,
+        event_code: 318,
     },
 ];
 static AXES: [AbsoluteAxisSurface; 6] = [
@@ -374,14 +374,14 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
 }
 fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
     let mut events = Vec::with_capacity(22);
-    for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
         });
     }
-    for (code, pressed) in [310, 311, 312, 313, 314, 315, 316, 317, 318, 319]
+    for (code, pressed) in [310, 311, 312, 313, 314, 315, 316, 309, 317, 318]
         .into_iter()
         .zip(state.buttons)
     {
@@ -891,6 +891,36 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
+        let selection = RealizationSelection {
+            controller: SwitchProDefinition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (control, code) in [
+            (SwitchProControl::Capture, 309),
+            (SwitchProControl::LeftStickPress, 317),
+            (SwitchProControl::RightStickPress, 318),
+            (SwitchProControl::Home, 316),
+        ] {
+            let mut state = SwitchProState::default();
+            for pressed in [true, false] {
+                state.set_native(control, pressed);
+                let ProviderFrame::Evdev(events) =
+                    SwitchProDefinition.encode(selection, &state).unwrap()
+                else {
+                    panic!("evdev")
+                };
+                let active: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                    .map(|event| event.code)
+                    .collect();
+                assert_eq!(active, if pressed { vec![code] } else { vec![] });
+            }
+        }
+    }
+
     #[test]
     fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
         let NativeControllerRealization::Evdev(spec) = evdev_realization() else {

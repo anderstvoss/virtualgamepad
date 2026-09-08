@@ -59,3 +59,11 @@ The independent private protocol corpus is pinned at `protocol-corpus/`. Records
 Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](architecture-overhaul/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
 
 Descriptor-based callers must watch readability and add writability while `wants_write()` is true, as well as servicing `next_service_in()`. This retries a blocked required reply before its terminal deadline. Polling callers may continue regular bounded service.
+
+Current evdev consumer validation exposed a presentation boundary: DS4's combined
+gamepad/touch node is not recognized as a gamepad by tested udev/SDL. A
+controller-owned compound gamepad/touch presentation must be validated before
+that acceptance gap closes. The provider must not classify, drop or reroute
+controller controls implicitly. Native button codes and mapping revisions remain
+controller-owned; Xbox's legacy assignment differs from Sony/Nintendo. See
+[EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).

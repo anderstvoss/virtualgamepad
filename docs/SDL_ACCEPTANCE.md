@@ -126,3 +126,11 @@ exact run-owned hidraw node for Sony/Switch and event node for standard-HID Xbox
 It performs three sequential ten-second runs and verifies repeated close and
 removal after each. See [family results](architecture-overhaul/experiments/EXP-0009-family-sdl.md).
 No SDL dependency is added to ordinary Cargo builds.
+
+The evdev `--gamepad-rumble-script` profile requires standard controls and rumble,
+with the Rust parent verifying typed playback magnitudes. It scopes
+`SDL_JOYSTICK_HIDAPI=0` to that child and records SDL's actual mapping and joystick
+match counts to explain discovery failures. DS4 currently fails gamepad discovery
+because its combined touch node is classified as a touchscreen; do not suppress
+touch capabilities or change global udev policy to count a pass. See
+[EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).

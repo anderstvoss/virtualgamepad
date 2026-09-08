@@ -4,7 +4,9 @@ The agreed review threshold is deterministic tests plus Linux and SDL evidence.
 Steam and physical fidelity remain separate. No ignored test counts as a pass.
 This matrix does not promote manifest support levels. Earlier UHID/SDL results
 were recorded on kernel 6.12.105; EXP-0010 uses the currently running 6.12.107.
-The earlier results need repetition before acceptance on that new kernel.
+EXP-0011 repeats all four rewrite UHID/SDL profiles on 6.12.107 successfully.
+The baseline comparison and earlier fault-injection evidence remain tied to their
+recorded kernel; no new baseline or physical-comparison pass is inferred.
 
 | Family / realization | Deterministic | Linux | SDL | Remaining core work |
 | --- | --- | --- | --- | --- |
@@ -12,7 +14,8 @@ The earlier results need repetition before acceptance on that new kernel.
 | DS4 USB/UHID | report/lifecycle regressions and injected pairing identity pass | three reused-ID sessions, independent removal and cleanup pass | three ten-second controls, touch, sensors, typed rumble/RGB runs pass | remaining evdev and family failure/concurrency review |
 | Switch Pro USB/UHID | handshake, framing, cadence and lifecycle pass | startup/removal during three SDL runs pass | three ten-second control/motion runs pass | compressed-rumble feedback fidelity and concurrency |
 | Xbox standard HID/UHID | standard input and explicit limitations pass | startup/removal during three SDL runs pass | three ten-second standard control runs pass after axis fix | concurrency; no XInput/xpad/rumble claim |
-| Existing uinput families | semantic parity and bounded FF completion regressions pass | four-family upload/update/play/stop/erase, killed-consumer cleanup pass | family matrices pending | exact-device controls/touch and conventional rumble consumer parity |
+| DualSense/Switch/Xbox uinput | individual button mapping and bounded FF regressions pass | four-family FF/consumer-exit cleanup pass | three control/neutral/range/typed-rumble runs each pass | touch/auxiliary association and remaining failure/concurrency coverage |
+| DS4 uinput | touch retained, mapping/FF regressions pass | FF and cleanup pass | fails gamepad discovery: combined node classifies as touchscreen | prove separate gamepad/touch presentation and compound ownership |
 | Existing compiled dummy_hcd | compiled-path regressions retained | reserved resources/configuration missing | pending | Gate G interface decision and live capability/startup/cleanup |
 
 DS4 review found its feature address also used only the low 16 session bits.
@@ -30,7 +33,7 @@ is explicitly incomplete. Ordinary builds still use checked-in artifacts.
 
 ## Next implementation order
 
-1. Validate evdev consumer parity; controller-owned FF completion now passes deterministic and live kernel checks ([EXP-0010](experiments/EXP-0010-evdev-feedback.md)).
+1. Resolve DS4 combined-node discovery and validate touch/auxiliary association. [EXP-0011](experiments/EXP-0011-evdev-sdl.md) records three passing evdev families and the precise DS4 failure; [EXP-0010](experiments/EXP-0010-evdev-feedback.md) covers required FF completion.
 2. Complete remaining family concurrency/failure tests and Switch compressed-rumble evidence.
 3. Review demo readiness/deadline scheduling against measured requests and shutdown;
    change it only when its fixed scheduling violates the contract.

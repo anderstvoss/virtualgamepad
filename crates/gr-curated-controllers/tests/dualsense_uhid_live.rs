@@ -1,6 +1,6 @@
 //! Opt-in Linux startup evidence; no physical/SDL/Steam equivalence is implied.
 #![cfg(target_os = "linux")]
-use gr_controller_contract::{DigitalControlUpdate, DpadDirection};
+use gr_controller_contract::{ControllerSurfaceInfo, DigitalControlUpdate, DpadDirection};
 use gr_curated_controllers::{
     CreationOptions, DualSenseAxis, DualSenseControl, DualSenseHidOutput, DualSenseOutputEvent,
     DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
@@ -213,12 +213,14 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
             DualSenseTrigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    controller
-        .set_motion(MotionSample {
-            accelerometer: [i16::from(value), 0, 8192],
-            gyroscope: [0, i16::from(value), 0],
-        })
-        .unwrap();
+    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+        controller
+            .set_motion(MotionSample {
+                accelerometer: [i16::from(value), 0, 8192],
+                gyroscope: [0, i16::from(value), 0],
+            })
+            .unwrap();
+    }
     controller
         .set_touch(
             TouchSlot::First,
@@ -245,14 +247,108 @@ fn ds4_sdl_observes_motion_and_returns_output() {
 }
 
 fn run_sdl<C: AcceptanceController>() {
+    run_sdl_target::<C>(RealizationTarget::Uhid);
+}
+fn input_nodes() -> std::collections::BTreeSet<PathBuf> {
+    fs::read_dir("/sys/class/input")
+        .unwrap()
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry.file_name().to_str().is_some_and(|name| {
+                name.strip_prefix("event").is_some_and(|suffix| {
+                    !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit())
+                })
+            })
+        })
+        .map(|entry| entry.path())
+        .collect()
+}
+fn unique_new_node(
+    before: &std::collections::BTreeSet<PathBuf>,
+    after: &std::collections::BTreeSet<PathBuf>,
+) -> Result<Option<PathBuf>, usize> {
+    let created: Vec<_> = after.difference(before).cloned().collect();
+    if created.len() > 1 {
+        Err(created.len())
+    } else {
+        Ok(created.into_iter().next())
+    }
+}
+fn select_evdev_node(
+    before: &std::collections::BTreeSet<PathBuf>,
+    family: &str,
+) -> Option<PathBuf> {
+    let node = unique_new_node(before, &input_nodes()).expect("ambiguous new input nodes")?;
+    let expected = match family {
+        "dualsense" => "DualSense Wireless Controller",
+        "dualshock4" => "Wireless Controller",
+        "switch-pro" => "Pro Controller",
+        "" => "Virtual Xbox 360",
+        _ => panic!("unrecognized family"),
+    };
+    assert_eq!(
+        fs::read_to_string(node.join("device/name")).unwrap().trim(),
+        expected
+    );
+    assert!(
+        fs::canonicalize(&node)
+            .unwrap()
+            .starts_with("/sys/devices/virtual/input")
+    );
+    Some(node)
+}
+#[test]
+fn evdev_selection_rejects_ambiguity_and_preserves_large_inventories() {
+    let before: std::collections::BTreeSet<_> = (0..300)
+        .map(|n| PathBuf::from(format!("event{n}")))
+        .collect();
+    assert_eq!(unique_new_node(&before, &before), Ok(None));
+    for name in ["event301", "event999", "event300"] {
+        let mut after = before.clone();
+        after.insert(PathBuf::from(name));
+        assert_eq!(
+            unique_new_node(&before, &after),
+            Ok(Some(PathBuf::from(name)))
+        );
+        after.insert(PathBuf::from("event400"));
+        assert_eq!(unique_new_node(&before, &after), Err(2));
+    }
+}
+fn spawn_sdl(
+    binary: &std::ffi::OsStr,
+    path: &std::path::Path,
+    target: RealizationTarget,
+    mode: &str,
+) -> ProbeChild {
+    let mut command = Command::new(binary);
+    let mode = if target == RealizationTarget::Evdev {
+        command.env("SDL_JOYSTICK_HIDAPI", "0");
+        "--gamepad-rumble-script"
+    } else {
+        mode
+    };
+    ProbeChild(
+        command
+            .arg(path)
+            .args(["10000", mode])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    )
+}
+fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
     let owned_devices = || owned_family_devices(C::PREFIX);
     let _guard = LIVE_LOCK.lock().unwrap();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     assert!(owned_devices().is_empty());
     for session in [7, 7, 7 + (1 << 16)] {
-        let mut controller = C::create(session);
-        let start = Instant::now();
+        let before = input_nodes();
+        // On unwind the later-declared controller closes before the child is reaped.
         let mut probe = None;
+        let mut controller = C::create(session, target);
+        let mut owned_event = None;
+        let start = Instant::now();
         let mut result = None;
         let mut rumble_seen = false;
         let mut led_seen = false;
@@ -267,21 +363,23 @@ fn run_sdl<C: AcceptanceController>() {
             let (rumble, led) = controller.feedback();
             rumble_seen |= rumble;
             led_seen |= led;
-            if probe.is_none() {
-                let nodes = owned_devices();
-                if nodes.len() == 1 && start.elapsed() >= Duration::from_millis(500) {
-                    let paths = consumer_paths(&nodes[0], C::HIDRAW);
-                    if paths.len() == 1 {
-                        probe = Some(ProbeChild(
-                            Command::new(&binary)
-                                .arg(&paths[0])
-                                .args(["10000", C::MODE])
-                                .stdin(Stdio::null())
-                                .stdout(Stdio::piped())
-                                .spawn()
-                                .unwrap(),
-                        ));
+            if probe.is_none() && start.elapsed() >= Duration::from_millis(500) {
+                let paths = if target == RealizationTarget::Evdev {
+                    owned_event = select_evdev_node(&before, C::PREFIX);
+                    owned_event
+                        .iter()
+                        .map(|node| PathBuf::from("/dev/input").join(node.file_name().unwrap()))
+                        .collect()
+                } else {
+                    let nodes = owned_devices();
+                    if nodes.len() == 1 {
+                        consumer_paths(&nodes[0], C::HIDRAW)
+                    } else {
+                        Vec::new()
                     }
+                };
+                if paths.len() == 1 {
+                    probe = Some(spawn_sdl(&binary, &paths[0], target, C::MODE));
                 }
             }
             if let Some(child) = &mut probe {
@@ -300,14 +398,20 @@ fn run_sdl<C: AcceptanceController>() {
             }
             wait_for_service(&controller);
         }
+        controller.close();
+        controller.close();
         drop(probe);
-        controller.close();
-        controller.close();
         let cleanup = Instant::now();
-        while !owned_devices().is_empty() && cleanup.elapsed() < Duration::from_secs(2) {
+        while (!owned_devices().is_empty()
+            || owned_event.as_ref().is_some_and(|node| node.exists()))
+            && cleanup.elapsed() < Duration::from_secs(2)
+        {
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(owned_devices().is_empty(), "cleanup failed");
+        assert!(
+            owned_devices().is_empty() && owned_event.as_ref().is_none_or(|node| !node.exists()),
+            "cleanup failed"
+        );
         if let Some((_, output)) = &result {
             eprintln!("{}", output.trim());
         }
@@ -319,7 +423,8 @@ fn run_sdl<C: AcceptanceController>() {
             "SDL acceptance failed"
         );
         assert!(
-            (!C::EXPECT_RUMBLE || rumble_seen) && (!C::EXPECT_LED || led_seen),
+            (!(C::EXPECT_RUMBLE || target == RealizationTarget::Evdev) || rumble_seen)
+                && (target == RealizationTarget::Evdev || !C::EXPECT_LED || led_seen),
             "expected SDL output not received"
         );
     }
@@ -465,7 +570,7 @@ trait AcceptanceController: Sized {
     const HIDRAW: bool = true;
     const EXPECT_RUMBLE: bool;
     const EXPECT_LED: bool;
-    fn create(session: u64) -> Self;
+    fn create(session: u64, target: RealizationTarget) -> Self;
     fn script(&mut self, step: u16);
     fn feedback(&mut self) -> (bool, bool);
     fn close(&mut self);
@@ -510,9 +615,9 @@ macro_rules! acceptance_controller {
             const EXPECT_RUMBLE: bool = $rumble;
             const EXPECT_LED: bool = $led;
             $(const HIDRAW: bool = $raw;)?
-            fn create(session: u64) -> Self {
+            fn create(session: u64, target: RealizationTarget) -> Self {
                 $create(CreationOptions {
-                    target: RealizationTarget::Uhid,
+                    target,
                     session: RealizationSessionId(session),
                 })
                 .unwrap()
@@ -565,6 +670,10 @@ fn dualsense_feedback(
     let (mut rumble, mut led) = (false, false);
     controller
         .poll_output(&mut |event| {
+            if let DualSenseOutputEvent::ForceFeedback(event) = &event {
+                rumble |= expected_evdev_rumble(*event);
+            }
+
             if let DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
                 left_motor,
                 right_motor,
@@ -584,6 +693,10 @@ fn ds4_feedback(controller: &mut gr_curated_controllers::DualShock4Controller) -
     let (mut rumble, mut led) = (false, false);
     controller
         .poll_output(&mut |event| {
+            if let gr_curated_controllers::DualShock4OutputEvent::ForceFeedback(event) = &event {
+                rumble |= expected_evdev_rumble(*event);
+            }
+
             if let gr_curated_controllers::DualShock4OutputEvent::HidOutput(
                 gr_curated_controllers::DualShock4HidOutput::UsbOutput {
                     left_motor,
@@ -667,12 +780,14 @@ fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controlle
             gr_curated_controllers::DualShock4Trigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    controller
-        .set_motion(gr_curated_controllers::DualShock4MotionSample {
-            accelerometer: [i16::from(value), 0, 8192],
-            gyroscope: [0, i16::from(value), 0],
-        })
-        .unwrap();
+    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+        controller
+            .set_motion(gr_curated_controllers::DualShock4MotionSample {
+                accelerometer: [i16::from(value), 0, 8192],
+                gyroscope: [0, i16::from(value), 0],
+            })
+            .unwrap();
+    }
     controller
         .set_touch(
             gr_curated_controllers::DualShock4TouchSlot::First,
@@ -711,8 +826,15 @@ fn switch_sdl_observes_controls_and_motion() {
 }
 
 fn switch_feedback(controller: &mut gr_curated_controllers::SwitchProController) -> (bool, bool) {
-    controller.poll_output(&mut |_| {}).unwrap();
-    (false, false) // No compressed-rumble equivalence claim from mere packet arrival.
+    let mut rumble = false;
+    controller
+        .poll_output(&mut |event| {
+            if let gr_curated_controllers::SwitchProOutputEvent::ForceFeedback(event) = event {
+                rumble |= expected_evdev_rumble(event);
+            }
+        })
+        .unwrap();
+    (rumble, false) // HID output fidelity remains separate.
 }
 fn apply_switch_script(controller: &mut gr_curated_controllers::SwitchProController, step: u16) {
     use gr_controller_contract::FaceButton;
@@ -776,12 +898,14 @@ fn apply_switch_script(controller: &mut gr_curated_controllers::SwitchProControl
             SwitchProAxis::new(value),
         )
         .unwrap();
-    controller
-        .set_motion(SwitchProMotionSample {
-            accelerometer: [i16::try_from(step % 256).unwrap(), 0, 8192],
-            gyroscope: [0, i16::try_from(step % 256).unwrap(), 0],
-        })
-        .unwrap();
+    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+        controller
+            .set_motion(SwitchProMotionSample {
+                accelerometer: [i16::try_from(step % 256).unwrap(), 0, 8192],
+                gyroscope: [0, i16::try_from(step % 256).unwrap(), 0],
+            })
+            .unwrap();
+    }
     controller.commit().unwrap();
 }
 
@@ -828,8 +952,15 @@ fn xbox_standard_hid_sdl_observes_controls() {
 }
 
 fn xbox_feedback(controller: &mut gr_curated_controllers::Xbox360Controller) -> (bool, bool) {
-    controller.poll_output(&mut |_| {}).unwrap();
-    (false, false)
+    let mut rumble = false;
+    controller
+        .poll_output(&mut |event| {
+            if let gr_curated_controllers::Xbox360OutputEvent::ForceFeedback(event) = event {
+                rumble |= expected_evdev_rumble(event);
+            }
+        })
+        .unwrap();
+    (rumble, false) // HID output fidelity remains separate.
 }
 fn apply_xbox_script(controller: &mut gr_curated_controllers::Xbox360Controller, step: u16) {
     use gr_curated_controllers::xbox360::Xbox360Control;
@@ -892,4 +1023,58 @@ fn apply_xbox_script(controller: &mut gr_curated_controllers::Xbox360Controller,
         )
         .unwrap();
     controller.commit().unwrap();
+}
+
+fn expected_evdev_rumble(event: gr_realization_api::ForceFeedbackEvent) -> bool {
+    matches!(event, gr_realization_api::ForceFeedbackEvent::Playback { effect, repetitions }
+        if repetitions > 0 && effect.strong == 0x4000 && effect.weak == 0x8000)
+}
+macro_rules! evdev_acceptance {
+    ($name:ident, $controller:ty) => {
+        #[test]
+        #[ignore = "requires private SDL probe, prepared uinput and exact experiment-node access"]
+        fn $name() {
+            run_sdl_target::<$controller>(RealizationTarget::Evdev);
+        }
+    };
+}
+evdev_acceptance!(ds4_evdev_sdl, gr_curated_controllers::DualShock4Controller);
+evdev_acceptance!(
+    switch_evdev_sdl,
+    gr_curated_controllers::SwitchProController
+);
+evdev_acceptance!(
+    dualsense_evdev_sdl,
+    gr_curated_controllers::DualSenseController
+);
+evdev_acceptance!(xbox_evdev_sdl, gr_curated_controllers::Xbox360Controller);
+#[test]
+fn evdev_rumble_acceptance_requires_playback_and_exact_magnitudes() {
+    use gr_realization_api::{ForceFeedbackEffect, ForceFeedbackEvent, RumbleEffect};
+    let effect = RumbleEffect {
+        id: 0,
+        strong: 0x4000,
+        weak: 0x8000,
+        length_ms: 100,
+        delay_ms: 0,
+        trigger_button: 0,
+        trigger_interval_ms: 0,
+    };
+    assert!(expected_evdev_rumble(ForceFeedbackEvent::Playback {
+        effect,
+        repetitions: 1
+    }));
+    assert!(!expected_evdev_rumble(ForceFeedbackEvent::Playback {
+        effect,
+        repetitions: 0
+    }));
+    assert!(!expected_evdev_rumble(ForceFeedbackEvent::Uploaded {
+        request_id: 1,
+        effect: ForceFeedbackEffect::Rumble(effect),
+        status: 0
+    }));
+    assert!(!expected_evdev_rumble(ForceFeedbackEvent::Playback {
+        effect: RumbleEffect { weak: 1, ..effect },
+        repetitions: 1
+    }));
 }

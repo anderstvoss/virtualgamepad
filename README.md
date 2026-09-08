@@ -43,3 +43,10 @@ Host access can be inspected without changes using
 `python3 scripts/host-preflight.py all` (or a complete realization ID). Builds do
 not need device permissions. Opt-in creation access, consumer access, and the
 optional gadget broker have separate [deployment requirements](docs/DEPLOYMENT_AND_VALIDATION.md).
+
+The [core acceptance matrix](docs/architecture-overhaul/CORE_ACCEPTANCE.md) records
+measured family/provider results. SDL evdev controls and conventional rumble pass
+for DualSense, Switch Pro and Xbox on the recorded profile. DS4's combined evdev
+touch/gamepad node currently fails SDL gamepad discovery; use its measured UHID
+profile while a separate touch presentation is developed. Full evdev touch and
+physical fidelity remain unvalidated.
