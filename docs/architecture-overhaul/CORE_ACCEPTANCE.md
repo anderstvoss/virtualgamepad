@@ -61,8 +61,9 @@ to wait for blocked hardware before independent API work.
    Switch physical compressed-rumble fidelity remains best-effort/unvalidated.
 3. Demo service is now independent of GUI repaint, with per-controller workers,
    bounded optional display delivery, deadline-aware polling and failure/stop
-   cleanup regressions. Live GUI validation remains pending; shared-controller
-   mutex stalls are outside the independent-display guarantee.
+   cleanup regressions. Workers now exclusively own controllers; detached native
+   edits use a bounded acknowledged queue, with rejection/stop/order regressions.
+   Live GUI validation remains pending; OS scheduling remains outside any timing guarantee.
 4. Resolve Gate G with explicitly reserved resources and supported metadata/completion
    authority. Missing permissions do not fix the inspected f_hid interface gap.
 5. Begin extensions only after core review and each extension's declared gate.

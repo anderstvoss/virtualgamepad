@@ -74,10 +74,15 @@ deadlines and maintain a separate 4 ms motion cadence. The UI consumes at most
 200 retained log messages per controller and the latest indicator snapshot; a
 busy display lock drops optional display updates instead of blocking servicing.
 Worker stop or service failure closes the controller before waiting for another
-UI frame. Removal joins that worker, then performs idempotent close. Controller
-edits and servicing still share a mutex, so a thread stalled while holding that
-mutex can delay service; this is not a hard realtime guarantee. Repaint timing
-remains a display concern, with earlier controller deadlines also requested. Physical reference availability and
+UI frame. Each worker exclusively owns its live controller. The GUI edits a
+native-state snapshot and submits at most one batch of 64 native commands through
+a one-slot channel. It waits for the corresponding applied snapshot before
+accepting another batch, preserving press/release order. No GUI drawing or display
+lock holds the live controller. Rejection or failed submission closes the affected
+session visibly; a rejected batch is never committed. Stop takes priority over
+queued input at the next worker cycle. Removal joins the closed owner.
+This is not a hard realtime guarantee: OS scheduling and provider I/O still matter.
+Repaint timing is purely a display concern. Physical reference availability and
 best-effort family scope are recorded in the
 [validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
 
@@ -95,5 +100,6 @@ eviction increments `dropped_output_events`. A slow callback still delays the
 next cycle, so callbacks must copy bounded data and return promptly. The library
 starts no executor. A single owner can service multiple controllers; editing,
 encoding and callback execution must not contain unbounded application work.
-The demo uses the explicit service API but its shared edit mutex remains an open
-integration issue. This change does not establish a hard realtime guarantee.
+The demo uses the explicit service API with worker-exclusive controller ownership
+and bounded native edit batches. These application-level workers are not a library
+requirement. No hard realtime guarantee follows from this integration.

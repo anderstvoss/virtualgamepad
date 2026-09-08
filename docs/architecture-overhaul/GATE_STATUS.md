@@ -208,3 +208,22 @@ failed native sessions no longer advertise polling interest. Deterministic tests
 cover the ordering and lifecycle fixes; no live or physical gate is promoted.
 The handoff's service naming gap is addressed. Shared demo edit-lock contention,
 persistent identity and logical compound failure/association remain next work.
+
+### Demo controller ownership and bounded native editing
+
+The demo worker exclusively owns each controller; the UI retains detached native
+state/surface snapshots. A one-slot queue carries at most 64 native edits per
+batch. The UI waits for the corresponding applied snapshot before another batch.
+No UI callback holds the live controller. Failed edits do not commit partial
+state; the worker closes immediately. Full/disconnected queues are visible failures.
+Stop is separate and takes priority over queued input at the next cycle.
+
+Deterministic tests cover press/release order, stale snapshots, saturation,
+sequence exhaustion, rejected batches, unexpected worker exit, queued-input stop,
+locked optional display and independent removal. The former shared-controller
+mutex limitation is removed. No live GUI/touch or physical claim follows; those
+acceptance boundaries and Gate G remain unchanged. Persistent typed identity and
+logical compound failure/association are the next independent architecture work.
+
+[ADR-0007](decisions/ADR-0007-demo-service-ownership.md) records the integration
+contract and its explicit input, rejection and timing limits.

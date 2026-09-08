@@ -29,10 +29,14 @@ snapshots remain visible separately.
 
 Remove arbitrary controllers to test independence, or use **Stop all controllers**
 to stop/join workers and close all sessions. Verify consumer-side removal too;
-the lab summary itself does not establish cleanup. Busy controllers briefly hide
-their editing controls instead of blocking the UI or being treated as failures.
-The workers still share controller mutexes with short UI edits; this is not a
-hard realtime or lock-free design.
+the lab summary itself does not establish cleanup. Editing controls briefly wait
+for the previous input batch's applied snapshot. Inputs during that wait are not
+accepted; accepted press/release batches remain ordered. A full/disconnected queue
+or rejected native edit closes the affected controller and reports the failure,
+rather than dropping a release silently. Worker-owned controllers keep servicing
+while GUI drawing or optional display consumption stalls. This is not a hard
+realtime guarantee. Live GUI/consumer acceptance remains separate from fake-worker
+tests; do not repeat touch injection on the active desktop.
 
 **Check broker socket** runs only when clicked. A reachable socket is merely
 connectivity evidence; it does not validate Gate G or authorize gadget resources.

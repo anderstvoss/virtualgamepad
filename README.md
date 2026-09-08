@@ -58,7 +58,8 @@ validate Xbox 360 protocol fidelity. See the
 [physical validation policy](docs/architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
 
 The demo services controllers on background workers even while the window is not
-repainting. Its output log is bounded; older optional display messages can be
+repainting. Each worker owns its controller; the GUI submits bounded native edits
+and waits for an applied snapshot before accepting another batch. Its output log is bounded; older optional display messages can be
 omitted during UI stalls. Removing a controller stops its worker and closes its
 session independently of the remaining controllers.
 

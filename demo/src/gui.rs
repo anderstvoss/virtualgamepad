@@ -1,3 +1,7 @@
+mod editor;
+use editor::{
+    Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
+};
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use gr_privileged_broker::BrokerClient;
 use std::{
@@ -90,22 +94,6 @@ fn lab_record(
     )
 }
 
-fn try_control_edit<T>(
-    controller: &Mutex<T>,
-    edit: impl FnOnce(&mut T) -> Result<(), String>,
-) -> Result<bool, String> {
-    match controller.try_lock() {
-        Ok(mut controller) => {
-            edit(&mut *controller)?;
-            Ok(true)
-        }
-        Err(std::sync::TryLockError::WouldBlock) => Ok(false),
-        Err(std::sync::TryLockError::Poisoned(_)) => {
-            Err("controller mutex poisoned while drawing".to_owned())
-        }
-    }
-}
-
 fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
     0..controller_count
 }
@@ -162,13 +150,53 @@ enum Controller {
     SwitchPro(SwitchProController),
 }
 
+#[derive(Default)]
+struct EditProgress {
+    submitted: u64,
+    applied: u64,
+}
+impl EditProgress {
+    fn ready(&self) -> bool {
+        self.applied == self.submitted
+    }
+    fn observe(&mut self, applied: u64) -> bool {
+        if applied != self.submitted {
+            return false;
+        }
+        self.applied = applied;
+        true
+    }
+    fn submit<C>(
+        &mut self,
+        sender: &mpsc::SyncSender<(u64, Vec<Command<C>>)>,
+        edits: Vec<Command<C>>,
+    ) -> Result<(), String> {
+        if edits.is_empty() {
+            return Ok(());
+        }
+        if !self.ready() {
+            return Err("previous input batch is still pending".into());
+        }
+        let next = self
+            .submitted
+            .checked_add(1)
+            .ok_or("edit sequence exhausted")?;
+        sender.try_send((next, edits)).map_err(|_| {
+            "edit queue unavailable; controller closed to avoid lost releases".to_owned()
+        })?;
+        self.submitted = next;
+        Ok(())
+    }
+}
+
 struct NamedController {
     kind: Kind,
     options: CreationOptions,
     name: String,
-    controller: Arc<Mutex<Controller>>,
+    view: ControllerView,
+    edits: EditProgress,
     indicators: ReverseIndicators,
-    service_worker: Option<ServiceWorker>,
+    service_worker: Option<ServiceWorker<Controller>>,
     second_touch: LatchedTouch,
 }
 
@@ -222,26 +250,54 @@ impl ServiceMetrics {
 
 #[derive(Default)]
 struct WorkerDisplay {
+    snapshot: Option<ControllerView>,
+    applied: u64,
     logs: Vec<String>,
     metrics: ServiceMetrics,
     indicators: ReverseIndicators,
 }
 
-struct ServiceWorker {
+struct ServiceWorker<C> {
+    edits: mpsc::SyncSender<(u64, Vec<Command<C>>)>,
     stop: mpsc::Sender<()>,
     failure: mpsc::Receiver<String>,
     display: Arc<Mutex<WorkerDisplay>>,
-    handle: JoinHandle<()>,
+    handle: JoinHandle<C>,
 }
 
-impl ServiceWorker {
-    fn stop(self) {
-        let _ = self.stop.send(());
-        let _ = self.handle.join();
+fn worker_failure(receiver: &mpsc::Receiver<String>) -> Option<String> {
+    match receiver.try_recv() {
+        Ok(error) => Some(error),
+        Err(mpsc::TryRecvError::Empty) => None,
+        Err(mpsc::TryRecvError::Disconnected) => {
+            Some("controller worker exited unexpectedly".into())
+        }
     }
 }
 
-trait ServicedController: Send {
+impl<C> ServiceWorker<C> {
+    fn stop(self) -> Option<C> {
+        let _ = self.stop.send(());
+        self.handle.join().ok()
+    }
+}
+
+trait ServicedController: Send + Sized {
+    fn snapshot(&mut self) -> Option<ControllerView> {
+        None
+    }
+    fn commit_edits(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+    fn apply(&mut self, edits: Vec<Command<Self>>) -> Result<(), String> {
+        if edits.len() > editor::EDIT_LIMIT {
+            return Err("native edit batch exceeded its bound".into());
+        }
+        for edit in edits {
+            edit(self)?;
+        }
+        self.commit_edits()
+    }
     fn refresh(&mut self) -> Result<(), String>;
     fn service(
         &mut self,
@@ -252,6 +308,15 @@ trait ServicedController: Send {
     fn close(&mut self);
 }
 impl ServicedController for Controller {
+    fn snapshot(&mut self) -> Option<ControllerView> {
+        Some(Self::snapshot(self))
+    }
+    fn commit_edits(&mut self) -> Result<(), String> {
+        if self.is_dirty() {
+            self.commit()?;
+        }
+        Ok(())
+    }
     fn refresh(&mut self) -> Result<(), String> {
         self.refresh_motion()
     }
@@ -295,38 +360,41 @@ fn publish_display(display: &mut WorkerDisplay, logs: Vec<String>, indicators: &
     display.indicators = indicators.clone();
 }
 
-fn spawn_service_worker<C: ServicedController + 'static>(
-    controller: &Arc<Mutex<C>>,
-) -> ServiceWorker {
+fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> ServiceWorker<C> {
     let (stop_sender, stop_receiver) = mpsc::channel();
+    let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
     let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
     let display = Arc::new(Mutex::new(WorkerDisplay::default()));
     let worker_display = Arc::clone(&display);
-    let controller = Arc::clone(controller);
+
     let handle = thread::spawn(move || {
         let start = Instant::now();
         let mut next_motion = Duration::ZERO;
         let mut delay = Duration::ZERO;
         let mut indicators = ReverseIndicators::default();
         let mut metrics = ServiceMetrics::default();
+        let mut applied = 0;
         loop {
             match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
             let mut logs = Vec::new();
-            let result = controller
-                .lock()
-                .map_err(|_| "controller mutex poisoned in service worker".to_owned())
-                .and_then(|mut controller| {
-                    service_cycle(
-                        &mut *controller,
-                        start.elapsed(),
-                        &mut next_motion,
-                        &mut logs,
-                        &mut indicators,
-                    )
-                });
+            let result = (|| {
+                // At most one bounded edit batch per service cycle. Stop has a
+                // separate channel and is checked before queued input.
+                if let Ok((sequence, edits)) = edit_receiver.try_recv() {
+                    controller.apply(edits)?;
+                    applied = sequence;
+                }
+                service_cycle(
+                    &mut controller,
+                    start.elapsed(),
+                    &mut next_motion,
+                    &mut logs,
+                    &mut indicators,
+                )
+            })();
             // Optional UI output never owns or delays protocol replies.
             metrics.record(Instant::now());
             if let Ok(mut display) = worker_display.try_lock() {
@@ -339,6 +407,8 @@ fn spawn_service_worker<C: ServicedController + 'static>(
                 );
                 publish_display(&mut display, logs, &indicators);
                 display.metrics = metrics.clone();
+                display.snapshot = controller.snapshot();
+                display.applied = applied;
             } else {
                 metrics.omit(logs.len());
             }
@@ -351,12 +421,11 @@ fn spawn_service_worker<C: ServicedController + 'static>(
             }
         }
         // Stop or failure closes immediately, even when the UI never repaints.
+        controller.close();
         controller
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .close();
     });
     ServiceWorker {
+        edits: edit_sender,
         stop: stop_sender,
         failure: failure_receiver,
         display,
@@ -555,6 +624,8 @@ impl Controller {
         };
         result
     }
+}
+impl ControllerView {
     fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
         if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
             let battery = self.battery();
@@ -597,7 +668,6 @@ impl Controller {
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
         }
-        .map_err(|error| error.to_string())
     }
     fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
@@ -605,7 +675,6 @@ impl Controller {
             Self::DualSense(controller) => controller.set_battery_level(level),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
         }
-        .map_err(|error| error.to_string())
     }
 }
 pub struct App {
@@ -660,19 +729,20 @@ impl App {
             Kind::SwitchPro => create_switch_pro(options).map(Controller::SwitchPro),
         };
         match result {
-            Ok(controller) => {
+            Ok(mut controller) => {
                 let name = if self.name_draft.trim().is_empty() {
                     self.next_default_name()
                 } else {
                     self.name_draft.trim().to_owned()
                 };
-                let controller = Arc::new(Mutex::new(controller));
-                let service_worker = Some(spawn_service_worker(&controller));
+                let view = controller.snapshot();
+                let service_worker = Some(spawn_service_worker(controller));
                 self.controllers.push(NamedController {
                     kind: self.kind,
                     options,
                     name: name.clone(),
-                    controller,
+                    view,
+                    edits: EditProgress::default(),
                     indicators: ReverseIndicators::default(),
                     service_worker,
                     second_touch: LatchedTouch::default(),
@@ -697,9 +767,6 @@ impl App {
         if let Some(worker) = removed.service_worker.take() {
             worker.stop();
         }
-        if let Ok(mut controller) = removed.controller.lock() {
-            controller.close();
-        }
         self.selected_controller = selection_after_removal(self.controllers.len(), index);
     }
 
@@ -715,9 +782,6 @@ impl Drop for App {
             if let Some(worker) = named.service_worker.take() {
                 worker.stop();
             }
-            if let Ok(mut controller) = named.controller.lock() {
-                controller.close();
-            }
         }
     }
 }
@@ -729,15 +793,18 @@ impl eframe::App for App {
         let mut failed_controller = None;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
-                if let Ok(error) = worker.failure.try_recv() {
+                if let Some(error) = worker_failure(&worker.failure) {
                     failed_controller = Some((index, error));
                     break;
                 }
             }
             if let Some(worker) = &named.service_worker {
-                if let Ok(mut display) = worker.display.lock() {
+                if let Ok(mut display) = worker.display.try_lock() {
                     self.output_log.append(&mut display.logs);
                     named.indicators = display.indicators.clone();
+                    if display.snapshot.is_some() && named.edits.observe(display.applied) {
+                        named.view = display.snapshot.take().expect("checked snapshot");
+                    }
                 }
             }
         }
@@ -745,21 +812,7 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
-        let next_service = self
-            .controllers
-            .iter()
-            .filter_map(|named| {
-                named
-                    .controller
-                    .try_lock()
-                    .ok()
-                    .and_then(|controller| controller.next_service_in())
-            })
-            .min();
-        ctx.request_repaint_after(service_repaint_interval(
-            self.controllers.len(),
-            next_service,
-        ));
+        ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -903,14 +956,15 @@ impl eframe::App for App {
                                     }
                                 }
                             }
-                            let result = try_control_edit(&named.controller, |controller| {
-                                controller.draw(ui, &mut named.second_touch);
-                                if controller.is_dirty() { controller.commit() } else { Ok(()) }
-                            });
-                            match result {
-                                Ok(false) => { ui.small("Controller is servicing; controls return on the next frame."); }
-                                Ok(true) => {}
-                                Err(error) => { failed_controller = Some((index, error)); }
+                            if named.edits.ready() {
+                                named.view.draw(ui, &mut named.second_touch);
+                                let result = named.view.take_edits().and_then(|edits| {
+                                    let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
+                                    named.edits.submit(&worker.edits, edits)
+                                });
+                                if let Err(error) = result { failed_controller = Some((index, error)); }
+                            } else {
+                                ui.small("Waiting for the previous input batch; servicing continues independently.");
                             }
                             ui.small("Input changes are sent automatically.");
                         });
@@ -1191,7 +1245,7 @@ fn pad_axis_from_fraction(value: f32) -> i16 {
     (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
 }
 
-fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
+fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor) {
     surface(ui, controller.surface());
     digital_controls(ui, Kind::Xbox360, |update| {
         let _ = controller.set_digital(update);
@@ -1258,7 +1312,7 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
 #[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
 fn draw_dualsense(
     ui: &mut egui::Ui,
-    controller: &mut DualSenseController,
+    controller: &mut DualSenseEditor,
     second_touch: &mut LatchedTouch,
 ) {
     surface(ui, controller.surface());
@@ -1372,7 +1426,7 @@ fn draw_dualsense(
     }
 }
 
-fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
+fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
     surface(ui, controller.surface());
     digital_controls(ui, Kind::DualShock4, |update| {
         let _ = controller.set_digital(update);
@@ -1463,7 +1517,7 @@ fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
+fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
     ui.small("Click and drag to emulate the first DualShock 4 touch contact.");
     let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
     ui.painter().rect_stroke(
@@ -1497,7 +1551,7 @@ fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
 
 fn draw_ds4_touch_slot(
     ui: &mut egui::Ui,
-    controller: &mut DualShock4Controller,
+    controller: &mut DualShock4Editor,
     slot: DualShock4TouchSlot,
     id: u8,
     label: &str,
@@ -1524,7 +1578,7 @@ fn draw_ds4_touch_slot(
     });
 }
 
-fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
+fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
     surface(ui, controller.surface());
     digital_controls(ui, Kind::SwitchPro, |update| {
         let _ = controller.set_digital(update);
@@ -1599,7 +1653,7 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
+fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseEditor) {
     ui.small("Click and drag to emulate the first physical touch contact.");
     let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
     ui.painter().rect_stroke(
@@ -1633,7 +1687,7 @@ fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
 
 fn draw_latched_touch_slot(
     ui: &mut egui::Ui,
-    controller: &mut DualSenseController,
+    controller: &mut DualSenseEditor,
     slot: TouchSlot,
     id: u8,
     touch: &mut LatchedTouch,
@@ -1693,29 +1747,6 @@ mod tests {
     }
 
     #[test]
-    fn busy_controller_skips_ui_edit_without_failure_or_waiting() {
-        let controller = Mutex::new(7);
-        let guard = controller.lock().unwrap();
-        assert_eq!(
-            try_control_edit(&controller, |_| panic!("busy edit must not execute")),
-            Ok(false)
-        );
-        drop(guard);
-        assert_eq!(
-            try_control_edit(&controller, |value| {
-                *value = 8;
-                Ok(())
-            }),
-            Ok(true)
-        );
-        assert_eq!(*controller.lock().unwrap(), 8);
-        assert_eq!(
-            try_control_edit(&controller, |_| Err("injected commit failure".into())),
-            Err("injected commit failure".into())
-        );
-    }
-
-    #[test]
     fn lab_session_ids_can_repeat_and_advance_without_overflow() {
         for id in [0, 7, 65543, u64::MAX] {
             assert_eq!(following_session(id, false), id);
@@ -1760,8 +1791,14 @@ mod tests {
         fail: bool,
         deadline: Option<Duration>,
         progress: Option<mpsc::Sender<usize>>,
+        desired: Vec<bool>,
+        committed: Vec<Vec<bool>>,
     }
     impl ServicedController for FakeService {
+        fn commit_edits(&mut self) -> Result<(), String> {
+            self.committed.push(self.desired.clone());
+            Ok(())
+        }
         fn refresh(&mut self) -> Result<(), String> {
             self.refreshed += 1;
             Ok(())
@@ -1789,6 +1826,115 @@ mod tests {
         fn close(&mut self) {
             self.closed += 1;
         }
+    }
+
+    fn fake_edit(pressed: bool) -> Command<FakeService> {
+        Box::new(move |controller| {
+            controller.desired.push(pressed);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn unexpected_worker_exit_is_visible_without_a_failure_message() {
+        let (sender, receiver) = mpsc::channel();
+        assert_eq!(worker_failure(&receiver), None);
+        sender.send("injected failure".into()).unwrap();
+        assert_eq!(
+            worker_failure(&receiver).as_deref(),
+            Some("injected failure")
+        );
+        drop(sender);
+        assert_eq!(
+            worker_failure(&receiver).as_deref(),
+            Some("controller worker exited unexpectedly")
+        );
+    }
+
+    #[test]
+    fn edit_progress_preserves_order_and_rejects_full_disconnected_or_stale_updates() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut progress = EditProgress::default();
+        progress.submit(&sender, vec![fake_edit(true)]).unwrap();
+        assert!(!progress.ready());
+        assert!(!progress.observe(0));
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+        let (first, edits) = receiver.try_recv().unwrap();
+        let mut controller = FakeService::default();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(first));
+        progress.submit(&sender, vec![fake_edit(false)]).unwrap();
+        let (second, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(second));
+        assert_eq!(controller.committed, vec![vec![true], vec![true, false]]);
+
+        sender.try_send((99, vec![fake_edit(true)])).unwrap();
+        assert!(progress.submit(&sender, vec![fake_edit(true)]).is_err());
+        assert_eq!(progress.submitted, second);
+        drop(receiver);
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+        progress.submitted = u64::MAX;
+        progress.applied = u64::MAX;
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+    }
+
+    #[test]
+    fn rejected_edit_batch_cannot_commit_partial_state_or_run_following_edits() {
+        let mut controller = FakeService::default();
+        let edits: Vec<Command<FakeService>> = vec![
+            fake_edit(true),
+            Box::new(|_| Err("invalid native value".into())),
+            fake_edit(false),
+        ];
+        assert!(controller.apply(edits).is_err());
+        assert_eq!(controller.desired, vec![true]);
+        assert!(controller.committed.is_empty());
+        let oversized = (0..=editor::EDIT_LIMIT).map(|_| fake_edit(false)).collect();
+        assert!(controller.apply(oversized).is_err());
+        assert_eq!(controller.desired, vec![true]);
+    }
+
+    #[test]
+    fn edit_failure_closes_worker_without_display_consumption() {
+        let worker = spawn_service_worker(FakeService::default());
+        worker
+            .edits
+            .try_send((1, vec![Box::new(|_| Err("edit rejected".into()))]))
+            .unwrap();
+        assert_eq!(
+            worker.failure.recv_timeout(Duration::from_secs(2)).unwrap(),
+            "edit rejected"
+        );
+        let controller = worker.stop().unwrap();
+        assert_eq!(controller.closed, 1);
+        assert!(controller.committed.is_empty());
+    }
+
+    #[test]
+    fn stop_discards_queued_input_before_another_service_cycle() {
+        let worker = spawn_service_worker(FakeService::default());
+        let (entered, waiting) = mpsc::channel();
+        let (release, resume) = mpsc::channel();
+        worker
+            .edits
+            .try_send((
+                1,
+                vec![Box::new(move |c| {
+                    entered.send(()).unwrap();
+                    resume.recv_timeout(Duration::from_secs(2)).unwrap();
+                    c.desired.push(true);
+                    Ok(())
+                })],
+            ))
+            .unwrap();
+        waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.edits.try_send((2, vec![fake_edit(false)])).unwrap();
+        worker.stop.send(()).unwrap();
+        release.send(()).unwrap();
+        let controller = worker.stop().unwrap();
+        assert_eq!(controller.desired, vec![true]);
+        assert_eq!(controller.closed, 1);
     }
 
     #[test]
@@ -1847,18 +1993,17 @@ mod tests {
     #[test]
     fn worker_services_without_ui_and_stops_while_display_is_locked() {
         let (sender, receiver) = mpsc::channel();
-        let controller = Arc::new(Mutex::new(FakeService {
+        let controller = FakeService {
             progress: Some(sender),
             ..Default::default()
-        }));
-        let worker = spawn_service_worker(&controller);
+        };
+        let worker = spawn_service_worker(controller);
         let display = Arc::clone(&worker.display);
         let guard = display.lock().unwrap();
         for _ in 0..3 {
             receiver.recv_timeout(Duration::from_secs(2)).unwrap();
         }
-        worker.stop();
-        let state = controller.lock().unwrap();
+        let state = worker.stop().unwrap();
         assert!(state.serviced >= 3);
         assert_eq!(state.closed, 1);
         drop(guard);
@@ -1866,41 +2011,39 @@ mod tests {
 
     #[test]
     fn removing_one_worker_preserves_another_workers_service() {
-        let first = Arc::new(Mutex::new(FakeService::default()));
+        let first = FakeService::default();
         let (sender, receiver) = mpsc::channel();
-        let second = Arc::new(Mutex::new(FakeService {
+        let second = FakeService {
             progress: Some(sender),
             ..Default::default()
-        }));
-        let first_worker = spawn_service_worker(&first);
-        let second_worker = spawn_service_worker(&second);
+        };
+        let first_worker = spawn_service_worker(first);
+        let second_worker = spawn_service_worker(second);
         receiver.recv_timeout(Duration::from_secs(2)).unwrap();
-        first_worker.stop();
-        let count = second.lock().unwrap().serviced;
+        let first = first_worker.stop().unwrap();
+        let count = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
         loop {
             if receiver.recv_timeout(Duration::from_secs(2)).unwrap() > count {
                 break;
             }
         }
-        assert_eq!(first.lock().unwrap().closed, 1);
-        assert_eq!(second.lock().unwrap().closed, 0);
-        second_worker.stop();
-        assert_eq!(second.lock().unwrap().closed, 1);
+        assert_eq!(first.closed, 1);
+        let second = second_worker.stop().unwrap();
+        assert_eq!(second.closed, 1);
     }
 
     #[test]
     fn worker_failure_closes_without_waiting_for_ui_consumption() {
-        let controller = Arc::new(Mutex::new(FakeService {
+        let controller = FakeService {
             fail: true,
             ..Default::default()
-        }));
-        let worker = spawn_service_worker(&controller);
+        };
+        let worker = spawn_service_worker(controller);
         assert_eq!(
             worker.failure.recv_timeout(Duration::from_secs(2)).unwrap(),
             "injected service failure"
         );
-        worker.stop();
-        let state = controller.lock().unwrap();
+        let state = worker.stop().unwrap();
         assert_eq!(state.serviced, 1);
         assert_eq!(state.closed, 1);
     }
