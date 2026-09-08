@@ -33,8 +33,8 @@ Subsequent SDL results are recorded in [EXP-0009](experiments/EXP-0009-family-sd
 The current corpus pin remains remotely reachable and regeneration validation
 passes. Corpus workflow tests retain absent/mismatched/unpublished checkout cases.
 Corpus-only read access is configured through a read-only deploy key and the
-PROTOCOL_CORPUS_SSH_KEY Actions secret. The authenticated job must pass before
-final review; ordinary builds still use checked-in artifacts.
+PROTOCOL_CORPUS_SSH_KEY Actions secret. The authenticated pinned-corpus job passed
+in CI run 34268191527 at `fd407b3`; ordinary builds still use checked-in artifacts.
 
 [EXP-0014](experiments/EXP-0014-individual-evdev-mapping.md) additionally passes
 156 exact individual-control/neutral observations each for Xbox and Switch evdev,

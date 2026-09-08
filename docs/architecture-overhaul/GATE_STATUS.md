@@ -195,5 +195,6 @@ DS4 touch remains blocked by the unavailable isolated environment; demo mutex
 stalls and Gate G remain unresolved. No extension gate is promoted.
 
 Authenticated corpus CI now uses a corpus-only read-only deploy key, preserving
-the existing private/fork job boundary. Remote read access is verified; the
-published workflow result is required before claiming CI closure.
+the existing private/fork job boundary. Remote read access and the
+authenticated pinned-corpus job both passed (CI run 34268191527, `fd407b3`).
+Other build/acceptance gates remain independent.
