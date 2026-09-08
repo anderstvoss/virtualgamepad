@@ -61,3 +61,11 @@ connectivity evidence; it does not validate Gate G or authorize gadget resources
 Other families remain best-effort. See the [physical validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md)
 and [gate ledger](architecture-overhaul/GATE_STATUS.md). This GUI increment was
 validated with fake controllers and compilation, not a live desktop run.
+
+Face buttons show printed labels and spatial positions (Nintendo B is South).
+Stick pads now reach both signed endpoints, and Sony unsigned conversions preserve
+0/128/255. For mapping investigations, test one control at a time and record its
+observed consumer label/direction; a sweep pressing every button cannot establish
+that each individual mapping is correct. See
+[EXP-0013](architecture-overhaul/experiments/EXP-0013-mapping-audit.md) for the latest
+source-backed trigger/contact and range corrections.

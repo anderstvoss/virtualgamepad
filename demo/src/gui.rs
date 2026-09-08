@@ -1005,15 +1005,28 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     });
 }
 
-fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)) {
+const fn face_labels(kind: Kind) -> [&'static str; 4] {
+    match kind {
+        Kind::Xbox360 => ["A (South)", "B (East)", "X (West)", "Y (North)"],
+        Kind::DualSense | Kind::DualShock4 => [
+            "Cross (South)",
+            "Circle (East)",
+            "Square (West)",
+            "Triangle (North)",
+        ],
+        Kind::SwitchPro => ["B (South)", "A (East)", "Y (West)", "X (North)"],
+    }
+}
+
+fn digital_controls(ui: &mut egui::Ui, kind: Kind, mut set: impl FnMut(DigitalControlUpdate)) {
     ui.group(|ui| {
         ui.label("Face buttons");
         ui.horizontal_wrapped(|ui| {
             for (label, button) in [
-                ("South", FaceButton::South),
-                ("East", FaceButton::East),
-                ("West", FaceButton::West),
-                ("North", FaceButton::North),
+                (face_labels(kind)[0], FaceButton::South),
+                (face_labels(kind)[1], FaceButton::East),
+                (face_labels(kind)[2], FaceButton::West),
+                (face_labels(kind)[3], FaceButton::North),
             ] {
                 hold(ui, label, |pressed| {
                     set(DigitalControlUpdate::FaceButton { button, pressed });
@@ -1118,12 +1131,10 @@ fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
         let mut changed = false;
         if response.is_pointer_button_down_on() {
             if let Some(position) = response.interact_pointer_pos() {
-                let next_x = (((position.x - rect.center().x) / (rect.width() / 2.0))
-                    .clamp(-1.0, 1.0)
-                    * 32767.0) as i16;
-                let next_y = (((position.y - rect.center().y) / (rect.height() / 2.0))
-                    .clamp(-1.0, 1.0)
-                    * 32767.0) as i16;
+                let next_x =
+                    pad_axis_from_fraction((position.x - rect.center().x) / (rect.width() / 2.0));
+                let next_y =
+                    pad_axis_from_fraction((position.y - rect.center().y) / (rect.height() / 2.0));
                 changed = *x != next_x || *y != next_y;
                 *x = next_x;
                 *y = next_y;
@@ -1155,16 +1166,34 @@ fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool 
 }
 
 fn dualsense_axis_to_pad(value: u8) -> i16 {
-    i16::try_from((i32::from(value) - 128) * 257).expect("DualSense axis fits signed pad")
+    let offset = i32::from(value) - 128;
+    let mapped = if offset <= 0 {
+        offset * 256
+    } else {
+        (offset * 32767 + 63) / 127
+    };
+    i16::try_from(mapped).expect("unsigned axis maps into signed pad")
 }
 
 fn dualsense_axis_from_pad(value: i16) -> u8 {
-    u8::try_from((i32::from(value) / 257 + 128).clamp(0, 255))
-        .expect("clamped DualSense axis fits u8")
+    let value = i32::from(value);
+    let mapped = if value <= 0 {
+        (value + 32768 + 128) / 256
+    } else {
+        128 + (value * 127 + 16383) / 32767
+    };
+    u8::try_from(mapped).expect("signed pad maps into unsigned axis")
 }
+
+#[allow(clippy::cast_possible_truncation)] // Rounded bounded normalized input fits i16.
+fn pad_axis_from_fraction(value: f32) -> i16 {
+    let value = value.clamp(-1.0, 1.0);
+    (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
+}
+
 fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::Xbox360, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1233,7 +1262,7 @@ fn draw_dualsense(
     second_touch: &mut LatchedTouch,
 ) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::DualSense, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1345,7 +1374,7 @@ fn draw_dualsense(
 
 fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::DualShock4, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1497,7 +1526,7 @@ fn draw_ds4_touch_slot(
 
 fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::SwitchPro, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1627,6 +1656,41 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sony_pad_conversion_covers_full_domain_and_round_trips_every_axis_value() {
+        assert_eq!(dualsense_axis_to_pad(0), i16::MIN);
+        assert_eq!(dualsense_axis_to_pad(128), 0);
+        assert_eq!(dualsense_axis_to_pad(255), i16::MAX);
+        for value in 0..=255 {
+            assert_eq!(dualsense_axis_from_pad(dualsense_axis_to_pad(value)), value);
+        }
+        let mut previous = 0;
+        for value in i16::MIN..=i16::MAX {
+            let mapped = dualsense_axis_from_pad(value);
+            assert!(mapped >= previous);
+            previous = mapped;
+        }
+        for (fraction, expected) in [
+            (-2.0, i16::MIN),
+            (-1.0, i16::MIN),
+            (0.0, 0),
+            (1.0, i16::MAX),
+            (2.0, i16::MAX),
+        ] {
+            assert_eq!(pad_axis_from_fraction(fraction), expected);
+        }
+    }
+
+    #[test]
+    fn printed_face_labels_preserve_spatial_nintendo_and_sony_layouts() {
+        assert_eq!(
+            face_labels(Kind::SwitchPro),
+            ["B (South)", "A (East)", "Y (West)", "X (North)"]
+        );
+        assert_eq!(face_labels(Kind::DualShock4), face_labels(Kind::DualSense));
+        assert_eq!(face_labels(Kind::Xbox360)[0], "A (South)");
+    }
 
     #[test]
     fn busy_controller_skips_ui_edit_without_failure_or_waiting() {

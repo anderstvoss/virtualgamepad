@@ -678,6 +678,8 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
         | (u8::from(state.face[3]) << 7);
     bytes[8] = u8::from(state.buttons[0])
         | (u8::from(state.buttons[1]) << 1)
+        | (u8::from(state.triggers.0.raw() != 0) << 2)
+        | (u8::from(state.triggers.1.raw() != 0) << 3)
         | (u8::from(state.buttons[2]) << 4)
         | (u8::from(state.buttons[3]) << 5)
         | (u8::from(state.buttons[6]) << 6)
@@ -1229,6 +1231,29 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    #[test]
+    fn hid_trigger_buttons_follow_analog_press_and_release_independently() {
+        for (left, right, mask) in [
+            (0, 0, 0),
+            (1, 0, 4),
+            (255, 0, 4),
+            (0, 1, 8),
+            (0, 255, 8),
+            (255, 255, 12),
+            (0, 0, 0),
+        ] {
+            let state = DualSenseState {
+                triggers: (DualSenseTrigger::new(left), DualSenseTrigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = dualsense_hid_input_report(&state) else {
+                panic!("HID input")
+            };
+            assert_eq!(bytes[8], mask);
+            assert_eq!((bytes[4], bytes[5]), (left, right));
+        }
+    }
 
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {

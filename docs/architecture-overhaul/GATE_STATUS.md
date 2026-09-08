@@ -176,3 +176,12 @@ consumer access unvalidated; gadget ConfigFS availability, UDC authorization and
 broker socket are missing. No host changes were made. [The lab guide](../DEMO_LAB.md)
 provides the next controlled experiments for B/P, isolated compound touch, G and
 F/H/L/M. No gate is promoted from GUI tooling or socket reachability.
+
+### Source-backed mapping refinement
+
+[EXP-0013](experiments/EXP-0013-mapping-audit.md) corrects missing Sony digital
+trigger bits, DS4 contact-release reporting and demo full-range stick conversion.
+Printed/spatial face labels support individual-control lab checks. Deterministic
+regressions pass; live mapping/fidelity evidence is unchanged, and no cause is
+assigned to the prior display-session crash. All existing family limitations and
+isolated-touch prerequisites remain.

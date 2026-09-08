@@ -635,6 +635,8 @@ fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
         | (u8::from(state.face[3]) << 7);
     b[5] = u8::from(state.buttons[0])
         | (u8::from(state.buttons[1]) << 1)
+        | (u8::from(state.triggers.0.raw() != 0) << 2)
+        | (u8::from(state.triggers.1.raw() != 0) << 3)
         | (u8::from(state.buttons[2]) << 4)
         | (u8::from(state.buttons[3]) << 5)
         | (u8::from(state.buttons[6]) << 6)
@@ -656,10 +658,9 @@ fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
     for (i, v) in state.motion.accelerometer.into_iter().enumerate() {
         b[18 + i * 2..20 + i * 2].copy_from_slice(&v.to_le_bytes());
     }
-    if state.touches.iter().any(Option::is_some) {
-        b[32] = 1;
-        b[33] = state.touch_sequence;
-    }
+    // A zero count means "no update", not "all contacts released" to the host.
+    b[32] = 1;
+    b[33] = state.touch_sequence;
     encode_ds4_touches(&mut b[34..42], state.touches);
     b[29] = 0x1b;
     ProviderFrame::HidInput {
@@ -1017,6 +1018,29 @@ mod tests {
     }
 
     #[test]
+    fn hid_trigger_buttons_follow_analog_press_and_release_independently() {
+        for (left, right, mask) in [
+            (0, 0, 0),
+            (1, 0, 4),
+            (255, 0, 4),
+            (0, 1, 8),
+            (0, 255, 8),
+            (255, 255, 12),
+            (0, 0, 0),
+        ] {
+            let state = DualShock4State {
+                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
+                panic!("HID input")
+            };
+            assert_eq!(bytes[5], mask);
+            assert_eq!((bytes[7], bytes[8]), (left, right));
+        }
+    }
+
+    #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
             controller: DualShock4Definition.controller_id(),
@@ -1251,7 +1275,7 @@ mod tests {
         let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
             unreachable!()
         };
-        assert_eq!(&bytes[..9], &[10, 20, 30, 40, 8, 1, 0, 50, 60]);
+        assert_eq!(&bytes[..9], &[10, 20, 30, 40, 8, 13, 0, 50, 60]);
         let ProviderFrame::Evdev(events) = ds4_evdev_frame(&state) else {
             unreachable!()
         };
@@ -1289,6 +1313,59 @@ mod tests {
         };
         assert_eq!(u16::from_le_bytes([bytes[9], bytes[10]]), 850);
         assert_eq!(bytes[33], 5);
+    }
+
+    #[test]
+    fn touch_release_is_an_explicit_report_for_both_usb_transports() {
+        let mut host_active = [false; 2];
+        for (sequence, touches) in [
+            [None, None],
+            [
+                Some(DualShock4TouchContact::new(1, 10, 20).unwrap()),
+                Some(DualShock4TouchContact::new(2, 30, 40).unwrap()),
+            ],
+            [None, Some(DualShock4TouchContact::new(2, 31, 41).unwrap())],
+            [None, None],
+            [None, None],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let state = DualShock4State {
+                touches,
+                touch_sequence: u8::try_from(sequence).unwrap(),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
+                panic!("HID input")
+            };
+            // Model the host's count-gated contact updates: no report retains old state.
+            if bytes[32] > 0 {
+                host_active = [bytes[34] & 0x80 == 0, bytes[38] & 0x80 == 0];
+            }
+            assert_eq!(host_active, touches.map(|contact| contact.is_some()));
+            assert_eq!(bytes[32], 1);
+            assert_eq!(usize::from(bytes[33]), sequence);
+            for target in [RealizationTarget::Uhid, RealizationTarget::DummyHcd] {
+                let encoded = DualShock4Definition
+                    .encode(
+                        RealizationSelection {
+                            controller: DualShock4Definition.controller_id(),
+                            target,
+                        },
+                        &state,
+                    )
+                    .unwrap();
+                match encoded {
+                    ProviderFrame::HidInput { bytes: payload, .. } => assert_eq!(payload, bytes),
+                    ProviderFrame::DummyHcdInput(payload) => {
+                        assert_eq!(payload[0], 1);
+                        assert_eq!(&payload[1..], bytes);
+                    }
+                    _ => panic!("USB report"),
+                }
+            }
+        }
     }
 
     #[test]
