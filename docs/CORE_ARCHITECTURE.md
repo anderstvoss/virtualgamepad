@@ -67,3 +67,10 @@ that acceptance gap closes. The provider must not classify, drop or reroute
 controller controls implicitly. Native button codes and mapping revisions remain
 controller-owned; Xbox's legacy assignment differs from Sony/Nintendo. See
 [EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).
+
+The demo's polling fallback caps active repaint requests at 4 ms and shortens the
+request to the earliest controller service deadline, including an immediate
+retry. GUI scheduling is not a realtime guarantee; a blocked GUI thread still
+requires a separate service-loop review. Physical reference availability and
+best-effort family scope are recorded in the
+[validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).

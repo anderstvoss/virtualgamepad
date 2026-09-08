@@ -57,6 +57,11 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
+fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
+    let fallback = repaint_interval(controller_count);
+    next_service.map_or(fallback, |deadline| deadline.min(fallback))
+}
+
 const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
 }
@@ -255,6 +260,15 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
+    fn next_service_in(&self) -> Option<Duration> {
+        match self {
+            Self::Xbox(controller) => controller.next_service_in(),
+            Self::DualSense(controller) => controller.next_service_in(),
+            Self::DualShock4(controller) => controller.next_service_in(),
+            Self::SwitchPro(controller) => controller.next_service_in(),
+        }
+    }
+
     fn needs_motion_refresh(&self) -> bool {
         matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
             || matches!(self, Self::DualShock4(controller) if motion_refresh_target(controller.surface().common().target))
@@ -574,7 +588,21 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
-        ctx.request_repaint_after(repaint_interval(self.controllers.len()));
+        let next_service = self
+            .controllers
+            .iter()
+            .filter_map(|named| {
+                named
+                    .controller
+                    .lock()
+                    .ok()
+                    .and_then(|controller| controller.next_service_in())
+            })
+            .min();
+        ctx.request_repaint_after(service_repaint_interval(
+            self.controllers.len(),
+            next_service,
+        ));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -1418,6 +1446,28 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn repaint_respects_immediate_and_sub_frame_service_deadlines() {
+        for count in [1, 8, 300] {
+            for deadline in [
+                Duration::ZERO,
+                Duration::from_micros(500),
+                Duration::from_millis(3),
+            ] {
+                assert_eq!(service_repaint_interval(count, Some(deadline)), deadline);
+            }
+            assert_eq!(
+                service_repaint_interval(count, Some(Duration::from_secs(1))),
+                Duration::from_millis(4)
+            );
+            assert_eq!(
+                service_repaint_interval(count, None),
+                Duration::from_millis(4)
+            );
+        }
+        assert_eq!(service_repaint_interval(0, None), Duration::from_millis(50));
+    }
 
     #[test]
     fn motion_worker_uses_the_advertised_250_hz_interval() {

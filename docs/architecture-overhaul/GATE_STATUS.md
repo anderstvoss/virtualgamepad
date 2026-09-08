@@ -137,3 +137,17 @@ nodes survived the recovery inventory. Production adoption is blocked on isolate
 consumer validation and crash investigation; the prototype is test-only and the
 existing DS4 discovery limitation remains. This does not block independent core
 work or grant additional host permissions.
+
+### Independent family review and available physical references
+
+All four HID families pass interleaved three-session removal/read-failure tests
+with reused application/request IDs and exact replies for surviving sessions.
+The demo now requests repaint at an earlier service deadline instead of always
+waiting 4 ms. This preserves bounded polling fallback; it does not establish
+hard realtime scheduling or service while the GUI thread is blocked.
+
+[Physical validation policy](PHYSICAL_VALIDATION_POLICY.md) records the available
+DualSense, Xbox Series and Steam Controller references. Other families are
+best-effort; absent physical hardware does not block independent development.
+DualSense physical fidelity, H audio topology and L BT fixtures remain separate
+acceptance dependencies. No physical or live display tests were run in this batch.

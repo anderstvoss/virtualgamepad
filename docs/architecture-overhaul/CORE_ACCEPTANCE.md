@@ -1,7 +1,11 @@
 # Core acceptance matrix
 
 The agreed review threshold is deterministic tests plus Linux and SDL evidence.
-Steam and physical fidelity remain separate. No ignored test counts as a pass.
+Steam consumer and physical fidelity remain separate. The available physical
+references are DualSense, Xbox Series and Steam Controller; all other families
+are best-effort for now. Missing reference hardware does not block independent
+implementation or virtual testing. See [physical validation policy](PHYSICAL_VALIDATION_POLICY.md)
+for the precise DualSense dependencies and model distinctions. No ignored test counts as a pass.
 This matrix does not promote manifest support levels. Earlier UHID/SDL results
 were recorded on kernel 6.12.105; EXP-0010 uses the currently running 6.12.107.
 EXP-0011 repeats all four rewrite UHID/SDL profiles on 6.12.107 successfully.
@@ -39,7 +43,10 @@ is explicitly incomplete. Ordinary builds still use checked-in artifacts.
    cleanup regressions. The DS4 split-node prototype is test-only after a reported
    display-session crash interrupted live acceptance; [EXP-0012](experiments/EXP-0012-ds4-compound-interruption.md)
    requires isolated consumer validation before production adoption.
-2. Complete remaining family concurrency/failure tests and Switch compressed-rumble evidence.
+2. All four HID families now have interleaved three-session regressions covering
+   reused IDs, repeated exact SET rejection, arbitrary removal, partial-read
+   failure and terminal reopen prevention. Continue remaining concurrency axes;
+   Switch physical compressed-rumble fidelity remains best-effort/unvalidated.
 3. Review demo readiness/deadline scheduling against measured requests and shutdown;
    change it only when its fixed scheduling violates the contract.
 4. Resolve Gate G with explicitly reserved resources and supported metadata/completion

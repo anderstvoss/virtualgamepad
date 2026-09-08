@@ -50,3 +50,9 @@ for DualSense, Switch Pro and Xbox on the recorded profile. DS4's combined evdev
 touch/gamepad node currently fails SDL gamepad discovery; use its measured UHID
 profile while a separate touch presentation is developed. Full evdev touch and
 physical fidelity remain unvalidated.
+
+Physical reference testing currently targets the available DualSense, Xbox Series
+and Steam Controller hardware. Other families remain best-effort with explicit
+limitations and deterministic/virtual tests. Xbox Series hardware does not
+validate Xbox 360 protocol fidelity. See the
+[physical validation policy](docs/architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).

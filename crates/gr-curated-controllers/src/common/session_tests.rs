@@ -765,3 +765,92 @@ fn every_evdev_family_preserves_individual_spatial_face_buttons() {
     // xpad retains legacy BTN_X/BTN_Y codes; SDL maps that profile accordingly.
     evdev_face_positions(&Xbox360Definition, 307, 308);
 }
+
+fn family_failure_isolation<D: HidDriver>(driver: &D, numbered: [bool; 3]) {
+    for fail_read in [false, true] {
+        let (first, first_io) = rig(driver, numbered);
+        let (middle, middle_io) = rig(driver, numbered);
+        let (last, last_io) = rig(driver, numbered);
+        let mut runtimes = [first, middle, last];
+        let records = [first_io, middle_io, last_io];
+        for runtime in &mut runtimes {
+            runtime.service(0).unwrap();
+        }
+        for cycle in 1..=8 {
+            for index in [2, 0, 1] {
+                if index == 1 && cycle > 3 {
+                    continue;
+                }
+                records[index].lock().unwrap().events.push_back(
+                    RawReverseEvent::HidSetReportRequest {
+                        request_id: 44,
+                        report_id: 0,
+                        report_type: 99,
+                        bytes: vec![],
+                    },
+                );
+                if index == 1 && cycle == 3 && fail_read {
+                    records[index].lock().unwrap().read_error = Some(ProviderError::Read {
+                        reason: "injected removal during request".into(),
+                    });
+                    assert!(runtimes[index].service(cycle).is_err());
+                    assert!(runtimes[index].is_closed());
+                } else {
+                    runtimes[index].service(cycle).unwrap();
+                    assert_eq!(
+                        records[index].lock().unwrap().sent.last(),
+                        Some(&ProviderFrame::HidSetReportReply {
+                            request_id: 44,
+                            status: -95
+                        })
+                    );
+                }
+                if index == 1 && cycle == 3 {
+                    runtimes[index].close().unwrap();
+                }
+            }
+        }
+        for (index, runtime) in runtimes.iter_mut().enumerate() {
+            runtime.close().unwrap();
+            runtime.close().unwrap();
+            let count = records[index].lock().unwrap().attempts.len();
+            records[index]
+                .lock()
+                .unwrap()
+                .events
+                .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Open));
+            assert!(runtime.service(9).is_err());
+            assert_eq!(records[index].lock().unwrap().attempts.len(), count);
+            assert_eq!(records[index].lock().unwrap().destroys, 1);
+        }
+        for index in [0, 2] {
+            assert_eq!(
+                records[index]
+                    .lock()
+                    .unwrap()
+                    .sent
+                    .iter()
+                    .filter(|frame| matches!(
+                        frame,
+                        ProviderFrame::HidSetReportReply {
+                            request_id: 44,
+                            status: -95
+                        }
+                    ))
+                    .count(),
+                8
+            );
+        }
+        drop(runtimes);
+        for record in records {
+            assert_eq!(record.lock().unwrap().destroys, 1);
+        }
+    }
+}
+#[test]
+fn all_hid_families_isolate_removal_and_partial_read_failure_with_reused_ids() {
+    family_failure_isolation(&DualSenseDefinition, [true; 3]);
+    family_failure_isolation(&DualShock4Definition, [true; 3]);
+    family_failure_isolation(&SwitchProDefinition, [true, true, false]);
+    family_failure_isolation(&Xbox360Definition, [false; 3]);
+}
