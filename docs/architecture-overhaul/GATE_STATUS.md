@@ -162,3 +162,17 @@ worker failure, stop and independent controller removal. Required replies remain
 owned by the existing personality/session. No new hardware evidence is claimed;
 shared-controller mutex stalls remain a scheduling limitation. Physical reference
 and DS4 display-isolation policies remain unchanged.
+
+### Lab GUI and gate resumption review
+
+The demo exposes editable/reused application IDs, per-worker cycle/gap/log-loss
+observations, private clipboard lab records and stop-all cleanup. GUI controller
+access is nonblocking when the worker holds its mutex; brief UI edit ownership
+remains. Socket checks are explicit, not repeated every repaint. Deterministic
+checks cover busy editing, ID wrap/reuse and measurement records.
+
+Read-only preflight on 6.12.107 still finds UHID/uinput creation access ready and
+consumer access unvalidated; gadget ConfigFS availability, UDC authorization and
+broker socket are missing. No host changes were made. [The lab guide](../DEMO_LAB.md)
+provides the next controlled experiments for B/P, isolated compound touch, G and
+F/H/L/M. No gate is promoted from GUI tooling or socket reachability.

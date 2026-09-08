@@ -66,6 +66,46 @@ const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
 }
 
+const fn following_session(current: u64, advance: bool) -> u64 {
+    if advance {
+        current.wrapping_add(1)
+    } else {
+        current
+    }
+}
+
+fn lab_record(
+    name: &str,
+    options: CreationOptions,
+    metrics: &ServiceMetrics,
+    notes: &str,
+) -> String {
+    format!(
+        "Virtualgamepad manual lab record v1\nController: {name}\nRealization: {}\nApplication session: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
+        target_label(options.target),
+        options.session.0,
+        metrics.cycles,
+        metrics.max_gap.as_micros(),
+        metrics.omitted_logs
+    )
+}
+
+fn try_control_edit<T>(
+    controller: &Mutex<T>,
+    edit: impl FnOnce(&mut T) -> Result<(), String>,
+) -> Result<bool, String> {
+    match controller.try_lock() {
+        Ok(mut controller) => {
+            edit(&mut *controller)?;
+            Ok(true)
+        }
+        Err(std::sync::TryLockError::WouldBlock) => Ok(false),
+        Err(std::sync::TryLockError::Poisoned(_)) => {
+            Err("controller mutex poisoned while drawing".to_owned())
+        }
+    }
+}
+
 fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
     0..controller_count
 }
@@ -124,6 +164,7 @@ enum Controller {
 
 struct NamedController {
     kind: Kind,
+    options: CreationOptions,
     name: String,
     controller: Arc<Mutex<Controller>>,
     indicators: ReverseIndicators,
@@ -157,9 +198,32 @@ impl LatchedTouch {
     }
 }
 
+#[derive(Clone, Default)]
+struct ServiceMetrics {
+    cycles: u64,
+    max_gap: Duration,
+    omitted_logs: u64,
+    last_service: Option<Instant>,
+}
+impl ServiceMetrics {
+    fn record(&mut self, now: Instant) {
+        if let Some(previous) = self.last_service {
+            self.max_gap = self.max_gap.max(now.saturating_duration_since(previous));
+        }
+        self.last_service = Some(now);
+        self.cycles = self.cycles.saturating_add(1);
+    }
+    fn omit(&mut self, count: usize) {
+        self.omitted_logs = self
+            .omitted_logs
+            .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+    }
+}
+
 #[derive(Default)]
 struct WorkerDisplay {
     logs: Vec<String>,
+    metrics: ServiceMetrics,
     indicators: ReverseIndicators,
 }
 
@@ -244,6 +308,7 @@ fn spawn_service_worker<C: ServicedController + 'static>(
         let mut next_motion = Duration::ZERO;
         let mut delay = Duration::ZERO;
         let mut indicators = ReverseIndicators::default();
+        let mut metrics = ServiceMetrics::default();
         loop {
             match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -263,8 +328,19 @@ fn spawn_service_worker<C: ServicedController + 'static>(
                     )
                 });
             // Optional UI output never owns or delays protocol replies.
+            metrics.record(Instant::now());
             if let Ok(mut display) = worker_display.try_lock() {
+                metrics.omit(
+                    display
+                        .logs
+                        .len()
+                        .saturating_add(logs.len())
+                        .saturating_sub(OUTPUT_LOG_LIMIT),
+                );
                 publish_display(&mut display, logs, &indicators);
+                display.metrics = metrics.clone();
+            } else {
+                metrics.omit(logs.len());
             }
             match result {
                 Ok(next) => delay = next.min(next_motion.saturating_sub(start.elapsed())),
@@ -537,6 +613,9 @@ pub struct App {
     target: RealizationTarget,
     name_draft: String,
     next_session: u64,
+    advance_session: bool,
+    lab_notes: String,
+    broker_status: Option<Result<(), String>>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
     output_log: Vec<String>,
@@ -549,6 +628,9 @@ impl Default for App {
             target: RealizationTarget::Evdev,
             name_draft: String::new(),
             next_session: 1,
+            advance_session: true,
+            lab_notes: String::new(),
+            broker_status: None,
             controllers: vec![],
             selected_controller: None,
             output_log: vec![],
@@ -588,6 +670,7 @@ impl App {
                 let service_worker = Some(spawn_service_worker(&controller));
                 self.controllers.push(NamedController {
                     kind: self.kind,
+                    options,
                     name: name.clone(),
                     controller,
                     indicators: ReverseIndicators::default(),
@@ -596,7 +679,7 @@ impl App {
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
-                self.next_session += 1;
+                self.next_session = following_session(self.next_session, self.advance_session);
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
@@ -642,6 +725,7 @@ impl eframe::App for App {
     #[allow(clippy::too_many_lines)] // Coordinates the independent demo panels.
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let mut remove = None;
+        let mut stop_all = false;
         let mut failed_controller = None;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
@@ -667,7 +751,7 @@ impl eframe::App for App {
             .filter_map(|named| {
                 named
                     .controller
-                    .lock()
+                    .try_lock()
                     .ok()
                     .and_then(|controller| controller.next_service_in())
             })
@@ -713,27 +797,42 @@ impl eframe::App for App {
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
             ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
             if self.target == RealizationTarget::DummyHcd {
-                match dummy_hcd_broker_status() {
-                    Ok(()) => {
+                if ui.button("Check broker socket").clicked() {
+                    self.broker_status = Some(dummy_hcd_broker_status());
+                }
+                match &self.broker_status {
+                    Some(Ok(())) => {
                         ui.colored_label(
                             Color32::GREEN,
                             "DummyHcd broker socket is reachable. Create a curated controller to attach a USB device.",
                         );
                     }
-                    Err(error) => {
-                        ui.colored_label(
-                            Color32::RED,
-                            format!("DummyHcd broker unavailable: {error}"),
-                        );
+                    Some(Err(error)) => {
+                        ui.colored_label(Color32::RED, format!("DummyHcd broker unavailable: {error}"));
                     }
+                    None => { ui.small("Broker reachability has not been checked."); }
                 }
                 ui.small(
                     "Test flow: select DualSense, create it, then exercise buttons, touch, motion, and host-output indicators.",
                 );
             }
+            ui.horizontal(|ui| {
+                ui.label("Application session ID");
+                ui.add(egui::DragValue::new(&mut self.next_session));
+            });
+            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
+            ui.small("Turn off to test repeated IDs. Device identity remains creation-owned.");
             if ui.button("Create").clicked() {
                 self.create();
             }
+            if ui.button("Stop all controllers").clicked() { stop_all = true; }
+            ui.collapsing("Lab notes and gate prerequisites", |ui| {
+                ui.text_edit_multiline(&mut self.lab_notes);
+                ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
+                ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
+                ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
+                ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
+            });
             ui.separator();
             ui.label("Controllers");
             egui::ScrollArea::vertical()
@@ -794,19 +893,24 @@ impl eframe::App for App {
                                 ui.text_edit_singleline(&mut named.name);
                             });
                             draw_reverse_indicators(ui, &named.indicators);
-                            let result = named
-                                .controller
-                                .lock()
-                                .map_err(|_| "controller mutex poisoned while drawing".to_owned())
-                                .and_then(|mut controller| {
-                                    controller.draw(ui, &mut named.second_touch);
-                                    if controller.is_dirty() {
-                                        controller.commit()?;
+                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session.0));
+                            if let Some(worker) = &named.service_worker {
+                                if let Ok(display) = worker.display.try_lock() {
+                                    ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
+                                        display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
+                                    if ui.button("Copy lab record").clicked() {
+                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes));
                                     }
-                                    Ok(())
-                                });
-                            if let Err(error) = result {
-                                failed_controller = Some((index, error));
+                                }
+                            }
+                            let result = try_control_edit(&named.controller, |controller| {
+                                controller.draw(ui, &mut named.second_touch);
+                                if controller.is_dirty() { controller.commit() } else { Ok(()) }
+                            });
+                            match result {
+                                Ok(false) => { ui.small("Controller is servicing; controls return on the next frame."); }
+                                Ok(true) => {}
+                                Err(error) => { failed_controller = Some((index, error)); }
                             }
                             ui.small("Input changes are sent automatically.");
                         });
@@ -820,7 +924,7 @@ impl eframe::App for App {
                             self.output_log.clear();
                         }
                     });
-                    ui.small("Polling every 50 ms while the demo is open.");
+                    ui.small("Background service uses a 4 ms fallback and earlier deadlines. This bounded log is observational, not an acceptance verdict.");
                     if self.output_log.is_empty() {
                         ui.small("No reverse output received.");
                     }
@@ -829,7 +933,11 @@ impl eframe::App for App {
                     }
                 });
         });
-        if let Some((index, error)) = failed_controller {
+        if stop_all {
+            while !self.controllers.is_empty() {
+                self.remove_controller(self.controllers.len() - 1);
+            }
+        } else if let Some((index, error)) = failed_controller {
             self.close_failed_controller(index, error);
         } else if let Some(index) = remove {
             self.remove_controller(index);
@@ -1519,6 +1627,66 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn busy_controller_skips_ui_edit_without_failure_or_waiting() {
+        let controller = Mutex::new(7);
+        let guard = controller.lock().unwrap();
+        assert_eq!(
+            try_control_edit(&controller, |_| panic!("busy edit must not execute")),
+            Ok(false)
+        );
+        drop(guard);
+        assert_eq!(
+            try_control_edit(&controller, |value| {
+                *value = 8;
+                Ok(())
+            }),
+            Ok(true)
+        );
+        assert_eq!(*controller.lock().unwrap(), 8);
+        assert_eq!(
+            try_control_edit(&controller, |_| Err("injected commit failure".into())),
+            Err("injected commit failure".into())
+        );
+    }
+
+    #[test]
+    fn lab_session_ids_can_repeat_and_advance_without_overflow() {
+        for id in [0, 7, 65543, u64::MAX] {
+            assert_eq!(following_session(id, false), id);
+        }
+        assert_eq!(following_session(7, true), 8);
+        assert_eq!(following_session(u64::MAX, true), 0);
+    }
+
+    #[test]
+    fn lab_metrics_and_record_preserve_measurement_scope() {
+        let start = Instant::now();
+        let mut metrics = ServiceMetrics::default();
+        for delta in [0, 4, 15, 19] {
+            metrics.record(start + Duration::from_millis(delta));
+        }
+        metrics.omit(4);
+        metrics.omit(8);
+        assert_eq!(metrics.cycles, 4);
+        assert_eq!(metrics.max_gap, Duration::from_millis(11));
+        assert_eq!(metrics.omitted_logs, 12);
+        let record = lab_record(
+            "Synthetic lab controller",
+            CreationOptions {
+                session: RealizationSessionId(65543),
+                target: RealizationTarget::Uhid,
+            },
+            &metrics,
+            "Reference disconnected; synthetic test",
+        );
+        assert!(record.starts_with("Virtualgamepad manual lab record v1"));
+        assert!(record.contains("Application session: 65543"));
+        assert!(record.contains("Maximum observed service gap (us): 11000"));
+        assert!(record.contains("acceptance: not established"));
+        assert!(record.ends_with("Reference disconnected; synthetic test"));
+    }
 
     #[derive(Default)]
     struct FakeService {

@@ -61,3 +61,7 @@ The demo services controllers on background workers even while the window is not
 repainting. Its output log is bounded; older optional display messages can be
 omitted during UI stalls. Removing a controller stops its worker and closes its
 session independently of the remaining controllers.
+
+For repeatable manual experiments, see the [demo lab guide](docs/DEMO_LAB.md).
+The GUI includes session-ID reuse, service timing counters, copyable lab notes
+and stop-all cleanup. Measurements remain separate from physical acceptance.
