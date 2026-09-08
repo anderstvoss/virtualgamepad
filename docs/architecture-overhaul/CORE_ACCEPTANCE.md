@@ -43,6 +43,12 @@ evidence scope. No isolated touch environment is currently available.
 
 ## Next implementation order
 
+[Requirements triage](REQUIREMENTS_TRIAGE.md) prioritizes service ownership, typed
+identity and logical compound failure/association before further expansion. The
+items below retain the concrete acceptance prerequisites; they are not a mandate
+to wait for blocked hardware before independent API work.
+
+
 1. Resolve DS4 combined-node discovery and validate touch/auxiliary association. [EXP-0011](experiments/EXP-0011-evdev-sdl.md) records three passing evdev families and the precise DS4 failure; [EXP-0010](experiments/EXP-0010-evdev-feedback.md) covers required FF completion.
    The compound runtime now routes exact component replies and preserves records
    delivered before read failure, with partial snapshot retry and independent
