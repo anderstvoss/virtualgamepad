@@ -3,7 +3,8 @@
 
 use gr_realization_api::{
     NativeProviderFactory, NativeProviderSession, ProviderDiagnostics, ProviderError,
-    ProviderFrame, ProviderOpenRequest, ProviderReverseEvent, RawReverseEvent,
+    ProviderFrame, ProviderOpenRequest, ProviderReverseEvent, ProviderReverseEventSink,
+    RawReverseEvent,
 };
 use std::sync::Arc;
 use thiserror::Error;
@@ -69,6 +70,10 @@ pub enum CompoundSessionError {
     Closed,
     #[error("commit frames must contain every component exactly once in ascending component order")]
     InvalidFrameSet,
+    #[error("component {component:?} does not belong to this compound controller")]
+    UnknownComponent { component: ComponentId },
+    #[error("component replies must be HID GET/SET or force-feedback upload/erase completions")]
+    InvalidReply,
     #[error("component {component:?} provider operation failed: {source}")]
     Provider {
         component: ComponentId,
@@ -169,17 +174,68 @@ impl CompoundSession {
         Ok(())
     }
 
-    /// Drain raw reverse records in deterministic component order.
-    pub fn drain_reverse(
+    /// Send one protocol-owned completion to the component that produced its request.
+    ///
+    /// Request IDs are scoped to a component. The caller owns request validation,
+    /// bounded retry and terminal failure policy. This method preserves provider
+    /// errors and never resends input snapshots or retries implicitly.
+    pub fn reply(
         &mut self,
-        callback: &mut dyn FnMut(ComponentId, RawReverseEvent),
+        id: ComponentId,
+        frame: ProviderFrame,
     ) -> Result<(), CompoundSessionError> {
         if self.closed {
             return Err(CompoundSessionError::Closed);
         }
+        if !matches!(
+            frame,
+            ProviderFrame::HidGetReportReply { .. }
+                | ProviderFrame::HidSetReportReply { .. }
+                | ProviderFrame::ForceFeedbackUploadReply { .. }
+                | ProviderFrame::ForceFeedbackEraseReply { .. }
+        ) {
+            return Err(CompoundSessionError::InvalidReply);
+        }
+        let component = self
+            .components
+            .iter_mut()
+            .find(|component| component.id == id)
+            .ok_or(CompoundSessionError::UnknownComponent { component: id })?;
+        component
+            .session
+            .send(frame)
+            .map_err(|source| CompoundSessionError::Provider {
+                component: id,
+                source,
+            })
+    }
+
+    /// Drain raw reverse records in deterministic component order.
+    ///
+    /// Records already delivered remain visible if a later read fails. The caller
+    /// must complete or cancel requests under its protocol lifecycle policy.
+    pub fn drain_reverse(
+        &mut self,
+        callback: &mut dyn FnMut(ComponentId, RawReverseEvent),
+    ) -> Result<(), CompoundSessionError> {
+        struct Delivery<'a> {
+            id: ComponentId,
+            callback: &'a mut dyn FnMut(ComponentId, RawReverseEvent),
+        }
+        impl ProviderReverseEventSink for Delivery<'_> {
+            fn push(&mut self, event: ProviderReverseEvent) {
+                (self.callback)(self.id, event.event);
+            }
+        }
+        if self.closed {
+            return Err(CompoundSessionError::Closed);
+        }
         for component in &mut self.components {
-            let mut events: Vec<ProviderReverseEvent> = Vec::new();
-            match component.session.drain_reverse_events(&mut events) {
+            let mut delivery = Delivery {
+                id: component.id,
+                callback,
+            };
+            match component.session.drain_reverse_events(&mut delivery) {
                 Ok(()) | Err(ProviderError::WouldBlock) => {}
                 Err(source) => {
                     return Err(CompoundSessionError::Provider {
@@ -187,9 +243,6 @@ impl CompoundSession {
                         source,
                     });
                 }
-            }
-            for event in events {
-                callback(component.id, event.event);
             }
         }
         Ok(())
@@ -442,6 +495,331 @@ mod tests {
         session.close();
         session.close();
         assert_eq!(*closed.lock().expect("closed"), vec![2, 1]);
+    }
+
+    #[derive(Default)]
+    struct IoRecord {
+        attempts: Vec<ProviderFrame>,
+        writes: std::collections::VecDeque<ProviderError>,
+        events: Vec<RawReverseEvent>,
+        read_error: Option<ProviderError>,
+        reads: usize,
+        closes: usize,
+    }
+    struct Recorded(Arc<Mutex<IoRecord>>);
+    impl NativeProviderSession for Recorded {
+        fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
+            let mut record = self.0.lock().unwrap();
+            record.attempts.push(frame);
+            record.writes.pop_front().map_or(Ok(()), Err)
+        }
+        fn drain_reverse_events(
+            &mut self,
+            sink: &mut dyn ProviderReverseEventSink,
+        ) -> Result<(), ProviderError> {
+            let mut record = self.0.lock().unwrap();
+            record.reads += 1;
+            for event in record.events.drain(..) {
+                sink.push(ProviderReverseEvent {
+                    session: RealizationSessionId(7),
+                    sequence: 0,
+                    event,
+                });
+            }
+            record.read_error.take().map_or(Ok(()), Err)
+        }
+        fn readiness(&self) -> EventReadiness {
+            EventReadiness::NoReverseEvents
+        }
+        fn diagnostics(&self) -> ProviderDiagnostics {
+            ProviderDiagnostics {
+                state: ProviderState::Open,
+                frames_sent: 0,
+                reverse_events_drained: 0,
+                write_failures: 0,
+                lifecycle_events: 0,
+                last_error: None,
+            }
+        }
+        fn close(&mut self) -> Result<(), ProviderError> {
+            self.0.lock().unwrap().closes += 1;
+            Ok(())
+        }
+    }
+    fn recorded() -> (CompoundSession, [Arc<Mutex<IoRecord>>; 2]) {
+        let records = [Arc::default(), Arc::default()];
+        let components = records
+            .iter()
+            .enumerate()
+            .map(|(id, record)| Component {
+                id: ComponentId(u16::try_from(id).unwrap()),
+                session: Box::new(Recorded(Arc::clone(record))),
+                close_failures: 0,
+                last_close_error: None,
+            })
+            .collect();
+        (
+            CompoundSession {
+                components,
+                closed: false,
+            },
+            records,
+        )
+    }
+    fn replies() -> Vec<ProviderFrame> {
+        vec![
+            ProviderFrame::HidGetReportReply {
+                request_id: 7,
+                status: 0,
+                bytes: vec![1, 2, 3],
+            },
+            ProviderFrame::HidGetReportReply {
+                request_id: 7,
+                status: 5,
+                bytes: vec![],
+            },
+            ProviderFrame::HidSetReportReply {
+                request_id: 7,
+                status: 0,
+            },
+            ProviderFrame::HidSetReportReply {
+                request_id: 7,
+                status: 5,
+            },
+            ProviderFrame::ForceFeedbackUploadReply {
+                request_id: 7,
+                status: 0,
+            },
+            ProviderFrame::ForceFeedbackUploadReply {
+                request_id: 7,
+                status: -22,
+            },
+            ProviderFrame::ForceFeedbackEraseReply {
+                request_id: 7,
+                status: 0,
+            },
+            ProviderFrame::ForceFeedbackEraseReply {
+                request_id: 7,
+                status: -22,
+            },
+        ]
+    }
+    #[test]
+    fn exact_replies_are_scoped_to_components_even_with_reused_request_ids() {
+        let (mut session, records) = recorded();
+        for id in [1, 0, 1] {
+            for reply in replies() {
+                session.reply(ComponentId(id), reply).unwrap();
+            }
+        }
+        assert_eq!(records[0].lock().unwrap().attempts, replies());
+        assert_eq!(
+            records[1].lock().unwrap().attempts,
+            [replies(), replies()].concat()
+        );
+        for frame in [
+            ProviderFrame::Evdev(vec![]),
+            ProviderFrame::HidInput {
+                report_id: None,
+                bytes: vec![],
+            },
+            ProviderFrame::DummyHcdInput(vec![]),
+        ] {
+            assert!(matches!(
+                session.reply(ComponentId(0), frame),
+                Err(CompoundSessionError::InvalidReply)
+            ));
+        }
+        assert!(matches!(
+            session.reply(ComponentId(99), replies()[0].clone()),
+            Err(CompoundSessionError::UnknownComponent {
+                component: ComponentId(99)
+            })
+        ));
+        assert_eq!(records[0].lock().unwrap().attempts, replies());
+        assert_eq!(
+            records[1].lock().unwrap().attempts,
+            [replies(), replies()].concat()
+        );
+        session.close();
+        session.close();
+        assert!(matches!(
+            session.reply(ComponentId(0), replies()[0].clone()),
+            Err(CompoundSessionError::Closed)
+        ));
+        assert!(matches!(
+            session.drain_reverse(&mut |_, _| panic!("closed")),
+            Err(CompoundSessionError::Closed)
+        ));
+        drop(session);
+        for record in records {
+            assert_eq!(record.lock().unwrap().closes, 1);
+            assert_eq!(record.lock().unwrap().reads, 0);
+        }
+    }
+    #[test]
+    fn reply_backpressure_requires_explicit_retry_and_preserves_provider_error() {
+        let (mut session, records) = recorded();
+        records[1]
+            .lock()
+            .unwrap()
+            .writes
+            .push_back(ProviderError::WouldBlock);
+        let reply = replies()[0].clone();
+        assert!(matches!(
+            session.reply(ComponentId(1), reply.clone()),
+            Err(CompoundSessionError::Provider {
+                component: ComponentId(1),
+                source: ProviderError::WouldBlock
+            })
+        ));
+        assert_eq!(records[1].lock().unwrap().attempts, vec![reply.clone()]);
+        session.reply(ComponentId(1), reply.clone()).unwrap();
+        assert_eq!(
+            records[1].lock().unwrap().attempts,
+            vec![reply.clone(), reply]
+        );
+        assert!(records[0].lock().unwrap().attempts.is_empty());
+    }
+    #[test]
+    fn uncertain_reply_failure_is_not_retried_and_cleanup_is_terminal() {
+        let (mut session, records) = recorded();
+        records[0]
+            .lock()
+            .unwrap()
+            .writes
+            .push_back(ProviderError::Write {
+                reason: "delivery uncertain".into(),
+            });
+        let reply = replies()[0].clone();
+        assert!(
+            matches!(session.reply(ComponentId(0), reply.clone()), Err(CompoundSessionError::Provider { component: ComponentId(0), source: ProviderError::Write { reason } }) if reason == "delivery uncertain")
+        );
+        session.close();
+        session.close();
+        assert!(matches!(
+            session.reply(ComponentId(0), reply.clone()),
+            Err(CompoundSessionError::Closed)
+        ));
+        assert_eq!(records[0].lock().unwrap().attempts, vec![reply]);
+        assert!(records[1].lock().unwrap().attempts.is_empty());
+        for record in records {
+            assert_eq!(record.lock().unwrap().closes, 1);
+        }
+    }
+
+    #[test]
+    fn partial_reverse_delivery_survives_read_failure_without_replay() {
+        for error in [
+            ProviderError::WouldBlock,
+            ProviderError::Closed,
+            ProviderError::Read {
+                reason: "injected".into(),
+            },
+        ] {
+            let (mut session, records) = recorded();
+            let event = RawReverseEvent::ForceFeedbackErase {
+                request_id: 7,
+                effect_id: 3,
+            };
+            records[0].lock().unwrap().events.push(event.clone());
+            let blocked = matches!(error, ProviderError::WouldBlock);
+            records[0].lock().unwrap().read_error = Some(error);
+            let mut delivered = vec![];
+            let result = session.drain_reverse(&mut |id, event| delivered.push((id, event)));
+            assert_eq!(result.is_ok(), blocked);
+            assert_eq!(delivered, vec![(ComponentId(0), event)]);
+            assert_eq!(records[1].lock().unwrap().reads, usize::from(blocked));
+            if blocked {
+                session
+                    .reply(
+                        ComponentId(0),
+                        ProviderFrame::ForceFeedbackEraseReply {
+                            request_id: 7,
+                            status: 0,
+                        },
+                    )
+                    .unwrap();
+                session
+                    .drain_reverse(&mut |_, _| panic!("record replayed"))
+                    .unwrap();
+            }
+            session.close();
+            session.close();
+            for record in records {
+                assert_eq!(record.lock().unwrap().closes, 1);
+            }
+        }
+    }
+    #[test]
+    fn independent_compounds_with_reused_ids_survive_arbitrary_removal() {
+        let (mut first, first_records) = recorded();
+        let (mut middle, middle_records) = recorded();
+        let (mut last, last_records) = recorded();
+        middle.close();
+        for live in [&mut first, &mut last] {
+            for reply in replies() {
+                live.reply(ComponentId(0), reply).unwrap();
+            }
+            live.drain_reverse(&mut |_, _| panic!("no requests"))
+                .unwrap();
+        }
+        assert!(matches!(
+            middle.reply(ComponentId(0), replies()[0].clone()),
+            Err(CompoundSessionError::Closed)
+        ));
+        first.close();
+        last.reply(ComponentId(1), replies()[0].clone()).unwrap();
+        last.close();
+        drop((first, middle, last));
+        for records in [&first_records, &middle_records, &last_records] {
+            for record in records {
+                assert_eq!(record.lock().unwrap().closes, 1);
+            }
+        }
+        assert!(middle_records[0].lock().unwrap().attempts.is_empty());
+        assert_eq!(first_records[0].lock().unwrap().attempts, replies());
+        assert_eq!(last_records[0].lock().unwrap().attempts, replies());
+        assert_eq!(
+            last_records[1].lock().unwrap().attempts,
+            vec![replies()[0].clone()]
+        );
+    }
+
+    #[test]
+    fn partial_input_failure_requires_complete_snapshot_retry() {
+        let (mut session, records) = recorded();
+        records[1]
+            .lock()
+            .unwrap()
+            .writes
+            .push_back(ProviderError::WouldBlock);
+        let frames: Vec<_> = (0..2)
+            .map(|id| ComponentFrame {
+                component: ComponentId(id),
+                frame: ProviderFrame::Evdev(vec![]),
+            })
+            .collect();
+        assert!(matches!(
+            session.send(&frames),
+            Err(CompoundSessionError::Provider {
+                component: ComponentId(1),
+                source: ProviderError::WouldBlock
+            })
+        ));
+        assert!(matches!(
+            session.send(&frames[1..]),
+            Err(CompoundSessionError::InvalidFrameSet)
+        ));
+        session.send(&frames).unwrap();
+        for record in &records {
+            assert_eq!(record.lock().unwrap().attempts.len(), 2);
+        }
+        session.close();
+        assert!(matches!(
+            session.send(&frames),
+            Err(CompoundSessionError::Closed)
+        ));
     }
 
     /// Dreamcast/VMU-inspired benchmark only: this is not a Dreamcast codec.

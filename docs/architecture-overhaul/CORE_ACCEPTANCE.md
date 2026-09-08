@@ -34,6 +34,9 @@ is explicitly incomplete. Ordinary builds still use checked-in artifacts.
 ## Next implementation order
 
 1. Resolve DS4 combined-node discovery and validate touch/auxiliary association. [EXP-0011](experiments/EXP-0011-evdev-sdl.md) records three passing evdev families and the precise DS4 failure; [EXP-0010](experiments/EXP-0010-evdev-feedback.md) covers required FF completion.
+   The compound runtime now routes exact component replies and preserves records
+   delivered before read failure, with partial snapshot retry and independent
+   cleanup regressions. DS4 two-node integration and live evidence are still pending.
 2. Complete remaining family concurrency/failure tests and Switch compressed-rumble evidence.
 3. Review demo readiness/deadline scheduling against measured requests and shutdown;
    change it only when its fixed scheduling violates the contract.

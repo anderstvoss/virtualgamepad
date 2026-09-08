@@ -34,6 +34,26 @@ saturation, duplicate reply, and closed reply state are diagnostics and
 recoverable errors; they never close unrelated components or mutate input
 state. Reply payload types remain controller-native.
 
+### Component-scoped native completion
+
+`CompoundSession::reply(component, frame)` routes only HID GET/SET and FF
+upload/erase completions to an owned component. Request identifiers may repeat
+across components. Invalid components, input frames and closed sessions fail
+before provider I/O. Input commits still require the entire ordered frame set;
+a reply neither resends inputs nor changes their dirty state.
+
+The helper does not own a protocol request table or retry policy. The controller
+must complete or cancel each delivered request within its service cycle, with
+bounded retry only when the provider confirms backpressure. Provider errors retain
+the component and original error. No implicit retry is safe for uncertain writes.
+Reverse records stream to the caller even when a subsequent read fails; callers
+must handle those records and the terminal error together. A partial input send
+is not atomic across devices; only repeatable full snapshots use full-set retry.
+
+These are deterministic prerequisites for DS4 gamepad/touch composition. The
+current DS4 production node is still combined and its SDL discovery limitation
+remains. No new companion or realization is advertised by this runtime change.
+
 ## Steam Controller 2 and Dreamcast benchmark
 
 A future Steam Controller 2/Puck package may use a native component and an

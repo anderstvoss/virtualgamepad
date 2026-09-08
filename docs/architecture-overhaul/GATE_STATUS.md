@@ -116,3 +116,14 @@ regressions. Full touch, auxiliary-control and physical fidelity are not inferre
 All four rewrite UHID/SDL profiles also pass three repetitions on kernel 6.12.107
 in EXP-0011. Baseline comparisons and prior fault injection remain scoped to their
 original records; this recheck does not close B/P broadly.
+
+### Compound prerequisites for DS4 evdev
+
+The frame runtime now routes required replies to one owned component without
+resending input snapshots and delivers reverse records even if the next read
+fails. Deterministic regressions cover every native reply class/status, reused
+request IDs, rejected inputs/unknown components, explicit backpressure retry,
+partial input retry and independent terminal cleanup. Controller policy still
+owns completion/cancellation; this lifecycle helper does not introduce a second
+protocol authority. DS4's two-node presentation and its live acceptance remain
+pending. Gate E and other realization support levels are unchanged.
