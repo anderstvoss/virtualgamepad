@@ -133,3 +133,26 @@ Those costs are accepted.
 The corpus remains independently usable and independently validated. Document how fork CI retrieves it; do not make public conformance depend on a private developer checkout. Do not change visibility, credentials, repository settings, or release policy as an incidental submodule setup action. Resolve actual repository ownership/URL during E1; placeholders in these documents are not an existing remote.
 
 The handoffs are planning instructions, not evidence that repositories, submodules, CI, tags, or releases have been created. Follow the gate register's status records for execution state.
+
+## Authenticated CI with a read-only deploy key
+
+The corpus job uses `PROTOCOL_CORPUS_SSH_KEY`, registered as a read-only deploy key
+on the corpus repository only. It is not an account token and grants no write
+access or access to other private repositories. The ordinary project checkout
+uses its standard ephemeral Actions credential with persistence disabled; only
+the separately checked-out corpus uses the deploy key. The corpus revision is
+read from the main checkout's gitlink, with history available for the remote
+publication check. `actions/checkout` removes its persisted SSH configuration and
+key at job cleanup. No key is stored in source, fixtures or artifacts.
+
+The existing public-repository and same-repository-PR conditions remain unchanged.
+Fork PRs and ordinary package builds need no corpus credential. Missing access is
+an explicit job failure. Same-repository CI code is trusted with corpus read
+access, so review changes to that job before running them. Do not replace this
+key with a broad personal development token.
+
+For rotation, create a fresh corpus-only read-only deploy key, update the Actions
+secret, verify the pinned-corpus job, then revoke the old deploy key. For immediate
+revocation, remove the deploy key from the corpus repository and remove the
+Actions secret; ordinary builds remain available. The old
+PROTOCOL_CORPUS_READ_TOKEN mechanism is no longer used.

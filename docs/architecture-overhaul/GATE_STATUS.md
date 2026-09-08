@@ -185,3 +185,15 @@ Printed/spatial face labels support individual-control lab checks. Deterministic
 regressions pass; live mapping/fidelity evidence is unchanged, and no cause is
 assigned to the prior display-session crash. All existing family limitations and
 isolated-touch prerequisites remain.
+
+### Individual controls and corpus CI access
+
+[EXP-0014](experiments/EXP-0014-individual-evdev-mapping.md) records passing
+Xbox/Switch evdev individual controls, unrelated-control neutrality and release
+checks across three creations each. Probe readiness now precedes input activation.
+DS4 touch remains blocked by the unavailable isolated environment; demo mutex
+stalls and Gate G remain unresolved. No extension gate is promoted.
+
+Authenticated corpus CI now uses a corpus-only read-only deploy key, preserving
+the existing private/fork job boundary. Remote read access is verified; the
+published workflow result is required before claiming CI closure.

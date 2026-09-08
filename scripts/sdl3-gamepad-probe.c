@@ -4,6 +4,11 @@
 
 int main(int argc, char **argv) {
     uint64_t duration = 0;
+    unsigned control_case = 0;
+    bool control_script = argc == 4 && probe_control_case(argv[3], &control_case);
+    uint64_t matching_since = 0;
+    uint32_t final_buttons = 0;
+    int16_t final_axes[6] = {0};
     bool require_script = argc == 4 && strcmp(argv[3], "--dualsense-script") == 0;
     bool motion_script = argc == 4 && strcmp(argv[3], "--motion-gamepad-script") == 0;
     bool rumble_script = argc == 4 && strcmp(argv[3], "--gamepad-rumble-script") == 0;
@@ -25,7 +30,7 @@ int main(int argc, char **argv) {
     unsigned button_down = 0, button_up = 0, axis_events = 0, touch_events = 0;
     unsigned down_mask = 0, up_mask = 0, axis_mask = 0;
     ProbeAxis axes[6] = {0};
-    if ((argc != 3 && !require_motion && !gamepad_script) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
+    if ((argc != 3 && !require_motion && !gamepad_script && !control_script) || !argv[1][0] || !probe_duration(argv[2], &duration)) goto done;
     if (!SDL_Init(SDL_INIT_GAMEPAD | SDL_INIT_SENSOR)) { error = "SDL initialization failed"; goto done; }
     initialized = true;
     SDL_JoystickID *joysticks = SDL_GetJoysticks(&joystick_count);
@@ -49,14 +54,15 @@ int main(int argc, char **argv) {
     if (gamepad == NULL) { error = "selected gamepad open failed"; goto done; }
     for (int index = 0; index < 2; ++index) {
         sensors[index].present = SDL_GamepadHasSensor(gamepad, types[index]);
-        if (sensors[index].present)
+        if (sensors[index].present && !control_script)
             sensors[index].enabled = SDL_SetGamepadSensorEnabled(gamepad, types[index], true);
     }
     mapping = SDL_GetGamepadMapping(gamepad);
-    rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
-    led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
+    if (!control_script) rumble = SDL_RumbleGamepad(gamepad, 0x4000, 0x8000, (Uint32)duration);
+    if (!control_script) led = SDL_SetGamepadLED(gamepad, 32, 64, 128);
     started = SDL_GetTicks();
     connected = true;
+    if (control_script) { puts("{\"schema_version\":1,\"record_type\":\"mapping_ready\"}"); fflush(stdout); }
     while (SDL_GetTicks() - started < duration) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -77,6 +83,14 @@ int main(int argc, char **argv) {
             }
             if ((event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_DOWN || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_UP || event.type == SDL_EVENT_GAMEPAD_TOUCHPAD_MOTION) && event.gtouchpad.which == selected) ++touch_events;
         }
+        final_buttons = 0;
+        for (int button = 0; button < SDL_GAMEPAD_BUTTON_COUNT && button < 32; ++button)
+            if (SDL_GetGamepadButton(gamepad, (SDL_GamepadButton)button)) final_buttons |= 1u << button;
+        for (int axis = 0; axis < 6; ++axis) final_axes[axis] = SDL_GetGamepadAxis(gamepad, (SDL_GamepadAxis)axis);
+        if (control_script) {
+            if (!probe_control_matches(control_case, final_buttons, final_axes)) matching_since = 0;
+            else if (!matching_since) matching_since = SDL_GetTicks();
+        }
         bool neutral = true;
         for (int button = 0; button < 15; ++button)
             neutral = neutral && !SDL_GetGamepadButton(gamepad, (SDL_GamepadButton)button);
@@ -91,7 +105,10 @@ int main(int argc, char **argv) {
     elapsed = SDL_GetTicks() - started;
     passed = connected;
     error = connected ? "" : "selected gamepad removed during observation";
-    for (int index = 0; index < 2; ++index) {
+    if (control_script && (!matching_since || SDL_GetTicks() - matching_since < 50)) {
+        passed = false; error = "exact control state did not remain stable for 50 ms";
+    }
+    for (int index = 0; index < 2 && !control_script; ++index) {
         if ((require_motion && !sensors[index].present) ||
             (sensors[index].present && (!sensors[index].enabled || sensors[index].invalid || sensors[index].distinct < 10))) {
             passed = false;
@@ -112,6 +129,9 @@ int main(int argc, char **argv) {
     probe_json_string(argc > 1 ? argv[1] : "");
     printf(",\"enumerated_joysticks\":%d,\"exact_joystick_matches\":%d", joystick_count, joystick_matches);
     printf(",\"mapping\":"); probe_json_string(mapping ? mapping : "");
+    printf(",\"control_case\":%u,\"final_buttons\":%u,\"final_axes\":[", control_case, final_buttons);
+    for (unsigned axis = 0; axis < 6; ++axis) printf("%s%d", axis ? "," : "", final_axes[axis]);
+    printf("]");
     printf(",\"profile\":"); probe_json_string(argc == 4 ? argv[3] : "diagnostic");
     printf(",\"guid\":"); probe_json_string(guid);
     printf(",\"vendor\":%u,\"product\":%u", vendor, product);

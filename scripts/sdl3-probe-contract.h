@@ -31,6 +31,35 @@ static void probe_json_string(const char *text) {
 }
 static inline bool probe_unique_match(unsigned count) { return count == 1; }
 
+/* Exact-state mapping cases: neutral, 15 buttons, 8 signed stick endpoints,
+ * then the two positive trigger endpoints. Every unrelated control stays neutral. */
+static inline bool probe_control_case(const char *text, unsigned *value) {
+    const char prefix[] = "--control-";
+    if (!text || strncmp(text, prefix, sizeof(prefix)-1) != 0) return false;
+    text += sizeof(prefix)-1;
+    if (!*text) return false;
+    unsigned parsed = 0;
+    for (; *text; ++text) {
+        if (*text < '0' || *text > '9' || parsed > 25) return false;
+        parsed = parsed * 10 + (unsigned)(*text - '0');
+    }
+    if (parsed > 25) return false;
+    *value = parsed;
+    return true;
+}
+static inline bool probe_control_matches(unsigned test, uint32_t buttons, const int16_t axes[6]) {
+    if (test > 25) return false;
+    uint32_t expected = test >= 1 && test <= 15 ? 1u << (test-1) : 0;
+    if (buttons != expected) return false;
+    for (unsigned axis = 0; axis < 6; ++axis) {
+        bool negative = test >= 16 && test <= 23 && (test-16)/2 == axis && test % 2 == 0;
+        bool positive = (test >= 16 && test <= 23 && (test-16)/2 == axis && test % 2 == 1)
+                     || (test >= 24 && axis == test-20);
+        if (negative ? axes[axis] > -31000 : positive ? axes[axis] < 31000 : (axes[axis] < -512 || axes[axis] > 512)) return false;
+    }
+    return true;
+}
+
 typedef struct {
     bool present, enabled, invalid, have_sample;
     unsigned distinct;

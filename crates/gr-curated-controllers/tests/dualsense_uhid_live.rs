@@ -1078,3 +1078,241 @@ fn evdev_rumble_acceptance_requires_playback_and_exact_magnitudes() {
         repetitions: 1
     }));
 }
+
+fn isolated_digital(case: u8) -> Option<DigitalControlUpdate> {
+    use gr_controller_contract::FaceButton;
+    if (1..=4).contains(&case) {
+        Some(DigitalControlUpdate::FaceButton {
+            button: [
+                FaceButton::South,
+                FaceButton::East,
+                FaceButton::West,
+                FaceButton::North,
+            ][usize::from(case - 1)],
+            pressed: true,
+        })
+    } else if (12..=15).contains(&case) {
+        Some(DigitalControlUpdate::Dpad {
+            direction: [
+                DpadDirection::Up,
+                DpadDirection::Down,
+                DpadDirection::Left,
+                DpadDirection::Right,
+            ][usize::from(case - 12)],
+            pressed: true,
+        })
+    } else {
+        None
+    }
+}
+fn isolated_axes(case: u8) -> [i16; 4] {
+    let mut axes = [0; 4];
+    if (16..=23).contains(&case) {
+        axes[usize::from((case - 16) / 2)] = if case % 2 == 0 { i16::MIN } else { i16::MAX };
+    }
+    axes
+}
+trait MappingController: AcceptanceController {
+    fn mapping(&mut self, case: u8);
+}
+impl MappingController for gr_curated_controllers::Xbox360Controller {
+    fn mapping(&mut self, case: u8) {
+        use gr_curated_controllers::{Xbox360Axis, Xbox360Control, Xbox360Trigger};
+        apply_xbox_script(self, 0);
+        if let Some(update) = isolated_digital(case) {
+            self.set_digital(update).unwrap();
+        }
+        if (5..=11).contains(&case) {
+            self.set_native(
+                [
+                    Xbox360Control::Back,
+                    Xbox360Control::Guide,
+                    Xbox360Control::Start,
+                    Xbox360Control::LeftStickPress,
+                    Xbox360Control::RightStickPress,
+                    Xbox360Control::LeftShoulder,
+                    Xbox360Control::RightShoulder,
+                ][usize::from(case - 5)],
+                true,
+            )
+            .unwrap();
+        }
+        let [x, y, rx, ry] = isolated_axes(case);
+        self.set_left_stick(Xbox360Axis::new(x), Xbox360Axis::new(y))
+            .unwrap();
+        self.set_right_stick(Xbox360Axis::new(rx), Xbox360Axis::new(ry))
+            .unwrap();
+        self.set_triggers(
+            Xbox360Trigger::new(if case == 24 { 255 } else { 0 }),
+            Xbox360Trigger::new(if case == 25 { 255 } else { 0 }),
+        )
+        .unwrap();
+        self.commit().unwrap();
+    }
+}
+impl MappingController for gr_curated_controllers::SwitchProController {
+    fn mapping(&mut self, case: u8) {
+        use gr_curated_controllers::{SwitchProAxis, SwitchProControl};
+        apply_switch_script(self, 0);
+        if let Some(update) = isolated_digital(case) {
+            self.set_digital(update).unwrap();
+        }
+        if (5..=11).contains(&case) {
+            self.set_native(
+                [
+                    SwitchProControl::Minus,
+                    SwitchProControl::Home,
+                    SwitchProControl::Plus,
+                    SwitchProControl::LeftStickPress,
+                    SwitchProControl::RightStickPress,
+                    SwitchProControl::L,
+                    SwitchProControl::R,
+                ][usize::from(case - 5)],
+                true,
+            )
+            .unwrap();
+        }
+        let [x, y, rx, ry] = isolated_axes(case);
+        self.set_left_stick(SwitchProAxis::new(x), SwitchProAxis::new(y))
+            .unwrap();
+        self.set_right_stick(SwitchProAxis::new(rx), SwitchProAxis::new(ry))
+            .unwrap();
+        self.set_native(SwitchProControl::Zl, case == 24).unwrap();
+        self.set_native(SwitchProControl::Zr, case == 25).unwrap();
+        self.commit().unwrap();
+    }
+}
+#[allow(clippy::too_many_lines)] // Keeps exact selection, servicing and cleanup in one live run.
+#[allow(unsafe_code)] // Nonblocking access to this test-owned child stdout only.
+fn run_isolated_mapping<C: MappingController>() {
+    use std::io::Read;
+    use std::os::fd::AsRawFd;
+    let _guard = LIVE_LOCK.lock().unwrap();
+    let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
+    for id in [7, 7, 65543] {
+        let before = input_nodes();
+        let mut probe = None;
+        let mut controller = C::create(id, RealizationTarget::Evdev);
+        thread::sleep(Duration::from_millis(500));
+        let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
+        let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
+        let mut passed = true;
+        for case in (0..=25).flat_map(|case| [case, 0]) {
+            controller.mapping(0);
+            probe = Some(ProbeChild(
+                Command::new(&binary)
+                    .arg(&path)
+                    .arg("500")
+                    .arg(format!("--control-{case}"))
+                    .env("SDL_JOYSTICK_HIDAPI", "0")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .unwrap(),
+            ));
+            let fd = probe
+                .as_ref()
+                .unwrap()
+                .0
+                .stdout
+                .as_ref()
+                .unwrap()
+                .as_raw_fd();
+            // Preserve descriptor flags while enabling bounded readiness polling.
+            let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
+            assert!(flags >= 0);
+            assert_eq!(
+                unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) },
+                0
+            );
+            let mut output = Vec::new();
+            let mut applied = false;
+            let start = Instant::now();
+            let status = loop {
+                controller.feedback();
+                match probe
+                    .as_mut()
+                    .unwrap()
+                    .0
+                    .stdout
+                    .as_mut()
+                    .unwrap()
+                    .read_to_end(&mut output)
+                {
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                    Err(error) => panic!("probe output: {error}"),
+                }
+                if !applied
+                    && String::from_utf8_lossy(&output)
+                        .contains("\"record_type\":\"mapping_ready\"")
+                {
+                    controller.mapping(case);
+                    applied = true;
+                }
+                if let Some(status) = probe.as_mut().unwrap().0.try_wait().unwrap() {
+                    break Some(status);
+                }
+                if start.elapsed() > Duration::from_secs(5) {
+                    break None;
+                }
+                wait_for_service(&controller);
+            };
+            if let Some(status) = status {
+                probe
+                    .as_mut()
+                    .unwrap()
+                    .0
+                    .stdout
+                    .as_mut()
+                    .unwrap()
+                    .read_to_end(&mut output)
+                    .unwrap();
+                eprintln!("{}", String::from_utf8_lossy(&output).trim());
+                passed &= status.success() && applied;
+            } else {
+                passed = false;
+            }
+            if !passed {
+                break;
+            }
+            drop(probe.take());
+        }
+        controller.close();
+        controller.close();
+        drop(probe);
+        let start = Instant::now();
+        while node.exists() && start.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(!node.exists(), "mapping experiment cleanup failed");
+        eprintln!(
+            "{{\"schema_version\":1,\"record_type\":\"mapping_cleanup\",\"device_removed\":true,\"consumer_reaped\":true}}"
+        );
+        assert!(passed, "individual control mapping failed");
+    }
+}
+#[test]
+#[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
+fn xbox_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>();
+}
+#[test]
+#[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
+fn switch_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::SwitchProController>();
+}
+#[test]
+fn isolated_mapping_cases_touch_only_the_selected_axis() {
+    for case in 0..=25 {
+        let axes = isolated_axes(case);
+        assert_eq!(
+            axes.iter().filter(|v| **v != 0).count(),
+            usize::from((16..=23).contains(&case))
+        );
+        assert_eq!(
+            isolated_digital(case).is_some(),
+            (1..=4).contains(&case) || (12..=15).contains(&case)
+        );
+    }
+}
