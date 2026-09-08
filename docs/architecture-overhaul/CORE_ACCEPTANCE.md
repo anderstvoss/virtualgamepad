@@ -47,8 +47,10 @@ is explicitly incomplete. Ordinary builds still use checked-in artifacts.
    reused IDs, repeated exact SET rejection, arbitrary removal, partial-read
    failure and terminal reopen prevention. Continue remaining concurrency axes;
    Switch physical compressed-rumble fidelity remains best-effort/unvalidated.
-3. Review demo readiness/deadline scheduling against measured requests and shutdown;
-   change it only when its fixed scheduling violates the contract.
+3. Demo service is now independent of GUI repaint, with per-controller workers,
+   bounded optional display delivery, deadline-aware polling and failure/stop
+   cleanup regressions. Live GUI validation remains pending; shared-controller
+   mutex stalls are outside the independent-display guarantee.
 4. Resolve Gate G with explicitly reserved resources and supported metadata/completion
    authority. Missing permissions do not fix the inspected f_hid interface gap.
 5. Begin extensions only after core review and each extension's declared gate.

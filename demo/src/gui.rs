@@ -127,7 +127,7 @@ struct NamedController {
     name: String,
     controller: Arc<Mutex<Controller>>,
     indicators: ReverseIndicators,
-    motion_worker: Option<MotionWorker>,
+    service_worker: Option<ServiceWorker>,
     second_touch: LatchedTouch,
 }
 
@@ -157,54 +157,138 @@ impl LatchedTouch {
     }
 }
 
-struct MotionWorker {
+#[derive(Default)]
+struct WorkerDisplay {
+    logs: Vec<String>,
+    indicators: ReverseIndicators,
+}
+
+struct ServiceWorker {
     stop: mpsc::Sender<()>,
     failure: mpsc::Receiver<String>,
+    display: Arc<Mutex<WorkerDisplay>>,
     handle: JoinHandle<()>,
 }
 
-impl MotionWorker {
+impl ServiceWorker {
     fn stop(self) {
         let _ = self.stop.send(());
         let _ = self.handle.join();
     }
 }
 
-fn start_motion_worker(controller: &Arc<Mutex<Controller>>) -> Option<MotionWorker> {
-    if !controller
-        .lock()
-        .expect("controller mutex is not poisoned during creation")
-        .needs_motion_refresh()
-    {
-        return None;
+trait ServicedController: Send {
+    fn refresh(&mut self) -> Result<(), String>;
+    fn service(
+        &mut self,
+        log: &mut Vec<String>,
+        indicators: &mut ReverseIndicators,
+    ) -> Result<(), String>;
+    fn deadline(&self) -> Option<Duration>;
+    fn close(&mut self);
+}
+impl ServicedController for Controller {
+    fn refresh(&mut self) -> Result<(), String> {
+        self.refresh_motion()
     }
+    fn service(
+        &mut self,
+        log: &mut Vec<String>,
+        indicators: &mut ReverseIndicators,
+    ) -> Result<(), String> {
+        self.poll_output(log, indicators)
+    }
+    fn deadline(&self) -> Option<Duration> {
+        self.next_service_in()
+    }
+    fn close(&mut self) {
+        Self::close(self);
+    }
+}
+
+fn service_cycle<C: ServicedController>(
+    controller: &mut C,
+    now: Duration,
+    next_motion: &mut Duration,
+    logs: &mut Vec<String>,
+    indicators: &mut ReverseIndicators,
+) -> Result<Duration, String> {
+    if now >= *next_motion {
+        controller.refresh()?;
+        *next_motion = now.saturating_add(motion_worker_interval());
+    }
+    controller.service(logs, indicators)?;
+    Ok(controller
+        .deadline()
+        .unwrap_or(motion_worker_interval())
+        .min(next_motion.saturating_sub(now)))
+}
+
+fn publish_display(display: &mut WorkerDisplay, logs: Vec<String>, indicators: &ReverseIndicators) {
+    display.logs.extend(logs);
+    let excess = display.logs.len().saturating_sub(OUTPUT_LOG_LIMIT);
+    display.logs.drain(..excess);
+    display.indicators = indicators.clone();
+}
+
+fn spawn_service_worker<C: ServicedController + 'static>(
+    controller: &Arc<Mutex<C>>,
+) -> ServiceWorker {
     let (stop_sender, stop_receiver) = mpsc::channel();
-    let (failure_sender, failure_receiver) = mpsc::channel();
+    let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
+    let display = Arc::new(Mutex::new(WorkerDisplay::default()));
+    let worker_display = Arc::clone(&display);
     let controller = Arc::clone(controller);
     let handle = thread::spawn(move || {
+        let start = Instant::now();
+        let mut next_motion = Duration::ZERO;
+        let mut delay = Duration::ZERO;
+        let mut indicators = ReverseIndicators::default();
         loop {
-            match stop_receiver.recv_timeout(motion_worker_interval()) {
+            match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
             }
+            let mut logs = Vec::new();
             let result = controller
                 .lock()
-                .map_err(|_| "controller mutex poisoned in motion worker".to_owned())
-                .and_then(|mut controller| controller.refresh_motion());
-            if let Err(error) = result {
-                let _ = failure_sender.send(error);
-                break;
+                .map_err(|_| "controller mutex poisoned in service worker".to_owned())
+                .and_then(|mut controller| {
+                    service_cycle(
+                        &mut *controller,
+                        start.elapsed(),
+                        &mut next_motion,
+                        &mut logs,
+                        &mut indicators,
+                    )
+                });
+            // Optional UI output never owns or delays protocol replies.
+            if let Ok(mut display) = worker_display.try_lock() {
+                publish_display(&mut display, logs, &indicators);
+            }
+            match result {
+                Ok(next) => delay = next.min(next_motion.saturating_sub(start.elapsed())),
+                Err(error) => {
+                    let _ = failure_sender.try_send(error);
+                    break;
+                }
             }
         }
+        // Stop or failure closes immediately, even when the UI never repaints.
+        controller
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .close();
     });
-    Some(MotionWorker {
+    ServiceWorker {
         stop: stop_sender,
         failure: failure_receiver,
+        display,
         handle,
-    })
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct ReverseIndicators {
     led: Option<[u8; 3]>,
     mute_led: Option<bool>,
@@ -267,12 +351,6 @@ impl Controller {
             Self::DualShock4(controller) => controller.next_service_in(),
             Self::SwitchPro(controller) => controller.next_service_in(),
         }
-    }
-
-    fn needs_motion_refresh(&self) -> bool {
-        matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
-            || matches!(self, Self::DualShock4(controller) if motion_refresh_target(controller.surface().common().target))
-            || matches!(self, Self::SwitchPro(controller) if motion_refresh_target(controller.surface().common().target))
     }
 
     fn refresh_motion(&mut self) -> Result<(), String> {
@@ -507,13 +585,13 @@ impl App {
                     self.name_draft.trim().to_owned()
                 };
                 let controller = Arc::new(Mutex::new(controller));
-                let motion_worker = start_motion_worker(&controller);
+                let service_worker = Some(spawn_service_worker(&controller));
                 self.controllers.push(NamedController {
                     kind: self.kind,
                     name: name.clone(),
                     controller,
                     indicators: ReverseIndicators::default(),
-                    motion_worker,
+                    service_worker,
                     second_touch: LatchedTouch::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
@@ -533,7 +611,7 @@ impl App {
             return;
         }
         let mut removed = self.controllers.remove(index);
-        if let Some(worker) = removed.motion_worker.take() {
+        if let Some(worker) = removed.service_worker.take() {
             worker.stop();
         }
         if let Ok(mut controller) = removed.controller.lock() {
@@ -551,7 +629,7 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         for named in &mut self.controllers {
-            if let Some(worker) = named.motion_worker.take() {
+            if let Some(worker) = named.service_worker.take() {
                 worker.stop();
             }
             if let Ok(mut controller) = named.controller.lock() {
@@ -566,22 +644,17 @@ impl eframe::App for App {
         let mut remove = None;
         let mut failed_controller = None;
         for (index, named) in self.controllers.iter_mut().enumerate() {
-            if let Some(worker) = &named.motion_worker {
+            if let Some(worker) = &named.service_worker {
                 if let Ok(error) = worker.failure.try_recv() {
                     failed_controller = Some((index, error));
                     break;
                 }
             }
-            let result = named
-                .controller
-                .lock()
-                .map_err(|_| "controller mutex poisoned while polling output".to_owned())
-                .and_then(|mut controller| {
-                    controller.poll_output(&mut self.output_log, &mut named.indicators)
-                });
-            if let Err(error) = result {
-                failed_controller = Some((index, error));
-                break;
+            if let Some(worker) = &named.service_worker {
+                if let Ok(mut display) = worker.display.lock() {
+                    self.output_log.append(&mut display.logs);
+                    named.indicators = display.indicators.clone();
+                }
             }
         }
         if self.output_log.len() > OUTPUT_LOG_LIMIT {
@@ -1446,6 +1519,159 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Default)]
+    struct FakeService {
+        refreshed: usize,
+        serviced: usize,
+        closed: usize,
+        fail: bool,
+        deadline: Option<Duration>,
+        progress: Option<mpsc::Sender<usize>>,
+    }
+    impl ServicedController for FakeService {
+        fn refresh(&mut self) -> Result<(), String> {
+            self.refreshed += 1;
+            Ok(())
+        }
+        fn service(
+            &mut self,
+            log: &mut Vec<String>,
+            indicators: &mut ReverseIndicators,
+        ) -> Result<(), String> {
+            self.serviced += 1;
+            log.push(format!("event {}", self.serviced));
+            indicators.led = Some([1, 2, 3]);
+            if let Some(progress) = &self.progress {
+                let _ = progress.send(self.serviced);
+            }
+            if self.fail {
+                Err("injected service failure".into())
+            } else {
+                Ok(())
+            }
+        }
+        fn deadline(&self) -> Option<Duration> {
+            self.deadline
+        }
+        fn close(&mut self) {
+            self.closed += 1;
+        }
+    }
+
+    #[test]
+    fn independent_service_cycles_preserve_motion_cadence_and_short_deadlines() {
+        let mut controller = FakeService {
+            deadline: Some(Duration::from_micros(500)),
+            ..Default::default()
+        };
+        let mut next_motion = Duration::ZERO;
+        let mut logs = Vec::new();
+        let mut indicators = ReverseIndicators::default();
+        for now in [0, 500, 1000, 3500, 4000] {
+            let delay = service_cycle(
+                &mut controller,
+                Duration::from_micros(now),
+                &mut next_motion,
+                &mut logs,
+                &mut indicators,
+            )
+            .unwrap();
+            assert_eq!(delay, Duration::from_micros(500));
+        }
+        assert_eq!(controller.serviced, 5);
+        assert_eq!(controller.refreshed, 2);
+        controller.deadline = Some(Duration::ZERO);
+        assert_eq!(
+            service_cycle(
+                &mut controller,
+                Duration::from_micros(4001),
+                &mut next_motion,
+                &mut logs,
+                &mut indicators
+            )
+            .unwrap(),
+            Duration::ZERO
+        );
+        assert_eq!(controller.refreshed, 2);
+    }
+
+    #[test]
+    fn display_backlog_is_bounded_and_retains_latest_indicators() {
+        let mut display = WorkerDisplay::default();
+        let indicators = ReverseIndicators {
+            led: Some([1, 2, 3]),
+            ..Default::default()
+        };
+        for n in 0..1000 {
+            publish_display(&mut display, vec![n.to_string()], &indicators);
+        }
+        assert_eq!(display.logs.len(), OUTPUT_LOG_LIMIT);
+        assert_eq!(display.logs.first().unwrap(), "800");
+        assert_eq!(display.logs.last().unwrap(), "999");
+        assert_eq!(display.indicators.led, Some([1, 2, 3]));
+    }
+
+    #[test]
+    fn worker_services_without_ui_and_stops_while_display_is_locked() {
+        let (sender, receiver) = mpsc::channel();
+        let controller = Arc::new(Mutex::new(FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        }));
+        let worker = spawn_service_worker(&controller);
+        let display = Arc::clone(&worker.display);
+        let guard = display.lock().unwrap();
+        for _ in 0..3 {
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+        worker.stop();
+        let state = controller.lock().unwrap();
+        assert!(state.serviced >= 3);
+        assert_eq!(state.closed, 1);
+        drop(guard);
+    }
+
+    #[test]
+    fn removing_one_worker_preserves_another_workers_service() {
+        let first = Arc::new(Mutex::new(FakeService::default()));
+        let (sender, receiver) = mpsc::channel();
+        let second = Arc::new(Mutex::new(FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        }));
+        let first_worker = spawn_service_worker(&first);
+        let second_worker = spawn_service_worker(&second);
+        receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        first_worker.stop();
+        let count = second.lock().unwrap().serviced;
+        loop {
+            if receiver.recv_timeout(Duration::from_secs(2)).unwrap() > count {
+                break;
+            }
+        }
+        assert_eq!(first.lock().unwrap().closed, 1);
+        assert_eq!(second.lock().unwrap().closed, 0);
+        second_worker.stop();
+        assert_eq!(second.lock().unwrap().closed, 1);
+    }
+
+    #[test]
+    fn worker_failure_closes_without_waiting_for_ui_consumption() {
+        let controller = Arc::new(Mutex::new(FakeService {
+            fail: true,
+            ..Default::default()
+        }));
+        let worker = spawn_service_worker(&controller);
+        assert_eq!(
+            worker.failure.recv_timeout(Duration::from_secs(2)).unwrap(),
+            "injected service failure"
+        );
+        worker.stop();
+        let state = controller.lock().unwrap();
+        assert_eq!(state.serviced, 1);
+        assert_eq!(state.closed, 1);
+    }
 
     #[test]
     fn repaint_respects_immediate_and_sub_frame_service_deadlines() {

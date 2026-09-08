@@ -151,3 +151,14 @@ DualSense, Xbox Series and Steam Controller references. Other families are
 best-effort; absent physical hardware does not block independent development.
 DualSense physical fidelity, H audio topology and L BT fixtures remain separate
 acceptance dependencies. No physical or live display tests were run in this batch.
+
+### Demo service independent of repaint
+
+Each controller now has a service worker, including evdev and standard-HID Xbox.
+Workers complete polling independently of GUI repaint and publish bounded optional
+display snapshots. Fake-controller regressions cover an unconsumed/locked display,
+earlier service deadlines without extra motion ticks, output backlog bounds,
+worker failure, stop and independent controller removal. Required replies remain
+owned by the existing personality/session. No new hardware evidence is claimed;
+shared-controller mutex stalls remain a scheduling limitation. Physical reference
+and DS4 display-isolation policies remain unchanged.

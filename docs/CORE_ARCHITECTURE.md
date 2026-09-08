@@ -68,9 +68,15 @@ controller controls implicitly. Native button codes and mapping revisions remain
 controller-owned; Xbox's legacy assignment differs from Sony/Nintendo. See
 [EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).
 
-The demo's polling fallback caps active repaint requests at 4 ms and shortens the
-request to the earliest controller service deadline, including an immediate
-retry. GUI scheduling is not a realtime guarantee; a blocked GUI thread still
-requires a separate service-loop review. Physical reference availability and
+The demo runs one service worker per controller, including Xbox and evdev.
+Workers poll required output while the UI is idle, honor earlier protocol service
+deadlines and maintain a separate 4 ms motion cadence. The UI consumes at most
+200 retained log messages per controller and the latest indicator snapshot; a
+busy display lock drops optional display updates instead of blocking servicing.
+Worker stop or service failure closes the controller before waiting for another
+UI frame. Removal joins that worker, then performs idempotent close. Controller
+edits and servicing still share a mutex, so a thread stalled while holding that
+mutex can delay service; this is not a hard realtime guarantee. Repaint timing
+remains a display concern, with earlier controller deadlines also requested. Physical reference availability and
 best-effort family scope are recorded in the
 [validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
