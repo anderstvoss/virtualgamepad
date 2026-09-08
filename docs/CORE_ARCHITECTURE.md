@@ -40,7 +40,7 @@ The runtime accepts an entire generated batch into a bounded queue before advanc
 
 Each service call consumes at most one host event and makes a bounded number of submissions. Required replies have a reserved slot and a bounded retry deadline. Input receives service even under sustained requests. Optional output observations have separate bounded storage and an explicit loss counter; they cannot block required replies. Observations remain recoverable after a subsequent service error.
 
-Call `poll_output` on controller readiness and at `next_service_in()`, even when input is unchanged. `commit()` also services HID work and preserves retryable accepted input when submission is blocked. `readiness()` exposes a borrowed descriptor where available. The caller owns the event loop and must stop using the descriptor after close. The demo continues to poll at its bounded USB cadence.
+Call `service` (`poll_output` remains a compatibility alias) on controller readiness and at `next_service_in()`, even when input is unchanged. `commit()` also services HID work and preserves retryable accepted input when submission is blocked. `readiness()` exposes a borrowed descriptor where available. The caller owns the event loop and must stop using the descriptor after close. The demo continues to poll at its bounded USB cadence.
 
 `close()` is terminal. Cleanup is attempted once, including failure; later edits and submissions fail. A host STOP cancels unsent input for that stopped presentation while preserving desired semantic state for START. Consumer CLOSE/OPEN is not terminal library close. Switch stream status and counters are read from the controller handle, not its semantic state snapshot.
 
@@ -80,3 +80,20 @@ mutex can delay service; this is not a hard realtime guarantee. Repaint timing
 remains a display concern, with earlier controller deadlines also requested. Physical reference availability and
 best-effort family scope are recorded in the
 [validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
+
+### Service ownership and optional observers
+
+All four curated handles expose `service(callback)` for required protocol work
+and typed observations. Recompute readiness, write interest and the relative
+monotonic deadline after service or commit. Zero duration means immediate work;
+no deadline does not remove descriptor read interest. Closed native sessions now
+advertise neither readiness nor deadlines, matching terminal HID sessions.
+
+Curated evdev completes its bounded consumed request batch before invoking
+optional observers, matching HID's separation. Up to 32 observations survive;
+eviction increments `dropped_output_events`. A slow callback still delays the
+next cycle, so callbacks must copy bounded data and return promptly. The library
+starts no executor. A single owner can service multiple controllers; editing,
+encoding and callback execution must not contain unbounded application work.
+The demo uses the explicit service API but its shared edit mutex remains an open
+integration issue. This change does not establish a hard realtime guarantee.

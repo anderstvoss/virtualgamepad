@@ -4,6 +4,29 @@
 //!
 //! Controller modules deliberately share transport helpers, not controller
 //! state. Numeric values are native to their controller family.
+//!
+//! # Scheduling contract
+//!
+//! A controller is an active protocol endpoint. Call its `service` method even
+//! while semantic input is unchanged; `commit` only submits edited input and is
+//! not a substitute for idle servicing. `poll_output` is a compatibility alias.
+//!
+//! After creation and each service/commit, recompute `readiness`, `wants_write`
+//! and `next_service_in`. For descriptor readiness, watch reads plus writes only
+//! when requested. Also arm a monotonic timer for the returned relative duration:
+//! zero means service now, and `None` means no timer, not necessarily no read
+//! interest. `Readiness::Poll` requires bounded polling; native sessions currently
+//! supply a four-millisecond fallback. Closed sessions advertise no interest.
+//!
+//! One owner may service many controllers fairly without threads or an async
+//! runtime. Keep native edit transactions and output callbacks short. Required
+//! curated HID/evdev work precedes optional observers within a service call, but
+//! a blocked callback or editor still prevents the *next* call. An embedding
+//! with slow producers should send bounded native commands to its service owner,
+//! explicitly handle queue saturation and preserve press/release ordering. Do not
+//! hold a controller mutex while drawing a UI or doing unrelated work.
+//! Optional observations may be dropped; consult `dropped_output_events`.
+//! The legacy compiled gadget path retains its separately documented Gate G limits.
 
 mod common;
 pub mod dualsense;

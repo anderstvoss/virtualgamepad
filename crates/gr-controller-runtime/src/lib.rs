@@ -103,6 +103,11 @@ impl<D: TargetAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ControllerR
     pub const fn state(&self) -> &D::State {
         &self.state
     }
+    /// Whether this session has reached terminal close.
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        self.closed
+    }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {
         self.dirty

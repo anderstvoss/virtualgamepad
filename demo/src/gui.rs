@@ -490,7 +490,7 @@ impl Controller {
     ) -> Result<(), String> {
         let result: Result<(), String> = match self {
             Self::Xbox(controller) => controller
-                .poll_output(&mut |event| {
+                .service(&mut |event| {
                     if let Xbox360OutputEvent::ForceFeedback(event) = event {
                         indicators.apply_force_feedback(event);
                     }
@@ -498,7 +498,7 @@ impl Controller {
                 })
                 .map_err(|error| error.to_string()),
             Self::DualSense(controller) => controller
-                .poll_output(&mut |event| {
+                .service(&mut |event| {
                     match &event {
                         DualSenseOutputEvent::ForceFeedback(event) => {
                             indicators.apply_force_feedback(*event);
@@ -521,7 +521,7 @@ impl Controller {
                 })
                 .map_err(|error| error.to_string()),
             Self::DualShock4(controller) => controller
-                .poll_output(&mut |event| {
+                .service(&mut |event| {
                     if let virtualgamepad::DualShock4OutputEvent::HidOutput(
                         DualShock4HidOutput::UsbOutput {
                             right_motor,
@@ -545,7 +545,7 @@ impl Controller {
                 })
                 .map_err(|error| error.to_string()),
             Self::SwitchPro(controller) => controller
-                .poll_output(&mut |event| {
+                .service(&mut |event| {
                     if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
                         indicators.apply_force_feedback(event);
                     }

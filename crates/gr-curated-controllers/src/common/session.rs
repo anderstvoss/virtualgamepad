@@ -166,9 +166,20 @@ impl<D: HidDriver> ControllerSession<D> {
     ) -> Result<(), ProviderError> {
         if let Backend::Native(r) = &mut self.backend {
             if self.selection.target == gr_realization_api::RealizationTarget::Evdev {
-                let result = r.with_sink(|sink| self.feedback.service(sink, callback));
+                let result = r.with_sink(|sink| {
+                    self.feedback.service(sink, &mut |event| {
+                        if self.observations.len() == 32 {
+                            self.observations.pop_front();
+                            self.dropped = self.dropped.saturating_add(1);
+                        }
+                        self.observations.push_back(event);
+                    })
+                });
                 if result.is_err() {
                     r.close();
+                }
+                while let Some(event) = self.observations.pop_front() {
+                    callback(event);
                 }
                 return result;
             }
@@ -196,12 +207,13 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(crate) fn wants_write(&self) -> bool {
         match &self.backend {
-            Backend::Native(_) => self.feedback.pending(),
+            Backend::Native(r) => !r.is_closed() && self.feedback.pending(),
             Backend::Hid { runtime, .. } => runtime.wants_write(),
         }
     }
     pub(crate) fn next_service_in(&self) -> Option<Duration> {
         match &self.backend {
+            Backend::Native(r) if r.is_closed() => None,
             Backend::Native(_) => Some(if self.feedback.pending() {
                 Duration::ZERO
             } else {
@@ -220,6 +232,7 @@ impl<D: HidDriver> ControllerSession<D> {
     }
     pub(crate) fn readiness(&self) -> Option<gr_hid::Readiness> {
         match &self.backend {
+            Backend::Native(r) if r.is_closed() => None,
             Backend::Native(_) => Some(gr_hid::Readiness::Poll),
             Backend::Hid { runtime, .. } => runtime.readiness(),
         }

@@ -52,3 +52,14 @@ backpressure, exhausted retries, partial reads, overflow, uncertain completion a
 terminal cleanup. [EXP-0010](../experiments/EXP-0010-evdev-feedback.md) records the
 separate live kernel evidence. This does not establish complete SDL evdev parity,
 physical motor fidelity, trigger synthesis or a new realization.
+
+## Service-ordering correction
+
+Curated evdev now buffers optional observations until the bounded service batch
+has processed its required completions. Previously an observer ran between
+completions in a multi-request batch and could delay a later required reply.
+The buffer holds 32 observations with visible eviction counts. Backpressure still
+retains the exact unsent reply and prevents additional reads. Observers must return
+promptly for subsequent service cycles. Deterministic regressions verify exact
+batch replies before the first callback across all four families, bounded output
+loss, repeated polls and terminal scheduler-interest removal.

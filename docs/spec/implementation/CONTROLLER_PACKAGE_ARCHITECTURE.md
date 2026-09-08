@@ -83,3 +83,18 @@ must remove the old manual force-feedback reply calls. Low-level provider users
 still reply explicitly to typed mechanism requests. See
 [ADR-0006](../../architecture-overhaul/decisions/ADR-0006-conventional-feedback.md)
 for bounded ownership, rejected fields and terminal error behavior.
+
+## Explicit curated service entry point
+
+Each current curated handle exposes `service(callback)`; `poll_output` remains a
+compatible alias. Embeddings service unchanged input on readiness and monotonic
+deadlines, adding write interest only when requested. Recompute interest after
+state submission and servicing. Terminal native sessions expose no readiness or
+deadline, matching HID terminal behavior.
+
+Required curated HID/evdev protocol work precedes optional observer delivery in
+each bounded service cycle. Evdev observations are capped at 32 and eviction is
+reported by `dropped_output_events`. Observers must return promptly; they cannot
+extend the timing guarantee to subsequent cycles. Service/edit scheduling stays
+with the embedding, without mandatory workers or an async runtime. The legacy
+compiled gadget path remains subject to its separate request-interface gate.

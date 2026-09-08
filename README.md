@@ -18,7 +18,7 @@ See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the pri
 
 ## Servicing controllers
 
-UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `poll_output` on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow. UHID transport identities distinguish repeated creations independently of caller session IDs; oversized identity strings are rejected rather than truncated.
+UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `service` (`poll_output` remains an alias) on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow. UHID transport identities distinguish repeated creations independently of caller session IDs; oversized identity strings are rejected rather than truncated.
 
 Curated uinput sessions also require polling while input is idle. They complete
 conventional force-feedback upload/erase requests internally and expose typed

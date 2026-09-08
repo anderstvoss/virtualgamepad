@@ -198,3 +198,13 @@ Authenticated corpus CI now uses a corpus-only read-only deploy key, preserving
 the existing private/fork job boundary. Remote read access and the
 authenticated pinned-corpus job both passed (CI run 34268191527, `fd407b3`).
 Other build/acceptance gates remain independent.
+
+### Explicit service contract and observer ordering
+
+All four curated handles expose `service`, retaining `poll_output` as an alias.
+The demo uses the explicit operation. Evdev required completions precede optional
+callbacks for the consumed bounded batch; output eviction is counted. Closed and
+failed native sessions no longer advertise polling interest. Deterministic tests
+cover the ordering and lifecycle fixes; no live or physical gate is promoted.
+The handoff's service naming gap is addressed. Shared demo edit-lock contention,
+persistent identity and logical compound failure/association remain next work.

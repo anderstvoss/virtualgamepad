@@ -860,7 +860,23 @@ impl DualShock4Controller {
     pub fn close(&mut self) {
         self.0.close();
     }
+    /// Compatibility alias for [`Self::service`]; this performs required protocol work.
     pub fn poll_output(
+        &mut self,
+        callback: &mut dyn FnMut(DualShock4OutputEvent),
+    ) -> Result<(), ProviderError> {
+        self.service(callback)
+    }
+
+    /// Service protocol I/O, including while input state is unchanged.
+    ///
+    /// Call on [`Self::readiness`] and at [`Self::next_service_in`], watching
+    /// writability when [`Self::wants_write`] is true. Recompute interest after
+    /// each call. `commit` does not replace idle servicing.
+    /// Required curated HID/evdev replies are processed before optional output
+    /// callbacks. Callbacks must return promptly to permit the next service cycle.
+    /// See the crate-level scheduling contract. No thread or executor is started.
+    pub fn service(
         &mut self,
         callback: &mut dyn FnMut(DualShock4OutputEvent),
     ) -> Result<(), ProviderError> {

@@ -571,6 +571,8 @@ fn evdev_uncertain_completion_and_exhausted_retries_close_terminally() {
         }
         assert!(failed);
         assert!(!session.wants_write());
+        assert_eq!(session.readiness(), None);
+        assert_eq!(session.next_service_in(), None);
         assert!(session.update_state(|_| Ok(())).is_err());
         session.close();
         session.close();
@@ -853,4 +855,97 @@ fn all_hid_families_isolate_removal_and_partial_read_failure_with_reused_ids() {
     family_failure_isolation(&DualShock4Definition, [true; 3]);
     family_failure_isolation(&SwitchProDefinition, [true, true, false]);
     family_failure_isolation(&Xbox360Definition, [false; 3]);
+}
+
+fn evdev_service_contract<D: HidDriver>(driver: D) {
+    let (mut session, record) = evdev_rig(driver);
+    {
+        let mut r = record.lock().unwrap();
+        r.burst = 2;
+        for request_id in [41, 42] {
+            r.events.push_back(RawReverseEvent::ForceFeedbackUpload {
+                request_id,
+                effect: rumble(0),
+            });
+        }
+    }
+    let mut observed = 0;
+    session
+        .drain(&mut |_| {
+            // Even the first optional observer sees both required completions.
+            assert_eq!(
+                record.lock().unwrap().sent,
+                vec![
+                    ProviderFrame::ForceFeedbackUploadReply {
+                        request_id: 41,
+                        status: 0
+                    },
+                    ProviderFrame::ForceFeedbackUploadReply {
+                        request_id: 42,
+                        status: 0
+                    },
+                ]
+            );
+            observed += 1;
+        })
+        .unwrap();
+    assert_eq!(observed, 2);
+    session
+        .drain(&mut |_| panic!("duplicate observation"))
+        .unwrap();
+    assert!(session.readiness().is_some());
+    assert!(session.next_service_in().is_some());
+    session.close();
+    session.close();
+    assert_eq!(session.readiness(), None);
+    assert_eq!(session.next_service_in(), None);
+    assert!(!session.wants_write());
+    assert!(matches!(
+        session.drain(&mut |_| panic!("closed observation")),
+        Err(ProviderError::Closed)
+    ));
+    assert_eq!(record.lock().unwrap().destroys, 1);
+}
+
+#[test]
+fn every_evdev_family_completes_required_batch_before_optional_observers() {
+    evdev_service_contract(DualSenseDefinition);
+    evdev_service_contract(DualShock4Definition);
+    evdev_service_contract(SwitchProDefinition);
+    evdev_service_contract(Xbox360Definition);
+}
+
+#[test]
+fn evdev_optional_playback_observations_are_bounded_and_loss_is_visible() {
+    let (mut session, record) = evdev_rig(Xbox360Definition);
+    evdev_poll(
+        &mut session,
+        &record,
+        RawReverseEvent::ForceFeedbackUpload {
+            request_id: 1,
+            effect: rumble(0),
+        },
+    );
+    {
+        let mut r = record.lock().unwrap();
+        r.burst = 32;
+        for _ in 0..32 {
+            r.events.push_back(RawReverseEvent::Evdev(vec![
+                gr_realization_api::EvdevEvent {
+                    event_type: EV_FF,
+                    code: 0,
+                    value: 1,
+                },
+            ]));
+        }
+    }
+    let mut seen = 0;
+    session.drain(&mut |_| seen += 1).unwrap();
+    assert_eq!(seen, 32);
+    assert_eq!(session.dropped_observations(), 32);
+    session
+        .drain(&mut |_| panic!("observation replay"))
+        .unwrap();
+    session.close();
+    assert_eq!(record.lock().unwrap().destroys, 1);
 }
