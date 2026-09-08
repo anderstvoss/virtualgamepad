@@ -66,3 +66,9 @@ with two attachable accessory components and a 48×32 one-bit, 192-byte display
 framebuffer to prove attachment, reverse request/reply, retry, and close
 behavior. No Dreamcast API, Maple target, VMU storage, or hardware claim is
 created by this work.
+
+The DS4 gamepad/contact prototype currently exists only in tests. An interrupted
+live experiment coincided with a reported display-session crash; see
+[EXP-0012](../../architecture-overhaul/experiments/EXP-0012-ds4-compound-interruption.md).
+Shared-desktop contact injection must not be repeated as acceptance. Production
+adoption requires isolated consumer validation of both nodes and their cleanup.

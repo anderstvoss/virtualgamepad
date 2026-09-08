@@ -127,3 +127,13 @@ partial input retry and independent terminal cleanup. Controller policy still
 owns completion/cancellation; this lifecycle helper does not introduce a second
 protocol authority. DS4's two-node presentation and its live acceptance remain
 pending. Gate E and other realization support levels are unchanged.
+
+### DS4 split-presentation interruption
+
+[EXP-0012](experiments/EXP-0012-ds4-compound-interruption.md) retains the injected
+DS4 split-node prototype and lifecycle regressions. One SDL run completed before
+a reported display-session crash interrupted acceptance. No test processes or
+nodes survived the recovery inventory. Production adoption is blocked on isolated
+consumer validation and crash investigation; the prototype is test-only and the
+existing DS4 discovery limitation remains. This does not block independent core
+work or grant additional host permissions.

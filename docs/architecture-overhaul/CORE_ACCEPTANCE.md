@@ -36,7 +36,9 @@ is explicitly incomplete. Ordinary builds still use checked-in artifacts.
 1. Resolve DS4 combined-node discovery and validate touch/auxiliary association. [EXP-0011](experiments/EXP-0011-evdev-sdl.md) records three passing evdev families and the precise DS4 failure; [EXP-0010](experiments/EXP-0010-evdev-feedback.md) covers required FF completion.
    The compound runtime now routes exact component replies and preserves records
    delivered before read failure, with partial snapshot retry and independent
-   cleanup regressions. DS4 two-node integration and live evidence are still pending.
+   cleanup regressions. The DS4 split-node prototype is test-only after a reported
+   display-session crash interrupted live acceptance; [EXP-0012](experiments/EXP-0012-ds4-compound-interruption.md)
+   requires isolated consumer validation before production adoption.
 2. Complete remaining family concurrency/failure tests and Switch compressed-rumble evidence.
 3. Review demo readiness/deadline scheduling against measured requests and shutdown;
    change it only when its fixed scheduling violates the contract.
