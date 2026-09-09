@@ -76,3 +76,10 @@ measured limits. Remaining phases are incomplete; PR #106 stays draft.
 [EXP-0015](experiments/EXP-0015-reference-layouts.md) adds limited physical DualSense
 USB framing/GET/topology observations. Broken triggers and stick drift preclude
 affected mechanical-fidelity claims; DS4 remains source-backed without hardware.
+
+[ADR-0008](decisions/ADR-0008-explicit-sony-identity.md) adds explicit DualSense/DS4
+USB/UHID identity restoration with deterministic fresh-session regressions. Live
+reconnect and consumer association remain pending. The physical DualSense is now
+unplugged; prior EXP-0015 observations remain scoped to that recorded run.
+Steam Controller development is deferred until this overhaul lands and does not
+block the current PR's core acceptance work.

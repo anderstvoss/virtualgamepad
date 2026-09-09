@@ -103,3 +103,16 @@ encoding and callback execution must not contain unbounded application work.
 The demo uses the explicit service API with worker-exclusive controller ownership
 and bounded native edit batches. These application-level workers are not a library
 requirement. No hard realtime guarantee follows from this integration.
+
+### Explicit emulated identity versus transport identity
+
+Sony USB/UHID callers may opt into controller-typed identity restoration using
+`create_dualsense_with_identity` or `create_dualshock4_with_identity`. The supplied
+pairing bytes and controller-defined UHID `uniq` remain stable; the physical-path
+instance suffix, personality, semantic state, timers and request queues are new.
+Existing creation functions retain their fresh policy. Providers do not interpret
+identity, storage remains caller-owned, and unsupported restoration targets fail
+before open. This is the deterministic contract in
+[ADR-0008](architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md), not a
+claim that every consumer preserves association after reconnect. Compound identity
+and other realization policies remain unimplemented.

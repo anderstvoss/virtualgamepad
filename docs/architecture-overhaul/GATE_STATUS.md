@@ -238,3 +238,14 @@ retained. A physical USB DualSense returned expected GET report IDs/lengths and
 not an audio gate pass. Trigger modules are broken and stick drift is reported;
 no affected input/actuation fidelity is claimed. DS4 has no physical reference.
 No Gate G, isolated touch, full B/P, audio or Bluetooth acceptance is promoted.
+
+### Explicit Sony identity restoration
+
+[ADR-0008](decisions/ADR-0008-explicit-sony-identity.md) separates controller-typed
+persistent pairing identity from fresh transport/session state for USB/UHID.
+All-byte flag validation, unsupported-target rejection, stable/fresh label tests,
+neutral recreation and pending-reply cancellation pass deterministically.
+Default creation behavior is preserved. Live reconnect/consumer association and
+compound identity remain pending; no support level is promoted. Physical DualSense
+is unplugged. Steam Controller development is deferred until the overhaul lands;
+existing research provenance remains, but no Steam implementation begins in PR #106.

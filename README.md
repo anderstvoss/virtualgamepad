@@ -27,6 +27,14 @@ send manual force-feedback replies. See the [ownership contract](docs/architectu
 
 `CreationOptions.target` accepts `RealizationId::LINUX_UINPUT`, `LINUX_UHID_USB`, or `LINUX_DUMMY_HCD_USB_HID`. The old target names remain aliases. DualSense pairing addresses are generated once per creation from OS entropy and remain stable across protocol retries. Required HID replies are protocol-owned; application reply methods cannot override or duplicate them. Switch stream status is available on the controller handle.
 
+For explicit DualSense/DS4 USB/UHID recreation, generate a `DualSenseIdentity` or
+`DualShock4Identity`, store its `to_bytes()` in your application, and restore it
+with `from_bytes()`. Pass it to `create_dualsense_with_identity` or
+`create_dualshock4_with_identity`. The pairing identity and UHID `uniq` stay stable;
+transport sessions are fresh. Other targets reject this option. Existing creation
+functions remain ephemeral. See the [identity contract](docs/architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md)
+for consumer-association limits and concurrent-identity policy.
+
 The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. The broker's dynamic protocol migration, composite/audio behavior, and Bluetooth extensions are not complete.
 
 ## Development

@@ -45,10 +45,17 @@ impl<D: HidDriver> ControllerSession<D> {
             feedback: super::feedback::Feedback::default(),
         }
     }
-    pub(super) fn hid(driver: D, request: ProviderOpenRequest) -> Result<Self, ProviderError> {
+    pub(super) fn hid(
+        driver: D,
+        request: ProviderOpenRequest,
+        restored: Option<[u8; 6]>,
+    ) -> Result<Self, ProviderError> {
         let selection = request.selection;
         // Resolve creation identity before opening any provider resource.
-        let identity = driver.hid_identity()?;
+        let identity = match restored {
+            Some(identity) => identity,
+            None => driver.hid_identity()?,
+        };
         let protocol = driver.hid_protocol(request.session, identity);
         let id = request.session.0;
         let transport = LinuxUhidProvider.open_transport(request)?;

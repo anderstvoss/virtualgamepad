@@ -136,12 +136,45 @@ fn next_instance_suffix() -> Result<String, ProviderError> {
 
 pub(crate) fn create<D>(
     driver: D,
-    mut realization: NativeControllerRealization,
+    realization: NativeControllerRealization,
     options: CreationOptions,
 ) -> Result<ControllerSession<D>, ProviderError>
 where
     D: HidDriver,
 {
+    create_with_identity(driver, realization, options, None)
+}
+
+fn creation_labels(
+    physical_path: &str,
+    unique_id: &str,
+    restored: bool,
+) -> Result<(String, String), ProviderError> {
+    let suffix = next_instance_suffix()?;
+    Ok((
+        format!("{physical_path}/{suffix}"),
+        if restored {
+            unique_id.to_owned()
+        } else {
+            format!("{unique_id}-{suffix}")
+        },
+    ))
+}
+
+pub(crate) fn create_with_identity<D>(
+    driver: D,
+    mut realization: NativeControllerRealization,
+    options: CreationOptions,
+    restored: Option<[u8; 6]>,
+) -> Result<ControllerSession<D>, ProviderError>
+where
+    D: HidDriver,
+{
+    if restored.is_some() && options.target != RealizationTarget::Uhid {
+        return Err(ProviderError::Unsupported {
+            reason: "identity restoration is supported only for USB/UHID".into(),
+        });
+    }
     let prepared: PreparedRealization =
         prepare_realization(&driver, options.target).map_err(|error| {
             ProviderError::Unsupported {
@@ -149,9 +182,11 @@ where
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
-        let suffix = next_instance_suffix()?;
-        specification.physical_path = format!("{}/{}", specification.physical_path, suffix);
-        specification.unique_id = format!("{}-{suffix}", specification.unique_id);
+        (specification.physical_path, specification.unique_id) = creation_labels(
+            &specification.physical_path,
+            &specification.unique_id,
+            restored.is_some(),
+        )?;
     }
     let request = ProviderOpenRequest {
         session: options.session,
@@ -160,7 +195,7 @@ where
         realization,
     };
     if options.target == RealizationTarget::Uhid {
-        return ControllerSession::hid(driver, request);
+        return ControllerSession::hid(driver, request, restored);
     }
     let session: Box<dyn NativeProviderSession> = match options.target {
         RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
@@ -266,6 +301,20 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    #[test]
+    fn restored_identity_keeps_uniq_but_recreates_transport_labels() {
+        let (first_path, first_uniq) =
+            creation_labels("virtual/controller", "stable-identity", true).unwrap();
+        let (second_path, second_uniq) =
+            creation_labels("virtual/controller", "stable-identity", true).unwrap();
+        assert_ne!(first_path, second_path);
+        assert_eq!(first_uniq, "stable-identity");
+        assert_eq!(second_uniq, first_uniq);
+        let (_, ephemeral_one) = creation_labels("virtual/controller", "fresh", false).unwrap();
+        let (_, ephemeral_two) = creation_labels("virtual/controller", "fresh", false).unwrap();
+        assert_ne!(ephemeral_one, ephemeral_two);
+    }
 
     #[test]
     fn transport_identity_distinguishes_reused_sessions_and_processes() {

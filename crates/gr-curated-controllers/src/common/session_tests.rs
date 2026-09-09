@@ -91,6 +91,13 @@ fn rig<D: HidDriver>(
     driver: &D,
     numbered: [bool; 3],
 ) -> (Runtime<D::Hid, HidTransport>, Arc<Mutex<Record>>) {
+    rig_with_identity(driver, numbered, [2, 1, 2, 3, 4, 5])
+}
+fn rig_with_identity<D: HidDriver>(
+    driver: &D,
+    numbered: [bool; 3],
+    identity: [u8; 6],
+) -> (Runtime<D::Hid, HidTransport>, Arc<Mutex<Record>>) {
     let record = Arc::new(Mutex::new(Record::default()));
     let io = HidTransport::from_session(
         Box::new(Fake(record.clone())),
@@ -99,7 +106,7 @@ fn rig<D: HidDriver>(
     );
     (
         Runtime::new(
-            driver.hid_protocol(RealizationSessionId(7), [2, 1, 2, 3, 4, 5]),
+            driver.hid_protocol(RealizationSessionId(7), identity),
             io,
             7,
             Limits::default(),
@@ -948,4 +955,90 @@ fn evdev_optional_playback_observations_are_bounded_and_loss_is_visible() {
         .unwrap();
     session.close();
     assert_eq!(record.lock().unwrap().destroys, 1);
+}
+
+fn restored_sony_session<D: HidDriver>(driver: &D, feature: u8)
+where
+    D::State: PartialEq + std::fmt::Debug,
+{
+    let identity = [2, 1, 2, 3, 4, 5];
+    let (mut first, one) = rig_with_identity(driver, [true; 3], identity);
+    first.service(0).unwrap();
+    let initial_input = one.lock().unwrap().sent.first().unwrap().clone();
+    let neutral = first.state().clone();
+    first
+        .update(|state| {
+            driver
+                .apply_digital(
+                    state,
+                    gr_controller_contract::DigitalControlUpdate::FaceButton {
+                        button: gr_controller_contract::FaceButton::South,
+                        pressed: true,
+                    },
+                )
+                .map_err(|_| gr_hid::Error::InvalidState)
+        })
+        .unwrap();
+    assert_ne!(first.state(), &neutral);
+    let request = RawReverseEvent::HidGetReportRequest {
+        request_id: 71,
+        report_id: feature,
+        report_type: 0,
+    };
+    one.lock().unwrap().events.push_back(request.clone());
+    first.service(1).unwrap();
+    let expected = one
+        .lock()
+        .unwrap()
+        .sent
+        .iter()
+        .find(|frame| {
+            matches!(
+                frame,
+                ProviderFrame::HidGetReportReply { request_id: 71, .. }
+            )
+        })
+        .cloned();
+    let expected = expected.expect("completed pairing request");
+    one.lock().unwrap().events.push_back(request.clone());
+    one.lock()
+        .unwrap()
+        .fail
+        .push_back(ProviderError::WouldBlock);
+    first.service(2).unwrap();
+    assert!(first.wants_write());
+    first.close().unwrap();
+    first.close().unwrap();
+    assert_eq!(one.lock().unwrap().destroys, 1);
+    assert!(first.service(3).is_err());
+
+    let (mut second, two) = rig_with_identity(driver, [true; 3], identity);
+    assert_eq!(second.state(), &neutral);
+    second.service(0).unwrap();
+    let recreated_input = two.lock().unwrap().sent.first().cloned();
+    assert_eq!(recreated_input, Some(initial_input));
+    assert!(!second.wants_write());
+    assert!(
+        !two.lock()
+            .unwrap()
+            .sent
+            .iter()
+            .any(|frame| matches!(frame, ProviderFrame::HidGetReportReply { .. }))
+    );
+    two.lock().unwrap().events.push_back(request);
+    second.service(1).unwrap();
+    let recreated_reply = two.lock().unwrap().sent.last().cloned();
+    assert_eq!(recreated_reply, Some(expected.clone()));
+    let ProviderFrame::HidGetReportReply { bytes, status, .. } = expected else {
+        panic!("pairing reply");
+    };
+    assert_eq!(status, 0);
+    assert_eq!(&bytes[1..7], &identity);
+    second.close().unwrap();
+    assert_eq!(two.lock().unwrap().destroys, 1);
+}
+#[test]
+fn restored_sony_identity_does_not_resurrect_requests_or_transport_state() {
+    restored_sony_session(&DualSenseDefinition, 9);
+    restored_sony_session(&DualShock4Definition, 0x12);
 }

@@ -73,3 +73,14 @@ observed consumer label/direction; a sweep pressing every button cannot establis
 that each individual mapping is correct. See
 [EXP-0013](architecture-overhaul/experiments/EXP-0013-mapping-audit.md) for the latest
 source-backed trigger/contact and range corrections.
+
+## Identity restoration experiments
+
+The demo currently uses the existing fresh-per-creation constructors. It does not
+exercise the optional Sony identity-restoration API. An embedding test can generate
+and save a `DualSenseIdentity` or `DualShock4Identity`, create with the corresponding
+`create_*_with_identity` function, close completely, then recreate with the same
+identity. Record actual removal, fresh physical-path identity, stable pairing/uniq
+and consumer association separately. Use a different identity for each concurrently
+connected logical controller. No physical DualSense is required for deterministic
+session tests; live Linux/consumer reconnect acceptance is still pending.

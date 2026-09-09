@@ -105,13 +105,15 @@ impl BatteryState {
 
 pub use dualsense::{
     DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput,
-    DualSenseOutputEvent, DualSenseState, DualSenseSurface, DualSenseTouchContact,
-    DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
+    DualSenseIdentity, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
+    DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
+    create_dualsense_with_identity,
 };
 pub use dualshock4::{
     DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
-    DualShock4MotionSample, DualShock4OutputEvent, DualShock4State, DualShock4Surface,
-    DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger, create_dualshock4,
+    DualShock4Identity, DualShock4MotionSample, DualShock4OutputEvent, DualShock4State,
+    DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
+    create_dualshock4, create_dualshock4_with_identity,
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,

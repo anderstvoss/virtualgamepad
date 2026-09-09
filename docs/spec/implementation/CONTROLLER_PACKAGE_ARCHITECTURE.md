@@ -98,3 +98,14 @@ reported by `dropped_output_events`. Observers must return promptly; they cannot
 extend the timing guarantee to subsequent cycles. Service/edit scheduling stays
 with the embedding, without mandatory workers or an async runtime. The legacy
 compiled gadget path remains subject to its separate request-interface gate.
+
+## Optional Sony identity restoration
+
+`DualSenseIdentity` and `DualShock4Identity` own generation, byte validation and
+pairing representation for the explicit USB/UHID restoration constructors. The
+caller may store their bytes but does not persist protocol state. Controllers
+prepare stable UHID `uniq`; shared creation always gives the physical path a fresh
+instance suffix. The default constructors remain unchanged, and other targets
+reject supplied identities before opening resources. Compound component identity
+must later derive from one logical controller identity under its own accepted
+contract. See [ADR-0008](../../architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md).
