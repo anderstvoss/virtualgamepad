@@ -83,3 +83,20 @@ reconnect and consumer association remain pending. The physical DualSense is now
 unplugged; prior EXP-0015 observations remain scoped to that recorded run.
 Steam Controller development is deferred until this overhaul lands and does not
 block the current PR's core acceptance work.
+
+
+### Consumer mapping follow-up (EXP-0016)
+
+User testing reports DS4/Switch HID gyro working in Eden's SDL backend, but
+Steam-only Sony axis routing and Switch neutral disagreement. Exact consumer
+versions/mappings remain needed; no Steam bug or broad B/P pass is inferred.
+The Xbox standard-HID consecutive-button descriptor was independently confirmed
+wrong and corrected to the existing legacy xpad evdev key profile. Earlier
+aggregate HID sweeps did not prove individual mappings. See
+[EXP-0016](experiments/EXP-0016-consumer-mapping-disagreement.md) for regression and
+consumer retest scope. Gadget acceptance remains blocked by G; Steam Controller
+development remains deferred until landing.
+
+The corrected Xbox UHID profile passes 156 exact individual-control/neutral SDL
+3.2.0 observations across three creations on Linux 6.12.107 arm64, with exact
+selection and cleanup. Eden/Steam retesting remains separate and pending.

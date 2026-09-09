@@ -1184,7 +1184,7 @@ impl MappingController for gr_curated_controllers::SwitchProController {
 }
 #[allow(clippy::too_many_lines)] // Keeps exact selection, servicing and cleanup in one live run.
 #[allow(unsafe_code)] // Nonblocking access to this test-owned child stdout only.
-fn run_isolated_mapping<C: MappingController>() {
+fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
     use std::io::Read;
     use std::os::fd::AsRawFd;
     let _guard = LIVE_LOCK.lock().unwrap();
@@ -1192,10 +1192,19 @@ fn run_isolated_mapping<C: MappingController>() {
     for id in [7, 7, 65543] {
         let before = input_nodes();
         let mut probe = None;
-        let mut controller = C::create(id, RealizationTarget::Evdev);
+        let mut controller = C::create(id, target);
         thread::sleep(Duration::from_millis(500));
-        let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
-        let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
+        let (node, path) = if target == RealizationTarget::Evdev {
+            let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
+            let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
+            (node, path)
+        } else {
+            let nodes = owned_family_devices(C::PREFIX);
+            assert_eq!(nodes.len(), 1, "one exact owned HID device");
+            let paths = consumer_paths(&nodes[0], false);
+            assert_eq!(paths.len(), 1, "one exact owned event node");
+            (nodes[0].clone(), paths[0].clone())
+        };
         let mut passed = true;
         for case in (0..=25).flat_map(|case| [case, 0]) {
             controller.mapping(0);
@@ -1295,12 +1304,17 @@ fn run_isolated_mapping<C: MappingController>() {
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
 fn xbox_evdev_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>();
+    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(RealizationTarget::Evdev);
 }
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
 fn switch_evdev_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::SwitchProController>();
+    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(RealizationTarget::Evdev);
+}
+#[test]
+#[ignore = "requires prepared UHID and exact event node access plus private SDL probe; no touch injection"]
+fn xbox_uhid_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(RealizationTarget::Uhid);
 }
 #[test]
 fn isolated_mapping_cases_touch_only_the_selected_axis() {

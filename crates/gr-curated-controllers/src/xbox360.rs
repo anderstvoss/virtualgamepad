@@ -769,6 +769,105 @@ mod tests {
         );
     }
 
+    // Decode this descriptor's short items independently of the encoder. This
+    // models Linux generic Game Pad button mapping: BTN_GAMEPAD + usage - 1.
+    fn standard_hid_button_codes() -> Vec<(usize, u16)> {
+        let descriptor = gr_controller_wire::STANDARD_GAMEPAD_DESCRIPTOR;
+        let (mut page, mut size, mut count, mut offset) = (0, 0, 0, 0);
+        let mut usages = Vec::new();
+        let mut mapped = Vec::new();
+        let mut cursor = 0;
+        while cursor < descriptor.len() {
+            let tag = descriptor[cursor];
+            let length = match tag & 3 {
+                3 => 4,
+                n => usize::from(n),
+            };
+            let mut value = 0;
+            for byte in 0..length {
+                value |= usize::from(descriptor[cursor + 1 + byte]) << (8 * byte);
+            }
+            match tag & 0xfc {
+                0x04 => page = value,
+                0x74 => size = value,
+                0x94 => count = value,
+                0x08 | 0x18 => usages.push(value),
+                0x28 => {
+                    let first = usages.pop().unwrap();
+                    usages.extend(first..=value);
+                }
+                0x80 => {
+                    if page == 9 && value & 1 == 0 {
+                        assert_eq!(size, 1);
+                        assert_eq!(usages.len(), count);
+                        for (bit, usage) in usages.iter().enumerate() {
+                            mapped.push((offset + bit, 304 + u16::try_from(usage - 1).unwrap()));
+                        }
+                    }
+                    offset += size * count;
+                    usages.clear();
+                }
+                // Main items reset local usages.
+                _ if tag & 0x0c == 0 => usages.clear(),
+                _ => {}
+            }
+            cursor += 1 + length;
+        }
+        assert_eq!(offset, 72);
+        mapped
+    }
+
+    #[test]
+    fn standard_hid_individual_buttons_match_xpad_evdev_without_phantom_keys() {
+        let mapping = standard_hid_button_codes();
+        let controls = [
+            (Xbox360Control::A, 304),
+            (Xbox360Control::B, 305),
+            (Xbox360Control::X, 307),
+            (Xbox360Control::Y, 308),
+            (Xbox360Control::LeftShoulder, 310),
+            (Xbox360Control::RightShoulder, 311),
+            (Xbox360Control::Back, 314),
+            (Xbox360Control::Start, 315),
+            (Xbox360Control::Guide, 316),
+            (Xbox360Control::LeftStickPress, 317),
+            (Xbox360Control::RightStickPress, 318),
+        ];
+        assert_eq!(
+            mapping.iter().map(|(_, code)| *code).collect::<Vec<_>>(),
+            controls.iter().map(|(_, code)| *code).collect::<Vec<_>>()
+        );
+        for (control, expected) in controls {
+            let mut state = Xbox360State::default();
+            for pressed in [true, false, true, false] {
+                state.set_native(control, pressed);
+                for target in [RealizationTarget::Uhid, RealizationTarget::DummyHcd] {
+                    let frame = Xbox360Definition
+                        .encode(
+                            RealizationSelection {
+                                controller: Xbox360Definition.controller_id(),
+                                target,
+                            },
+                            &state,
+                        )
+                        .unwrap();
+                    let (ProviderFrame::HidInput { bytes, .. }
+                    | ProviderFrame::DummyHcdInput(bytes)) = frame
+                    else {
+                        panic!("HID realization");
+                    };
+                    let active: Vec<_> = mapping
+                        .iter()
+                        .filter(|(bit, _)| bytes[bit / 8] & (1 << (bit % 8)) != 0)
+                        .map(|(_, code)| *code)
+                        .collect();
+                    assert_eq!(active, if pressed { vec![expected] } else { vec![] });
+                    assert_eq!(bytes[1] & 0xf8, 0, "padding remains clear");
+                }
+            }
+        }
+    }
+
     #[test]
     fn standard_hid_axes_match_unsigned_descriptor_and_trigger_positions() {
         let axes = |state: &Xbox360State| {

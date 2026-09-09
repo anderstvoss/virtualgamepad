@@ -84,3 +84,20 @@ identity. Record actual removal, fresh physical-path identity, stable pairing/un
 and consumer association separately. Use a different identity for each concurrently
 connected logical controller. No physical DualSense is required for deterministic
 session tests; live Linux/consumer reconnect acceptance is still pending.
+
+
+### Comparing Eden and Steam mappings
+
+Record the exact consumer build and input backend separately. Eden nightly SDL
+reports working DS4/Switch HID gyro, while user testing found Steam-only Sony
+axis routing and Switch neutral offsets; the cause remains unestablished. Test
+one axis at a time at neutral and both endpoints, with the exact realization,
+selected identity, mapping string and any per-game override recorded. Keep
+consumer settings unchanged during the comparison. Do not compensate in the demo
+for one consumer before checking raw Linux and SDL observations.
+
+The Xbox standard-HID descriptor now uses the same eleven Linux button codes as
+its evdev profile. Recreate existing virtual devices after rebuilding: descriptors
+are installed at creation. West is X and North is Y; legacy Linux BTN_X is
+numerically also named BTN_NORTH, so use observed printed/spatial action rather
+than that alias alone. See EXP-0016 for the old HID defect and retest scope.
