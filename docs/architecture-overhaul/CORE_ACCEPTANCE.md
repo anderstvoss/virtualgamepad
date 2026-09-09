@@ -71,7 +71,8 @@ to wait for blocked hardware before independent API work.
 5. Begin extensions only after core review and each extension's declared gate.
 
 See [EXP-0008](experiments/EXP-0008-sdl-core.md) for consumer/tool revisions and
-measured limits. Remaining phases are incomplete; PR #106 stays draft.
+measured limits. Extension phases remain incomplete; see ASSESSMENT.md for the final core-review
+and PR readiness decision.
 
 [EXP-0015](experiments/EXP-0015-reference-layouts.md) adds limited physical DualSense
 USB framing/GET/topology observations. Broken triggers and stick drift preclude

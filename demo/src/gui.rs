@@ -465,6 +465,7 @@ struct ReverseIndicators {
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
+    hid_motors: [u8; 2],
     rumble_started: Option<Instant>,
 }
 impl ReverseIndicators {
@@ -502,10 +503,15 @@ impl ReverseIndicators {
         lightbar_rgb: Option<[u8; 3]>,
         mute_button_led: Option<bool>,
     ) {
-        self.set_rumble(
-            right_motor.is_some_and(|motor| motor != 0)
-                || left_motor.is_some_and(|motor| motor != 0),
-        );
+        if let Some(value) = right_motor {
+            self.hid_motors[0] = value;
+        }
+        if let Some(value) = left_motor {
+            self.hid_motors[1] = value;
+        }
+        if right_motor.is_some() || left_motor.is_some() {
+            self.set_rumble(self.hid_motors.iter().any(|value| *value != 0));
+        }
         if let Some(lightbar_rgb) = lightbar_rgb {
             self.led = Some(lightbar_rgb);
         }
@@ -2287,6 +2293,25 @@ mod tests {
         indicators.apply_hid_output(Some(64), Some(128), None, None);
         assert_eq!(indicators.led, Some([32, 64, 128]));
         assert!(indicators.rumble_active);
+    }
+
+    #[test]
+    fn partial_hid_updates_preserve_unmentioned_motors() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_hid_output(Some(64), Some(128), None, None);
+        let started = indicators.rumble_started;
+        indicators.apply_hid_output(None, None, Some([1, 2, 3]), Some(true));
+        assert!(
+            indicators.rumble_active,
+            "LED-only update must preserve rumble"
+        );
+        assert_eq!(indicators.rumble_started, started);
+        indicators.apply_hid_output(Some(0), None, None, None);
+        assert!(indicators.rumble_active, "left motor remains active");
+        indicators.apply_hid_output(None, Some(0), None, None);
+        assert!(!indicators.rumble_active);
+        assert_eq!(indicators.led, Some([1, 2, 3]));
+        assert_eq!(indicators.mute_led, Some(true));
     }
 
     #[test]

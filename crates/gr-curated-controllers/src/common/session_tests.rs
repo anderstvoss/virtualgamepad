@@ -1182,3 +1182,58 @@ fn sony_hid_dpad_directions_and_releases_match_native_hat_positions() {
     sony_hat_positions(&DualSenseDefinition, 7);
     sony_hat_positions(&DualShock4Definition, 4);
 }
+
+fn sony_held_input_survives_consumer_reopen<D: HidDriver>(driver: &D, hat_offset: usize) {
+    let (mut runtime, record) = rig(driver, [true; 3]);
+    runtime
+        .update(|state| {
+            driver
+                .apply_digital(
+                    state,
+                    gr_controller_contract::DigitalControlUpdate::Dpad {
+                        direction: gr_controller_contract::DpadDirection::Up,
+                        pressed: true,
+                    },
+                )
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+    for (step, lifecycle) in [
+        gr_hid::Lifecycle::Open,
+        gr_hid::Lifecycle::Close,
+        gr_hid::Lifecycle::Open,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        record
+            .lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidLifecycle(lifecycle));
+        runtime
+            .service(u64::try_from(step).unwrap() * 4000)
+            .unwrap();
+        assert!(!runtime.is_closed());
+        let record = record.lock().unwrap();
+        let Some(ProviderFrame::HidInput { bytes, .. }) = record.sent.last() else {
+            panic!("held input report")
+        };
+        assert_eq!(
+            bytes[hat_offset] & 15,
+            0,
+            "library must not inject neutral on consumer reopen"
+        );
+        assert_eq!(record.sent.len(), step + 1);
+    }
+    runtime.close().unwrap();
+    runtime.close().unwrap();
+    assert_eq!(record.lock().unwrap().destroys, 1);
+    assert!(runtime.service(12000).is_err());
+}
+#[test]
+fn sony_first_report_and_consumer_reopen_preserve_held_up() {
+    sony_held_input_survives_consumer_reopen(&DualSenseDefinition, 7);
+    sony_held_input_survives_consumer_reopen(&DualShock4Definition, 4);
+}

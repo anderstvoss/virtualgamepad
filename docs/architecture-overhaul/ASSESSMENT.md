@@ -30,11 +30,12 @@ CI uses existing corpus-only read access; no repository permissions or workflow
 policy changed. Each published head's CI result remains separately inspectable.
 
 The scoped current-core changes are suitable for review with the limitations
-above explicit. PR #106 remains draft pending final reviewer assessment; the
+above explicit. The final code review is complete, with readiness conditional on green final-head
+CI; the
 known DS4 combined-node classification failure is contained by its documented
 restriction and test-only split prototype. It is not a passing realization.
 Steam/Eden interactive comparisons, isolated compound/touch evidence and physical
-fidelity do not silently become passes. The maintainer decides landing; alpha
+fidelity do not silently become passes. The maintainer decides landing and performs the merge; alpha
 versioning and individual new-controller work follow landing.
 
 ## Provider purity assessment
@@ -48,3 +49,29 @@ selection and broker's controller profiles/static feature windows remain visible
 legacy exceptions. Retain them until EXP-0004/G establishes a supported generic
 control metadata/completion interface and owned-resource live cleanup. Do not
 introduce speculative staged IPC or broader standing privileges to hide that gap.
+
+## Final code review
+
+Reviewed the runtime request/delivery/deadline paths, compound failure and output
+ownership, curated lifecycle/identity/feedback boundaries, UHID and uinput
+transports, broker ownership policy, development-helper trust boundaries, demo
+worker/edit integration, and the documented acceptance/build limits.
+
+One defect was reproduced: LED-only HID updates cleared the demo rumble indicator.
+The display now retains each motor independently and changes only fields present
+in a report. A failing-before/fixed-after regression covers LED-only updates,
+one-motor updates, explicit stop and retained indicator timing. No controller
+protocol or host-owned output is rewritten to compensate for a display defect.
+
+An additional deterministic Sony regression verifies held Up in the very first
+input report and across consumer OPEN/CLOSE/OPEN, followed by terminal library
+close and idempotent cleanup. It confirms that the library does not inject neutral
+on consumer reopen; actual consumer interpretation remains the separately
+recorded SDL/Steam/Eden evidence boundary.
+
+No remaining actionable blocker was identified for the scoped core review.
+The known DS4 evdev classification failure and unvalidated compound/gadget,
+physical and interactive-consumer capabilities remain explicit limitations, not
+passes. No broad refactor, dependency addition or privilege change is justified
+by this review. Mark #106 ready only after the published final head passes checks;
+merging remains the maintainer's action.
