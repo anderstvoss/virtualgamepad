@@ -16,8 +16,11 @@ A controller package supplies ordered component identifiers, prepared provider
 requests, encoders, and reverse decoders. The runtime preflights every selected
 component before opening any. A failed later open closes previous components in
 reverse order and returns the primary error plus rollback diagnostics. Commits
-contain every active component exactly once in deterministic order; a failed
-send leaves the logical state dirty so retry resends the full frame set.
+contain every active component exactly once in deterministic order; a backpressured
+send leaves the logical state dirty so retry resends the full repeatable frame set.
+Every selected component is required for the lifetime of this helper. A provider
+error other than `WouldBlock` closes the group before returning the original
+component/error. Invalid caller frame sets or reply routing do not close it.
 
 Companions are disabled by default. A concrete controller creation option may
 enable only its declared typed companion roles. Keyboard and pointer companions
@@ -47,7 +50,9 @@ must complete or cancel each delivered request within its service cycle, with
 bounded retry only when the provider confirms backpressure. Provider errors retain
 the component and original error. No implicit retry is safe for uncertain writes.
 Reverse records stream to the caller even when a subsequent read fails; callers
-must handle those records and the terminal error together. A partial input send
+must handle those records and the terminal error together. The group is already
+closed on terminal provider failure, so delivered requests are cancelled by
+transport teardown rather than replied to through a surviving sibling. A partial input send
 is not atomic across devices; only repeatable full snapshots use full-set retry.
 
 These are deterministic prerequisites for DS4 gamepad/touch composition. The
@@ -72,3 +77,18 @@ live experiment coincided with a reported display-session crash; see
 [EXP-0012](../../architecture-overhaul/experiments/EXP-0012-ds4-compound-interruption.md).
 Shared-desktop contact injection must not be repeated as acceptance. Production
 adoption requires isolated consumer validation of both nodes and their cleanup.
+
+## Required-component failure policy
+
+[ADR-0009](../../architecture-overhaul/decisions/ADR-0009-compound-terminal-failure.md)
+defines fail-closed ownership for the existing native compound helper. Close
+attempts run in reverse order even after cleanup errors; diagnostics preserve
+those errors without replacing the initiating failure. Repeated close and all
+later I/O are terminal. A failed close is not proof that host resources vanished.
+
+Controller packages still interpret raw lifecycle events (including STOP versus
+removal), own request deadlines and bounded backpressure retry, and explicitly
+close on protocol-level terminal failure. This helper does not parse lifecycle
+bytes or run a clock. Optional hot-removable components and identity-derived
+association need a controller-owned model before production adoption. Steam
+Controller development is deferred until the overhaul lands.

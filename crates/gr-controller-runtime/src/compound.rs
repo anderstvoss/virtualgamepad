@@ -63,7 +63,7 @@ pub enum CompoundOpenError {
     InvalidComponentOrder { component: ComponentId },
 }
 
-/// Recoverable operation failure for a live compound controller.
+/// Operation failure; terminal provider errors close the entire compound.
 #[derive(Debug, Error)]
 pub enum CompoundSessionError {
     #[error("compound controller is closed")]
@@ -93,6 +93,9 @@ struct Component {
 ///
 /// This type intentionally owns lifecycle only. Controller packages own the
 /// state model, frame construction, component meaning, and reverse decoding.
+/// Every selected component is required for this session. Provider failures other
+/// than `WouldBlock` close the entire group before returning the original error.
+/// Optional hot-removal requires a separate controller-owned lifecycle policy.
 pub struct CompoundSession {
     components: Vec<Component>,
     closed: bool,
@@ -163,13 +166,9 @@ impl CompoundSession {
             else {
                 return Err(CompoundSessionError::InvalidFrameSet);
             };
-            component
-                .session
-                .send(frame.frame.clone())
-                .map_err(|source| CompoundSessionError::Provider {
-                    component: frame.component,
-                    source,
-                })?;
+            if let Err(source) = component.session.send(frame.frame.clone()) {
+                return Err(self.provider_failure(frame.component, source));
+            }
         }
         Ok(())
     }
@@ -177,7 +176,7 @@ impl CompoundSession {
     /// Send one protocol-owned completion to the component that produced its request.
     ///
     /// Request IDs are scoped to a component. The caller owns request validation,
-    /// bounded retry and terminal failure policy. This method preserves provider
+    /// bounded retry and deadline policy. This method preserves provider
     /// errors and never resends input snapshots or retries implicitly.
     pub fn reply(
         &mut self,
@@ -201,13 +200,10 @@ impl CompoundSession {
             .iter_mut()
             .find(|component| component.id == id)
             .ok_or(CompoundSessionError::UnknownComponent { component: id })?;
-        component
-            .session
-            .send(frame)
-            .map_err(|source| CompoundSessionError::Provider {
-                component: id,
-                source,
-            })
+        match component.session.send(frame) {
+            Ok(()) => Ok(()),
+            Err(source) => Err(self.provider_failure(id, source)),
+        }
     }
 
     /// Drain raw reverse records in deterministic component order.
@@ -238,14 +234,23 @@ impl CompoundSession {
             match component.session.drain_reverse_events(&mut delivery) {
                 Ok(()) | Err(ProviderError::WouldBlock) => {}
                 Err(source) => {
-                    return Err(CompoundSessionError::Provider {
-                        component: component.id,
-                        source,
-                    });
+                    let id = component.id;
+                    return Err(self.provider_failure(id, source));
                 }
             }
         }
         Ok(())
+    }
+
+    fn provider_failure(
+        &mut self,
+        component: ComponentId,
+        source: ProviderError,
+    ) -> CompoundSessionError {
+        if !matches!(source, ProviderError::WouldBlock) {
+            self.close();
+        }
+        CompoundSessionError::Provider { component, source }
     }
 
     /// Close all components exactly once, in reverse order.
@@ -505,6 +510,7 @@ mod tests {
         read_error: Option<ProviderError>,
         reads: usize,
         closes: usize,
+        close_error: bool,
     }
     struct Recorded(Arc<Mutex<IoRecord>>);
     impl NativeProviderSession for Recorded {
@@ -542,8 +548,13 @@ mod tests {
             }
         }
         fn close(&mut self) -> Result<(), ProviderError> {
-            self.0.lock().unwrap().closes += 1;
-            Ok(())
+            let mut record = self.0.lock().unwrap();
+            record.closes += 1;
+            if record.close_error {
+                Err(ProviderError::Closed)
+            } else {
+                Ok(())
+            }
         }
     }
     fn recorded() -> (CompoundSession, [Arc<Mutex<IoRecord>>; 2]) {
@@ -695,6 +706,7 @@ mod tests {
         assert!(
             matches!(session.reply(ComponentId(0), reply.clone()), Err(CompoundSessionError::Provider { component: ComponentId(0), source: ProviderError::Write { reason } }) if reason == "delivery uncertain")
         );
+        assert!(session.diagnostics().closed);
         session.close();
         session.close();
         assert!(matches!(
@@ -728,6 +740,7 @@ mod tests {
             let mut delivered = vec![];
             let result = session.drain_reverse(&mut |id, event| delivered.push((id, event)));
             assert_eq!(result.is_ok(), blocked);
+            assert_eq!(session.diagnostics().closed, !blocked);
             assert_eq!(delivered, vec![(ComponentId(0), event)]);
             assert_eq!(records[1].lock().unwrap().reads, usize::from(blocked));
             if blocked {
@@ -820,6 +833,61 @@ mod tests {
             session.send(&frames),
             Err(CompoundSessionError::Closed)
         ));
+    }
+
+    #[test]
+    fn terminal_component_errors_close_every_required_component_before_returning() {
+        for failing in 0..2 {
+            for operation in 0..3 {
+                let (mut session, records) = recorded();
+                // Cleanup failure must not mask the initiating error or stop cleanup.
+                records[1].lock().unwrap().close_error = true;
+                let error = ProviderError::Closed;
+                if operation == 2 {
+                    records[failing].lock().unwrap().read_error = Some(error);
+                } else {
+                    records[failing].lock().unwrap().writes.push_back(error);
+                }
+                let frames: Vec<_> = (0..2)
+                    .map(|id| ComponentFrame {
+                        component: ComponentId(id),
+                        frame: ProviderFrame::Evdev(vec![]),
+                    })
+                    .collect();
+                let result = match operation {
+                    0 => session.send(&frames),
+                    1 => session.reply(
+                        ComponentId(u16::try_from(failing).unwrap()),
+                        replies()[0].clone(),
+                    ),
+                    _ => session.drain_reverse(&mut |_, _| {}),
+                };
+                assert!(matches!(result, Err(CompoundSessionError::Provider {
+                    component, source: ProviderError::Closed,
+                }) if usize::from(component.0) == failing));
+                let diagnostics = session.diagnostics();
+                assert!(diagnostics.closed);
+                assert_eq!(diagnostics.components[1].close_failures, 1);
+                assert!(diagnostics.components[1].last_close_error.is_some());
+                assert!(matches!(
+                    session.send(&frames),
+                    Err(CompoundSessionError::Closed)
+                ));
+                assert!(matches!(
+                    session.reply(ComponentId(0), replies()[0].clone()),
+                    Err(CompoundSessionError::Closed)
+                ));
+                assert!(matches!(
+                    session.drain_reverse(&mut |_, _| panic!("terminal")),
+                    Err(CompoundSessionError::Closed)
+                ));
+                session.close();
+                drop(session);
+                for record in records {
+                    assert_eq!(record.lock().unwrap().closes, 1);
+                }
+            }
+        }
     }
 
     /// Dreamcast/VMU-inspired benchmark only: this is not a Dreamcast codec.

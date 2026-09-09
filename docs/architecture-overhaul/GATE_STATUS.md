@@ -249,3 +249,15 @@ Default creation behavior is preserved. Live reconnect/consumer association and
 compound identity remain pending; no support level is promoted. Physical DualSense
 is unplugged. Steam Controller development is deferred until the overhaul lands;
 existing research provenance remains, but no Steam implementation begins in PR #106.
+
+
+### Required-component failure containment
+
+ADR-0009 makes terminal native compound provider errors close the whole selected
+group before returning. Deterministic tests cover both component positions and
+input/reply/read operations, cleanup failure, terminal I/O, repeated cleanup,
+partial reverse delivery and preserved backpressure retry. This closes the helper
+policy gap; it does not pass Gate E or isolated DS4 acceptance. Protocol-level
+removal/deadlines still belong to the controller; compound identity/association
+and live cleanup evidence remain pending. No host preparation or live test was
+performed. DualSense is unplugged and Steam Controller development is deferred.
