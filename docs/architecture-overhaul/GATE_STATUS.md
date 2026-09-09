@@ -328,3 +328,14 @@ with physical compressed-rumble fidelity explicitly unvalidated. Curated handles
 now expose requested labels and cached creation-time host observations. The
 DS4 test-only prototype exercises creation/role association with reused IDs;
 production split-node association still requires isolated acceptance.
+
+### Final core review and demo
+
+The [assessment](ASSESSMENT.md) maps all eight scoped closure items to evidence,
+limitations or explicit prerequisites. The final group audit fixes loss of an
+observation from a subsequently failing component; uncertain actions are still
+never replayed. Group bounds/recoverable-error fairness and acknowledged demo
+neutralization now have direct regressions. Lab records include consumer build,
+backend/mapping and cached association plus retained cleanup diagnostics.
+Interactive GUI, isolated touch/association, Steam/Eden and physical acceptance
+remain distinct. Extension gates and all-WIP support labels remain unchanged.

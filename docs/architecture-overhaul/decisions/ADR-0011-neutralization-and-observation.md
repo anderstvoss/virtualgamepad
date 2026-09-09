@@ -31,3 +31,10 @@ repeated neutralization, no I/O before commit, retryable failed commit, rejected
 edits and closed-session rejection across all current families. Cleanup tests
 require retained failure diagnostics after repeated close. Production DS4 split,
 physical fidelity and support-level promotion remain separately gated.
+
+The final group audit additionally drains retained observations from a failing
+component before terminal group cleanup. A SET observed before uncertain reply
+delivery remains visible without replaying the reply. Regression tests cover
+this exact sequence, bounded group loss counts and repeated fair sibling service
+after recoverable errors. The demo release action uses the acknowledged native
+edit path, with a deterministic press-then-release ordering test.

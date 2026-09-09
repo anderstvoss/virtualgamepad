@@ -78,19 +78,31 @@ const fn following_session(current: u64, advance: bool) -> u64 {
     }
 }
 
+#[derive(Default)]
+struct ConsumerNotes {
+    build: String,
+    backend: String,
+    mapping: String,
+}
+
 fn lab_record(
     name: &str,
     options: CreationOptions,
     metrics: &ServiceMetrics,
     notes: &str,
+    consumer: &ConsumerNotes,
+    details: &str,
 ) -> String {
     format!(
-        "Virtualgamepad manual lab record v1\nController: {name}\nRealization: {}\nApplication session: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
+        "Virtualgamepad manual lab record v2\nController: {name}\nRealization: {}\nApplication session: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
         target_label(options.target),
         options.session.0,
         metrics.cycles,
         metrics.max_gap.as_micros(),
-        metrics.omitted_logs
+        metrics.omitted_logs,
+        consumer.build,
+        consumer.backend,
+        consumer.mapping
     )
 }
 
@@ -298,6 +310,7 @@ trait ServicedController: Send + Sized {
         }
         self.commit_edits()
     }
+    fn neutralize(&mut self) -> Result<(), String>;
     fn refresh(&mut self) -> Result<(), String>;
     fn service(
         &mut self,
@@ -307,7 +320,20 @@ trait ServicedController: Send + Sized {
     fn deadline(&self) -> Option<Duration>;
     fn close(&mut self);
 }
+fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
+    Box::new(ServicedController::neutralize)
+}
+
 impl ServicedController for Controller {
+    fn neutralize(&mut self) -> Result<(), String> {
+        match self {
+            Self::Xbox(c) => c.neutralize(),
+            Self::DualSense(c) => c.neutralize(),
+            Self::DualShock4(c) => c.neutralize(),
+            Self::SwitchPro(c) => c.neutralize(),
+        }
+        .map_err(|error| error.to_string())
+    }
     fn snapshot(&mut self) -> Option<ControllerView> {
         Some(Self::snapshot(self))
     }
@@ -684,6 +710,8 @@ pub struct App {
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
+    consumer_notes: ConsumerNotes,
+    last_cleanup: Option<String>,
     broker_status: Option<Result<(), String>>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
@@ -699,6 +727,8 @@ impl Default for App {
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
+            consumer_notes: ConsumerNotes::default(),
+            last_cleanup: None,
             broker_status: None,
             controllers: vec![],
             selected_controller: None,
@@ -765,7 +795,10 @@ impl App {
         }
         let mut removed = self.controllers.remove(index);
         if let Some(worker) = removed.service_worker.take() {
-            worker.stop();
+            self.last_cleanup = Some(worker.stop().map_or_else(
+                || "Worker exited without a returned controller; host cleanup requires verification".into(),
+                |mut controller| controller.snapshot().lab_details(),
+            ));
         }
         self.selected_controller = selection_after_removal(self.controllers.len(), index);
     }
@@ -880,7 +913,18 @@ impl eframe::App for App {
             }
             if ui.button("Stop all controllers").clicked() { stop_all = true; }
             ui.collapsing("Lab notes and gate prerequisites", |ui| {
+                ui.label("Consumer build/version");
+                ui.text_edit_singleline(&mut self.consumer_notes.build);
+                ui.label("Input backend (for example SDL HIDAPI or Linux event)");
+                ui.text_edit_singleline(&mut self.consumer_notes.backend);
+                ui.label("Observed mapping/profile");
+                ui.text_edit_multiline(&mut self.consumer_notes.mapping);
+                ui.label("Observations");
                 ui.text_edit_multiline(&mut self.lab_notes);
+                if let Some(cleanup) = &self.last_cleanup {
+                    ui.label(format!("Last removed session: {cleanup}"));
+                    if ui.button("Copy cleanup diagnostics").clicked() { ui.ctx().copy_text(cleanup.clone()); }
+                }
                 ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
                 ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
                 ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
@@ -952,12 +996,17 @@ impl eframe::App for App {
                                     ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
                                         display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
                                     if ui.button("Copy lab record").clicked() {
-                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes));
+                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes, &self.consumer_notes, &named.view.lab_details()));
                                     }
                                 }
                             }
                             if named.edits.ready() {
-                                named.view.draw(ui, &mut named.second_touch);
+                                if ui.button("Release all inputs").clicked() {
+                                    named.second_touch.active = false;
+                                    if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
+                                } else {
+                                    named.view.draw(ui, &mut named.second_touch);
+                                }
                                 let result = named.view.take_edits().and_then(|edits| {
                                     let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
                                     named.edits.submit(&worker.edits, edits)
@@ -1775,8 +1824,18 @@ mod tests {
             },
             &metrics,
             "Reference disconnected; synthetic test",
+            &ConsumerNotes {
+                build: "synthetic build".into(),
+                backend: "fake backend".into(),
+                mapping: "fake mapping".into(),
+            },
+            "Closed; cleanup failed: synthetic",
         );
-        assert!(record.starts_with("Virtualgamepad manual lab record v1"));
+        assert!(record.starts_with("Virtualgamepad manual lab record v2"));
+        assert!(record.contains("Consumer build: synthetic build"));
+        assert!(record.contains("Consumer backend: fake backend"));
+        assert!(record.contains("Consumer mapping: fake mapping"));
+        assert!(record.contains("cleanup failed: synthetic"));
         assert!(record.contains("Application session: 65543"));
         assert!(record.contains("Maximum observed service gap (us): 11000"));
         assert!(record.contains("acceptance: not established"));
@@ -1795,6 +1854,13 @@ mod tests {
         committed: Vec<Vec<bool>>,
     }
     impl ServicedController for FakeService {
+        fn neutralize(&mut self) -> Result<(), String> {
+            if self.closed != 0 {
+                return Err("closed".into());
+            }
+            self.desired.push(false);
+            Ok(())
+        }
         fn commit_edits(&mut self) -> Result<(), String> {
             self.committed.push(self.desired.clone());
             Ok(())
@@ -1833,6 +1899,25 @@ mod tests {
             controller.desired.push(pressed);
             Ok(())
         })
+    }
+
+    #[test]
+    fn release_input_uses_acknowledged_queue_and_preserves_prior_press() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut progress = EditProgress::default();
+        let mut controller = FakeService::default();
+        progress.submit(&sender, vec![fake_edit(true)]).unwrap();
+        assert!(progress.submit(&sender, vec![release_inputs()]).is_err());
+        let (seq, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(seq));
+        progress.submit(&sender, vec![release_inputs()]).unwrap();
+        let (seq, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(seq));
+        assert_eq!(controller.committed, vec![vec![true], vec![true, false]]);
+        controller.close();
+        assert!(controller.apply(vec![release_inputs()]).is_err());
     }
 
     #[test]

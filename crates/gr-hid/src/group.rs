@@ -8,6 +8,10 @@ use crate::{Error, Protocol, Readiness, Runtime, Transport};
 pub trait ServicedComponent {
     type Output;
     fn service(&mut self, now: u64) -> Result<Vec<Self::Output>, Error>;
+    /// Drain observations retained when service failed after processing input.
+    fn take_observations(&mut self) -> Vec<Self::Output> {
+        Vec::new()
+    }
     fn deadline(&self) -> Option<u64>;
     fn readiness(&self) -> Option<Readiness>;
     fn wants_write(&self) -> bool;
@@ -21,6 +25,9 @@ impl<P: Protocol, T: Transport> ServicedComponent for Runtime<P, T> {
     type Output = P::Output;
     fn service(&mut self, now: u64) -> Result<Vec<Self::Output>, Error> {
         self.service(now)
+    }
+    fn take_observations(&mut self) -> Vec<Self::Output> {
+        self.take_observations()
     }
     fn deadline(&self) -> Option<u64> {
         self.deadline()
@@ -50,6 +57,18 @@ pub struct GroupCycle<O> {
     pub outputs: Vec<(u16, O)>,
     pub failures: Vec<(u16, Error)>,
     pub omitted_outputs: usize,
+}
+
+impl<O> GroupCycle<O> {
+    fn observe(&mut self, role: u16, outputs: Vec<O>) {
+        for output in outputs {
+            if self.outputs.len() < 128 {
+                self.outputs.push((role, output));
+            } else {
+                self.omitted_outputs += 1;
+            }
+        }
+    }
 }
 
 /// Invalid topology; all supplied components have received terminal cleanup.
@@ -158,13 +177,7 @@ impl<C: ServicedComponent> RequiredGroup<C> {
         for (role, component) in &mut self.components {
             match component.service(now) {
                 Ok(outputs) => {
-                    for output in outputs {
-                        if cycle.outputs.len() < 128 {
-                            cycle.outputs.push((*role, output));
-                        } else {
-                            cycle.omitted_outputs += 1;
-                        }
-                    }
+                    cycle.observe(*role, outputs);
                     if component.is_closed() {
                         cycle.failures.push((*role, Error::Closed));
                         self.close();
@@ -172,6 +185,7 @@ impl<C: ServicedComponent> RequiredGroup<C> {
                     }
                 }
                 Err(error) => {
+                    cycle.observe(*role, component.take_observations());
                     cycle.failures.push((*role, error));
                     if component.is_closed()
                         || !matches!(

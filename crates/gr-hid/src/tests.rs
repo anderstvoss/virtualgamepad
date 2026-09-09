@@ -607,3 +607,88 @@ fn required_group_preserves_prior_observations_on_later_uncertain_failure() {
     assert_eq!(ai.borrow().closes, 1);
     assert_eq!(bi.borrow().closes, 1);
 }
+
+#[test]
+fn required_group_retains_observation_from_the_failing_component() {
+    let (a, io) = runtime(Personality::default());
+    io.borrow_mut().events.push_back(request(
+        0,
+        RequestKind::Set(Report::new(ReportType::Output, Some(2), vec![44]).unwrap()),
+    ));
+    io.borrow_mut().outcomes.push_back(Delivery::Uncertain);
+    let mut group = RequiredGroup::new(vec![(7, a)]).unwrap();
+    let cycle = group.service(0).unwrap();
+    assert_eq!(cycle.outputs, vec![(7, 44)]);
+    assert_eq!(cycle.failures, vec![(7, Error::UncertainDelivery)]);
+    assert!(group.is_closed());
+    assert!(matches!(group.service(1), Err(Error::Closed)));
+    group.close();
+    assert_eq!(
+        io.borrow().attempts.len(),
+        1,
+        "uncertain reply is never replayed"
+    );
+    assert_eq!(io.borrow().closes, 1);
+}
+
+#[test]
+fn required_group_bounds_observations_and_services_after_recoverable_error() {
+    struct Component {
+        calls: Rc<RefCell<Vec<u16>>>,
+        role: u16,
+        closed: bool,
+    }
+    impl ServicedComponent for Component {
+        type Output = u8;
+        fn service(&mut self, _: u64) -> Result<Vec<u8>, Error> {
+            self.calls.borrow_mut().push(self.role);
+            if self.role == 0 {
+                Err(Error::QueueFull)
+            } else {
+                Ok(vec![0; 100])
+            }
+        }
+        fn deadline(&self) -> Option<u64> {
+            Some(u64::from(self.role))
+        }
+        fn readiness(&self) -> Option<Readiness> {
+            Some(Readiness::Poll)
+        }
+        fn wants_write(&self) -> bool {
+            false
+        }
+        fn is_closed(&self) -> bool {
+            self.closed
+        }
+        fn close(&mut self) -> Result<(), Error> {
+            self.closed = true;
+            Ok(())
+        }
+    }
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let mut group = RequiredGroup::new(
+        (0..3)
+            .map(|role| {
+                (
+                    role,
+                    Component {
+                        role,
+                        calls: Rc::clone(&calls),
+                        closed: false,
+                    },
+                )
+            })
+            .collect(),
+    )
+    .unwrap();
+    for now in 0..2 {
+        let cycle = group.service(now).unwrap();
+        assert_eq!(cycle.failures, vec![(0, Error::QueueFull)]);
+        assert_eq!(cycle.outputs.len(), 128);
+        assert_eq!(cycle.omitted_outputs, 72);
+        assert!(cycle.outputs[..100].iter().all(|(role, _)| *role == 1));
+        assert!(cycle.outputs[100..].iter().all(|(role, _)| *role == 2));
+        assert!(!group.is_closed());
+    }
+    assert_eq!(*calls.borrow(), vec![0, 1, 2, 0, 1, 2]);
+}

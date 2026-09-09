@@ -22,6 +22,7 @@ pub(super) struct Editor<S, T: 'static> {
     edits: EditBatch,
     overflow: bool,
     diagnostics: Option<ProviderDiagnostics>,
+    association: virtualgamepad::ControllerAssociation,
     streaming: bool,
     counter: u8,
 }
@@ -65,7 +66,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: None,
+                diagnostics: Some(c.provider_diagnostics()),
+                association: c.association().clone(),
                 streaming: false,
                 counter: 0,
             }),
@@ -75,6 +77,7 @@ impl Controller {
                 edits: Vec::new(),
                 overflow: false,
                 diagnostics: Some(c.provider_diagnostics()),
+                association: c.association().clone(),
                 streaming: false,
                 counter: 0,
             }),
@@ -83,7 +86,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: None,
+                diagnostics: Some(c.provider_diagnostics()),
+                association: c.association().clone(),
                 streaming: false,
                 counter: 0,
             }),
@@ -92,7 +96,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: None,
+                diagnostics: Some(c.provider_diagnostics()),
+                association: c.association().clone(),
                 streaming: c.stream_enabled(),
                 counter: c.motion_report_counter(),
             }),
@@ -100,6 +105,44 @@ impl Controller {
     }
 }
 impl ControllerView {
+    pub(super) fn lab_details(&self) -> String {
+        match self {
+            Self::Xbox(c) => format!(
+                "{}: {:?}; {:?}",
+                c.association.role(),
+                c.association,
+                c.diagnostics
+            ),
+            Self::DualSense(c) => format!(
+                "{}: {:?}; {:?}",
+                c.association.role(),
+                c.association,
+                c.diagnostics
+            ),
+            Self::DualShock4(c) => format!(
+                "{}: {:?}; {:?}",
+                c.association.role(),
+                c.association,
+                c.diagnostics
+            ),
+            Self::SwitchPro(c) => format!(
+                "{}: {:?}; {:?}",
+                c.association.role(),
+                c.association,
+                c.diagnostics
+            ),
+        }
+    }
+    pub(super) fn release_inputs(&mut self) -> Result<(), String> {
+        let edit = super::release_inputs();
+        match self {
+            Self::Xbox(c) => c.queue(edit),
+            Self::DualSense(c) => c.queue(edit),
+            Self::DualShock4(c) => c.queue(edit),
+            Self::SwitchPro(c) => c.queue(edit),
+        }
+    }
+
     pub(super) fn take_edits(&mut self) -> Result<EditBatch, String> {
         match self {
             Self::Xbox(c) => c.take_edits(),
@@ -481,6 +524,7 @@ mod tests {
             edits: Vec::new(),
             overflow: false,
             diagnostics: None,
+            association: virtualgamepad::ControllerAssociation::default(),
             streaming: false,
             counter: 0,
         };

@@ -70,3 +70,16 @@ scope: refine #106/current controllers first, review and land, prepare alpha
 versioning, then open focused controller issues and exercise Steam Controller
 (2026) + Puck, Xbox Series and Wii Remote addition. All support matrix cells stay
 WIP for now; experiment results are retained without automatic promotion.
+
+## Current disposition — supersedes the initial next-change column
+
+The [core review assessment](ASSESSMENT.md) now maps the eight scoped closure
+items to implementation evidence and explicit prerequisites. ADRs 0010–0011
+settle required-component protocol service/association, native neutralization,
+observation order and retained cleanup diagnostics. EXP-0017 adds individual HID
+mapping results for all current families. The demo now exposes acknowledged
+release-all plus structured consumer and association/cleanup lab fields.
+The initial findings above are historical triage, not the current implementation
+backlog. Remaining evidence is isolated DS4 split/touch, exact interactive consumer
+comparison, physical fidelity and separate extension gates; no support promotion
+or automatic landing follows these changes.

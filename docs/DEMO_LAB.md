@@ -101,3 +101,19 @@ its evdev profile. Recreate existing virtual devices after rebuilding: descripto
 are installed at creation. West is X and North is Y; legacy Linux BTN_X is
 numerically also named BTN_NORTH, so use observed printed/spatial action rather
 than that alias alone. See EXP-0016 for the old HID defect and retest scope.
+
+## Release and correlation records
+
+**Release all inputs** queues one native `neutralize()` edit through the same
+acknowledged worker queue, then commits it. It releases contacts too, but preserves
+battery metadata, identity, protocol state and host-owned rumble/LED state. The
+button waits for the previous accepted edit; it cannot overtake a press. The UI
+skips other control edits that frame so stale touch state is not reasserted.
+
+Lab record v2 has separate consumer build, backend and mapping fields, plus the
+selected component role, requested creation labels and any cached host observation.
+A cached path is historical: verify identity and ancestry after re-enumeration.
+After removal, **Copy cleanup diagnostics** preserves the last returned controller's
+terminal state and any cleanup error. A worker that returns no controller is
+reported as requiring host verification. This is not proof that every kernel
+node was removed; verify that independently. Nothing is automatically saved.

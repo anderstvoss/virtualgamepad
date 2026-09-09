@@ -71,3 +71,13 @@ The current run reports kernel `6.12.107+deb13-arm64`, unlike the earlier
 `6.12.105` UHID/SDL records. No kernel change or reboot was performed by this task.
 Recheck the recorded UHID/SDL configurations before claiming acceptance on the
 current kernel; preserve the older results with their original host version.
+
+## Final core review input tooling
+
+EXP-0017 rebuilt pinned SDL 3.2.0 in a fresh private prefix with input-only console
+configuration (audio/camera disabled after an old PipeWire API build failure).
+All four current UHID families passed individual controls and cleanup on the
+recorded 6.12.107 arm64 host. Existing creation access was reused; no permissions,
+modules or services changed for these runs. Raw build/experiment records remain
+private. Earlier “not surveyed” and missing-cache entries above are historical;
+this does not establish interactive Steam/Eden, isolated touch or gadget readiness.

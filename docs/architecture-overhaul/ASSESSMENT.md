@@ -1,40 +1,50 @@
-# Implementation assessment — 2026-09-06
+# Core rewrite assessment — 2026-09-09
 
-Review branch: `architecture/protocol-session-rewrite`, [PR #106](https://github.com/anderstvoss/virtualgamepad/pull/106). Foundation and production changes are committed in coherent batches; no remote-main push or history rewrite is required. The [gate ledger](GATE_STATUS.md) controls acceptance.
+Scope: current feature branch and PR #106, four existing controller families.
+This assessment supersedes the earlier incremental status on this page. The
+[gate ledger](GATE_STATUS.md) remains authoritative for experiment scope. The
+full E0–E6 extension roadmap is not complete; no merge, release, new controller
+or support-cell promotion is included.
 
-The implemented UHID path now keeps state, autonomous cadence, GET/SET decisions, and output validation in synchronous controller personalities. The neutral runtime owns bounded delivery, request identity, retry deadlines, and terminal cleanup. UHID retains transport framing, kernel request mapping, and lifecycle metadata. DualSense, DS4, Switch Pro, and existing standard-HID Xbox behavior share this boundary. uinput presentation and the existing compiled dummy_hcd path remain intact.
+## Remaining-item disposition
 
-Review fixes include rejection before SET success, one-event UHID writes after partial/uncertain delivery, terminal cleanup after a failed close, preserving accepted state and reply identity under pressure, and exposing writable polling interest through controller handles. Deterministic tests retain transaction, compound rollback, framing, concurrency, removal, and demo-selection regressions. Independent synthetic DualSense fixtures are pinned to published corpus evidence; they are not physical captures.
+| Review item | Implemented evidence | Limitation or resumption prerequisite |
+| --- | --- | --- |
+| Compound identity and roles | ADR-0010: distinct logical/creation identities, controller-owned roles, associated UHID/uinput labels; duplicate roles and failure at every open position covered. Test-only DS4 prototype checks shared creation prefix, distinct role suffixes and independent reused-ID creations. | Requested labels plus verified host ancestry are required for actual association. DS4 split production adoption still needs an isolated host. |
+| Required-component lifecycle and service | Native terminal containment plus `RequiredGroup`: fair bounded service, earliest deadlines, readiness, component-scoped requests, expiry, uncertain-delivery cancellation and terminal reopen rejection. Final audit retains observations from the component whose later action failed. | Optional hot removal is outside the required-component contract. No production compound topology is inferred from synthetic tests. |
+| Native state and neutralization | ADR-0011: all four handles provide one transactional `neutralize()` edit, explicit commit, preserved metadata/protocol/output state, retryable dirty state and terminal rejection. | Native controller units and conversion helpers remain; no normalized core or persistence service. |
+| Output and cleanup API | Exact required replies precede optional observations. Bounded loss counts and component-local service order are tested, including recoverable-error sibling service. All handles retain cleanup diagnostics and creation metadata. | Cached host paths are historical observations, not authority to operate on reused nodes. Kernel cleanup failure is not reported as success. Compressed Switch motor words are exposed without physical amplitude/frequency claims. |
+| Current-controller acceptance | EXP-0017: 624 isolated HID control/neutral observations and twelve cleanup passes. Existing report-class, framing, cadence, concurrency, motion/output and fault-injection tests retained. Xbox descriptor correction has exact SDL retesting. | DS4 combined evdev fails SDL classification and remains documented. No isolated touch rerun. Physical DualSense absence/damaged controls and absent DS4/Switch references limit fidelity. |
+| Consumer disagreement | Pinned SDL exact paths/backends/mappings and neutral/endpoints recorded. Initial Sony Up probe failures preserved; polling neutral before activation fixes the transition apparatus. User Eden gyro observations retained. | Exact Steam/Eden builds, backend, mapping and same-device observations still needed. No Steam bug inferred. Held-input-at-open is outside the settled transition test. |
+| Demo integration | Acknowledged “Release all inputs”, consumer build/backend/mapping fields, association/cleanup records and retained last-removal diagnostics. Fake-worker/UI helpers cover stalls, bounded rejection, press/release ordering, arbitrary removal, failure and shutdown. | Live interactive GUI acceptance is not established by these tests. Records are copied only at user request and stay outside Git. Touch is not injected into the active desktop. |
+| Boundary, corpus and delivery | Neutral UHID/uinput providers, synchronous personalities and caller-owned execution retained. Corpus generation/publication verification and ordinary offline source-archive builds checked separately. No new runtime dependencies or host permission changes. | Compiled gadget controller profiles/report lengths/startup remain the explicit Gate G exception. Missing metadata/completion authority cannot be fixed with permissions. Audio/Bluetooth/compatibility extension gates remain separate. |
 
-All required workspace formatting, check, strict Clippy, and test commands pass. Gitleaks passes. Five corpus workflow tests cover regeneration/staleness, absent or mismatched submodules, dirty contents, unpublished revisions, and recursive checkout. Remote revision verification passes. `cargo package -p gr-hid --allow-dirty` packages and verifies the new dependency-free crate. Live uinput creation/destruction passed separately; ignored hardware tests remain skipped.
+## Validation and review boundary
 
-The independent corpus has a separate [parent-validation PR #1](https://github.com/anderstvoss/controller-protocol-corpus/pull/1), with seven tests and schema validation passing. This fixes transformation identifier validation without prematurely moving the superproject gitlink. The published seed remains adopted.
+Required checks: workspace formatting, all-target/all-feature check and strict
+Clippy, all-feature tests, Python tooling tests, corpus regeneration and remote
+publication verification, Gitleaks and configured commit/push hooks. Source
+archives are checked without Git metadata, corpus checkout, credentials or Cargo
+network access. Ordinary builds use checked-in artifacts. Authenticated corpus
+CI uses existing corpus-only read access; no repository permissions or workflow
+policy changed. Each published head's CI result remains separately inspectable.
 
-Remaining acceptance and implementation: Basic UHID access and production DualSense kernel startup are now validated; B/P still require controlled baseline/bus/driver and consumer comparisons. See [EXP-0006](experiments/EXP-0006-dualsense-live-startup.md). G has a source-level metadata/completion mismatch and requires a supported kernel/profile decision plus live startup, latency, and cleanup evidence before broker replacement; see [EXP-0004](experiments/EXP-0004-gadget-capability.md). Compound, host/USB audio, Bluetooth, compatibility, physical SC2 expansion, and wheel/HOTAS acceptance are not implemented or promoted by this batch. Explicit development-helper provisioning and restoration are recorded in EXP-0005; EXP-0006 used existing access without further host changes. The authenticated corpus CI job needs the operator-provided `PROTOCOL_CORPUS_READ_TOKEN`; ordinary builds do not require it. The full E0–E6 roadmap is therefore still incomplete, and PR #106 remains a draft.
+The scoped current-core changes are suitable for review with the limitations
+above explicit. PR #106 remains draft pending final reviewer assessment; the
+known DS4 combined-node classification failure is contained by its documented
+restriction and test-only split prototype. It is not a passing realization.
+Steam/Eden interactive comparisons, isolated compound/touch evidence and physical
+fidelity do not silently become passes. The maintainer decides landing; alpha
+versioning and individual new-controller work follow landing.
 
-The transport identity review removed aliasing caused by caller-session reuse and
-made UHID reject silent identity truncation. A compact process/creation ordinal
-fits curated phys/uniq fields. This does not change controller-owned pairing
-addresses or claim namespace-independent physical identity. The new opt-in live
-probe validates the production personality beyond the minimal provider test.
+## Provider purity assessment
 
-The test-only bus apparatus now runs against both the archived baseline and the
-rewrite. Three repetitions per bus/revision all enumerated and cleaned up; USB
-selected playstation and virtual bus selected hid-generic. This narrows the
-remaining B/P work to controlled consumer/binding/reference evidence and observed
-report behavior; it does not diagnose the historical Steam issue. See
-[EXP-0007](experiments/EXP-0007-bus-baseline-comparison.md).
-
-DualSense now passes the scoped baseline/rewrite Linux/SDL control, motion, touch,
-rumble/RGB and cleanup matrix in [EXP-0008](experiments/EXP-0008-sdl-core.md).
-The fail-closed JSON consumer and per-creation pairing identity close independent
-correctness gaps. Repeated-ID concurrent sessions and injected failure cleanup
-also pass. Other families and the remaining gate axes still prevent overall core
-sign-off; this is not completion of the architecture roadmap.
-
-The family review found and fixed the equivalent DS4 feature-address collision.
-Its injected-identity tests and concurrent kernel sessions pass, while its consumer
-matrix remains pending. [CORE_ACCEPTANCE](CORE_ACCEPTANCE.md) separates these axes
-and lists exact remaining work. SDL acceptance additionally checks an observed
-neutral state and requires actual low-end samples for axis range assertions;
-missing samples no longer inherit a passing zero minimum.
+UHID owns Linux event/framing and transport identity, while curated personalities
+own controller protocol semantics. uinput transports prepared axes, keys,
+physical paths and neutral force-feedback events; controller presentation and
+feedback policy remain unprivileged. Provider manifests do not depend on curated
+controller personalities. The dummy_hcd provider's compiled `report_length`
+selection and broker's controller profiles/static feature windows remain visible
+legacy exceptions. Retain them until EXP-0004/G establishes a supported generic
+control metadata/completion interface and owned-resource live cleanup. Do not
+introduce speculative staged IPC or broader standing privileges to hide that gap.
