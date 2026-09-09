@@ -60,6 +60,13 @@ persistence storage. The existing component-scoped reply routing is useful and
 must survive any composition changes.
 
 Service ownership, identity restoration and required-component failure each need
-an explicit decision record when their experiments settle the contract. None is
-claimed settled by this triage. PR #106 remains draft; the acceptance matrix and
+an explicit decision record when their experiments settle the contract. ADRs 0007–0009 now settle worker ownership, the Sony identity subset and native
+compound terminal-provider policy; compound identity and protocol deadlines remain. PR #106 remains draft; the acceptance matrix and
 gate ledger remain the source of measured support claims.
+
+
+The maintainer's [landing and alpha plan](LANDING_AND_ALPHA_PLAN.md) now controls
+scope: refine #106/current controllers first, review and land, prepare alpha
+versioning, then open focused controller issues and exercise Steam Controller
+(2026) + Puck, Xbox Series and Wii Remote addition. All support matrix cells stay
+WIP for now; experiment results are retained without automatic promotion.

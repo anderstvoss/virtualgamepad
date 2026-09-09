@@ -35,6 +35,10 @@ transport sessions are fresh. Other targets reject this option. Existing creatio
 functions remain ephemeral. See the [identity contract](docs/architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md)
 for consumer-association limits and concurrent-identity policy.
 
+The [controller support matrix](docs/CONTROLLER_SUPPORT.md) currently marks all
+entries WIP. The [landing and alpha plan](docs/architecture-overhaul/LANDING_AND_ALPHA_PLAN.md)
+prioritizes the current controller core before new-controller development.
+
 The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. The broker's dynamic protocol migration, composite/audio behavior, and Bluetooth extensions are not complete.
 
 ## Development

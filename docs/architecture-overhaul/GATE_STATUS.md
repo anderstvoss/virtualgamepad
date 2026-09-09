@@ -278,3 +278,13 @@ development remains deferred until landing.
 The corrected Xbox UHID profile passes 156 exact individual-control/neutral SDL
 3.2.0 observations across three creations on Linux 6.12.107 arm64, with exact
 selection and cleanup. Eden/Steam retesting remains separate and pending.
+
+
+### Landing scope and support labels
+
+The [landing and alpha plan](LANDING_AND_ALPHA_PLAN.md) prioritizes current-core
+hardening and review in #106. Remaining extension gates retain their blockers and
+must pass before dependent features ship; they are not silently required to add
+new controllers before the core can land. The [support matrix](../CONTROLLER_SUPPORT.md)
+starts every cell at WIP, independently of experiment-level passes. Alpha
+versioning and new-controller issues follow landing; no merge or release occurred.
