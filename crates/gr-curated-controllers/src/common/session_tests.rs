@@ -354,6 +354,7 @@ fn evdev_rig<D: HidDriver>(driver: D) -> (ControllerSession<D>, Arc<Mutex<Record
         ProviderSessionSink {
             session: Box::new(Fake(record.clone())),
             closed: false,
+            close_error: None,
         },
         prepared,
     )
@@ -1041,4 +1042,53 @@ where
 fn restored_sony_identity_does_not_resurrect_requests_or_transport_state() {
     restored_sony_session(&DualSenseDefinition, 9);
     restored_sony_session(&DualShock4Definition, 0x12);
+}
+
+fn neutralization_is_transactional<D: HidDriver>(driver: D)
+where
+    D::State: PartialEq + std::fmt::Debug,
+{
+    let expected = driver.neutral_state();
+    let (mut session, record) = evdev_rig(driver);
+    session
+        .apply_digital(gr_controller_contract::DigitalControlUpdate::FaceButton {
+            button: gr_controller_contract::FaceButton::South,
+            pressed: true,
+        })
+        .unwrap();
+    session.commit().unwrap();
+    let sent = record.lock().unwrap().sent.len();
+    session.neutralize().unwrap();
+    assert_eq!(session.state(), &expected);
+    assert_eq!(
+        record.lock().unwrap().sent.len(),
+        sent,
+        "neutralization must not perform I/O"
+    );
+    assert!(session.is_dirty());
+    record
+        .lock()
+        .unwrap()
+        .fail
+        .push_back(ProviderError::WouldBlock);
+    assert!(session.commit().is_err());
+    assert_eq!(session.state(), &expected);
+    assert!(session.is_dirty());
+    session.commit().unwrap();
+    assert!(!session.is_dirty());
+    let before = session.state().clone();
+    assert!(session.update_state(|_| Err(ControlError::Closed)).is_err());
+    assert_eq!(session.state(), &before);
+    session.close();
+    assert!(matches!(session.neutralize(), Err(ControlError::Closed)));
+    assert_eq!(session.state(), &before);
+    session.close();
+    assert_eq!(record.lock().unwrap().destroys, 1);
+}
+#[test]
+fn all_family_neutralization_is_one_edit_with_retryable_delivery_and_terminal_close() {
+    neutralization_is_transactional(DualSenseDefinition);
+    neutralization_is_transactional(DualShock4Definition);
+    neutralization_is_transactional(SwitchProDefinition);
+    neutralization_is_transactional(Xbox360Definition);
 }

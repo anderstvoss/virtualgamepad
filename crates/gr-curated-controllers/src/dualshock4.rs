@@ -855,6 +855,15 @@ impl DualShock4Controller {
             Ok(())
         })
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
+    /// Current transport and retained cleanup diagnostics.
+    pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
+        self.0.diagnostics()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
@@ -1047,6 +1056,18 @@ fn create_dualshock4_inner(
     Ok(DualShock4Controller(c))
 }
 impl common::HidDriver for DualShock4Definition {
+    fn neutralize_state(state: &mut Self::State) {
+        *state = Self::State {
+            battery: state.battery,
+            sequence: state.sequence,
+            sensor_timestamp: state.sensor_timestamp,
+            touch_sequence: state
+                .touch_sequence
+                .wrapping_add(u8::from(state.touches.iter().any(Option::is_some))),
+            ..Self::State::default()
+        };
+    }
+
     type Hid = common::SnapshotProtocol<DualShock4State>;
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         common::creation_identity()
@@ -1083,6 +1104,36 @@ impl common::HidDriver for DualShock4Definition {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let mut expected = DualShock4State::default();
+        expected.battery.set_exposed(true);
+        expected
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        expected.sequence = 77;
+        expected.sensor_timestamp = 12345;
+        expected.touch_sequence = 9;
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (DualShock4Axis(100), DualShock4Axis(200));
+        state.right = (DualShock4Axis(200), DualShock4Axis(100));
+        state.triggers = (DualShock4Trigger(255), DualShock4Trigger(255));
+        state.touches = [
+            Some(DualShock4TouchContact::new(1, 100, 200).unwrap()),
+            Some(DualShock4TouchContact::new(2, 300, 400).unwrap()),
+        ];
+        state.touch_sequence = 8;
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <DualShock4Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <DualShock4Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
 
     #[test]
     fn identity_roundtrip_flags_and_target_rejection_require_no_host() {

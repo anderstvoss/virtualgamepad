@@ -576,6 +576,15 @@ impl Xbox360Controller {
             Ok(())
         })
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
+    /// Current transport and retained cleanup diagnostics.
+    pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
+        self.0.diagnostics()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
@@ -708,6 +717,13 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
 }
 
 impl common::HidDriver for Xbox360Definition {
+    fn neutralize_state(state: &mut Self::State) {
+        *state = Self::State {
+            battery: state.battery,
+            ..Self::State::default()
+        };
+    }
+
     type Hid = common::SnapshotProtocol<Xbox360State>;
     fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
@@ -745,6 +761,26 @@ fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
 mod tests {
     use super::*;
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let mut expected = Xbox360State::default();
+        expected.battery.set_exposed(true);
+        expected
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (Xbox360Axis(100), Xbox360Axis(200));
+        state.right = (Xbox360Axis(200), Xbox360Axis(100));
+        state.triggers = (Xbox360Trigger(255), Xbox360Trigger(255));
+        <Xbox360Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <Xbox360Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
 
     #[test]
     fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {

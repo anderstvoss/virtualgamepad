@@ -60,6 +60,7 @@ pub(crate) const fn dpad_index(direction: DpadDirection) -> usize {
 pub(crate) struct ProviderSessionSink {
     session: Box<dyn NativeProviderSession>,
     closed: bool,
+    close_error: Option<String>,
 }
 
 impl FrameSink for ProviderSessionSink {
@@ -99,13 +100,20 @@ impl ProviderSessionSink {
     }
 
     pub(crate) fn diagnostics(&self) -> gr_realization_api::ProviderDiagnostics {
-        self.session.diagnostics()
+        let mut diagnostics = self.session.diagnostics();
+        if self.closed {
+            diagnostics.state = gr_realization_api::ProviderState::Closed;
+        }
+        if let Some(error) = &self.close_error {
+            diagnostics.last_error = Some(format!("cleanup failed: {error}"));
+        }
+        diagnostics
     }
 
     pub(crate) fn close(&mut self) {
         if !self.closed {
             self.closed = true;
-            let _ = self.session.close();
+            self.close_error = self.session.close().err().map(|error| error.to_string());
         }
     }
 }
@@ -215,6 +223,7 @@ where
         ProviderSessionSink {
             session,
             closed: false,
+            close_error: None,
         },
         prepared,
     )
@@ -384,6 +393,7 @@ mod tests {
         let mut sink = ProviderSessionSink {
             session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
+            close_error: None,
         };
         sink.close();
         drop(sink);
@@ -392,6 +402,7 @@ mod tests {
         let dropped = ProviderSessionSink {
             session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
+            close_error: None,
         };
         drop(dropped);
         assert_eq!(closes.load(Ordering::SeqCst), 2);
@@ -402,9 +413,20 @@ mod tests {
         let mut sink = ProviderSessionSink {
             session: Box::new(ClosingSession(closes.clone(), true)),
             closed: false,
+            close_error: None,
         };
         sink.close();
         sink.close();
+        assert_eq!(
+            sink.diagnostics().state,
+            gr_realization_api::ProviderState::Closed
+        );
+        assert!(
+            sink.diagnostics()
+                .last_error
+                .unwrap()
+                .contains("cleanup failed")
+        );
         drop(sink);
         assert_eq!(closes.load(Ordering::SeqCst), 1);
     }

@@ -132,6 +132,15 @@ impl Protocol for DualSenseUsbProtocol {
 }
 
 impl common::HidDriver for DualSenseDefinition {
+    fn neutralize_state(state: &mut Self::State) {
+        *state = Self::State {
+            battery: state.battery,
+            input_sequence: state.input_sequence,
+            sensor_timestamp: state.sensor_timestamp,
+            ..Self::State::default()
+        };
+    }
+
     type Hid = DualSenseUsbProtocol;
     fn hid_identity(&self) -> Result<[u8; 6], gr_realization_api::ProviderError> {
         common::creation_identity()

@@ -303,3 +303,11 @@ service, overlapping request IDs, CLOSE/OPEN distinction, exact reply deadline,
 uncertain delivery, prior observations and retained cleanup failures. It exposes
 aggregate deadlines/readiness without introducing a worker. This resolves the
 helper-level service owner, not isolated production DS4 association or Gate E.
+
+### Native neutralization and diagnostics
+
+ADR-0011 adds transactional neutralize() to all four handles, preserving metadata
+and protocol state, with retryable committed delivery and terminal rejection.
+Native/HID cleanup errors are retained and every handle exposes diagnostics.
+All-family metadata/control/contact regressions pass. Observation ordering remains
+local service order with bounded loss reporting. No live fidelity gate is promoted.

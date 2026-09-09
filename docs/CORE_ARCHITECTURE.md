@@ -116,3 +116,10 @@ before open. This is the deterministic contract in
 [ADR-0008](architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md), not a
 claim that every consumer preserves association after reconnect. Compound identity
 and other realization policies remain unimplemented.
+
+Current handles provide `neutralize()` followed by explicit `commit()` to release
+all inputs transactionally without resetting identity, battery metadata, protocol
+state or host-owned outputs. Optional output order is service-observation order,
+not cross-device hardware chronology. All handles expose retained transport and
+cleanup diagnostics; terminal library state alone does not prove host removal.
+See [ADR-0011](architecture-overhaul/decisions/ADR-0011-neutralization-and-observation.md).

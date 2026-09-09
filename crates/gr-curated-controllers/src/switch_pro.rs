@@ -715,6 +715,15 @@ impl SwitchProController {
             Ok(())
         })
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
+    /// Current transport and retained cleanup diagnostics.
+    pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
+        self.0.diagnostics()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
@@ -908,6 +917,27 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let expected = SwitchProState {
+            timer: 77,
+            stream_enabled: true,
+            ..SwitchProState::default()
+        };
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (SwitchProAxis(100), SwitchProAxis(200));
+        state.right = (SwitchProAxis(200), SwitchProAxis(100));
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
+
     #[test]
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {

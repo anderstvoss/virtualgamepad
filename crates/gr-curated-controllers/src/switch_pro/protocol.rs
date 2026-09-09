@@ -130,6 +130,14 @@ impl Protocol for SwitchUsbProtocol {
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }
 impl common::HidDriver for SwitchProDefinition {
+    fn neutralize_state(state: &mut Self::State) {
+        *state = Self::State {
+            timer: state.timer,
+            stream_enabled: state.stream_enabled,
+            ..Self::State::default()
+        };
+    }
+
     type Hid = SwitchUsbProtocol;
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         SwitchUsbProtocol::new()

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
     type Hid: Protocol<State = Self::State, Output = RawReverseEvent> + Send;
+    fn neutralize_state(state: &mut Self::State);
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         Ok([0; 6])
     }
@@ -84,6 +85,12 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Native(r) => r.is_dirty(),
             Backend::Hid { runtime, .. } => runtime.is_dirty(),
         }
+    }
+    pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.update_state(|state| {
+            D::neutralize_state(state);
+            Ok(())
+        })
     }
     pub(crate) fn update_state(
         &mut self,
@@ -209,7 +216,13 @@ impl<D: HidDriver> ControllerSession<D> {
     pub(crate) fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         match &mut self.backend {
             Backend::Native(r) => r.with_sink(|s| s.diagnostics()),
-            Backend::Hid { runtime, .. } => runtime.transport().diagnostics(),
+            Backend::Hid { runtime, .. } => {
+                let mut diagnostics = runtime.transport().diagnostics();
+                if let Some(error) = runtime.cleanup_error() {
+                    diagnostics.last_error = Some(format!("cleanup failed: {error}"));
+                }
+                diagnostics
+            }
         }
     }
     pub(crate) fn wants_write(&self) -> bool {

@@ -1017,6 +1017,11 @@ impl DualSenseController {
             }),
         }
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
@@ -1312,6 +1317,34 @@ fn create_dualsense_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let mut expected = DualSenseState::default();
+        expected.battery.set_exposed(true);
+        expected
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        expected.input_sequence = 77;
+        expected.sensor_timestamp = 12345;
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (DualSenseAxis(100), DualSenseAxis(200));
+        state.right = (DualSenseAxis(200), DualSenseAxis(100));
+        state.triggers = (DualSenseTrigger(255), DualSenseTrigger(255));
+        state.touches = [
+            Some(DualSenseTouchContact::new(1, 100, 200).unwrap()),
+            Some(DualSenseTouchContact::new(2, 300, 400).unwrap()),
+        ];
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
 
     #[test]
     fn identity_roundtrip_flags_and_target_rejection_require_no_host() {
