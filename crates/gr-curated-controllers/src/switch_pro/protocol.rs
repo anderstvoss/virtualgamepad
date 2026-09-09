@@ -50,7 +50,7 @@ impl SwitchUsbProtocol {
                 self.stream_enabled |= enable;
                 self.pending.push_back(common::logical_input(reply));
             }
-            Some(0x10) if bytes.len() >= 8 => {} // Rumble-only report; typed raw output preserved.
+            Some(0x10) if bytes.len() >= 9 => {} // Rumble-only report; typed raw output preserved.
             Some(0x80 | 1 | 0x10) => return Err(ReplyError::Invalid),
             _ => return Err(ReplyError::Unsupported),
         }

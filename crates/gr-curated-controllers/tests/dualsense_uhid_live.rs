@@ -1182,6 +1182,59 @@ impl MappingController for gr_curated_controllers::SwitchProController {
         self.commit().unwrap();
     }
 }
+macro_rules! sony_mapping {
+    ($controller:ty, $axis:path, $trigger:path, $control:ident, $back:ident) => {
+        impl MappingController for $controller {
+            fn mapping(&mut self, case: u8) {
+                use gr_curated_controllers::$control;
+                self.neutralize().unwrap();
+                if let Some(update) = isolated_digital(case) {
+                    self.set_digital(update).unwrap();
+                }
+                if (5..=11).contains(&case) {
+                    self.set_native(
+                        [
+                            $control::$back,
+                            $control::PlayStation,
+                            $control::Options,
+                            $control::LeftStickPress,
+                            $control::RightStickPress,
+                            $control::L1,
+                            $control::R1,
+                        ][usize::from(case - 5)],
+                        true,
+                    )
+                    .unwrap();
+                }
+                let [x, y, rx, ry] =
+                    isolated_axes(case).map(|v| u8::try_from((i32::from(v) + 32768) >> 8).unwrap());
+                self.set_left_stick($axis(x), $axis(y)).unwrap();
+                self.set_right_stick($axis(rx), $axis(ry)).unwrap();
+                self.set_triggers(
+                    $trigger(if case == 24 { 255 } else { 0 }),
+                    $trigger(if case == 25 { 255 } else { 0 }),
+                )
+                .unwrap();
+                self.commit().unwrap();
+            }
+        }
+    };
+}
+sony_mapping!(
+    gr_curated_controllers::DualSenseController,
+    gr_curated_controllers::DualSenseAxis::new,
+    gr_curated_controllers::DualSenseTrigger::new,
+    DualSenseControl,
+    Create
+);
+sony_mapping!(
+    gr_curated_controllers::DualShock4Controller,
+    gr_curated_controllers::DualShock4Axis::new,
+    gr_curated_controllers::DualShock4Trigger::new,
+    DualShock4Control,
+    Share
+);
+
 #[allow(clippy::too_many_lines)] // Keeps exact selection, servicing and cleanup in one live run.
 #[allow(unsafe_code)] // Nonblocking access to this test-owned child stdout only.
 fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
@@ -1201,7 +1254,7 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
         } else {
             let nodes = owned_family_devices(C::PREFIX);
             assert_eq!(nodes.len(), 1, "one exact owned HID device");
-            let paths = consumer_paths(&nodes[0], false);
+            let paths = consumer_paths(&nodes[0], C::HIDRAW);
             assert_eq!(paths.len(), 1, "one exact owned event node");
             (nodes[0].clone(), paths[0].clone())
         };
@@ -1213,7 +1266,14 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
                     .arg(&path)
                     .arg("500")
                     .arg(format!("--control-{case}"))
-                    .env("SDL_JOYSTICK_HIDAPI", "0")
+                    .env(
+                        "SDL_JOYSTICK_HIDAPI",
+                        if target == RealizationTarget::Uhid && C::HIDRAW {
+                            "1"
+                        } else {
+                            "0"
+                        },
+                    )
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .spawn()
@@ -1315,6 +1375,21 @@ fn switch_evdev_individual_mapping() {
 #[ignore = "requires prepared UHID and exact event node access plus private SDL probe; no touch injection"]
 fn xbox_uhid_individual_mapping() {
     run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(RealizationTarget::Uhid);
+}
+#[test]
+#[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
+fn dualsense_uhid_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualSenseController>(RealizationTarget::Uhid);
+}
+#[test]
+#[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
+fn ds4_uhid_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualShock4Controller>(RealizationTarget::Uhid);
+}
+#[test]
+#[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
+fn switch_uhid_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(RealizationTarget::Uhid);
 }
 #[test]
 fn isolated_mapping_cases_touch_only_the_selected_axis() {

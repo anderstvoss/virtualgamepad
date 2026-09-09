@@ -1049,7 +1049,13 @@ where
     D::State: PartialEq + std::fmt::Debug,
 {
     let expected = driver.neutral_state();
-    let (mut session, record) = evdev_rig(driver);
+    let (session, record) = evdev_rig(driver);
+    let association = crate::ControllerAssociation {
+        requested_physical_path: Some("virtual/controller/fresh-creation".into()),
+        requested_unique_id: None,
+        observed_host_path: Some("/sys/devices/virtual/input/input123".into()),
+    };
+    let mut session = session.with_association(association.clone());
     session
         .apply_digital(gr_controller_contract::DigitalControlUpdate::FaceButton {
             button: gr_controller_contract::FaceButton::South,
@@ -1082,6 +1088,12 @@ where
     session.close();
     assert!(matches!(session.neutralize(), Err(ControlError::Closed)));
     assert_eq!(session.state(), &before);
+    assert_eq!(
+        session.association(),
+        &association,
+        "creation evidence survives terminal cleanup"
+    );
+    assert_eq!(session.association().role(), "primary");
     session.close();
     assert_eq!(record.lock().unwrap().destroys, 1);
 }
@@ -1091,4 +1103,82 @@ fn all_family_neutralization_is_one_edit_with_retryable_delivery_and_terminal_cl
     neutralization_is_transactional(DualShock4Definition);
     neutralization_is_transactional(SwitchProDefinition);
     neutralization_is_transactional(Xbox360Definition);
+}
+
+#[test]
+fn switch_rumble_set_completes_exactly_and_rejects_missing_counter_or_motor_bytes() {
+    for length in 0..=64 {
+        let (mut rt, io) = rig(&SwitchProDefinition, [true, true, false]);
+        rt.service(0).unwrap();
+        let mut bytes = vec![0x10];
+        bytes.extend(vec![0; length]);
+        io.lock()
+            .unwrap()
+            .events
+            .push_back(RawReverseEvent::HidSetReportRequest {
+                request_id: 44,
+                report_id: 0x10,
+                report_type: 1,
+                bytes,
+            });
+        rt.service(1).unwrap();
+        let replies: Vec<_> = io
+            .lock()
+            .unwrap()
+            .sent
+            .iter()
+            .filter_map(|frame| match frame {
+                ProviderFrame::HidSetReportReply { request_id, status } => {
+                    Some((*request_id, *status))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            replies,
+            vec![(44, if (9..=63).contains(&length) { 0 } else { -22 })]
+        );
+        rt.service(2).unwrap();
+        rt.close().unwrap();
+        rt.close().unwrap();
+        assert_eq!(io.lock().unwrap().destroys, 1);
+    }
+}
+
+fn sony_hat_positions<D: HidDriver>(driver: &D, offset: usize) {
+    use gr_controller_contract::{DigitalControlUpdate, DpadDirection};
+    let mut state = driver.neutral_state();
+    for (direction, hat) in [
+        (DpadDirection::Up, 0),
+        (DpadDirection::Right, 2),
+        (DpadDirection::Down, 4),
+        (DpadDirection::Left, 6),
+    ] {
+        for pressed in [true, false, true, false] {
+            driver
+                .apply_digital(
+                    &mut state,
+                    DigitalControlUpdate::Dpad { direction, pressed },
+                )
+                .unwrap();
+            let ProviderFrame::HidInput { bytes, .. } = driver
+                .encode(
+                    gr_realization_api::RealizationSelection {
+                        controller: driver.controller_id(),
+                        target: RealizationTarget::Uhid,
+                    },
+                    &state,
+                )
+                .unwrap()
+            else {
+                panic!("HID")
+            };
+            assert_eq!(bytes[offset] & 15, if pressed { hat } else { 8 });
+        }
+    }
+}
+#[test]
+fn sony_hid_dpad_directions_and_releases_match_native_hat_positions() {
+    sony_hat_positions(&DualSenseDefinition, 7);
+    sony_hat_positions(&DualShock4Definition, 4);
 }

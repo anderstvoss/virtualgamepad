@@ -33,6 +33,12 @@ static inline bool probe_unique_match(unsigned count) { return count == 1; }
 
 /* Exact-state mapping cases: neutral, 15 buttons, 8 signed stick endpoints,
  * then the two positive trigger endpoints. Every unrelated control stays neutral. */
+/* Initial consumer state is not evidence of an input report. Service a bounded
+ * neutral warmup before asking the producer for an isolated transition. */
+static inline bool probe_control_ready(uint64_t elapsed_ms, bool neutral) {
+    return elapsed_ms >= 100 && neutral;
+}
+
 static inline bool probe_control_case(const char *text, unsigned *value) {
     const char prefix[] = "--control-";
     if (!text || strncmp(text, prefix, sizeof(prefix)-1) != 0) return false;

@@ -63,3 +63,15 @@ failure diagnostics and removes scheduler interests; no cleanup retry or kernel
 success is inferred. Fake-clock tests cover reused requests, all-role service,
 consumer reopen, deadline boundary, uncertain delivery, prior observations and
 cleanup failure. This helper is not yet a shipped multi-node controller profile.
+
+### Single-component diagnostic review
+
+Current curated handles expose `association()`: requested physical/unique labels,
+controller-owned primary role and an optional host path observed once at creation.
+The latter is cached to avoid provider I/O in frequent UI snapshots, and retained
+with terminal diagnostics for cleanup investigation. It is historical evidence,
+not authority to operate on a re-enumerated node. Callers must verify current
+identity and host ancestry. Compiled gadget profiles expose no invented labels.
+The test-only DS4 prototype now passes explicit logical/creation identity through
+associated opens; its reused-ID test checks distinct creation paths and shared
+role prefixes. This does not enable production DS4 split wiring.

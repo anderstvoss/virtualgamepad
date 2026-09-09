@@ -208,6 +208,7 @@ where
     if options.target == RealizationTarget::Uhid {
         return ControllerSession::hid(driver, request, restored);
     }
+    let mut association = crate::ControllerAssociation::requested(&request.realization);
     let session: Box<dyn NativeProviderSession> = match options.target {
         RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
         RealizationTarget::Uhid => LinuxUhidProvider.open(request)?,
@@ -218,6 +219,7 @@ where
             });
         }
     };
+    association.observed_host_path = session.host_path();
     ControllerRuntime::new(
         driver,
         ProviderSessionSink {
@@ -227,7 +229,7 @@ where
         },
         prepared,
     )
-    .map(ControllerSession::native)
+    .map(|runtime| ControllerSession::native(runtime).with_association(association))
     .map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })
@@ -313,6 +315,27 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+
+    #[test]
+    fn association_transports_requested_labels_without_inventing_host_observation() {
+        let mut realization = hid_realization("synthetic", 1, 2);
+        let NativeControllerRealization::Uhid(spec) = &mut realization else {
+            unreachable!()
+        };
+        let (physical, unique) = creation_labels("virtual/synthetic", "restored", true).unwrap();
+        spec.physical_path = physical.clone();
+        spec.unique_id = unique.clone();
+        let association = crate::ControllerAssociation::requested(&realization);
+        assert_eq!(
+            association.requested_physical_path.as_deref(),
+            Some(physical.as_str())
+        );
+        assert_eq!(
+            association.requested_unique_id.as_deref(),
+            Some(unique.as_str())
+        );
+        assert_eq!(association.observed_host_path, None);
+    }
 
     #[test]
     fn restored_identity_keeps_uniq_but_recreates_transport_labels() {

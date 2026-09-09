@@ -28,6 +28,9 @@ int main(void) {
     assert(!probe_control_case("--control-1x", &control));
     assert(!probe_control_case("--control-", &control));
     int16_t values[6] = {0};
+    assert(!probe_control_ready(99, true));
+    assert(!probe_control_ready(100, false));
+    assert(probe_control_ready(100, true));
     assert(probe_control_matches(0, 0, values));
     for (unsigned button = 1; button <= 15; ++button) {
         assert(probe_control_matches(button, 1u << (button-1), values));

@@ -29,6 +29,7 @@ enum Backend<D: HidDriver> {
 }
 pub(crate) struct ControllerSession<D: HidDriver> {
     backend: Backend<D>,
+    association: crate::ControllerAssociation,
     selection: gr_realization_api::RealizationSelection,
     started: Instant,
     observations: VecDeque<RawReverseEvent>,
@@ -39,6 +40,7 @@ impl<D: HidDriver> ControllerSession<D> {
     pub(super) fn native(runtime: ControllerRuntime<D, ProviderSessionSink>) -> Self {
         Self {
             selection: runtime.selection(),
+            association: crate::ControllerAssociation::default(),
             backend: Backend::Native(runtime),
             started: Instant::now(),
             observations: VecDeque::new(),
@@ -52,6 +54,7 @@ impl<D: HidDriver> ControllerSession<D> {
         restored: Option<[u8; 6]>,
     ) -> Result<Self, ProviderError> {
         let selection = request.selection;
+        let association = crate::ControllerAssociation::requested(&request.realization);
         // Resolve creation identity before opening any provider resource.
         let identity = match restored {
             Some(identity) => identity,
@@ -64,12 +67,20 @@ impl<D: HidDriver> ControllerSession<D> {
             Runtime::new(protocol, transport, id, Limits::default()).map_err(provider_error)?;
         Ok(Self {
             backend: Backend::Hid { driver, runtime },
+            association,
             selection,
             started: Instant::now(),
             observations: VecDeque::new(),
             dropped: 0,
             feedback: super::feedback::Feedback::default(),
         })
+    }
+    pub(super) fn with_association(mut self, association: crate::ControllerAssociation) -> Self {
+        self.association = association;
+        self
+    }
+    pub(crate) const fn association(&self) -> &crate::ControllerAssociation {
+        &self.association
     }
     pub(crate) const fn state(&self) -> &D::State {
         match &self.backend {

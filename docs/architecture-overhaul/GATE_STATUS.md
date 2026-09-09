@@ -311,3 +311,20 @@ and protocol state, with retryable committed delivery and terminal rejection.
 Native/HID cleanup errors are retained and every handle exposes diagnostics.
 All-family metadata/control/contact regressions pass. Observation ordering remains
 local service order with bounded loss reporting. No live fidelity gate is promoted.
+
+### Individual HID controls, output framing and lab correlation
+
+[EXP-0017](experiments/EXP-0017-individual-hid-and-rumble.md) passes 156 isolated
+control/neutral observations per family (624 total) on Linux 6.12.107 arm64 and a
+clean pinned SDL 3.2.0 build. Twelve creation cleanups confirmed device removal
+and child reaping. Sony/Switch used HIDAPI; Xbox used Linux event input. Initial
+Sony Up failures are preserved as an unprimed consumer-probe sequence; polling
+neutral before activation corrected the apparatus. Held-input-at-open remains
+outside this transition result. No touch, Steam/Eden or physical pass is inferred.
+
+Switch report 0x10 now requires counter plus both four-byte motor words; exact
+SET length/completion regressions pass. Typed outputs preserve encoded motors,
+with physical compressed-rumble fidelity explicitly unvalidated. Curated handles
+now expose requested labels and cached creation-time host observations. The
+DS4 test-only prototype exercises creation/role association with reused IDs;
+production split-node association still requires isolated acceptance.

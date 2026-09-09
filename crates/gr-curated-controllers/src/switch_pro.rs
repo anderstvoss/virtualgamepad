@@ -720,6 +720,12 @@ impl SwitchProController {
     pub fn neutralize(&mut self) -> Result<(), ControlError> {
         self.0.neutralize()
     }
+    /// Requested component labels and the cached creation-time host observation.
+    #[must_use]
+    pub fn association(&self) -> &crate::ControllerAssociation {
+        self.0.association()
+    }
+
     /// Current transport and retained cleanup diagnostics.
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         self.0.diagnostics()
@@ -845,6 +851,14 @@ fn dummy_hcd_reply(
     wire.extend_from_slice(&bytes);
     Ok(ProviderFrame::DummyHcdInput(wire))
 }
+/// Encoded motor words from one Switch host output; not decoded amplitudes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumble {
+    pub packet_counter: u8,
+    pub left: [u8; 4],
+    pub right: [u8; 4],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
     ForceFeedback(gr_realization_api::ForceFeedbackEvent),
@@ -861,6 +875,29 @@ pub enum SwitchProOutputEvent {
     },
     Other,
 }
+impl SwitchProOutputEvent {
+    /// Extract exact encoded motor words from accepted rumble/subcommand output.
+    /// Stateful compressed amplitude/frequency interpretation remains unvalidated.
+    #[must_use]
+    pub fn rumble(&self) -> Option<SwitchProRumble> {
+        let Self::Output {
+            report_id: Some(id @ (1 | 0x10)),
+            bytes,
+        } = self
+        else {
+            return None;
+        };
+        if bytes.len() > 63 || bytes.len() < if *id == 1 { 10 } else { 9 } {
+            return None;
+        }
+        Some(SwitchProRumble {
+            packet_counter: bytes[0],
+            left: bytes[1..5].try_into().ok()?,
+            right: bytes[5..9].try_into().ok()?,
+        })
+    }
+}
+
 impl From<RawReverseEvent> for SwitchProOutputEvent {
     fn from(e: RawReverseEvent) -> Self {
         match e {
@@ -917,6 +954,34 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rumble_words_skip_counter_and_keep_motor_order() {
+        for id in [1, 0x10] {
+            let event = SwitchProOutputEvent::Output {
+                report_id: Some(id),
+                bytes: vec![15, 0, 1, 64, 64, 11, 12, 13, 14, 3],
+            };
+            assert_eq!(
+                event.rumble(),
+                Some(SwitchProRumble {
+                    packet_counter: 15,
+                    left: [0, 1, 64, 64],
+                    right: [11, 12, 13, 14]
+                })
+            );
+        }
+        for length in 0..9 {
+            assert!(
+                SwitchProOutputEvent::Output {
+                    report_id: Some(0x10),
+                    bytes: vec![0; length]
+                }
+                .rumble()
+                .is_none()
+            );
+        }
+    }
+
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
         let expected = SwitchProState {

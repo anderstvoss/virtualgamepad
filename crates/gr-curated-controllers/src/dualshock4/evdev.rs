@@ -1,7 +1,8 @@
 //! Test-only DS4 gamepad/contact prototype; live display isolation is unresolved.
 use super::common;
 use gr_controller_runtime::{
-    ComponentFrame, ComponentId, ComponentOpen, CompoundSession, CompoundSessionError,
+    ComponentFrame, ComponentId, ComponentOpen, CompoundIdentity, CompoundSession,
+    CompoundSessionError,
 };
 use gr_realization_api::{
     EvdevEvent, EventReadiness, NativeAbsoluteAxis, NativeControllerRealization,
@@ -52,23 +53,27 @@ fn requests(mut request: ProviderOpenRequest) -> Result<[ProviderOpenRequest; 2]
 }
 
 pub(super) fn open(
+    identity: CompoundIdentity,
     request: ProviderOpenRequest,
     factory: Arc<dyn NativeProviderFactory>,
 ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
     let application_id = request.session;
     let [gamepad, touch] = requests(request)?;
-    let compound = CompoundSession::open(vec![
-        ComponentOpen {
-            id: GAMEPAD,
-            factory: Arc::clone(&factory),
-            request: gamepad,
-        },
-        ComponentOpen {
-            id: TOUCH,
-            factory,
-            request: touch,
-        },
-    ])
+    let compound = CompoundSession::open_associated(
+        identity,
+        vec![
+            ComponentOpen {
+                id: GAMEPAD,
+                factory: Arc::clone(&factory),
+                request: gamepad,
+            },
+            ComponentOpen {
+                id: TOUCH,
+                factory,
+                request: touch,
+            },
+        ],
+    )
     .map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })?;
@@ -241,6 +246,26 @@ mod tests {
         RawReverseEvent, RealizationSelection, RealizationTarget,
     };
     use std::sync::Mutex;
+    // Synthetic logical identity is shared; each fake creation receives a fresh
+    // deterministic token. No physical evidence or production identity API.
+    fn open(
+        request: ProviderOpenRequest,
+        factory: Arc<dyn NativeProviderFactory>,
+    ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let mut creation = [0; 16];
+        creation[..8].copy_from_slice(&NEXT.fetch_add(1, Ordering::Relaxed).to_le_bytes());
+        super::open(
+            CompoundIdentity {
+                logical: [9; 16],
+                creation,
+            },
+            request,
+            factory,
+        )
+    }
+
     #[derive(Default)]
     struct Record {
         requests: Vec<ProviderOpenRequest>,
@@ -478,6 +503,29 @@ mod tests {
                     .all(|r| r.session == RealizationSessionId(7))
             );
         }
+        let paths = |record: &Arc<Mutex<Record>>| {
+            record
+                .lock()
+                .unwrap()
+                .requests
+                .iter()
+                .map(|request| {
+                    let NativeControllerRealization::Evdev(spec) = &request.realization else {
+                        panic!()
+                    };
+                    spec.physical_path.clone().unwrap()
+                })
+                .collect::<Vec<_>>()
+        };
+        let first_paths = paths(&first_record);
+        let second_paths = paths(&second_record);
+        assert!(first_paths[0].ends_with("/c0000"));
+        assert!(first_paths[1].ends_with("/c0001"));
+        assert_eq!(
+            first_paths[0].rsplit_once('/').unwrap().0,
+            first_paths[1].rsplit_once('/').unwrap().0
+        );
+        assert!(first_paths.iter().all(|path| !second_paths.contains(path)));
         assert_eq!(first_record.lock().unwrap().frames.len(), 10);
         assert_eq!(second_record.lock().unwrap().frames.len(), 36);
     }

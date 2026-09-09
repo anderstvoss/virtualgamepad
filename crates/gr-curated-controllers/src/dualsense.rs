@@ -920,7 +920,12 @@ impl DualSenseController {
     pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
+    /// Requested component labels and the cached creation-time host observation.
     #[must_use]
+    pub fn association(&self) -> &crate::ControllerAssociation {
+        self.0.association()
+    }
+
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
         self.0.diagnostics()
     }

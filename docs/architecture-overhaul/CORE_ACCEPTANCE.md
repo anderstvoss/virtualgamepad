@@ -100,3 +100,12 @@ development remains deferred until landing.
 The corrected Xbox UHID profile passes 156 exact individual-control/neutral SDL
 3.2.0 observations across three creations on Linux 6.12.107 arm64, with exact
 selection and cleanup. Eden/Steam retesting remains separate and pending.
+
+[EXP-0017](experiments/EXP-0017-individual-hid-and-rumble.md) now adds individual
+USB/UHID mapping evidence for all four current families: 156 exact observations
+and three clean removals each. Sony/Switch used HIDAPI; Xbox used Linux event
+input. This supersedes the earlier individual-mapping gap, not the separate
+motion/touch/output, physical fidelity, Steam/Eden or compound acceptance limits.
+Switch output framing is corrected and encoded motors are exposed; physical
+compressed-rumble decoding remains unvalidated. ADRs 0010–0011 now settle the
+helper-level compound service/association and native neutralization contracts.

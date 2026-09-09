@@ -15,17 +15,17 @@ pub use gr_controller_contract::{
 };
 pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
 pub use gr_curated_controllers::{
-    BatteryLevel, BatteryState, CreationOptions, DualSenseAxis, DualSenseControl,
-    DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseIdentity,
+    BatteryLevel, BatteryState, ControllerAssociation, CreationOptions, DualSenseAxis,
+    DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput, DualSenseIdentity,
     DualSenseOutputEvent, DualSenseState, DualSenseSurface, DualSenseTouchContact,
     DualSenseTrigger, DualShock4Axis, DualShock4Control, DualShock4Controller, DualShock4HidOutput,
     DualShock4Identity, DualShock4MotionSample, DualShock4OutputEvent, DualShock4State,
     DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot, DualShock4Trigger,
     MotionSample, SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
-    SwitchProOutputEvent, SwitchProState, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
-    Xbox360Controller, Xbox360OutputEvent, Xbox360State, Xbox360Surface, Xbox360Trigger,
-    create_dualsense, create_dualsense_with_identity, create_dualshock4,
-    create_dualshock4_with_identity, create_switch_pro, create_xbox360,
+    SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
+    Xbox360Surface, Xbox360Trigger, create_dualsense, create_dualsense_with_identity,
+    create_dualshock4, create_dualshock4_with_identity, create_switch_pro, create_xbox360,
 };
 pub use gr_realization_api::{
     ControllerId, EventReadiness, ForceFeedbackEffect, ForceFeedbackEvent,

@@ -44,6 +44,41 @@ pub struct CreationOptions {
     pub session: RealizationSessionId,
 }
 
+/// Creation metadata for the current single-component curated profiles.
+///
+/// Requested physical paths distinguish creations even with restored identity
+/// or reused application IDs. A cached host path is an observation at creation,
+/// not proof that a node still exists or belongs to this session. Verify ancestry
+/// and current identity before using host paths; never associate by display name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ControllerAssociation {
+    pub requested_physical_path: Option<String>,
+    pub requested_unique_id: Option<String>,
+    pub observed_host_path: Option<String>,
+}
+impl ControllerAssociation {
+    /// Controller-owned role; compound profiles have their own distinct roles.
+    #[must_use]
+    pub const fn role(&self) -> &'static str {
+        "primary"
+    }
+    pub(crate) fn requested(realization: &gr_realization_api::NativeControllerRealization) -> Self {
+        use gr_realization_api::NativeControllerRealization;
+        match realization {
+            NativeControllerRealization::Uhid(spec) => Self {
+                requested_physical_path: Some(spec.physical_path.clone()),
+                requested_unique_id: Some(spec.unique_id.clone()),
+                observed_host_path: None,
+            },
+            NativeControllerRealization::Evdev(spec) => Self {
+                requested_physical_path: spec.physical_path.clone(),
+                ..Self::default()
+            },
+            NativeControllerRealization::DummyHcd(_) => Self::default(),
+        }
+    }
+}
+
 /// Battery percentage shared by every curated controller family.
 ///
 /// Battery exposure is live state rather than a creation option: callers can
@@ -117,7 +152,7 @@ pub use dualshock4::{
 };
 pub use switch_pro::{
     SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
-    SwitchProOutputEvent, SwitchProState, SwitchProSurface, create_switch_pro,
+    SwitchProOutputEvent, SwitchProRumble, SwitchProState, SwitchProSurface, create_switch_pro,
 };
 pub use xbox360::{
     Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360State,
