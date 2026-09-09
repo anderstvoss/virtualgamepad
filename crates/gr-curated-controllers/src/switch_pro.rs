@@ -605,6 +605,7 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        physical_path: None,
         device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,

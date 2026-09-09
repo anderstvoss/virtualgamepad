@@ -230,6 +230,8 @@ pub struct NativeAbsoluteAxis {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeEvdevRealization {
+    /// Prepared correlation label passed unchanged to `UI_SET_PHYS`, not a file path.
+    pub physical_path: Option<String>,
     pub device_name: String,
     pub identity: NativeDeviceIdentity,
     pub event_codes: Vec<u16>,
@@ -309,6 +311,13 @@ impl NativeControllerRealization {
     pub fn validate(&self) -> Result<(), NativeRealizationError> {
         match self {
             Self::Evdev(specification) => {
+                if specification
+                    .physical_path
+                    .as_ref()
+                    .is_some_and(|path| path.is_empty() || path.len() > 255 || path.contains('\0'))
+                {
+                    return Err(NativeRealizationError::InvalidEvdevPhysicalPath);
+                }
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
                         target: RealizationTarget::Evdev,
@@ -377,6 +386,8 @@ fn has_duplicate(values: &[u16]) -> bool {
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum NativeRealizationError {
+    #[error("evdev physical label must contain 1–255 bytes without NUL")]
+    InvalidEvdevPhysicalPath,
     #[error("{target} realization requires a non-empty device name")]
     EmptyDeviceName { target: RealizationTarget },
     #[error("evdev event codes contain a duplicate")]
@@ -620,6 +631,11 @@ impl<T: Extend<ProviderReverseEvent>> ProviderReverseEventSink for T {
 }
 #[allow(clippy::missing_errors_doc)]
 pub trait NativeProviderSession: Send {
+    /// Observed host object, when the provider can query it. Never inferred from a name.
+    /// Validity is limited to this open session; callers must verify ancestry/labels.
+    fn host_path(&self) -> Option<String> {
+        None
+    }
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError>;
     fn drain_reverse_events(
         &mut self,
@@ -648,6 +664,21 @@ pub trait NativeProviderFactory: Send + Sync {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn evdev_physical_labels_reject_invalid_c_strings() {
+        for label in [String::new(), "a\0b".into(), "x".repeat(256)] {
+            let mut request = uinput_request();
+            let NativeControllerRealization::Evdev(ref mut spec) = request.realization else {
+                panic!("evdev")
+            };
+            spec.physical_path = Some(label);
+            assert!(matches!(
+                request.realization.validate(),
+                Err(NativeRealizationError::InvalidEvdevPhysicalPath)
+            ));
+        }
+    }
+
+    #[test]
     fn realization_ids_and_sets_are_extensible_without_a_global_enum() {
         use std::hash::{Hash, Hasher};
         const FUTURE: RealizationId = RealizationId::new("test.synthetic-compound");
@@ -675,6 +706,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {
                     vendor_id: 1,

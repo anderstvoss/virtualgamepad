@@ -13,6 +13,46 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ComponentId(pub u16);
 
+/// Controller-owned logical identity and fresh creation token.
+/// Callers supply entropy/identity policy; the runtime never persists either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompoundIdentity {
+    pub logical: [u8; 16],
+    pub creation: [u8; 16],
+}
+
+/// Exact requested association, independent of display names and application IDs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ComponentAssociation {
+    pub identity: CompoundIdentity,
+    pub role: ComponentId,
+    pub physical_path: String,
+    pub unique_id: String,
+}
+impl CompoundIdentity {
+    #[must_use]
+    pub fn component(self, role: ComponentId) -> ComponentAssociation {
+        let hex = |bytes: [u8; 16]| {
+            const DIGITS: &[u8; 16] = b"0123456789abcdef";
+            bytes
+                .into_iter()
+                .flat_map(|b| {
+                    [
+                        char::from(DIGITS[usize::from(b >> 4)]),
+                        char::from(DIGITS[usize::from(b & 15)]),
+                    ]
+                })
+                .collect::<String>()
+        };
+        ComponentAssociation {
+            identity: self,
+            role,
+            physical_path: format!("virtualgamepad/{}/c{:04x}", hex(self.creation), role.0),
+            unique_id: format!("{}/c{:04x}", hex(self.logical), role.0),
+        }
+    }
+}
+
 /// One prepared provider open owned by a controller package.
 pub struct ComponentOpen {
     pub id: ComponentId,
@@ -31,6 +71,8 @@ pub struct ComponentFrame {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentDiagnostics {
     pub component: ComponentId,
+    pub association: Option<ComponentAssociation>,
+    pub host_path: Option<String>,
     pub provider: ProviderDiagnostics,
     pub close_failures: u64,
     pub last_close_error: Option<String>,
@@ -46,6 +88,8 @@ pub struct CompoundDiagnostics {
 /// Opening a compound controller failed before a usable session was returned.
 #[derive(Debug, Error)]
 pub enum CompoundOpenError {
+    #[error("component {component:?} cannot represent explicit association")]
+    UnsupportedAssociation { component: ComponentId },
     #[error("component {component:?} preflight failed: {reason}")]
     Preflight {
         component: ComponentId,
@@ -84,6 +128,7 @@ pub enum CompoundSessionError {
 
 struct Component {
     id: ComponentId,
+    association: Option<ComponentAssociation>,
     session: Box<dyn NativeProviderSession>,
     close_failures: u64,
     last_close_error: Option<String>,
@@ -102,6 +147,34 @@ pub struct CompoundSession {
 }
 
 impl CompoundSession {
+    /// Prepare exact component labels before any I/O, then preflight/open atomically
+    /// at the logical level. Separate kernel nodes are not externally atomic.
+    pub fn open_associated(
+        identity: CompoundIdentity,
+        mut opens: Vec<ComponentOpen>,
+    ) -> Result<Self, CompoundOpenError> {
+        for open in &mut opens {
+            let association = identity.component(open.id);
+            match &mut open.request.realization {
+                gr_realization_api::NativeControllerRealization::Evdev(spec) => {
+                    spec.physical_path = Some(association.physical_path);
+                }
+                gr_realization_api::NativeControllerRealization::Uhid(spec) => {
+                    spec.physical_path = association.physical_path;
+                    spec.unique_id = association.unique_id;
+                }
+                gr_realization_api::NativeControllerRealization::DummyHcd(_) => {
+                    return Err(CompoundOpenError::UnsupportedAssociation { component: open.id });
+                }
+            }
+        }
+        let mut session = Self::open(opens)?;
+        for component in &mut session.components {
+            component.association = Some(identity.component(component.id));
+        }
+        Ok(session)
+    }
+
     /// Preflight and open all components, rolling back partial opens.
     pub fn open(mut opens: Vec<ComponentOpen>) -> Result<Self, CompoundOpenError> {
         opens.sort_by_key(|open| open.id);
@@ -125,6 +198,7 @@ impl CompoundSession {
             match open.factory.open(open.request) {
                 Ok(session) => components.push(Component {
                     id: open.id,
+                    association: None,
                     session,
                     close_failures: 0,
                     last_close_error: None,
@@ -271,6 +345,12 @@ impl CompoundSession {
                 .iter()
                 .map(|component| ComponentDiagnostics {
                     component: component.id,
+                    association: component.association.clone(),
+                    host_path: if self.closed {
+                        None
+                    } else {
+                        component.session.host_path()
+                    },
                     provider: component.session.diagnostics(),
                     close_failures: component.close_failures,
                     last_close_error: component.last_close_error.clone(),
@@ -398,6 +478,7 @@ mod tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {
                     vendor_id: 1,
@@ -564,6 +645,7 @@ mod tests {
             .enumerate()
             .map(|(id, record)| Component {
                 id: ComponentId(u16::try_from(id).unwrap()),
+                association: None,
                 session: Box::new(Recorded(Arc::clone(record))),
                 close_failures: 0,
                 last_close_error: None,
@@ -888,6 +970,152 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn associated_open_transports_labels_and_preserves_diagnostics_after_close() {
+        struct Labels(Arc<Mutex<Vec<ProviderOpenRequest>>>);
+        impl NativeProviderFactory for Labels {
+            fn capabilities(&self) -> ProviderCapabilities {
+                ProviderCapabilities::for_target(RealizationTarget::Evdev, false)
+            }
+            fn preflight(
+                &self,
+                _: &ProviderOpenRequest,
+            ) -> Result<(), gr_realization_api::ProviderPreflightError> {
+                Ok(())
+            }
+            fn open(
+                &self,
+                request: ProviderOpenRequest,
+            ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+                self.0.lock().unwrap().push(request);
+                Ok(Box::new(Recorded(Arc::default())))
+            }
+        }
+        let labels = Arc::new(Mutex::new(Vec::new()));
+        let factory = Arc::new(Labels(Arc::clone(&labels)));
+        let identity = CompoundIdentity {
+            logical: [7; 16],
+            creation: [8; 16],
+        };
+        let opens = [ComponentId(9), ComponentId(2)]
+            .into_iter()
+            .map(|id| ComponentOpen {
+                id,
+                factory: Arc::clone(&factory) as Arc<dyn NativeProviderFactory>,
+                request: request(7),
+            })
+            .collect();
+        let mut session = CompoundSession::open_associated(identity, opens).unwrap();
+        for (index, role) in [ComponentId(2), ComponentId(9)].into_iter().enumerate() {
+            let requests = labels.lock().unwrap();
+            let NativeControllerRealization::Evdev(spec) = &requests[index].realization else {
+                panic!("evdev")
+            };
+            assert_eq!(
+                spec.physical_path.as_ref(),
+                Some(&identity.component(role).physical_path)
+            );
+            assert_eq!(requests[index].session, RealizationSessionId(7));
+            assert_eq!(
+                session.diagnostics().components[index].association,
+                Some(identity.component(role))
+            );
+        }
+        let before = session.diagnostics();
+        session.close();
+        assert_eq!(
+            session.diagnostics().components[0].association,
+            before.components[0].association
+        );
+        assert!(session.diagnostics().closed);
+    }
+
+    #[test]
+    fn association_separates_logical_identity_creation_and_roles() {
+        let first = CompoundIdentity {
+            logical: [1; 16],
+            creation: [2; 16],
+        };
+        let second = CompoundIdentity {
+            creation: [3; 16],
+            ..first
+        };
+        for role in [ComponentId(0), ComponentId(1), ComponentId(u16::MAX)] {
+            let a = first.component(role);
+            let b = second.component(role);
+            assert_eq!(a.unique_id, b.unique_id);
+            assert_ne!(a.physical_path, b.physical_path);
+            assert!(a.physical_path.len() < 64);
+            assert!(!a.physical_path.contains('\0'));
+        }
+        assert_ne!(
+            first.component(ComponentId(0)).physical_path,
+            first.component(ComponentId(1)).physical_path
+        );
+        assert_ne!(
+            first.component(ComponentId(0)).unique_id,
+            first.component(ComponentId(1)).unique_id
+        );
+    }
+
+    #[test]
+    fn duplicate_roles_reject_before_open_and_every_open_position_rolls_back() {
+        for failing in 0..3 {
+            let opens = Arc::new(Mutex::new(vec![]));
+            let closed = Arc::new(Mutex::new(vec![]));
+            let entries = (0..3)
+                .map(|id| ComponentOpen {
+                    id: ComponentId(id),
+                    factory: Arc::new(Factory {
+                        fail_open: id == failing,
+                        opens: Arc::clone(&opens),
+                        closed: Arc::clone(&closed),
+                    }),
+                    request: request(u64::from(id)),
+                })
+                .collect();
+            let result = CompoundSession::open_associated(
+                CompoundIdentity {
+                    logical: [1; 16],
+                    creation: [2; 16],
+                },
+                entries,
+            );
+            assert!(
+                matches!(result, Err(CompoundOpenError::Open { component, .. }) if component == ComponentId(failing))
+            );
+            assert_eq!(
+                *closed.lock().unwrap(),
+                (0..failing).rev().collect::<Vec<_>>()
+            );
+        }
+        let opens = Arc::new(Mutex::new(vec![]));
+        let closed = Arc::new(Mutex::new(vec![]));
+        let entries = (0..2)
+            .map(|_| ComponentOpen {
+                id: ComponentId(7),
+                factory: Arc::new(Factory {
+                    fail_open: false,
+                    opens: Arc::clone(&opens),
+                    closed: Arc::clone(&closed),
+                }),
+                request: request(7),
+            })
+            .collect();
+        assert!(matches!(
+            CompoundSession::open_associated(
+                CompoundIdentity {
+                    logical: [1; 16],
+                    creation: [2; 16]
+                },
+                entries
+            ),
+            Err(CompoundOpenError::InvalidComponentOrder { .. })
+        ));
+        assert!(opens.lock().unwrap().is_empty());
+        assert!(closed.lock().unwrap().is_empty());
     }
 
     /// Dreamcast/VMU-inspired benchmark only: this is not a Dreamcast codec.

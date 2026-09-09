@@ -92,3 +92,24 @@ close on protocol-level terminal failure. This helper does not parse lifecycle
 bytes or run a clock. Optional hot-removable components and identity-derived
 association need a controller-owned model before production adoption. Steam
 Controller development is deferred until the overhaul lands.
+
+## Explicit association metadata
+
+Use `open_associated` with controller-owned `CompoundIdentity` tokens and distinct
+component roles when the realization can carry correlation metadata. Logical
+identity can survive recreation; the creation token must not. Diagnostics expose
+both requested association and an optional observed host path. Verify the kernel
+physical label and ancestry before selecting child event/hidraw nodes. Uinput
+transports prepared physical labels and queries its own kernel sysname. See
+[ADR-0010](../../architecture-overhaul/decisions/ADR-0010-compound-association.md).
+This is a native association prerequisite, not the protocol-group scheduler or
+production DS4 split adoption.
+
+`gr_hid::RequiredGroup` is the protocol-runtime counterpart: a controller-owned
+enum can supply different personalities through ServicedComponent, while each
+runtime retains request ownership and its own service budget. Service returns
+bounded component-scoped observations and failures after required work; terminal
+failure closes the group, preserves cleanup diagnostics and removes all interests.
+Use the minimum deadline and every reported readiness/write interest even when
+input is idle. Native frame composition remains for repeatable evdev snapshots;
+do not route non-repeatable HID actions through full-frame retries.

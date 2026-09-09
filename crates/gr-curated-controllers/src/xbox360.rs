@@ -661,6 +661,7 @@ impl Xbox360Controller {
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        physical_path: None,
         device_name: "Virtual Xbox 360".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x045e,

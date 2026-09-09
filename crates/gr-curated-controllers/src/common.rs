@@ -188,6 +188,9 @@ where
             restored.is_some(),
         )?;
     }
+    if let NativeControllerRealization::Evdev(specification) = &mut realization {
+        specification.physical_path = Some(creation_labels("virtualgamepad/uinput", "", false)?.0);
+    }
     let request = ProviderOpenRequest {
         session: options.session,
         selection: prepared.selection(),

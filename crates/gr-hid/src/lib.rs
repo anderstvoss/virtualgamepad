@@ -6,6 +6,9 @@
 //! by a host consumer. Definitely-unsent actions retain their original bytes;
 //! uncertain delivery terminates the session instead of replaying effects.
 #![allow(clippy::missing_errors_doc)]
+mod group;
+pub use group::{GroupCycle, GroupOpenError, RequiredGroup, ServicedComponent};
+
 use std::collections::VecDeque;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +203,7 @@ pub struct Runtime<P: Protocol, T: Transport> {
     last_request: Option<u64>,
     now: u64,
     closed: bool,
+    close_error: Option<Error>,
     limits: Limits,
 }
 impl<P: Protocol, T: Transport> Runtime<P, T> {
@@ -229,6 +233,7 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
             last_request: None,
             now: 0,
             closed: false,
+            close_error: None,
             limits,
         })
     }
@@ -447,6 +452,10 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
         }
         Ok(())
     }
+    #[must_use]
+    pub const fn cleanup_error(&self) -> Option<Error> {
+        self.close_error
+    }
     pub fn close(&mut self) -> Result<(), Error> {
         if self.closed {
             return Ok(());
@@ -454,7 +463,9 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
         self.closed = true;
         self.pending.clear();
         self.reply = None;
-        self.transport.close()
+        let result = self.transport.close();
+        self.close_error = result.err();
+        result
     }
 }
 impl<P: Protocol, T: Transport> Drop for Runtime<P, T> {

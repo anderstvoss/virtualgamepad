@@ -288,3 +288,18 @@ must pass before dependent features ship; they are not silently required to add
 new controllers before the core can land. The [support matrix](../CONTROLLER_SUPPORT.md)
 starts every cell at WIP, independently of experiment-level passes. Alpha
 versioning and new-controller issues follow landing; no merge or release occurred.
+
+### Native compound association prerequisite
+
+ADR-0010 adds logical/creation/role metadata and prepared UHID/uinput labels.
+Deterministic derivation, duplicate-role, every-open-position rollback and
+retained-diagnostics tests pass. An ordinary-user uinput run verified its queried
+kernel sysname, physical label and removal after repeated cleanup. No host policy
+changed. Group protocol deadlines, fair service and production DS4 association
+remain pending; Gate E and support cells are not promoted.
+
+The protocol-group portion of ADR-0010 now has fake-clock evidence: every-role
+service, overlapping request IDs, CLOSE/OPEN distinction, exact reply deadline,
+uncertain delivery, prior observations and retained cleanup failures. It exposes
+aggregate deadlines/readiness without introducing a worker. This resolves the
+helper-level service owner, not isolated production DS4 association or Gate E.

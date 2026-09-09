@@ -503,3 +503,107 @@ fn synthetic_watchdog_edge_retries_once_and_host_reconnects() {
             .any(|c| matches!(c, Command::Input(r) if r.id() == Some(2) && r.payload() == [1]))
     );
 }
+
+#[test]
+fn required_group_services_overlapping_requests_and_idle_deadlines() {
+    let (a, ai) = runtime(Personality::default());
+    let (b, bi) = runtime(Personality::default());
+    let mut group = RequiredGroup::new(vec![(9, b), (2, a)]).unwrap();
+    assert_eq!(group.deadline(), Some(0));
+    for ordinal in 0..4 {
+        for io in [&ai, &bi] {
+            io.borrow_mut().events.push_back(get(ordinal));
+        }
+        assert!(group.service(ordinal * 4000).unwrap().failures.is_empty());
+        for io in [&ai, &bi] {
+            assert!(io.borrow().submitted.iter().any(|c| matches!(c, Command::Reply { token, reply: Reply::Get(Ok(report)) } if token.ordinal == ordinal && report.payload() == [42])));
+        }
+    }
+    assert_eq!(group.interests().len(), 2);
+    for io in [&ai, &bi] {
+        io.borrow_mut()
+            .events
+            .push_back(HostEvent::Lifecycle(Lifecycle::Close));
+    }
+    assert!(group.service(16000).unwrap().failures.is_empty());
+    assert!(!group.is_closed());
+    for io in [&ai, &bi] {
+        io.borrow_mut()
+            .events
+            .push_back(HostEvent::Lifecycle(Lifecycle::Open));
+    }
+    assert!(group.service(20000).unwrap().failures.is_empty());
+    group.close();
+    group.close();
+    assert!(group.interests().is_empty());
+    assert_eq!(group.deadline(), None);
+    assert!(group.component_mut(2).is_none());
+    assert!(matches!(group.service(24000), Err(Error::Closed)));
+    drop(group);
+    for io in [&ai, &bi] {
+        assert_eq!(io.borrow().closes, 1);
+    }
+}
+
+#[test]
+fn required_group_reply_deadline_cancels_siblings_and_retains_cleanup_failure() {
+    for failing in 0..2 {
+        let (a, ai) = runtime(Personality::default());
+        let (b, bi) = runtime(Personality::default());
+        let ios = [ai, bi];
+        let mut group = RequiredGroup::new(vec![(0, a), (1, b)]).unwrap();
+        ios[failing].borrow_mut().events.push_back(get(0));
+        ios[failing]
+            .borrow_mut()
+            .outcomes
+            .extend([Delivery::DefinitelyUnsent; 32]);
+        ios[failing].borrow_mut().close_fails = true;
+        assert!(group.service(0).unwrap().failures.is_empty());
+        assert!(group.service(99999).unwrap().failures.is_empty());
+        let cycle = group.service(100_000).unwrap();
+        assert_eq!(
+            cycle.failures,
+            vec![(u16::try_from(failing).unwrap(), Error::Deadline)]
+        );
+        assert!(group.is_closed());
+        assert_eq!(
+            group.cleanup_failures(),
+            &[(u16::try_from(failing).unwrap(), Error::Transport)]
+        );
+        group.close();
+        drop(group);
+        for io in &ios {
+            assert_eq!(io.borrow().closes, 1);
+        }
+    }
+}
+
+#[test]
+fn required_group_invalid_topology_closes_all_owned_components() {
+    let (a, ai) = runtime(Personality::default());
+    let (b, bi) = runtime(Personality::default());
+    assert!(matches!(
+        RequiredGroup::new(vec![(1, a), (1, b)]),
+        Err(GroupOpenError { .. })
+    ));
+    assert_eq!(ai.borrow().closes, 1);
+    assert_eq!(bi.borrow().closes, 1);
+}
+
+#[test]
+fn required_group_preserves_prior_observations_on_later_uncertain_failure() {
+    let (a, ai) = runtime(Personality::default());
+    let (b, bi) = runtime(Personality::default());
+    ai.borrow_mut().events.push_back(request(
+        0,
+        RequestKind::Set(Report::new(ReportType::Output, Some(2), vec![33]).unwrap()),
+    ));
+    bi.borrow_mut().outcomes.push_back(Delivery::Uncertain);
+    let mut group = RequiredGroup::new(vec![(0, a), (1, b)]).unwrap();
+    let cycle = group.service(0).unwrap();
+    assert_eq!(cycle.outputs, vec![(0, 33)]);
+    assert_eq!(cycle.failures, vec![(1, Error::UncertainDelivery)]);
+    assert!(group.is_closed());
+    assert_eq!(ai.borrow().closes, 1);
+    assert_eq!(bi.borrow().closes, 1);
+}

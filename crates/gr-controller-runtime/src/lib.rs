@@ -4,8 +4,9 @@ mod compound;
 mod reverse_delivery;
 
 pub use compound::{
-    ComponentDiagnostics, ComponentFrame, ComponentId, ComponentOpen, CompoundDiagnostics,
-    CompoundOpenError, CompoundSession, CompoundSessionError,
+    ComponentAssociation, ComponentDiagnostics, ComponentFrame, ComponentId, ComponentOpen,
+    CompoundDiagnostics, CompoundIdentity, CompoundOpenError, CompoundSession,
+    CompoundSessionError,
 };
 use gr_controller_contract::{
     CommitError, ControlError, DigitalControlUpdate, ManifestError, PreparedRealization,
