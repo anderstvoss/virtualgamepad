@@ -45,3 +45,15 @@ This preparation is separate from resolving the interrupted DS4 contact test.
 Do not repeat virtual contact injection into the active desktop; use an isolated
 consumer environment as required by EXP-0012. No hardware tests were run when
 this policy was recorded.
+
+## Attached reference update
+
+[EXP-0015](experiments/EXP-0015-reference-layouts.md) confirms a USB DualSense
+attachment and read-only report/topology observations. The user reports broken
+trigger modules and stick drift: exclude trigger actuation/response and neutral
+stick fidelity from this device's acceptance role. It can still provide protocol
+and topology evidence. Xbox Series and Steam Controller were not enumerated in
+this VM at that inspection; DS4 is explicitly unavailable. Use pinned OpenPuck
+source evidence for DS4 and HHD for applicable DualSense layout checks, retaining
+source lineage and differences. Compatibility implementations do not substitute
+for physical observations when a gate specifically requires them.

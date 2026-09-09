@@ -1361,6 +1361,22 @@ mod tests {
     }
 
     #[test]
+    fn contact_packing_matches_pinned_hhd_and_openpuck_field_fixture() {
+        let expected = common::fixture_bytes(include_str!(
+            "../../../tests/fixtures/protocol-corpus/sony-contact-pair.hex"
+        ));
+        let mut actual = [0; 8];
+        encode_hid_touches(
+            &mut actual,
+            [
+                Some(DualSenseTouchContact::new(0, 1234, 567).unwrap()),
+                Some(DualSenseTouchContact::new(1, 1919, 941).unwrap()),
+            ],
+        );
+        assert_eq!(actual.as_slice(), expected);
+    }
+
+    #[test]
     fn touch_validation_rejects_without_state_mutation() {
         assert!(DualSenseTouchContact::new(0, 1920, 0).is_err());
         assert!(DualSenseTouchContact::new(0, 0, 942).is_err());

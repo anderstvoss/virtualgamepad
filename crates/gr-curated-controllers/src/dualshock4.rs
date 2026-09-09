@@ -1385,6 +1385,32 @@ mod tests {
     }
 
     #[test]
+    fn active_report_matches_pinned_openpuck_field_layout() {
+        let expected = common::fixture_bytes(include_str!(
+            "../../../tests/fixtures/protocol-corpus/ds4-active-layout.hex"
+        ));
+        let mut state = DualShock4State {
+            left: (DualShock4Axis::new(10), DualShock4Axis::new(20)),
+            right: (DualShock4Axis::new(30), DualShock4Axis::new(40)),
+            triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(127)),
+            dpad: [false, false, false, true],
+            touches: [
+                Some(DualShock4TouchContact::new(0, 1234, 567).unwrap()),
+                Some(DualShock4TouchContact::new(1, 1919, 941).unwrap()),
+            ],
+            ..Default::default()
+        };
+        state.face[0] = true;
+        state.buttons[4] = true;
+        state.buttons[5] = true;
+        let ProviderFrame::HidInput { report_id, bytes } = ds4_frame(&state) else {
+            panic!("HID input");
+        };
+        assert_eq!(report_id, Some(expected[0]));
+        assert_eq!(bytes, expected[1..]);
+    }
+
+    #[test]
     fn touchpad_contacts_use_the_ds4_timestamped_touch_block() {
         let state = DualShock4State {
             touches: [

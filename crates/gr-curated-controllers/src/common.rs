@@ -249,6 +249,16 @@ pub(crate) fn unavailable(target: gr_realization_api::RealizationTarget) -> Cont
 }
 
 #[cfg(test)]
+pub(crate) fn fixture_bytes(text: &str) -> Vec<u8> {
+    let hex = text.trim();
+    assert_eq!(hex.len() % 2, 0);
+    (0..hex.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+        .collect()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use gr_realization_api::{EventReadiness, ProviderDiagnostics, ProviderState};

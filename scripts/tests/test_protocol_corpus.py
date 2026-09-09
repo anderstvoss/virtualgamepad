@@ -1,3 +1,5 @@
+import hashlib
+import json
 import importlib.util
 import shutil
 import subprocess
@@ -35,6 +37,21 @@ class CorpusWorkflow(unittest.TestCase):
         (self.root / 'tests/fixtures/protocol-corpus/ds-neutral.hex').write_text('00\n')
         with self.assertRaisesRegex(ValueError, 'stale'):
             MODULE.check(self.root)
+
+    def test_reference_fixture_size_is_checked_independently_of_hash(self):
+        path = self.corpus / 'fixtures/sony-contact-pair.hex'
+        path.write_text('00' * 9 + '\n')
+        record_path = self.corpus / 'records/fixture/sony-contact-pair.json'
+        record = json.loads(record_path.read_text())
+        record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        record_path.write_text(json.dumps(record))
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'wrong shape with valid hash')
+        revision = git(self.corpus, 'rev-parse', 'HEAD')
+        git(self.root, 'update-index', '--cacheinfo', '160000,' + revision + ',protocol-corpus')
+        with self.assertRaisesRegex(ValueError, 'unexpected fixture size: sony-contact-pair'):
+            MODULE.check(self.root, write=True)
 
     def test_missing_and_mismatched_submodule(self):
         (self.corpus / '.git').rename(self.root / 'saved-git')

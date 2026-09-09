@@ -227,3 +227,14 @@ logical compound failure/association are the next independent architecture work.
 
 [ADR-0007](decisions/ADR-0007-demo-service-ownership.md) records the integration
 contract and its explicit input, rejection and timing limits.
+
+### Pinned compatibility references and physical framing
+
+[EXP-0015](experiments/EXP-0015-reference-layouts.md) records published corpus
+revision `e65c044`, source-backed OpenPuck DS4 and HHD contact-layout fixtures,
+and passing encoder regressions. Negative release/trigger-policy comparisons are
+retained. A physical USB DualSense returned expected GET report IDs/lengths and
+64 input frames with increasing timestamps. Read-only audio topology is observed,
+not an audio gate pass. Trigger modules are broken and stick drift is reported;
+no affected input/actuation fidelity is claimed. DS4 has no physical reference.
+No Gate G, isolated touch, full B/P, audio or Bluetooth acceptance is promoted.

@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 
 
 def git(root, *args):
@@ -32,7 +32,8 @@ def check(root, write=False, verify_remote=False):
         subprocess.run(['git', '-C', str(corpus), 'merge-base', '--is-ancestor', revision, 'FETCH_HEAD'], check=True)
     outputs = {}
     inputs = {}
-    for name in ['ds-neutral', 'ds-cross']:
+    for name, expected_size in [('ds-neutral', 64), ('ds-cross', 64),
+                                ('ds4-active-layout', 64), ('sony-contact-pair', 8)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (corpus / record_path).read_bytes()
         record = json.loads(record_bytes)
@@ -42,8 +43,8 @@ def check(root, write=False, verify_remote=False):
         data = path.read_bytes()
         if hashlib.sha256(data).hexdigest() != record['sha256']:
             raise ValueError('fixture hash mismatch: ' + name)
-        if len(bytes.fromhex(data.decode().strip())) != 64:
-            raise ValueError('unexpected DualSense input fixture size')
+        if len(bytes.fromhex(data.decode().strip())) != expected_size:
+            raise ValueError('unexpected fixture size: ' + name)
         inputs[record_path] = hashlib.sha256(record_bytes).hexdigest()
         inputs[record['path']] = record['sha256']
         outputs[name + '.hex'] = data

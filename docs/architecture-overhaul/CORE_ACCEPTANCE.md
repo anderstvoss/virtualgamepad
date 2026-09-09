@@ -30,7 +30,9 @@ test used IDs 7, 7 and 65543, observed three kernel identities/input devices,
 removed the middle controller while the others serviced events, then removed all.
 Subsequent SDL results are recorded in [EXP-0009](experiments/EXP-0009-family-sdl.md).
 
-The current corpus pin remains remotely reachable and regeneration validation
+The corpus pin `e65c044d062ed833ad13641f54c826db16d176e4` adds reviewed
+OpenPuck/HHD source facts and synthetic DS4/contact fixtures. It remains remotely
+reachable and regeneration validation
 passes. Corpus workflow tests retain absent/mismatched/unpublished checkout cases.
 Corpus-only read access is configured through a read-only deploy key and the
 PROTOCOL_CORPUS_SSH_KEY Actions secret. The authenticated pinned-corpus job passed
@@ -70,3 +72,7 @@ to wait for blocked hardware before independent API work.
 
 See [EXP-0008](experiments/EXP-0008-sdl-core.md) for consumer/tool revisions and
 measured limits. Remaining phases are incomplete; PR #106 stays draft.
+
+[EXP-0015](experiments/EXP-0015-reference-layouts.md) adds limited physical DualSense
+USB framing/GET/topology observations. Broken triggers and stick drift preclude
+affected mechanical-fidelity claims; DS4 remains source-backed without hardware.
