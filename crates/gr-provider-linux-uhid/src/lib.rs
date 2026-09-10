@@ -928,6 +928,40 @@ mod seam_tests {
         assert_eq!(*factory.preflights.lock().unwrap(), 0);
     }
     #[test]
+    fn concurrent_usb_and_bluetooth_sessions_close_independently() {
+        let usb_factory = RecordingFactory::default();
+        let bt_factory = RecordingFactory::default();
+        let mut usb = LinuxUhidProvider
+            .open_with_factory(targeted(RealizationId::LINUX_UHID_USB, 3), &usb_factory)
+            .unwrap();
+        let mut bt = LinuxUhidProvider::for_target(RealizationId::LINUX_UHID_BLUETOOTH)
+            .unwrap()
+            .open_with_factory(
+                targeted(RealizationId::LINUX_UHID_BLUETOOTH, 5),
+                &bt_factory,
+            )
+            .unwrap();
+        usb.close().unwrap();
+        usb.close().unwrap();
+        assert_eq!(usb_factory.record.lock().unwrap().destroys, 1);
+        assert_eq!(bt_factory.record.lock().unwrap().destroys, 0);
+        let frame = ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![7],
+        };
+        assert!(usb.send(frame.clone()).is_err());
+        bt.send(frame).unwrap();
+        assert_eq!(
+            bt_factory.record.lock().unwrap().inputs,
+            vec![(Some(1), vec![7])]
+        );
+        drop(usb);
+        drop(bt);
+        assert_eq!(usb_factory.record.lock().unwrap().destroys, 1);
+        assert_eq!(bt_factory.record.lock().unwrap().destroys, 1);
+    }
+
+    #[test]
     #[cfg(target_os = "linux")]
     fn create2_encodes_exact_controller_owned_metadata_for_both_buses() {
         for (target, bus) in [

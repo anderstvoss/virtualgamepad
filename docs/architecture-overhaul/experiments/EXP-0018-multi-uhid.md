@@ -11,7 +11,9 @@ Evidence: `exact_usb_and_bluetooth_selection_rejects_mismatch_before_any_io`
 covers both valid paths, crossed providers, unknown IDs, crossed buses and native
 selection disagreement. `create2_encodes_exact_controller_owned_metadata_for_both_buses`
 checks the entire CREATE2 event. `mixed_uhid_buses_keep_independent_transport_labels`
-checks fresh phys/uniq identities. Existing request/reply/cleanup tests are retained.
+checks fresh phys/uniq identities.
+`concurrent_usb_and_bluetooth_sessions_close_independently` proves removing USB
+does not stop Bluetooth servicing and each session destroys exactly once. Existing request/reply/cleanup tests are retained.
 
 Result: deterministic target and byte-level tests pass. Existing controller
 manifests remain USB-only and their descriptors/personality bytes are unchanged.

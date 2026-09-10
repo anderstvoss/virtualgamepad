@@ -439,3 +439,68 @@ fn every_report_class_and_malformed_activation_is_acknowledged_without_mutation(
     );
     assert_eq!(io.0.borrow().closes, 1);
 }
+
+#[test]
+fn host_memory_reads_and_activation_replies_follow_live_topology() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    r.service(0).unwrap();
+    assert!(io.0.borrow().submitted.contains(&Command::Reply {
+        token: RequestId {
+            session: 42,
+            ordinal: 1
+        },
+        reply: Reply::Get(Ok(
+            Report::new(ReportType::Feature, Some(3), vec![1, 0x11, 0x22]).unwrap()
+        ))
+    }));
+    r.update_protocol(|p| {
+        p.attach(Port::MotionPlus {
+            active: false,
+            downstream: Some(node()),
+            passthrough: false,
+        })
+    })
+    .unwrap();
+    enqueue(
+        &io,
+        2,
+        RequestKind::Set(Report::new(ReportType::Feature, Some(4), vec![1]).unwrap()),
+    );
+    r.service(1).unwrap();
+    assert!(io.0.borrow().submitted.contains(&Command::Reply {
+        token: RequestId {
+            session: 42,
+            ordinal: 2
+        },
+        reply: Reply::Set(Ok(()))
+    }));
+    assert_eq!(r.protocol().identity(), 4);
+    for (index, kind) in [ReportType::Input, ReportType::Output, ReportType::Other(9)]
+        .into_iter()
+        .enumerate()
+    {
+        let ordinal = u64::try_from(index).unwrap() + 3;
+        enqueue(&io, ordinal, RequestKind::Get { kind, id: Some(3) });
+        r.service(ordinal).unwrap();
+        assert!(io.0.borrow().submitted.contains(&Command::Reply {
+            token: RequestId {
+                session: 42,
+                ordinal
+            },
+            reply: Reply::Get(Err(ReplyError::Unsupported))
+        }));
+    }
+    r.close().unwrap();
+    assert_eq!(io.0.borrow().closes, 1);
+}

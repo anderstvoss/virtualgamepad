@@ -8,11 +8,11 @@ Experiment: `gr-hid/tests/internal_topology.rs` implements test-only Wii-like
 Remote/Nunchuk/MotionPlus concepts using entirely synthetic IDs and bytes.
 No Linux provider or production controller manifest references this prototype.
 
-Evidence: five tests exercise one session from base through direct attachment,
+Evidence: six tests exercise one session from base through direct attachment,
 calibration reads, control changes, detach, bridge activation and repeated
 pass-through/downstream transitions. They cover invalid topology and semantic
 validation rollback, four-edge queue saturation, rapid detach during initialization,
-malformed host writes, every report class, exact error replies, queued input and
+successful host activation and memory replies, malformed host writes, every report class, exact error replies, queued input and
 reply byte preservation, uncertain submission, close and edits after close.
 Run with `cargo test -p gr-hid`.
 

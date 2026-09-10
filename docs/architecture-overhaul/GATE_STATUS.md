@@ -25,6 +25,21 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux baseline/bus startup comparison passes; controlled consumer/driver evidence outstanding |
 
+## Post-106 gates
+
+| Gate | Status | Evidence and boundary |
+| --- | --- | --- |
+| Q | passed | [EXP-0018](experiments/EXP-0018-multi-uhid.md), [ADR-0012](decisions/ADR-0012-multiple-uhid-targets.md): deterministic exact-target/CREATE2 scope only |
+| R | passed | [EXP-0019](experiments/EXP-0019-persistent-resources.md), [ADR-0013](decisions/ADR-0013-persistent-resources.md): synthetic memory lifecycle, not file durability |
+| S | passed | [EXP-0020](experiments/EXP-0020-internal-topology.md), [ADR-0014](decisions/ADR-0014-protocol-edits.md): synthetic Wii-like topology, not production support |
+| T | blocked | [EXP-0021](experiments/EXP-0021-control-exposure.md): representation passes; real backend-dependent/remap-only evidence and corpus adoption pending |
+| U | blocked | [EXP-0022](experiments/EXP-0022-sdl-differential.md): harness/schema passes; exact backend/reference/removal observations and corpus adoption pending |
+| Production Wii Remote | blocked | Requires explicit later maintainer authorization even after Q/R/S; no package, manifest or demo enablement |
+
+Owner for Q–U: Codex. Prior A–P statuses and limitations are not promoted by
+these extensions. Alpha tagging still requires the documented decisions and
+readiness review; this PR does not publish or tag a release.
+
 ## Update rules
 
 Allowed statuses: `not_run`, `running`, `passed`, `failed`, `blocked`, `not_applicable`. The last requires a scoped justification; it is not a pass. Claim an item before execution and name an owner. Link every completed or blocked run to an EXP record and relevant ADR, including negative/mixed outcomes and missing prerequisites.
