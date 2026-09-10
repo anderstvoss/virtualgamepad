@@ -1,7 +1,7 @@
 # UHID access after reboot: research review and resolution plan
 
-Status: current-session failure resolved; persistent boot installation and reboot
-acceptance are pending administrator authentication.
+Status: GUI recovery confirmed by the user; persistent boot configuration
+installed and verified. Reboot acceptance remains pending.
 Reviewed against `e0fb72196bf8d45c23b9b11a7dc5113125f06099` (post-107 main).
 This document records the initial review, subsequent live diagnosis and remaining
 boot acceptance. It does not claim a completed reboot fix.
@@ -97,6 +97,10 @@ after module loading, with all test-owned devices removed. This verifies the
 GUI creation/worker path, not a manual rendered-window interaction or SDL/Steam
 compatibility. The minimal provider and curated startup/cleanup tests also passed.
 
+The user subsequently confirmed that the change appears to resolve the GUI
+failure. This supplies user-observed recovery in addition to the automated live
+test evidence; it is not a report of successful post-reboot validation.
+
 The GUI now retains the underlying creation error and adds registration-aware
 setup guidance, with deterministic regressions for missing registration, a retry
 after registration, unavailable inspection and unrelated provider failures.
@@ -104,10 +108,11 @@ Providers still do no privileged setup.
 
 `modules-load.d/virtualgamepad-uhid.conf` supplies the narrow boot opt-in, with
 installation and rollback guidance in the deployment document. The installed
-helper is authorized to load modules but not install boot policy; ordinary sudo
-requires a password. Installation was not performed. After an administrator
-installs the file, the reboot acceptance below remains necessary. No reboot was
-performed during this repair.
+helper is authorized to load modules but not install boot policy. After the
+administrator installation step was provided, a follow-up inspection confirmed
+that `/etc/modules-load.d/virtualgamepad-uhid.conf` is root-owned with mode `0644`
+and matches the reviewed repository file byte-for-byte. Reboot acceptance below remains necessary; no
+reboot was performed during this repair.
 
 ## Resolution sequence
 
@@ -262,6 +267,8 @@ tooling test and secret-scan gates for the implementation. Deterministic tests
 cannot replace reboot evidence; a plan PR or a successful temporary grant does
 not close the reported bug.
 
-Pending decisions: confirm the affected execution environment, resolve the local
-rule conflict, determine whether boot module loading is necessary, and choose
-documentation-only provisioning versus a supported installer after manual proof.
+The implemented resolution is the explicit boot configuration and installation
+guidance, plus improved GUI diagnostics; a new privileged installer is unnecessary
+for this fix. Remaining acceptance is creation and cleanup after reboot without
+manual preparation. Review of the pre-existing broad-group rule remains a
+separate administrator follow-up; this repair did not replace that policy.
