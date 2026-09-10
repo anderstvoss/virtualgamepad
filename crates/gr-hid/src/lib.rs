@@ -251,6 +251,27 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
         self.dirty = true;
         Ok(())
     }
+    /// Transactionally edit controller-owned protocol configuration/topology.
+    /// The closure must perform no external I/O and clones must isolate mutable
+    /// protocol resources, just as for input generation. Validate controller-owned
+    /// topology inside the closure; the runtime also validates current input.
+    /// Accepted reports/replies retain their bytes and delivery order. New work
+    /// follows them on service; a controller must bound any queued status edges.
+    /// Failure leaves protocol, semantic state and scheduling unchanged.
+    pub fn update_protocol(
+        &mut self,
+        edit: impl FnOnce(&mut P) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        if self.closed {
+            return Err(Error::Closed);
+        }
+        let mut candidate = self.protocol.clone();
+        edit(&mut candidate)?;
+        candidate.validate(&self.state)?;
+        self.protocol = candidate;
+        self.dirty = true;
+        Ok(())
+    }
     #[must_use]
     pub const fn state(&self) -> &P::State {
         &self.state
