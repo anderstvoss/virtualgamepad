@@ -1,3 +1,14 @@
+# Post-landing core refinement and initial alpha
+
+PR #106 is merged at `d3a6832`. Follow [the post-106 plan](POST_106_PLAN.md)
+and [gate ledger](GATE_STATUS.md); the original landing sequence below is history.
+Alpha preparation may continue, but tagging remains blocked until Q/R/S decisions
+and T representation are settled and U has a stable harness/schema. Production
+Wii Remote is neither required for alpha nor authorized by those gate results.
+No release version, publish setting, tag, or workflow is changed by this follow-up.
+
+## Historical pre-merge sequence
+
 # Overhaul landing and initial alpha
 
 This maintainer-directed sequence supersedes any interpretation that PR #106 must

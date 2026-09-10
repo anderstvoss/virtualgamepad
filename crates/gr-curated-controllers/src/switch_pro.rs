@@ -586,6 +586,7 @@ fn switch_subcommand_reply(
 }
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::Uhid,
         bus_type: 3,
         device_name: "Pro Controller".into(),
         // `common::create` appends the realization session exactly once.

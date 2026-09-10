@@ -62,7 +62,7 @@ impl<D: HidDriver> ControllerSession<D> {
         };
         let protocol = driver.hid_protocol(request.session, identity);
         let id = request.session.0;
-        let transport = LinuxUhidProvider.open_transport(request)?;
+        let transport = LinuxUhidProvider::for_target(selection.target)?.open_transport(request)?;
         let runtime =
             Runtime::new(protocol, transport, id, Limits::default()).map_err(provider_error)?;
         Ok(Self {

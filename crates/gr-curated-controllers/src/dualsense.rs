@@ -1213,6 +1213,7 @@ fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealizatio
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::Uhid,
         bus_type: 0x03,
         device_name: "DualSense Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/dualsense".into(),

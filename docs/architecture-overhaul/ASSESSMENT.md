@@ -1,5 +1,9 @@
 # Core rewrite assessment — 2026-09-09
 
+PR #106 landed on `main` as `d3a683259778f57bfe60b37168a862f718252a18`.
+This is the final pre-merge core assessment, retained as historical evidence.
+Current follow-up decisions are recorded in [the gate ledger](GATE_STATUS.md).
+
 Scope: current feature branch and PR #106, four existing controller families.
 This assessment supersedes the earlier incremental status on this page. The
 [gate ledger](GATE_STATUS.md) remains authoritative for experiment scope. The

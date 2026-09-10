@@ -3,7 +3,7 @@
 All entries are **WIP** while the architecture overhaul is under review. WIP
 includes implemented work under assessment and work not yet started. It does not
 promise that every combination will ship. The later-controller rows are planned
-workflow exercises after landing, not new controller APIs or current support.
+future workflow exercises, not new controller APIs or current support.
 
 | Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
 | --- | --- | --- | --- | --- | --- |
@@ -11,9 +11,9 @@ workflow exercises after landing, not new controller APIs or current support.
 | DualShock 4 | WIP | WIP | WIP | WIP | WIP |
 | Switch Pro | WIP | WIP | WIP | WIP | WIP |
 | Xbox 360 | WIP | WIP | WIP | WIP | WIP |
-| Steam Controller (2026) + Puck — after landing | WIP | WIP | WIP | WIP | WIP |
-| Xbox Series — after landing | WIP | WIP | WIP | WIP | WIP |
-| Wii Remote — after landing | WIP | WIP | WIP | WIP | WIP |
+| Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
+| Xbox Series | WIP | WIP | WIP | WIP | WIP |
+| Wii Remote | WIP | WIP | WIP | WIP | WIP |
 
 ¹ Gated concepts, not production realization IDs. USB personality over UHID is a
 virtual HID presentation; dummy_hcd is a separate optional gadget realization.
@@ -49,3 +49,7 @@ or require an absent native function merely because another controller has it.
 The [landing and alpha plan](architecture-overhaul/LANDING_AND_ALPHA_PLAN.md)
 defines the order: harden #106 and current controllers, review and land, prepare
 initial alpha/versioning, then exercise new-controller issues and additions.
+
+Production Wii Remote remains positively gated on later maintainer authorization.
+The test-only Wii-like topology experiment does not enable a controller package,
+demo entry, Bluetooth personality, or any support cell.

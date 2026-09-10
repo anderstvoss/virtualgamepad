@@ -712,6 +712,7 @@ fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
 }
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::Uhid,
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),

@@ -1,5 +1,9 @@
 # Architecture gate status
 
+PR #106 landed on `main` as `d3a683259778f57bfe60b37168a862f718252a18`.
+The active follow-up is [post-106 core refinement](POST_106_PLAN.md). Older execution
+batches below are historical; do not resume the merged rewrite branch.
+
 This is the current status ledger. Definitions and dependencies live in [the gate register](ARCHITECTURE_DECISION_EXPERIMENTS.md), section 17. Do not mark a gate passed because its design or test harness exists.
 
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
