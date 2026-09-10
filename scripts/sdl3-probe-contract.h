@@ -66,6 +66,29 @@ static inline bool probe_control_matches(unsigned test, uint32_t buttons, const 
     return true;
 }
 
+/* Lifecycle records describe calls actually made, not inferred device removal. */
+typedef struct { bool opened, closed, reopen_attempted, reopened, reclosed; } ProbeLifecycle;
+static inline void probe_opened(ProbeLifecycle *state, bool success, bool reopen) {
+    if (reopen) { state->reopen_attempted = true; state->reopened = success; }
+    else state->opened = success;
+}
+static inline void probe_closed(ProbeLifecycle *state, bool reopen) {
+    if (reopen) state->reclosed = state->reopened;
+    else state->closed = state->opened;
+}
+static inline void probe_measurement(const char *name, const char *reason) {
+    probe_json_string(name);
+    printf(":{\"reason\":");
+    if (reason) probe_json_string(reason); else printf("null");
+    printf(",\"value\":");
+}
+static inline void probe_unknown(const char *name, const char *reason) {
+    probe_measurement(name, reason); printf("null}");
+}
+static inline void probe_boolean(const char *name, bool value) {
+    probe_measurement(name, NULL); printf("%s}", value ? "true" : "false");
+}
+
 typedef struct {
     bool present, enabled, invalid, have_sample;
     unsigned distinct;

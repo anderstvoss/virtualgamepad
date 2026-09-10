@@ -11,6 +11,20 @@ class SdlContractTests(unittest.TestCase):
 #include <assert.h>
 #include "sdl3-probe-contract.h"
 int main(void) {
+    ProbeLifecycle lifecycle = {0};
+    probe_closed(&lifecycle, false);
+    assert(!lifecycle.closed);
+    probe_opened(&lifecycle, false, false);
+    assert(!lifecycle.opened && !lifecycle.closed);
+    probe_opened(&lifecycle, true, false);
+    probe_closed(&lifecycle, false);
+    assert(lifecycle.opened && lifecycle.closed);
+    probe_opened(&lifecycle, false, true);
+    probe_closed(&lifecycle, true);
+    assert(lifecycle.reopen_attempted && !lifecycle.reopened && !lifecycle.reclosed);
+    probe_opened(&lifecycle, true, true);
+    probe_closed(&lifecycle, true);
+    assert(lifecycle.reopened && lifecycle.reclosed);
     uint64_t duration = 0;
     assert(probe_duration("10000", &duration) && duration == 10000);
     const char *invalid[] = {"", "-1", "0", "99", "60001", "10junk", "999999999999999999999"};
