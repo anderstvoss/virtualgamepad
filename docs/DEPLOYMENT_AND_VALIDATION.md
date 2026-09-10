@@ -101,6 +101,30 @@ nodes or the broad `input` group. Existing distribution/session ACLs must be
 reviewed rather than silently overwritten. The VM experiments use temporary
 ACLs instead of persistent group enrollment.
 
+For access lost after reboot, see the
+[UHID research review and resolution plan](architecture-overhaul/UHID_REBOOT_ACCESS_PLAN.md).
+It separates registration, persistent authorization and temporary helper leases,
+and defines the reboot evidence required before claiming a fix.
+
+On hosts where UHID is modular and remains unregistered after boot, the device
+node may exist with root-only permissions before the module's registration event
+lets udev apply the installed policy. A GUI `cannot access device node` error
+therefore requires checking `/sys/class/misc/uhid/dev` as well as the node ACL.
+An administrator can load `uhid` and settle udev to test this case without an ACL
+grant. If that alone restores creation, opt into boot registration using the
+reviewed `modules-load.d/virtualgamepad-uhid.conf` file:
+
+```bash
+# From the repository root; inspect any existing destination before installing.
+sudo install -o root -g root -m 0644 modules-load.d/virtualgamepad-uhid.conf /etc/modules-load.d/virtualgamepad-uhid.conf
+```
+
+Do not overwrite a different administrator-owned file. This configuration loads
+only `uhid`; it grants no permissions and does not replace the explicit udev/group
+policy. Verify ordinary-user creation after reboot without manual module loading.
+To undo this opt-in, an administrator removes only this unchanged installed file;
+do not unload the module while controllers may be using it.
+
 Consumers need access to their session's hidraw/event nodes, not the creation
 device or broker socket. SDL development files, Steam, capture tools, corpus
 credentials, and physical reference devices are validation prerequisites only.
