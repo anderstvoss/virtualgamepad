@@ -21,21 +21,21 @@ captures, v1 records CLI parsing and hash-bound external reverse/cleanup evidenc
 against the pinned real SDL 3.2.0 build; invalid-argument output parses as v2 and
 correctly reports no consumer close. No host devices were opened in that check.
 
-Result: deterministic harness/schema tests pass. Core adoption of Gate U's source
-claims remains **blocked** on corpus publication to main. Physical comparisons
+Result: Gate U **passes** its harness/schema and source-evidence scope. Core adopts
+the claims from published corpus main `a1789d6ed92b2325016dd78be765342f3ca19aa4`. Physical comparisons
 are controller-acceptance work, not a prerequisite for this harness/schema pass.
 The reviewed Linux SDL 3.2.0 GUID/path combinations now supply source-derived
 backend identity; ambiguous combinations remain unmeasured. Mapping database
 provenance, controller-side reverse output and provider removal require external
 observations before those dimensions can be claimed. Companion SDL source claims exist at
-corpus revision `0468aeb` ([companion PR](https://github.com/anderstvoss/controller-protocol-corpus/pull/2)); they are not yet the adopted corpus pin.
+corpus revision `0468aeb` ([companion PR](https://github.com/anderstvoss/controller-protocol-corpus/pull/2)); they are included in the adopted corpus merge revision.
 
 Decision: accept the versioned comparison workflow with structured differences.
 Consequences: zero unexpected differences may still contain unmeasured fields;
 exit 0 alone is not full compatibility. Successful rumble/LED calls are not
 physical effects. Contact masks cover the first touchpad and at most 32 fingers;
 other contact events produce an explicit unavailable reason instead of truncation.
-Revisit condition: corpus publication, controller-specific reference runs, exact
+Revisit condition: controller-specific reference runs, exact
 mapping provenance or broader contact capture becomes available.
 No new dependencies, production controllers, privileges or physical support claims.
 

@@ -28,7 +28,7 @@ prototype is only compiled as an integration test.
   comparison pass deterministic tests. Required external observations can attach
   only to a matching capture hash and cannot overwrite existing values. Reviewed
   Linux SDL 3.2.0 GUID/path combinations now provide explicitly source-derived
-  backend identification. Gate U corpus adoption stays blocked pending publication;
+  backend identification. Gate U passes its harness/source-evidence scope;
   physical comparisons are separate controller acceptance. Exit 0 is not a claim
   of complete compatibility.
 
@@ -43,9 +43,9 @@ live topology session. Existing current-controller regressions are retained.
 contains revision `0468aeb`: seven pinned/scoped sources, fifteen claims and four
 provenance tests. It validates 53 records and ten tests. Vendor excerpt hashing
 is explicitly scoped; no whole-page digest or physical capture is invented.
-Core remains pinned to `e65c044d062ed833ad13641f54c826db16d176e4`, verified against
-published corpus main. Adopt the companion only after it satisfies that policy.
-Neither PR is merged automatically.
+Corpus PR #2 was merged with maintainer authorization. Core now pins its published
+main revision `a1789d6ed92b2325016dd78be765342f3ca19aa4`; generated fixture bytes
+are unchanged and their manifest records the adopted revision.
 
 ## Completion Summary
 
@@ -118,10 +118,9 @@ New dependencies:
 - None.
 
 Unresolved issues:
-- Corpus companion adoption awaits publication on main; no merge is authorized.
 - Gate T contrasting exposure/remap-only evidence remains incomplete. Gate U
   harness/schema passes with bounded source-derived backend identification; its
-  corpus adoption awaits main. Controller physical/mapping/removal observations
+  source claims are adopted from corpus main. Controller physical/mapping/removal observations
   remain unmeasured where unavailable. This is not hardware fidelity acceptance.
 - Existing DS4 touch isolation, Switch rumble fidelity, Steam/Eden, broker, audio
   and actual Bluetooth limits remain. No host changes or physical tests performed.

@@ -32,8 +32,8 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | Q | passed | [EXP-0018](experiments/EXP-0018-multi-uhid.md), [ADR-0012](decisions/ADR-0012-multiple-uhid-targets.md): deterministic exact-target/CREATE2 scope only |
 | R | passed | [EXP-0019](experiments/EXP-0019-persistent-resources.md), [ADR-0013](decisions/ADR-0013-persistent-resources.md): synthetic memory lifecycle, not file durability |
 | S | passed | [EXP-0020](experiments/EXP-0020-internal-topology.md), [ADR-0014](decisions/ADR-0014-protocol-edits.md): synthetic Wii-like topology, not production support |
-| T | blocked | [EXP-0021](experiments/EXP-0021-control-exposure.md): representation and scoped Edge mapping/parser research pass; contrasting exposure/remap-only evidence and corpus adoption pending |
-| U | blocked | [EXP-0022](experiments/EXP-0022-sdl-differential.md): harness/schema and bounded source-derived backend identification pass; source-claim adoption awaits corpus main. Physical acceptance is separate |
+| T | blocked | [EXP-0021](experiments/EXP-0021-control-exposure.md): representation and scoped Edge mapping/parser research pass; contrasting exposure/remap-only evidence pending; corpus claims adopted |
+| U | passed | [EXP-0022](experiments/EXP-0022-sdl-differential.md): harness/schema and bounded source-derived backend identification pass; source claims adopted from published corpus main `a1789d6`. Physical acceptance is separate |
 | Production Wii Remote | blocked | Requires explicit later maintainer authorization even after Q/R/S; no package, manifest or demo enablement |
 
 Owner for Q–U: Codex. Prior A–P statuses and limitations are not promoted by

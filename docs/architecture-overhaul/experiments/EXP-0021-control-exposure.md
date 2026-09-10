@@ -24,8 +24,8 @@ optional control map or mutable universal state is necessary.
 Result: representation tests pass. Full Gate T evidence acceptance remains
 **blocked**: the requested real host-visible/backend-dependent and mode-specific
 remap-only cases have not been demonstrated. Synthetic cases exercise those
-representations but cannot replace that evidence. Core corpus adoption also waits
-for companion publication on main; the current pinned corpus is unchanged.
+representations but cannot replace that evidence. The companion claims are now adopted from published corpus main at
+`a1789d6ed92b2325016dd78be765342f3ca19aa4`.
 
 Decision: preserve layered reporting and explicit unknowns; no schema extension.
 Consequences: sources cannot promote support cells. Do not interpret a marketing
@@ -55,5 +55,5 @@ Read-only host inventory found virtual mouse/keyboard devices and no physical
 gamepads. No reference input, output actuation or host-policy changes were made.
 The companion corpus adds scoped default-mapping, parser and backend-signature
 claims; its existing Linux/physical unknowns remain. Gate T stays blocked on the
-unambiguous contrasting exposure/remap-only evidence and corpus adoption, rather
+unambiguous contrasting exposure/remap-only evidence, rather
 than requiring every physical device before accepting the representation tests.
