@@ -64,6 +64,42 @@ before attempting provisioning. No host configuration or ACL was changed.
 
 ## Resolution sequence
 
+### 0. Compare the live harness and demo before choosing a host fix
+
+Ordinary workspace tests skip the ignored live UHID tests. The provider's
+deterministic tests use fake I/O; their success says nothing about `/dev/uhid`
+access. The minimal ignored provider test opens the real provider with a small
+synthetic descriptor, sends input and closes. It does not exercise a curated
+controller's complete kernel startup.
+
+The curated live tests call the same `create_dualsense`/`create_dualshock4`
+functions as `demo/src/gui.rs::App::create`, with explicit UHID selection.
+Both reach the same `LinuxUhidProvider`, which checks access, opens a fresh node
+and sends `UHID_CREATE2`. Neither the tests nor GUI grants access or loads UHID;
+the documented helper grant is a separate preparation step. The live tests poll
+the controller in their test loop; the GUI starts a service worker after creation
+and closes the controller if that worker fails.
+
+The demo defaults to **Evdev on every launch** (`App::default`), whereas the live
+UHID tests explicitly select UHID. Confirm the GUI's selected target and actual
+error path before attributing a post-restart failure to UHID permissions.
+
+On the same boot, revision, ordinary-user login and host preparation state, run
+the exact ignored test `dualsense_services_kernel_startup_and_removes_its_device`
+in `dualsense_uhid_live`, then launch the demo from that same login and explicitly
+select DualSense and HID / UHID. Keep these runs sequential and make no grants
+or restores between them. Verify the test actually ran rather than being ignored.
+Record whether the GUI reports `Creation failed`, reports a later provider
+failure, or creates successfully but is absent from the consumer.
+
+- If both fail opening the node, continue with host registration/access diagnosis.
+- If the live curated test passes and the GUI fails, first compare target,
+  executable revision, effective groups and launch confinement. Then investigate
+  GUI creation/worker lifecycle with a deterministic regression for the actual
+  failing sequence, rather than changing host permissions speculatively.
+- If both create but only consumer discovery fails, investigate consumer access,
+  discovery and protocol servicing separately from creation-device authorization.
+
 ### 1. Establish the failing boot state
 
 On the affected Linux host, arrange a controlled reboot with its operator. Before
