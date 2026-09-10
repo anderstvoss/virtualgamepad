@@ -1,5 +1,9 @@
 # Architecture gate status
 
+PR #106 landed on `main` as `d3a683259778f57bfe60b37168a862f718252a18`.
+The active follow-up is [post-106 core refinement](POST_106_PLAN.md). Older execution
+batches below are historical; do not resume the merged rewrite branch.
+
 This is the current status ledger. Definitions and dependencies live in [the gate register](ARCHITECTURE_DECISION_EXPERIMENTS.md), section 17. Do not mark a gate passed because its design or test harness exists.
 
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
@@ -20,6 +24,21 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | N | Curated compatibility variants | Affected E6 family | not_run | unassigned | None |
 | O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux baseline/bus startup comparison passes; controlled consumer/driver evidence outstanding |
+
+## Post-106 gates
+
+| Gate | Status | Evidence and boundary |
+| --- | --- | --- |
+| Q | passed | [EXP-0018](experiments/EXP-0018-multi-uhid.md), [ADR-0012](decisions/ADR-0012-multiple-uhid-targets.md): deterministic exact-target/CREATE2 scope only |
+| R | passed | [EXP-0019](experiments/EXP-0019-persistent-resources.md), [ADR-0013](decisions/ADR-0013-persistent-resources.md): synthetic memory lifecycle, not file durability |
+| S | passed | [EXP-0020](experiments/EXP-0020-internal-topology.md), [ADR-0014](decisions/ADR-0014-protocol-edits.md): synthetic Wii-like topology, not production support |
+| T | blocked | [EXP-0021](experiments/EXP-0021-control-exposure.md): representation and scoped Edge mapping/parser research pass; contrasting exposure/remap-only evidence pending; corpus claims adopted |
+| U | passed | [EXP-0022](experiments/EXP-0022-sdl-differential.md): harness/schema and bounded source-derived backend identification pass; source claims adopted from published corpus main `a1789d6`. Physical acceptance is separate |
+| Production Wii Remote | blocked | Requires explicit later maintainer authorization even after Q/R/S; no package, manifest or demo enablement |
+
+Owner for Q–U: Codex. Prior A–P statuses and limitations are not promoted by
+these extensions. Alpha tagging still requires the documented decisions and
+readiness review; this PR does not publish or tag a release.
 
 ## Update rules
 

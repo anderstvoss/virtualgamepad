@@ -21,13 +21,30 @@ const UHID_SET_REPORT_REPLY: u32 = 14;
 const UHID_DATA_MAX: usize = 4096;
 const UHID_EVENT_SIZE: usize = 4 + 280 + UHID_DATA_MAX;
 
-#[derive(Default)]
-pub struct LinuxUhidProvider;
+/// One exact realization served by the shared UHID mechanism.
+#[derive(Clone, Copy)]
+pub struct LinuxUhidProvider {
+    target: RealizationId,
+}
+/// Source-compatible USB provider value.
+#[allow(non_upper_case_globals)]
+pub const LinuxUhidProvider: LinuxUhidProvider = LinuxUhidProvider {
+    target: RealizationId::LINUX_UHID_USB,
+};
+impl Default for LinuxUhidProvider {
+    fn default() -> Self {
+        LinuxUhidProvider
+    }
+}
 impl NativeProviderFactory for LinuxUhidProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(RealizationTarget::Uhid, true)
+        ProviderCapabilities::for_target(self.target, true)
     }
     fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+        self.validate_request(request)
+            .map_err(|error| ProviderPreflightError::InvalidRequest {
+                reason: error.to_string(),
+            })?;
         LiveLinuxIoFactory.preflight(request)
     }
     fn open(
@@ -38,16 +55,55 @@ impl NativeProviderFactory for LinuxUhidProvider {
     }
 }
 impl LinuxUhidProvider {
-    fn open_with_factory(
-        &self,
-        request: ProviderOpenRequest,
-        factory: &dyn LinuxIoFactory,
-    ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+    /// Select a supported complete UHID realization; never infer a bus or fall back.
+    ///
+    /// # Errors
+    /// Rejects realization IDs not implemented by this provider.
+    pub fn for_target(target: RealizationId) -> Result<Self, ProviderError> {
+        if ![
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_UHID_BLUETOOTH,
+        ]
+        .contains(&target)
+        {
+            return Err(ProviderError::Unsupported {
+                reason: format!("unsupported UHID target {target}"),
+            });
+        }
+        Ok(Self { target })
+    }
+    fn validate_request(&self, request: &ProviderOpenRequest) -> Result<(), ProviderError> {
         request
             .validate_against(self.capabilities())
             .map_err(|error| ProviderError::Unsupported {
                 reason: error.to_string(),
             })?;
+        let NativeControllerRealization::Uhid(spec) = &request.realization else {
+            return Err(ProviderError::Unsupported {
+                reason: "UHID requires HID realization".into(),
+            });
+        };
+        let expected_bus = if self.target == RealizationId::LINUX_UHID_USB {
+            0x03
+        } else {
+            0x05
+        };
+        if spec.bus_type != expected_bus {
+            return Err(ProviderError::Unsupported {
+                reason: format!(
+                    "{} requires bus {expected_bus}, got {}",
+                    self.target, spec.bus_type
+                ),
+            });
+        }
+        Ok(())
+    }
+    fn open_with_factory(
+        &self,
+        request: ProviderOpenRequest,
+        factory: &dyn LinuxIoFactory,
+    ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+        self.validate_request(&request)?;
         factory.preflight(&request)?;
         let NativeControllerRealization::Uhid(specification) = request.realization else {
             return Err(ProviderError::Unsupported {
@@ -76,14 +132,14 @@ trait LinuxIo: Send {
 }
 struct LiveLinuxIoFactory;
 impl LinuxIoFactory for LiveLinuxIoFactory {
-    fn preflight(&self, _: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
-        linux_io::open_node().map(|_| ())
+    fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+        linux_io::open_node(request.selection.target).map(|_| ())
     }
     fn open(
         &self,
         specification: &NativeHidRealization,
     ) -> Result<Box<dyn LinuxIo>, ProviderError> {
-        let mut file = linux_io::open_node()?;
+        let mut file = linux_io::open_node(specification.target)?;
         linux_io::create(&mut file, specification)?;
         Ok(Box::new(LiveLinuxIo { file }))
     }
@@ -344,7 +400,7 @@ mod linux_io {
         },
         Lifecycle(gr_hid::Lifecycle),
     }
-    pub fn open_node() -> Result<File, ProviderPreflightError> {
+    pub fn open_node(target: RealizationTarget) -> Result<File, ProviderPreflightError> {
         OpenOptions::new()
             .read(true)
             .write(true)
@@ -352,11 +408,11 @@ mod linux_io {
             .open("/dev/uhid")
             .map_err(|error| match error.kind() {
                 ErrorKind::NotFound => ProviderPreflightError::MissingDeviceNode {
-                    target: RealizationTarget::Uhid,
+                    target,
                     path: "/dev/uhid".into(),
                 },
                 _ => ProviderPreflightError::AccessDenied {
-                    target: RealizationTarget::Uhid,
+                    target,
                     path: "/dev/uhid".into(),
                 },
             })
@@ -413,7 +469,7 @@ mod linux_io {
             assert_eq!(untouched, [0_u8; 64]);
         }
     }
-    pub fn create(io: &mut File, spec: &NativeHidRealization) -> Result<(), ProviderError> {
+    pub fn create(io: &mut impl Write, spec: &NativeHidRealization) -> Result<(), ProviderError> {
         if spec.descriptor.len() > UHID_DATA_MAX {
             return Err(ProviderError::Open {
                 reason: "HID descriptor exceeds UHID maximum".into(),
@@ -680,6 +736,7 @@ mod integration_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Uhid(NativeHidRealization {
+                target: RealizationTarget::Uhid,
                 bus_type: 0x03,
                 device_name: "virtualgamepad integration test".into(),
                 physical_path: String::new(),
@@ -774,6 +831,7 @@ mod seam_tests {
     }
     fn specification() -> NativeHidRealization {
         NativeHidRealization {
+            target: RealizationTarget::Uhid,
             bus_type: 3,
             device_name: "test".into(),
             physical_path: String::new(),
@@ -798,6 +856,134 @@ mod seam_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Uhid(specification()),
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingFactory {
+        preflights: Mutex<usize>,
+        specs: Mutex<Vec<NativeHidRealization>>,
+        record: Arc<Mutex<Record>>,
+    }
+    impl LinuxIoFactory for RecordingFactory {
+        fn preflight(&self, _: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+            *self.preflights.lock().unwrap() += 1;
+            Ok(())
+        }
+        fn open(&self, spec: &NativeHidRealization) -> Result<Box<dyn LinuxIo>, ProviderError> {
+            self.specs.lock().unwrap().push(spec.clone());
+            Ok(Box::new(FakeIo {
+                events: VecDeque::new(),
+                input_results: VecDeque::new(),
+                record: self.record.clone(),
+            }))
+        }
+    }
+    fn targeted(target: RealizationId, bus: u16) -> ProviderOpenRequest {
+        let mut request = request();
+        request.selection.target = target;
+        let NativeControllerRealization::Uhid(spec) = &mut request.realization else {
+            unreachable!()
+        };
+        spec.target = target;
+        spec.bus_type = bus;
+        request
+    }
+    #[test]
+    fn exact_usb_and_bluetooth_selection_rejects_mismatch_before_any_io() {
+        let usb = RealizationId::LINUX_UHID_USB;
+        let bt = RealizationId::LINUX_UHID_BLUETOOTH;
+        let unknown = RealizationId::new("test.unknown-uhid");
+        assert!(LinuxUhidProvider::for_target(unknown).is_err());
+        for provider_target in [usb, bt] {
+            let provider = LinuxUhidProvider::for_target(provider_target).unwrap();
+            for (target, bus) in [(usb, 3), (bt, 5), (unknown, 3), (usb, 5), (bt, 3)] {
+                let factory = RecordingFactory::default();
+                let request = targeted(target, bus);
+                assert_eq!(request.realization.target(), target);
+                let result = provider.open_with_factory(request.clone(), &factory);
+                let valid = target == provider_target
+                    && ((target == usb && bus == 3) || (target == bt && bus == 5));
+                assert_eq!(result.is_ok(), valid);
+                assert_eq!(*factory.preflights.lock().unwrap(), usize::from(valid));
+                assert_eq!(factory.specs.lock().unwrap().len(), usize::from(valid));
+                if !valid {
+                    assert!(matches!(
+                        provider.preflight(&request),
+                        Err(ProviderPreflightError::InvalidRequest { .. })
+                    ));
+                }
+                drop(result);
+                assert_eq!(factory.record.lock().unwrap().destroys, usize::from(valid));
+            }
+        }
+        let factory = RecordingFactory::default();
+        let mut mismatch = targeted(bt, 5);
+        mismatch.selection.target = usb;
+        assert!(
+            LinuxUhidProvider
+                .open_with_factory(mismatch, &factory)
+                .is_err()
+        );
+        assert_eq!(*factory.preflights.lock().unwrap(), 0);
+    }
+    #[test]
+    fn concurrent_usb_and_bluetooth_sessions_close_independently() {
+        let usb_factory = RecordingFactory::default();
+        let bt_factory = RecordingFactory::default();
+        let mut usb = LinuxUhidProvider
+            .open_with_factory(targeted(RealizationId::LINUX_UHID_USB, 3), &usb_factory)
+            .unwrap();
+        let mut bt = LinuxUhidProvider::for_target(RealizationId::LINUX_UHID_BLUETOOTH)
+            .unwrap()
+            .open_with_factory(
+                targeted(RealizationId::LINUX_UHID_BLUETOOTH, 5),
+                &bt_factory,
+            )
+            .unwrap();
+        usb.close().unwrap();
+        usb.close().unwrap();
+        assert_eq!(usb_factory.record.lock().unwrap().destroys, 1);
+        assert_eq!(bt_factory.record.lock().unwrap().destroys, 0);
+        let frame = ProviderFrame::HidInput {
+            report_id: Some(1),
+            bytes: vec![7],
+        };
+        assert!(usb.send(frame.clone()).is_err());
+        bt.send(frame).unwrap();
+        assert_eq!(
+            bt_factory.record.lock().unwrap().inputs,
+            vec![(Some(1), vec![7])]
+        );
+        drop(usb);
+        drop(bt);
+        assert_eq!(usb_factory.record.lock().unwrap().destroys, 1);
+        assert_eq!(bt_factory.record.lock().unwrap().destroys, 1);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn create2_encodes_exact_controller_owned_metadata_for_both_buses() {
+        for (target, bus) in [
+            (RealizationId::LINUX_UHID_USB, 3_u16),
+            (RealizationId::LINUX_UHID_BLUETOOTH, 5),
+        ] {
+            let request = targeted(target, bus);
+            let NativeControllerRealization::Uhid(spec) = request.realization else {
+                unreachable!()
+            };
+            let mut actual = Vec::new();
+            linux_io::create(&mut actual, &spec).unwrap();
+            let mut expected = vec![0; UHID_EVENT_SIZE];
+            expected[0..4].copy_from_slice(&11_u32.to_ne_bytes());
+            expected[4..8].copy_from_slice(b"test");
+            expected[260..262].copy_from_slice(&1_u16.to_ne_bytes());
+            expected[262..264].copy_from_slice(&bus.to_ne_bytes());
+            expected[264..268].copy_from_slice(&1_u32.to_ne_bytes());
+            expected[268..272].copy_from_slice(&2_u32.to_ne_bytes());
+            expected[272..276].copy_from_slice(&3_u32.to_ne_bytes());
+            expected[280] = 1;
+            assert_eq!(actual, expected);
         }
     }
 
@@ -1005,10 +1191,8 @@ mod linux_io {
         },
         Lifecycle(gr_hid::Lifecycle),
     }
-    pub fn open_node() -> Result<File, ProviderPreflightError> {
-        Err(ProviderPreflightError::UnsupportedPlatform {
-            target: RealizationTarget::Uhid,
-        })
+    pub fn open_node(target: RealizationTarget) -> Result<File, ProviderPreflightError> {
+        Err(ProviderPreflightError::UnsupportedPlatform { target })
     }
     pub fn create(_: &mut File, _: &NativeHidRealization) -> Result<(), ProviderError> {
         Err(ProviderError::Open {

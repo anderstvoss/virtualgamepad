@@ -205,13 +205,12 @@ where
         requirements: prepared.entry().provider_requirements,
         realization,
     };
-    if options.target == RealizationTarget::Uhid {
+    if matches!(&request.realization, NativeControllerRealization::Uhid(_)) {
         return ControllerSession::hid(driver, request, restored);
     }
     let mut association = crate::ControllerAssociation::requested(&request.realization);
     let session: Box<dyn NativeProviderSession> = match options.target {
         RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
-        RealizationTarget::Uhid => LinuxUhidProvider.open(request)?,
         RealizationTarget::DummyHcd => LinuxDummyHcdProvider.open(request)?,
         _ => {
             return Err(ProviderError::Unsupported {
@@ -241,6 +240,7 @@ pub(crate) fn hid_realization(
     product_id: u16,
 ) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
+        target: RealizationTarget::Uhid,
         bus_type: 0x03,
         device_name: name.into(),
         physical_path: "virtualgamepad/uhid".into(),
@@ -335,6 +335,32 @@ mod tests {
             Some(unique.as_str())
         );
         assert_eq!(association.observed_host_path, None);
+    }
+
+    #[test]
+    fn mixed_uhid_buses_keep_independent_transport_labels() {
+        let mut labels = Vec::new();
+        for target in [
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
+        ] {
+            let mut realization = hid_realization("synthetic", 1, 2);
+            let NativeControllerRealization::Uhid(spec) = &mut realization else {
+                unreachable!()
+            };
+            spec.target = target;
+            spec.bus_type = if target == RealizationTarget::LINUX_UHID_USB {
+                3
+            } else {
+                5
+            };
+            (spec.physical_path, spec.unique_id) =
+                creation_labels(&spec.physical_path, &spec.unique_id, false).unwrap();
+            labels.push((spec.physical_path.clone(), spec.unique_id.clone()));
+            assert_eq!(realization.target(), target);
+        }
+        assert_ne!(labels[0].0, labels[1].0);
+        assert_ne!(labels[0].1, labels[1].1);
     }
 
     #[test]

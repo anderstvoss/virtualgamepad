@@ -109,3 +109,29 @@ instance suffix. The default constructors remain unchanged, and other targets
 reject supplied identities before opening resources. Compound component identity
 must later derive from one logical controller identity under its own accepted
 contract. See [ADR-0008](../../architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md).
+
+## Post-106 controller-owned extensions
+
+Populate `NativeHidRealization.target` with the exact compiled realization ID.
+For local UHID use USB bus metadata with `linux.uhid.usb` or Bluetooth bus metadata
+with `linux.uhid.bluetooth`; the provider rejects mismatches without fallback.
+Only declare paths the controller actually implements. No current USB personality
+is automatically Bluetooth-capable because the mechanism supports both IDs.
+
+Use typed controller methods around `Runtime::update_protocol` for caller-driven
+configuration/topology. Validate attachment edits inside the transaction, keep
+resource clones isolated, and bound protocol status queues. Queued transport bytes
+are preserved and new input generation follows them. Internal attachments are not
+`RequiredGroup` host components. No arbitrary extension plugin interface is added.
+
+The persistent-resource experiment recommends typed, value-owned protocol memory
+and exact snapshots after terminal close. Deliberate shutdown exposes retain or
+discard; an external exporter may retry after failure without reopening transport.
+Actual file helpers belong outside runtime/providers and require their own atomic
+replacement tests. This is an accepted pattern, not a universal public resource API.
+
+Controller-native independent controls remain typed even when a target has a
+technical restriction; document the reason in its surface. Remap-only or unknown
+raw controls are not invented as independent state. Consumer/source/physical
+observations are separately scoped. Production Wii Remote is deferred pending
+explicit maintainer authorization; its test prototype grants no package support.

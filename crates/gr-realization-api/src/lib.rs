@@ -38,6 +38,7 @@ impl fmt::Display for ControllerId {
 pub struct RealizationId(&'static str);
 impl RealizationId {
     pub const LINUX_UINPUT: Self = Self("linux.uinput");
+    pub const LINUX_UHID_BLUETOOTH: Self = Self("linux.uhid.bluetooth");
     pub const LINUX_UHID_USB: Self = Self("linux.uhid.usb");
     pub const LINUX_DUMMY_HCD_USB_HID: Self = Self("linux.dummy_hcd.usb-hid");
     /// Declare a compiled realization ID.
@@ -247,6 +248,7 @@ pub struct NativeEvdevRealization {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NativeHidRealization {
+    pub target: RealizationId,
     pub bus_type: u16,
     pub device_name: String,
     pub physical_path: String,
@@ -293,7 +295,7 @@ impl NativeControllerRealization {
     pub const fn target(&self) -> RealizationTarget {
         match self {
             Self::Evdev(_) => RealizationTarget::Evdev,
-            Self::Uhid(_) => RealizationTarget::Uhid,
+            Self::Uhid(specification) => specification.target,
             Self::DummyHcd(_) => RealizationTarget::DummyHcd,
         }
     }
@@ -359,7 +361,7 @@ impl NativeControllerRealization {
             Self::Uhid(specification) => {
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: RealizationTarget::Uhid,
+                        target: specification.target,
                     });
                 }
                 if specification.descriptor.is_empty() {
@@ -567,6 +569,8 @@ pub enum ProviderError {
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ProviderPreflightError {
+    #[error("invalid provider request: {reason}")]
+    InvalidRequest { reason: String },
     #[error("{target} is unavailable on this platform")]
     UnsupportedPlatform { target: RealizationTarget },
     #[error("{target} requires device node `{path}`")]

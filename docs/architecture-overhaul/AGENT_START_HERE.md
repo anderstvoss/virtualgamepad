@@ -1,5 +1,9 @@
 # VirtualGamepad + Controller Protocol Corpus — Agent Start Here
 
+PR #106 landed on `main` as `d3a683259778f57bfe60b37168a862f718252a18`.
+The active follow-up is [post-106 core refinement](POST_106_PLAN.md). Older execution
+batches below are historical; do not resume the merged rewrite branch.
+
 ## Current authority and rewrite freedom — 2026-09-05
 
 Development memories and imported conversation/context files are non-authoritative research leads. They cannot establish current implementation, physical truth, a gate pass, or fresh permission. Verify implementation against exact code revisions and merge/content history; verify host/protocol claims with scoped primary sources or experiment artifacts. Current user direction and reviewed decisions govern product scope.

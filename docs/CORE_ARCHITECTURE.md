@@ -123,3 +123,29 @@ state or host-owned outputs. Optional output order is service-observation order,
 not cross-device hardware chronology. All handles expose retained transport and
 cleanup diagnostics; terminal library state alone does not prove host removal.
 See [ADR-0011](architecture-overhaul/decisions/ADR-0011-neutralization-and-observation.md).
+
+## Post-106 extension seams
+
+Native HID specifications carry a complete realization target. The shared UHID
+provider can be configured for `linux.uhid.usb` or `linux.uhid.bluetooth`, validating
+exact selection and controller-owned bus metadata before preflight/open. Existing
+curated controllers retain their USB manifests. Bluetooth metadata over UHID is
+not radio/link/pairing support. See [ADR-0012](architecture-overhaul/decisions/ADR-0012-multiple-uhid-targets.md).
+
+`gr_hid::Runtime::update_protocol` supports transactional caller-driven protocol
+configuration. It clones, edits and validates before installation, rejects closed
+sessions, and preserves accepted report/reply bytes. Controller-owned attachments
+and bounded status queues remain personality concerns, separate from compound
+host components. [ADR-0014](architecture-overhaul/decisions/ADR-0014-protocol-edits.md)
+is supported by a synthetic test-only Wii-like prototype.
+
+A synthetic resource experiment establishes a controller-owned typed value and
+explicit snapshot/discard pattern after terminal cleanup; no generic memory API
+or filesystem helper is introduced. Implicit teardown never persists resources.
+See [ADR-0013](architecture-overhaul/decisions/ADR-0013-persistent-resources.md).
+
+Native independent controls, target visibility and consumer mapping are separate
+facts. Unknown raw visibility cannot be inferred from macro functionality. The
+[SDL differential workflow](SDL_DIFFERENTIAL.md) reports missing measurements and
+expected/unexpected differences without converting source evidence into physical
+truth. Production Wii Remote remains positively gated on later authorization.
