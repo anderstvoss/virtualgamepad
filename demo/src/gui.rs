@@ -125,6 +125,36 @@ enum ControllerLifecycleStatus {
     ClosedAfterFailure { name: String, error: String },
 }
 
+fn creation_error_message(
+    error: &virtualgamepad::ProviderError,
+    uhid_registered: Option<bool>,
+) -> String {
+    use virtualgamepad::{ProviderError, ProviderPreflightError};
+    let message = error.to_string();
+    let ProviderError::Preflight(
+        ProviderPreflightError::AccessDenied { target, path }
+        | ProviderPreflightError::MissingDeviceNode { target, path },
+    ) = error
+    else {
+        return message;
+    };
+    if ![
+        RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ]
+    .contains(target)
+        || path != "/dev/uhid"
+    {
+        return message;
+    }
+    let guidance = if uhid_registered == Some(false) {
+        "UHID kernel registration is missing. Have an administrator load the uhid module, then retry. If this recurs after reboot, configure UHID boot loading in host setup."
+    } else {
+        "Check UHID device access for this login. Temporary helper access lasts only for this boot; persistent access requires administrator-configured host policy."
+    };
+    format!("{message}. {guidance}")
+}
+
 fn status_after_runtime_failure(name: &str, error: String) -> ControllerLifecycleStatus {
     ControllerLifecycleStatus::ClosedAfterFailure {
         name: name.into(),
@@ -789,7 +819,12 @@ impl App {
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
-                let error = error.to_string();
+                let error = creation_error_message(
+                    &error,
+                    std::path::Path::new("/sys/class/misc/uhid/dev")
+                        .try_exists()
+                        .ok(),
+                );
                 self.lifecycle_status = Some(ControllerLifecycleStatus::CreationFailed { error });
             }
         }
@@ -1765,6 +1800,124 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uhid_creation_failure_distinguishes_registration_from_access() {
+        use virtualgamepad::{ProviderError, ProviderPreflightError};
+        for target in [
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
+        ] {
+            for preflight in [
+                ProviderPreflightError::AccessDenied {
+                    target,
+                    path: "/dev/uhid".into(),
+                },
+                ProviderPreflightError::MissingDeviceNode {
+                    target,
+                    path: "/dev/uhid".into(),
+                },
+            ] {
+                let error = ProviderError::Preflight(preflight);
+                let missing = creation_error_message(&error, Some(false));
+                assert!(missing.starts_with(&error.to_string()));
+                assert!(missing.contains("registration is missing"));
+                assert!(missing.contains("load the uhid module"));
+                // A retry after registration must not retain the missing-module hint.
+                for registration in [Some(true), None] {
+                    let access = creation_error_message(&error, registration);
+                    assert!(access.starts_with(&error.to_string()));
+                    assert!(!access.contains("registration is missing"));
+                    assert!(access.contains("device access for this login"));
+                }
+            }
+        }
+        for error in [
+            ProviderError::Preflight(ProviderPreflightError::AccessDenied {
+                target: RealizationTarget::Evdev,
+                path: "/dev/uinput".into(),
+            }),
+            ProviderError::Open {
+                reason: "synthetic creation failure".into(),
+            },
+            ProviderError::Closed,
+        ] {
+            assert_eq!(
+                creation_error_message(&error, Some(false)),
+                error.to_string()
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires prepared UHID access and Linux hid-playstation; run in isolation"]
+    fn gui_uhid_creation_services_and_cleans_up_real_controllers() {
+        fn owned_nodes() -> Vec<std::path::PathBuf> {
+            let prefix = format!(
+                "HID_PHYS=virtualgamepad/uhid/dualsense/p{:x}-i",
+                std::process::id()
+            );
+            std::fs::read_dir("/sys/bus/hid/devices")
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    std::fs::read_to_string(path.join("uevent")).is_ok_and(|text| {
+                        text.lines().any(|line| {
+                            line.strip_prefix(&prefix).is_some_and(|instance| {
+                                !instance.is_empty()
+                                    && instance.bytes().all(|byte| byte.is_ascii_hexdigit())
+                            })
+                        })
+                    })
+                })
+                .collect()
+        }
+        fn wait_for_nodes(count: usize) {
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                let nodes = owned_nodes();
+                if nodes.len() == count && nodes.iter().all(|path| path.join("input").is_dir()) {
+                    return;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "expected {count} bound devices"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        assert!(owned_nodes().is_empty());
+        let mut app = App::default();
+        app.kind = Kind::DualSense;
+        app.target = RealizationTarget::Uhid;
+        for count in 1..=2 {
+            app.create();
+            assert!(
+                matches!(
+                    app.lifecycle_status,
+                    Some(ControllerLifecycleStatus::Created { .. })
+                ),
+                "{:?}",
+                app.lifecycle_status
+            );
+            assert_eq!(app.controllers.len(), count);
+            wait_for_nodes(count);
+        }
+        // Exercise the actual GUI workers through startup and repeated idle polls.
+        thread::sleep(Duration::from_secs(1));
+        for controller in &app.controllers {
+            assert!(worker_failure(&controller.service_worker.as_ref().unwrap().failure).is_none());
+        }
+        app.remove_controller(0);
+        wait_for_nodes(1);
+        assert_eq!(app.controllers.len(), 1);
+        app.create();
+        wait_for_nodes(2);
+        // App shutdown joins and closes all remaining workers.
+        drop(app);
+        wait_for_nodes(0);
+    }
 
     #[test]
     fn sony_pad_conversion_covers_full_domain_and_round_trips_every_axis_value() {

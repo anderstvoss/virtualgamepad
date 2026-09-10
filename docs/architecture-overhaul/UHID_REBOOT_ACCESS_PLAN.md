@@ -1,15 +1,17 @@
 # UHID access after reboot: research review and resolution plan
 
-Status: proposed resolution; reboot reproduction and remediation are pending.
+Status: current-session failure resolved; persistent boot installation and reboot
+acceptance are pending administrator authentication.
 Reviewed against `e0fb72196bf8d45c23b9b11a7dc5113125f06099` (post-107 main).
-This change records a plan, not a completed host fix.
+This document records the initial review, subsequent live diagnosis and remaining
+boot acceptance. It does not claim a completed reboot fix.
 
 ## Findings
 
 The research correctly separates persistent host authorization from controller
-protocol resource persistence. The leading explanation is reliance on the
-development helper's temporary ACL, potentially combined with missing UHID
-registration at boot. Neither mechanism is yet confirmed across a reboot.
+protocol resource persistence. Its initial temporary-ACL hypothesis was not needed
+to explain the reproduced GUI failure: loading the missing UHID module alone
+restored access through existing host policy. Reboot acceptance is still pending.
 
 | Evidence | What it establishes | What it does not establish |
 | --- | --- | --- |
@@ -61,6 +63,51 @@ before attempting provisioning. No host configuration or ACL was changed.
   `/tmp` may be cleared at boot and is unsuitable as the only evidence copy.
 - A competing administrator rule is a decision to resolve before installation,
   not something an installer should overwrite or defeat through rule ordering.
+
+## Confirmed GUI failure and current-session repair
+
+The reported GUI screenshot explicitly selected HID / UHID and showed
+`linux.uhid.usb cannot access device node /dev/uhid`. Its displayed live DualSense
+was an earlier Evdev controller, not a successfully created UHID controller.
+The failure therefore was not merely the GUI's default target selection.
+
+Read-only checks reproduced a root-only node, no visible UHID registration or
+loaded module, and no active helper leases. Module metadata confirmed modular
+UHID support. Loading only `uhid` through the installed helper and settling udev
+produced this transition:
+
+| Check | Before module load | After module load |
+| --- | --- | --- |
+| Kernel misc registration | absent | present, matches the character node |
+| Node policy | root-only `0600` | existing administrator group rule, `0660` |
+| Named-user ACL lease | inactive | inactive; no grant performed |
+| Creation inventory | missing | ready |
+| Ordinary-user creation | open denied | live provider and curated DualSense tests passed |
+
+This isolates missing registration as the immediate trigger: the module's device
+registration allowed existing udev policy to apply. No group enrollment, ACL
+grant, rule replacement or broad permission change was performed. The existing
+broad-group policy remains an administrator-owned follow-up; it is not the
+repository's recommended installation policy.
+
+The new ignored demo test calls the actual `App::create`, starts its real service
+workers, waits for kernel input binding, creates two controllers, removes one,
+creates again and shuts down the application. It passed as the ordinary user
+after module loading, with all test-owned devices removed. This verifies the
+GUI creation/worker path, not a manual rendered-window interaction or SDL/Steam
+compatibility. The minimal provider and curated startup/cleanup tests also passed.
+
+The GUI now retains the underlying creation error and adds registration-aware
+setup guidance, with deterministic regressions for missing registration, a retry
+after registration, unavailable inspection and unrelated provider failures.
+Providers still do no privileged setup.
+
+`modules-load.d/virtualgamepad-uhid.conf` supplies the narrow boot opt-in, with
+installation and rollback guidance in the deployment document. The installed
+helper is authorized to load modules but not install boot policy; ordinary sudo
+requires a password. Installation was not performed. After an administrator
+installs the file, the reboot acceptance below remains necessary. No reboot was
+performed during this repair.
 
 ## Resolution sequence
 
