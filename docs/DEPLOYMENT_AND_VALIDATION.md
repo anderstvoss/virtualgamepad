@@ -101,6 +101,11 @@ nodes or the broad `input` group. Existing distribution/session ACLs must be
 reviewed rather than silently overwritten. The VM experiments use temporary
 ACLs instead of persistent group enrollment.
 
+For access lost after reboot, see the
+[UHID research review and resolution plan](architecture-overhaul/UHID_REBOOT_ACCESS_PLAN.md).
+It separates registration, persistent authorization and temporary helper leases,
+and defines the reboot evidence required before claiming a fix.
+
 Consumers need access to their session's hidraw/event nodes, not the creation
 device or broker socket. SDL development files, Steam, capture tools, corpus
 credentials, and physical reference devices are validation prerequisites only.
