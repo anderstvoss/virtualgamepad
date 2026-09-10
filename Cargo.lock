@@ -877,15 +877,21 @@ dependencies = [
  "gr-controller-runtime",
  "gr-controller-wire",
  "gr-dualsense-wire",
+ "gr-hid",
  "gr-provider-linux-dummy-hcd",
  "gr-provider-linux-uhid",
  "gr-provider-linux-uinput",
  "gr-realization-api",
+ "libc",
  "proptest",
 ]
 
 [[package]]
 name = "gr-dualsense-wire"
+version = "0.1.0"
+
+[[package]]
+name = "gr-hid"
 version = "0.1.0"
 
 [[package]]
@@ -911,6 +917,7 @@ dependencies = [
 name = "gr-provider-linux-uhid"
 version = "0.1.0"
 dependencies = [
+ "gr-hid",
  "gr-realization-api",
  "libc",
 ]
@@ -927,6 +934,7 @@ dependencies = [
 name = "gr-realization-api"
 version = "0.1.0"
 dependencies = [
+ "gr-hid",
  "thiserror 2.0.20",
 ]
 

@@ -1,3 +1,7 @@
+mod editor;
+use editor::{
+    Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
+};
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use gr_privileged_broker::BrokerClient;
 use std::{
@@ -57,8 +61,49 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
+fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
+    let fallback = repaint_interval(controller_count);
+    next_service.map_or(fallback, |deadline| deadline.min(fallback))
+}
+
 const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
+}
+
+const fn following_session(current: u64, advance: bool) -> u64 {
+    if advance {
+        current.wrapping_add(1)
+    } else {
+        current
+    }
+}
+
+#[derive(Default)]
+struct ConsumerNotes {
+    build: String,
+    backend: String,
+    mapping: String,
+}
+
+fn lab_record(
+    name: &str,
+    options: CreationOptions,
+    metrics: &ServiceMetrics,
+    notes: &str,
+    consumer: &ConsumerNotes,
+    details: &str,
+) -> String {
+    format!(
+        "Virtualgamepad manual lab record v2\nController: {name}\nRealization: {}\nApplication session: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
+        target_label(options.target),
+        options.session.0,
+        metrics.cycles,
+        metrics.max_gap.as_micros(),
+        metrics.omitted_logs,
+        consumer.build,
+        consumer.backend,
+        consumer.mapping
+    )
 }
 
 fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
@@ -117,12 +162,53 @@ enum Controller {
     SwitchPro(SwitchProController),
 }
 
+#[derive(Default)]
+struct EditProgress {
+    submitted: u64,
+    applied: u64,
+}
+impl EditProgress {
+    fn ready(&self) -> bool {
+        self.applied == self.submitted
+    }
+    fn observe(&mut self, applied: u64) -> bool {
+        if applied != self.submitted {
+            return false;
+        }
+        self.applied = applied;
+        true
+    }
+    fn submit<C>(
+        &mut self,
+        sender: &mpsc::SyncSender<(u64, Vec<Command<C>>)>,
+        edits: Vec<Command<C>>,
+    ) -> Result<(), String> {
+        if edits.is_empty() {
+            return Ok(());
+        }
+        if !self.ready() {
+            return Err("previous input batch is still pending".into());
+        }
+        let next = self
+            .submitted
+            .checked_add(1)
+            .ok_or("edit sequence exhausted")?;
+        sender.try_send((next, edits)).map_err(|_| {
+            "edit queue unavailable; controller closed to avoid lost releases".to_owned()
+        })?;
+        self.submitted = next;
+        Ok(())
+    }
+}
+
 struct NamedController {
     kind: Kind,
+    options: CreationOptions,
     name: String,
-    controller: Arc<Mutex<Controller>>,
+    view: ControllerView,
+    edits: EditProgress,
     indicators: ReverseIndicators,
-    motion_worker: Option<MotionWorker>,
+    service_worker: Option<ServiceWorker<Controller>>,
     second_touch: LatchedTouch,
 }
 
@@ -152,59 +238,234 @@ impl LatchedTouch {
     }
 }
 
-struct MotionWorker {
-    stop: mpsc::Sender<()>,
-    failure: mpsc::Receiver<String>,
-    handle: JoinHandle<()>,
+#[derive(Clone, Default)]
+struct ServiceMetrics {
+    cycles: u64,
+    max_gap: Duration,
+    omitted_logs: u64,
+    last_service: Option<Instant>,
 }
-
-impl MotionWorker {
-    fn stop(self) {
-        let _ = self.stop.send(());
-        let _ = self.handle.join();
-    }
-}
-
-fn start_motion_worker(controller: &Arc<Mutex<Controller>>) -> Option<MotionWorker> {
-    if !controller
-        .lock()
-        .expect("controller mutex is not poisoned during creation")
-        .needs_motion_refresh()
-    {
-        return None;
-    }
-    let (stop_sender, stop_receiver) = mpsc::channel();
-    let (failure_sender, failure_receiver) = mpsc::channel();
-    let controller = Arc::clone(controller);
-    let handle = thread::spawn(move || {
-        loop {
-            match stop_receiver.recv_timeout(motion_worker_interval()) {
-                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                Err(mpsc::RecvTimeoutError::Timeout) => {}
-            }
-            let result = controller
-                .lock()
-                .map_err(|_| "controller mutex poisoned in motion worker".to_owned())
-                .and_then(|mut controller| controller.refresh_motion());
-            if let Err(error) = result {
-                let _ = failure_sender.send(error);
-                break;
-            }
+impl ServiceMetrics {
+    fn record(&mut self, now: Instant) {
+        if let Some(previous) = self.last_service {
+            self.max_gap = self.max_gap.max(now.saturating_duration_since(previous));
         }
-    });
-    Some(MotionWorker {
-        stop: stop_sender,
-        failure: failure_receiver,
-        handle,
-    })
+        self.last_service = Some(now);
+        self.cycles = self.cycles.saturating_add(1);
+    }
+    fn omit(&mut self, count: usize) {
+        self.omitted_logs = self
+            .omitted_logs
+            .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+    }
 }
 
 #[derive(Default)]
+struct WorkerDisplay {
+    snapshot: Option<ControllerView>,
+    applied: u64,
+    logs: Vec<String>,
+    metrics: ServiceMetrics,
+    indicators: ReverseIndicators,
+}
+
+struct ServiceWorker<C> {
+    edits: mpsc::SyncSender<(u64, Vec<Command<C>>)>,
+    stop: mpsc::Sender<()>,
+    failure: mpsc::Receiver<String>,
+    display: Arc<Mutex<WorkerDisplay>>,
+    handle: JoinHandle<C>,
+}
+
+fn worker_failure(receiver: &mpsc::Receiver<String>) -> Option<String> {
+    match receiver.try_recv() {
+        Ok(error) => Some(error),
+        Err(mpsc::TryRecvError::Empty) => None,
+        Err(mpsc::TryRecvError::Disconnected) => {
+            Some("controller worker exited unexpectedly".into())
+        }
+    }
+}
+
+impl<C> ServiceWorker<C> {
+    fn stop(self) -> Option<C> {
+        let _ = self.stop.send(());
+        self.handle.join().ok()
+    }
+}
+
+trait ServicedController: Send + Sized {
+    fn snapshot(&mut self) -> Option<ControllerView> {
+        None
+    }
+    fn commit_edits(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+    fn apply(&mut self, edits: Vec<Command<Self>>) -> Result<(), String> {
+        if edits.len() > editor::EDIT_LIMIT {
+            return Err("native edit batch exceeded its bound".into());
+        }
+        for edit in edits {
+            edit(self)?;
+        }
+        self.commit_edits()
+    }
+    fn neutralize(&mut self) -> Result<(), String>;
+    fn refresh(&mut self) -> Result<(), String>;
+    fn service(
+        &mut self,
+        log: &mut Vec<String>,
+        indicators: &mut ReverseIndicators,
+    ) -> Result<(), String>;
+    fn deadline(&self) -> Option<Duration>;
+    fn close(&mut self);
+}
+fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
+    Box::new(ServicedController::neutralize)
+}
+
+impl ServicedController for Controller {
+    fn neutralize(&mut self) -> Result<(), String> {
+        match self {
+            Self::Xbox(c) => c.neutralize(),
+            Self::DualSense(c) => c.neutralize(),
+            Self::DualShock4(c) => c.neutralize(),
+            Self::SwitchPro(c) => c.neutralize(),
+        }
+        .map_err(|error| error.to_string())
+    }
+    fn snapshot(&mut self) -> Option<ControllerView> {
+        Some(Self::snapshot(self))
+    }
+    fn commit_edits(&mut self) -> Result<(), String> {
+        if self.is_dirty() {
+            self.commit()?;
+        }
+        Ok(())
+    }
+    fn refresh(&mut self) -> Result<(), String> {
+        self.refresh_motion()
+    }
+    fn service(
+        &mut self,
+        log: &mut Vec<String>,
+        indicators: &mut ReverseIndicators,
+    ) -> Result<(), String> {
+        self.poll_output(log, indicators)
+    }
+    fn deadline(&self) -> Option<Duration> {
+        self.next_service_in()
+    }
+    fn close(&mut self) {
+        Self::close(self);
+    }
+}
+
+fn service_cycle<C: ServicedController>(
+    controller: &mut C,
+    now: Duration,
+    next_motion: &mut Duration,
+    logs: &mut Vec<String>,
+    indicators: &mut ReverseIndicators,
+) -> Result<Duration, String> {
+    if now >= *next_motion {
+        controller.refresh()?;
+        *next_motion = now.saturating_add(motion_worker_interval());
+    }
+    controller.service(logs, indicators)?;
+    Ok(controller
+        .deadline()
+        .unwrap_or(motion_worker_interval())
+        .min(next_motion.saturating_sub(now)))
+}
+
+fn publish_display(display: &mut WorkerDisplay, logs: Vec<String>, indicators: &ReverseIndicators) {
+    display.logs.extend(logs);
+    let excess = display.logs.len().saturating_sub(OUTPUT_LOG_LIMIT);
+    display.logs.drain(..excess);
+    display.indicators = indicators.clone();
+}
+
+fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> ServiceWorker<C> {
+    let (stop_sender, stop_receiver) = mpsc::channel();
+    let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
+    let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
+    let display = Arc::new(Mutex::new(WorkerDisplay::default()));
+    let worker_display = Arc::clone(&display);
+
+    let handle = thread::spawn(move || {
+        let start = Instant::now();
+        let mut next_motion = Duration::ZERO;
+        let mut delay = Duration::ZERO;
+        let mut indicators = ReverseIndicators::default();
+        let mut metrics = ServiceMetrics::default();
+        let mut applied = 0;
+        loop {
+            match stop_receiver.recv_timeout(delay) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
+            let mut logs = Vec::new();
+            let result = (|| {
+                // At most one bounded edit batch per service cycle. Stop has a
+                // separate channel and is checked before queued input.
+                if let Ok((sequence, edits)) = edit_receiver.try_recv() {
+                    controller.apply(edits)?;
+                    applied = sequence;
+                }
+                service_cycle(
+                    &mut controller,
+                    start.elapsed(),
+                    &mut next_motion,
+                    &mut logs,
+                    &mut indicators,
+                )
+            })();
+            // Optional UI output never owns or delays protocol replies.
+            metrics.record(Instant::now());
+            if let Ok(mut display) = worker_display.try_lock() {
+                metrics.omit(
+                    display
+                        .logs
+                        .len()
+                        .saturating_add(logs.len())
+                        .saturating_sub(OUTPUT_LOG_LIMIT),
+                );
+                publish_display(&mut display, logs, &indicators);
+                display.metrics = metrics.clone();
+                display.snapshot = controller.snapshot();
+                display.applied = applied;
+            } else {
+                metrics.omit(logs.len());
+            }
+            match result {
+                Ok(next) => delay = next.min(next_motion.saturating_sub(start.elapsed())),
+                Err(error) => {
+                    let _ = failure_sender.try_send(error);
+                    break;
+                }
+            }
+        }
+        // Stop or failure closes immediately, even when the UI never repaints.
+        controller.close();
+        controller
+    });
+    ServiceWorker {
+        edits: edit_sender,
+        stop: stop_sender,
+        failure: failure_receiver,
+        display,
+        handle,
+    }
+}
+
+#[derive(Clone, Default)]
 struct ReverseIndicators {
     led: Option<[u8; 3]>,
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
+    hid_motors: [u8; 2],
     rumble_started: Option<Instant>,
 }
 impl ReverseIndicators {
@@ -220,17 +481,37 @@ impl ReverseIndicators {
             self.rumble_until = None;
         }
     }
-    fn apply_dualsense_usb_output(
+    fn apply_force_feedback(&mut self, event: virtualgamepad::ForceFeedbackEvent) {
+        if let virtualgamepad::ForceFeedbackEvent::Playback {
+            effect,
+            repetitions,
+        } = event
+        {
+            // Activity pulse, not a simulation of replay timing or physical motors.
+            if repetitions != 0 && (effect.strong != 0 || effect.weak != 0) {
+                self.rumble_pulse();
+            } else {
+                self.set_rumble(false);
+                self.rumble_until = None;
+            }
+        }
+    }
+    fn apply_hid_output(
         &mut self,
         right_motor: Option<u8>,
         left_motor: Option<u8>,
         lightbar_rgb: Option<[u8; 3]>,
         mute_button_led: Option<bool>,
     ) {
-        self.set_rumble(
-            right_motor.is_some_and(|motor| motor != 0)
-                || left_motor.is_some_and(|motor| motor != 0),
-        );
+        if let Some(value) = right_motor {
+            self.hid_motors[0] = value;
+        }
+        if let Some(value) = left_motor {
+            self.hid_motors[1] = value;
+        }
+        if right_motor.is_some() || left_motor.is_some() {
+            self.set_rumble(self.hid_motors.iter().any(|value| *value != 0));
+        }
         if let Some(lightbar_rgb) = lightbar_rgb {
             self.led = Some(lightbar_rgb);
         }
@@ -240,10 +521,13 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
-    fn needs_motion_refresh(&self) -> bool {
-        matches!(self, Self::DualSense(controller) if dualsense_motion_target(controller.surface().common().target))
-            || matches!(self, Self::DualShock4(controller) if motion_refresh_target(controller.surface().common().target))
-            || matches!(self, Self::SwitchPro(controller) if motion_refresh_target(controller.surface().common().target))
+    fn next_service_in(&self) -> Option<Duration> {
+        match self {
+            Self::Xbox(controller) => controller.next_service_in(),
+            Self::DualSense(controller) => controller.next_service_in(),
+            Self::DualShock4(controller) => controller.next_service_in(),
+            Self::SwitchPro(controller) => controller.next_service_in(),
+        }
     }
 
     fn refresh_motion(&mut self) -> Result<(), String> {
@@ -300,114 +584,80 @@ impl Controller {
             Self::SwitchPro(controller) => controller.is_dirty(),
         }
     }
-    #[allow(clippy::too_many_lines)] // Acknowledgements must stay adjacent to typed decoding.
     fn poll_output(
         &mut self,
         log: &mut Vec<String>,
         indicators: &mut ReverseIndicators,
     ) -> Result<(), String> {
         let result: Result<(), String> = match self {
-            Self::Xbox(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match event {
-                            Xbox360OutputEvent::ForceFeedbackUpload { request_id, .. } => {
-                                indicators.rumble_pulse();
-                                replies.push((request_id, true));
-                            }
-                            Xbox360OutputEvent::ForceFeedbackErase { request_id, .. } => {
-                                replies.push((request_id, false));
-                            }
-                            _ => {}
-                        }
-                        log.push(format!("Xbox 360: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
+            Self::Xbox(controller) => controller
+                .service(&mut |event| {
+                    if let Xbox360OutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
                     }
-                }
-                Ok(())
-            }
-            Self::DualSense(controller) => {
-                let mut replies = Vec::new();
-                controller
-                    .poll_output(&mut |event| {
-                        match &event {
-                            DualSenseOutputEvent::ConventionalForceFeedbackUpload {
-                                request_id,
-                                ..
-                            } => {
-                                indicators.rumble_pulse();
-                                replies.push((*request_id, true));
-                            }
-                            DualSenseOutputEvent::ConventionalForceFeedbackErase {
-                                request_id,
-                                ..
-                            } => {
-                                replies.push((*request_id, false));
-                            }
-                            DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
-                                right_motor,
-                                left_motor,
-                                lightbar_rgb,
-                                mute_button_led,
-                                ..
-                            }) => {
-                                indicators.apply_dualsense_usb_output(
-                                    *right_motor,
-                                    *left_motor,
-                                    *lightbar_rgb,
-                                    *mute_button_led,
-                                );
-                            }
-                            _ => {}
+                    log.push(format!("Xbox 360: {event:?}"));
+                })
+                .map_err(|error| error.to_string()),
+            Self::DualSense(controller) => controller
+                .service(&mut |event| {
+                    match &event {
+                        DualSenseOutputEvent::ForceFeedback(event) => {
+                            indicators.apply_force_feedback(*event);
                         }
-                        log.push(format!("DualSense: {event:?}"));
-                    })
-                    .map_err(|error| error.to_string())?;
-                for (request_id, upload) in replies {
-                    if upload {
-                        controller
-                            .reply_force_feedback_upload(request_id, 0)
-                            .map_err(|error| error.to_string())?;
-                    } else {
-                        controller
-                            .reply_force_feedback_erase(request_id, 0)
-                            .map_err(|error| error.to_string())?;
+                        DualSenseOutputEvent::HidOutput(DualSenseHidOutput::UsbOutput {
+                            right_motor,
+                            left_motor,
+                            lightbar_rgb,
+                            mute_button_led,
+                            ..
+                        }) => indicators.apply_hid_output(
+                            *right_motor,
+                            *left_motor,
+                            *lightbar_rgb,
+                            *mute_button_led,
+                        ),
+                        _ => {}
                     }
-                }
-                Ok(())
-            }
+                    log.push(format!("DualSense: {event:?}"));
+                })
+                .map_err(|error| error.to_string()),
             Self::DualShock4(controller) => controller
-                .poll_output(&mut |event| {
+                .service(&mut |event| {
                     if let virtualgamepad::DualShock4OutputEvent::HidOutput(
                         DualShock4HidOutput::UsbOutput {
                             right_motor,
                             left_motor,
+                            lightbar_rgb,
                             ..
                         },
                     ) = &event
                     {
-                        indicators.set_rumble(*right_motor != 0 || *left_motor != 0);
+                        indicators.apply_hid_output(
+                            Some(*right_motor),
+                            Some(*left_motor),
+                            *lightbar_rgb,
+                            None,
+                        );
+                    }
+                    if let virtualgamepad::DualShock4OutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
                     }
                     log.push(format!("DualShock 4: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
             Self::SwitchPro(controller) => controller
-                .poll_output(&mut |event| log.push(format!("Switch Pro: {event:?}")))
+                .service(&mut |event| {
+                    if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
+                        indicators.apply_force_feedback(event);
+                    }
+                    log.push(format!("Switch Pro: {event:?}"));
+                })
                 .map_err(|error| error.to_string()),
         };
         result
     }
+}
+impl ControllerView {
     fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
         if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
             let battery = self.battery();
@@ -450,7 +700,6 @@ impl Controller {
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
         }
-        .map_err(|error| error.to_string())
     }
     fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
@@ -458,7 +707,6 @@ impl Controller {
             Self::DualSense(controller) => controller.set_battery_level(level),
             Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
         }
-        .map_err(|error| error.to_string())
     }
 }
 pub struct App {
@@ -466,6 +714,11 @@ pub struct App {
     target: RealizationTarget,
     name_draft: String,
     next_session: u64,
+    advance_session: bool,
+    lab_notes: String,
+    consumer_notes: ConsumerNotes,
+    last_cleanup: Option<String>,
+    broker_status: Option<Result<(), String>>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
     output_log: Vec<String>,
@@ -478,6 +731,11 @@ impl Default for App {
             target: RealizationTarget::Evdev,
             name_draft: String::new(),
             next_session: 1,
+            advance_session: true,
+            lab_notes: String::new(),
+            consumer_notes: ConsumerNotes::default(),
+            last_cleanup: None,
+            broker_status: None,
             controllers: vec![],
             selected_controller: None,
             output_log: vec![],
@@ -507,25 +765,27 @@ impl App {
             Kind::SwitchPro => create_switch_pro(options).map(Controller::SwitchPro),
         };
         match result {
-            Ok(controller) => {
+            Ok(mut controller) => {
                 let name = if self.name_draft.trim().is_empty() {
                     self.next_default_name()
                 } else {
                     self.name_draft.trim().to_owned()
                 };
-                let controller = Arc::new(Mutex::new(controller));
-                let motion_worker = start_motion_worker(&controller);
+                let view = controller.snapshot();
+                let service_worker = Some(spawn_service_worker(controller));
                 self.controllers.push(NamedController {
                     kind: self.kind,
+                    options,
                     name: name.clone(),
-                    controller,
+                    view,
+                    edits: EditProgress::default(),
                     indicators: ReverseIndicators::default(),
-                    motion_worker,
+                    service_worker,
                     second_touch: LatchedTouch::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
-                self.next_session += 1;
+                self.next_session = following_session(self.next_session, self.advance_session);
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
@@ -540,11 +800,11 @@ impl App {
             return;
         }
         let mut removed = self.controllers.remove(index);
-        if let Some(worker) = removed.motion_worker.take() {
-            worker.stop();
-        }
-        if let Ok(mut controller) = removed.controller.lock() {
-            controller.close();
+        if let Some(worker) = removed.service_worker.take() {
+            self.last_cleanup = Some(worker.stop().map_or_else(
+                || "Worker exited without a returned controller; host cleanup requires verification".into(),
+                |mut controller| controller.snapshot().lab_details(),
+            ));
         }
         self.selected_controller = selection_after_removal(self.controllers.len(), index);
     }
@@ -558,11 +818,8 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         for named in &mut self.controllers {
-            if let Some(worker) = named.motion_worker.take() {
+            if let Some(worker) = named.service_worker.take() {
                 worker.stop();
-            }
-            if let Ok(mut controller) = named.controller.lock() {
-                controller.close();
             }
         }
     }
@@ -571,31 +828,30 @@ impl eframe::App for App {
     #[allow(clippy::too_many_lines)] // Coordinates the independent demo panels.
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let mut remove = None;
+        let mut stop_all = false;
         let mut failed_controller = None;
         for (index, named) in self.controllers.iter_mut().enumerate() {
-            if let Some(worker) = &named.motion_worker {
-                if let Ok(error) = worker.failure.try_recv() {
+            if let Some(worker) = &named.service_worker {
+                if let Some(error) = worker_failure(&worker.failure) {
                     failed_controller = Some((index, error));
                     break;
                 }
             }
-            let result = named
-                .controller
-                .lock()
-                .map_err(|_| "controller mutex poisoned while polling output".to_owned())
-                .and_then(|mut controller| {
-                    controller.poll_output(&mut self.output_log, &mut named.indicators)
-                });
-            if let Err(error) = result {
-                failed_controller = Some((index, error));
-                break;
+            if let Some(worker) = &named.service_worker {
+                if let Ok(mut display) = worker.display.try_lock() {
+                    self.output_log.append(&mut display.logs);
+                    named.indicators = display.indicators.clone();
+                    if display.snapshot.is_some() && named.edits.observe(display.applied) {
+                        named.view = display.snapshot.take().expect("checked snapshot");
+                    }
+                }
             }
         }
         if self.output_log.len() > OUTPUT_LOG_LIMIT {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
-        ctx.request_repaint_after(repaint_interval(self.controllers.len()));
+        ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::SidePanel::left("create").show(ctx, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
@@ -633,27 +889,53 @@ impl eframe::App for App {
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
             ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
             if self.target == RealizationTarget::DummyHcd {
-                match dummy_hcd_broker_status() {
-                    Ok(()) => {
+                if ui.button("Check broker socket").clicked() {
+                    self.broker_status = Some(dummy_hcd_broker_status());
+                }
+                match &self.broker_status {
+                    Some(Ok(())) => {
                         ui.colored_label(
                             Color32::GREEN,
                             "DummyHcd broker socket is reachable. Create a curated controller to attach a USB device.",
                         );
                     }
-                    Err(error) => {
-                        ui.colored_label(
-                            Color32::RED,
-                            format!("DummyHcd broker unavailable: {error}"),
-                        );
+                    Some(Err(error)) => {
+                        ui.colored_label(Color32::RED, format!("DummyHcd broker unavailable: {error}"));
                     }
+                    None => { ui.small("Broker reachability has not been checked."); }
                 }
                 ui.small(
                     "Test flow: select DualSense, create it, then exercise buttons, touch, motion, and host-output indicators.",
                 );
             }
+            ui.horizontal(|ui| {
+                ui.label("Application session ID");
+                ui.add(egui::DragValue::new(&mut self.next_session));
+            });
+            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
+            ui.small("Turn off to test repeated IDs. Device identity remains creation-owned.");
             if ui.button("Create").clicked() {
                 self.create();
             }
+            if ui.button("Stop all controllers").clicked() { stop_all = true; }
+            ui.collapsing("Lab notes and gate prerequisites", |ui| {
+                ui.label("Consumer build/version");
+                ui.text_edit_singleline(&mut self.consumer_notes.build);
+                ui.label("Input backend (for example SDL HIDAPI or Linux event)");
+                ui.text_edit_singleline(&mut self.consumer_notes.backend);
+                ui.label("Observed mapping/profile");
+                ui.text_edit_multiline(&mut self.consumer_notes.mapping);
+                ui.label("Observations");
+                ui.text_edit_multiline(&mut self.lab_notes);
+                if let Some(cleanup) = &self.last_cleanup {
+                    ui.label(format!("Last removed session: {cleanup}"));
+                    if ui.button("Copy cleanup diagnostics").clicked() { ui.ctx().copy_text(cleanup.clone()); }
+                }
+                ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
+                ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
+                ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
+                ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
+            });
             ui.separator();
             ui.label("Controllers");
             egui::ScrollArea::vertical()
@@ -714,19 +996,30 @@ impl eframe::App for App {
                                 ui.text_edit_singleline(&mut named.name);
                             });
                             draw_reverse_indicators(ui, &named.indicators);
-                            let result = named
-                                .controller
-                                .lock()
-                                .map_err(|_| "controller mutex poisoned while drawing".to_owned())
-                                .and_then(|mut controller| {
-                                    controller.draw(ui, &mut named.second_touch);
-                                    if controller.is_dirty() {
-                                        controller.commit()?;
+                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session.0));
+                            if let Some(worker) = &named.service_worker {
+                                if let Ok(display) = worker.display.try_lock() {
+                                    ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
+                                        display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
+                                    if ui.button("Copy lab record").clicked() {
+                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes, &self.consumer_notes, &named.view.lab_details()));
                                     }
-                                    Ok(())
+                                }
+                            }
+                            if named.edits.ready() {
+                                if ui.button("Release all inputs").clicked() {
+                                    named.second_touch.active = false;
+                                    if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
+                                } else {
+                                    named.view.draw(ui, &mut named.second_touch);
+                                }
+                                let result = named.view.take_edits().and_then(|edits| {
+                                    let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
+                                    named.edits.submit(&worker.edits, edits)
                                 });
-                            if let Err(error) = result {
-                                failed_controller = Some((index, error));
+                                if let Err(error) = result { failed_controller = Some((index, error)); }
+                            } else {
+                                ui.small("Waiting for the previous input batch; servicing continues independently.");
                             }
                             ui.small("Input changes are sent automatically.");
                         });
@@ -740,7 +1033,7 @@ impl eframe::App for App {
                             self.output_log.clear();
                         }
                     });
-                    ui.small("Polling every 50 ms while the demo is open.");
+                    ui.small("Background service uses a 4 ms fallback and earlier deadlines. This bounded log is observational, not an acceptance verdict.");
                     if self.output_log.is_empty() {
                         ui.small("No reverse output received.");
                     }
@@ -749,7 +1042,11 @@ impl eframe::App for App {
                     }
                 });
         });
-        if let Some((index, error)) = failed_controller {
+        if stop_all {
+            while !self.controllers.is_empty() {
+                self.remove_controller(self.controllers.len() - 1);
+            }
+        } else if let Some((index, error)) = failed_controller {
             self.close_failed_controller(index, error);
         } else if let Some(index) = remove {
             self.remove_controller(index);
@@ -757,7 +1054,7 @@ impl eframe::App for App {
     }
 }
 
-const fn target_label(target: RealizationTarget) -> &'static str {
+fn target_label(target: RealizationTarget) -> &'static str {
     match target {
         RealizationTarget::Evdev => "Evdev / uinput",
         RealizationTarget::Uhid => "HID / UHID",
@@ -817,15 +1114,28 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     });
 }
 
-fn digital_controls(ui: &mut egui::Ui, mut set: impl FnMut(DigitalControlUpdate)) {
+const fn face_labels(kind: Kind) -> [&'static str; 4] {
+    match kind {
+        Kind::Xbox360 => ["A (South)", "B (East)", "X (West)", "Y (North)"],
+        Kind::DualSense | Kind::DualShock4 => [
+            "Cross (South)",
+            "Circle (East)",
+            "Square (West)",
+            "Triangle (North)",
+        ],
+        Kind::SwitchPro => ["B (South)", "A (East)", "Y (West)", "X (North)"],
+    }
+}
+
+fn digital_controls(ui: &mut egui::Ui, kind: Kind, mut set: impl FnMut(DigitalControlUpdate)) {
     ui.group(|ui| {
         ui.label("Face buttons");
         ui.horizontal_wrapped(|ui| {
             for (label, button) in [
-                ("South", FaceButton::South),
-                ("East", FaceButton::East),
-                ("West", FaceButton::West),
-                ("North", FaceButton::North),
+                (face_labels(kind)[0], FaceButton::South),
+                (face_labels(kind)[1], FaceButton::East),
+                (face_labels(kind)[2], FaceButton::West),
+                (face_labels(kind)[3], FaceButton::North),
             ] {
                 hold(ui, label, |pressed| {
                     set(DigitalControlUpdate::FaceButton { button, pressed });
@@ -930,12 +1240,10 @@ fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
         let mut changed = false;
         if response.is_pointer_button_down_on() {
             if let Some(position) = response.interact_pointer_pos() {
-                let next_x = (((position.x - rect.center().x) / (rect.width() / 2.0))
-                    .clamp(-1.0, 1.0)
-                    * 32767.0) as i16;
-                let next_y = (((position.y - rect.center().y) / (rect.height() / 2.0))
-                    .clamp(-1.0, 1.0)
-                    * 32767.0) as i16;
+                let next_x =
+                    pad_axis_from_fraction((position.x - rect.center().x) / (rect.width() / 2.0));
+                let next_y =
+                    pad_axis_from_fraction((position.y - rect.center().y) / (rect.height() / 2.0));
                 changed = *x != next_x || *y != next_y;
                 *x = next_x;
                 *y = next_y;
@@ -967,16 +1275,34 @@ fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool 
 }
 
 fn dualsense_axis_to_pad(value: u8) -> i16 {
-    i16::try_from((i32::from(value) - 128) * 257).expect("DualSense axis fits signed pad")
+    let offset = i32::from(value) - 128;
+    let mapped = if offset <= 0 {
+        offset * 256
+    } else {
+        (offset * 32767 + 63) / 127
+    };
+    i16::try_from(mapped).expect("unsigned axis maps into signed pad")
 }
 
 fn dualsense_axis_from_pad(value: i16) -> u8 {
-    u8::try_from((i32::from(value) / 257 + 128).clamp(0, 255))
-        .expect("clamped DualSense axis fits u8")
+    let value = i32::from(value);
+    let mapped = if value <= 0 {
+        (value + 32768 + 128) / 256
+    } else {
+        128 + (value * 127 + 16383) / 32767
+    };
+    u8::try_from(mapped).expect("signed pad maps into unsigned axis")
 }
-fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
+
+#[allow(clippy::cast_possible_truncation)] // Rounded bounded normalized input fits i16.
+fn pad_axis_from_fraction(value: f32) -> i16 {
+    let value = value.clamp(-1.0, 1.0);
+    (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
+}
+
+fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::Xbox360, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1041,11 +1367,11 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Controller) {
 #[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
 fn draw_dualsense(
     ui: &mut egui::Ui,
-    controller: &mut DualSenseController,
+    controller: &mut DualSenseEditor,
     second_touch: &mut LatchedTouch,
 ) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::DualSense, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1155,9 +1481,9 @@ fn draw_dualsense(
     }
 }
 
-fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
+fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::DualShock4, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1246,7 +1572,7 @@ fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
+fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
     ui.small("Click and drag to emulate the first DualShock 4 touch contact.");
     let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
     ui.painter().rect_stroke(
@@ -1280,7 +1606,7 @@ fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Controller) {
 
 fn draw_ds4_touch_slot(
     ui: &mut egui::Ui,
-    controller: &mut DualShock4Controller,
+    controller: &mut DualShock4Editor,
     slot: DualShock4TouchSlot,
     id: u8,
     label: &str,
@@ -1307,9 +1633,9 @@ fn draw_ds4_touch_slot(
     });
 }
 
-fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
+fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
     surface(ui, controller.surface());
-    digital_controls(ui, |update| {
+    digital_controls(ui, Kind::SwitchPro, |update| {
         let _ = controller.set_digital(update);
     });
     ui.group(|ui| {
@@ -1351,10 +1677,10 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
     });
     ui.group(|ui| {
         ui.label("Switch Pro motion report");
-        ui.small(if controller.state().stream_enabled() {
+        ui.small(if controller.stream_enabled() {
             format!(
                 "Host selected report mode 0x30; streaming at 250 Hz (frame counter: {}).",
-                controller.state().motion_report_counter()
+                controller.motion_report_counter()
             )
         } else {
             "Waiting for the host to select report mode 0x30.".to_owned()
@@ -1382,7 +1708,7 @@ fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProController) {
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
+fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseEditor) {
     ui.small("Click and drag to emulate the first physical touch contact.");
     let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
     ui.painter().rect_stroke(
@@ -1416,7 +1742,7 @@ fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseController) {
 
 fn draw_latched_touch_slot(
     ui: &mut egui::Ui,
-    controller: &mut DualSenseController,
+    controller: &mut DualSenseEditor,
     slot: TouchSlot,
     id: u8,
     touch: &mut LatchedTouch,
@@ -1439,6 +1765,401 @@ fn draw_latched_touch_slot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sony_pad_conversion_covers_full_domain_and_round_trips_every_axis_value() {
+        assert_eq!(dualsense_axis_to_pad(0), i16::MIN);
+        assert_eq!(dualsense_axis_to_pad(128), 0);
+        assert_eq!(dualsense_axis_to_pad(255), i16::MAX);
+        for value in 0..=255 {
+            assert_eq!(dualsense_axis_from_pad(dualsense_axis_to_pad(value)), value);
+        }
+        let mut previous = 0;
+        for value in i16::MIN..=i16::MAX {
+            let mapped = dualsense_axis_from_pad(value);
+            assert!(mapped >= previous);
+            previous = mapped;
+        }
+        for (fraction, expected) in [
+            (-2.0, i16::MIN),
+            (-1.0, i16::MIN),
+            (0.0, 0),
+            (1.0, i16::MAX),
+            (2.0, i16::MAX),
+        ] {
+            assert_eq!(pad_axis_from_fraction(fraction), expected);
+        }
+    }
+
+    #[test]
+    fn printed_face_labels_preserve_spatial_nintendo_and_sony_layouts() {
+        assert_eq!(
+            face_labels(Kind::SwitchPro),
+            ["B (South)", "A (East)", "Y (West)", "X (North)"]
+        );
+        assert_eq!(face_labels(Kind::DualShock4), face_labels(Kind::DualSense));
+        assert_eq!(face_labels(Kind::Xbox360)[0], "A (South)");
+    }
+
+    #[test]
+    fn lab_session_ids_can_repeat_and_advance_without_overflow() {
+        for id in [0, 7, 65543, u64::MAX] {
+            assert_eq!(following_session(id, false), id);
+        }
+        assert_eq!(following_session(7, true), 8);
+        assert_eq!(following_session(u64::MAX, true), 0);
+    }
+
+    #[test]
+    fn lab_metrics_and_record_preserve_measurement_scope() {
+        let start = Instant::now();
+        let mut metrics = ServiceMetrics::default();
+        for delta in [0, 4, 15, 19] {
+            metrics.record(start + Duration::from_millis(delta));
+        }
+        metrics.omit(4);
+        metrics.omit(8);
+        assert_eq!(metrics.cycles, 4);
+        assert_eq!(metrics.max_gap, Duration::from_millis(11));
+        assert_eq!(metrics.omitted_logs, 12);
+        let record = lab_record(
+            "Synthetic lab controller",
+            CreationOptions {
+                session: RealizationSessionId(65543),
+                target: RealizationTarget::Uhid,
+            },
+            &metrics,
+            "Reference disconnected; synthetic test",
+            &ConsumerNotes {
+                build: "synthetic build".into(),
+                backend: "fake backend".into(),
+                mapping: "fake mapping".into(),
+            },
+            "Closed; cleanup failed: synthetic",
+        );
+        assert!(record.starts_with("Virtualgamepad manual lab record v2"));
+        assert!(record.contains("Consumer build: synthetic build"));
+        assert!(record.contains("Consumer backend: fake backend"));
+        assert!(record.contains("Consumer mapping: fake mapping"));
+        assert!(record.contains("cleanup failed: synthetic"));
+        assert!(record.contains("Application session: 65543"));
+        assert!(record.contains("Maximum observed service gap (us): 11000"));
+        assert!(record.contains("acceptance: not established"));
+        assert!(record.ends_with("Reference disconnected; synthetic test"));
+    }
+
+    #[derive(Default)]
+    struct FakeService {
+        refreshed: usize,
+        serviced: usize,
+        closed: usize,
+        fail: bool,
+        deadline: Option<Duration>,
+        progress: Option<mpsc::Sender<usize>>,
+        desired: Vec<bool>,
+        committed: Vec<Vec<bool>>,
+    }
+    impl ServicedController for FakeService {
+        fn neutralize(&mut self) -> Result<(), String> {
+            if self.closed != 0 {
+                return Err("closed".into());
+            }
+            self.desired.push(false);
+            Ok(())
+        }
+        fn commit_edits(&mut self) -> Result<(), String> {
+            self.committed.push(self.desired.clone());
+            Ok(())
+        }
+        fn refresh(&mut self) -> Result<(), String> {
+            self.refreshed += 1;
+            Ok(())
+        }
+        fn service(
+            &mut self,
+            log: &mut Vec<String>,
+            indicators: &mut ReverseIndicators,
+        ) -> Result<(), String> {
+            self.serviced += 1;
+            log.push(format!("event {}", self.serviced));
+            indicators.led = Some([1, 2, 3]);
+            if let Some(progress) = &self.progress {
+                let _ = progress.send(self.serviced);
+            }
+            if self.fail {
+                Err("injected service failure".into())
+            } else {
+                Ok(())
+            }
+        }
+        fn deadline(&self) -> Option<Duration> {
+            self.deadline
+        }
+        fn close(&mut self) {
+            self.closed += 1;
+        }
+    }
+
+    fn fake_edit(pressed: bool) -> Command<FakeService> {
+        Box::new(move |controller| {
+            controller.desired.push(pressed);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn release_input_uses_acknowledged_queue_and_preserves_prior_press() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut progress = EditProgress::default();
+        let mut controller = FakeService::default();
+        progress.submit(&sender, vec![fake_edit(true)]).unwrap();
+        assert!(progress.submit(&sender, vec![release_inputs()]).is_err());
+        let (seq, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(seq));
+        progress.submit(&sender, vec![release_inputs()]).unwrap();
+        let (seq, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(seq));
+        assert_eq!(controller.committed, vec![vec![true], vec![true, false]]);
+        controller.close();
+        assert!(controller.apply(vec![release_inputs()]).is_err());
+    }
+
+    #[test]
+    fn unexpected_worker_exit_is_visible_without_a_failure_message() {
+        let (sender, receiver) = mpsc::channel();
+        assert_eq!(worker_failure(&receiver), None);
+        sender.send("injected failure".into()).unwrap();
+        assert_eq!(
+            worker_failure(&receiver).as_deref(),
+            Some("injected failure")
+        );
+        drop(sender);
+        assert_eq!(
+            worker_failure(&receiver).as_deref(),
+            Some("controller worker exited unexpectedly")
+        );
+    }
+
+    #[test]
+    fn edit_progress_preserves_order_and_rejects_full_disconnected_or_stale_updates() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let mut progress = EditProgress::default();
+        progress.submit(&sender, vec![fake_edit(true)]).unwrap();
+        assert!(!progress.ready());
+        assert!(!progress.observe(0));
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+        let (first, edits) = receiver.try_recv().unwrap();
+        let mut controller = FakeService::default();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(first));
+        progress.submit(&sender, vec![fake_edit(false)]).unwrap();
+        let (second, edits) = receiver.try_recv().unwrap();
+        controller.apply(edits).unwrap();
+        assert!(progress.observe(second));
+        assert_eq!(controller.committed, vec![vec![true], vec![true, false]]);
+
+        sender.try_send((99, vec![fake_edit(true)])).unwrap();
+        assert!(progress.submit(&sender, vec![fake_edit(true)]).is_err());
+        assert_eq!(progress.submitted, second);
+        drop(receiver);
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+        progress.submitted = u64::MAX;
+        progress.applied = u64::MAX;
+        assert!(progress.submit(&sender, vec![fake_edit(false)]).is_err());
+    }
+
+    #[test]
+    fn rejected_edit_batch_cannot_commit_partial_state_or_run_following_edits() {
+        let mut controller = FakeService::default();
+        let edits: Vec<Command<FakeService>> = vec![
+            fake_edit(true),
+            Box::new(|_| Err("invalid native value".into())),
+            fake_edit(false),
+        ];
+        assert!(controller.apply(edits).is_err());
+        assert_eq!(controller.desired, vec![true]);
+        assert!(controller.committed.is_empty());
+        let oversized = (0..=editor::EDIT_LIMIT).map(|_| fake_edit(false)).collect();
+        assert!(controller.apply(oversized).is_err());
+        assert_eq!(controller.desired, vec![true]);
+    }
+
+    #[test]
+    fn edit_failure_closes_worker_without_display_consumption() {
+        let worker = spawn_service_worker(FakeService::default());
+        worker
+            .edits
+            .try_send((1, vec![Box::new(|_| Err("edit rejected".into()))]))
+            .unwrap();
+        assert_eq!(
+            worker.failure.recv_timeout(Duration::from_secs(2)).unwrap(),
+            "edit rejected"
+        );
+        let controller = worker.stop().unwrap();
+        assert_eq!(controller.closed, 1);
+        assert!(controller.committed.is_empty());
+    }
+
+    #[test]
+    fn stop_discards_queued_input_before_another_service_cycle() {
+        let worker = spawn_service_worker(FakeService::default());
+        let (entered, waiting) = mpsc::channel();
+        let (release, resume) = mpsc::channel();
+        worker
+            .edits
+            .try_send((
+                1,
+                vec![Box::new(move |c| {
+                    entered.send(()).unwrap();
+                    resume.recv_timeout(Duration::from_secs(2)).unwrap();
+                    c.desired.push(true);
+                    Ok(())
+                })],
+            ))
+            .unwrap();
+        waiting.recv_timeout(Duration::from_secs(2)).unwrap();
+        worker.edits.try_send((2, vec![fake_edit(false)])).unwrap();
+        worker.stop.send(()).unwrap();
+        release.send(()).unwrap();
+        let controller = worker.stop().unwrap();
+        assert_eq!(controller.desired, vec![true]);
+        assert_eq!(controller.closed, 1);
+    }
+
+    #[test]
+    fn independent_service_cycles_preserve_motion_cadence_and_short_deadlines() {
+        let mut controller = FakeService {
+            deadline: Some(Duration::from_micros(500)),
+            ..Default::default()
+        };
+        let mut next_motion = Duration::ZERO;
+        let mut logs = Vec::new();
+        let mut indicators = ReverseIndicators::default();
+        for now in [0, 500, 1000, 3500, 4000] {
+            let delay = service_cycle(
+                &mut controller,
+                Duration::from_micros(now),
+                &mut next_motion,
+                &mut logs,
+                &mut indicators,
+            )
+            .unwrap();
+            assert_eq!(delay, Duration::from_micros(500));
+        }
+        assert_eq!(controller.serviced, 5);
+        assert_eq!(controller.refreshed, 2);
+        controller.deadline = Some(Duration::ZERO);
+        assert_eq!(
+            service_cycle(
+                &mut controller,
+                Duration::from_micros(4001),
+                &mut next_motion,
+                &mut logs,
+                &mut indicators
+            )
+            .unwrap(),
+            Duration::ZERO
+        );
+        assert_eq!(controller.refreshed, 2);
+    }
+
+    #[test]
+    fn display_backlog_is_bounded_and_retains_latest_indicators() {
+        let mut display = WorkerDisplay::default();
+        let indicators = ReverseIndicators {
+            led: Some([1, 2, 3]),
+            ..Default::default()
+        };
+        for n in 0..1000 {
+            publish_display(&mut display, vec![n.to_string()], &indicators);
+        }
+        assert_eq!(display.logs.len(), OUTPUT_LOG_LIMIT);
+        assert_eq!(display.logs.first().unwrap(), "800");
+        assert_eq!(display.logs.last().unwrap(), "999");
+        assert_eq!(display.indicators.led, Some([1, 2, 3]));
+    }
+
+    #[test]
+    fn worker_services_without_ui_and_stops_while_display_is_locked() {
+        let (sender, receiver) = mpsc::channel();
+        let controller = FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        };
+        let worker = spawn_service_worker(controller);
+        let display = Arc::clone(&worker.display);
+        let guard = display.lock().unwrap();
+        for _ in 0..3 {
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+        let state = worker.stop().unwrap();
+        assert!(state.serviced >= 3);
+        assert_eq!(state.closed, 1);
+        drop(guard);
+    }
+
+    #[test]
+    fn removing_one_worker_preserves_another_workers_service() {
+        let first = FakeService::default();
+        let (sender, receiver) = mpsc::channel();
+        let second = FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        };
+        let first_worker = spawn_service_worker(first);
+        let second_worker = spawn_service_worker(second);
+        receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        let first = first_worker.stop().unwrap();
+        let count = receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        loop {
+            if receiver.recv_timeout(Duration::from_secs(2)).unwrap() > count {
+                break;
+            }
+        }
+        assert_eq!(first.closed, 1);
+        let second = second_worker.stop().unwrap();
+        assert_eq!(second.closed, 1);
+    }
+
+    #[test]
+    fn worker_failure_closes_without_waiting_for_ui_consumption() {
+        let controller = FakeService {
+            fail: true,
+            ..Default::default()
+        };
+        let worker = spawn_service_worker(controller);
+        assert_eq!(
+            worker.failure.recv_timeout(Duration::from_secs(2)).unwrap(),
+            "injected service failure"
+        );
+        let state = worker.stop().unwrap();
+        assert_eq!(state.serviced, 1);
+        assert_eq!(state.closed, 1);
+    }
+
+    #[test]
+    fn repaint_respects_immediate_and_sub_frame_service_deadlines() {
+        for count in [1, 8, 300] {
+            for deadline in [
+                Duration::ZERO,
+                Duration::from_micros(500),
+                Duration::from_millis(3),
+            ] {
+                assert_eq!(service_repaint_interval(count, Some(deadline)), deadline);
+            }
+            assert_eq!(
+                service_repaint_interval(count, Some(Duration::from_secs(1))),
+                Duration::from_millis(4)
+            );
+            assert_eq!(
+                service_repaint_interval(count, None),
+                Duration::from_millis(4)
+            );
+        }
+        assert_eq!(service_repaint_interval(0, None), Duration::from_millis(50));
+    }
 
     #[test]
     fn motion_worker_uses_the_advertised_250_hz_interval() {
@@ -1532,13 +2253,75 @@ mod tests {
     }
 
     #[test]
+    fn effect_upload_is_not_playback_and_stop_clears_activity() {
+        use virtualgamepad::{ForceFeedbackEffect, ForceFeedbackEvent, RumbleEffect};
+        let mut indicators = ReverseIndicators::default();
+        let effect = RumbleEffect {
+            id: 0,
+            strong: 1,
+            weak: 2,
+            length_ms: 100,
+            delay_ms: 0,
+            trigger_button: 0,
+            trigger_interval_ms: 0,
+        };
+        indicators.apply_force_feedback(ForceFeedbackEvent::Uploaded {
+            request_id: 7,
+            effect: ForceFeedbackEffect::Rumble(effect),
+            status: 0,
+        });
+        assert!(!indicators.rumble_active);
+        assert!(indicators.rumble_until.is_none());
+        indicators.apply_force_feedback(ForceFeedbackEvent::Playback {
+            effect,
+            repetitions: 1,
+        });
+        assert!(indicators.rumble_until.is_some());
+        indicators.apply_force_feedback(ForceFeedbackEvent::Playback {
+            effect,
+            repetitions: 0,
+        });
+        assert!(!indicators.rumble_active);
+        assert!(indicators.rumble_until.is_none());
+    }
+
+    #[test]
+    fn ds4_rgb_indicator_updates_and_survives_rumble_only_output() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_hid_output(Some(0), Some(0), Some([32, 64, 128]), None);
+        assert_eq!(indicators.led, Some([32, 64, 128]));
+        indicators.apply_hid_output(Some(64), Some(128), None, None);
+        assert_eq!(indicators.led, Some([32, 64, 128]));
+        assert!(indicators.rumble_active);
+    }
+
+    #[test]
+    fn partial_hid_updates_preserve_unmentioned_motors() {
+        let mut indicators = ReverseIndicators::default();
+        indicators.apply_hid_output(Some(64), Some(128), None, None);
+        let started = indicators.rumble_started;
+        indicators.apply_hid_output(None, None, Some([1, 2, 3]), Some(true));
+        assert!(
+            indicators.rumble_active,
+            "LED-only update must preserve rumble"
+        );
+        assert_eq!(indicators.rumble_started, started);
+        indicators.apply_hid_output(Some(0), None, None, None);
+        assert!(indicators.rumble_active, "left motor remains active");
+        indicators.apply_hid_output(None, Some(0), None, None);
+        assert!(!indicators.rumble_active);
+        assert_eq!(indicators.led, Some([1, 2, 3]));
+        assert_eq!(indicators.mute_led, Some(true));
+    }
+
+    #[test]
     fn rumble_only_dualsense_output_preserves_prior_led_indicators() {
         let mut indicators = ReverseIndicators {
             led: Some([0x11, 0x22, 0x33]),
             mute_led: Some(true),
             ..ReverseIndicators::default()
         };
-        indicators.apply_dualsense_usb_output(Some(0x40), Some(0x20), None, None);
+        indicators.apply_hid_output(Some(0x40), Some(0x20), None, None);
         assert_eq!(indicators.led, Some([0x11, 0x22, 0x33]));
         assert_eq!(indicators.mute_led, Some(true));
         assert!(indicators.rumble_active);

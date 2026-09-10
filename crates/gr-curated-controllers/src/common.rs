@@ -1,3 +1,9 @@
+mod feedback;
+mod snapshot;
+pub(crate) use snapshot::{SnapshotProtocol, logical_input};
+mod session;
+#[cfg(test)]
+mod session_tests;
 use crate::CreationOptions;
 use gr_controller_contract::{
     CommitError, ControlError, DpadDirection, FaceButton, PreparedRealization,
@@ -13,7 +19,19 @@ use gr_realization_api::{
     NativeProviderSession, ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent,
     RawReverseEvent, RealizationTarget,
 };
-use std::collections::BTreeMap;
+pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
+
+pub(crate) const CONVENTIONAL_RUMBLE: [gr_controller_contract::OutputSurface; 1] =
+    [gr_controller_contract::OutputSurface {
+        name: "conventional-rumble",
+        event_type: 21,
+        event_code: 0x50,
+    }];
+pub(crate) const FEEDBACK_RESTRICTION: gr_controller_contract::TargetRestriction =
+    gr_controller_contract::TargetRestriction {
+        feature: "automatic force-feedback trigger",
+        reason: "curated evdev policy accepts 64 replayable rumble effects but does not implement button-triggered playback",
+    };
 
 pub(crate) const EV_SYN: u16 = 0;
 pub(crate) const EV_KEY: u16 = 1;
@@ -42,6 +60,7 @@ pub(crate) const fn dpad_index(direction: DpadDirection) -> usize {
 pub(crate) struct ProviderSessionSink {
     session: Box<dyn NativeProviderSession>,
     closed: bool,
+    close_error: Option<String>,
 }
 
 impl FrameSink for ProviderSessionSink {
@@ -61,16 +80,19 @@ impl ProviderSessionSink {
         &mut self,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
-        let mut events: Vec<ProviderReverseEvent> = Vec::new();
-        match self.session.drain_reverse_events(&mut events) {
-            Ok(()) => {}
-            Err(ProviderError::WouldBlock) => return Ok(()),
-            Err(error) => return Err(error),
+        struct Delivery<'a>(&'a mut dyn FnMut(RawReverseEvent));
+        impl gr_realization_api::ProviderReverseEventSink for Delivery<'_> {
+            fn push(&mut self, event: ProviderReverseEvent) {
+                self.0(event.event);
+            }
         }
-        for event in events {
-            callback(event.event);
+        if self.closed {
+            return Err(ProviderError::Closed);
         }
-        Ok(())
+        match self.session.drain_reverse_events(&mut Delivery(callback)) {
+            Err(ProviderError::WouldBlock) => Ok(()),
+            result => result,
+        }
     }
 
     pub(crate) fn reply(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
@@ -78,12 +100,20 @@ impl ProviderSessionSink {
     }
 
     pub(crate) fn diagnostics(&self) -> gr_realization_api::ProviderDiagnostics {
-        self.session.diagnostics()
+        let mut diagnostics = self.session.diagnostics();
+        if self.closed {
+            diagnostics.state = gr_realization_api::ProviderState::Closed;
+        }
+        if let Some(error) = &self.close_error {
+            diagnostics.last_error = Some(format!("cleanup failed: {error}"));
+        }
+        diagnostics
     }
 
     pub(crate) fn close(&mut self) {
-        if !self.closed && self.session.close().is_ok() {
+        if !self.closed {
             self.closed = true;
+            self.close_error = self.session.close().err().map(|error| error.to_string());
         }
     }
 }
@@ -94,14 +124,65 @@ impl Drop for ProviderSessionSink {
     }
 }
 
+fn instance_suffix(process: u32, instance: u64) -> String {
+    // UHID phys/uniq fields are 64 bytes including the terminating NUL.
+    format!("p{process:x}-i{instance:x}")
+}
+
+fn next_instance_suffix() -> Result<String, ProviderError> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let instance = NEXT
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
+            value.checked_add(1)
+        })
+        .map_err(|_| ProviderError::Open {
+            reason: "UHID instance identity space exhausted".into(),
+        })?;
+    Ok(instance_suffix(std::process::id(), instance))
+}
+
 pub(crate) fn create<D>(
+    driver: D,
+    realization: NativeControllerRealization,
+    options: CreationOptions,
+) -> Result<ControllerSession<D>, ProviderError>
+where
+    D: HidDriver,
+{
+    create_with_identity(driver, realization, options, None)
+}
+
+fn creation_labels(
+    physical_path: &str,
+    unique_id: &str,
+    restored: bool,
+) -> Result<(String, String), ProviderError> {
+    let suffix = next_instance_suffix()?;
+    Ok((
+        format!("{physical_path}/{suffix}"),
+        if restored {
+            unique_id.to_owned()
+        } else {
+            format!("{unique_id}-{suffix}")
+        },
+    ))
+}
+
+pub(crate) fn create_with_identity<D>(
     driver: D,
     mut realization: NativeControllerRealization,
     options: CreationOptions,
-) -> Result<ControllerRuntime<D, ProviderSessionSink>, ProviderError>
+    restored: Option<[u8; 6]>,
+) -> Result<ControllerSession<D>, ProviderError>
 where
-    D: TargetAwareControllerDriver<Frame = ProviderFrame>,
+    D: HidDriver,
 {
+    if restored.is_some() && options.target != RealizationTarget::Uhid {
+        return Err(ProviderError::Unsupported {
+            reason: "identity restoration is supported only for USB/UHID".into(),
+        });
+    }
     let prepared: PreparedRealization =
         prepare_realization(&driver, options.target).map_err(|error| {
             ProviderError::Unsupported {
@@ -109,9 +190,14 @@ where
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
-        let suffix = format!("session-{}", options.session.0);
-        specification.physical_path = format!("{}/{}", specification.physical_path, suffix);
-        specification.unique_id = format!("{}-{suffix}", specification.unique_id);
+        (specification.physical_path, specification.unique_id) = creation_labels(
+            &specification.physical_path,
+            &specification.unique_id,
+            restored.is_some(),
+        )?;
+    }
+    if let NativeControllerRealization::Evdev(specification) = &mut realization {
+        specification.physical_path = Some(creation_labels("virtualgamepad/uinput", "", false)?.0);
     }
     let request = ProviderOpenRequest {
         session: options.session,
@@ -119,6 +205,10 @@ where
         requirements: prepared.entry().provider_requirements,
         realization,
     };
+    if options.target == RealizationTarget::Uhid {
+        return ControllerSession::hid(driver, request, restored);
+    }
+    let mut association = crate::ControllerAssociation::requested(&request.realization);
     let session: Box<dyn NativeProviderSession> = match options.target {
         RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
         RealizationTarget::Uhid => LinuxUhidProvider.open(request)?,
@@ -129,14 +219,17 @@ where
             });
         }
     };
+    association.observed_host_path = session.host_path();
     ControllerRuntime::new(
         driver,
         ProviderSessionSink {
             session,
             closed: false,
+            close_error: None,
         },
         prepared,
     )
+    .map(|runtime| ControllerSession::native(runtime).with_association(association))
     .map_err(|error| ProviderError::Open {
         reason: error.to_string(),
     })
@@ -161,7 +254,6 @@ pub(crate) fn hid_realization(
         numbered_input_reports: false,
         numbered_output_reports: false,
         numbered_feature_reports: false,
-        feature_report_responses: BTreeMap::new(),
     })
 }
 
@@ -206,6 +298,16 @@ pub(crate) fn unavailable(target: gr_realization_api::RealizationTarget) -> Cont
 }
 
 #[cfg(test)]
+pub(crate) fn fixture_bytes(text: &str) -> Vec<u8> {
+    let hex = text.trim();
+    assert_eq!(hex.len() % 2, 0);
+    (0..hex.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+        .collect()
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use gr_realization_api::{EventReadiness, ProviderDiagnostics, ProviderState};
@@ -214,7 +316,62 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    struct ClosingSession(Arc<AtomicUsize>);
+    #[test]
+    fn association_transports_requested_labels_without_inventing_host_observation() {
+        let mut realization = hid_realization("synthetic", 1, 2);
+        let NativeControllerRealization::Uhid(spec) = &mut realization else {
+            unreachable!()
+        };
+        let (physical, unique) = creation_labels("virtual/synthetic", "restored", true).unwrap();
+        spec.physical_path = physical.clone();
+        spec.unique_id = unique.clone();
+        let association = crate::ControllerAssociation::requested(&realization);
+        assert_eq!(
+            association.requested_physical_path.as_deref(),
+            Some(physical.as_str())
+        );
+        assert_eq!(
+            association.requested_unique_id.as_deref(),
+            Some(unique.as_str())
+        );
+        assert_eq!(association.observed_host_path, None);
+    }
+
+    #[test]
+    fn restored_identity_keeps_uniq_but_recreates_transport_labels() {
+        let (first_path, first_uniq) =
+            creation_labels("virtual/controller", "stable-identity", true).unwrap();
+        let (second_path, second_uniq) =
+            creation_labels("virtual/controller", "stable-identity", true).unwrap();
+        assert_ne!(first_path, second_path);
+        assert_eq!(first_uniq, "stable-identity");
+        assert_eq!(second_uniq, first_uniq);
+        let (_, ephemeral_one) = creation_labels("virtual/controller", "fresh", false).unwrap();
+        let (_, ephemeral_two) = creation_labels("virtual/controller", "fresh", false).unwrap();
+        assert_ne!(ephemeral_one, ephemeral_two);
+    }
+
+    #[test]
+    fn transport_identity_distinguishes_reused_sessions_and_processes() {
+        let longest = instance_suffix(u32::MAX, u64::MAX);
+        for prefix in [
+            "virtualgamepad/uhid/dualsense/",
+            "virtualgamepad-dualsense-",
+            "virtualgamepad/uhid/dualshock4/",
+            "virtualgamepad/uhid/switch-pro/",
+        ] {
+            assert!(prefix.len() + longest.len() < 64);
+        }
+        let first = instance_suffix(10, 0);
+        assert_ne!(first, instance_suffix(11, 0));
+        assert_ne!(first, instance_suffix(10, 1));
+        assert_ne!(
+            next_instance_suffix().unwrap(),
+            next_instance_suffix().unwrap()
+        );
+    }
+
+    struct ClosingSession(Arc<AtomicUsize>, bool);
 
     impl NativeProviderSession for ClosingSession {
         fn send(&mut self, _: ProviderFrame) -> Result<(), ProviderError> {
@@ -245,7 +402,11 @@ mod tests {
 
         fn close(&mut self) -> Result<(), ProviderError> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(())
+            if self.1 {
+                Err(ProviderError::Closed)
+            } else {
+                Ok(())
+            }
         }
     }
 
@@ -253,18 +414,43 @@ mod tests {
     fn provider_session_is_destroyed_once_on_explicit_close_or_drop() {
         let closes = Arc::new(AtomicUsize::new(0));
         let mut sink = ProviderSessionSink {
-            session: Box::new(ClosingSession(Arc::clone(&closes))),
+            session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
+            close_error: None,
         };
         sink.close();
         drop(sink);
         assert_eq!(closes.load(Ordering::SeqCst), 1);
 
         let dropped = ProviderSessionSink {
-            session: Box::new(ClosingSession(Arc::clone(&closes))),
+            session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
+            close_error: None,
         };
         drop(dropped);
         assert_eq!(closes.load(Ordering::SeqCst), 2);
+    }
+    #[test]
+    fn failed_cleanup_is_terminal_and_not_retried_on_drop() {
+        let closes = Arc::new(AtomicUsize::new(0));
+        let mut sink = ProviderSessionSink {
+            session: Box::new(ClosingSession(closes.clone(), true)),
+            closed: false,
+            close_error: None,
+        };
+        sink.close();
+        sink.close();
+        assert_eq!(
+            sink.diagnostics().state,
+            gr_realization_api::ProviderState::Closed
+        );
+        assert!(
+            sink.diagnostics()
+                .last_error
+                .unwrap()
+                .contains("cleanup failed")
+        );
+        drop(sink);
+        assert_eq!(closes.load(Ordering::SeqCst), 1);
     }
 }

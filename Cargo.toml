@@ -11,6 +11,7 @@ publish = false
 
 [workspace]
 members = [
+    "crates/gr-hid",
     "crates/gr-realization-api",
     "crates/gr-dualsense-wire",
     "crates/gr-controller-wire",

@@ -1,0 +1,2 @@
+# Install only when opting into trusted-user UHID creation access.
+KERNEL=="uhid", SUBSYSTEM=="misc", GROUP="virtualgamepad-uhid", MODE="0660"

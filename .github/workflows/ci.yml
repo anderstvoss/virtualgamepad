@@ -344,3 +344,48 @@ jobs:
         with:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure
+
+  protocol-corpus:
+    name: Pinned protocol corpus
+    # Private execution remains local. Fork PRs have no corpus credentials;
+    # their ordinary Rust jobs still use checked-in artifacts.
+    if: >-
+      ${{ !github.event.repository.private &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require explicit corpus access
+        env:
+          CORPUS_KEY: ${{ secrets.PROTOCOL_CORPUS_SSH_KEY }}
+        run: |
+          if [ -z "$CORPUS_KEY" ]; then
+            echo '::error::Private corpus validation requires the read-only PROTOCOL_CORPUS_SSH_KEY deploy key.'
+            exit 1
+          fi
+      - name: Checkout ordinary build artifacts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read adopted corpus revision
+        id: corpus-revision
+        run: echo "revision=$(git rev-parse HEAD:protocol-corpus)" >> "$GITHUB_OUTPUT"
+      - name: Checkout pinned corpus with repository-only read access
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: anderstvoss/controller-protocol-corpus
+          ref: ${{ steps.corpus-revision.outputs.revision }}
+          path: protocol-corpus
+          fetch-depth: 0
+          ssh-key: ${{ secrets.PROTOCOL_CORPUS_SSH_KEY }}
+          # Needed for the publication check's fetch; checkout removes it post-job.
+          persist-credentials: true
+      - name: Validate evidence and adopted revision
+        run: |
+          python3 -m venv .corpus-venv
+          .corpus-venv/bin/pip install -r protocol-corpus/requirements-dev.txt
+          .corpus-venv/bin/python protocol-corpus/tools/validate.py
+          .corpus-venv/bin/python -m unittest discover -s protocol-corpus/tests
+          python3 scripts/check-protocol-corpus.py --verify-remote
+          python3 -m unittest discover -s scripts/tests

@@ -2,7 +2,10 @@
 
 #![allow(unsafe_code)]
 
-use crate::{BrokerError, HostSession};
+use crate::{
+    BrokerError, HostSession,
+    host_access::{HostAccess, HostConfig},
+};
 use gr_controller_wire::{
     DUALSHOCK4_USB_DESCRIPTOR, STANDARD_GAMEPAD_DESCRIPTOR, SWITCH_PRO_USB_DESCRIPTOR,
     dualsense::{
@@ -17,9 +20,9 @@ use std::{
     io::{Read, Write},
     os::fd::AsRawFd,
     path::{Path, PathBuf},
-    process::{self, Command},
+    process,
     sync::{
-        Mutex, OnceLock,
+        Arc, Mutex, OnceLock,
         atomic::{AtomicU64, Ordering},
     },
     thread,
@@ -129,7 +132,6 @@ fn profile_features(profile: ControllerProfile, serial: &str) -> Vec<(u8, Vec<u8
 trait DummyHcdHost {
     fn is_dir(&self, path: &Path) -> bool;
     fn exists(&self, path: &Path) -> bool;
-    fn load_module(&self, module: &str) -> Result<bool, std::io::Error>;
     fn create_dir(&self, path: &Path) -> Result<(), std::io::Error>;
     fn create_dir_all(&self, path: &Path) -> Result<(), std::io::Error>;
     fn write(&self, path: &Path, value: &[u8]) -> Result<(), std::io::Error>;
@@ -145,12 +147,6 @@ impl DummyHcdHost for LinuxDummyHcdHost {
     }
     fn exists(&self, path: &Path) -> bool {
         path.exists()
-    }
-    fn load_module(&self, module: &str) -> Result<bool, std::io::Error> {
-        Command::new("/usr/sbin/modprobe")
-            .arg(module)
-            .status()
-            .map(|status| status.success())
     }
     fn create_dir(&self, path: &Path) -> Result<(), std::io::Error> {
         fs::create_dir(path)
@@ -180,21 +176,16 @@ pub struct DummyHcdSession {
     profile: ControllerProfile,
     udc: String,
     closed: bool,
+    access: Option<Arc<HostAccess>>,
 }
 
-/// Recover `ConfigFS` gadget roots left by a broker process that systemd stopped
-/// before Rust could run session destructors. Only fixed-format project roots
-/// directly below the dedicated `ConfigFS` gadget directory are eligible.
-pub fn cleanup_stale_sessions() -> Result<(), BrokerError> {
-    let host = LinuxDummyHcdHost;
-    if !host.is_dir(Path::new(CONFIGFS)) {
-        return Ok(());
-    }
-    for entry in fs::read_dir(CONFIGFS).map_err(io)? {
-        let root = entry.map_err(io)?.path();
-        if is_owned_root(&root) {
-            cleanup(&host, &root)?;
-        }
+/// Recover only this locked instance's journaled, identity-checked resources.
+pub fn cleanup_stale_sessions(access: &HostAccess) -> Result<(), BrokerError> {
+    let linux = LinuxDummyHcdHost;
+    let roots = access.recoverable(Path::new(CONFIGFS)).map_err(io)?;
+    for root in roots {
+        cleanup(&linux, &root)?;
+        access.forget(&root).map_err(io)?;
     }
     Ok(())
 }
@@ -266,17 +257,20 @@ impl HidGadgetIo for LinuxHidGadgetIo {
 }
 impl DummyHcdSession {
     pub fn open(_session: u64, controller: CompiledControllerKind) -> Result<Self, BrokerError> {
+        let config = HostConfig::load(Path::new("/etc/virtualgamepad/broker.conf")).map_err(io)?;
+        let access = Arc::new(HostAccess::acquire(config).map_err(io)?);
+        Self::open_authorized(controller, &access)
+    }
+    pub fn open_authorized(
+        controller: CompiledControllerKind,
+        access: &Arc<HostAccess>,
+    ) -> Result<Self, BrokerError> {
         let linux = LinuxDummyHcdHost;
         let profile = profile(controller);
         if !linux.is_dir(Path::new(CONFIGFS)) {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
         let known_hidg = nodes("hidg")?;
-        for module in ["libcomposite", "usb_f_hid", "dummy_hcd"] {
-            if !linux.load_module(module).map_err(io)? {
-                return Err(host("allowlisted kernel module could not load"));
-            }
-        }
         let gadget_id = next_gadget_id()?;
         if gadget_id == u64::MAX {
             return Err(host("dummy_hcd gadget identifier space is exhausted"));
@@ -286,11 +280,17 @@ impl DummyHcdSession {
         if linux.exists(&root) {
             return Err(host("generated gadget root already exists"));
         }
-        let mut reserved_udc = None;
+        // Reserve before any ConfigFS mutation. Missing setup is never repaired
+        // by loading modules from the runtime daemon.
+        let udc = reserve_dummy_udc(access)?;
+        let mut recorded = false;
+        let mut created = false;
         let result = (|| {
-            setup(&linux, &root, &serial, profile)?;
-            let udc = reserve_dummy_udc()?;
-            reserved_udc = Some(udc.clone());
+            linux.create_dir(&root).map_err(io)?;
+            created = true;
+            access.record(&root, &udc).map_err(io)?;
+            recorded = true;
+            setup_contents(&linux, &root, &serial, profile)?;
             write(&linux, &root.join("UDC"), &udc)?;
             wait_until_configured(&udc)?;
             let hidg = wait_node("hidg", &known_hidg)?;
@@ -299,41 +299,46 @@ impl DummyHcdSession {
                 .write(true)
                 .open(&hidg)
                 .map_err(io)?;
-            let mut session = Self {
+            let session = Self {
                 root: root.clone(),
                 hidg: hidg.clone(),
                 io: Box::new(LinuxHidGadgetIo { file }),
                 serial,
                 profile,
-                udc,
+                udc: udc.clone(),
                 closed: false,
+                access: Some(Arc::clone(access)),
             };
-            // Sony's hid-playstation driver sends calibration/firmware feature
-            // requests while binding. Service those requests before exposing
-            // the session. Switch must return immediately: hid-nintendo's
-            // controller-info handshake is answered by its curated client.
-            // We intentionally do not discover `hidraw` by pathname because
-            // Linux can reuse its name between sequential dummy sessions.
-            if matches!(
-                controller,
-                CompiledControllerKind::DualSense | CompiledControllerKind::DualShock4
-            ) {
-                session.service_initial_feature_requests()?;
-            }
             Ok(session)
         })();
         match result {
             Ok(mut session) => {
+                // Sony's hid-playstation driver sends calibration/firmware feature
+                // requests while binding. Service those requests before exposing
+                // the session. Switch must return immediately: hid-nintendo's
+                // controller-info handshake is answered by its curated client.
+                // We intentionally do not discover `hidraw` by pathname because
+                // Linux can reuse its name between sequential dummy sessions.
+                if matches!(
+                    controller,
+                    CompiledControllerKind::DualSense | CompiledControllerKind::DualShock4
+                ) {
+                    session.service_initial_feature_requests()?;
+                }
+
                 for (id, data) in session.features() {
                     session.reply(id, &data, false)?;
                 }
                 Ok(session)
             }
             Err(error) => {
-                if let Some(udc) = reserved_udc {
+                if rollback_created(&linux, &root, created).is_ok() {
+                    if recorded {
+                        access.forget(&root).map_err(io)?;
+                    }
                     release_dummy_udc(&udc);
                 }
-                let _ = cleanup(&linux, &root);
+                // Failed cleanup keeps the reservation and journal for recovery.
                 Err(error)
             }
         }
@@ -415,10 +420,13 @@ impl HostSession for DummyHcdSession {
             } else {
                 Ok(())
             };
-            release_dummy_udc(&self.udc);
             self.closed = true;
             cleanup_result?;
             teardown_result?;
+            if let Some(access) = &self.access {
+                access.forget(&self.root).map_err(io)?;
+            }
+            release_dummy_udc(&self.udc);
         }
         Ok(())
     }
@@ -428,6 +436,7 @@ impl Drop for DummyHcdSession {
         let _ = self.close();
     }
 }
+#[cfg(test)]
 fn setup(
     host: &impl DummyHcdHost,
     root: &Path,
@@ -435,6 +444,21 @@ fn setup(
     profile: ControllerProfile,
 ) -> Result<(), BrokerError> {
     host.create_dir(root).map_err(io)?;
+    setup_contents(host, root, serial, profile)
+}
+fn rollback_created(
+    host: &impl DummyHcdHost,
+    root: &Path,
+    created: bool,
+) -> Result<(), BrokerError> {
+    if created { cleanup(host, root) } else { Ok(()) }
+}
+fn setup_contents(
+    host: &impl DummyHcdHost,
+    root: &Path,
+    serial: &str,
+    profile: ControllerProfile,
+) -> Result<(), BrokerError> {
     write(host, &root.join("idVendor"), profile.vendor_id)?;
     write(host, &root.join("idProduct"), profile.product_id)?;
     write(host, &root.join("bcdDevice"), profile.device_bcd)?;
@@ -518,20 +542,33 @@ fn names(path: &str) -> Result<Vec<String>, BrokerError> {
         })
         .collect()
 }
-fn reserve_dummy_udc() -> Result<String, BrokerError> {
-    let bound = fs::read_dir(CONFIGFS)
-        .map_err(io)?
-        .filter_map(Result::ok)
-        .filter_map(|entry| fs::read_to_string(entry.path().join("UDC")).ok())
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
+fn binding_inventory(
+    entries: impl Iterator<Item = std::io::Result<String>>,
+) -> std::io::Result<Vec<String>> {
+    entries
+        .map(|entry| entry.map(|value| value.trim().to_owned()))
+        .collect()
+}
+fn reserve_dummy_udc(access: &HostAccess) -> Result<String, BrokerError> {
+    let bound = binding_inventory(
+        fs::read_dir(CONFIGFS)
+            .map_err(io)?
+            .map(|entry| fs::read_to_string(entry?.path().join("UDC"))),
+    )
+    .map_err(io)?;
     let mut reserved = RESERVED_UDCS
         .get_or_init(|| Mutex::new(BTreeSet::new()))
         .lock()
         .map_err(|_| host("dummy_hcd UDC reservation lock is poisoned"))?;
-    let udc = select_dummy_udc(names("/sys/class/udc")?, &bound, &reserved)
-        .ok_or_else(|| host("no unused dummy_hcd UDC is available"))?;
+    let udc = select_authorized_udc(
+        names("/sys/class/udc")?,
+        &bound,
+        &reserved,
+        &access.config.allowed_udcs,
+    )
+    .ok_or_else(|| {
+        host("no unused administrator-authorized dummy_hcd UDC is available; run host preflight")
+    })?;
     reserved.insert(udc.clone());
     Ok(udc)
 }
@@ -542,6 +579,20 @@ fn release_dummy_udc(udc: &str) {
     {
         reserved.remove(udc);
     }
+}
+fn select_authorized_udc(
+    udcs: Vec<String>,
+    bound: &[String],
+    reserved: &BTreeSet<String>,
+    allowed: &BTreeSet<String>,
+) -> Option<String> {
+    select_dummy_udc(
+        udcs.into_iter()
+            .filter(|name| allowed.contains(name))
+            .collect(),
+        bound,
+        reserved,
+    )
 }
 fn select_dummy_udc(
     udcs: Vec<String>,
@@ -733,12 +784,6 @@ mod tests {
         fn exists(&self, _: &Path) -> bool {
             true
         }
-        fn load_module(&self, module: &str) -> Result<bool, std::io::Error> {
-            self.operations
-                .borrow_mut()
-                .push(format!("module:{module}"));
-            Ok(true)
-        }
         fn create_dir(&self, path: &Path) -> Result<(), std::io::Error> {
             self.record("mkdir", path);
             Ok(())
@@ -803,6 +848,52 @@ mod tests {
             assert!(profile.report_length <= MAX_REPORT_LENGTH);
         }
     }
+    #[test]
+    fn unreadable_bindings_prevent_reservation() {
+        let entries = vec![
+            Ok("dummy_udc.0".into()),
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        ];
+        assert_eq!(
+            binding_inventory(entries.into_iter()).unwrap_err().kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
+
+    #[test]
+    fn administrator_authorization_never_falls_back_to_another_udc() {
+        let allowed = BTreeSet::from(["dummy_udc.1".into()]);
+        let nodes = vec!["dummy_udc.0".into(), "dummy_udc.1".into()];
+        assert_eq!(
+            select_authorized_udc(nodes.clone(), &[], &BTreeSet::new(), &allowed),
+            Some("dummy_udc.1".into())
+        );
+        assert_eq!(
+            select_authorized_udc(
+                nodes.clone(),
+                &["dummy_udc.1".into()],
+                &BTreeSet::new(),
+                &allowed
+            ),
+            None
+        );
+        assert_eq!(select_authorized_udc(nodes, &[], &allowed, &allowed), None);
+        assert_eq!(
+            select_authorized_udc(vec!["dummy_udc.0".into()], &[], &BTreeSet::new(), &allowed),
+            None
+        );
+    }
+
+    #[test]
+    fn failed_creation_never_cleans_an_existing_research_root() {
+        let host = FakeHost::new();
+        let root = Path::new("/sys/kernel/config/usb_gadget/virtualgamepad-0000000000000001");
+        rollback_created(&host, root, false).unwrap();
+        assert!(host.operations.borrow().is_empty());
+        rollback_created(&host, root, true).unwrap();
+        assert!(!host.operations.borrow().is_empty());
+    }
+
     #[test]
     fn cleanup_refuses_roots_outside_the_generated_configfs_namespace() {
         let host = LinuxDummyHcdHost;
@@ -932,6 +1023,7 @@ mod tests {
             profile: profile(CompiledControllerKind::DualSense),
             udc: String::new(),
             closed: true,
+            access: None,
         };
         assert!(session.send_input(&[0; MAX_REPORT_LENGTH - 1]).is_err());
         session.send_input(&[0; MAX_REPORT_LENGTH]).unwrap();
@@ -959,6 +1051,7 @@ mod tests {
             profile: profile(CompiledControllerKind::Xbox360),
             udc: String::new(),
             closed: true,
+            access: None,
         };
         assert!(session.send_input(&[0; 64]).is_err());
         session.send_input(&[0; 9]).expect("fixed Xbox HID report");
@@ -995,6 +1088,7 @@ mod tests {
             profile: profile(CompiledControllerKind::DualSense),
             udc: String::new(),
             closed: true,
+            access: None,
         };
         let pairing = session
             .features()
@@ -1056,7 +1150,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires root, ConfigFS, and dummy_hcd kernel support"]
+    #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
@@ -1097,7 +1191,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_ds4_profile_accepts_its_exact_report() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualShock4)
@@ -1114,7 +1208,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_switch_profile_opens_and_cleans_up() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         // hid-nintendo's controller-info handshake is served by the
@@ -1128,7 +1222,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "requires root, ConfigFS, and a fresh dummy_hcd attachment"]
+    #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_xbox_hid_profile_accepts_its_exact_report() {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::Xbox360)

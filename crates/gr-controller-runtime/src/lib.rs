@@ -4,8 +4,9 @@ mod compound;
 mod reverse_delivery;
 
 pub use compound::{
-    ComponentDiagnostics, ComponentFrame, ComponentId, ComponentOpen, CompoundDiagnostics,
-    CompoundOpenError, CompoundSession, CompoundSessionError,
+    ComponentAssociation, ComponentDiagnostics, ComponentFrame, ComponentId, ComponentOpen,
+    CompoundDiagnostics, CompoundIdentity, CompoundOpenError, CompoundSession,
+    CompoundSessionError,
 };
 use gr_controller_contract::{
     CommitError, ControlError, DigitalControlUpdate, ManifestError, PreparedRealization,
@@ -102,6 +103,11 @@ impl<D: TargetAwareControllerDriver, S: FrameSink<Frame = D::Frame>> ControllerR
     #[must_use]
     pub const fn state(&self) -> &D::State {
         &self.state
+    }
+    /// Whether this session has reached terminal close.
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        self.closed
     }
     #[must_use]
     pub const fn is_dirty(&self) -> bool {

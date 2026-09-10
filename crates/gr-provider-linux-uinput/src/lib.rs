@@ -54,6 +54,9 @@ trait LinuxIoFactory: Send + Sync {
 }
 
 trait LinuxIo: Send {
+    fn host_path(&self) -> Option<String> {
+        None
+    }
     fn write_events(&mut self, events: &[EvdevEvent]) -> Result<(), ProviderError>;
     fn drain_event(
         &mut self,
@@ -90,6 +93,9 @@ struct LiveLinuxIo {
     erases: HashMap<u32, linux_io::FfErase>,
 }
 impl LinuxIo for LiveLinuxIo {
+    fn host_path(&self) -> Option<String> {
+        linux_io::host_path(&self.file)
+    }
     fn write_events(&mut self, events: &[EvdevEvent]) -> Result<(), ProviderError> {
         linux_io::write_events(&mut self.file, events)
     }
@@ -184,6 +190,11 @@ impl Session {
     }
 }
 impl NativeProviderSession for Session {
+    fn host_path(&self) -> Option<String> {
+        (self.state == ProviderState::Open)
+            .then(|| self.io.host_path())
+            .flatten()
+    }
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
         if self.state != ProviderState::Open {
             self.failures += 1;
@@ -217,7 +228,9 @@ impl NativeProviderSession for Session {
         &mut self,
         out: &mut dyn ProviderReverseEventSink,
     ) -> Result<(), ProviderError> {
-        let _ = self.id;
+        if self.state != ProviderState::Open {
+            return Err(ProviderError::Closed);
+        }
         let result = self.io.drain_event(out, self.id, &mut self.reverse);
         if let Err(error) = &result {
             if !matches!(error, ProviderError::WouldBlock) {
@@ -283,6 +296,7 @@ mod linux_io {
     const IOC_SIZESHIFT: u64 = IOC_TYPESHIFT + IOC_TYPEBITS;
     const IOC_DIRSHIFT: u64 = IOC_SIZESHIFT + IOC_SIZEBITS;
     const IOC_WRITE: u64 = 1;
+    const IOC_READ: u64 = 2;
     const IOC_READ_WRITE: u64 = 3;
     const IOC_NONE: u64 = 0;
     const fn ioctl_code(direction: u64, number: u64, size: usize) -> libc::c_ulong {
@@ -326,21 +340,8 @@ mod linux_io {
         code: u16,
         value: i32,
     }
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    pub struct FfUpload {
-        request_id: u32,
-        retval: i32,
-        effect: [u8; 48],
-        old: [u8; 48],
-    }
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    pub struct FfErase {
-        request_id: u32,
-        retval: i32,
-        effect_id: u32,
-    }
+    pub type FfUpload = libc::uinput_ff_upload;
+    pub type FfErase = libc::uinput_ff_erase;
     fn ioctl(
         fd: i32,
         request: libc::c_ulong,
@@ -366,6 +367,23 @@ mod linux_io {
             Ok(())
         }
     }
+    pub fn host_path(file: &File) -> Option<String> {
+        let mut name = [0_u8; 80];
+        ioctl(
+            file.as_raw_fd(),
+            ioctl_code(IOC_READ, 44, name.len()),
+            name.as_mut_ptr().cast(),
+        )
+        .ok()?;
+        let end = name.iter().position(|b| *b == 0)?;
+        let name = std::str::from_utf8(&name[..end]).ok()?;
+        let index = name.strip_prefix("input")?;
+        if index.is_empty() || !index.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some(format!("/sys/devices/virtual/input/{name}"))
+    }
+
     pub fn open_and_create(spec: &NativeEvdevRealization) -> Result<File, ProviderError> {
         let file = OpenOptions::new()
             .read(true)
@@ -376,6 +394,18 @@ mod linux_io {
                 reason: error.to_string(),
             })?;
         let fd = file.as_raw_fd();
+        if let Some(path) = &spec.physical_path {
+            let path =
+                std::ffi::CString::new(path.as_bytes()).map_err(|_| ProviderError::Open {
+                    reason: "invalid prepared physical label".into(),
+                })?;
+            ioctl(
+                fd,
+                ioctl_code(IOC_WRITE, 108, std::mem::size_of::<*const libc::c_char>()),
+                path.as_ptr().cast_mut().cast(),
+            )
+            .map_err(|error| context(error, "UI_SET_PHYS", 0))?;
+        }
         for event in &spec.event_codes {
             set_bit(fd, 100, *event).map_err(|error| context(error, "UI_SET_EVBIT", *event))?;
         }
@@ -486,6 +516,27 @@ mod linux_io {
         }
         Ok(())
     }
+    // Decode ABI fields only; the controller decides acceptance. libc supplies
+    // native union alignment and ioctl sizes instead of a fixed 48-byte layout.
+    pub(super) fn decode_effect(effect: &libc::ff_effect) -> ForceFeedbackEffect {
+        if effect.type_ != 0x50 {
+            return ForceFeedbackEffect::Unsupported {
+                id: effect.id,
+                kind: effect.type_,
+            };
+        }
+        let bytes = effect.u[0].to_ne_bytes();
+        ForceFeedbackEffect::Rumble(RumbleEffect {
+            id: effect.id,
+            strong: u16::from_ne_bytes([bytes[0], bytes[1]]),
+            weak: u16::from_ne_bytes([bytes[2], bytes[3]]),
+            length_ms: effect.replay.length,
+            delay_ms: effect.replay.delay,
+            trigger_button: effect.trigger.button,
+            trigger_interval_ms: effect.trigger.interval,
+        })
+    }
+
     pub fn drain_event(
         io: &mut File,
         out: &mut dyn ProviderReverseEventSink,
@@ -524,7 +575,7 @@ mod linux_io {
                 reason: "negative force-feedback request id".into(),
             })?;
             let upload = begin_upload(io, request_id)?;
-            let effect = upload.effect.to_vec();
+            let effect = decode_effect(&upload.effect);
             uploads.insert(request_id, upload);
             RawReverseEvent::ForceFeedbackUpload { request_id, effect }
         } else if event.event_type == EV_UINPUT && event.code == UI_FF_ERASE {
@@ -553,12 +604,10 @@ mod linux_io {
         Ok(())
     }
     fn begin_upload(io: &mut File, request_id: u32) -> Result<FfUpload, ProviderError> {
-        let mut upload = FfUpload {
-            request_id,
-            retval: 0,
-            effect: [0; 48],
-            old: [0; 48],
-        };
+        // The libc upload consists solely of integer fields and an integer
+        // representation of the native union; all-zero is a valid ioctl buffer.
+        let mut upload: FfUpload = unsafe { std::mem::zeroed() };
+        upload.request_id = request_id;
         ioctl(
             io.as_raw_fd(),
             ioctl_code(IOC_READ_WRITE, 200, std::mem::size_of::<FfUpload>()),
@@ -654,6 +703,7 @@ mod integration_tests {
     #[test]
     #[ignore = "requires pre-provisioned /dev/uinput access"]
     fn creates_and_destroys_a_process_owned_device() {
+        let physical = format!("virtualgamepad/test/p{}", std::process::id());
         let request = ProviderOpenRequest {
             session: RealizationSessionId(1),
             selection: RealizationSelection {
@@ -662,6 +712,7 @@ mod integration_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                physical_path: Some(physical.clone()),
                 device_name: "virtualgamepad integration test".into(),
                 identity: NativeDeviceIdentity {
                     vendor_id: 0xffff,
@@ -680,6 +731,13 @@ mod integration_tests {
         let mut session = LinuxUinputProvider
             .open(request)
             .expect("pre-provisioned uinput");
+        let host = session.host_path().expect("kernel-observed uinput sysname");
+        assert_eq!(
+            std::fs::read_to_string(format!("{host}/phys"))
+                .unwrap()
+                .trim(),
+            physical
+        );
         session
             .send(ProviderFrame::Evdev(vec![
                 EvdevEvent {
@@ -695,6 +753,9 @@ mod integration_tests {
             ]))
             .expect("write synchronized event frame");
         session.close().expect("destroy process-owned device");
+        session.close().expect("idempotent close");
+        assert!(session.host_path().is_none());
+        assert!(!std::path::Path::new(&host).exists());
     }
 }
 
@@ -805,6 +866,7 @@ mod seam_tests {
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
+                physical_path: None,
                 device_name: "test".into(),
                 identity: NativeDeviceIdentity {
                     vendor_id: 1,
@@ -856,6 +918,53 @@ mod seam_tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn rumble_abi_fields_are_decoded_without_padding_or_pointer_data() {
+        let mut effect = libc::ff_effect {
+            type_: 0x50,
+            id: 3,
+            direction: 0,
+            trigger: libc::ff_trigger {
+                button: 4,
+                interval: 5,
+            },
+            replay: libc::ff_replay {
+                length: 321,
+                delay: 17,
+            },
+            u: Default::default(),
+        };
+        let mut bytes = effect.u[0].to_ne_bytes();
+        bytes[..2].copy_from_slice(&1234_u16.to_ne_bytes());
+        bytes[2..4].copy_from_slice(&5678_u16.to_ne_bytes());
+        #[cfg(target_pointer_width = "64")]
+        {
+            effect.u[0] = u64::from_ne_bytes(bytes);
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            effect.u[0] = u32::from_ne_bytes(bytes);
+        }
+        assert_eq!(
+            linux_io::decode_effect(&effect),
+            ForceFeedbackEffect::Rumble(RumbleEffect {
+                id: 3,
+                strong: 1234,
+                weak: 5678,
+                length_ms: 321,
+                delay_ms: 17,
+                trigger_button: 4,
+                trigger_interval_ms: 5,
+            })
+        );
+        effect.type_ = 0x51;
+        assert_eq!(
+            linux_io::decode_effect(&effect),
+            ForceFeedbackEffect::Unsupported { id: 3, kind: 0x51 }
+        );
+    }
+
+    #[test]
     fn retryable_failures_and_reverse_ids_preserve_session_state() {
         let record = Arc::new(Mutex::new(Record::default()));
         let io = FakeIo {
@@ -867,7 +976,7 @@ mod seam_tests {
             ]),
             events: VecDeque::from([Ok(RawReverseEvent::ForceFeedbackUpload {
                 request_id: 41,
-                effect: vec![1, 2],
+                effect: ForceFeedbackEffect::Unsupported { id: 0, kind: 1 },
             })]),
             upload_results: VecDeque::from([
                 Err(ProviderError::Write {
@@ -917,6 +1026,10 @@ mod seam_tests {
         assert_eq!(session.diagnostics().write_failures, 3);
         session.close().expect("close");
         assert_eq!(record.lock().expect("record").destroys, 1);
+        assert!(matches!(
+            session.drain_reverse_events(&mut Vec::new()),
+            Err(ProviderError::Closed)
+        ));
         assert!(matches!(session.send(frame()), Err(ProviderError::Closed)));
         session.close().expect("repeated close");
         assert_eq!(record.lock().expect("record").destroys, 1);
@@ -929,6 +1042,9 @@ mod linux_io {
     pub struct FfUpload;
     #[derive(Clone, Copy)]
     pub struct FfErase;
+    pub fn host_path(_: &File) -> Option<String> {
+        None
+    }
     pub fn open_and_create(_: &NativeEvdevRealization) -> Result<File, ProviderError> {
         Err(ProviderError::Open {
             reason: "unsupported platform".into(),

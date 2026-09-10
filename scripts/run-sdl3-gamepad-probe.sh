@@ -7,9 +7,9 @@ if ! command -v pkg-config >/dev/null || ! pkg-config --exists sdl3; then
 fi
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-binary="${TMPDIR:-/tmp}/virtualgamepad-sdl3-gamepad-probe"
-if [ ! -x "$binary" ] || [ "$script_dir/sdl3-gamepad-probe.c" -nt "$binary" ]; then
-  cc -std=c17 -Wall -Wextra -Werror "$script_dir/sdl3-gamepad-probe.c" \
-    $(pkg-config --cflags --libs sdl3) -o "$binary"
-fi
-exec "$binary" "$@"
+probe_dir="$(mktemp -d "${TMPDIR:-/tmp}/virtualgamepad-sdl3-probe.XXXXXXXX")"
+trap 'rm -rf -- "$probe_dir"' EXIT
+binary="$probe_dir/probe"
+cc -std=c17 -Wall -Wextra -Werror "$script_dir/sdl3-gamepad-probe.c" \
+  $(pkg-config --cflags --libs sdl3) -o "$binary"
+"$binary" "$@"

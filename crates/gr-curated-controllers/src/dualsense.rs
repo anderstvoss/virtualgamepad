@@ -1,5 +1,9 @@
 //! `DualSense` controller with native input, touch, motion, and output types.
 
+#[cfg(all(test, target_os = "linux"))]
+mod host_probe;
+mod protocol;
+
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
@@ -7,7 +11,6 @@ use gr_controller_contract::{
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -245,7 +248,15 @@ impl DualSenseSurface {
         &self.common
     }
 }
-static DIGITAL: [DigitalControlSurface; 14] = [
+static DIGITAL: [DigitalControlSurface; 16] = [
+    DigitalControlSurface {
+        control: "l2-button",
+        event_code: 312,
+    },
+    DigitalControlSurface {
+        control: "r2-button",
+        event_code: 313,
+    },
     DigitalControlSurface {
         control: "cross",
         event_code: 304,
@@ -256,11 +267,11 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "square",
-        event_code: 307,
+        event_code: 308,
     },
     DigitalControlSurface {
         control: "triangle",
-        event_code: 308,
+        event_code: 307,
     },
     DigitalControlSurface {
         control: "l1",
@@ -284,15 +295,15 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "touchpad-click",
-        event_code: 317,
+        event_code: 704,
     },
     DigitalControlSurface {
         control: "left-stick-press",
-        event_code: 318,
+        event_code: 317,
     },
     DigitalControlSurface {
         control: "right-stick-press",
-        event_code: 319,
+        event_code: 318,
     },
     DigitalControlSurface {
         control: "touch-active",
@@ -406,7 +417,8 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 4] = [
+static RESTRICTIONS: [TargetRestriction; 5] = [
+    common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no evidenced faithful DualSense IMU presentation",
@@ -476,8 +488,7 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
 };
 
 const fn motion_targets() -> RealizationTargetSet {
-    RealizationTargetSet::singleton(RealizationTarget::Uhid)
-        .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
+    RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
 }
 
 const fn supports_motion(target: RealizationTarget) -> bool {
@@ -494,7 +505,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -571,14 +582,14 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             return Ok(ProviderFrame::DummyHcdInput(bytes));
         }
         let mut events = Vec::new();
-        for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+        for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
             events.push(EvdevEvent {
                 event_type: common::EV_KEY,
                 code,
                 value: i32::from(pressed),
             });
         }
-        for (code, pressed) in [310, 311, 314, 315, 316, 317, 318, 319]
+        for (code, pressed) in [310, 311, 314, 315, 316, 704, 317, 318]
             .into_iter()
             .zip(state.buttons)
         {
@@ -586,6 +597,13 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
                 event_type: common::EV_KEY,
                 code,
                 value: i32::from(pressed),
+            });
+        }
+        for (code, value) in [(312, state.triggers.0.raw()), (313, state.triggers.1.raw())] {
+            events.push(EvdevEvent {
+                event_type: common::EV_KEY,
+                code,
+                value: i32::from(value != 0),
             });
         }
         events.extend([
@@ -660,6 +678,8 @@ fn dualsense_hid_input_report(state: &DualSenseState) -> ProviderFrame {
         | (u8::from(state.face[3]) << 7);
     bytes[8] = u8::from(state.buttons[0])
         | (u8::from(state.buttons[1]) << 1)
+        | (u8::from(state.triggers.0.raw() != 0) << 2)
+        | (u8::from(state.triggers.1.raw() != 0) << 3)
         | (u8::from(state.buttons[2]) << 4)
         | (u8::from(state.buttons[3]) << 5)
         | (u8::from(state.buttons[6]) << 6)
@@ -787,14 +807,9 @@ fn encode_touches(events: &mut Vec<EvdevEvent>, touches: [Option<DualSenseTouchC
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualSenseOutputEvent {
-    ConventionalForceFeedbackUpload {
-        request_id: u32,
-        effect: Vec<u8>,
-    },
-    ConventionalForceFeedbackErase {
-        request_id: u32,
-        effect_id: u32,
-    },
+    Other,
+    HidLifecycle(gr_hid::Lifecycle),
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
     ProviderEvent(Vec<EvdevEvent>),
     HidOutput(DualSenseHidOutput),
     HidGetReportRequest {
@@ -866,14 +881,35 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
     }
     DualSenseHidOutput::Unknown { report_id, raw }
 }
-pub struct DualSenseController(ControllerRuntime<DualSenseDefinition, common::ProviderSessionSink>);
+pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &DualSenseState {
         self.0.state()
     }
     #[must_use]
-    pub const fn surface(&self) -> &'static DualSenseSurface {
+    pub fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
             RealizationTarget::Uhid => &HID_SURFACE,
             RealizationTarget::DummyHcd => &USB_SURFACE,
@@ -881,12 +917,17 @@ impl DualSenseController {
         }
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
+    /// Requested component labels and the cached creation-time host observation.
     #[must_use]
+    pub fn association(&self) -> &crate::ControllerAssociation {
+        self.0.association()
+    }
+
     pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
-        self.0.with_sink(|sink| sink.diagnostics())
+        self.0.diagnostics()
     }
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
         self.0.apply_digital(update)
@@ -981,30 +1022,48 @@ impl DualSenseController {
             }),
         }
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
+    /// Compatibility alias for [`Self::service`]; this performs required protocol work.
     pub fn poll_output(
+        &mut self,
+        callback: &mut dyn FnMut(DualSenseOutputEvent),
+    ) -> Result<(), ProviderError> {
+        self.service(callback)
+    }
+
+    /// Service protocol I/O, including while input state is unchanged.
+    ///
+    /// Call on [`Self::readiness`] and at [`Self::next_service_in`], watching
+    /// writability when [`Self::wants_write`] is true. Recompute interest after
+    /// each call. `commit` does not replace idle servicing.
+    /// Required curated HID/evdev replies are processed before optional output
+    /// callbacks. Callbacks must return promptly to permit the next service cycle.
+    /// See the crate-level scheduling contract. No thread or executor is started.
+    pub fn service(
         &mut self,
         callback: &mut dyn FnMut(DualSenseOutputEvent),
     ) -> Result<(), ProviderError> {
         self.0.with_sink(|sink| {
             sink.drain(&mut |event| {
                 let output = match event {
-                    RawReverseEvent::ForceFeedbackUpload { request_id, effect } => {
-                        DualSenseOutputEvent::ConventionalForceFeedbackUpload { request_id, effect }
+                    RawReverseEvent::HidLifecycle(event) => {
+                        DualSenseOutputEvent::HidLifecycle(event)
                     }
-                    RawReverseEvent::ForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    } => DualSenseOutputEvent::ConventionalForceFeedbackErase {
-                        request_id,
-                        effect_id,
-                    },
+                    RawReverseEvent::ForceFeedbackUpload { .. }
+                    | RawReverseEvent::ForceFeedbackErase { .. } => DualSenseOutputEvent::Other,
+                    RawReverseEvent::ForceFeedback(event) => {
+                        DualSenseOutputEvent::ForceFeedback(event)
+                    }
                     RawReverseEvent::Evdev(events) => DualSenseOutputEvent::ProviderEvent(events),
                     RawReverseEvent::HidOutput { report_id, bytes } => {
                         DualSenseOutputEvent::HidOutput(decode_dualsense_hid_output(
@@ -1054,32 +1113,16 @@ impl DualSenseController {
         self.0
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
-    pub fn reply_force_feedback_upload(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackUploadReply { request_id, status })
-        })
-    }
-    pub fn reply_force_feedback_erase(
-        &mut self,
-        request_id: u32,
-        status: i32,
-    ) -> Result<(), ProviderError> {
-        self.0.with_sink(|sink| {
-            sink.reply(ProviderFrame::ForceFeedbackEraseReply { request_id, status })
-        })
-    }
 }
 fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        physical_path: None,
         device_name: "DualSense Wireless Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
             product_id: 0x0ce6,
-            version: 1,
+            // Native Linux gamepad mapping revision recognized by SDL; not firmware evidence.
+            version: 0x8111,
         },
         event_codes: vec![common::EV_KEY, common::EV_ABS, common::EV_FF],
         key_codes: DIGITAL.iter().map(|control| control.event_code).collect(),
@@ -1098,9 +1141,7 @@ fn realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-fn dualsense_feature_responses(
-    session: RealizationSessionId,
-) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn dualsense_feature_responses(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     // `uhid_report_type`: feature=0, output=1, input=2. This is distinct
     // from the HID class-request values and is the value Linux sends in a
     // `UHID_GET_REPORT` event.
@@ -1134,20 +1175,10 @@ fn dualsense_feature_responses(
     let mut pairing = vec![0_u8; 20];
     pairing[0] = 0x09;
     // `hid-playstation` de-duplicates DualSense connections by this address.
-    // Generate an ephemeral locally-administered unicast address so separate
-    // virtual sessions never impersonate the same physical controller. It is
-    // not read from hardware, persisted, or used outside this process.
-    let process = u64::from(std::process::id());
-    let process_bytes = process.to_le_bytes();
-    let session_bytes = session.0.to_le_bytes();
-    pairing[1..7].copy_from_slice(&[
-        0x02,
-        process_bytes[0],
-        process_bytes[1],
-        process_bytes[2],
-        session_bytes[0],
-        session_bytes[1],
-    ]);
+    // Creation supplies an ephemeral locally-administered unicast address
+    // from OS entropy. Keep it unchanged for this personality, independently
+    // of caller session IDs. This is not a captured physical address.
+    pairing[1..7].copy_from_slice(&identity);
     let mut firmware = vec![0_u8; 64];
     firmware[0] = 0x20;
     // OpenPuck's PS5 USB personality exposes non-zero hardware and firmware
@@ -1178,7 +1209,7 @@ fn dualsense_feature_responses(
     .collect()
 }
 
-fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization {
+fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealization {
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Uhid(NativeHidRealization {
@@ -1195,11 +1226,66 @@ fn hid_realization(session: RealizationSessionId) -> NativeControllerRealization
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: dualsense_feature_responses(session),
     })
 }
+/// Controller-owned identity material for explicit USB/UHID recreation.
+///
+/// Store `to_bytes()` in application-owned storage and restore with `from_bytes`.
+/// Bytes use the pairing feature's wire order. Only locally administered unicast
+/// identities generated by this API are supported; physical identity cloning is
+/// not the contract. This stores no device handles, timers, or protocol queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DualSenseIdentity([u8; 6]);
+impl DualSenseIdentity {
+    /// Generate identity from OS entropy. No provider is opened.
+    pub fn generate() -> Result<Self, ProviderError> {
+        common::creation_identity().map(Self)
+    }
+    /// Restore valid locally administered unicast bytes; invalid flags return None.
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
+        if bytes[0] & 3 == 2 {
+            Some(Self(bytes))
+        } else {
+            None
+        }
+    }
+    #[must_use]
+    pub const fn to_bytes(self) -> [u8; 6] {
+        self.0
+    }
+    fn unique_id(self) -> String {
+        let bytes = self.0;
+        format!(
+            "virtualgamepad-dualsense-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
+        )
+    }
+}
+
+/// Create a new USB/UHID session with an explicitly restored emulated identity.
+///
+/// Pairing feature bytes and UHID uniq are stable; transport identity and all
+/// protocol state are fresh. Other targets fail without opening a provider.
+/// Use distinct identities for simultaneously connected logical controllers.
+/// Stable consumer association is consumer-dependent, not guaranteed by this API.
+pub fn create_dualsense_with_identity(
+    options: CreationOptions,
+    identity: DualSenseIdentity,
+) -> Result<DualSenseController, ProviderError> {
+    create_dualsense_inner(options, Some(identity))
+}
+
+/// Create a controller with the existing fresh-per-creation identity policy.
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ProviderError> {
-    let realization = match options.target {
+    create_dualsense_inner(options, None)
+}
+
+fn create_dualsense_inner(
+    options: CreationOptions,
+    identity: Option<DualSenseIdentity>,
+) -> Result<DualSenseController, ProviderError> {
+    let mut realization = match options.target {
         RealizationTarget::Evdev => realization(),
         RealizationTarget::Uhid => hid_realization(options.session),
         RealizationTarget::DummyHcd => {
@@ -1213,7 +1299,16 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
             });
         }
     };
-    let mut controller = common::create(DualSenseDefinition, realization, options)?;
+    if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
+    {
+        spec.unique_id = identity.unique_id();
+    }
+    let mut controller = common::create_with_identity(
+        DualSenseDefinition,
+        realization,
+        options,
+        identity.map(DualSenseIdentity::to_bytes),
+    )?;
     // SDL/Steam only waits briefly for the first full USB report while it
     // decides whether a DualSense supports enhanced input (including gyro).
     // Flush neutral state before returning so callers cannot accidentally
@@ -1227,7 +1322,189 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let mut expected = DualSenseState::default();
+        expected.battery.set_exposed(true);
+        expected
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        expected.input_sequence = 77;
+        expected.sensor_timestamp = 12345;
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (DualSenseAxis(100), DualSenseAxis(200));
+        state.right = (DualSenseAxis(200), DualSenseAxis(100));
+        state.triggers = (DualSenseTrigger(255), DualSenseTrigger(255));
+        state.touches = [
+            Some(DualSenseTouchContact::new(1, 100, 200).unwrap()),
+            Some(DualSenseTouchContact::new(2, 300, 400).unwrap()),
+        ];
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <DualSenseDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
+
+    #[test]
+    fn identity_roundtrip_flags_and_target_rejection_require_no_host() {
+        for first in 0..=255 {
+            let bytes = [first, 1, 2, 3, 4, 5];
+            let restored = DualSenseIdentity::from_bytes(bytes);
+            assert_eq!(restored.is_some(), first & 3 == 2);
+            if let Some(identity) = restored {
+                assert_eq!(identity.to_bytes(), bytes);
+                assert!(identity.unique_id().len() < 64);
+                for target in [RealizationTarget::Evdev, RealizationTarget::DummyHcd] {
+                    assert!(matches!(
+                        create_dualsense_with_identity(
+                            CreationOptions {
+                                target,
+                                session: RealizationSessionId(7),
+                            },
+                            identity
+                        ),
+                        Err(ProviderError::Unsupported { .. })
+                    ));
+                }
+            }
+        }
+    }
+
     use proptest::prelude::*;
+
+    #[test]
+    fn hid_trigger_buttons_follow_analog_press_and_release_independently() {
+        for (left, right, mask) in [
+            (0, 0, 0),
+            (1, 0, 4),
+            (255, 0, 4),
+            (0, 1, 8),
+            (0, 255, 8),
+            (255, 255, 12),
+            (0, 0, 0),
+        ] {
+            let state = DualSenseState {
+                triggers: (DualSenseTrigger::new(left), DualSenseTrigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = dualsense_hid_input_report(&state) else {
+                panic!("HID input")
+            };
+            assert_eq!(bytes[8], mask);
+            assert_eq!((bytes[4], bytes[5]), (left, right));
+        }
+    }
+
+    #[test]
+    fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
+        let selection = RealizationSelection {
+            controller: DualSenseDefinition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (control, code) in [
+            (DualSenseControl::TouchpadClick, 704),
+            (DualSenseControl::LeftStickPress, 317),
+            (DualSenseControl::RightStickPress, 318),
+            (DualSenseControl::PlayStation, 316),
+        ] {
+            let mut state = DualSenseState::default();
+            for pressed in [true, false] {
+                state.set_native(control, pressed);
+                let ProviderFrame::Evdev(events) =
+                    DualSenseDefinition.encode(selection, &state).unwrap()
+                else {
+                    panic!("evdev")
+                };
+                let active: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                    .map(|event| event.code)
+                    .collect();
+                assert_eq!(active, if pressed { vec![code] } else { vec![] });
+            }
+        }
+    }
+
+    #[test]
+    fn evdev_sony_mapping_and_digital_triggers_follow_standard_linux_layout() {
+        let NativeControllerRealization::Evdev(spec) = realization() else {
+            panic!("evdev")
+        };
+        assert_eq!(spec.identity.version, 0x8111);
+        assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
+        let selection = RealizationSelection {
+            controller: DualSenseDefinition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (left, right, expected) in [
+            (0, 0, vec![]),
+            (1, 0, vec![312]),
+            (0, 255, vec![313]),
+            (255, 255, vec![312, 313]),
+        ] {
+            let state = DualSenseState {
+                triggers: (DualSenseTrigger::new(left), DualSenseTrigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::Evdev(events) =
+                DualSenseDefinition.encode(selection, &state).unwrap()
+            else {
+                panic!("evdev")
+            };
+            let active: Vec<_> = events
+                .iter()
+                .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                .map(|event| event.code)
+                .collect();
+            assert_eq!(active, expected);
+        }
+    }
+
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                SURFACE.common.outputs[0].event_type,
+                SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
+
+    #[test]
+    fn contact_packing_matches_pinned_hhd_and_openpuck_field_fixture() {
+        let expected = common::fixture_bytes(include_str!(
+            "../../../tests/fixtures/protocol-corpus/sony-contact-pair.hex"
+        ));
+        let mut actual = [0; 8];
+        encode_hid_touches(
+            &mut actual,
+            [
+                Some(DualSenseTouchContact::new(0, 1234, 567).unwrap()),
+                Some(DualSenseTouchContact::new(1, 1919, 941).unwrap()),
+            ],
+        );
+        assert_eq!(actual.as_slice(), expected);
+    }
 
     #[test]
     fn touch_validation_rejects_without_state_mutation() {
@@ -1328,8 +1605,7 @@ mod tests {
         assert!(!supports_motion(RealizationTarget::Evdev));
         assert_eq!(
             motion_targets(),
-            RealizationTargetSet::singleton(RealizationTarget::Uhid)
-                .union(RealizationTargetSet::singleton(RealizationTarget::DummyHcd))
+            RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
         );
     }
 
@@ -1386,9 +1662,9 @@ mod tests {
                 .windows(2)
                 .any(|item| item == [0x85, 0x02])
         );
+        let features = dualsense_feature_responses([2, 1, 2, 3, 4, 5]);
         for report_id in [0x03, 0x05, 0x09, 0x20] {
-            let bytes = realization
-                .feature_report_responses
+            let bytes = features
                 .get(&NativeHidReportKey {
                     report_id,
                     report_type: 0,
@@ -1396,8 +1672,7 @@ mod tests {
                 .expect("DualSense Linux probe reply");
             assert_eq!(bytes[0], report_id);
         }
-        let capabilities = realization
-            .feature_report_responses
+        let capabilities = features
             .get(&NativeHidReportKey {
                 report_id: 0x03,
                 report_type: 0,
@@ -1405,8 +1680,7 @@ mod tests {
             .expect("DualSense SDL capability reply");
         assert_eq!(capabilities.len(), 48);
         assert_eq!(&capabilities[2..6], &[0x28, 0x01, 0x00, 0x0e]);
-        let firmware = realization
-            .feature_report_responses
+        let firmware = features
             .get(&NativeHidReportKey {
                 report_id: 0x20,
                 report_type: 0,
@@ -1419,7 +1693,7 @@ mod tests {
 
     #[test]
     fn calibration_feature_has_non_zero_motion_denominators() {
-        let calibration = dualsense_feature_responses(RealizationSessionId(1))
+        let calibration = dualsense_feature_responses([2, 1, 2, 3, 4, 5])
             .remove(&NativeHidReportKey {
                 report_id: 0x05,
                 report_type: 0,
@@ -1453,16 +1727,16 @@ mod tests {
 
     #[test]
     fn pairing_feature_uses_a_distinct_local_identity_per_session() {
-        let pairing = |session| {
-            dualsense_feature_responses(RealizationSessionId(session))
+        let pairing = |identity| {
+            dualsense_feature_responses(identity)
                 .remove(&NativeHidReportKey {
                     report_id: 0x09,
                     report_type: 0,
                 })
                 .expect("pairing feature")
         };
-        let first = pairing(1);
-        let second = pairing(2);
+        let first = pairing([2, 1, 2, 3, 4, 5]);
+        let second = pairing([2, 1, 2, 3, 4, 6]);
         assert_eq!(first[1] & 0x03, 0x02, "locally administered unicast MAC");
         assert_ne!(&first[1..7], &second[1..7]);
     }

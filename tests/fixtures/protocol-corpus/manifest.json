@@ -1,0 +1,15 @@
+{
+  "corpus_commit": "e65c044d062ed833ad13641f54c826db16d176e4",
+  "generator_version": 2,
+  "inputs": {
+    "fixtures/ds-cross.hex": "cf780dad4726100617c5c663522e37d6927393eca727a52c3285b50597437eda",
+    "fixtures/ds-neutral.hex": "40380fbd97b0adccad7b02aaf75c990ecc323d99d641a2033fa6471ead8cd6fb",
+    "fixtures/ds4-active-layout.hex": "a6d79f0ff881eb5b222ce3705845cd70518a208dc6e47cfe8c22da350b973316",
+    "fixtures/sony-contact-pair.hex": "51a6e5c3395e7f2306e00a4e7a71b6283604ba17cfa6c7b1d2a63e2c196290fa",
+    "records/fixture/ds-cross.json": "945b5da019d445c4180f98b1487e9170c72eb91e299b3ef1cc6d0e81ac29f3a8",
+    "records/fixture/ds-neutral.json": "371f407f873b016459f8fd44fba329066ad0bb6f3b8017fdeb6a1e8b06676722",
+    "records/fixture/ds4-active-layout.json": "bee103a17d28473b161254e45e23682c412826dcd112b46e535c12012d685143",
+    "records/fixture/sony-contact-pair.json": "effea56c77d763ecc2cd4318b81120bb31c635255c443efead9fa1bb5b4c83e0"
+  },
+  "schema_version": 1
+}

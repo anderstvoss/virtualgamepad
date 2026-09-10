@@ -7,7 +7,7 @@ controller package. It is intentionally not a plugin contract.
 
 Each controller module owns its private complete state, typed native controls,
 native numeric value types, normalized digital mapping, target manifest,
-prepared realization, encoder, reverse decoder, typed output event, and typed
+prepared realization, stateful protocol personality, evdev encoder, reverse decoder, typed output event, and typed
 target-surface descriptor. A module may use shared helpers only where values
 have identical units and semantics.
 
@@ -52,3 +52,60 @@ reverse output, retry after failed commit, and terminal closure.
 
 Adding a controller changes only its package, root constructor/re-exports,
 tests, and documentation. It must not change core/runtime/provider logic.
+
+## Stateful HID execution
+
+UHID packages implement the `gr-hid::Protocol` contract through a controller-owned personality. Feature tables are personality data, never provider configuration. Personality state owns report sequence, timing, initialization, and required replies. Logical reports carry a report class, optional nonzero ID, and payload without that ID. Kernel envelopes belong to the adapter.
+
+The runtime clones personality generation before queue acceptance, retains definitely-unsent bytes, and closes on uncertain delivery. Required SET validation precedes acknowledgement. Optional observations must not own completion tokens. Service readiness and deadlines independently of semantic edits; test idle cadence and startup probes without subscribers.
+
+Compiled manifests declare cohesive `RealizationId` values and static `RealizationTargetSet::new(&[...])` membership. The existing uinput and broker paths retain their earlier frame runtime pending their relevant migration gates. See [current architecture](../../CORE_ARCHITECTURE.md) for implementation boundaries.
+
+## Ephemeral UHID transport identity
+
+UHID phys/uniq values receive a compact process/creation ordinal suffix. Caller
+session IDs remain application identifiers and may be reused without duplicating
+those transport fields. This identity is process-local and distinguishes concurrent
+processes in the same PID namespace; it is not a physical serial guarantee.
+The provider rejects oversized or embedded-NUL identity strings rather than
+silently truncating them. Controller-owned feature addresses are a separate protocol concern. DualSense and DS4
+acquire a locally administered unicast address from OS entropy before
+provider open, independently of application session IDs. Its personality retains
+the address across GETs/retries; entropy failure rejects creation. Deterministic
+tests inject identities without OS entropy.
+
+## Conventional evdev feedback ownership
+
+All curated evdev controllers service required upload/erase replies internally
+during `poll_output`. `ForceFeedback(ForceFeedbackEvent)` reports completed uploads,
+erasures and playback commands with stored magnitudes and replay timing. Callers
+must remove the old manual force-feedback reply calls. Low-level provider users
+still reply explicitly to typed mechanism requests. See
+[ADR-0006](../../architecture-overhaul/decisions/ADR-0006-conventional-feedback.md)
+for bounded ownership, rejected fields and terminal error behavior.
+
+## Explicit curated service entry point
+
+Each current curated handle exposes `service(callback)`; `poll_output` remains a
+compatible alias. Embeddings service unchanged input on readiness and monotonic
+deadlines, adding write interest only when requested. Recompute interest after
+state submission and servicing. Terminal native sessions expose no readiness or
+deadline, matching HID terminal behavior.
+
+Required curated HID/evdev protocol work precedes optional observer delivery in
+each bounded service cycle. Evdev observations are capped at 32 and eviction is
+reported by `dropped_output_events`. Observers must return promptly; they cannot
+extend the timing guarantee to subsequent cycles. Service/edit scheduling stays
+with the embedding, without mandatory workers or an async runtime. The legacy
+compiled gadget path remains subject to its separate request-interface gate.
+
+## Optional Sony identity restoration
+
+`DualSenseIdentity` and `DualShock4Identity` own generation, byte validation and
+pairing representation for the explicit USB/UHID restoration constructors. The
+caller may store their bytes but does not persist protocol state. Controllers
+prepare stable UHID `uniq`; shared creation always gives the physical path a fresh
+instance suffix. The default constructors remain unchanged, and other targets
+reject supplied identities before opening resources. Compound component identity
+must later derive from one logical controller identity under its own accepted
+contract. See [ADR-0008](../../architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md).

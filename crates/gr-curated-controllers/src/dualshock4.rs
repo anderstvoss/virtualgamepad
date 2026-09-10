@@ -1,4 +1,6 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
+#[cfg(test)]
+mod evdev;
 
 use crate::{BatteryState, CreationOptions, common};
 use gr_controller_contract::{
@@ -7,7 +9,6 @@ use gr_controller_contract::{
     RealizationManifest, RealizationManifestEntry, RealizationValidationStatus,
     TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -199,7 +200,15 @@ impl DualShock4Surface {
         &self.common
     }
 }
-static DIGITAL: [DigitalControlSurface; 12] = [
+static DIGITAL: [DigitalControlSurface; 14] = [
+    DigitalControlSurface {
+        control: "l2-button",
+        event_code: 312,
+    },
+    DigitalControlSurface {
+        control: "r2-button",
+        event_code: 313,
+    },
     DigitalControlSurface {
         control: "cross",
         event_code: 304,
@@ -210,11 +219,11 @@ static DIGITAL: [DigitalControlSurface; 12] = [
     },
     DigitalControlSurface {
         control: "square",
-        event_code: 307,
+        event_code: 308,
     },
     DigitalControlSurface {
         control: "triangle",
-        event_code: 308,
+        event_code: 307,
     },
     DigitalControlSurface {
         control: "l1",
@@ -238,15 +247,15 @@ static DIGITAL: [DigitalControlSurface; 12] = [
     },
     DigitalControlSurface {
         control: "touchpad-click",
-        event_code: 317,
+        event_code: 704,
     },
     DigitalControlSurface {
         control: "left-stick-press",
-        event_code: 318,
+        event_code: 317,
     },
     DigitalControlSurface {
         control: "right-stick-press",
-        event_code: 319,
+        event_code: 318,
     },
 ];
 static AXES: [AbsoluteAxisSurface; 12] = [
@@ -352,11 +361,24 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 0,
     event_code: 5,
 }];
+static HID_OUTPUTS: [OutputSurface; 2] = [
+    OUTPUTS[0],
+    OutputSurface {
+        name: "RGB lightbar",
+        event_type: 0,
+        event_code: 5,
+    },
+];
 static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "physical-device fidelity",
     reason: "OpenPuck-derived USB HID-Gyro protocol requires external-device comparison",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 3] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
+    TargetRestriction {
+        feature: "SDL gamepad discovery",
+        reason: "combined touch/gamepad capabilities are classified as a touchscreen on tested udev; a separate touch presentation is pending",
+    },
+    common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful DualShock 4 IMU presentation",
@@ -364,6 +386,10 @@ static EVDEV_RESTRICTIONS: [TargetRestriction; 3] = [
     TargetRestriction {
         feature: "battery reporting",
         reason: "uinput cannot create the physical DualShock 4 power-supply device",
+    },
+    TargetRestriction {
+        feature: "RGB lightbar",
+        reason: "generic evdev LEDs cannot faithfully express DualShock 4 RGB reports",
     },
     RESTRICTIONS[0],
 ];
@@ -373,7 +399,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
     },
 };
@@ -383,7 +409,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
     },
 };
@@ -393,7 +419,7 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
     },
 };
@@ -408,7 +434,7 @@ impl RealizationControllerDefinition for DualShock4Definition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -503,14 +529,14 @@ impl TargetAwareControllerDriver for DualShock4Definition {
 }
 fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
     let mut events = Vec::with_capacity(31);
-    for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
         });
     }
-    for (code, pressed) in [310, 311, 314, 315, 316, 317, 318, 319]
+    for (code, pressed) in [310, 311, 314, 315, 316, 704, 317, 318]
         .into_iter()
         .zip(state.buttons)
     {
@@ -518,6 +544,13 @@ fn ds4_evdev_frame(state: &DualShock4State) -> ProviderFrame {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
+        });
+    }
+    for (code, value) in [(312, state.triggers.0.raw()), (313, state.triggers.1.raw())] {
+        events.push(EvdevEvent {
+            event_type: common::EV_KEY,
+            code,
+            value: i32::from(value != 0),
         });
     }
     for (code, value) in [
@@ -602,6 +635,8 @@ fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
         | (u8::from(state.face[3]) << 7);
     b[5] = u8::from(state.buttons[0])
         | (u8::from(state.buttons[1]) << 1)
+        | (u8::from(state.triggers.0.raw() != 0) << 2)
+        | (u8::from(state.triggers.1.raw() != 0) << 3)
         | (u8::from(state.buttons[2]) << 4)
         | (u8::from(state.buttons[3]) << 5)
         | (u8::from(state.buttons[6]) << 6)
@@ -623,10 +658,9 @@ fn ds4_frame(state: &DualShock4State) -> ProviderFrame {
     for (i, v) in state.motion.accelerometer.into_iter().enumerate() {
         b[18 + i * 2..20 + i * 2].copy_from_slice(&v.to_le_bytes());
     }
-    if state.touches.iter().any(Option::is_some) {
-        b[32] = 1;
-        b[33] = state.touch_sequence;
-    }
+    // A zero count means "no update", not "all contacts released" to the host.
+    b[32] = 1;
+    b[33] = state.touch_sequence;
     encode_ds4_touches(&mut b[34..42], state.touches);
     b[29] = 0x1b;
     ProviderFrame::HidInput {
@@ -661,34 +695,27 @@ fn advance_ds4_timing(state: &mut DualShock4State) {
     }
 }
 
-fn features(session: RealizationSessionId) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
+fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
     const F: u8 = 0;
-    dualshock4_feature_responses([
-        2,
-        0,
-        0,
-        0,
-        (session.0 & 255) as u8,
-        ((session.0 >> 8) & 255) as u8,
-    ])
-    .into_iter()
-    .map(|(report_id, bytes)| {
-        (
-            NativeHidReportKey {
-                report_id,
-                report_type: F,
-            },
-            bytes,
-        )
-    })
-    .collect()
+    dualshock4_feature_responses(identity)
+        .into_iter()
+        .map(|(report_id, bytes)| {
+            (
+                NativeHidReportKey {
+                    report_id,
+                    report_type: F,
+                },
+                bytes,
+            )
+        })
+        .collect()
 }
-fn hid(session: RealizationSessionId) -> NativeControllerRealization {
+fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
-        // `common::create` appends the realization session exactly once.
+        // `common::create` appends a compact creation identity exactly once.
         physical_path: "virtualgamepad/uhid/dualshock4".into(),
         unique_id: "virtualgamepad-dualshock4".into(),
         identity: NativeDeviceIdentity {
@@ -700,11 +727,11 @@ fn hid(session: RealizationSessionId) -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: true,
-        feature_report_responses: features(session),
     })
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        physical_path: None,
         device_name: "Wireless Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x054c,
@@ -732,20 +759,39 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct DualShock4Controller(
-    ControllerRuntime<DualShock4Definition, common::ProviderSessionSink>,
-);
+pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &DualShock4State {
         self.0.state()
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     #[must_use]
-    pub const fn surface(&self) -> &'static DualShock4Surface {
+    pub fn surface(&self) -> &'static DualShock4Surface {
         match self.0.selection().target {
             RealizationTarget::Evdev => &EVDEV_SURFACE,
             RealizationTarget::Uhid => &HID_SURFACE,
@@ -809,14 +855,44 @@ impl DualShock4Controller {
             Ok(())
         })
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
+    /// Requested component labels and the cached creation-time host observation.
+    #[must_use]
+    pub fn association(&self) -> &crate::ControllerAssociation {
+        self.0.association()
+    }
+
+    /// Current transport and retained cleanup diagnostics.
+    pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
+        self.0.diagnostics()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
+    /// Compatibility alias for [`Self::service`]; this performs required protocol work.
     pub fn poll_output(
+        &mut self,
+        callback: &mut dyn FnMut(DualShock4OutputEvent),
+    ) -> Result<(), ProviderError> {
+        self.service(callback)
+    }
+
+    /// Service protocol I/O, including while input state is unchanged.
+    ///
+    /// Call on [`Self::readiness`] and at [`Self::next_service_in`], watching
+    /// writability when [`Self::wants_write`] is true. Recompute interest after
+    /// each call. `commit` does not replace idle servicing.
+    /// Required curated HID/evdev replies are processed before optional output
+    /// callbacks. Callbacks must return promptly to permit the next service cycle.
+    /// See the crate-level scheduling contract. No thread or executor is started.
+    pub fn service(
         &mut self,
         callback: &mut dyn FnMut(DualShock4OutputEvent),
     ) -> Result<(), ProviderError> {
@@ -826,6 +902,9 @@ impl DualShock4Controller {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DualShock4OutputEvent {
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    ProviderEvent(Vec<EvdevEvent>),
+    HidLifecycle(gr_hid::Lifecycle),
     HidOutput(DualShock4HidOutput),
     HostRequest {
         request_id: u32,
@@ -840,6 +919,8 @@ pub enum DualShock4HidOutput {
         raw: Vec<u8>,
         right_motor: u8,
         left_motor: u8,
+        /// Present only when the host enables the RGB lightbar update.
+        lightbar_rgb: Option<[u8; 3]>,
     },
     Unknown {
         report_id: Option<u8>,
@@ -851,6 +932,11 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
         return DualShock4HidOutput::UsbOutput {
             right_motor: raw[3],
             left_motor: raw[4],
+            lightbar_rgb: if raw[0] & 2 != 0 {
+                raw.get(5..8).map(|bytes| [bytes[0], bytes[1], bytes[2]])
+            } else {
+                None
+            },
             raw,
         };
     }
@@ -859,6 +945,9 @@ fn decode_ds4_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualShock4HidOu
 impl From<RawReverseEvent> for DualShock4OutputEvent {
     fn from(value: RawReverseEvent) -> Self {
         match value {
+            RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
+            RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
+            RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => {
                 Self::HidOutput(decode_ds4_hid_output(report_id, bytes))
             }
@@ -881,8 +970,64 @@ impl From<RawReverseEvent> for DualShock4OutputEvent {
         }
     }
 }
+/// Controller-owned identity material for explicit USB/UHID recreation.
+///
+/// Store `to_bytes()` in application-owned storage and restore with `from_bytes`.
+/// Bytes use the pairing feature's wire order. Only locally administered unicast
+/// identities generated by this API are supported; physical identity cloning is
+/// not the contract. This stores no device handles, timers, or protocol queues.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct DualShock4Identity([u8; 6]);
+impl DualShock4Identity {
+    /// Generate identity from OS entropy. No provider is opened.
+    pub fn generate() -> Result<Self, ProviderError> {
+        common::creation_identity().map(Self)
+    }
+    /// Restore valid locally administered unicast bytes; invalid flags return None.
+    #[must_use]
+    pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self> {
+        if bytes[0] & 3 == 2 {
+            Some(Self(bytes))
+        } else {
+            None
+        }
+    }
+    #[must_use]
+    pub const fn to_bytes(self) -> [u8; 6] {
+        self.0
+    }
+    fn unique_id(self) -> String {
+        let bytes = self.0;
+        format!(
+            "virtualgamepad-dualshock4-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5]
+        )
+    }
+}
+
+/// Create a new USB/UHID session with an explicitly restored emulated identity.
+///
+/// Pairing feature bytes and UHID uniq are stable; transport identity and all
+/// protocol state are fresh. Other targets fail without opening a provider.
+/// Use distinct identities for simultaneously connected logical controllers.
+/// Stable consumer association is consumer-dependent, not guaranteed by this API.
+pub fn create_dualshock4_with_identity(
+    options: CreationOptions,
+    identity: DualShock4Identity,
+) -> Result<DualShock4Controller, ProviderError> {
+    create_dualshock4_inner(options, Some(identity))
+}
+
+/// Create a controller with the existing fresh-per-creation identity policy.
 pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controller, ProviderError> {
-    let realization = match options.target {
+    create_dualshock4_inner(options, None)
+}
+
+fn create_dualshock4_inner(
+    options: CreationOptions,
+    identity: Option<DualShock4Identity>,
+) -> Result<DualShock4Controller, ProviderError> {
+    let mut realization = match options.target {
         RealizationTarget::Evdev => evdev_realization(),
         RealizationTarget::Uhid => hid(options.session),
         RealizationTarget::DummyHcd => {
@@ -896,7 +1041,16 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
             });
         }
     };
-    let mut c = common::create(DualShock4Definition, realization, options)?;
+    if let (Some(identity), NativeControllerRealization::Uhid(spec)) = (identity, &mut realization)
+    {
+        spec.unique_id = identity.unique_id();
+    }
+    let mut c = common::create_with_identity(
+        DualShock4Definition,
+        realization,
+        options,
+        identity.map(DualShock4Identity::to_bytes),
+    )?;
     if matches!(
         options.target,
         RealizationTarget::Uhid | RealizationTarget::DummyHcd
@@ -907,9 +1061,263 @@ pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controlle
     }
     Ok(DualShock4Controller(c))
 }
+impl common::HidDriver for DualShock4Definition {
+    fn neutralize_state(state: &mut Self::State) {
+        *state = Self::State {
+            battery: state.battery,
+            sequence: state.sequence,
+            sensor_timestamp: state.sensor_timestamp,
+            touch_sequence: state
+                .touch_sequence
+                .wrapping_add(u8::from(state.touches.iter().any(Option::is_some))),
+            ..Self::State::default()
+        };
+    }
+
+    type Hid = common::SnapshotProtocol<DualShock4State>;
+    fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
+        common::creation_identity()
+    }
+    fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
+        #[allow(clippy::cast_possible_truncation)] // Protocol counters wrap at their declared width.
+        fn encode(state: &DualShock4State, now: u64, sequence: u8) -> gr_hid::Report {
+            let mut wire = state.clone();
+            wire.sequence = sequence;
+            wire.sensor_timestamp = ((now / 16).wrapping_mul(3)) as u16;
+            wire.touch_sequence = sequence;
+            common::logical_input(ds4_frame(&wire))
+        }
+        fn validate(report: &gr_hid::Report) -> Result<(), gr_hid::ReplyError> {
+            if report.kind != gr_hid::ReportType::Output || report.id() != Some(5) {
+                return Err(gr_hid::ReplyError::Unsupported);
+            }
+            if report.payload().len() != 31 {
+                return Err(gr_hid::ReplyError::Invalid);
+            }
+            Ok(())
+        }
+        common::SnapshotProtocol::new(
+            DualShock4State::default(),
+            encode,
+            validate,
+            features(identity),
+            [true; 3],
+            Some(4000),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let mut expected = DualShock4State::default();
+        expected.battery.set_exposed(true);
+        expected
+            .battery
+            .set_level(crate::BatteryLevel::new(37).unwrap());
+        expected.sequence = 77;
+        expected.sensor_timestamp = 12345;
+        expected.touch_sequence = 9;
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (DualShock4Axis(100), DualShock4Axis(200));
+        state.right = (DualShock4Axis(200), DualShock4Axis(100));
+        state.triggers = (DualShock4Trigger(255), DualShock4Trigger(255));
+        state.touches = [
+            Some(DualShock4TouchContact::new(1, 100, 200).unwrap()),
+            Some(DualShock4TouchContact::new(2, 300, 400).unwrap()),
+        ];
+        state.touch_sequence = 8;
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <DualShock4Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <DualShock4Definition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
+
+    #[test]
+    fn identity_roundtrip_flags_and_target_rejection_require_no_host() {
+        for first in 0..=255 {
+            let bytes = [first, 1, 2, 3, 4, 5];
+            let restored = DualShock4Identity::from_bytes(bytes);
+            assert_eq!(restored.is_some(), first & 3 == 2);
+            if let Some(identity) = restored {
+                assert_eq!(identity.to_bytes(), bytes);
+                assert!(identity.unique_id().len() < 64);
+                for target in [RealizationTarget::Evdev, RealizationTarget::DummyHcd] {
+                    assert!(matches!(
+                        create_dualshock4_with_identity(
+                            CreationOptions {
+                                target,
+                                session: RealizationSessionId(7),
+                            },
+                            identity
+                        ),
+                        Err(ProviderError::Unsupported { .. })
+                    ));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn evdev_retains_touch_contacts_and_exposes_combined_node_discovery_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.key_codes.contains(&330));
+        for code in [0, 1, 47, 53, 54, 57] {
+            assert!(spec.absolute_axes.iter().any(|axis| axis.code == code));
+        }
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "SDL gamepad discovery")
+        );
+    }
+
+    #[test]
+    fn hid_trigger_buttons_follow_analog_press_and_release_independently() {
+        for (left, right, mask) in [
+            (0, 0, 0),
+            (1, 0, 4),
+            (255, 0, 4),
+            (0, 1, 8),
+            (0, 255, 8),
+            (255, 255, 12),
+            (0, 0, 0),
+        ] {
+            let state = DualShock4State {
+                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
+                panic!("HID input")
+            };
+            assert_eq!(bytes[5], mask);
+            assert_eq!((bytes[7], bytes[8]), (left, right));
+        }
+    }
+
+    #[test]
+    fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
+        let selection = RealizationSelection {
+            controller: DualShock4Definition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (control, code) in [
+            (DualShock4Control::TouchpadClick, 704),
+            (DualShock4Control::LeftStickPress, 317),
+            (DualShock4Control::RightStickPress, 318),
+            (DualShock4Control::PlayStation, 316),
+        ] {
+            let mut state = DualShock4State::default();
+            for pressed in [true, false] {
+                state.set_native(control, pressed);
+                let ProviderFrame::Evdev(events) =
+                    DualShock4Definition.encode(selection, &state).unwrap()
+                else {
+                    panic!("evdev")
+                };
+                let active: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                    .map(|event| event.code)
+                    .collect();
+                assert_eq!(active, if pressed { vec![code] } else { vec![] });
+            }
+        }
+    }
+
+    #[test]
+    fn evdev_sony_mapping_and_digital_triggers_follow_standard_linux_layout() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
+        let selection = RealizationSelection {
+            controller: DualShock4Definition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (left, right, expected) in [
+            (0, 0, vec![]),
+            (1, 0, vec![312]),
+            (0, 255, vec![313]),
+            (255, 255, vec![312, 313]),
+        ] {
+            let state = DualShock4State {
+                triggers: (DualShock4Trigger::new(left), DualShock4Trigger::new(right)),
+                ..Default::default()
+            };
+            let ProviderFrame::Evdev(events) =
+                DualShock4Definition.encode(selection, &state).unwrap()
+            else {
+                panic!("evdev")
+            };
+            let active: Vec<_> = events
+                .iter()
+                .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                .map(|event| event.code)
+                .collect();
+            assert_eq!(active, expected);
+        }
+    }
+
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(EVDEV_SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                EVDEV_SURFACE.common.outputs[0].event_type,
+                EVDEV_SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
+
+    #[test]
+    fn pairing_requests_keep_injected_creation_identity_not_session_bits() {
+        use common::HidDriver;
+        use gr_hid::{Protocol, Reply, ReportType, RequestKind};
+        let get = RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(0x12),
+        };
+        for session in [7, 7 + (1 << 16)] {
+            let mut first = DualShock4Definition
+                .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 5]);
+            let mut second = DualShock4Definition
+                .hid_protocol(RealizationSessionId(session), [2, 1, 2, 3, 4, 6]);
+            let expected = first.request(&get, 0).0;
+            assert_ne!(expected, second.request(&get, 0).0);
+            let Reply::Get(Ok(report)) = &expected else {
+                panic!("missing pairing reply")
+            };
+            assert_eq!(&report.payload()[..6], &[2, 1, 2, 3, 4, 5]);
+            for now in [1, 100, 10000] {
+                assert_eq!(first.request(&get, now).0, expected);
+            }
+        }
+    }
+
     #[test]
     fn openpuck_ds4_motion_layout_and_feature_reports_are_stable() {
         let s = DualShock4State {
@@ -928,7 +1336,7 @@ mod tests {
             &bytes[12..24],
             &[1, 0, 3, 0, 2, 0, 252, 255, 5, 0, 250, 255]
         );
-        let f = features(RealizationSessionId(4));
+        let f = features([2, 0, 0, 0, 4, 0]);
         assert_eq!(
             f[&NativeHidReportKey {
                 report_id: 2,
@@ -1032,7 +1440,7 @@ mod tests {
         let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
             unreachable!()
         };
-        assert_eq!(&bytes[..9], &[10, 20, 30, 40, 8, 1, 0, 50, 60]);
+        assert_eq!(&bytes[..9], &[10, 20, 30, 40, 8, 13, 0, 50, 60]);
         let ProviderFrame::Evdev(events) = ds4_evdev_frame(&state) else {
             unreachable!()
         };
@@ -1070,6 +1478,85 @@ mod tests {
         };
         assert_eq!(u16::from_le_bytes([bytes[9], bytes[10]]), 850);
         assert_eq!(bytes[33], 5);
+    }
+
+    #[test]
+    fn touch_release_is_an_explicit_report_for_both_usb_transports() {
+        let mut host_active = [false; 2];
+        for (sequence, touches) in [
+            [None, None],
+            [
+                Some(DualShock4TouchContact::new(1, 10, 20).unwrap()),
+                Some(DualShock4TouchContact::new(2, 30, 40).unwrap()),
+            ],
+            [None, Some(DualShock4TouchContact::new(2, 31, 41).unwrap())],
+            [None, None],
+            [None, None],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let state = DualShock4State {
+                touches,
+                touch_sequence: u8::try_from(sequence).unwrap(),
+                ..Default::default()
+            };
+            let ProviderFrame::HidInput { bytes, .. } = ds4_frame(&state) else {
+                panic!("HID input")
+            };
+            // Model the host's count-gated contact updates: no report retains old state.
+            if bytes[32] > 0 {
+                host_active = [bytes[34] & 0x80 == 0, bytes[38] & 0x80 == 0];
+            }
+            assert_eq!(host_active, touches.map(|contact| contact.is_some()));
+            assert_eq!(bytes[32], 1);
+            assert_eq!(usize::from(bytes[33]), sequence);
+            for target in [RealizationTarget::Uhid, RealizationTarget::DummyHcd] {
+                let encoded = DualShock4Definition
+                    .encode(
+                        RealizationSelection {
+                            controller: DualShock4Definition.controller_id(),
+                            target,
+                        },
+                        &state,
+                    )
+                    .unwrap();
+                match encoded {
+                    ProviderFrame::HidInput { bytes: payload, .. } => assert_eq!(payload, bytes),
+                    ProviderFrame::DummyHcdInput(payload) => {
+                        assert_eq!(payload[0], 1);
+                        assert_eq!(&payload[1..], bytes);
+                    }
+                    _ => panic!("USB report"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn active_report_matches_pinned_openpuck_field_layout() {
+        let expected = common::fixture_bytes(include_str!(
+            "../../../tests/fixtures/protocol-corpus/ds4-active-layout.hex"
+        ));
+        let mut state = DualShock4State {
+            left: (DualShock4Axis::new(10), DualShock4Axis::new(20)),
+            right: (DualShock4Axis::new(30), DualShock4Axis::new(40)),
+            triggers: (DualShock4Trigger::new(255), DualShock4Trigger::new(127)),
+            dpad: [false, false, false, true],
+            touches: [
+                Some(DualShock4TouchContact::new(0, 1234, 567).unwrap()),
+                Some(DualShock4TouchContact::new(1, 1919, 941).unwrap()),
+            ],
+            ..Default::default()
+        };
+        state.face[0] = true;
+        state.buttons[4] = true;
+        state.buttons[5] = true;
+        let ProviderFrame::HidInput { report_id, bytes } = ds4_frame(&state) else {
+            panic!("HID input");
+        };
+        assert_eq!(report_id, Some(expected[0]));
+        assert_eq!(bytes, expected[1..]);
     }
 
     #[test]
@@ -1118,6 +1605,52 @@ mod tests {
     }
 
     #[test]
+    fn rgb_surface_is_advertised_for_hid_and_explicitly_limited_for_evdev() {
+        for surface in [&HID_SURFACE, &USB_SURFACE] {
+            assert!(
+                surface
+                    .common
+                    .outputs
+                    .iter()
+                    .any(|output| output.name == "RGB lightbar")
+            );
+        }
+        assert!(
+            !EVDEV_SURFACE
+                .common
+                .outputs
+                .iter()
+                .any(|output| output.name == "RGB lightbar")
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "RGB lightbar"
+                    && restriction.reason.contains("evdev"))
+        );
+    }
+
+    #[test]
+    fn rgb_output_requires_a_valid_flag_and_complete_color() {
+        for (flags, color, expected) in [
+            (2, vec![32, 64, 128], Some([32, 64, 128])),
+            (1, vec![32, 64, 128], None),
+            (2, vec![32, 64], None),
+        ] {
+            let mut raw = vec![flags, 0, 0, 0, 0];
+            raw.extend(color);
+            let DualShock4HidOutput::UsbOutput { lightbar_rgb, .. } =
+                decode_ds4_hid_output(Some(5), raw)
+            else {
+                panic!("missing decoded output")
+            };
+            assert_eq!(lightbar_rgb, expected);
+        }
+    }
+
+    #[test]
     fn usb_rumble_output_decodes_the_ds4_motor_offsets() {
         assert_eq!(
             decode_ds4_hid_output(Some(0x05), vec![0, 0, 0, 0x40, 0x20]),
@@ -1125,6 +1658,7 @@ mod tests {
                 raw: vec![0, 0, 0, 0x40, 0x20],
                 right_motor: 0x40,
                 left_motor: 0x20,
+                lightbar_rgb: None,
             }
         );
     }

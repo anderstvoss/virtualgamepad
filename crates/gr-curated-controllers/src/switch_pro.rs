@@ -10,7 +10,8 @@ use gr_controller_contract::{
     RealizationManifest, RealizationManifestEntry, RealizationValidationStatus,
     TargetAwareControllerDriver, TargetRestriction,
 };
-use gr_controller_runtime::ControllerRuntime;
+mod protocol;
+
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -91,14 +92,6 @@ impl SwitchProState {
     pub const fn motion(&self) -> SwitchProMotionSample {
         self.motion
     }
-    #[must_use]
-    pub const fn stream_enabled(&self) -> bool {
-        self.stream_enabled
-    }
-    #[must_use]
-    pub const fn motion_report_counter(&self) -> u8 {
-        self.timer
-    }
     fn set_native(&mut self, c: SwitchProControl, p: bool) {
         match c {
             SwitchProControl::L => self.buttons[0] = p,
@@ -140,11 +133,11 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "y",
-        event_code: 307,
+        event_code: 308,
     },
     DigitalControlSurface {
         control: "x",
-        event_code: 308,
+        event_code: 307,
     },
     DigitalControlSurface {
         control: "l",
@@ -176,15 +169,15 @@ static DIGITAL: [DigitalControlSurface; 14] = [
     },
     DigitalControlSurface {
         control: "capture",
-        event_code: 317,
+        event_code: 309,
     },
     DigitalControlSurface {
         control: "left-stick-press",
-        event_code: 318,
+        event_code: 317,
     },
     DigitalControlSurface {
         control: "right-stick-press",
-        event_code: 319,
+        event_code: 318,
     },
 ];
 static AXES: [AbsoluteAxisSurface; 6] = [
@@ -246,7 +239,12 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "console pairing",
     reason: "Steam/Linux mode deliberately omits Switch-console pairing and SPI calibration persistence",
 }];
-static EVDEV_RESTRICTIONS: [TargetRestriction; 2] = [
+static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
+    common::FEEDBACK_RESTRICTION,
+    TargetRestriction {
+        feature: "HD rumble",
+        reason: "evdev FF_RUMBLE represents two magnitudes, not Switch frequency/amplitude encoding",
+    },
     TargetRestriction {
         feature: "motion",
         reason: "evdev has no faithful Switch Pro IMU presentation",
@@ -259,7 +257,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
-        outputs: &OUTPUTS,
+        outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
     },
 };
@@ -293,7 +291,7 @@ impl RealizationControllerDefinition for SwitchProDefinition {
             RealizationManifestEntry {
                 target: RealizationTarget::Evdev,
                 provider_requirements: ProviderRequirements {
-                    requires_reverse_output: false,
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -376,14 +374,14 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
 }
 fn switch_evdev_frame(state: &SwitchProState) -> ProviderFrame {
     let mut events = Vec::with_capacity(22);
-    for (code, pressed) in [304, 305, 307, 308].into_iter().zip(state.face) {
+    for (code, pressed) in [304, 305, 308, 307].into_iter().zip(state.face) {
         events.push(EvdevEvent {
             event_type: common::EV_KEY,
             code,
             value: i32::from(pressed),
         });
     }
-    for (code, pressed) in [310, 311, 312, 313, 314, 315, 316, 317, 318, 319]
+    for (code, pressed) in [310, 311, 312, 313, 314, 315, 316, 309, 317, 318]
         .into_iter()
         .zip(state.buttons)
     {
@@ -603,11 +601,11 @@ fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
         numbered_input_reports: true,
         numbered_output_reports: true,
         numbered_feature_reports: false,
-        feature_report_responses: std::collections::BTreeMap::default(),
     })
 }
 fn evdev_realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
+        physical_path: None,
         device_name: "Pro Controller".into(),
         identity: NativeDeviceIdentity {
             vendor_id: 0x057e,
@@ -631,14 +629,46 @@ fn evdev_realization() -> NativeControllerRealization {
         force_feedback_codes: vec![0x50],
     })
 }
-pub struct SwitchProController(ControllerRuntime<SwitchProDefinition, common::ProviderSessionSink>);
+pub struct SwitchProController(common::ControllerSession<SwitchProDefinition>);
 impl SwitchProController {
+    #[must_use]
+    pub fn stream_enabled(&self) -> bool {
+        self.0
+            .protocol()
+            .map_or(self.0.state().stream_enabled, |p| p.stream_enabled)
+    }
+    #[must_use]
+    pub fn motion_report_counter(&self) -> u8 {
+        self.0.protocol().map_or(self.0.state().timer, |p| p.timer)
+    }
+
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.0.wants_write()
+    }
+
+    /// Service on this readiness source and at `next_service_in`, including idle state.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.0.readiness()
+    }
+    #[must_use]
+    pub fn next_service_in(&self) -> Option<std::time::Duration> {
+        self.0.next_service_in()
+    }
+    /// Count of bounded optional output notifications evicted by slow consumption.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.0.dropped_observations()
+    }
+
     #[must_use]
     pub const fn state(&self) -> &SwitchProState {
         self.0.state()
     }
     #[must_use]
-    pub const fn is_dirty(&self) -> bool {
+    pub fn is_dirty(&self) -> bool {
         self.0.is_dirty()
     }
     #[must_use]
@@ -685,10 +715,28 @@ impl SwitchProController {
             Ok(())
         })
     }
+    /// Release inputs as one accepted edit; call `commit()` to deliver it.
+    /// Identity, battery metadata, protocol clocks and host-owned outputs survive.
+    pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.0.neutralize()
+    }
+    /// Requested component labels and the cached creation-time host observation.
+    #[must_use]
+    pub fn association(&self) -> &crate::ControllerAssociation {
+        self.0.association()
+    }
+
+    /// Current transport and retained cleanup diagnostics.
+    pub fn provider_diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
+        self.0.diagnostics()
+    }
     pub fn commit(&mut self) -> Result<(), CommitError> {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
+        if self.0.selection().target == RealizationTarget::Uhid {
+            return self.0.commit();
+        }
         if self.0.state().stream_enabled {
             self.0
                 .update_state(|s| {
@@ -704,13 +752,33 @@ impl SwitchProController {
         }
     }
     pub fn close(&mut self) {
-        self.0.with_sink(common::ProviderSessionSink::close);
         self.0.close();
     }
+    /// Compatibility alias for [`Self::service`]; this performs required protocol work.
     pub fn poll_output(
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
+        self.service(callback)
+    }
+
+    /// Service protocol I/O, including while input state is unchanged.
+    ///
+    /// Call on [`Self::readiness`] and at [`Self::next_service_in`], watching
+    /// writability when [`Self::wants_write`] is true. Recompute interest after
+    /// each call. `commit` does not replace idle servicing.
+    /// Required curated HID/evdev replies are processed before optional output
+    /// callbacks. Callbacks must return promptly to permit the next service cycle.
+    /// See the crate-level scheduling contract. No thread or executor is started.
+    pub fn service(
+        &mut self,
+        callback: &mut dyn FnMut(SwitchProOutputEvent),
+    ) -> Result<(), ProviderError> {
+        if self.0.selection().target == RealizationTarget::Uhid {
+            return self
+                .0
+                .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
+        }
         let mut events = Vec::new();
         self.0
             .with_sink(|sink| sink.drain(&mut |event| events.push(event)))?;
@@ -783,8 +851,19 @@ fn dummy_hcd_reply(
     wire.extend_from_slice(&bytes);
     Ok(ProviderFrame::DummyHcdInput(wire))
 }
+/// Encoded motor words from one Switch host output; not decoded amplitudes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SwitchProRumble {
+    pub packet_counter: u8,
+    pub left: [u8; 4],
+    pub right: [u8; 4],
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SwitchProOutputEvent {
+    ForceFeedback(gr_realization_api::ForceFeedbackEvent),
+    ProviderEvent(Vec<EvdevEvent>),
+    HidLifecycle(gr_hid::Lifecycle),
     Output {
         report_id: Option<u8>,
         bytes: Vec<u8>,
@@ -796,9 +875,35 @@ pub enum SwitchProOutputEvent {
     },
     Other,
 }
+impl SwitchProOutputEvent {
+    /// Extract exact encoded motor words from accepted rumble/subcommand output.
+    /// Stateful compressed amplitude/frequency interpretation remains unvalidated.
+    #[must_use]
+    pub fn rumble(&self) -> Option<SwitchProRumble> {
+        let Self::Output {
+            report_id: Some(id @ (1 | 0x10)),
+            bytes,
+        } = self
+        else {
+            return None;
+        };
+        if bytes.len() > 63 || bytes.len() < if *id == 1 { 10 } else { 9 } {
+            return None;
+        }
+        Some(SwitchProRumble {
+            packet_counter: bytes[0],
+            left: bytes[1..5].try_into().ok()?,
+            right: bytes[5..9].try_into().ok()?,
+        })
+    }
+}
+
 impl From<RawReverseEvent> for SwitchProOutputEvent {
     fn from(e: RawReverseEvent) -> Self {
         match e {
+            RawReverseEvent::ForceFeedback(event) => Self::ForceFeedback(event),
+            RawReverseEvent::Evdev(events) => Self::ProviderEvent(events),
+            RawReverseEvent::HidLifecycle(event) => Self::HidLifecycle(event),
             RawReverseEvent::HidOutput { report_id, bytes } => Self::Output { report_id, bytes },
             RawReverseEvent::HidGetReportRequest {
                 request_id,
@@ -849,6 +954,109 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rumble_words_skip_counter_and_keep_motor_order() {
+        for id in [1, 0x10] {
+            let event = SwitchProOutputEvent::Output {
+                report_id: Some(id),
+                bytes: vec![15, 0, 1, 64, 64, 11, 12, 13, 14, 3],
+            };
+            assert_eq!(
+                event.rumble(),
+                Some(SwitchProRumble {
+                    packet_counter: 15,
+                    left: [0, 1, 64, 64],
+                    right: [11, 12, 13, 14]
+                })
+            );
+        }
+        for length in 0..9 {
+            assert!(
+                SwitchProOutputEvent::Output {
+                    report_id: Some(0x10),
+                    bytes: vec![0; length]
+                }
+                .rumble()
+                .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn neutralization_releases_native_inputs_and_preserves_metadata() {
+        let expected = SwitchProState {
+            timer: 77,
+            stream_enabled: true,
+            ..SwitchProState::default()
+        };
+        let mut state = expected.clone();
+        state.face.fill(true);
+        state.dpad.fill(true);
+        state.buttons.fill(true);
+        state.left = (SwitchProAxis(100), SwitchProAxis(200));
+        state.right = (SwitchProAxis(200), SwitchProAxis(100));
+        state.motion.accelerometer = [100; 3];
+        state.motion.gyroscope = [200; 3];
+        <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+        <SwitchProDefinition as common::HidDriver>::neutralize_state(&mut state);
+        assert_eq!(state, expected);
+    }
+
+    #[test]
+    fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
+        let selection = RealizationSelection {
+            controller: SwitchProDefinition.controller_id(),
+            target: RealizationTarget::Evdev,
+        };
+        for (control, code) in [
+            (SwitchProControl::Capture, 309),
+            (SwitchProControl::LeftStickPress, 317),
+            (SwitchProControl::RightStickPress, 318),
+            (SwitchProControl::Home, 316),
+        ] {
+            let mut state = SwitchProState::default();
+            for pressed in [true, false] {
+                state.set_native(control, pressed);
+                let ProviderFrame::Evdev(events) =
+                    SwitchProDefinition.encode(selection, &state).unwrap()
+                else {
+                    panic!("evdev")
+                };
+                let active: Vec<_> = events
+                    .iter()
+                    .filter(|event| event.event_type == common::EV_KEY && event.value != 0)
+                    .map(|event| event.code)
+                    .collect();
+                assert_eq!(active, if pressed { vec![code] } else { vec![] });
+            }
+        }
+    }
+
+    #[test]
+    fn evdev_rumble_surface_matches_capabilities_and_explicit_trigger_limit() {
+        let NativeControllerRealization::Evdev(spec) = evdev_realization() else {
+            panic!("evdev")
+        };
+        assert!(spec.event_codes.contains(&common::EV_FF));
+        assert_eq!(spec.force_feedback_codes, [0x50]);
+        assert_eq!(EVDEV_SURFACE.common.outputs.len(), 1);
+        assert_eq!(
+            (
+                EVDEV_SURFACE.common.outputs[0].event_type,
+                EVDEV_SURFACE.common.outputs[0].event_code
+            ),
+            (21, 0x50)
+        );
+        assert!(
+            EVDEV_SURFACE
+                .common
+                .restrictions
+                .iter()
+                .any(|restriction| restriction.feature == "automatic force-feedback trigger")
+        );
+    }
+
     #[test]
     fn openpuck_motion_triplicates_and_maps_axes() {
         let s = SwitchProState {
@@ -948,6 +1156,11 @@ mod tests {
             panic!("evdev realization")
         };
         assert_eq!(realization.identity.product_id, 0x2009);
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "HD rumble")
+        );
         assert_eq!(realization.absolute_axes.len(), AXES.len());
     }
 
@@ -1042,6 +1255,11 @@ mod tests {
         assert_eq!(realization.device_name, "Pro Controller");
         assert_eq!(realization.identity.vendor_id, 0x057e);
         assert_eq!(realization.identity.product_id, 0x2009);
+        assert!(
+            EVDEV_RESTRICTIONS
+                .iter()
+                .any(|restriction| restriction.feature == "HD rumble")
+        );
         assert_eq!(realization.identity.version, 0x0220);
     }
 

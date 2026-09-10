@@ -3,6 +3,10 @@
 Thanks for your interest. This project is in early WIP — expect APIs to
 shift. Please read this file end-to-end before opening a PR.
 
+## Architecture overhaul
+
+For protocol/corpus rewrite work, begin with the [architecture execution kit](docs/architecture-overhaul/README.md). Its gate register owns implementation sequencing; its status ledger distinguishes planned work from validated results. Existing repository and PR rules still apply.
+
 ## Development setup
 
 Run once after cloning:
@@ -63,3 +67,9 @@ vulnerability reporting (see [SECURITY.md](SECURITY.md)).
 
 By contributing, you agree your contributions are licensed under
 [AGPL-3.0-only](LICENSE).
+
+## Protocol corpus checks
+
+The private protocol corpus is pinned at `protocol-corpus/`. Contributors with access initialize it using `git submodule update --init --recursive`. Install its `requirements-dev.txt` in an isolated Python environment, then run its validator and unit tests. Run `python3 scripts/check-protocol-corpus.py --verify-remote` and `python3 -m unittest discover -s scripts/tests` before adopting a corpus commit. `--write` regenerates checked-in test artifacts after a reviewed gitlink update.
+
+Normal Cargo builds do not require corpus access. CI retains the repository's existing private-job gating; authenticated corpus jobs require a read credential, and fork jobs do not establish corpus conformance.
