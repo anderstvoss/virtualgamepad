@@ -185,7 +185,12 @@ def compare(reference, virtual, limitations=()):
                     result.update(reason=rule['reason'], evidence=rule['evidence'])
             results.append(result)
     counts = {name: sum(r['classification'] == name for r in results) for name in ('match', 'expected realization limitation', 'unexpected difference', 'not measured')}
-    return {'schema_version': 1, 'comparison_kind': 'SDL consumer observations', 'counts': counts, 'differences': results}
+    # Keep the inference method visible when the comparison is read without its
+    # input captures. This provenance is not another agreement/acceptance field.
+    backend_evidence = {role: record.get('backend_evidence')
+                        for role, record in [('reference', reference), ('virtual', virtual)]}
+    return {'schema_version': 1, 'comparison_kind': 'SDL consumer observations',
+            'counts': counts, 'differences': results, 'backend_evidence': backend_evidence}
 
 
 def main():

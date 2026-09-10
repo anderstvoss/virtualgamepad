@@ -20,6 +20,41 @@ static bool probe_duration(const char *text, uint64_t *value) {
 static bool probe_path_matches(const char *wanted, const char *actual) {
     return wanted && *wanted && actual && strcmp(wanted, actual) == 0;
 }
+/* Source-derived interpretation, not a stable SDL driver-name API. Restrict it
+ * to the reviewed release, structured VID/PID GUIDs and native Linux paths.
+ * SDL_CreateJoystickGUID stores the driver signature in byte 14; vendor-less
+ * GUIDs can contain name bytes there and must never be classified this way.
+ * Source: SDL 535d80badefc83c5c527ec5748f2a20d6a9310fe,
+ * SDL_joystick.c, hidapi/SDL_hidapijoystick.c, linux/SDL_sysjoystick.c. */
+static inline bool probe_numbered_path(const char *path, const char *prefix) {
+    if (!path || strncmp(path, prefix, strlen(prefix)) != 0) return false;
+    path += strlen(prefix);
+    if (!*path) return false;
+    for (; *path; ++path) if (*path < '0' || *path > '9') return false;
+    return true;
+}
+static inline const char *probe_backend(int version, const char *revision, bool linux_platform,
+                                        const char *guid, const char *path,
+                                        unsigned vendor, unsigned product) {
+    if (!linux_platform || version != 3002000 || !revision ||
+        strcmp(revision, "SDL3-3.2.0-release-3.2.0") != 0 ||
+        !guid || strlen(guid) != 32 || !vendor || vendor > 65535 || product > 65535) return NULL;
+    unsigned char bytes[16] = {0};
+    for (unsigned i = 0; i < 32; ++i) {
+        unsigned digit;
+        if (guid[i] >= '0' && guid[i] <= '9') digit = (unsigned)(guid[i] - '0');
+        else if (guid[i] >= 'a' && guid[i] <= 'f') digit = (unsigned)(guid[i] - 'a') + 10;
+        else if (guid[i] >= 'A' && guid[i] <= 'F') digit = (unsigned)(guid[i] - 'A') + 10;
+        else return NULL;
+        bytes[i/2] = (unsigned char)(bytes[i/2] * 16 + digit);
+    }
+    if ((bytes[4] | (unsigned)bytes[5] << 8) != vendor ||
+        (bytes[8] | (unsigned)bytes[9] << 8) != product ||
+        bytes[6] || bytes[7] || bytes[10] || bytes[11]) return NULL;
+    if (bytes[14] == 'h' && probe_numbered_path(path, "/dev/hidraw")) return "hidapi";
+    if (!bytes[14] && !bytes[15] && probe_numbered_path(path, "/dev/input/event")) return "linux-evdev";
+    return NULL;
+}
 static void probe_json_string(const char *text) {
     putchar('"');
     for (const unsigned char *p = (const unsigned char *)(text ? text : ""); *p; ++p) {

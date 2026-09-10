@@ -21,6 +21,7 @@ typedef int SDL_Joystick;
 #define SDL_GAMEPAD_AXIS_COUNT 6
 #define SDL_INIT_GAMEPAD 1
 #define SDL_INIT_SENSOR 2
+#define SDL_PLATFORM_LINUX 1
 #define SDL_SENSOR_GYRO 1
 #define SDL_SENSOR_ACCEL 2
 #define SDL_HINT_JOYSTICK_HIDAPI "SDL_JOYSTICK_HIDAPI"
@@ -47,17 +48,17 @@ static void SDL_free(void *p) { free(p); }
 static const char *SDL_GetHint(const char *name) { return getenv(name); }
 static bool SDL_Init(unsigned flags) { return !scenario("init-fail"); }
 static void SDL_Quit(void) { fprintf(stderr,"fake_closes=%u\n",closes); }
-static int SDL_GetVersion(void) { return 3002000; }
-static const char *SDL_GetRevision(void) { return "synthetic-build"; }
+static int SDL_GetVersion(void) { const char *s=getenv("PROBE_VERSION"); return s ? atoi(s) : 3002000; }
+static const char *SDL_GetRevision(void) { const char *s=getenv("PROBE_REVISION"); return s ? s : "synthetic-build"; }
 static SDL_JoystickID *SDL_GetJoysticks(int *count) {
  *count=scenario("duplicate") ? 2 : 1;
  int *ids=malloc((unsigned)*count*sizeof(int)); ids[0]=7; if (*count==2) ids[1]=8; return ids;
 }
 static SDL_JoystickID *SDL_GetGamepads(int *count) { return SDL_GetJoysticks(count); }
-static const char *SDL_GetGamepadPathForID(int id) { return scenario("absent") ? "synthetic-other" : "synthetic-device"; }
+static const char *SDL_GetGamepadPathForID(int id) { const char *s=getenv("PROBE_PATH"); return scenario("absent") ? "synthetic-other" : s ? s : "synthetic-device"; }
 static const char *SDL_GetJoystickPathForID(int id) { return SDL_GetGamepadPathForID(id); }
 static int SDL_GetGamepadGUIDForID(int id) { return 1; }
-static void SDL_GUIDToString(int guid,char *out,int size) { snprintf(out,(size_t)size,"synthetic-guid"); }
+static void SDL_GUIDToString(int guid,char *out,int size) { const char *s=getenv("PROBE_GUID"); snprintf(out,(size_t)size,"%s",s ? s : "synthetic-guid"); }
 static unsigned SDL_GetGamepadVendorForID(int id) { return 1; }
 static unsigned SDL_GetGamepadProductForID(int id) { return 2; }
 static SDL_Gamepad *SDL_OpenGamepad(int id) { ++opens; return scenario("open-fail") || (scenario("reopen-fail") && opens==2) ? NULL : &object; }

@@ -34,12 +34,31 @@ The `observations` object always includes these dimensions:
 - opened, closed, reopened, reclosed and device_removed.
 
 Each is `{ "value": ..., "reason": null }` when measured, or
-`{ "value": null, "reason": "explanation" }` when unmeasured. Backend identity,
-mapping source, controller reverse evidence and provider removal are currently
-explicitly unmeasured by this standalone probe. Requested hints are not evidence
-of the chosen backend. Consumer close is not device removal. Reopen is not measured
+`{ "value": null, "reason": "explanation" }` when unmeasured. Mapping source,
+controller reverse evidence and provider removal remain explicitly unmeasured by
+this standalone probe. Requested hints are not evidence of the chosen backend.
+Consumer close is not device removal. Reopen is not measured
 unless requested and attempted. Physical/reference role is assigned by the caller
 and must be retained in the surrounding experiment provenance.
+
+For the reviewed Linux SDL 3.2.0 release, `backend` may be `hidapi` or `linux-evdev`.
+This is a **source-derived inference** from GUID byte 14 and the exact opened
+device path, recorded as such in the root `backend_evidence` object with the source
+revision. It requires runtime version 3002000, revision label
+`SDL3-3.2.0-release-3.2.0`, a structured GUID matching the nonzero vendor/product
+identity, and an exact numbered `/dev/hidraw` or `/dev/input/event` path. The
+[GUID constructor](https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/SDL_joystick.c),
+[HIDAPI driver](https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/hidapi/SDL_hidapijoystick.c)
+and [Linux driver](https://github.com/libsdl-org/SDL/blob/535d80badefc83c5c527ec5748f2a20d6a9310fe/src/joystick/linux/SDL_sysjoystick.c)
+define this interpretation. Other builds/platforms, vendor-less name GUIDs,
+inconsistent signatures and paths, and failed opens remain unmeasured.
+The runtime label is not a binary hash; retain the surrounding build provenance.
+This does not identify a kernel driver, physical transport, HIDAPI subdriver or
+mapping database entry. A mapping string alone cannot establish which built-in,
+generated or user-supplied mapping won. External evidence is still needed for that
+provenance. The comparator retains each capture's `backend_evidence` alongside
+its differences so the inference label survives comparison. Existing v2
+observations with an unknown backend remain valid.
 
 Sensor summaries compare availability, enablement, change and validity; raw sample
 counts remain diagnostic rather than exact timing equivalence. Touch masks record

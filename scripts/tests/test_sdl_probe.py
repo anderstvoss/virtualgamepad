@@ -24,12 +24,45 @@ class ProbeIntegration(unittest.TestCase):
     def tearDownClass(cls):
         cls.directory.cleanup()
 
-    def run_probe(self, scenario, *options):
-        result = subprocess.run([str(self.binary), 'synthetic-device', '300', *options], env=dict(os.environ, PROBE_SCENARIO=scenario), capture_output=True, text=True)
+    def run_probe(self, scenario, *options, evidence=None):
+        env = {key: value for key, value in os.environ.items() if not key.startswith(('PROBE_', 'SDL_'))}
+        env.update(PROBE_SCENARIO=scenario)
+        env.update(evidence or {})
+        result = subprocess.run([str(self.binary), env.get('PROBE_PATH', 'synthetic-device'), '300', *options], env=env, capture_output=True, text=True)
         records = [json.loads(line) for line in result.stdout.splitlines()]
         record = records[-1]
         COMPARE.normalize(record)
         return result, record
+
+    def test_reviewed_guid_and_path_identify_backend_independently_of_hint(self):
+        # Synthetic GUIDs use fake VID/PID 1:2, never captures from user devices.
+        for guid, path, backend, conflicting_hint in [
+            ('03000000010000000200000000006800', '/dev/hidraw7', 'hidapi', '0'),
+            ('03000000010000000200000000000000', '/dev/input/event12', 'linux-evdev', '1'),
+        ]:
+            result, record = self.run_probe('normal', evidence={
+                'PROBE_REVISION': 'SDL3-3.2.0-release-3.2.0', 'PROBE_GUID': guid,
+                'PROBE_PATH': path, 'SDL_JOYSTICK_HIDAPI': conflicting_hint,
+            })
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(record['observations']['backend']['value'], backend)
+            self.assertEqual(record['observations']['backend_request']['value'], conflicting_hint)
+            self.assertIn('source-derived', record['backend_evidence']['method'])
+            self.assertIsNone(record['observations']['mapping_source']['value'])
+
+    def test_ambiguous_backend_and_failed_open_remain_unmeasured(self):
+        baseline = {'PROBE_REVISION': 'SDL3-3.2.0-release-3.2.0',
+                    'PROBE_GUID': '03000000010000000200000000006800', 'PROBE_PATH': '/dev/hidraw7'}
+        for override in [
+            {'PROBE_REVISION': 'synthetic-build'}, {'PROBE_VERSION': '3004000'},
+            {'PROBE_GUID': 'synthetic-guid'}, {'PROBE_GUID': '03000000000000000200000000006800'},
+            {'PROBE_PATH': '/dev/hidraw7-extra'}, {'PROBE_PATH': '/dev/input/event7'},
+            {'PROBE_SCENARIO': 'open-fail'},
+        ]:
+            _, record = self.run_probe('normal', evidence=baseline | override)
+            self.assertIsNone(record['observations']['backend']['value'])
+            self.assertTrue(record['observations']['backend']['reason'])
+            self.assertIsNone(record['backend_evidence'])
 
     def test_selection_and_open_failures_never_claim_close(self):
         for scenario in ['absent', 'duplicate', 'init-fail', 'open-fail']:

@@ -37,6 +37,17 @@ class ComparisonTests(unittest.TestCase):
         self.assertEqual(self.classifications(result)['controller_reverse'], 'not measured')
         self.assertEqual(self.classifications(result)['device_removed'], 'not measured')
 
+    def test_backend_inference_provenance_survives_comparison(self):
+        left, right = capture(), capture()
+        left['observations']['backend'] = dict(value='hidapi', reason=None)
+        right['observations']['backend'] = dict(value='hidapi', reason=None)
+        left['backend_evidence'] = dict(method='source-derived synthetic test', source_revision='synthetic')
+        result = COMPARE.compare(left, right)
+        self.assertEqual(self.classifications(result)['backend'], 'match')
+        self.assertEqual(result['backend_evidence']['reference'], left['backend_evidence'])
+        self.assertIsNone(result['backend_evidence']['virtual'])
+        self.assertEqual(self.classifications(result)['mapping_source'], 'not measured')
+
     def test_extra_buttons_and_exact_evidence_linked_limitations(self):
         left, right = capture(), capture()
         right['observations']['capabilities']['value']['buttons'] = ['south']

@@ -27,6 +27,7 @@ int main(int argc, char **argv) {
     bool gamepad_script = rumble_script || (strcmp(profile, "--gamepad-script") == 0);
     bool require_motion = require_script || motion_script || (strcmp(profile, "--require-motion") == 0);
     bool initialized = false, passed = false, connected = false;
+    const char *backend = NULL;
     bool rumble = false, led = false, neutral_observed = false;
     const char *error = "invalid arguments: expected exact-device-path duration-ms [script-mode] [--reopen]";
     SDL_Gamepad *gamepad = NULL;
@@ -72,6 +73,10 @@ int main(int argc, char **argv) {
     gamepad = SDL_OpenGamepad(selected);
     if (gamepad == NULL) { error = "selected gamepad open failed"; goto done; }
     probe_opened(&lifecycle, true, false);
+#if defined(SDL_PLATFORM_LINUX) && !defined(SDL_PLATFORM_ANDROID)
+    backend = probe_backend(SDL_GetVersion(), SDL_GetRevision(), true, guid,
+                            SDL_GetGamepadPathForID(selected), vendor, product);
+#endif
     for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) available_buttons[b] = SDL_GamepadHasButton(gamepad, (SDL_GamepadButton)b);
     for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; ++a) available_axes[a] = SDL_GamepadHasAxis(gamepad, (SDL_GamepadAxis)a);
     SDL_PropertiesID properties = SDL_GetGamepadProperties(gamepad);
@@ -207,12 +212,16 @@ int main(int argc, char **argv) {
     for (int index = 0; index < 2; ++index) {
         printf("%s{\"present\":%s,\"enabled\":%s,\"distinct\":%u,\"invalid_timestamps_or_values\":%s}", index ? "," : "", sensors[index].present ? "true" : "false", sensors[index].enabled ? "true" : "false", sensors[index].distinct, sensors[index].invalid ? "true" : "false");
     }
-    printf("],\"observations\":{");
+    printf("],\"backend_evidence\":");
+    if (backend) printf("{\"method\":\"source-derived GUID signature and exact Linux device path\",\"source_revision\":\"535d80badefc83c5c527ec5748f2a20d6a9310fe\"}");
+    else printf("null");
+    printf(",\"observations\":{");
     probe_measurement("identity", lifecycle.opened ? NULL : "device not opened");
     if (lifecycle.opened) { printf("{\"vendor\":%u,\"product\":%u,\"guid\":", vendor, product); probe_json_string(guid); printf("}"); } else printf("null");
     printf("},"); probe_measurement("build", NULL);
     printf("{\"version\":%d,\"revision\":", SDL_GetVersion()); probe_json_string(SDL_GetRevision()); printf("}},");
-    probe_unknown("backend", "SDL 3.2 does not expose a verified driver name through this probe; requested hints are not observations");
+    if (backend) { probe_measurement("backend", NULL); probe_json_string(backend); printf("}"); }
+    else probe_unknown("backend", "no opened device matching the reviewed SDL 3.2.0 Linux GUID/path signature; requested hints are not observations");
     printf(","); if (backend_request) { probe_measurement("backend_request", NULL); probe_json_string(backend_request); printf("}"); }
     else { probe_unknown("backend_request", "no explicit HIDAPI hint requested"); }
     printf(",");

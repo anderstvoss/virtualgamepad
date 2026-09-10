@@ -20,13 +20,17 @@ prototype is only compiled as an integration test.
   schedules bounded controller-owned status work. No compound/provider semantics
   are changed. Both direct and host-driven bridge/memory cases pass.
 - T: typed independent controls and restrictions are representable; macro-only
-  documentation cannot admit independent raw state. Real mode/backend evidence
-  remains incomplete. Full Gate T is blocked, not passed by synthetic examples.
+  documentation cannot admit independent raw state. Pinned SDL default mapping
+  and kernel parser research resolve part of the backend evidence gap; real
+  mode/exposure evidence remains incomplete. Full Gate T is blocked, not passed
+  by synthetic examples.
 - U: one v2 SDL probe, exact selection, actual close/reopen records and classified
   comparison pass deterministic tests. Required external observations can attach
-  only to a matching capture hash and cannot overwrite existing values. Physical
-  comparisons/backend evidence and corpus adoption remain outstanding; Gate U
-  stays blocked. Exit 0 is not a claim of complete compatibility.
+  only to a matching capture hash and cannot overwrite existing values. Reviewed
+  Linux SDL 3.2.0 GUID/path combinations now provide explicitly source-derived
+  backend identification. Gate U corpus adoption stays blocked pending publication;
+  physical comparisons are separate controller acceptance. Exit 0 is not a claim
+  of complete compatibility.
 
 Review corrected lint findings in the typed-button fixture and C output formatting.
 The final warning-free build and tooling suite pass. Follow-up regressions also
@@ -36,8 +40,8 @@ live topology session. Existing current-controller regressions are retained.
 ## Corpus delivery boundary
 
 [Companion corpus PR #2](https://github.com/anderstvoss/controller-protocol-corpus/pull/2)
-contains revision `e677a26`: three pinned/scoped sources, twelve claims and three
-provenance tests. It validates 46 records and nine tests. Vendor excerpt hashing
+contains revision `0468aeb`: seven pinned/scoped sources, fifteen claims and four
+provenance tests. It validates 53 records and ten tests. Vendor excerpt hashing
 is explicitly scoped; no whole-page digest or physical capture is invented.
 Core remains pinned to `e65c044d062ed833ad13641f54c826db16d176e4`, verified against
 published corpus main. Adopt the companion only after it satisfies that policy.
@@ -94,9 +98,9 @@ Behavior changed:
 
 Tests added or modified:
 - 19 Rust regressions/examples across realization, lifecycle, topology and exposure.
-- Tooling suite expanded from 27 to 40 tests, including the actual C probe with fake
+- Tooling suite expanded from 27 to 43 tests, including the actual C probe with fake
   SDL and hash-bound external observation evidence.
-- Companion corpus adds three provenance regressions (six to nine tests).
+- Companion corpus adds four provenance regressions (six to ten tests).
 
 Validation:
 - `cargo fmt --all -- --check`: passed.
@@ -104,7 +108,7 @@ Validation:
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed.
 - `cargo test --workspace --all-features`: passed, 258 tests; 30 hardware tests ignored.
 - `gitleaks detect --redact`: passed.
-- `python3 -m unittest discover -s scripts/tests`: passed, 40 tests.
+- `python3 -m unittest discover -s scripts/tests`: passed, 43 tests.
 - Pinned corpus validator/tests and `scripts/check-protocol-corpus.py --verify-remote`: passed.
 - Real SDL 3.2.0 strict C compilation and failed-open v2 output contract: passed.
 - Configured commit hooks: passed for implementation stages; delivery uses the
@@ -115,7 +119,9 @@ New dependencies:
 
 Unresolved issues:
 - Corpus companion adoption awaits publication on main; no merge is authorized.
-- Gate T real backend/remap-only evidence and Gate U physical/backend/removal
-  observations remain blocked. This is not complete hardware fidelity acceptance.
+- Gate T contrasting exposure/remap-only evidence remains incomplete. Gate U
+  harness/schema passes with bounded source-derived backend identification; its
+  corpus adoption awaits main. Controller physical/mapping/removal observations
+  remain unmeasured where unavailable. This is not hardware fidelity acceptance.
 - Existing DS4 touch isolation, Switch rumble fidelity, Steam/Eden, broker, audio
   and actual Bluetooth limits remain. No host changes or physical tests performed.

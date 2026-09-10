@@ -11,6 +11,28 @@ class SdlContractTests(unittest.TestCase):
 #include <assert.h>
 #include "sdl3-probe-contract.h"
 int main(void) {
+    const char *release = "SDL3-3.2.0-release-3.2.0";
+    const char *hidapi = "03000000010000000200000000006800";
+    assert(strcmp(probe_backend(3002000, release, true, hidapi, "/dev/hidraw17", 1, 2), "hidapi") == 0);
+    assert(strcmp(probe_backend(3002000, release, true, "05000000010000000200000000000000", "/dev/input/event12", 1, 2), "linux-evdev") == 0);
+    assert(!probe_backend(3002000, release, false, hidapi, "/dev/hidraw17", 1, 2));
+    assert(!probe_backend(3002000, NULL, true, hidapi, "/dev/hidraw17", 1, 2));
+    assert(!probe_backend(3002000, release, true, NULL, "/dev/hidraw17", 1, 2));
+    assert(!probe_backend(3002000, release, true, hidapi, NULL, 1, 2));
+    assert(!probe_backend(3002000, release, true, hidapi, "/dev/hidraw17", 0, 2));
+    assert(!probe_backend(3002000, release, true, hidapi, "/dev/hidraw17", 1, 3));
+    const char *unknown_guids[] = {
+        "0300000001000000020000000000680", "03000000010000000200000000006800x",
+        "030000000100000002000000000068zz", "03000000010000000200000000000000",
+        "03000000010001000200000000006800", "03000000010000000200010000006800",
+        "03000000010000000200000000007600",
+    };
+    for (unsigned i = 0; i < sizeof(unknown_guids)/sizeof(unknown_guids[0]); ++i)
+        assert(!probe_backend(3002000, release, true, unknown_guids[i], "/dev/hidraw17", 1, 2));
+    const char *unknown_paths[] = {"", "/dev/hidraw", "/dev/hidraw-1", "/dev/hidraw17/child", "virtual-device", "/dev/input/js0"};
+    for (unsigned i = 0; i < sizeof(unknown_paths)/sizeof(unknown_paths[0]); ++i)
+        assert(!probe_backend(3002000, release, true, hidapi, unknown_paths[i], 1, 2));
+    assert(!probe_backend(3002000, release, true, "03000000010000000200000000000001", "/dev/input/event7", 1, 2));
     ProbeLifecycle lifecycle = {0};
     probe_closed(&lifecycle, false);
     assert(!lifecycle.closed);
