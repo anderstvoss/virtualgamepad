@@ -33,6 +33,8 @@ const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
+const DIAGNOSTIC_LOG_HEIGHT_FRACTION: f32 = 0.6;
+const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
 const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
@@ -115,6 +117,14 @@ fn controller_list_height(
 /// and health status remain a single bottom-aligned group.
 fn sidebar_footer_height(available_height: f32) -> f32 {
     available_height.max(0.0)
+}
+
+fn diagnostic_log_height(footer_height: f32) -> f32 {
+    sidebar_footer_height(footer_height) * DIAGNOSTIC_LOG_HEIGHT_FRACTION
+}
+
+fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
+    (log_height - f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)).max(0.0)
 }
 
 fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
@@ -1617,6 +1627,7 @@ impl eframe::App for App {
                         },
                     );
                     let footer_height = sidebar_footer_height(ui.available_height());
+                    let log_height = diagnostic_log_height(footer_height);
                     ui.allocate_ui_with_layout(
                         Vec2::new(SIDEBAR_WIDTH, footer_height),
                         egui::Layout::bottom_up(egui::Align::Min),
@@ -1642,7 +1653,7 @@ impl eframe::App for App {
                                 .inner_margin(egui::Margin {
                                     left: 4,
                                     right: 4,
-                                    top: 4,
+                                    top: DIAGNOSTIC_LOG_TOP_MARGIN,
                                     bottom: 0,
                                 })
                                 .show(ui, |ui| {
@@ -1651,7 +1662,8 @@ impl eframe::App for App {
                                     egui::ScrollArea::vertical()
                                         .id_salt("diagnostic_log")
                                         .auto_shrink([false, false])
-                                        .max_height(58.0)
+                                        .min_scrolled_height(diagnostic_log_scroll_height(log_height))
+                                        .max_height(diagnostic_log_scroll_height(log_height))
                                         .stick_to_bottom(true)
                                         .show(ui, |ui| {
                                             ui.set_width(SIDEBAR_WIDTH - 16.0);
@@ -3068,6 +3080,13 @@ mod tests {
     fn sidebar_footer_claims_all_remaining_height() {
         assert!((sidebar_footer_height(128.0) - 128.0).abs() < f32::EPSILON);
         assert!(sidebar_footer_height(-1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn diagnostic_log_uses_sixty_percent_of_the_footer_region() {
+        assert!((diagnostic_log_height(200.0) - 120.0).abs() < 0.001);
+        assert!((diagnostic_log_scroll_height(120.0) - 116.0).abs() < 0.001);
+        assert!(diagnostic_log_scroll_height(2.0).abs() < 0.001);
     }
 
     #[test]
