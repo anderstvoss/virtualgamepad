@@ -34,12 +34,12 @@ const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
+const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
-const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 3.0;
-const ADVANCED_OPTIONS_RESERVED_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT + ADVANCED_OPTIONS_BODY_HEIGHT;
-const SIDEBAR_FIXED_HEIGHT: f32 = 360.0 + ADVANCED_OPTIONS_RESERVED_HEIGHT;
+const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
+const SIDEBAR_FIXED_HEIGHT: f32 = 360.0 + CONTROLLER_ROW_HEIGHT;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = 0.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -96,8 +96,14 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
-fn controller_list_height(viewport_height: f32) -> f32 {
-    (viewport_height - SIDEBAR_FIXED_HEIGHT).max(CONTROLLER_LIST_MIN_HEIGHT)
+fn controller_list_height(viewport_height: f32, advanced_options_open: bool) -> f32 {
+    let advanced_options_height = if advanced_options_open {
+        ADVANCED_OPTIONS_BODY_HEIGHT
+    } else {
+        0.0
+    };
+    (viewport_height - SIDEBAR_FIXED_HEIGHT - advanced_options_height)
+        .max(CONTROLLER_LIST_MIN_HEIGHT)
 }
 
 fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
@@ -286,7 +292,6 @@ fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered
 }
 
 fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
-    const SPINBOX_WIDTH: f32 = 58.0;
     const ARROW_WIDTH: f32 = 16.0;
     const SPINBOX_HEIGHT: f32 = 22.0;
     let id = ui.make_persistent_id("create_count_spinbox");
@@ -295,9 +300,9 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
             .unwrap_or_else(|| value.to_string())
     });
     let text_response = ui.add_sized(
-        [SPINBOX_WIDTH, SPINBOX_HEIGHT],
+        [CREATE_COUNT_SPINBOX_WIDTH, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
-            .desired_width(SPINBOX_WIDTH)
+            .desired_width(CREATE_COUNT_SPINBOX_WIDTH)
             .horizontal_align(egui::Align::RIGHT)
             .vertical_align(egui::Align::Center)
             .margin(egui::Margin {
@@ -1259,7 +1264,7 @@ impl eframe::App for App {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let name_is_default = self.name_draft.trim().is_empty();
                         let clear_width = 18.0;
-                        let count_control_width = 58.0;
+                        let count_control_width = CREATE_COUNT_SPINBOX_WIDTH;
                         let edit_width = if name_is_default {
                             (ui.available_width()
                                 - count_control_width
@@ -1328,29 +1333,63 @@ impl eframe::App for App {
                     } else {
                         "▶ Advanced options"
                     };
-                    let advanced_response = ui
-                        .add_enabled_ui(advanced_available, |ui| {
-                            ui.add_sized(
-                                [ui.available_width(), CONTROLLER_ROW_HEIGHT],
-                                egui::Button::new(advanced_label),
-                            )
-                        })
-                        .inner;
+                    let advanced_width = (ui.available_width()
+                        - CREATE_COUNT_SPINBOX_WIDTH
+                        - ui.spacing().item_spacing.x)
+                        .max(40.0);
+                    let (advanced_rect, advanced_response) = ui.allocate_exact_size(
+                        Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT),
+                        if advanced_available {
+                            Sense::click()
+                        } else {
+                            Sense::hover()
+                        },
+                    );
+                    let advanced_fill = if advanced_available {
+                        controller_row_fill(
+                            self.advanced_options_open,
+                            ui.visuals().selection.bg_fill,
+                        )
+                    } else {
+                        ui.visuals().widgets.noninteractive.bg_fill
+                    };
+                    ui.painter().rect_filled(advanced_rect, 0.0, advanced_fill);
+                    if advanced_available
+                        && controller_row_has_hover_outline(advanced_response.hovered())
+                    {
+                        ui.painter().rect_stroke(
+                            advanced_rect,
+                            0.0,
+                            ui.visuals().widgets.hovered.bg_stroke,
+                            egui::StrokeKind::Inside,
+                        );
+                    }
+                    ui.painter().text(
+                        advanced_rect.left_center() + egui::vec2(6.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        advanced_label,
+                        egui::TextStyle::Button.resolve(ui.style()),
+                        if advanced_available {
+                            ui.visuals().text_color()
+                        } else {
+                            ui.visuals().weak_text_color()
+                        },
+                    );
                     if advanced_response.clicked() {
                         self.advanced_options_open = !self.advanced_options_open;
                     }
-                    egui::Frame::NONE
-                        .fill(Color32::from_gray(20))
-                        .show(ui, |ui| {
-                            ui.set_width(SIDEBAR_WIDTH);
-                            egui::ScrollArea::vertical()
-                                .id_salt("advanced_options")
-                                .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                .auto_shrink([false, false])
-                                .show(ui, |ui| {
-                                    ui.set_width(SIDEBAR_WIDTH - 8.0);
-                                    if self.advanced_options_open && advanced_available {
+                    if self.advanced_options_open && advanced_available {
+                        egui::Frame::NONE
+                            .fill(Color32::from_gray(20))
+                            .show(ui, |ui| {
+                                ui.set_width(SIDEBAR_WIDTH);
+                                egui::ScrollArea::vertical()
+                                    .id_salt("advanced_options")
+                                    .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                    .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                    .auto_shrink([false, false])
+                                    .show(ui, |ui| {
+                                        ui.set_width(SIDEBAR_WIDTH - 8.0);
                                         ui.strong("Experimental USB gadget");
                                         ui.small("Requires the privileged broker and prepared dummy_hcd resources.");
                                         ui.small("Complete Gate G host setup before validation.");
@@ -1360,11 +1399,14 @@ impl eframe::App for App {
                                         ui.small("• dummy_hcd resources were prepared by the host.");
                                         ui.small("• The target host is ready for USB gadget probing.");
                                         ui.small("• Record the consumer and host result in lab notes.");
-                                    }
-                                });
-                        });
+                                    });
+                            });
+                    }
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                    let list_height = controller_list_height(ctx.screen_rect().height());
+                    let list_height = controller_list_height(
+                        ctx.screen_rect().height(),
+                        self.advanced_options_open && advanced_available,
+                    );
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
                     let selector_spacing = ui.spacing().item_spacing.x;
                     let controller_content_width = controller_surface_width - selector_spacing;
@@ -2920,12 +2962,13 @@ mod tests {
     }
 
     #[test]
-    fn advanced_options_use_the_controller_list_height_budget() {
+    fn advanced_options_only_reduce_the_list_budget_while_open() {
         assert!(
-            (ADVANCED_OPTIONS_RESERVED_HEIGHT - (CONTROLLER_ROW_HEIGHT * 4.0)).abs() < f32::EPSILON
+            (controller_list_height(100.0, false) - CONTROLLER_LIST_MIN_HEIGHT).abs()
+                < f32::EPSILON
         );
-        assert!((controller_list_height(100.0) - CONTROLLER_LIST_MIN_HEIGHT).abs() < f32::EPSILON);
-        assert!((controller_list_height(600.0) - 152.0).abs() < f32::EPSILON);
+        assert!((controller_list_height(600.0, false) - 218.0).abs() < f32::EPSILON);
+        assert!((controller_list_height(600.0, true) - 86.0).abs() < f32::EPSILON);
     }
 
     #[test]
