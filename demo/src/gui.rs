@@ -170,6 +170,21 @@ fn selection_after_controller_click(
     clicked.then_some(clicked_index).or(selected_index)
 }
 
+fn controller_row_fill(
+    active: bool,
+    hovered: bool,
+    selected_fill: Color32,
+    hover_fill: Color32,
+) -> Color32 {
+    if active {
+        selected_fill
+    } else if hovered {
+        hover_fill
+    } else {
+        Color32::from_gray(62)
+    }
+}
+
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
     let existing_names: std::collections::HashSet<String> = existing_names.collect();
     (0..=existing_names.len())
@@ -1375,31 +1390,24 @@ impl eframe::App for App {
                                         [CONTROLLER_NUMBER_WIDTH, CONTROLLER_ROW_HEIGHT],
                                         egui::Label::new(format!("{}", index + 1)),
                                     );
-                                    let fill = if active {
-                                        ui.visuals().selection.bg_fill
-                                    } else {
-                                        Color32::from_gray(62)
-                                    };
-                                    let controller_response = egui::Frame::NONE
-                                        .fill(fill)
-                                        .show(ui, |ui| {
-                                            let (rect, response) = ui.allocate_exact_size(
-                                                Vec2::new(
-                                                    controller_button_width,
-                                                    CONTROLLER_ROW_HEIGHT,
-                                                ),
-                                                Sense::click(),
-                                            );
-                                            ui.painter().text(
-                                                rect.left_center() + egui::vec2(6.0, 0.0),
-                                                egui::Align2::LEFT_CENTER,
-                                                label,
-                                                egui::TextStyle::Button.resolve(ui.style()),
-                                                ui.visuals().text_color(),
-                                            );
-                                            response
-                                        })
-                                        .inner;
+                                    let (rect, controller_response) = ui.allocate_exact_size(
+                                        Vec2::new(controller_button_width, CONTROLLER_ROW_HEIGHT),
+                                        Sense::click(),
+                                    );
+                                    let fill = controller_row_fill(
+                                        active,
+                                        controller_response.hovered(),
+                                        ui.visuals().selection.bg_fill,
+                                        ui.visuals().widgets.hovered.bg_fill,
+                                    );
+                                    ui.painter().rect_filled(rect, 0.0, fill);
+                                    ui.painter().text(
+                                        rect.left_center() + egui::vec2(6.0, 0.0),
+                                        egui::Align2::LEFT_CENTER,
+                                        label,
+                                        egui::TextStyle::Button.resolve(ui.style()),
+                                        ui.visuals().text_color(),
+                                    );
                                     self.selected_controller = selection_after_controller_click(
                                         self.selected_controller,
                                         index,
@@ -3065,6 +3073,19 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn controller_rows_highlight_on_hover_without_overriding_selection() {
+        let selected = Color32::BLUE;
+        let hovered = Color32::GRAY;
+
+        assert_eq!(
+            controller_row_fill(false, false, selected, hovered),
+            Color32::from_gray(62)
+        );
+        assert_eq!(controller_row_fill(false, true, selected, hovered), hovered);
+        assert_eq!(controller_row_fill(true, true, selected, hovered), selected);
     }
 
     #[test]
