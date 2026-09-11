@@ -136,6 +136,35 @@ fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>)
         .expect("unbounded controller name search must find an available name")
 }
 
+fn truncate_identifier(identifier: &str, max_chars: usize) -> String {
+    let mut chars = identifier.chars();
+    let visible: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{visible}…")
+    } else {
+        visible
+    }
+}
+
+fn controller_identifier(controller: &NamedController) -> String {
+    truncate_identifier(
+        &format!(
+            "{} · lab {}",
+            target_label(controller.options.target),
+            controller.options.session
+        ),
+        28,
+    )
+}
+
+fn requested_create_count(name: &str, count: u32) -> u32 {
+    if name.trim().is_empty() {
+        count.max(1)
+    } else {
+        1
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ControllerLifecycleStatus {
     Created { name: String },
@@ -781,6 +810,7 @@ pub struct App {
     kind: Kind,
     target: RealizationId,
     name_draft: String,
+    create_count: u32,
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
@@ -798,6 +828,7 @@ impl Default for App {
             kind: Kind::Xbox360,
             target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
+            create_count: 1,
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
@@ -823,6 +854,19 @@ impl App {
     }
 
     fn create(&mut self) {
+        let count = requested_create_count(&self.name_draft, self.create_count);
+        for _ in 0..count {
+            self.create_one();
+            if matches!(
+                self.lifecycle_status,
+                Some(ControllerLifecycleStatus::CreationFailed { .. })
+            ) {
+                break;
+            }
+        }
+    }
+
+    fn create_one(&mut self) {
         let options = LabOptions {
             target: self.target,
             session: self.next_session,
@@ -952,58 +996,173 @@ impl eframe::App for App {
                     drag: false,
                     mouse_wheel: true,
                 })
-                .show(ui, |ui| {
+            .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(200.0);
-            ui.heading("Create controller");
-            egui::ComboBox::from_label("Type")
-                .selected_text(self.kind.label())
-                .show_ui(ui, |ui| {
-                    for kind in Kind::ALL {
-                        ui.selectable_value(&mut self.kind, kind, kind.label());
+                    ui.heading("Add Controller");
+                    ui.separator();
+                    egui::Grid::new("controller_creation_grid")
+                        .num_columns(2)
+                        .spacing([6.0, 4.0])
+                        .show(ui, |ui| {
+                            ui.label("Type");
+                            egui::ComboBox::from_id_salt("controller_type")
+                                .selected_text(self.kind.label())
+                                .width(ui.available_width())
+                                .show_ui(ui, |ui| {
+                                    for kind in Kind::ALL {
+                                        ui.selectable_value(&mut self.kind, kind, kind.label());
+                                    }
+                                });
+                            ui.end_row();
+                            ui.label("Target");
+                            egui::ComboBox::from_id_salt("controller_target")
+                                .selected_text(target_label(self.target))
+                                .width(ui.available_width())
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.target,
+                                        RealizationId::LINUX_UINPUT,
+                                        target_label(RealizationId::LINUX_UINPUT),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.target,
+                                        RealizationId::LINUX_UHID_USB,
+                                        target_label(RealizationId::LINUX_UHID_USB),
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.target,
+                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                        target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+                                    );
+                                });
+                            ui.end_row();
+                        });
+                    let default_name = self.next_default_name();
+                    ui.horizontal(|ui| {
+                        let clear_width = 22.0;
+                        let edit_width = (ui.available_width() - clear_width).max(40.0);
+                        ui.add_sized(
+                            [edit_width, 20.0],
+                            egui::TextEdit::singleline(&mut self.name_draft)
+                                .hint_text(default_name)
+                                .desired_width(edit_width),
+                        )
+                        .on_hover_text("Optional name. Leave empty for the automatic controller name.");
+                        if ui.small_button("×").on_hover_text("Clear name").clicked() {
+                            self.name_draft.clear();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        if self.name_draft.trim().is_empty() {
+                            ui.label("Make");
+                            ui.add(
+                                egui::DragValue::new(&mut self.create_count)
+                                    .range(1..=99)
+                                    .speed(0.1),
+                            );
+                        }
+                    });
+                    if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
+                        ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
+                    } else if self.target == RealizationId::LINUX_UHID_USB {
+                        ui.small("UHID requires administrator-prepared device access.");
                     }
-                });
-            egui::ComboBox::from_label("Target")
-                .selected_text(target_label(self.target))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationId::LINUX_UINPUT,
-                        target_label(RealizationId::LINUX_UINPUT),
+                    if ui
+                        .add_sized([ui.available_width(), 22.0], egui::Button::new("Create"))
+                        .clicked()
+                    {
+                        self.create();
+                    }
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.heading("Controllers");
+                    let row_height = 32.0;
+                    let list_height = (ui.available_height() - 72.0).max(row_height * 4.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("controller_list")
+                        .min_scrolled_height(row_height * 4.0)
+                        .max_height(list_height)
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            for index in controller_tab_indices(self.controllers.len()) {
+                                let controller = &self.controllers[index];
+                                let active = self.selected_controller == Some(index);
+                                let label = format!("{}  ·  {}", controller.name, controller_identifier(controller));
+                                ui.horizontal(|ui| {
+                                    ui.add_sized(
+                                        [24.0, row_height],
+                                        egui::Label::new(format!("{}", index + 1)),
+                                    );
+                                    let remove_width = 22.0;
+                                    let button_width = (ui.available_width() - remove_width).max(40.0);
+                                    let fill = if active {
+                                        ui.visuals().selection.bg_fill
+                                    } else {
+                                        Color32::from_gray(62)
+                                    };
+                                    if ui
+                                        .add_sized(
+                                            [button_width, row_height],
+                                            egui::Button::new(label).fill(fill),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.selected_controller = Some(index);
+                                    }
+                                    if ui
+                                        .small_button("×")
+                                        .on_hover_text("Remove controller")
+                                        .clicked()
+                                    {
+                                        self.pending_cleanup = Some(CleanupRequest::One(index));
+                                    }
+                                });
+                            }
+                        });
+                    if ui
+                        .add_sized(
+                            [ui.available_width(), 22.0],
+                            egui::Button::new("Stop all controllers"),
+                        )
+                        .clicked()
+                    {
+                        self.pending_cleanup = Some(CleanupRequest::All);
+                    }
+                    ui.separator();
+                    ui.heading("Service diagnostics");
+                    let healthy = !matches!(
+                        self.lifecycle_status,
+                        Some(
+                            ControllerLifecycleStatus::CreationFailed { .. }
+                                | ControllerLifecycleStatus::ClosedAfterFailure { .. },
+                        )
                     );
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationId::LINUX_UHID_USB,
-                        target_label(RealizationId::LINUX_UHID_USB),
+                    let status_fill = if healthy {
+                        Color32::from_rgb(45, 125, 65)
+                    } else {
+                        Color32::from_rgb(145, 55, 55)
+                    };
+                    ui.add_sized(
+                        [ui.available_width(), 24.0],
+                        egui::Label::new(egui::RichText::new(if healthy {
+                            "  HEALTHY"
+                        } else {
+                            "  ATTENTION"
+                        })
+                        .color(Color32::WHITE)
+                        .background_color(status_fill)),
                     );
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                        target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+                    ui.add_sized(
+                        [ui.available_width(), 36.0],
+                        egui::TextEdit::multiline(&mut self.lab_notes)
+                            .hint_text("Warnings and error codes will appear here")
+                            .desired_width(ui.available_width()),
                     );
-                });
-            let default_name = self.next_default_name();
-            ui.add(
-                egui::TextEdit::singleline(&mut self.name_draft)
-                    .hint_text(default_name)
-                    .desired_width(f32::INFINITY),
-            )
-            .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
-                ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
-            } else if self.target == RealizationId::LINUX_UHID_USB {
-                ui.small("UHID requires administrator-prepared device access.");
-            }
-            if ui.button("Create").clicked() {
-                self.create();
-            }
-            if ui.button("Stop all controllers").clicked() {
-                self.pending_cleanup = Some(CleanupRequest::All);
-            }
-            egui::CollapsingHeader::new("Lab notes and gate prerequisites")
-                .default_open(false)
-                .show(ui, |ui| {
+                    egui::CollapsingHeader::new("Lab notes and gate prerequisites")
+                        .default_open(false)
+                        .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Lab correlation ID");
                 ui.add(egui::DragValue::new(&mut self.next_session));
@@ -1027,29 +1186,7 @@ impl eframe::App for App {
                 ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
                 ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
             });
-            ui.separator();
-            ui.label("Controllers");
-            for index in controller_tab_indices(self.controllers.len()) {
-                let controller = &self.controllers[index];
-                ui.horizontal(|ui| {
-                    if ui
-                        .selectable_label(
-                            self.selected_controller == Some(index),
-                            &controller.name,
-                        )
-                        .clicked()
-                    {
-                        self.selected_controller = Some(index);
-                    }
-                    if ui
-                        .small_button("×")
-                        .on_hover_text("Remove controller")
-                        .clicked()
-                    {
-                        self.pending_cleanup = Some(CleanupRequest::One(index));
-                    }
-                });
-            }
+                        });
             if let Some(status) = &self.lifecycle_status {
                 match status {
                     ControllerLifecycleStatus::Created { name } => {
@@ -1133,7 +1270,6 @@ impl eframe::App for App {
                 });
                 });
             });
-        });
         if let Some(request) = self.pending_cleanup {
             let (title, message) = match request {
                 CleanupRequest::One(index) => {
@@ -2548,6 +2684,19 @@ mod tests {
             next_available_name(Kind::Xbox360, ["DualSense 0".to_owned()].into_iter(),),
             "Xbox 360 0"
         );
+    }
+
+    #[test]
+    fn default_creation_count_is_bounded_to_automatic_names() {
+        assert_eq!(requested_create_count("", 0), 1);
+        assert_eq!(requested_create_count("  ", 4), 4);
+        assert_eq!(requested_create_count("Named pad", 9), 1);
+    }
+
+    #[test]
+    fn controller_identifier_is_truncated_for_sidebar_rows() {
+        assert_eq!(truncate_identifier("abc", 4), "abc");
+        assert_eq!(truncate_identifier("abcdef", 4), "abcd…");
     }
 
     #[test]
