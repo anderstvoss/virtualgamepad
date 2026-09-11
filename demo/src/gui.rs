@@ -32,6 +32,8 @@ const OUTPUT_LOG_LIMIT: usize = 200;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+const SIDEBAR_WIDTH: f32 = 200.0;
+const CONTROLLER_ROW_HEIGHT: f32 = 32.0;
 
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
@@ -819,6 +821,7 @@ pub struct App {
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
     output_log: Vec<String>,
+    diagnostic_log: String,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     pending_cleanup: Option<CleanupRequest>,
 }
@@ -837,6 +840,7 @@ impl Default for App {
             controllers: vec![],
             selected_controller: None,
             output_log: vec![],
+            diagnostic_log: String::new(),
             lifecycle_status: None,
             pending_cleanup: None,
         }
@@ -912,6 +916,7 @@ impl App {
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
                 self.next_session = following_session(self.next_session, self.advance_session);
+                self.diagnostic_log = format!("Created {name}.");
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
@@ -921,6 +926,7 @@ impl App {
                         .try_exists()
                         .ok(),
                 );
+                self.diagnostic_log = format!("Creation failed: {error}");
                 self.lifecycle_status = Some(ControllerLifecycleStatus::CreationFailed { error });
             }
         }
@@ -944,6 +950,7 @@ impl App {
 
     fn close_failed_controller(&mut self, index: usize, error: String) {
         let name = self.controllers[index].name.clone();
+        self.diagnostic_log = format!("{name} closed after provider failure: {error}");
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
         self.remove_controller(index);
     }
@@ -999,7 +1006,9 @@ impl eframe::App for App {
             .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_width(200.0);
+                    ui.set_width(SIDEBAR_WIDTH);
+                    ui.set_min_width(SIDEBAR_WIDTH);
+                    ui.set_max_width(SIDEBAR_WIDTH);
                     ui.heading("Add Controller");
                     ui.separator();
                     egui::Grid::new("controller_creation_grid")
@@ -1077,26 +1086,28 @@ impl eframe::App for App {
                     }
                     ui.add_space(6.0);
                     ui.separator();
-                    ui.heading("Controllers");
-                    let row_height = 32.0;
-                    let list_height = (ui.available_height() - 72.0).max(row_height * 4.0);
+                    let list_height = (ui.available_height() - 72.0).max(CONTROLLER_ROW_HEIGHT * 4.0);
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
-                        .min_scrolled_height(row_height * 4.0)
+                        .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
                         .max_height(list_height)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
+                            ui.set_width(SIDEBAR_WIDTH);
                             for index in controller_tab_indices(self.controllers.len()) {
                                 let controller = &self.controllers[index];
                                 let active = self.selected_controller == Some(index);
-                                let label = format!("{}  ·  {}", controller.name, controller_identifier(controller));
+                                let label = truncate_identifier(
+                                    &format!("{}  ·  {}", controller.name, controller_identifier(controller)),
+                                    32,
+                                );
                                 ui.horizontal(|ui| {
                                     ui.add_sized(
-                                        [24.0, row_height],
+                                        [16.0, CONTROLLER_ROW_HEIGHT],
                                         egui::Label::new(format!("{}", index + 1)),
                                     );
-                                    let remove_width = 22.0;
-                                    let button_width = (ui.available_width() - remove_width).max(40.0);
+                                    let remove_width = CONTROLLER_ROW_HEIGHT;
+                                    let button_width = (SIDEBAR_WIDTH - 16.0 - remove_width - 12.0).max(40.0);
                                     let fill = if active {
                                         ui.visuals().selection.bg_fill
                                     } else {
@@ -1104,7 +1115,7 @@ impl eframe::App for App {
                                     };
                                     if ui
                                         .add_sized(
-                                            [button_width, row_height],
+                                            [button_width, CONTROLLER_ROW_HEIGHT],
                                             egui::Button::new(label).fill(fill),
                                         )
                                         .clicked()
@@ -1112,7 +1123,10 @@ impl eframe::App for App {
                                         self.selected_controller = Some(index);
                                     }
                                     if ui
-                                        .small_button("×")
+                                        .add_sized(
+                                            [remove_width, CONTROLLER_ROW_HEIGHT],
+                                            egui::Button::new("×").fill(Color32::from_rgb(150, 45, 45)),
+                                        )
                                         .on_hover_text("Remove controller")
                                         .clicked()
                                     {
@@ -1124,41 +1138,20 @@ impl eframe::App for App {
                     if ui
                         .add_sized(
                             [ui.available_width(), 22.0],
-                            egui::Button::new("Stop all controllers"),
+                            egui::Button::new("Stop all controllers")
+                                .fill(Color32::from_rgb(150, 45, 65)),
                         )
                         .clicked()
                     {
                         self.pending_cleanup = Some(CleanupRequest::All);
                     }
                     ui.separator();
-                    ui.heading("Service diagnostics");
-                    let healthy = !matches!(
-                        self.lifecycle_status,
-                        Some(
-                            ControllerLifecycleStatus::CreationFailed { .. }
-                                | ControllerLifecycleStatus::ClosedAfterFailure { .. },
-                        )
-                    );
-                    let status_fill = if healthy {
-                        Color32::from_rgb(45, 125, 65)
-                    } else {
-                        Color32::from_rgb(145, 55, 55)
-                    };
-                    ui.add_sized(
-                        [ui.available_width(), 24.0],
-                        egui::Label::new(egui::RichText::new(if healthy {
-                            "  HEALTHY"
-                        } else {
-                            "  ATTENTION"
-                        })
-                        .color(Color32::WHITE)
-                        .background_color(status_fill)),
-                    );
                     ui.add_sized(
                         [ui.available_width(), 36.0],
-                        egui::TextEdit::multiline(&mut self.lab_notes)
+                        egui::TextEdit::multiline(&mut self.diagnostic_log)
                             .hint_text("Warnings and error codes will appear here")
-                            .desired_width(ui.available_width()),
+                            .desired_width(ui.available_width())
+                            .interactive(false),
                     );
                     egui::CollapsingHeader::new("Lab notes and gate prerequisites")
                         .default_open(false)
@@ -1186,23 +1179,27 @@ impl eframe::App for App {
                 ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
                 ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
             });
-                        });
-            if let Some(status) = &self.lifecycle_status {
-                match status {
-                    ControllerLifecycleStatus::Created { name } => {
-                        ui.colored_label(Color32::GREEN, format!("Created {name}."));
-                    }
-                    ControllerLifecycleStatus::CreationFailed { error } => {
-                        ui.colored_label(Color32::RED, format!("Creation failed: {error}"));
-                    }
-                    ControllerLifecycleStatus::ClosedAfterFailure { name, error } => {
-                        ui.colored_label(
-                            Color32::RED,
-                            format!("{name} closed after provider failure: {error}"),
-                        );
-                    }
-                }
-            }
+                    });
+                    ui.add_space((ui.available_height() - 22.0).max(0.0));
+                    let sidebar_healthy = !matches!(
+                        self.lifecycle_status,
+                        Some(
+                            ControllerLifecycleStatus::CreationFailed { .. }
+                                | ControllerLifecycleStatus::ClosedAfterFailure { .. },
+                        )
+                    );
+                    let status_color = if sidebar_healthy {
+                        Color32::GREEN
+                    } else {
+                        Color32::RED
+                    };
+                    ui.colored_label(
+                        status_color,
+                        format!(
+                            "● {}",
+                            if sidebar_healthy { "Healthy" } else { "Attention" }
+                        ),
+                    );
                 });
                 ui.separator();
                 ui.vertical(|ui| {
