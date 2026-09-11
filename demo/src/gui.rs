@@ -133,12 +133,15 @@ fn sidebar_layout_budget(
     available_height: f32,
     footer_controls_height: f32,
     diagnostic_log_height: f32,
+    section_spacing: f32,
 ) -> SidebarLayoutBudget {
     let available_height = available_height.max(0.0);
     let footer_height = diagnostic_log_height + footer_controls_height;
-    let controller_list_height =
-        (available_height - footer_height - CONTROLLER_LIST_FRAME_VERTICAL_MARGIN)
-            .max(CONTROLLER_LIST_MIN_HEIGHT);
+    let controller_list_height = (available_height
+        - footer_height
+        - CONTROLLER_LIST_FRAME_VERTICAL_MARGIN
+        - (section_spacing * 2.0))
+        .max(CONTROLLER_LIST_MIN_HEIGHT);
     SidebarLayoutBudget {
         controller_list: controller_list_height,
         diagnostic_log: diagnostic_log_height,
@@ -1562,6 +1565,7 @@ impl eframe::App for App {
                         ui.available_height(),
                         footer_controls_height,
                         diagnostic_log_height,
+                        ui.spacing().item_spacing.y,
                     );
                     let list_height = sidebar_layout.controller_list;
                     let (controller_list_rect, _) = ui.allocate_exact_size(
@@ -3112,18 +3116,18 @@ mod tests {
 
     #[test]
     fn sidebar_budget_reserves_space_for_list_and_footer_without_overlap() {
-        let layout = sidebar_layout_budget(500.0, 50.0, 74.0);
+        let layout = sidebar_layout_budget(500.0, 50.0, 74.0, 3.0);
         assert!((layout.diagnostic_log - 74.0).abs() < 0.001);
         assert!((layout.footer - 124.0).abs() < 0.001);
-        assert!((layout.controller_list - 368.0).abs() < 0.001);
+        assert!((layout.controller_list - 362.0).abs() < 0.001);
         assert!(
-            (layout.controller_list + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN + layout.footer
+            (layout.controller_list + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN + layout.footer + 6.0
                 - 500.0)
                 .abs()
                 < 0.001
         );
 
-        let constrained = sidebar_layout_budget(90.0, 50.0, 74.0);
+        let constrained = sidebar_layout_budget(90.0, 50.0, 74.0, 3.0);
         assert!((constrained.diagnostic_log - 74.0).abs() < 0.001);
         assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
     }
