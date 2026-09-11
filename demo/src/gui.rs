@@ -295,6 +295,50 @@ fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered
         .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DisclosureDirection {
+    Right,
+    Down,
+}
+
+const fn advanced_disclosure_direction(expanded: bool) -> DisclosureDirection {
+    if expanded {
+        DisclosureDirection::Down
+    } else {
+        DisclosureDirection::Right
+    }
+}
+
+fn paint_advanced_disclosure_arrow(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    direction: DisclosureDirection,
+    hovered: bool,
+) {
+    let center = rect.center();
+    let inset = 5.0;
+    let half_width = 3.0;
+    let points = match direction {
+        DisclosureDirection::Right => vec![
+            Pos2::new(rect.left() + inset, center.y - half_width),
+            Pos2::new(rect.left() + inset, center.y + half_width),
+            Pos2::new(rect.right() - inset, center.y),
+        ],
+        DisclosureDirection::Down => vec![
+            Pos2::new(center.x - half_width, rect.top() + inset),
+            Pos2::new(center.x + half_width, rect.top() + inset),
+            Pos2::new(center.x, rect.bottom() - inset),
+        ],
+    };
+    let color = if hovered {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.painter()
+        .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
 fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     const ARROW_WIDTH: f32 = 16.0;
     const SPINBOX_HEIGHT: f32 = 22.0;
@@ -1373,10 +1417,10 @@ impl eframe::App for App {
                         advanced_rect.left_top(),
                         Pos2::new(advanced_rect.left() + 18.0, advanced_rect.bottom()),
                     );
-                    paint_spinbox_arrow(
+                    paint_advanced_disclosure_arrow(
                         ui,
                         arrow_rect,
-                        self.advanced_options_open,
+                        advanced_disclosure_direction(self.advanced_options_open),
                         advanced_available && advanced_response.hovered(),
                     );
                     if advanced_response.clicked() {
@@ -2998,6 +3042,18 @@ mod tests {
                 RealizationId::LINUX_UHID_USB
             ));
         }
+    }
+
+    #[test]
+    fn advanced_disclosure_arrow_tracks_expansion() {
+        assert_eq!(
+            advanced_disclosure_direction(false),
+            DisclosureDirection::Right
+        );
+        assert_eq!(
+            advanced_disclosure_direction(true),
+            DisclosureDirection::Down
+        );
     }
 
     #[test]
