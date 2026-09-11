@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![doc = include_str!("../docs/APPLICATION_API.md")]
 #![doc = concat!("\nController-family boundaries:\n\n```compile_fail,E0308\n", include_str!("../tests/ui/dualsense_rejects_xbox_native_control.rs"), "\n```\n\n```compile_fail,E0599\n", include_str!("../tests/ui/xbox_has_no_touch_surface.rs"), "\n```\n")]
 
 //! Standalone, controller-native virtual controllers.

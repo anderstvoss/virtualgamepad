@@ -84,7 +84,7 @@ omitted during UI stalls. Removing a controller stops its worker and closes its
 session independently of the remaining controllers.
 
 For repeatable manual experiments, see the [demo lab guide](docs/DEMO_LAB.md).
-The GUI includes session-ID reuse, service timing counters, copyable lab notes
+The GUI includes reusable lab correlation IDs, service timing counters, copyable lab notes
 and stop-all cleanup. “Release all inputs” uses the acknowledged edit queue;
 lab records include consumer build/backend/mapping and association/cleanup
 diagnostics. Measurements remain separate from physical acceptance.

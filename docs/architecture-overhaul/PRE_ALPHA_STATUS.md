@@ -32,8 +32,8 @@ review → release. An unattended demo run cannot complete the feedback checkpoi
 | Baseline and contract | Complete | Baseline above; [API inventory](API_INVENTORY.md), [application contract](../APPLICATION_API.md) |
 | Application API contraction | Implemented; preliminary | Opaque creation options; controller handles, errors, diagnostics, identity and component metadata in root; old machinery under opt-in experimental module |
 | Consumer and exposure stress | Deterministic scope complete | Root consumer lifecycle tests; executable negative/positive doctests; existing Gate T, memory, topology and compound regressions; benchmark conclusions below |
-| Current controllers and demo | In refinement | Migrated demo; native state readback and DS4/Switch labels; deterministic regressions; selected live tests recorded in completion evidence |
-| Maintainer hands-on checkpoint | **Pending** | Exercise creation, controls, feedback, arbitrary controller selection/removal, diagnostics and recreation; incorporate feedback |
+| Current controllers and demo | Initial refinement complete; focused task pending | Migrated demo; native state readback and DS4/Switch labels; deterministic regressions; selected live tests recorded in completion evidence |
+| Maintainer hands-on checkpoint | **Pending in a separate maintainer-created task** | Exercise creation, controls, feedback, arbitrary controller selection/removal, diagnostics and recreation; incorporate feedback |
 | Final independent API review | Not started | Re-inventory after feedback, review every refinement delta, rerun boundary/consumer tests |
 | Separate final quality review | Not started | After final API review: resource/unsafe/concurrency/dependency/package audit |
 | Git alpha release | Not started | Exact-revision consumer build, cached offline build, changelog/versions, approved gates, tag and post-tag smoke |
@@ -87,6 +87,24 @@ Q/R/S/U were not reimplemented or promoted beyond their existing scoped results.
 
 ## Hands-on checkpoint
 
+The maintainer requested that controller/demo interactive refinement happen in a
+separate task they will create. This task stops at that gate after general
+preliminary-candidate polish. This is an ownership decision, not acceptance of
+controller behavior. No new task was created automatically.
+
+Resume on `codex/pre-alpha-stabilization`; the preliminary implementation commit
+is `e50b9ba`. Read [current functions and evidence](../CURRENT_CONTROLLER_REFINEMENT.md)
+and the [demo lab guide](../DEMO_LAB.md) before making focused changes. Preserve
+existing lifecycle, input-ordering and bounded-worker regressions. Record each
+reproduction, fix, deterministic regression and actual user feedback in this
+ledger (or a linked refinement record). Carry any public signature or behavior
+changes into the subsequent fresh API inventory review.
+
+The exit requires the maintainer's actual review and incorporation of actionable
+feedback. Then proceed to final independent API review, followed by the separate
+final code-quality/polish pass, and only then Git alpha preparation. General polish
+before this checkpoint does not satisfy either of those later reviews.
+
 Run `cargo run -p virtualgamepad-demo` on the prepared desktop. Select USB/UHID
 when uinput is not prepared. Review all four existing families, same-family
 duplicates, lists beyond the viewport, removal from different positions, neutral
@@ -102,7 +120,7 @@ work packages.
 ## Preliminary validation record
 
 - Workspace formatting, all-target/all-feature check and strict Clippy pass.
-- Full workspace suite: 280 passed, 32 intentionally ignored hardware cases;
+- Full workspace suite: 281 passed, 32 intentionally ignored hardware cases;
   no failures at this checkpoint.
 - Python tooling suite: 43 passed.
 - Strict root rustdoc build passes with default features disabled.
@@ -115,3 +133,7 @@ work packages.
 
 The snapshot consumer build is not the final exact-tag Git-dependency validation;
 that remains REL-01 work after the interactive and final review gates.
+
+Pre-checkpoint documentation polish also makes the application guide a compiling
+root doctest. The focused refinement handoff above follows the maintainer's
+separate-task decision; the final reviews remain unstarted.

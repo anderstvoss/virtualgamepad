@@ -85,7 +85,7 @@ behavior remain controller-specific acceptance criteria. Bluetooth realizations 
 
 ## Stateful UHID service and current migration boundary
 
-Applications must service `poll_output` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
+Applications must call `service` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
 
 The broker still uses its compiled startup feature path. Gate G must prove staged startup, control metadata/completion support, and latency before replacing it with unprivileged dynamic protocol handling. Do not infer gadget control-request parity from UHID tests. See [host prerequisites](architecture-overhaul/HOST_READINESS.md) and the [reviewable provisioning proposal](architecture-overhaul/HOST_PROVISIONING.md).
 

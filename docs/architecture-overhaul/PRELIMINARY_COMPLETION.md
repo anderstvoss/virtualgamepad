@@ -120,3 +120,48 @@ review, separate quality review and release remain pending.
   deferred. No host policy was changed.
 - Exact-tag Git dependency validation belongs to release preparation; the current
   standalone test used a corpus-free snapshot of the working source.
+
+
+## Completion Summary — pre-checkpoint general polish
+
+The maintainer will create a separate task for interactive controller/demo
+refinement. General polish ends at that checkpoint, following the required
+execution sequence. This supplement records changes after the preliminary
+implementation commit `e50b9ba`; the earlier validation record remains historical.
+
+Files changed:
+- `README.md`: replace obsolete session-ID reuse wording with lab correlation.
+- `docs/CORE_ARCHITECTURE.md`: clarify the root API excludes `poll_output`.
+- `docs/DEPLOYMENT_AND_VALIDATION.md`: instruct applications to call `service`.
+- `docs/DEMO_LAB.md`: align lab labels, record v3, gadget availability and measured
+  identity/lifecycle evidence with the implemented demo.
+- `src/lib.rs`: include the application guide in crate documentation and doctests.
+- `docs/architecture-overhaul/PRE_ALPHA_STATUS.md`: record separate-task ownership,
+  resumption context, acceptance requirements and latest deterministic validation.
+- `docs/architecture-overhaul/PRELIMINARY_COMPLETION.md`: this supplement.
+
+Behavior changed:
+- Documentation and handoff only; controller and GUI runtime behavior is unchanged.
+
+Tests added or modified:
+- The application guide's lifecycle example now compiles in the root doctests;
+  root doctests contain three positive examples and eight compile-fail cases.
+
+Validation:
+- `cargo fmt --all -- --check`: passed.
+- `cargo check --workspace --all-targets --all-features`: passed.
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`: passed.
+- `cargo test --workspace --all-features`: passed, 281 tests; 32 opt-in tests ignored.
+- `gitleaks detect --redact`: passed.
+- `RUSTDOCFLAGS='-D warnings' cargo doc -p virtualgamepad --no-deps --no-default-features`: passed.
+- `git diff --check`: passed.
+- Hardware tests and tooling tests were not repeated for this documentation-only
+  supplement; the earlier results above remain the recorded evidence.
+
+New dependencies:
+- None.
+
+Unresolved issues:
+- Focused hands-on refinement remains pending in the maintainer-created task.
+- Final API review, subsequent final quality pass and alpha release remain pending.
+- Previously deferred physical and host evidence remains deferred.
