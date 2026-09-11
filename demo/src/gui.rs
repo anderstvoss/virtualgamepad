@@ -1061,7 +1061,7 @@ impl eframe::App for App {
                 });
                 ui.separator();
                 ui.vertical(|ui| {
-                    ui.set_min_width(640.0);
+                    ui.set_min_width(448.0);
                     ui.heading("Live controllers");
                     if let Some(index) = self
                         .selected_controller
