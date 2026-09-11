@@ -54,13 +54,6 @@ impl RealizationId {
     pub const fn as_str(self) -> &'static str {
         self.0
     }
-    // Source aliases ease migration; there is no closed enum or numeric tier.
-    #[allow(non_upper_case_globals)]
-    pub const Evdev: Self = Self::LINUX_UINPUT;
-    #[allow(non_upper_case_globals)]
-    pub const Uhid: Self = Self::LINUX_UHID_USB;
-    #[allow(non_upper_case_globals)]
-    pub const DummyHcd: Self = Self::LINUX_DUMMY_HCD_USB_HID;
     const fn same(self, other: Self) -> bool {
         let a = self.0.as_bytes();
         let b = other.0.as_bytes();
@@ -294,9 +287,9 @@ impl NativeControllerRealization {
     #[must_use]
     pub const fn target(&self) -> RealizationTarget {
         match self {
-            Self::Evdev(_) => RealizationTarget::Evdev,
+            Self::Evdev(_) => RealizationTarget::LINUX_UINPUT,
             Self::Uhid(specification) => specification.target,
-            Self::DummyHcd(_) => RealizationTarget::DummyHcd,
+            Self::DummyHcd(_) => RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         }
     }
 
@@ -322,7 +315,7 @@ impl NativeControllerRealization {
                 }
                 if specification.device_name.is_empty() {
                     return Err(NativeRealizationError::EmptyDeviceName {
-                        target: RealizationTarget::Evdev,
+                        target: RealizationTarget::LINUX_UINPUT,
                     });
                 }
                 if has_duplicate(&specification.event_codes) {
@@ -706,7 +699,7 @@ mod tests {
             session: super::RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.provider"),
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -730,28 +723,36 @@ mod tests {
 
     #[test]
     fn targets_are_exact_and_independent() {
-        assert_ne!(RealizationTarget::Evdev, RealizationTarget::Uhid);
-        assert_ne!(RealizationTarget::Uhid, RealizationTarget::DummyHcd);
+        assert_ne!(
+            RealizationTarget::LINUX_UINPUT,
+            RealizationTarget::LINUX_UHID_USB
+        );
+        assert_ne!(
+            RealizationTarget::LINUX_UHID_USB,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+        );
     }
 
     #[test]
     fn target_sets_are_unordered_membership_sets() {
-        let targets =
-            RealizationTargetSet::new(&[RealizationTarget::DummyHcd, RealizationTarget::Evdev]);
-        assert!(targets.contains(RealizationTarget::DummyHcd));
-        assert!(targets.contains(RealizationTarget::Evdev));
-        assert!(!targets.contains(RealizationTarget::Uhid));
+        let targets = RealizationTargetSet::new(&[
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            RealizationTarget::LINUX_UINPUT,
+        ]);
+        assert!(targets.contains(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
+        assert!(targets.contains(RealizationTarget::LINUX_UINPUT));
+        assert!(!targets.contains(RealizationTarget::LINUX_UHID_USB));
     }
 
     #[test]
     fn provider_validation_rejects_target_mismatch_without_fallback() {
         let selection = RealizationSelection {
             controller: ControllerId::new("test.hardware-only"),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(RealizationTarget::Uhid, true),
+            ProviderCapabilities::for_target(RealizationTarget::LINUX_UHID_USB, true),
             ProviderRequirements::default(),
         )
         .expect_err("providers cannot substitute targets");
@@ -762,11 +763,11 @@ mod tests {
     fn provider_validation_checks_reverse_output_separately() {
         let selection = RealizationSelection {
             controller: ControllerId::new("test.identity"),
-            target: RealizationTarget::Uhid,
+            target: RealizationTarget::LINUX_UHID_USB,
         };
         let error = validate_provider(
             selection,
-            ProviderCapabilities::for_target(RealizationTarget::Uhid, false),
+            ProviderCapabilities::for_target(RealizationTarget::LINUX_UHID_USB, false),
             ProviderRequirements {
                 requires_reverse_output: true,
             },
@@ -782,7 +783,7 @@ mod tests {
     fn open_validation_uses_the_actual_provider_capabilities() {
         uinput_request()
             .validate_against(ProviderCapabilities::for_target(
-                RealizationTarget::Evdev,
+                RealizationTarget::LINUX_UINPUT,
                 false,
             ))
             .expect("no reverse output is required");
@@ -791,7 +792,7 @@ mod tests {
         request.requirements.requires_reverse_output = true;
         let error = request
             .validate_against(ProviderCapabilities::for_target(
-                RealizationTarget::Evdev,
+                RealizationTarget::LINUX_UINPUT,
                 false,
             ))
             .expect_err("provider cannot satisfy reverse output");
@@ -810,14 +811,14 @@ mod tests {
         specification.device_name.clear();
         let error = request
             .validate_against(ProviderCapabilities::for_target(
-                RealizationTarget::Evdev,
+                RealizationTarget::LINUX_UINPUT,
                 false,
             ))
             .expect_err("empty name is invalid");
         assert!(matches!(
             error,
             ProviderOpenValidationError::Specification(NativeRealizationError::EmptyDeviceName {
-                target: RealizationTarget::Evdev
+                target: RealizationTarget::LINUX_UINPUT
             })
         ));
     }

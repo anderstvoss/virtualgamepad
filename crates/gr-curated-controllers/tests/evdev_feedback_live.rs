@@ -26,7 +26,7 @@ macro_rules! live {
             const NAME: &'static str = $name;
             fn create() -> Self {
                 let mut controller = $create(CreationOptions {
-                    target: RealizationTarget::Evdev,
+                    target: RealizationTarget::LINUX_UINPUT,
                     session: RealizationSessionId(7),
                 })
                 .unwrap();

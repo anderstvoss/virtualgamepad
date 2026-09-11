@@ -732,11 +732,11 @@ mod integration_tests {
             session: RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uhid.integration"),
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Uhid(NativeHidRealization {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 bus_type: 0x03,
                 device_name: "virtualgamepad integration test".into(),
                 physical_path: String::new(),
@@ -831,7 +831,7 @@ mod seam_tests {
     }
     fn specification() -> NativeHidRealization {
         NativeHidRealization {
-            target: RealizationTarget::Uhid,
+            target: RealizationTarget::LINUX_UHID_USB,
             bus_type: 3,
             device_name: "test".into(),
             physical_path: String::new(),
@@ -852,7 +852,7 @@ mod seam_tests {
             session: RealizationSessionId(8),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uhid"),
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Uhid(specification()),

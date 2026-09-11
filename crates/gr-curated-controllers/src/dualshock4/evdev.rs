@@ -281,7 +281,7 @@ mod tests {
     }
     impl NativeProviderFactory for Factory {
         fn capabilities(&self) -> ProviderCapabilities {
-            ProviderCapabilities::for_target(RealizationTarget::Evdev, true)
+            ProviderCapabilities::for_target(RealizationTarget::LINUX_UINPUT, true)
         }
         fn preflight(&self, _: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
             Ok(())
@@ -353,7 +353,7 @@ mod tests {
             session: RealizationSessionId(7),
             selection: RealizationSelection {
                 controller: ControllerId::new("sony.dualshock4"),
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
             },
             requirements: ProviderRequirements::default(),
             realization: evdev_realization(),

@@ -1,5 +1,11 @@
 # Deployment and validation
 
+The [application API](APPLICATION_API.md) exposes uinput and USB/UHID for the
+current controllers. Gadget sections below describe experimental research SPI,
+not normal root creation or a supported alpha target. No automatic fallback or
+runtime host preparation is introduced by the new application layer.
+
+
 The implemented realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.

@@ -61,7 +61,7 @@ fn dualsense_services_kernel_startup_and_removes_its_device() {
         "ambiguous existing test identity"
     );
     let mut controller = create_dualsense(CreationOptions {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         session: RealizationSessionId(session),
     })
     .expect("create production DualSense USB personality");
@@ -213,7 +213,7 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
             DualSenseTrigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(MotionSample {
                 accelerometer: [i16::from(value), 0, 8192],
@@ -247,7 +247,7 @@ fn ds4_sdl_observes_motion_and_returns_output() {
 }
 
 fn run_sdl<C: AcceptanceController>() {
-    run_sdl_target::<C>(RealizationTarget::Uhid);
+    run_sdl_target::<C>(RealizationTarget::LINUX_UHID_USB);
 }
 fn input_nodes() -> std::collections::BTreeSet<PathBuf> {
     fs::read_dir("/sys/class/input")
@@ -321,7 +321,7 @@ fn spawn_sdl(
     mode: &str,
 ) -> ProbeChild {
     let mut command = Command::new(binary);
-    let mode = if target == RealizationTarget::Evdev {
+    let mode = if target == RealizationTarget::LINUX_UINPUT {
         command.env("SDL_JOYSTICK_HIDAPI", "0");
         "--gamepad-rumble-script"
     } else {
@@ -364,7 +364,7 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             rumble_seen |= rumble;
             led_seen |= led;
             if probe.is_none() && start.elapsed() >= Duration::from_millis(500) {
-                let paths = if target == RealizationTarget::Evdev {
+                let paths = if target == RealizationTarget::LINUX_UINPUT {
                     owned_event = select_evdev_node(&before, C::PREFIX);
                     owned_event
                         .iter()
@@ -423,8 +423,8 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             "SDL acceptance failed"
         );
         assert!(
-            (!(C::EXPECT_RUMBLE || target == RealizationTarget::Evdev) || rumble_seen)
-                && (target == RealizationTarget::Evdev || !C::EXPECT_LED || led_seen),
+            (!(C::EXPECT_RUMBLE || target == RealizationTarget::LINUX_UINPUT) || rumble_seen)
+                && (target == RealizationTarget::LINUX_UINPUT || !C::EXPECT_LED || led_seen),
             "expected SDL output not received"
         );
     }
@@ -439,7 +439,7 @@ fn repeated_application_ids_keep_three_kernel_sessions_independent() {
         .into_iter()
         .map(|session| {
             create_dualsense(CreationOptions {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 session: RealizationSessionId(session),
             })
             .unwrap()
@@ -501,7 +501,7 @@ fn sdl_failure_boundaries_reap_consumer_and_remove_controller() {
     for remove_controller in [false, true] {
         assert!(owned_devices().is_empty());
         let mut controller = create_dualsense(CreationOptions {
-            target: RealizationTarget::Uhid,
+            target: RealizationTarget::LINUX_UHID_USB,
             session: RealizationSessionId(7),
         })
         .unwrap();
@@ -780,7 +780,7 @@ fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controlle
             gr_curated_controllers::DualShock4Trigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(gr_curated_controllers::DualShock4MotionSample {
                 accelerometer: [i16::from(value), 0, 8192],
@@ -898,7 +898,7 @@ fn apply_switch_script(controller: &mut gr_curated_controllers::SwitchProControl
             SwitchProAxis::new(value),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::Evdev {
+    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(SwitchProMotionSample {
                 accelerometer: [i16::try_from(step % 256).unwrap(), 0, 8192],
@@ -1034,7 +1034,7 @@ macro_rules! evdev_acceptance {
         #[test]
         #[ignore = "requires private SDL probe, prepared uinput and exact experiment-node access"]
         fn $name() {
-            run_sdl_target::<$controller>(RealizationTarget::Evdev);
+            run_sdl_target::<$controller>(RealizationTarget::LINUX_UINPUT);
         }
     };
 }
@@ -1247,7 +1247,7 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
         let mut probe = None;
         let mut controller = C::create(id, target);
         thread::sleep(Duration::from_millis(500));
-        let (node, path) = if target == RealizationTarget::Evdev {
+        let (node, path) = if target == RealizationTarget::LINUX_UINPUT {
             let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
             let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
             (node, path)
@@ -1268,7 +1268,7 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
                     .arg(format!("--control-{case}"))
                     .env(
                         "SDL_JOYSTICK_HIDAPI",
-                        if target == RealizationTarget::Uhid && C::HIDRAW {
+                        if target == RealizationTarget::LINUX_UHID_USB && C::HIDRAW {
                             "1"
                         } else {
                             "0"
@@ -1364,32 +1364,44 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
 fn xbox_evdev_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(RealizationTarget::Evdev);
+    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(
+        RealizationTarget::LINUX_UINPUT,
+    );
 }
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
 fn switch_evdev_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(RealizationTarget::Evdev);
+    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(
+        RealizationTarget::LINUX_UINPUT,
+    );
 }
 #[test]
 #[ignore = "requires prepared UHID and exact event node access plus private SDL probe; no touch injection"]
 fn xbox_uhid_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(RealizationTarget::Uhid);
+    run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(
+        RealizationTarget::LINUX_UHID_USB,
+    );
 }
 #[test]
 #[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
 fn dualsense_uhid_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::DualSenseController>(RealizationTarget::Uhid);
+    run_isolated_mapping::<gr_curated_controllers::DualSenseController>(
+        RealizationTarget::LINUX_UHID_USB,
+    );
 }
 #[test]
 #[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
 fn ds4_uhid_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::DualShock4Controller>(RealizationTarget::Uhid);
+    run_isolated_mapping::<gr_curated_controllers::DualShock4Controller>(
+        RealizationTarget::LINUX_UHID_USB,
+    );
 }
 #[test]
 #[ignore = "requires exact session hidraw access and private SDL probe; no touch injection"]
 fn switch_uhid_individual_mapping() {
-    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(RealizationTarget::Uhid);
+    run_isolated_mapping::<gr_curated_controllers::SwitchProController>(
+        RealizationTarget::LINUX_UHID_USB,
+    );
 }
 #[test]
 fn isolated_mapping_cases_touch_only_the_selected_axis() {

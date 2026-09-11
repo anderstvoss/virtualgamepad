@@ -161,7 +161,7 @@ impl BrokerClient {
 
 fn target_tag(target: RealizationTarget) -> Option<u8> {
     match target {
-        RealizationTarget::DummyHcd => Some(1),
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => Some(1),
         _ => None,
     }
 }
@@ -396,7 +396,7 @@ impl BrokerPolicy {
         if self.allowed_peers.binary_search(&peer).is_err() {
             return Err(BrokerError::Unauthorized { peer });
         }
-        if target != RealizationTarget::DummyHcd {
+        if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
             return Err(BrokerError::UnsupportedController { target, controller });
         }
         self.sessions.insert(
@@ -466,7 +466,7 @@ fn compiled_report_length(
     target: RealizationTarget,
     controller: CompiledControllerKind,
 ) -> Option<usize> {
-    if target != RealizationTarget::DummyHcd {
+    if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
         return None;
     }
     match controller {
@@ -550,7 +550,7 @@ mod tests {
             broker.open(
                 2000,
                 session,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense
             ),
             Err(BrokerError::Unauthorized { .. })
@@ -559,7 +559,7 @@ mod tests {
             .open(
                 1000,
                 session,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense,
             )
             .unwrap();
@@ -586,7 +586,12 @@ mod tests {
             let mut broker = BrokerPolicy::new(vec![1000]);
             let session = RealizationSessionId(u64::try_from(offset).unwrap() + 100);
             broker
-                .open(1000, session, RealizationTarget::DummyHcd, controller)
+                .open(
+                    1000,
+                    session,
+                    RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                    controller,
+                )
                 .expect("compiled profile is policy-authorized");
             assert!(
                 broker
@@ -608,7 +613,7 @@ mod tests {
             .open(
                 1000,
                 session,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense,
             )
             .unwrap();
@@ -640,7 +645,7 @@ mod tests {
         assert!(matches!(
             registry.open(
                 43,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense,
                 &Untouchable
             ),
@@ -659,7 +664,7 @@ mod tests {
         let session = registry
             .open(
                 1000,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense,
                 &factory,
             )
@@ -688,7 +693,7 @@ mod tests {
             .open(
                 1000,
                 session,
-                RealizationTarget::DummyHcd,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 CompiledControllerKind::DualSense,
             )
             .unwrap();

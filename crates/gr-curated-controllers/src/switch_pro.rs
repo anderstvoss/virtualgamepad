@@ -40,6 +40,11 @@ pub struct SwitchProMotionSample {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SwitchProControl {
+    B,
+    A,
+    Y,
+    X,
+
     L,
     R,
     Zl,
@@ -92,8 +97,42 @@ impl SwitchProState {
     pub const fn motion(&self) -> SwitchProMotionSample {
         self.motion
     }
+    /// Current accepted value of a controller-native button.
+    #[must_use]
+    pub const fn native_pressed(&self, control: SwitchProControl) -> bool {
+        match control {
+            SwitchProControl::B => self.face[0],
+            SwitchProControl::A => self.face[1],
+            SwitchProControl::Y => self.face[2],
+            SwitchProControl::X => self.face[3],
+            SwitchProControl::L => self.buttons[0],
+            SwitchProControl::R => self.buttons[1],
+            SwitchProControl::Zl => self.buttons[2],
+            SwitchProControl::Zr => self.buttons[3],
+            SwitchProControl::Minus => self.buttons[4],
+            SwitchProControl::Plus => self.buttons[5],
+            SwitchProControl::Home => self.buttons[6],
+            SwitchProControl::Capture => self.buttons[7],
+            SwitchProControl::LeftStickPress => self.buttons[8],
+            SwitchProControl::RightStickPress => self.buttons[9],
+        }
+    }
+    /// Current accepted D-pad direction, before realization-specific encoding.
+    #[must_use]
+    pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
+        self.dpad[common::dpad_index(direction)]
+    }
+    /// Current accepted spatial face button, independent of printed labels.
+    #[must_use]
+    pub const fn face_pressed(&self, button: gr_controller_contract::FaceButton) -> bool {
+        self.face[common::face_index(button)]
+    }
     fn set_native(&mut self, c: SwitchProControl, p: bool) {
         match c {
+            SwitchProControl::B => self.face[0] = p,
+            SwitchProControl::A => self.face[1] = p,
+            SwitchProControl::Y => self.face[2] = p,
+            SwitchProControl::X => self.face[3] = p,
             SwitchProControl::L => self.buttons[0] = p,
             SwitchProControl::R => self.buttons[1] = p,
             SwitchProControl::Zl => self.buttons[2] = p,
@@ -253,7 +292,7 @@ static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
 ];
 static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Evdev,
+        target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -263,7 +302,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
 };
 static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -273,7 +312,7 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
 };
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
-        target: RealizationTarget::DummyHcd,
+        target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -289,21 +328,21 @@ impl RealizationControllerDefinition for SwitchProDefinition {
     fn realization_manifest(&self) -> RealizationManifest {
         static E: [RealizationManifestEntry; 3] = [
             RealizationManifestEntry {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -341,7 +380,9 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
     ) -> Result<(), ControlError> {
         if matches!(
             sel.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
+            RealizationTarget::LINUX_UINPUT
+                | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             Ok(())
         } else {
@@ -353,13 +394,13 @@ impl TargetAwareControllerDriver for SwitchProDefinition {
         sel: RealizationSelection,
         s: &Self::State,
     ) -> Result<ProviderFrame, ControlError> {
-        if sel.target == RealizationTarget::Evdev {
+        if sel.target == RealizationTarget::LINUX_UINPUT {
             return Ok(switch_evdev_frame(s));
         }
         let ProviderFrame::HidInput { report_id, bytes } = switch_frame(s) else {
             unreachable!()
         };
-        if sel.target == RealizationTarget::Uhid {
+        if sel.target == RealizationTarget::LINUX_UHID_USB {
             Ok(ProviderFrame::HidInput { report_id, bytes })
         } else {
             let Some(report_id) = report_id else {
@@ -586,7 +627,7 @@ fn switch_subcommand_reply(
 }
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         bus_type: 3,
         device_name: "Pro Controller".into(),
         // `common::create` appends the realization session exactly once.
@@ -675,8 +716,8 @@ impl SwitchProController {
     #[must_use]
     pub fn surface(&self) -> &'static SwitchProSurface {
         match self.0.selection().target {
-            RealizationTarget::Evdev => &EVDEV_SURFACE,
-            RealizationTarget::Uhid => &HID_SURFACE,
+            RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
+            RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -735,7 +776,7 @@ impl SwitchProController {
         self.0.commit()
     }
     pub fn refresh_motion(&mut self) -> Result<(), CommitError> {
-        if self.0.selection().target == RealizationTarget::Uhid {
+        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
             return self.0.commit();
         }
         if self.0.state().stream_enabled {
@@ -775,7 +816,7 @@ impl SwitchProController {
         &mut self,
         callback: &mut dyn FnMut(SwitchProOutputEvent),
     ) -> Result<(), ProviderError> {
-        if self.0.selection().target == RealizationTarget::Uhid {
+        if self.0.selection().target == RealizationTarget::LINUX_UHID_USB {
             return self
                 .0
                 .drain(&mut |event| callback(SwitchProOutputEvent::from(event)));
@@ -835,7 +876,7 @@ fn dummy_hcd_reply(
     target: RealizationTarget,
     frame: ProviderFrame,
 ) -> Result<ProviderFrame, ProviderError> {
-    if target != RealizationTarget::DummyHcd {
+    if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
         return Ok(frame);
     }
     let ProviderFrame::HidInput {
@@ -927,9 +968,9 @@ impl From<RawReverseEvent> for SwitchProOutputEvent {
 }
 pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, ProviderError> {
     let realization = match o.target {
-        RealizationTarget::Evdev => evdev_realization(),
-        RealizationTarget::Uhid => hid(o.session),
-        RealizationTarget::DummyHcd => {
+        RealizationTarget::LINUX_UINPUT => evdev_realization(),
+        RealizationTarget::LINUX_UHID_USB => hid(o.session),
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: CompiledControllerKind::SwitchPro,
             })
@@ -940,7 +981,7 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
             });
         }
     };
-    let is_dummy_hcd = o.target == RealizationTarget::DummyHcd;
+    let is_dummy_hcd = o.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
     let mut controller = common::create(SwitchProDefinition, realization, o)?;
     if is_dummy_hcd {
         // A physical USB attachment should expose a neutral 0x30 report as
@@ -952,6 +993,15 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
     }
     Ok(SwitchProController(controller))
 }
+/// Workspace test seam. Never opens a real provider or accepts runtime profiles.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_controller(
+    session: Box<dyn gr_realization_api::NativeProviderSession>,
+) -> Result<SwitchProController, ProviderError> {
+    common::injected(SwitchProDefinition, session).map(SwitchProController)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1008,7 +1058,7 @@ mod tests {
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
             controller: SwitchProDefinition.controller_id(),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
             (SwitchProControl::Capture, 309),
@@ -1083,7 +1133,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: SwitchProDefinition.controller_id(),
-                    target: RealizationTarget::Uhid,
+                    target: RealizationTarget::LINUX_UHID_USB,
                 },
                 &SwitchProState::default(),
             )
@@ -1097,7 +1147,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: SwitchProDefinition.controller_id(),
-                    target: RealizationTarget::DummyHcd,
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &SwitchProState::default(),
             )
@@ -1110,14 +1160,17 @@ mod tests {
                 .realization_manifest()
                 .entries()
                 .iter()
-                .any(|entry| entry.target == RealizationTarget::DummyHcd)
+                .any(|entry| entry.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID)
         );
     }
 
     #[test]
     fn dummy_hcd_replies_retain_the_usb_report_id() {
-        let reply = dummy_hcd_reply(RealizationTarget::DummyHcd, switch_usb_reply(2))
-            .expect("DummyHcd reply");
+        let reply = dummy_hcd_reply(
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            switch_usb_reply(2),
+        )
+        .expect("DummyHcd reply");
         assert!(
             matches!(reply, ProviderFrame::DummyHcdInput(bytes) if bytes.len() == 64 && bytes[0] == 0x81 && bytes[1] == 2)
         );
@@ -1127,7 +1180,7 @@ mod tests {
     #[ignore = "requires the installed root-owned DummyHcd broker"]
     fn dummy_hcd_broker_opens_the_switch_usb_profile() {
         let mut controller = create_switch_pro(CreationOptions {
-            target: RealizationTarget::DummyHcd,
+            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             session: RealizationSessionId(0x5357_4954),
         })
         .expect("open Switch Pro through the privileged broker");
@@ -1140,7 +1193,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: SwitchProDefinition.controller_id(),
-                    target: RealizationTarget::Evdev,
+                    target: RealizationTarget::LINUX_UINPUT,
                 },
                 &SwitchProState::default(),
             )

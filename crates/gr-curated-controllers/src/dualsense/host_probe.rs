@@ -32,7 +32,7 @@ fn controlled_bus_startup_probe() {
     for repeat in 0..3 {
         for bus_type in [0x03, 0x06] {
             let options = CreationOptions {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 session: RealizationSessionId(0x4250),
             };
             let mut realization = hid_realization(options.session);

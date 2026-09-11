@@ -137,7 +137,7 @@ mod tests {
         }
         fn realization_manifest(&self) -> RealizationManifest {
             static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
@@ -203,7 +203,8 @@ mod tests {
         ControllerRuntime::new(
             Driver,
             Sink { fail, sent: vec![] },
-            prepare_realization(&Driver, RealizationTarget::Evdev).expect("prepared realization"),
+            prepare_realization(&Driver, RealizationTarget::LINUX_UINPUT)
+                .expect("prepared realization"),
         )
         .expect("matching controller")
     }
@@ -274,7 +275,8 @@ mod tests {
                 Ok(false)
             }
         }
-        let prepared = prepare_realization(&Driver, RealizationTarget::Evdev).expect("prepared");
+        let prepared =
+            prepare_realization(&Driver, RealizationTarget::LINUX_UINPUT).expect("prepared");
         let result = ControllerRuntime::new(
             OtherDriver,
             Sink {

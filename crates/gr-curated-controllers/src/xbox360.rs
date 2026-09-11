@@ -101,6 +101,28 @@ impl Xbox360State {
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
         self.face[common::face_index(button)]
     }
+    /// Current accepted value of a controller-native button.
+    #[must_use]
+    pub const fn native_pressed(&self, control: Xbox360Control) -> bool {
+        match control {
+            Xbox360Control::A => self.face[0],
+            Xbox360Control::B => self.face[1],
+            Xbox360Control::X => self.face[2],
+            Xbox360Control::Y => self.face[3],
+            Xbox360Control::LeftShoulder => self.buttons[0],
+            Xbox360Control::RightShoulder => self.buttons[1],
+            Xbox360Control::Back => self.buttons[2],
+            Xbox360Control::Start => self.buttons[3],
+            Xbox360Control::Guide => self.buttons[4],
+            Xbox360Control::LeftStickPress => self.buttons[5],
+            Xbox360Control::RightStickPress => self.buttons[6],
+        }
+    }
+    /// Current accepted D-pad direction, before realization-specific encoding.
+    #[must_use]
+    pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
+        self.dpad[common::dpad_index(direction)]
+    }
     fn set_native(&mut self, control: Xbox360Control, pressed: bool) {
         match control {
             Xbox360Control::A => self.face[0] = pressed,
@@ -278,7 +300,7 @@ static RESTRICTIONS: [TargetRestriction; 3] = [
 ];
 static SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Evdev,
+        target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -288,7 +310,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
 };
 static HID_SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -298,7 +320,7 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
 };
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
-        target: RealizationTarget::DummyHcd,
+        target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -315,21 +337,21 @@ impl RealizationControllerDefinition for Xbox360Definition {
     fn realization_manifest(&self) -> RealizationManifest {
         static ENTRIES: [RealizationManifestEntry; 3] = [
             RealizationManifestEntry {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
@@ -367,7 +389,9 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
+            RealizationTarget::LINUX_UINPUT
+                | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             Ok(())
         } else {
@@ -381,10 +405,10 @@ impl TargetAwareControllerDriver for Xbox360Definition {
     ) -> Result<Self::Frame, ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Uhid | RealizationTarget::DummyHcd
+            RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             let frame = xbox_hid_frame(state);
-            return if selection.target == RealizationTarget::DummyHcd {
+            return if selection.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
                 let ProviderFrame::HidInput {
                     report_id: None,
                     bytes,
@@ -518,8 +542,8 @@ impl Xbox360Controller {
     #[must_use]
     pub fn surface(&self) -> &'static Xbox360Surface {
         match self.0.selection().target {
-            RealizationTarget::Uhid => &HID_SURFACE,
-            RealizationTarget::DummyHcd => &DUMMY_HCD_SURFACE,
+            RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &DUMMY_HCD_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -706,9 +730,9 @@ fn hid_realization() -> NativeControllerRealization {
 }
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ProviderError> {
     let realization = match options.target {
-        RealizationTarget::Evdev => realization(),
-        RealizationTarget::Uhid => hid_realization(),
-        RealizationTarget::DummyHcd => {
+        RealizationTarget::LINUX_UINPUT => realization(),
+        RealizationTarget::LINUX_UHID_USB => hid_realization(),
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: CompiledControllerKind::Xbox360,
             })
@@ -761,6 +785,15 @@ fn xbox_hid_frame(state: &Xbox360State) -> ProviderFrame {
             state.triggers.1.raw(),
         ],
     )
+}
+
+/// Workspace test seam. Never opens a real provider or accepts runtime profiles.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_controller(
+    session: Box<dyn gr_realization_api::NativeProviderSession>,
+) -> Result<Xbox360Controller, ProviderError> {
+    common::injected(Xbox360Definition, session).map(Xbox360Controller)
 }
 
 #[cfg(test)]
@@ -884,7 +917,10 @@ mod tests {
             let mut state = Xbox360State::default();
             for pressed in [true, false, true, false] {
                 state.set_native(control, pressed);
-                for target in [RealizationTarget::Uhid, RealizationTarget::DummyHcd] {
+                for target in [
+                    RealizationTarget::LINUX_UHID_USB,
+                    RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                ] {
                     let frame = Xbox360Definition
                         .encode(
                             RealizationSelection {
@@ -973,7 +1009,7 @@ mod tests {
             HID_SURFACE.common.validation_status,
             RealizationValidationStatus::ResearchBacked
         );
-        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Uhid);
+        assert_eq!(HID_SURFACE.common.target, RealizationTarget::LINUX_UHID_USB);
         assert!(HID_SURFACE.common.outputs.is_empty());
         assert!(
             !Xbox360Definition.realization_manifest().entries()[1]
@@ -988,7 +1024,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: Xbox360Definition.controller_id(),
-                    target: RealizationTarget::DummyHcd,
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &Xbox360State::default(),
             )
@@ -1007,7 +1043,7 @@ mod tests {
     #[ignore = "requires the installed root-owned DummyHcd broker"]
     fn dummy_hcd_broker_opens_and_delivers_the_xbox_hid_report() {
         let mut controller = create_xbox360(CreationOptions {
-            target: RealizationTarget::DummyHcd,
+            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             session: RealizationSessionId(0x5842_4f58),
         })
         .expect("open Xbox HID through the privileged broker");

@@ -1,6 +1,6 @@
 # Controller support matrix
 
-All entries are **WIP** while the architecture overhaul is under review. WIP
+All entries are **WIP** during pre-alpha API/controller refinement. WIP
 includes implemented work under assessment and work not yet started. It does not
 promise that every combination will ship. The later-controller rows are planned
 future workflow exercises, not new controller APIs or current support.
@@ -46,9 +46,12 @@ accessories and lifecycle. Link each accepted cell to evidence and technical
 limitations. Do not mark a whole controller accepted because one function works,
 or require an absent native function merely because another controller has it.
 
-The [landing and alpha plan](architecture-overhaul/LANDING_AND_ALPHA_PLAN.md)
-defines the order: harden #106 and current controllers, review and land, prepare
-initial alpha/versioning, then exercise new-controller issues and additions.
+The [active pre-alpha ledger](architecture-overhaul/PRE_ALPHA_STATUS.md) requires
+API stress, controller/demo refinement, hands-on feedback, final API review,
+separate quality review and then a Git-based alpha. Normal root constructors
+exclude gadget realization while Gate G remains unresolved; its implementation
+and evidence stay available through experimental SPI. No WIP cell is promoted.
+See the [current function review](CURRENT_CONTROLLER_REFINEMENT.md).
 
 Production Wii Remote remains positively gated on later maintainer authorization.
 The test-only Wii-like topology experiment does not enable a controller package,

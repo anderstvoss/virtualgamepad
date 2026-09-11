@@ -399,7 +399,7 @@ mod tests {
     }
     impl NativeProviderFactory for Factory {
         fn capabilities(&self) -> ProviderCapabilities {
-            ProviderCapabilities::for_target(RealizationTarget::Evdev, false)
+            ProviderCapabilities::for_target(RealizationTarget::LINUX_UINPUT, false)
         }
         fn preflight(
             &self,
@@ -474,7 +474,7 @@ mod tests {
             session: RealizationSessionId(id),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.compound"),
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -977,7 +977,7 @@ mod tests {
         struct Labels(Arc<Mutex<Vec<ProviderOpenRequest>>>);
         impl NativeProviderFactory for Labels {
             fn capabilities(&self) -> ProviderCapabilities {
-                ProviderCapabilities::for_target(RealizationTarget::Evdev, false)
+                ProviderCapabilities::for_target(RealizationTarget::LINUX_UINPUT, false)
             }
             fn preflight(
                 &self,

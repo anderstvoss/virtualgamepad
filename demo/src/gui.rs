@@ -3,7 +3,6 @@ use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
 };
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
-use gr_privileged_broker::BrokerClient;
 use std::{
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
@@ -11,46 +10,47 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, CreationOptions, DigitalControlUpdate, DpadDirection,
-    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    BatteryLevel, BatteryState, DigitalControlUpdate, DpadDirection, DualSenseAxis,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationSessionId,
-    RealizationTarget, SwitchProAxis, SwitchProControl, SwitchProController, SwitchProMotionSample,
-    TouchSlot, Xbox360Axis, Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger,
-    create_dualsense, create_dualshock4, create_switch_pro, create_xbox360,
+    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationId, SwitchProAxis,
+    SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
+    Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
+    create_dualshock4, create_switch_pro, create_xbox360,
 };
+
+// Lab correlation is application bookkeeping, never controller/session identity.
+#[derive(Clone, Copy)]
+struct LabOptions {
+    target: RealizationId,
+    session: u64,
+}
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
-fn dualsense_motion_target(target: RealizationTarget) -> bool {
+fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
     )
 }
 
-fn dualsense_motion_target_label(target: RealizationTarget) -> &'static str {
-    if target == RealizationTarget::Uhid {
+fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
+    if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
     } else {
         "DummyHcd USB motion report"
     }
 }
 
-fn motion_refresh_target(target: RealizationTarget) -> bool {
+fn motion_refresh_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
     )
-}
-
-fn dummy_hcd_broker_status() -> Result<(), String> {
-    BrokerClient::connect()
-        .map(|_| ())
-        .map_err(|error| error.to_string())
 }
 
 fn repaint_interval(controller_count: usize) -> Duration {
@@ -87,16 +87,16 @@ struct ConsumerNotes {
 
 fn lab_record(
     name: &str,
-    options: CreationOptions,
+    options: LabOptions,
     metrics: &ServiceMetrics,
     notes: &str,
     consumer: &ConsumerNotes,
     details: &str,
 ) -> String {
     format!(
-        "Virtualgamepad manual lab record v2\nController: {name}\nRealization: {}\nApplication session: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
+        "Virtualgamepad manual lab record v3\nController: {name}\nRealization: {}\nLab correlation: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
         target_label(options.target),
-        options.session.0,
+        options.session,
         metrics.cycles,
         metrics.max_gap.as_micros(),
         metrics.omitted_logs,
@@ -126,21 +126,19 @@ enum ControllerLifecycleStatus {
 }
 
 fn creation_error_message(
-    error: &virtualgamepad::ProviderError,
+    error: &virtualgamepad::ControllerError,
     uhid_registered: Option<bool>,
 ) -> String {
-    use virtualgamepad::{ProviderError, ProviderPreflightError};
+    use virtualgamepad::ControllerError;
     let message = error.to_string();
-    let ProviderError::Preflight(
-        ProviderPreflightError::AccessDenied { target, path }
-        | ProviderPreflightError::MissingDeviceNode { target, path },
-    ) = error
+    let (ControllerError::AccessDenied { target, path }
+    | ControllerError::MissingDeviceNode { target, path }) = error
     else {
         return message;
     };
     if ![
-        RealizationTarget::LINUX_UHID_USB,
-        RealizationTarget::LINUX_UHID_BLUETOOTH,
+        RealizationId::LINUX_UHID_USB,
+        RealizationId::LINUX_UHID_BLUETOOTH,
     ]
     .contains(target)
         || path != "/dev/uhid"
@@ -233,7 +231,7 @@ impl EditProgress {
 
 struct NamedController {
     kind: Kind,
-    options: CreationOptions,
+    options: LabOptions,
     name: String,
     view: ControllerView,
     edits: EditProgress,
@@ -581,9 +579,7 @@ impl Controller {
             Self::SwitchPro(controller)
                 if motion_refresh_target(controller.surface().common().target) =>
             {
-                controller
-                    .refresh_motion()
-                    .map_err(|error| error.to_string())
+                controller.commit().map_err(|error| error.to_string())
             }
             _ => Ok(()),
         }
@@ -741,14 +737,13 @@ impl ControllerView {
 }
 pub struct App {
     kind: Kind,
-    target: RealizationTarget,
+    target: RealizationId,
     name_draft: String,
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
     consumer_notes: ConsumerNotes,
     last_cleanup: Option<String>,
-    broker_status: Option<Result<(), String>>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
     output_log: Vec<String>,
@@ -758,14 +753,13 @@ impl Default for App {
     fn default() -> Self {
         Self {
             kind: Kind::Xbox360,
-            target: RealizationTarget::Evdev,
+            target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
             consumer_notes: ConsumerNotes::default(),
             last_cleanup: None,
-            broker_status: None,
             controllers: vec![],
             selected_controller: None,
             output_log: vec![],
@@ -784,15 +778,25 @@ impl App {
     }
 
     fn create(&mut self) {
-        let options = CreationOptions {
+        let options = LabOptions {
             target: self.target,
-            session: RealizationSessionId(self.next_session),
+            session: self.next_session,
         };
         let result = match self.kind {
-            Kind::Xbox360 => create_xbox360(options).map(Controller::Xbox),
-            Kind::DualSense => create_dualsense(options).map(Controller::DualSense),
-            Kind::DualShock4 => create_dualshock4(options).map(Controller::DualShock4),
-            Kind::SwitchPro => create_switch_pro(options).map(Controller::SwitchPro),
+            Kind::Xbox360 => create_xbox360(virtualgamepad::CreationOptions::new(options.target))
+                .map(Controller::Xbox),
+            Kind::DualSense => {
+                create_dualsense(virtualgamepad::CreationOptions::new(options.target))
+                    .map(Controller::DualSense)
+            }
+            Kind::DualShock4 => {
+                create_dualshock4(virtualgamepad::CreationOptions::new(options.target))
+                    .map(Controller::DualShock4)
+            }
+            Kind::SwitchPro => {
+                create_switch_pro(virtualgamepad::CreationOptions::new(options.target))
+                    .map(Controller::SwitchPro)
+            }
         };
         match result {
             Ok(mut controller) => {
@@ -901,19 +905,16 @@ impl eframe::App for App {
                 .show_ui(ui, |ui| {
                     ui.selectable_value(
                         &mut self.target,
-                        RealizationTarget::Evdev,
-                        target_label(RealizationTarget::Evdev),
+                        RealizationId::LINUX_UINPUT,
+                        target_label(RealizationId::LINUX_UINPUT),
                     );
                     ui.selectable_value(
                         &mut self.target,
-                        RealizationTarget::Uhid,
-                        target_label(RealizationTarget::Uhid),
+                        RealizationId::LINUX_UHID_USB,
+                        target_label(RealizationId::LINUX_UHID_USB),
                     );
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationTarget::DummyHcd,
-                        target_label(RealizationTarget::DummyHcd),
-                    );
+                    ui.add_enabled(false, egui::Button::new("USB gadget (experimental)"))
+                        .on_disabled_hover_text("Gate G is unresolved: required USB requests still need the research protocol API.");
                 });
             let default_name = self.next_default_name();
             ui.add(
@@ -922,38 +923,18 @@ impl eframe::App for App {
                     .desired_width(f32::INFINITY),
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID requires /dev/uhid access. DummyHcd requires the administrator-installed broker service.");
-            if self.target == RealizationTarget::DummyHcd {
-                if ui.button("Check broker socket").clicked() {
-                    self.broker_status = Some(dummy_hcd_broker_status());
-                }
-                match &self.broker_status {
-                    Some(Ok(())) => {
-                        ui.colored_label(
-                            Color32::GREEN,
-                            "DummyHcd broker socket is reachable. Create a curated controller to attach a USB device.",
-                        );
-                    }
-                    Some(Err(error)) => {
-                        ui.colored_label(Color32::RED, format!("DummyHcd broker unavailable: {error}"));
-                    }
-                    None => { ui.small("Broker reachability has not been checked."); }
-                }
-                ui.small(
-                    "Test flow: select DualSense, create it, then exercise buttons, touch, motion, and host-output indicators.",
-                );
-            }
-            ui.horizontal(|ui| {
-                ui.label("Application session ID");
-                ui.add(egui::DragValue::new(&mut self.next_session));
-            });
-            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
-            ui.small("Turn off to test repeated IDs. Device identity remains creation-owned.");
+            ui.small("UHID requires administrator-prepared device access.");
             if ui.button("Create").clicked() {
                 self.create();
             }
             if ui.button("Stop all controllers").clicked() { stop_all = true; }
             ui.collapsing("Lab notes and gate prerequisites", |ui| {
+            ui.horizontal(|ui| {
+                ui.label("Lab correlation ID");
+                ui.add(egui::DragValue::new(&mut self.next_session));
+            });
+            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
+            ui.small("This ID labels lab records only. Controller identity and session tokens are library-owned.");
                 ui.label("Consumer build/version");
                 ui.text_edit_singleline(&mut self.consumer_notes.build);
                 ui.label("Input backend (for example SDL HIDAPI or Linux event)");
@@ -1031,7 +1012,7 @@ impl eframe::App for App {
                                 ui.text_edit_singleline(&mut named.name);
                             });
                             draw_reverse_indicators(ui, &named.indicators);
-                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session.0));
+                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session));
                             if let Some(worker) = &named.service_worker {
                                 if let Ok(display) = worker.display.try_lock() {
                                     ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
@@ -1089,11 +1070,11 @@ impl eframe::App for App {
     }
 }
 
-fn target_label(target: RealizationTarget) -> &'static str {
+fn target_label(target: RealizationId) -> &'static str {
     match target {
-        RealizationTarget::Evdev => "Evdev / uinput",
-        RealizationTarget::Uhid => "HID / UHID",
-        RealizationTarget::DummyHcd => "USB / dummy_hcd",
+        RealizationId::LINUX_UINPUT => "Evdev / uinput",
+        RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
     }
 }
@@ -1483,10 +1464,11 @@ fn draw_dualsense(
     if dualsense_motion_target(target) {
         ui.group(|ui| {
             ui.label(dualsense_motion_target_label(target));
-            let diagnostics = controller.provider_diagnostics();
+            let diagnostics = controller.diagnostics();
             ui.small(format!(
                 "HID reports sent: {}; host requests handled: {}",
-                diagnostics.frames_sent, diagnostics.reverse_events_drained
+                diagnostics.frames_sent(),
+                diagnostics.reverse_events_drained()
             ));
             let motion = controller.state().motion();
             let mut gyro = motion.gyroscope;
@@ -1803,22 +1785,22 @@ mod tests {
 
     #[test]
     fn uhid_creation_failure_distinguishes_registration_from_access() {
-        use virtualgamepad::{ProviderError, ProviderPreflightError};
+        use virtualgamepad::ControllerError;
         for target in [
-            RealizationTarget::LINUX_UHID_USB,
-            RealizationTarget::LINUX_UHID_BLUETOOTH,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_UHID_BLUETOOTH,
         ] {
             for preflight in [
-                ProviderPreflightError::AccessDenied {
+                ControllerError::AccessDenied {
                     target,
                     path: "/dev/uhid".into(),
                 },
-                ProviderPreflightError::MissingDeviceNode {
+                ControllerError::MissingDeviceNode {
                     target,
                     path: "/dev/uhid".into(),
                 },
             ] {
-                let error = ProviderError::Preflight(preflight);
+                let error = preflight;
                 let missing = creation_error_message(&error, Some(false));
                 assert!(missing.starts_with(&error.to_string()));
                 assert!(missing.contains("registration is missing"));
@@ -1833,14 +1815,14 @@ mod tests {
             }
         }
         for error in [
-            ProviderError::Preflight(ProviderPreflightError::AccessDenied {
-                target: RealizationTarget::Evdev,
+            ControllerError::AccessDenied {
+                target: RealizationId::LINUX_UINPUT,
                 path: "/dev/uinput".into(),
-            }),
-            ProviderError::Open {
+            },
+            ControllerError::Open {
                 reason: "synthetic creation failure".into(),
             },
-            ProviderError::Closed,
+            ControllerError::Closed,
         ] {
             assert_eq!(
                 creation_error_message(&error, Some(false)),
@@ -1890,7 +1872,7 @@ mod tests {
         assert!(owned_nodes().is_empty());
         let mut app = App::default();
         app.kind = Kind::DualSense;
-        app.target = RealizationTarget::Uhid;
+        app.target = RealizationId::LINUX_UHID_USB;
         for count in 1..=2 {
             app.create();
             assert!(
@@ -1977,9 +1959,9 @@ mod tests {
         assert_eq!(metrics.omitted_logs, 12);
         let record = lab_record(
             "Synthetic lab controller",
-            CreationOptions {
-                session: RealizationSessionId(65543),
-                target: RealizationTarget::Uhid,
+            LabOptions {
+                session: 65543,
+                target: RealizationId::LINUX_UHID_USB,
             },
             &metrics,
             "Reference disconnected; synthetic test",
@@ -1990,12 +1972,12 @@ mod tests {
             },
             "Closed; cleanup failed: synthetic",
         );
-        assert!(record.starts_with("Virtualgamepad manual lab record v2"));
+        assert!(record.starts_with("Virtualgamepad manual lab record v3"));
         assert!(record.contains("Consumer build: synthetic build"));
         assert!(record.contains("Consumer backend: fake backend"));
         assert!(record.contains("Consumer mapping: fake mapping"));
         assert!(record.contains("cleanup failed: synthetic"));
-        assert!(record.contains("Application session: 65543"));
+        assert!(record.contains("Lab correlation: 65543"));
         assert!(record.contains("Maximum observed service gap (us): 11000"));
         assert!(record.contains("acceptance: not established"));
         assert!(record.ends_with("Reference disconnected; synthetic test"));
@@ -2357,24 +2339,28 @@ mod tests {
 
     #[test]
     fn dualsense_motion_refresh_is_available_for_uhid_and_dummy_hcd() {
-        assert!(dualsense_motion_target(RealizationTarget::Uhid));
-        assert!(dualsense_motion_target(RealizationTarget::DummyHcd));
-        assert!(!dualsense_motion_target(RealizationTarget::Evdev));
+        assert!(dualsense_motion_target(RealizationId::LINUX_UHID_USB));
+        assert!(dualsense_motion_target(
+            RealizationId::LINUX_DUMMY_HCD_USB_HID
+        ));
+        assert!(!dualsense_motion_target(RealizationId::LINUX_UINPUT));
         assert_eq!(
-            dualsense_motion_target_label(RealizationTarget::Uhid),
+            dualsense_motion_target_label(RealizationId::LINUX_UHID_USB),
             "UHID motion report"
         );
         assert_eq!(
-            dualsense_motion_target_label(RealizationTarget::DummyHcd),
+            dualsense_motion_target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
             "DummyHcd USB motion report"
         );
     }
 
     #[test]
     fn motion_refresh_has_the_same_target_contract_for_all_imu_controllers() {
-        assert!(motion_refresh_target(RealizationTarget::Uhid));
-        assert!(motion_refresh_target(RealizationTarget::DummyHcd));
-        assert!(!motion_refresh_target(RealizationTarget::Evdev));
+        assert!(motion_refresh_target(RealizationId::LINUX_UHID_USB));
+        assert!(motion_refresh_target(
+            RealizationId::LINUX_DUMMY_HCD_USB_HID
+        ));
+        assert!(!motion_refresh_target(RealizationId::LINUX_UINPUT));
     }
 
     #[test]
