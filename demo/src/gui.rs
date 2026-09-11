@@ -1544,29 +1544,29 @@ impl eframe::App for App {
                     );
                     let footer_controls_height = CONTROLLER_ROW_HEIGHT
                         + 1.0
-                        + ui.text_style_height(&egui::TextStyle::Body)
-                        + (ui.spacing().item_spacing.y * 3.0);
+                        + ui.text_style_height(&egui::TextStyle::Body);
                     let sidebar_layout =
                         sidebar_layout_budget(ui.available_height(), footer_controls_height);
                     let list_height = sidebar_layout.controller_list;
-                    ui.allocate_ui_with_layout(
+                    let (controller_list_rect, _) = ui.allocate_exact_size(
                         Vec2::new(
                             SIDEBAR_WIDTH,
                             list_height + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
                         ),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            egui::Frame::NONE
-                                .fill(Color32::from_gray(20))
-                                .inner_margin(egui::Margin::same(4))
-                                .show(ui, |ui| {
-                    ui.set_width(controller_surface_width);
+                        Sense::hover(),
+                    );
+                    ui.painter()
+                        .rect_filled(controller_list_rect, 0.0, Color32::from_gray(20));
+                    let controller_content_rect = controller_list_rect.shrink(4.0);
+                    let mut list_ui = ui.new_child(
+                        egui::UiBuilder::new().max_rect(controller_content_rect),
+                    );
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
                         .min_scrolled_height(list_height)
                         .max_height(list_height)
                         .auto_shrink([false, false])
-                        .show(ui, |ui| {
+                        .show(&mut list_ui, |ui| {
                             ui.set_width(controller_surface_width);
                             ui.scope(|ui| {
                                 ui.spacing_mut().item_spacing.x = 1.0;
@@ -1632,88 +1632,90 @@ impl eframe::App for App {
                                 );
                             }
                             });
-                                });
-                            });
-                        },
-                    );
+                        });
                     let footer_height = sidebar_layout.footer;
                     let log_height = sidebar_layout.diagnostic_log;
-                    let log_scroll_height = diagnostic_log_scroll_height(log_height);
-                    ui.allocate_ui_with_layout(
+                    let (footer_rect, _) = ui.allocate_exact_size(
                         Vec2::new(SIDEBAR_WIDTH, footer_height),
-                        egui::Layout::bottom_up(egui::Align::Min),
-                        |ui| {
-                            let status_color = if self.backend_healthy {
-                                Color32::GREEN
+                        Sense::hover(),
+                    );
+                    let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+                    footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    let stop_all_clicked = footer_ui
+                        .add_sized(
+                            [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                            egui::Button::new("Stop all controllers")
+                                .fill(Color32::from_rgb(150, 45, 65)),
+                        )
+                        .clicked();
+                    stop_all = stop_all_after_click(stop_all_clicked);
+                    footer_ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+
+                    let (log_rect, _) = footer_ui.allocate_exact_size(
+                        Vec2::new(SIDEBAR_WIDTH, log_height),
+                        Sense::hover(),
+                    );
+                    footer_ui
+                        .painter()
+                        .rect_filled(log_rect, 0.0, Color32::from_gray(8));
+                    let log_content_rect = egui::Rect::from_min_max(
+                        log_rect.left_top()
+                            + egui::vec2(4.0, f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)),
+                        log_rect.right_bottom() - egui::vec2(4.0, 0.0),
+                    );
+                    let mut log_ui = footer_ui.new_child(
+                        egui::UiBuilder::new().max_rect(log_content_rect),
+                    );
+                    let log_scroll_height = diagnostic_log_scroll_height(log_height);
+                    egui::ScrollArea::vertical()
+                        .id_salt("diagnostic_log")
+                        .auto_shrink([false, false])
+                        .min_scrolled_height(log_scroll_height)
+                        .max_height(log_scroll_height)
+                        .stick_to_bottom(true)
+                        .show(&mut log_ui, |ui| {
+                            ui.set_width(SIDEBAR_WIDTH - 16.0);
+                            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                                if self.diagnostic_log.is_empty() {
+                                    ui.weak("Warnings and error codes will appear here");
+                                }
+                                for index in terminal_log_indices(self.diagnostic_log.len()) {
+                                    let entry = &self.diagnostic_log[index];
+                                    ui.colored_label(
+                                        if entry.success {
+                                            Color32::from_rgb(105, 170, 105)
+                                        } else {
+                                            Color32::RED
+                                        },
+                                        &entry.message,
+                                    );
+                                }
+                            });
+                        });
+
+                    let status_height = ui.text_style_height(&egui::TextStyle::Body);
+                    let (status_rect, _) = footer_ui.allocate_exact_size(
+                        Vec2::new(SIDEBAR_WIDTH, status_height),
+                        Sense::hover(),
+                    );
+                    let status_color = if self.backend_healthy {
+                        Color32::GREEN
+                    } else {
+                        Color32::RED
+                    };
+                    footer_ui.painter().text(
+                        status_rect.left_center(),
+                        egui::Align2::LEFT_CENTER,
+                        format!(
+                            "● {}",
+                            if self.backend_healthy {
+                                "Healthy"
                             } else {
-                                Color32::RED
-                            };
-                            ui.colored_label(
-                                status_color,
-                                format!(
-                                    "● {}",
-                                    if self.backend_healthy {
-                                        "Healthy"
-                                    } else {
-                                        "Attention"
-                                    }
-                                ),
-                            );
-                            egui::Frame::NONE
-                                .fill(Color32::from_gray(8))
-                                .inner_margin(egui::Margin {
-                                    left: 4,
-                                    right: 4,
-                                    top: DIAGNOSTIC_LOG_TOP_MARGIN,
-                                    bottom: 0,
-                                })
-                                .show(ui, |ui| {
-                                    ui.set_min_width(SIDEBAR_WIDTH - 8.0);
-                                    ui.set_max_width(SIDEBAR_WIDTH - 8.0);
-                                    ui.set_min_height(log_scroll_height);
-                                    egui::ScrollArea::vertical()
-                                        .id_salt("diagnostic_log")
-                                        .auto_shrink([false, false])
-                                        .min_scrolled_height(log_scroll_height)
-                                        .max_height(log_scroll_height)
-                                        .stick_to_bottom(true)
-                                        .show(ui, |ui| {
-                                            ui.set_width(SIDEBAR_WIDTH - 16.0);
-                                            ui.with_layout(
-                                                egui::Layout::bottom_up(egui::Align::Min),
-                                                |ui| {
-                                                    if self.diagnostic_log.is_empty() {
-                                                        ui.weak(
-                                                            "Warnings and error codes will appear here",
-                                                        );
-                                                    }
-                                                    for index in terminal_log_indices(
-                                                        self.diagnostic_log.len(),
-                                                    ) {
-                                                        let entry = &self.diagnostic_log[index];
-                                                        ui.colored_label(
-                                                            if entry.success {
-                                                                Color32::from_rgb(105, 170, 105)
-                                                            } else {
-                                                                Color32::RED
-                                                            },
-                                                            &entry.message,
-                                                        );
-                                                    }
-                                                },
-                                            );
-                                        });
-                                });
-                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                            let stop_all_clicked = ui
-                                .add_sized(
-                                    [ui.available_width(), 22.0],
-                                    egui::Button::new("Stop all controllers")
-                                        .fill(Color32::from_rgb(150, 45, 65)),
-                                )
-                                .clicked();
-                            stop_all = stop_all_after_click(stop_all_clicked);
-                        },
+                                "Attention"
+                            }
+                        ),
+                        egui::TextStyle::Body.resolve(footer_ui.style()),
+                        status_color,
                     );
                 });
                 ui.separator();
