@@ -108,8 +108,18 @@ fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
     (log_height - f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)).max(0.0)
 }
 
-fn terminal_log_indices(entry_count: usize) -> impl Iterator<Item = usize> {
-    (0..entry_count).rev()
+fn diagnostic_log_top_padding(
+    viewport_height: f32,
+    line_height: f32,
+    entry_count: usize,
+    line_spacing: f32,
+) -> f32 {
+    let entry_count = f32::from(
+        u8::try_from(entry_count.clamp(1, OUTPUT_LOG_LIMIT))
+            .expect("diagnostic log limit fits in u8"),
+    );
+    let content_height = (line_height * entry_count) + (line_spacing * (entry_count - 1.0));
+    (viewport_height - content_height).max(0.0)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1681,22 +1691,25 @@ impl eframe::App for App {
                         .stick_to_bottom(true)
                         .show(&mut log_ui, |ui| {
                             ui.set_width(SIDEBAR_WIDTH - 16.0);
-                            ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                                if self.diagnostic_log.is_empty() {
-                                    ui.weak("Warnings and error codes will appear here");
-                                }
-                                for index in terminal_log_indices(self.diagnostic_log.len()) {
-                                    let entry = &self.diagnostic_log[index];
-                                    ui.colored_label(
-                                        if entry.success {
-                                            Color32::from_rgb(105, 170, 105)
-                                        } else {
-                                            Color32::RED
-                                        },
-                                        &entry.message,
-                                    );
-                                }
-                            });
+                            ui.add_space(diagnostic_log_top_padding(
+                                log_scroll_height,
+                                ui.text_style_height(&egui::TextStyle::Body),
+                                self.diagnostic_log.len(),
+                                ui.spacing().item_spacing.y,
+                            ));
+                            if self.diagnostic_log.is_empty() {
+                                ui.weak("Warnings and error codes will appear here");
+                            }
+                            for entry in &self.diagnostic_log {
+                                ui.colored_label(
+                                    if entry.success {
+                                        Color32::from_rgb(105, 170, 105)
+                                    } else {
+                                        Color32::RED
+                                    },
+                                    &entry.message,
+                                );
+                            }
                         });
 
                     let status_height = ui.text_style_height(&egui::TextStyle::Body);
@@ -3123,11 +3136,10 @@ mod tests {
     }
 
     #[test]
-    fn terminal_log_places_the_newest_entry_at_the_bottom() {
-        assert_eq!(
-            terminal_log_indices(4).collect::<Vec<_>>(),
-            vec![3, 2, 1, 0]
-        );
+    fn diagnostic_log_bottom_aligns_without_expanding_short_content() {
+        assert!((diagnostic_log_top_padding(70.0, 14.0, 4, 3.0) - 5.0).abs() < 0.001);
+        assert!(diagnostic_log_top_padding(70.0, 14.0, 5, 3.0).abs() < 0.001);
+        assert!(diagnostic_log_top_padding(70.0, 14.0, 9, 3.0).abs() < 0.001);
     }
 
     #[test]
