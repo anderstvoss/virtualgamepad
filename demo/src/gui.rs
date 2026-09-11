@@ -1628,6 +1628,7 @@ impl eframe::App for App {
                     );
                     let footer_height = sidebar_footer_height(ui.available_height());
                     let log_height = diagnostic_log_height(footer_height);
+                    let log_scroll_height = diagnostic_log_scroll_height(log_height);
                     ui.allocate_ui_with_layout(
                         Vec2::new(SIDEBAR_WIDTH, footer_height),
                         egui::Layout::bottom_up(egui::Align::Min),
@@ -1659,11 +1660,12 @@ impl eframe::App for App {
                                 .show(ui, |ui| {
                                     ui.set_min_width(SIDEBAR_WIDTH - 8.0);
                                     ui.set_max_width(SIDEBAR_WIDTH - 8.0);
+                                    ui.set_min_height(log_scroll_height);
                                     egui::ScrollArea::vertical()
                                         .id_salt("diagnostic_log")
                                         .auto_shrink([false, false])
-                                        .min_scrolled_height(diagnostic_log_scroll_height(log_height))
-                                        .max_height(diagnostic_log_scroll_height(log_height))
+                                        .min_scrolled_height(log_scroll_height)
+                                        .max_height(log_scroll_height)
                                         .stick_to_bottom(true)
                                         .show(ui, |ui| {
                                             ui.set_width(SIDEBAR_WIDTH - 16.0);
