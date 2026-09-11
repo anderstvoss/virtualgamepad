@@ -52,8 +52,8 @@ struct DiagnosticLogEntry {
 impl ControllerLabelMode {
     const fn label(self) -> &'static str {
         match self {
-            Self::AssignedName => "Assigned name",
-            Self::InternalIdentifier => "Internal identifier",
+            Self::AssignedName => "Name",
+            Self::InternalIdentifier => "Identifier",
         }
     }
 }
