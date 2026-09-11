@@ -11,8 +11,8 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, DigitalControlUpdate, DpadDirection, DualSenseAxis,
-    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DpadDirection,
+    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
     DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationId, SwitchProAxis,
@@ -56,6 +56,10 @@ impl ControllerLabelMode {
             Self::InternalIdentifier => "Internal identifier",
         }
     }
+}
+
+const fn backend_status_is_healthy(status: ControllerStatus) -> bool {
+    matches!(status, ControllerStatus::Open)
 }
 
 fn dualsense_motion_target(target: RealizationId) -> bool {
@@ -385,6 +389,7 @@ struct WorkerDisplay {
     logs: Vec<String>,
     metrics: ServiceMetrics,
     indicators: ReverseIndicators,
+    backend_healthy: Option<bool>,
 }
 
 struct ServiceWorker<C> {
@@ -413,6 +418,10 @@ impl<C> ServiceWorker<C> {
 }
 
 trait ServicedController: Send + Sized {
+    fn backend_healthy(&mut self) -> bool {
+        true
+    }
+
     fn snapshot(&mut self) -> Option<ControllerView> {
         None
     }
@@ -443,6 +452,10 @@ fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
 }
 
 impl ServicedController for Controller {
+    fn backend_healthy(&mut self) -> bool {
+        Controller::backend_healthy(self)
+    }
+
     fn neutralize(&mut self) -> Result<(), String> {
         match self {
             Self::Xbox(c) => c.neutralize(),
@@ -554,6 +567,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                 )
             })();
             label_output_logs(&log_label, &mut logs);
+            let backend_healthy = controller.backend_healthy();
             // Optional UI output never owns or delays protocol replies.
             metrics.record(Instant::now());
             if let Ok(mut display) = worker_display.try_lock() {
@@ -568,6 +582,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                 display.metrics = metrics.clone();
                 display.snapshot = controller.snapshot();
                 display.applied = applied;
+                display.backend_healthy = Some(backend_healthy);
             } else {
                 metrics.omit(logs.len());
             }
@@ -657,6 +672,16 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
+    fn backend_healthy(&mut self) -> bool {
+        let status = match self {
+            Self::Xbox(controller) => controller.diagnostics().status(),
+            Self::DualSense(controller) => controller.diagnostics().status(),
+            Self::DualShock4(controller) => controller.diagnostics().status(),
+            Self::SwitchPro(controller) => controller.diagnostics().status(),
+        };
+        backend_status_is_healthy(status)
+    }
+
     fn next_service_in(&self) -> Option<Duration> {
         match self {
             Self::Xbox(controller) => controller.next_service_in(),
@@ -859,6 +884,7 @@ pub struct App {
     output_log: Vec<String>,
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
+    backend_healthy: bool,
     pending_cleanup: Option<CleanupRequest>,
 }
 impl Default for App {
@@ -879,6 +905,7 @@ impl Default for App {
             output_log: vec![],
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
+            backend_healthy: true,
             pending_cleanup: None,
         }
     }
@@ -1016,9 +1043,11 @@ impl eframe::App for App {
         let mut remove = None;
         let mut stop_all = false;
         let mut failed_controller = None;
+        let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
                 if let Some(error) = worker_failure(&worker.failure) {
+                    backend_healthy = false;
                     failed_controller = Some((index, error));
                     break;
                 }
@@ -1027,6 +1056,9 @@ impl eframe::App for App {
                 if let Ok(mut display) = worker.display.try_lock() {
                     self.output_log.append(&mut display.logs);
                     named.indicators = display.indicators.clone();
+                    if let Some(healthy) = display.backend_healthy {
+                        backend_healthy &= healthy;
+                    }
                     if display.snapshot.is_some() && named.edits.observe(display.applied) {
                         named.view = display.snapshot.take().expect("checked snapshot");
                     }
@@ -1037,6 +1069,7 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
+        self.backend_healthy = backend_healthy;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(
             "virtualgamepad Demo GUI".to_owned(),
         ));
@@ -1056,7 +1089,7 @@ impl eframe::App for App {
                     ui.set_min_width(SIDEBAR_WIDTH);
                     ui.set_max_width(SIDEBAR_WIDTH);
                     ui.heading("Add Controller");
-                    ui.separator();
+                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     egui::Grid::new("controller_creation_grid")
                         .num_columns(2)
                         .spacing([6.0, 4.0])
@@ -1131,7 +1164,7 @@ impl eframe::App for App {
                         self.create();
                     }
                     ui.add_space(6.0);
-                    ui.separator();
+                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     let list_height = controller_list_height(ctx.screen_rect().height());
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
                     let selector_spacing = ui.spacing().item_spacing.x;
@@ -1142,10 +1175,6 @@ impl eframe::App for App {
                         - CONTROLLER_DELETE_WIDTH
                         - (row_spacing * 2.0))
                         .max(40.0);
-                    egui::Frame::NONE
-                        .fill(Color32::from_gray(20))
-                        .inner_margin(egui::Margin::same(4))
-                        .show(ui, |ui| {
                     ui.set_width(controller_surface_width);
                     ui.horizontal(|ui| {
                         let chip_width =
@@ -1179,6 +1208,10 @@ impl eframe::App for App {
                             self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
                         }
                     });
+                    egui::Frame::NONE
+                        .fill(Color32::from_gray(20))
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
                         .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
@@ -1261,7 +1294,7 @@ impl eframe::App for App {
                     {
                         self.pending_cleanup = Some(CleanupRequest::All);
                     }
-                    ui.separator();
+                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     egui::Frame::NONE
                         .fill(Color32::from_gray(8))
                         .inner_margin(egui::Margin::same(4))
@@ -1290,31 +1323,24 @@ impl eframe::App for App {
                                     }
                                 });
                         });
-                    let sidebar_healthy = !matches!(
-                        self.lifecycle_status,
-                        Some(
-                            ControllerLifecycleStatus::CreationFailed { .. }
-                                | ControllerLifecycleStatus::ClosedAfterFailure { .. },
-                        )
-                    );
-                    let status_color = if sidebar_healthy {
-                        Color32::GREEN
-                    } else {
-                        Color32::RED
-                    };
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |status_ui| {
-                            status_ui.colored_label(
-                                status_color,
-                                format!(
-                                    "● {}",
-                                    if sidebar_healthy { "Healthy" } else { "Attention" }
-                                ),
-                            );
-                        },
-                    );
+                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                        let status_color = if self.backend_healthy {
+                            Color32::GREEN
+                        } else {
+                            Color32::RED
+                        };
+                        ui.colored_label(
+                            status_color,
+                            format!(
+                                "● {}",
+                                if self.backend_healthy {
+                                    "Healthy"
+                                } else {
+                                    "Attention"
+                                }
+                            ),
+                        );
+                    });
                 });
                 ui.separator();
                 ui.vertical(|ui| {
@@ -2862,6 +2888,14 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn only_an_open_backend_reports_healthy() {
+        assert!(backend_status_is_healthy(ControllerStatus::Open));
+        assert!(!backend_status_is_healthy(ControllerStatus::NotOpen));
+        assert!(!backend_status_is_healthy(ControllerStatus::Closed));
+        assert!(!backend_status_is_healthy(ControllerStatus::Failed));
     }
 
     #[test]
