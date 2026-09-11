@@ -1213,17 +1213,23 @@ impl eframe::App for App {
                                     let controller_response = egui::Frame::NONE
                                         .fill(fill)
                                         .show(ui, |ui| {
-                                            ui.allocate_ui_with_layout(
+                                            let (rect, response) = ui.allocate_exact_size(
                                                 Vec2::new(
                                                     controller_button_width,
                                                     CONTROLLER_ROW_HEIGHT,
                                                 ),
-                                                egui::Layout::left_to_right(egui::Align::Center),
-                                                |ui| ui.add(egui::Label::new(label).sense(Sense::click())),
-                                            )
+                                                Sense::click(),
+                                            );
+                                            ui.painter().text(
+                                                rect.left_center() + egui::vec2(6.0, 0.0),
+                                                egui::Align2::LEFT_CENTER,
+                                                label,
+                                                egui::TextStyle::Button.resolve(ui.style()),
+                                                ui.visuals().text_color(),
+                                            );
+                                            response
                                         })
-                                        .inner
-                                        .response;
+                                        .inner;
                                     self.selected_controller = selection_after_controller_click(
                                         self.selected_controller,
                                         index,
