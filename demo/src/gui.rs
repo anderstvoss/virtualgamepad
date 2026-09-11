@@ -214,6 +214,43 @@ fn step_create_count(count: u32, increment: bool) -> u32 {
     }
 }
 
+fn spinbox_arrow_rects(rect: egui::Rect, arrow_width: f32) -> (egui::Rect, egui::Rect) {
+    let arrow_left = rect.right() - arrow_width;
+    (
+        egui::Rect::from_min_max(
+            Pos2::new(arrow_left, rect.top()),
+            Pos2::new(rect.right(), rect.center().y),
+        ),
+        egui::Rect::from_min_max(Pos2::new(arrow_left, rect.center().y), rect.right_bottom()),
+    )
+}
+
+fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered: bool) {
+    let center = rect.center();
+    let inset = 3.0;
+    let half_width = 3.0;
+    let points = if points_up {
+        vec![
+            Pos2::new(center.x, rect.top() + inset),
+            Pos2::new(center.x - half_width, rect.bottom() - inset),
+            Pos2::new(center.x + half_width, rect.bottom() - inset),
+        ]
+    } else {
+        vec![
+            Pos2::new(center.x - half_width, rect.top() + inset),
+            Pos2::new(center.x + half_width, rect.top() + inset),
+            Pos2::new(center.x, rect.bottom() - inset),
+        ]
+    };
+    let color = if hovered {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.painter()
+        .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
 fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     const SPINBOX_WIDTH: f32 = 58.0;
     const ARROW_WIDTH: f32 = 16.0;
@@ -247,23 +284,11 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     if text_response.lost_focus() {
         text = value.to_string();
     }
-    let arrow_left = text_response.rect.right() - ARROW_WIDTH;
-    let increment_rect = egui::Rect::from_min_max(
-        Pos2::new(arrow_left, text_response.rect.top()),
-        Pos2::new(text_response.rect.right(), text_response.rect.center().y),
-    );
-    let decrement_rect = egui::Rect::from_min_max(
-        Pos2::new(arrow_left, text_response.rect.center().y),
-        text_response.rect.right_bottom(),
-    );
-    let increment_response = ui.put(
-        increment_rect,
-        Button::new("▴").frame(false).min_size(Vec2::ZERO),
-    );
-    let decrement_response = ui.put(
-        decrement_rect,
-        Button::new("▾").frame(false).min_size(Vec2::ZERO),
-    );
+    let (increment_rect, decrement_rect) = spinbox_arrow_rects(text_response.rect, ARROW_WIDTH);
+    let increment_response = ui.interact(increment_rect, id.with("increment"), Sense::click());
+    let decrement_response = ui.interact(decrement_rect, id.with("decrement"), Sense::click());
+    paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
+    paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
     if increment_response.clicked() {
         *value = step_create_count(*value, true);
         text = value.to_string();
@@ -2998,6 +3023,18 @@ mod tests {
         assert_eq!(step_create_count(1, false), 1);
         assert_eq!(step_create_count(4, false), 3);
         assert_eq!(step_create_count(9_999, true), 10_000);
+    }
+
+    #[test]
+    fn spinbox_arrows_stay_inside_the_number_field() {
+        let field = egui::Rect::from_min_size(Pos2::new(20.0, 30.0), Vec2::new(58.0, 22.0));
+        let (increment, decrement) = spinbox_arrow_rects(field, 16.0);
+
+        assert!(field.contains_rect(increment));
+        assert!(field.contains_rect(decrement));
+        assert!((increment.bottom() - decrement.top()).abs() < f32::EPSILON);
+        assert!((increment.right() - field.right()).abs() < f32::EPSILON);
+        assert!((decrement.right() - field.right()).abs() < f32::EPSILON);
     }
 
     #[test]
