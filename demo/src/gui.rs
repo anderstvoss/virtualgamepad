@@ -37,6 +37,7 @@ const CONTROLLER_ROW_HEIGHT: f32 = 22.0;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const CONTROLLER_SCROLLBAR_ALLOWANCE: f32 = 12.0;
+const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -86,6 +87,10 @@ fn repaint_interval(controller_count: usize) -> Duration {
     } else {
         GUI_REPAINT_INTERVAL
     }
+}
+
+fn controller_list_height(viewport_height: f32) -> f32 {
+    (viewport_height - SIDEBAR_FIXED_HEIGHT).max(CONTROLLER_ROW_HEIGHT * 4.0)
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -1039,11 +1044,10 @@ impl eframe::App for App {
                 })
             .show(ui, |ui| {
             ui.horizontal_top(|ui| {
-                let sidebar_height = ui.available_height();
-                ui.allocate_ui_with_layout(
-                    Vec2::new(SIDEBAR_WIDTH, sidebar_height),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
+                ui.vertical(|ui| {
+                    ui.set_width(SIDEBAR_WIDTH);
+                    ui.set_min_width(SIDEBAR_WIDTH);
+                    ui.set_max_width(SIDEBAR_WIDTH);
                     ui.heading("Add Controller");
                     ui.separator();
                     egui::Grid::new("controller_creation_grid")
@@ -1121,8 +1125,7 @@ impl eframe::App for App {
                     }
                     ui.add_space(6.0);
                     ui.separator();
-                    let list_height =
-                        (ui.available_height() - 72.0).max(CONTROLLER_ROW_HEIGHT * 4.0);
+                    let list_height = controller_list_height(ctx.screen_rect().height());
                     let controller_list_width = SIDEBAR_WIDTH - CONTROLLER_SCROLLBAR_ALLOWANCE;
                     let row_spacing = ui.spacing().item_spacing.x;
                     let controller_button_width = (controller_list_width
@@ -1259,33 +1262,6 @@ impl eframe::App for App {
                                     }
                                 });
                         });
-                    egui::CollapsingHeader::new("Lab notes and gate prerequisites")
-                        .default_open(false)
-                        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Lab correlation ID");
-                ui.add(egui::DragValue::new(&mut self.next_session));
-            });
-            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
-            ui.small("This ID labels lab records only. Controller identity and session tokens are library-owned.");
-                ui.label("Consumer build/version");
-                ui.text_edit_singleline(&mut self.consumer_notes.build);
-                ui.label("Input backend (for example SDL HIDAPI or Linux event)");
-                ui.text_edit_singleline(&mut self.consumer_notes.backend);
-                ui.label("Observed mapping/profile");
-                ui.text_edit_multiline(&mut self.consumer_notes.mapping);
-                ui.label("Observations");
-                ui.text_edit_multiline(&mut self.lab_notes);
-                if let Some(cleanup) = &self.last_cleanup {
-                    ui.label(format!("Last cleanup diagnostics: {cleanup}"));
-                    if ui.button("Copy cleanup diagnostics").clicked() { ui.ctx().copy_text(cleanup.clone()); }
-                }
-                ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
-                ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
-                ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
-                ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
-            });
-                    });
                     let sidebar_healthy = !matches!(
                         self.lifecycle_status,
                         Some(
@@ -1311,8 +1287,7 @@ impl eframe::App for App {
                             );
                         },
                     );
-                    },
-                );
+                });
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.set_min_width(448.0);
@@ -1376,9 +1351,39 @@ impl eframe::App for App {
                     for entry in self.output_log.iter().rev().take(20) {
                         ui.monospace(entry);
                     }
+                    ui.separator();
+                    egui::CollapsingHeader::new("Lab notes and gate prerequisites")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.label("Lab correlation ID");
+                                ui.add(egui::DragValue::new(&mut self.next_session));
+                            });
+                            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
+                            ui.small("This ID labels lab records only. Controller identity and session tokens are library-owned.");
+                            ui.label("Consumer build/version");
+                            ui.text_edit_singleline(&mut self.consumer_notes.build);
+                            ui.label("Input backend (for example SDL HIDAPI or Linux event)");
+                            ui.text_edit_singleline(&mut self.consumer_notes.backend);
+                            ui.label("Observed mapping/profile");
+                            ui.text_edit_multiline(&mut self.consumer_notes.mapping);
+                            ui.label("Observations");
+                            ui.text_edit_multiline(&mut self.lab_notes);
+                            if let Some(cleanup) = &self.last_cleanup {
+                                ui.label(format!("Last cleanup diagnostics: {cleanup}"));
+                                if ui.button("Copy cleanup diagnostics").clicked() {
+                                    ui.ctx().copy_text(cleanup.clone());
+                                }
+                            }
+                            ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
+                            ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
+                            ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
+                            ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
+                        });
                 });
                 });
             });
+        });
         if let Some(request) = self.pending_cleanup {
             let (title, message) = match request {
                 CleanupRequest::One(index) => {
@@ -2684,6 +2689,14 @@ mod tests {
         assert_eq!(repaint_interval(0), Duration::from_millis(50));
         assert_eq!(repaint_interval(1), Duration::from_millis(16));
         assert_eq!(repaint_interval(8), Duration::from_millis(16));
+    }
+
+    #[test]
+    fn controller_list_keeps_four_rows_when_the_viewport_is_short() {
+        assert!(
+            (controller_list_height(100.0) - (CONTROLLER_ROW_HEIGHT * 4.0)).abs() < f32::EPSILON
+        );
+        assert!((controller_list_height(600.0) - 240.0).abs() < f32::EPSILON);
     }
 
     #[test]
