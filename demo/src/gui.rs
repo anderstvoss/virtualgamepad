@@ -265,6 +265,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
         egui::TextEdit::singleline(&mut text)
             .desired_width(SPINBOX_WIDTH)
             .horizontal_align(egui::Align::RIGHT)
+            .vertical_align(egui::Align::Center)
             .margin(egui::Margin {
                 left: 4,
                 right: 20,
