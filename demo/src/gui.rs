@@ -157,6 +157,14 @@ fn selection_after_removal(
     }
 }
 
+fn selection_after_controller_click(
+    selected_index: Option<usize>,
+    clicked_index: usize,
+    clicked: bool,
+) -> Option<usize> {
+    clicked.then_some(clicked_index).or(selected_index)
+}
+
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
     let existing_names: std::collections::HashSet<String> = existing_names.collect();
     (0..=existing_names.len())
@@ -1214,10 +1222,13 @@ impl eframe::App for App {
                                                 |ui| ui.add(egui::Label::new(label).sense(Sense::click())),
                                             )
                                         })
+                                        .inner
                                         .response;
-                                    if controller_response.clicked() {
-                                        self.selected_controller = Some(index);
-                                    }
+                                    self.selected_controller = selection_after_controller_click(
+                                        self.selected_controller,
+                                        index,
+                                        controller_response.clicked(),
+                                    );
                                     if ui
                                         .add_sized(
                                             [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
@@ -2839,6 +2850,12 @@ mod tests {
             vec![0, 1, 2, 3]
         );
         assert_eq!(controller_tab_indices(12).count(), 12);
+    }
+
+    #[test]
+    fn controller_row_click_selects_the_clicked_controller() {
+        assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
+        assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
     }
 
     #[test]
