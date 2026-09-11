@@ -96,9 +96,13 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
-fn controller_list_height(viewport_height: f32, advanced_options_open: bool) -> f32 {
+fn controller_list_height(
+    viewport_height: f32,
+    advanced_options_open: bool,
+    advanced_options_spacing: f32,
+) -> f32 {
     let advanced_options_height = if advanced_options_open {
-        ADVANCED_OPTIONS_BODY_HEIGHT
+        ADVANCED_OPTIONS_BODY_HEIGHT + advanced_options_spacing
     } else {
         0.0
     };
@@ -1406,6 +1410,7 @@ impl eframe::App for App {
                     let list_height = controller_list_height(
                         ctx.screen_rect().height(),
                         self.advanced_options_open && advanced_available,
+                        ui.spacing().item_spacing.y,
                     );
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
                     let selector_spacing = ui.spacing().item_spacing.x;
@@ -2970,11 +2975,11 @@ mod tests {
     #[test]
     fn advanced_options_only_reduce_the_list_budget_while_open() {
         assert!(
-            (controller_list_height(100.0, false) - CONTROLLER_LIST_MIN_HEIGHT).abs()
+            (controller_list_height(100.0, false, 3.0) - CONTROLLER_LIST_MIN_HEIGHT).abs()
                 < f32::EPSILON
         );
-        assert!((controller_list_height(600.0, false) - 218.0).abs() < f32::EPSILON);
-        assert!((controller_list_height(600.0, true) - 86.0).abs() < f32::EPSILON);
+        assert!((controller_list_height(600.0, false, 3.0) - 218.0).abs() < f32::EPSILON);
+        assert!((controller_list_height(600.0, true, 3.0) - 83.0).abs() < f32::EPSILON);
     }
 
     #[test]
