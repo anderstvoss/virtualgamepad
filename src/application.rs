@@ -25,7 +25,8 @@ impl CreationOptions {
     pub(crate) fn internal(
         self,
     ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
-        if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
+        if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID && !cfg!(feature = "experimental")
+        {
             return Err(ControllerError::Unsupported { reason: "dummy_hcd requires experimental protocol ownership (Gate G); use the experimental research API".into() });
         }
         Ok(gr_curated_controllers::CreationOptions {
@@ -306,10 +307,12 @@ mod tests {
     }
     #[test]
     fn experimental_creation_rejects_before_open() {
-        assert!(matches!(
-            CreationOptions::new(RealizationId::LINUX_DUMMY_HCD_USB_HID).internal(),
-            Err(ControllerError::Unsupported { .. })
-        ));
+        let result = CreationOptions::new(RealizationId::LINUX_DUMMY_HCD_USB_HID).internal();
+        if cfg!(feature = "experimental") {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(ControllerError::Unsupported { .. })));
+        }
     }
 
     #[test]

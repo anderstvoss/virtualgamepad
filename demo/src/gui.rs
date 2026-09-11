@@ -963,8 +963,11 @@ impl eframe::App for App {
                         RealizationId::LINUX_UHID_USB,
                         target_label(RealizationId::LINUX_UHID_USB),
                     );
-                    ui.add_enabled(false, egui::Button::new("USB gadget (experimental)"))
-                        .on_disabled_hover_text("Gate G is unresolved: required USB requests still need the research protocol API.");
+                    ui.selectable_value(
+                        &mut self.target,
+                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                        target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+                    );
                 });
             let default_name = self.next_default_name();
             ui.add(
@@ -973,7 +976,11 @@ impl eframe::App for App {
                     .desired_width(f32::INFINITY),
             )
             .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID requires administrator-prepared device access.");
+            if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
+                ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
+            } else if self.target == RealizationId::LINUX_UHID_USB {
+                ui.small("UHID requires administrator-prepared device access.");
+            }
             if ui.button("Create").clicked() {
                 self.create();
             }
