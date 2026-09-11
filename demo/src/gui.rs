@@ -1267,7 +1267,8 @@ impl eframe::App for App {
                         if name_is_default {
                             let row_width = ui.available_width();
                             let spacing = ui.spacing().item_spacing.x;
-                            ui.with_layout(
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(row_width, 22.0),
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
                                     let count_control_width =
@@ -1289,6 +1290,7 @@ impl eframe::App for App {
                                         egui::TextEdit::singleline(&mut self.name_draft)
                                             .hint_text(default_name)
                                             .desired_width(edit_width)
+                                            .horizontal_align(egui::Align::LEFT)
                                             .vertical_align(egui::Align::Center)
                                             .margin(egui::Margin {
                                                 left: 4,
@@ -1310,6 +1312,7 @@ impl eframe::App for App {
                                     egui::TextEdit::singleline(&mut self.name_draft)
                                         .hint_text(default_name)
                                         .desired_width(edit_width)
+                                        .horizontal_align(egui::Align::LEFT)
                                         .vertical_align(egui::Align::Center)
                                         .margin(egui::Margin {
                                             left: 4,
