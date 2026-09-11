@@ -110,12 +110,32 @@ fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
     0..controller_count
 }
 
-fn selection_after_removal(remaining_count: usize, removed_index: usize) -> Option<usize> {
+fn selection_after_removal(
+    remaining_count: usize,
+    removed_index: usize,
+    selected_index: Option<usize>,
+) -> Option<usize> {
     if remaining_count == 0 {
         None
     } else {
-        Some(removed_index.min(remaining_count - 1))
+        selected_index.map(|selected_index| {
+            if selected_index == removed_index {
+                removed_index.min(remaining_count - 1)
+            } else if selected_index > removed_index {
+                selected_index - 1
+            } else {
+                selected_index
+            }
+        })
     }
+}
+
+fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
+    let existing_names: std::collections::HashSet<String> = existing_names.collect();
+    (0..)
+        .map(|number| format!("{} {number}", kind.label()))
+        .find(|name| !existing_names.contains(name))
+        .expect("unbounded controller name search must find an available name")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -769,12 +789,13 @@ impl Default for App {
 }
 impl App {
     fn next_default_name(&self) -> String {
-        let number = self
-            .controllers
-            .iter()
-            .filter(|controller| controller.kind == self.kind)
-            .count();
-        format!("{} {number}", self.kind.label())
+        next_available_name(
+            self.kind,
+            self.controllers
+                .iter()
+                .filter(|controller| controller.kind == self.kind)
+                .map(|controller| controller.name.clone()),
+        )
     }
 
     fn create(&mut self) {
@@ -838,6 +859,7 @@ impl App {
         if index >= self.controllers.len() {
             return;
         }
+        let selected_index = self.selected_controller;
         let mut removed = self.controllers.remove(index);
         if let Some(worker) = removed.service_worker.take() {
             self.last_cleanup = Some(worker.stop().map_or_else(
@@ -845,7 +867,8 @@ impl App {
                 |mut controller| controller.snapshot().lab_details(),
             ));
         }
-        self.selected_controller = selection_after_removal(self.controllers.len(), index);
+        self.selected_controller =
+            selection_after_removal(self.controllers.len(), index, selected_index);
     }
 
     fn close_failed_controller(&mut self, index: usize, error: String) {
@@ -2376,10 +2399,32 @@ mod tests {
 
     #[test]
     fn removing_any_tab_selects_the_nearest_remaining_controller() {
-        assert_eq!(selection_after_removal(0, 0), None);
-        assert_eq!(selection_after_removal(2, 0), Some(0));
-        assert_eq!(selection_after_removal(2, 1), Some(1));
-        assert_eq!(selection_after_removal(2, 2), Some(1));
+        assert_eq!(selection_after_removal(0, 0, Some(0)), None);
+        assert_eq!(selection_after_removal(2, 0, Some(0)), Some(0));
+        assert_eq!(selection_after_removal(2, 1, Some(1)), Some(1));
+        assert_eq!(selection_after_removal(2, 2, Some(2)), Some(1));
+    }
+
+    #[test]
+    fn removing_another_tab_preserves_the_selected_controller() {
+        assert_eq!(selection_after_removal(2, 0, Some(2)), Some(1));
+        assert_eq!(selection_after_removal(2, 2, Some(0)), Some(0));
+        assert_eq!(selection_after_removal(2, 1, None), None);
+    }
+
+    #[test]
+    fn automatic_controller_names_reuse_only_unused_suffixes() {
+        assert_eq!(
+            next_available_name(
+                Kind::DualSense,
+                ["DualSense 0".to_owned(), "DualSense 2".to_owned()].into_iter(),
+            ),
+            "DualSense 1"
+        );
+        assert_eq!(
+            next_available_name(Kind::Xbox360, ["DualSense 0".to_owned()].into_iter(),),
+            "Xbox 360 0"
+        );
     }
 
     #[test]
