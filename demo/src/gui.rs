@@ -35,6 +35,7 @@ const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
+const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
@@ -195,6 +196,10 @@ fn selection_after_controller_click(
 
 fn controller_removal_after_delete_click(index: usize, clicked: bool) -> Option<usize> {
     clicked.then_some(index)
+}
+
+fn successful_controller_close_message(name: &str) -> String {
+    format!("Closed {name}.")
 }
 
 const fn stop_all_after_click(clicked: bool) -> bool {
@@ -1188,11 +1193,24 @@ impl App {
         }
         let selected_index = self.selected_controller;
         let mut removed = self.controllers.remove(index);
+        let name = removed.name.clone();
         if let Some(worker) = removed.service_worker.take() {
-            self.last_cleanup = Some(worker.stop().map_or_else(
-                || "Worker exited without a returned controller; host cleanup requires verification".into(),
-                |mut controller| controller.snapshot().lab_details(),
-            ));
+            if let Some(mut controller) = worker.stop() {
+                self.last_cleanup = Some(controller.snapshot().lab_details());
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: successful_controller_close_message(&name),
+                    success: true,
+                });
+            } else {
+                self.last_cleanup = Some(
+                    "Worker exited without a returned controller; host cleanup requires verification"
+                        .into(),
+                );
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Close of {name} could not be verified."),
+                    success: false,
+                });
+            }
         }
         self.selected_controller =
             selection_after_removal(self.controllers.len(), index, selected_index);
@@ -1367,7 +1385,10 @@ impl eframe::App for App {
                         }
                     });
                     if ui
-                        .add_sized([ui.available_width(), 22.0], egui::Button::new("Create"))
+                        .add_sized(
+                            [ui.available_width(), 22.0],
+                            egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
+                        )
                         .clicked()
                     {
                         self.create();
@@ -3222,6 +3243,14 @@ mod tests {
     fn controller_delete_click_requests_immediate_removal() {
         assert_eq!(controller_removal_after_delete_click(3, false), None);
         assert_eq!(controller_removal_after_delete_click(3, true), Some(3));
+    }
+
+    #[test]
+    fn successful_controller_close_is_logged() {
+        assert_eq!(
+            successful_controller_close_message("Xbox 360 0"),
+            "Closed Xbox 360 0."
+        );
     }
 
     #[test]
