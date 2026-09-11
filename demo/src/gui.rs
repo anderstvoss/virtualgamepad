@@ -174,6 +174,10 @@ fn controller_removal_after_delete_click(index: usize, clicked: bool) -> Option<
     clicked.then_some(index)
 }
 
+const fn stop_all_after_click(clicked: bool) -> bool {
+    clicked
+}
+
 fn controller_row_fill(active: bool, selected_fill: Color32) -> Color32 {
     if active {
         selected_fill
@@ -327,11 +331,6 @@ enum ControllerLifecycleStatus {
     Created { name: String },
     CreationFailed { error: String },
     ClosedAfterFailure { name: String, error: String },
-}
-
-#[derive(Clone, Copy)]
-enum CleanupRequest {
-    All,
 }
 
 fn creation_error_message(
@@ -1000,7 +999,6 @@ pub struct App {
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     backend_healthy: bool,
-    pending_cleanup: Option<CleanupRequest>,
 }
 impl Default for App {
     fn default() -> Self {
@@ -1021,7 +1019,6 @@ impl Default for App {
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
             backend_healthy: true,
-            pending_cleanup: None,
         }
     }
 }
@@ -1437,16 +1434,14 @@ impl eframe::App for App {
                             });
                         });
                     });
-                    if ui
+                    let stop_all_clicked = ui
                         .add_sized(
                             [ui.available_width(), 22.0],
                             egui::Button::new("Stop all controllers")
                                 .fill(Color32::from_rgb(150, 45, 65)),
                         )
-                        .clicked()
-                    {
-                        self.pending_cleanup = Some(CleanupRequest::All);
-                    }
+                        .clicked();
+                    stop_all = stop_all_after_click(stop_all_clicked);
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     egui::Frame::NONE
                         .fill(Color32::from_gray(8))
@@ -1606,32 +1601,6 @@ impl eframe::App for App {
                 });
             });
         });
-        if self.pending_cleanup.is_some() {
-            let title = "Stop all controllers?";
-            let message = format!("Close all {} virtual controllers?", self.controllers.len());
-            let mut confirmed = false;
-            let mut cancelled = false;
-            egui::Window::new(title)
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label(message);
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            cancelled = true;
-                        }
-                        if ui.button("Confirm").clicked() {
-                            confirmed = true;
-                        }
-                    });
-                });
-            if confirmed {
-                self.pending_cleanup = None;
-                stop_all = true;
-            } else if cancelled {
-                self.pending_cleanup = None;
-            }
-        }
         if stop_all {
             while !self.controllers.is_empty() {
                 self.remove_controller(self.controllers.len() - 1);
@@ -3070,6 +3039,12 @@ mod tests {
     fn controller_delete_click_requests_immediate_removal() {
         assert_eq!(controller_removal_after_delete_click(3, false), None);
         assert_eq!(controller_removal_after_delete_click(3, true), Some(3));
+    }
+
+    #[test]
+    fn stop_all_click_requests_immediate_cleanup() {
+        assert!(!stop_all_after_click(false));
+        assert!(stop_all_after_click(true));
     }
 
     #[test]
