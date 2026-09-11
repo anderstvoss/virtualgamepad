@@ -1328,15 +1328,8 @@ impl eframe::App for App {
                     if !advanced_available {
                         self.advanced_options_open = false;
                     }
-                    let advanced_label = if self.advanced_options_open {
-                        "▼ Advanced options"
-                    } else {
-                        "▶ Advanced options"
-                    };
-                    let advanced_width = (ui.available_width()
-                        - CREATE_COUNT_SPINBOX_WIDTH
-                        - ui.spacing().item_spacing.x)
-                        .max(40.0);
+                    let advanced_label = "Advanced options";
+                    let advanced_width = ui.available_width();
                     let (advanced_rect, advanced_response) = ui.allocate_exact_size(
                         Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT),
                         if advanced_available {
@@ -1346,10 +1339,7 @@ impl eframe::App for App {
                         },
                     );
                     let advanced_fill = if advanced_available {
-                        controller_row_fill(
-                            self.advanced_options_open,
-                            ui.visuals().selection.bg_fill,
-                        )
+                        Color32::from_gray(62)
                     } else {
                         ui.visuals().widgets.noninteractive.bg_fill
                     };
@@ -1370,10 +1360,20 @@ impl eframe::App for App {
                         advanced_label,
                         egui::TextStyle::Button.resolve(ui.style()),
                         if advanced_available {
-                            ui.visuals().text_color()
+                            ui.visuals().strong_text_color()
                         } else {
                             ui.visuals().weak_text_color()
                         },
+                    );
+                    let arrow_rect = egui::Rect::from_min_max(
+                        Pos2::new(advanced_rect.right() - 18.0, advanced_rect.top()),
+                        advanced_rect.right_bottom(),
+                    );
+                    paint_spinbox_arrow(
+                        ui,
+                        arrow_rect,
+                        self.advanced_options_open,
+                        advanced_available && advanced_response.hovered(),
                     );
                     if advanced_response.clicked() {
                         self.advanced_options_open = !self.advanced_options_open;
@@ -1459,7 +1459,7 @@ impl eframe::App for App {
                     ui.set_width(controller_surface_width);
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
-                        .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
+                        .min_scrolled_height(list_height)
                         .max_height(list_height)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
