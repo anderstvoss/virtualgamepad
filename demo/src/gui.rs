@@ -40,6 +40,7 @@ const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
 const CREATE_COUNT_SPINBOX_MIN_WIDTH: f32 = 34.0;
 const CREATE_COUNT_SPINBOX_MAX_WIDTH: f32 = 58.0;
 const CREATE_COUNT_SPINBOX_DIGIT_WIDTH: f32 = 8.0;
+const CREATE_COUNT_SPINBOX_TEXT_MARGIN_WIDTH: f32 = 24.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -226,6 +227,10 @@ fn create_count_spinbox_width(value: u32) -> f32 {
     }
 }
 
+fn create_count_spinbox_text_width(spinbox_width: f32) -> f32 {
+    spinbox_width - CREATE_COUNT_SPINBOX_TEXT_MARGIN_WIDTH
+}
+
 fn spinbox_arrow_rects(rect: egui::Rect, arrow_width: f32) -> (egui::Rect, egui::Rect) {
     let arrow_left = rect.right() - arrow_width;
     (
@@ -275,7 +280,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     let text_response = ui.add_sized(
         [spinbox_width, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
-            .desired_width(spinbox_width)
+            .desired_width(create_count_spinbox_text_width(spinbox_width))
             .horizontal_align(egui::Align::RIGHT)
             .vertical_align(egui::Align::Center)
             .margin(egui::Margin {
@@ -3064,6 +3069,22 @@ mod tests {
         );
         assert!(
             (create_count_spinbox_width(10_000) - CREATE_COUNT_SPINBOX_MAX_WIDTH).abs()
+                < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn compact_count_spinboxes_reserve_only_their_outer_width() {
+        assert!(
+            (create_count_spinbox_text_width(create_count_spinbox_width(1)) - 10.0).abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (create_count_spinbox_text_width(create_count_spinbox_width(10)) - 18.0).abs()
+                < f32::EPSILON
+        );
+        assert!(
+            (create_count_spinbox_text_width(create_count_spinbox_width(9_999)) - 34.0).abs()
                 < f32::EPSILON
         );
     }
