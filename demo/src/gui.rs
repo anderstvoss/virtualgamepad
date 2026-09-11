@@ -1175,14 +1175,12 @@ impl eframe::App for App {
                         - CONTROLLER_DELETE_WIDTH
                         - (row_spacing * 2.0))
                         .max(40.0);
-                    ui.set_width(controller_surface_width);
                     ui.allocate_ui_with_layout(
-                        Vec2::new(controller_surface_width, 22.0),
+                        Vec2::new(SIDEBAR_WIDTH, 22.0),
                         egui::Layout::left_to_right(egui::Align::Center),
                         |ui| {
                             ui.spacing_mut().item_spacing.x = selector_spacing;
-                            let chip_width =
-                                (controller_surface_width - selector_spacing) / 2.0;
+                            let chip_width = (SIDEBAR_WIDTH - selector_spacing) / 2.0;
                         if ui
                             .add_sized(
                                 [chip_width, 22.0],
@@ -1217,6 +1215,7 @@ impl eframe::App for App {
                         .fill(Color32::from_gray(20))
                         .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
+                    ui.set_width(controller_surface_width);
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
                         .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
