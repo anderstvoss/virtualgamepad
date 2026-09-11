@@ -37,7 +37,10 @@ const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
-const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
+const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 3.0;
+const ADVANCED_OPTIONS_RESERVED_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT + ADVANCED_OPTIONS_BODY_HEIGHT;
+const SIDEBAR_FIXED_HEIGHT: f32 = 360.0 + ADVANCED_OPTIONS_RESERVED_HEIGHT;
+const CONTROLLER_LIST_MIN_HEIGHT: f32 = 0.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -94,7 +97,17 @@ fn repaint_interval(controller_count: usize) -> Duration {
 }
 
 fn controller_list_height(viewport_height: f32) -> f32 {
-    (viewport_height - SIDEBAR_FIXED_HEIGHT).max(CONTROLLER_ROW_HEIGHT * 4.0)
+    (viewport_height - SIDEBAR_FIXED_HEIGHT).max(CONTROLLER_LIST_MIN_HEIGHT)
+}
+
+fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
+    matches!(
+        (kind, target),
+        (
+            Kind::Xbox360 | Kind::DualSense | Kind::DualShock4 | Kind::SwitchPro,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID
+        )
+    )
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -987,6 +1000,7 @@ pub struct App {
     target: RealizationId,
     name_draft: String,
     create_count: u32,
+    advanced_options_open: bool,
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
@@ -1007,6 +1021,7 @@ impl Default for App {
             target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
             create_count: 1,
+            advanced_options_open: false,
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
@@ -1298,17 +1313,56 @@ impl eframe::App for App {
                             );
                         }
                     });
-                    if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
-                        ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
-                    } else if self.target == RealizationId::LINUX_UHID_USB {
-                        ui.small("UHID requires administrator-prepared device access.");
-                    }
                     if ui
                         .add_sized([ui.available_width(), 22.0], egui::Button::new("Create"))
                         .clicked()
                     {
                         self.create();
                     }
+                    let advanced_available = advanced_options_available(self.kind, self.target);
+                    if !advanced_available {
+                        self.advanced_options_open = false;
+                    }
+                    let advanced_label = if self.advanced_options_open {
+                        "▼ Advanced options"
+                    } else {
+                        "▶ Advanced options"
+                    };
+                    let advanced_response = ui
+                        .add_enabled_ui(advanced_available, |ui| {
+                            ui.add_sized(
+                                [ui.available_width(), CONTROLLER_ROW_HEIGHT],
+                                egui::Button::new(advanced_label),
+                            )
+                        })
+                        .inner;
+                    if advanced_response.clicked() {
+                        self.advanced_options_open = !self.advanced_options_open;
+                    }
+                    egui::Frame::NONE
+                        .fill(Color32::from_gray(20))
+                        .show(ui, |ui| {
+                            ui.set_width(SIDEBAR_WIDTH);
+                            egui::ScrollArea::vertical()
+                                .id_salt("advanced_options")
+                                .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.set_width(SIDEBAR_WIDTH - 8.0);
+                                    if self.advanced_options_open && advanced_available {
+                                        ui.strong("Experimental USB gadget");
+                                        ui.small("Requires the privileged broker and prepared dummy_hcd resources.");
+                                        ui.small("Complete Gate G host setup before validation.");
+                                        ui.separator();
+                                        ui.label("Validation prerequisites");
+                                        ui.small("• Broker access is available to this session.");
+                                        ui.small("• dummy_hcd resources were prepared by the host.");
+                                        ui.small("• The target host is ready for USB gadget probing.");
+                                        ui.small("• Record the consumer and host result in lab notes.");
+                                    }
+                                });
+                        });
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     let list_height = controller_list_height(ctx.screen_rect().height());
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
@@ -2866,11 +2920,30 @@ mod tests {
     }
 
     #[test]
-    fn controller_list_keeps_four_rows_when_the_viewport_is_short() {
+    fn advanced_options_use_the_controller_list_height_budget() {
         assert!(
-            (controller_list_height(100.0) - (CONTROLLER_ROW_HEIGHT * 4.0)).abs() < f32::EPSILON
+            (ADVANCED_OPTIONS_RESERVED_HEIGHT - (CONTROLLER_ROW_HEIGHT * 4.0)).abs() < f32::EPSILON
         );
-        assert!((controller_list_height(600.0) - 240.0).abs() < f32::EPSILON);
+        assert!((controller_list_height(100.0) - CONTROLLER_LIST_MIN_HEIGHT).abs() < f32::EPSILON);
+        assert!((controller_list_height(600.0) - 152.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn advanced_options_are_currently_available_for_dummy_hcd_targets() {
+        for kind in Kind::ALL {
+            assert!(advanced_options_available(
+                kind,
+                RealizationId::LINUX_DUMMY_HCD_USB_HID
+            ));
+            assert!(!advanced_options_available(
+                kind,
+                RealizationId::LINUX_UINPUT
+            ));
+            assert!(!advanced_options_available(
+                kind,
+                RealizationId::LINUX_UHID_USB
+            ));
+        }
     }
 
     #[test]
