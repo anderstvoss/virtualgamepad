@@ -4,6 +4,7 @@ use editor::{
 };
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::{
+    cmp::Ordering,
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -119,21 +120,17 @@ fn selection_after_removal(
     if remaining_count == 0 {
         None
     } else {
-        selected_index.map(|selected_index| {
-            if selected_index == removed_index {
-                removed_index.min(remaining_count - 1)
-            } else if selected_index > removed_index {
-                selected_index - 1
-            } else {
-                selected_index
-            }
+        selected_index.map(|selected_index| match selected_index.cmp(&removed_index) {
+            Ordering::Equal => removed_index.min(remaining_count - 1),
+            Ordering::Greater => selected_index - 1,
+            Ordering::Less => selected_index,
         })
     }
 }
 
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
     let existing_names: std::collections::HashSet<String> = existing_names.collect();
-    (0..)
+    (0..=existing_names.len())
         .map(|number| format!("{} {number}", kind.label()))
         .find(|name| !existing_names.contains(name))
         .expect("unbounded controller name search must find an available name")
@@ -447,6 +444,7 @@ fn label_output_logs(label: &str, logs: &mut [String]) {
     }
 }
 
+#[cfg(test)]
 fn spawn_service_worker<C: ServicedController + 'static>(controller: C) -> ServiceWorker<C> {
     spawn_service_worker_with_label(controller, "Controller".into())
 }
