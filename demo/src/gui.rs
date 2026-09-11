@@ -941,10 +941,13 @@ impl eframe::App for App {
             self.output_log.drain(..excess);
         }
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
-        egui::SidePanel::left("create").show(ctx, |ui| {
+        egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.set_min_width(280.0);
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
                 .selected_text(self.kind.label())
@@ -1018,31 +1021,27 @@ impl eframe::App for App {
             });
             ui.separator();
             ui.label("Controllers");
-            egui::ScrollArea::vertical()
-                .max_height(260.0)
-                .show(ui, |ui| {
-                    for index in controller_tab_indices(self.controllers.len()) {
-                        let controller = &self.controllers[index];
-                        ui.horizontal(|ui| {
-                            if ui
-                                .selectable_label(
-                                    self.selected_controller == Some(index),
-                                    &controller.name,
-                                )
-                                .clicked()
-                            {
-                                self.selected_controller = Some(index);
-                            }
-                            if ui
-                                .small_button("×")
-                                .on_hover_text("Remove controller")
-                                .clicked()
-                            {
-                                self.pending_cleanup = Some(CleanupRequest::One(index));
-                            }
-                        });
+            for index in controller_tab_indices(self.controllers.len()) {
+                let controller = &self.controllers[index];
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(
+                            self.selected_controller == Some(index),
+                            &controller.name,
+                        )
+                        .clicked()
+                    {
+                        self.selected_controller = Some(index);
+                    }
+                    if ui
+                        .small_button("×")
+                        .on_hover_text("Remove controller")
+                        .clicked()
+                    {
+                        self.pending_cleanup = Some(CleanupRequest::One(index));
                     }
                 });
+            }
             if let Some(status) = &self.lifecycle_status {
                 match status {
                     ControllerLifecycleStatus::Created { name } => {
@@ -1060,11 +1059,9 @@ impl eframe::App for App {
                 }
             }
                 });
-        });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::both()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+                ui.separator();
+                ui.vertical(|ui| {
+                    ui.set_min_width(640.0);
                     ui.heading("Live controllers");
                     if let Some(index) = self
                         .selected_controller
@@ -1126,6 +1123,8 @@ impl eframe::App for App {
                         ui.monospace(entry);
                     }
                 });
+                });
+            });
         });
         if let Some(request) = self.pending_cleanup {
             let (title, message) = match request {
