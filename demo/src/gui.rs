@@ -940,6 +940,9 @@ impl eframe::App for App {
             let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
             self.output_log.drain(..excess);
         }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+            "virtualgamepad Demo GUI".to_owned(),
+        ));
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both()
