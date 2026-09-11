@@ -36,7 +36,6 @@ const SIDEBAR_WIDTH: f32 = 200.0;
 const CONTROLLER_ROW_HEIGHT: f32 = 22.0;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
-const CONTROLLER_SCROLLBAR_ALLOWANCE: f32 = 12.0;
 const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1126,16 +1125,21 @@ impl eframe::App for App {
                     ui.add_space(6.0);
                     ui.separator();
                     let list_height = controller_list_height(ctx.screen_rect().height());
-                    let controller_list_width = SIDEBAR_WIDTH - CONTROLLER_SCROLLBAR_ALLOWANCE;
-                    let row_spacing = ui.spacing().item_spacing.x;
-                    let controller_button_width = (controller_list_width
+                    let controller_surface_width = SIDEBAR_WIDTH - 8.0;
+                    let row_spacing = 1.0;
+                    let controller_button_width = (controller_surface_width
                         - CONTROLLER_NUMBER_WIDTH
                         - CONTROLLER_DELETE_WIDTH
                         - (row_spacing * 2.0))
                         .max(40.0);
+                    egui::Frame::NONE
+                        .fill(Color32::from_gray(20))
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
+                    ui.set_width(controller_surface_width);
                     ui.horizontal(|ui| {
                         let chip_width =
-                            (controller_list_width - ui.spacing().item_spacing.x) / 2.0;
+                            (controller_surface_width - ui.spacing().item_spacing.x) / 2.0;
                         if ui
                             .add_sized(
                                 [chip_width, 22.0],
@@ -1171,7 +1175,7 @@ impl eframe::App for App {
                         .max_height(list_height)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            ui.set_width(controller_list_width);
+                            ui.set_width(controller_surface_width);
                             ui.scope(|ui| {
                                 ui.spacing_mut().item_spacing.x = 1.0;
                             for index in controller_tab_indices(self.controllers.len()) {
@@ -1223,6 +1227,7 @@ impl eframe::App for App {
                             }
                             });
                         });
+                    });
                     if ui
                         .add_sized(
                             [ui.available_width(), 22.0],
@@ -1238,15 +1243,15 @@ impl eframe::App for App {
                         .fill(Color32::from_gray(8))
                         .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
-                            ui.set_min_width(controller_list_width);
-                            ui.set_max_width(controller_list_width);
+                            ui.set_min_width(SIDEBAR_WIDTH - 8.0);
+                            ui.set_max_width(SIDEBAR_WIDTH - 8.0);
                             egui::ScrollArea::vertical()
                                 .id_salt("diagnostic_log")
                                 .auto_shrink([false, false])
                                 .max_height(58.0)
                                 .stick_to_bottom(true)
                                 .show(ui, |ui| {
-                                    ui.set_width(controller_list_width - 8.0);
+                                    ui.set_width(SIDEBAR_WIDTH - 16.0);
                                     if self.diagnostic_log.is_empty() {
                                         ui.weak("Warnings and error codes will appear here");
                                     }
