@@ -33,7 +33,7 @@ const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
-const CONTROLLER_ROW_HEIGHT: f32 = 32.0;
+const CONTROLLER_ROW_HEIGHT: f32 = 22.0;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const CONTROLLER_SCROLLBAR_ALLOWANCE: f32 = 12.0;
@@ -42,6 +42,11 @@ const CONTROLLER_SCROLLBAR_ALLOWANCE: f32 = 12.0;
 enum ControllerLabelMode {
     AssignedName,
     InternalIdentifier,
+}
+
+struct DiagnosticLogEntry {
+    message: String,
+    success: bool,
 }
 
 impl ControllerLabelMode {
@@ -840,7 +845,7 @@ pub struct App {
     selected_controller: Option<usize>,
     controller_label_mode: ControllerLabelMode,
     output_log: Vec<String>,
-    diagnostic_log: String,
+    diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     pending_cleanup: Option<CleanupRequest>,
 }
@@ -860,7 +865,7 @@ impl Default for App {
             selected_controller: None,
             controller_label_mode: ControllerLabelMode::AssignedName,
             output_log: vec![],
-            diagnostic_log: String::new(),
+            diagnostic_log: Vec::new(),
             lifecycle_status: None,
             pending_cleanup: None,
         }
@@ -936,7 +941,10 @@ impl App {
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
                 self.next_session = following_session(self.next_session, self.advance_session);
-                self.diagnostic_log = format!("Created {name}.");
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Created {name}."),
+                    success: true,
+                });
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
@@ -946,7 +954,10 @@ impl App {
                         .try_exists()
                         .ok(),
                 );
-                self.diagnostic_log = format!("Creation failed: {error}");
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Creation failed: {error}"),
+                    success: false,
+                });
                 self.lifecycle_status = Some(ControllerLifecycleStatus::CreationFailed { error });
             }
         }
@@ -970,7 +981,10 @@ impl App {
 
     fn close_failed_controller(&mut self, index: usize, error: String) {
         let name = self.controllers[index].name.clone();
-        self.diagnostic_log = format!("{name} closed after provider failure: {error}");
+        self.diagnostic_log.push(DiagnosticLogEntry {
+            message: format!("{name} closed after provider failure: {error}"),
+            success: false,
+        });
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
         self.remove_controller(index);
     }
@@ -1189,13 +1203,31 @@ impl eframe::App for App {
                         self.pending_cleanup = Some(CleanupRequest::All);
                     }
                     ui.separator();
-                    ui.add_sized(
-                        [ui.available_width(), 36.0],
-                        egui::TextEdit::multiline(&mut self.diagnostic_log)
-                            .hint_text("Warnings and error codes will appear here")
-                            .desired_width(ui.available_width())
-                            .interactive(false),
-                    );
+                    egui::Frame::NONE
+                        .fill(Color32::from_gray(8))
+                        .inner_margin(egui::Margin::same(4))
+                        .show(ui, |ui| {
+                            ui.set_width(controller_list_width - 8.0);
+                            egui::ScrollArea::vertical()
+                                .id_salt("diagnostic_log")
+                                .max_height(58.0)
+                                .stick_to_bottom(true)
+                                .show(ui, |ui| {
+                                    if self.diagnostic_log.is_empty() {
+                                        ui.weak("Warnings and error codes will appear here");
+                                    }
+                                    for entry in &self.diagnostic_log {
+                                        ui.colored_label(
+                                            if entry.success {
+                                                Color32::GREEN
+                                            } else {
+                                                Color32::RED
+                                            },
+                                            &entry.message,
+                                        );
+                                    }
+                                });
+                        });
                     egui::CollapsingHeader::new("Lab notes and gate prerequisites")
                         .default_open(false)
                         .show(ui, |ui| {
@@ -1223,7 +1255,6 @@ impl eframe::App for App {
                 ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
             });
                     });
-                    ui.add_space((ui.available_height() - 22.0).max(0.0));
                     let sidebar_healthy = !matches!(
                         self.lifecycle_status,
                         Some(
@@ -1236,12 +1267,18 @@ impl eframe::App for App {
                     } else {
                         Color32::RED
                     };
-                    ui.colored_label(
-                        status_color,
-                        format!(
-                            "● {}",
-                            if sidebar_healthy { "Healthy" } else { "Attention" }
-                        ),
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |status_ui| {
+                            status_ui.colored_label(
+                                status_color,
+                                format!(
+                                    "● {}",
+                                    if sidebar_healthy { "Healthy" } else { "Attention" }
+                                ),
+                            );
+                        },
                     );
                 });
                 ui.separator();
