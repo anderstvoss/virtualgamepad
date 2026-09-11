@@ -215,62 +215,66 @@ fn step_create_count(count: u32, increment: bool) -> u32 {
 }
 
 fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
-    const VALUE_WIDTH: f32 = 42.0;
+    const SPINBOX_WIDTH: f32 = 58.0;
     const ARROW_WIDTH: f32 = 16.0;
+    const SPINBOX_HEIGHT: f32 = 22.0;
     let id = ui.make_persistent_id("create_count_spinbox");
     let mut text = ui.data_mut(|data| {
         data.get_temp::<String>(id)
             .unwrap_or_else(|| value.to_string())
     });
-    let response = ui
-        .horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            let text_response = ui.add_sized(
-                [VALUE_WIDTH, 22.0],
-                egui::TextEdit::singleline(&mut text)
-                    .desired_width(VALUE_WIDTH)
-                    .horizontal_align(egui::Align::RIGHT)
-                    .margin(egui::Margin::symmetric(4, 2))
-                    .id(id),
-            );
-            if text_response.changed() {
-                if let Ok(parsed) = text.trim().parse::<u32>() {
-                    *value = parsed.max(1);
-                    if parsed == 0 {
-                        text = value.to_string();
-                    }
-                }
-            }
-            if text_response.lost_focus() {
+    let text_response = ui.add_sized(
+        [SPINBOX_WIDTH, SPINBOX_HEIGHT],
+        egui::TextEdit::singleline(&mut text)
+            .desired_width(SPINBOX_WIDTH)
+            .horizontal_align(egui::Align::RIGHT)
+            .margin(egui::Margin {
+                left: 4,
+                right: 20,
+                top: 2,
+                bottom: 2,
+            })
+            .id(id),
+    );
+    if text_response.changed() {
+        if let Ok(parsed) = text.trim().parse::<u32>() {
+            *value = parsed.max(1);
+            if parsed == 0 {
                 text = value.to_string();
             }
-            let arrow_responses = ui
-                .vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    let increment = ui.add_sized(
-                        [ARROW_WIDTH, 11.0],
-                        Button::new("▴").frame(false).min_size(Vec2::ZERO),
-                    );
-                    let decrement = ui.add_sized(
-                        [ARROW_WIDTH, 11.0],
-                        Button::new("▾").frame(false).min_size(Vec2::ZERO),
-                    );
-                    (increment, decrement)
-                })
-                .inner;
-            if arrow_responses.0.clicked() {
-                *value = step_create_count(*value, true);
-                text = value.to_string();
-            }
-            if arrow_responses.1.clicked() {
-                *value = step_create_count(*value, false);
-                text = value.to_string();
-            }
-            text_response
-                .union(arrow_responses.0)
-                .union(arrow_responses.1)
-        })
-        .inner;
+        }
+    }
+    if text_response.lost_focus() {
+        text = value.to_string();
+    }
+    let arrow_left = text_response.rect.right() - ARROW_WIDTH;
+    let increment_rect = egui::Rect::from_min_max(
+        Pos2::new(arrow_left, text_response.rect.top()),
+        Pos2::new(text_response.rect.right(), text_response.rect.center().y),
+    );
+    let decrement_rect = egui::Rect::from_min_max(
+        Pos2::new(arrow_left, text_response.rect.center().y),
+        text_response.rect.right_bottom(),
+    );
+    let increment_response = ui.put(
+        increment_rect,
+        Button::new("▴").frame(false).min_size(Vec2::ZERO),
+    );
+    let decrement_response = ui.put(
+        decrement_rect,
+        Button::new("▾").frame(false).min_size(Vec2::ZERO),
+    );
+    if increment_response.clicked() {
+        *value = step_create_count(*value, true);
+        text = value.to_string();
+    }
+    if decrement_response.clicked() {
+        *value = step_create_count(*value, false);
+        text = value.to_string();
+    }
+    let response = text_response
+        .union(increment_response)
+        .union(decrement_response);
     ui.data_mut(|data| data.insert_temp(id, text));
     response
 }
