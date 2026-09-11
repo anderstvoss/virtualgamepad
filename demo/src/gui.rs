@@ -29,6 +29,7 @@ struct LabOptions {
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
+const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 
 fn dualsense_motion_target(target: RealizationId) -> bool {
@@ -57,7 +58,7 @@ fn repaint_interval(controller_count: usize) -> Duration {
     if controller_count == 0 {
         IDLE_REPAINT_INTERVAL
     } else {
-        DUALSENSE_MOTION_INTERVAL
+        GUI_REPAINT_INTERVAL
     }
 }
 
@@ -2347,11 +2348,11 @@ mod tests {
             }
             assert_eq!(
                 service_repaint_interval(count, Some(Duration::from_secs(1))),
-                Duration::from_millis(4)
+                Duration::from_millis(16)
             );
             assert_eq!(
                 service_repaint_interval(count, None),
-                Duration::from_millis(4)
+                Duration::from_millis(16)
             );
         }
         assert_eq!(service_repaint_interval(0, None), Duration::from_millis(50));
@@ -2365,8 +2366,8 @@ mod tests {
     #[test]
     fn live_controllers_poll_reverse_output_at_the_usb_cadence() {
         assert_eq!(repaint_interval(0), Duration::from_millis(50));
-        assert_eq!(repaint_interval(1), Duration::from_millis(4));
-        assert_eq!(repaint_interval(8), Duration::from_millis(4));
+        assert_eq!(repaint_interval(1), Duration::from_millis(16));
+        assert_eq!(repaint_interval(8), Duration::from_millis(16));
     }
 
     #[test]
