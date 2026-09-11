@@ -288,7 +288,11 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     );
     if text_response.changed() {
         if let Ok(parsed) = text.trim().parse::<u32>() {
-            *value = parsed.max(1);
+            let new_value = parsed.max(1);
+            if *value != new_value {
+                *value = new_value;
+                ui.ctx().request_repaint();
+            }
             if parsed == 0 {
                 text = value.to_string();
             }
@@ -303,11 +307,19 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
     paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
     if increment_response.clicked() {
-        *value = step_create_count(*value, true);
+        let new_value = step_create_count(*value, true);
+        if *value != new_value {
+            *value = new_value;
+            ui.ctx().request_repaint();
+        }
         text = value.to_string();
     }
     if decrement_response.clicked() {
-        *value = step_create_count(*value, false);
+        let new_value = step_create_count(*value, false);
+        if *value != new_value {
+            *value = new_value;
+            ui.ctx().request_repaint();
+        }
         text = value.to_string();
     }
     let response = text_response
