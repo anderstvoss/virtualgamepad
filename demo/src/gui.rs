@@ -1038,11 +1038,12 @@ impl eframe::App for App {
                     mouse_wheel: true,
                 })
             .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(SIDEBAR_WIDTH);
-                    ui.set_min_width(SIDEBAR_WIDTH);
-                    ui.set_max_width(SIDEBAR_WIDTH);
+            ui.horizontal_top(|ui| {
+                let sidebar_height = ui.available_height();
+                ui.allocate_ui_with_layout(
+                    Vec2::new(SIDEBAR_WIDTH, sidebar_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
                     ui.heading("Add Controller");
                     ui.separator();
                     egui::Grid::new("controller_creation_grid")
@@ -1129,21 +1130,38 @@ impl eframe::App for App {
                         - CONTROLLER_DELETE_WIDTH
                         - (row_spacing * 2.0))
                         .max(40.0);
-                    egui::ComboBox::from_id_salt("controller_label_mode")
-                        .selected_text(self.controller_label_mode.label())
-                        .width(controller_list_width)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.controller_label_mode,
-                                ControllerLabelMode::AssignedName,
-                                ControllerLabelMode::AssignedName.label(),
-                            );
-                            ui.selectable_value(
-                                &mut self.controller_label_mode,
-                                ControllerLabelMode::InternalIdentifier,
-                                ControllerLabelMode::InternalIdentifier.label(),
-                            );
-                        });
+                    ui.horizontal(|ui| {
+                        let chip_width =
+                            (controller_list_width - ui.spacing().item_spacing.x) / 2.0;
+                        if ui
+                            .add_sized(
+                                [chip_width, 22.0],
+                                egui::Button::new(ControllerLabelMode::AssignedName.label())
+                                    .selected(
+                                        self.controller_label_mode
+                                            == ControllerLabelMode::AssignedName,
+                                    ),
+                            )
+                            .clicked()
+                        {
+                            self.controller_label_mode = ControllerLabelMode::AssignedName;
+                        }
+                        if ui
+                            .add_sized(
+                                [chip_width, 22.0],
+                                egui::Button::new(
+                                    ControllerLabelMode::InternalIdentifier.label(),
+                                )
+                                .selected(
+                                    self.controller_label_mode
+                                        == ControllerLabelMode::InternalIdentifier,
+                                ),
+                            )
+                            .clicked()
+                        {
+                            self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
+                        }
+                    });
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
                         .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
@@ -1151,6 +1169,8 @@ impl eframe::App for App {
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
                             ui.set_width(controller_list_width);
+                            ui.scope(|ui| {
+                                ui.spacing_mut().item_spacing.x = 1.0;
                             for index in controller_tab_indices(self.controllers.len()) {
                                 let controller = &self.controllers[index];
                                 let active = self.selected_controller == Some(index);
@@ -1170,13 +1190,20 @@ impl eframe::App for App {
                                     } else {
                                         Color32::from_gray(62)
                                     };
-                                    if ui
-                                        .add_sized(
-                                            [controller_button_width, CONTROLLER_ROW_HEIGHT],
-                                            egui::Button::new(label).fill(fill),
-                                        )
-                                        .clicked()
-                                    {
+                                    let controller_response = egui::Frame::NONE
+                                        .fill(fill)
+                                        .show(ui, |ui| {
+                                            ui.allocate_ui_with_layout(
+                                                Vec2::new(
+                                                    controller_button_width,
+                                                    CONTROLLER_ROW_HEIGHT,
+                                                ),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| ui.add(egui::Label::new(label).sense(Sense::click())),
+                                            )
+                                        })
+                                        .response;
+                                    if controller_response.clicked() {
                                         self.selected_controller = Some(index);
                                     }
                                     if ui
@@ -1191,6 +1218,7 @@ impl eframe::App for App {
                                     }
                                 });
                             }
+                            });
                         });
                     if ui
                         .add_sized(
@@ -1207,19 +1235,22 @@ impl eframe::App for App {
                         .fill(Color32::from_gray(8))
                         .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
-                            ui.set_width(controller_list_width - 8.0);
+                            ui.set_min_width(controller_list_width);
+                            ui.set_max_width(controller_list_width);
                             egui::ScrollArea::vertical()
                                 .id_salt("diagnostic_log")
+                                .auto_shrink([false, false])
                                 .max_height(58.0)
                                 .stick_to_bottom(true)
                                 .show(ui, |ui| {
+                                    ui.set_width(controller_list_width - 8.0);
                                     if self.diagnostic_log.is_empty() {
                                         ui.weak("Warnings and error codes will appear here");
                                     }
                                     for entry in &self.diagnostic_log {
                                         ui.colored_label(
                                             if entry.success {
-                                                Color32::GREEN
+                                                Color32::from_rgb(105, 170, 105)
                                             } else {
                                                 Color32::RED
                                             },
@@ -1280,7 +1311,8 @@ impl eframe::App for App {
                             );
                         },
                     );
-                });
+                    },
+                );
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.set_min_width(448.0);
