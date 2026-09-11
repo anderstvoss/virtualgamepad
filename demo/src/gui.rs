@@ -434,7 +434,20 @@ fn publish_display(display: &mut WorkerDisplay, logs: Vec<String>, indicators: &
     display.indicators = indicators.clone();
 }
 
-fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> ServiceWorker<C> {
+fn label_output_logs(label: &str, logs: &mut [String]) {
+    for log in logs {
+        *log = format!("{label}: {log}");
+    }
+}
+
+fn spawn_service_worker<C: ServicedController + 'static>(controller: C) -> ServiceWorker<C> {
+    spawn_service_worker_with_label(controller, "Controller".into())
+}
+
+fn spawn_service_worker_with_label<C: ServicedController + 'static>(
+    mut controller: C,
+    log_label: String,
+) -> ServiceWorker<C> {
     let (stop_sender, stop_receiver) = mpsc::channel();
     let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
     let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
@@ -469,6 +482,7 @@ fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> S
                     &mut indicators,
                 )
             })();
+            label_output_logs(&log_label, &mut logs);
             // Optional UI output never owns or delays protocol replies.
             metrics.record(Instant::now());
             if let Ok(mut display) = worker_display.try_lock() {
@@ -827,7 +841,10 @@ impl App {
                     self.name_draft.trim().to_owned()
                 };
                 let view = controller.snapshot();
-                let service_worker = Some(spawn_service_worker(controller));
+                let service_worker = Some(spawn_service_worker_with_label(
+                    controller,
+                    format!("{} · lab {}", name, options.session),
+                ));
                 self.controllers.push(NamedController {
                     kind: self.kind,
                     options,
@@ -1035,7 +1052,11 @@ impl eframe::App for App {
                                 ui.text_edit_singleline(&mut named.name);
                             });
                             draw_reverse_indicators(ui, &named.indicators);
-                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session));
+                            ui.label(format!(
+                                "{} · lab correlation ID {}",
+                                target_label(named.options.target),
+                                named.options.session
+                            ));
                             if let Some(worker) = &named.service_worker {
                                 if let Ok(display) = worker.display.try_lock() {
                                     ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
@@ -2394,6 +2415,19 @@ mod tests {
                 name: "DualSense 0".into(),
                 error: "provider closed".into(),
             }
+        );
+    }
+
+    #[test]
+    fn reverse_output_logs_identify_the_controller_context() {
+        let mut logs = vec!["ForceFeedback".to_owned(), "HidOutput".to_owned()];
+        label_output_logs("DualSense 1 · lab 4", &mut logs);
+        assert_eq!(
+            logs,
+            vec![
+                "DualSense 1 · lab 4: ForceFeedback",
+                "DualSense 1 · lab 4: HidOutput"
+            ]
         );
     }
 
