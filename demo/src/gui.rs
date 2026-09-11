@@ -1176,9 +1176,13 @@ impl eframe::App for App {
                         - (row_spacing * 2.0))
                         .max(40.0);
                     ui.set_width(controller_surface_width);
-                    ui.horizontal(|ui| {
-                        let chip_width =
-                            controller_content_width / 2.0;
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(controller_surface_width, 22.0),
+                        egui::Layout::left_to_right(egui::Align::Center),
+                        |ui| {
+                            ui.spacing_mut().item_spacing.x = selector_spacing;
+                            let chip_width =
+                                (controller_surface_width - selector_spacing) / 2.0;
                         if ui
                             .add_sized(
                                 [chip_width, 22.0],
@@ -1207,7 +1211,8 @@ impl eframe::App for App {
                         {
                             self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
                         }
-                    });
+                        },
+                    );
                     egui::Frame::NONE
                         .fill(Color32::from_gray(20))
                         .inner_margin(egui::Margin::same(4))
