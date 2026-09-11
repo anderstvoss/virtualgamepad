@@ -206,6 +206,75 @@ fn requested_create_count(name: &str, count: u32) -> u32 {
     }
 }
 
+fn step_create_count(count: u32, increment: bool) -> u32 {
+    if increment {
+        count.saturating_add(1)
+    } else {
+        count.saturating_sub(1).max(1)
+    }
+}
+
+fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
+    const VALUE_WIDTH: f32 = 42.0;
+    const ARROW_WIDTH: f32 = 16.0;
+    let id = ui.make_persistent_id("create_count_spinbox");
+    let mut text = ui.data_mut(|data| {
+        data.get_temp::<String>(id)
+            .unwrap_or_else(|| value.to_string())
+    });
+    let response = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            let text_response = ui.add_sized(
+                [VALUE_WIDTH, 22.0],
+                egui::TextEdit::singleline(&mut text)
+                    .desired_width(VALUE_WIDTH)
+                    .horizontal_align(egui::Align::RIGHT)
+                    .margin(egui::Margin::symmetric(4, 2))
+                    .id(id),
+            );
+            if text_response.changed() {
+                if let Ok(parsed) = text.trim().parse::<u32>() {
+                    *value = parsed.max(1);
+                    if parsed == 0 {
+                        text = value.to_string();
+                    }
+                }
+            }
+            if text_response.lost_focus() {
+                text = value.to_string();
+            }
+            let arrow_responses = ui
+                .vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let increment = ui.add_sized(
+                        [ARROW_WIDTH, 11.0],
+                        Button::new("▴").frame(false).min_size(Vec2::ZERO),
+                    );
+                    let decrement = ui.add_sized(
+                        [ARROW_WIDTH, 11.0],
+                        Button::new("▾").frame(false).min_size(Vec2::ZERO),
+                    );
+                    (increment, decrement)
+                })
+                .inner;
+            if arrow_responses.0.clicked() {
+                *value = step_create_count(*value, true);
+                text = value.to_string();
+            }
+            if arrow_responses.1.clicked() {
+                *value = step_create_count(*value, false);
+                text = value.to_string();
+            }
+            text_response
+                .union(arrow_responses.0)
+                .union(arrow_responses.1)
+        })
+        .inner;
+    ui.data_mut(|data| data.insert_temp(id, text));
+    response
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ControllerLifecycleStatus {
     Created { name: String },
@@ -1180,13 +1249,7 @@ impl eframe::App for App {
                                 Vec2::new(count_control_width, 22.0),
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    ui.add_sized(
-                                        [count_control_width, 22.0],
-                                        egui::DragValue::new(&mut self.create_count)
-                                            .range(1..=u32::MAX)
-                                            .speed(1.0)
-                                            .min_decimals(0),
-                                    );
+                                    create_count_spinbox(ui, &mut self.create_count);
                                 },
                             );
                         }
@@ -2924,6 +2987,13 @@ mod tests {
         assert_eq!(requested_create_count("", 0), 1);
         assert_eq!(requested_create_count("  ", 4), 4);
         assert_eq!(requested_create_count("Named pad", 9), 1);
+    }
+
+    #[test]
+    fn create_count_spinbox_steps_without_crossing_its_minimum() {
+        assert_eq!(step_create_count(1, false), 1);
+        assert_eq!(step_create_count(4, false), 3);
+        assert_eq!(step_create_count(9_999, true), 10_000);
     }
 
     #[test]
