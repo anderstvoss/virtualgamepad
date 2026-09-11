@@ -33,7 +33,8 @@ const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
-const CONTROLLER_ROW_HEIGHT: f32 = 22.0;
+const NAME_INPUT_HEIGHT: f32 = 20.0;
+const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
@@ -1242,7 +1243,7 @@ impl eframe::App for App {
                         };
                         let name_response = ui
                             .add_sized(
-                                [edit_width, 22.0],
+                                [edit_width, NAME_INPUT_HEIGHT],
                                 egui::TextEdit::singleline(&mut self.name_draft)
                                     .hint_text(default_name)
                                     .desired_width(edit_width)
@@ -3025,6 +3026,12 @@ mod tests {
         assert_eq!(step_create_count(1, false), 1);
         assert_eq!(step_create_count(4, false), 3);
         assert_eq!(step_create_count(9_999, true), 10_000);
+    }
+
+    #[test]
+    fn controller_rows_match_the_name_input_height() {
+        assert!((CONTROLLER_ROW_HEIGHT - NAME_INPUT_HEIGHT).abs() < f32::EPSILON);
+        assert!((CONTROLLER_DELETE_WIDTH - NAME_INPUT_HEIGHT).abs() < f32::EPSILON);
     }
 
     #[test]
