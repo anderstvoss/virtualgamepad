@@ -1246,6 +1246,7 @@ impl eframe::App for App {
                                 egui::TextEdit::singleline(&mut self.name_draft)
                                     .hint_text(default_name)
                                     .desired_width(edit_width)
+                                    .vertical_align(egui::Align::Center)
                                     .margin(egui::Margin {
                                         left: 4,
                                         right: 22,
