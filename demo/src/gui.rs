@@ -206,14 +206,6 @@ fn requested_create_count(name: &str, count: u32) -> u32 {
     }
 }
 
-fn adjust_create_count(count: u32, increase: bool) -> u32 {
-    if increase {
-        count.saturating_add(1)
-    } else {
-        count.saturating_sub(1).max(1)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ControllerLifecycleStatus {
     Created { name: String },
@@ -881,7 +873,6 @@ pub struct App {
     target: RealizationId,
     name_draft: String,
     create_count: u32,
-    create_count_text: String,
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
@@ -903,7 +894,6 @@ impl Default for App {
             target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
             create_count: 1,
-            create_count_text: "1".to_owned(),
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
@@ -1142,15 +1132,15 @@ impl eframe::App for App {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let name_is_default = self.name_draft.trim().is_empty();
                         let clear_width = 18.0;
-                        let count_text_width = 42.0;
-                        let count_arrows_width = 16.0;
-                        let count_control_width = count_text_width + count_arrows_width;
-                        let make_label_width = 34.0;
-                        let edit_width = (ui.available_width()
-                            - make_label_width
-                            - count_control_width
-                            - (ui.spacing().item_spacing.x * 2.0))
-                            .max(40.0);
+                        let count_control_width = 58.0;
+                        let edit_width = if name_is_default {
+                            (ui.available_width()
+                                - count_control_width
+                                - ui.spacing().item_spacing.x)
+                                .max(40.0)
+                        } else {
+                            ui.available_width()
+                        };
                         let name_response = ui
                             .add_sized(
                                 [edit_width, 22.0],
@@ -1185,44 +1175,21 @@ impl eframe::App for App {
                                 self.name_draft.clear();
                             }
                         }
-                        ui.add_sized([make_label_width, 22.0], egui::Label::new("Make"));
-                        ui.add_enabled_ui(name_is_default, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing.x = 0.0;
-                                let count_response = ui.add_sized(
-                                    [count_text_width, 22.0],
-                                    egui::TextEdit::singleline(&mut self.create_count_text)
-                                        .desired_width(count_text_width)
-                                        .horizontal_align(egui::Align::RIGHT)
-                                        .margin(egui::Margin::symmetric(4, 2)),
-                                );
-                                if count_response.changed() {
-                                    if let Ok(value) = self.create_count_text.trim().parse::<u32>() {
-                                        self.create_count = value.max(1);
-                                    }
-                                }
-                                if count_response.lost_focus() {
-                                    self.create_count_text = self.create_count.max(1).to_string();
-                                }
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = 0.0;
-                                    if ui
-                                        .add_sized([count_arrows_width, 11.0], Button::new("▲"))
-                                        .clicked()
-                                    {
-                                        self.create_count = adjust_create_count(self.create_count, true);
-                                        self.create_count_text = self.create_count.to_string();
-                                    }
-                                    if ui
-                                        .add_sized([count_arrows_width, 11.0], Button::new("▼"))
-                                        .clicked()
-                                    {
-                                        self.create_count = adjust_create_count(self.create_count, false);
-                                        self.create_count_text = self.create_count.to_string();
-                                    }
-                                });
-                            });
-                        });
+                        if name_is_default {
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(count_control_width, 22.0),
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.add_sized(
+                                        [count_control_width, 22.0],
+                                        egui::DragValue::new(&mut self.create_count)
+                                            .range(1..=u32::MAX)
+                                            .speed(1.0)
+                                            .min_decimals(0),
+                                    );
+                                },
+                            );
+                        }
                     });
                     if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
                         ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
@@ -1235,7 +1202,6 @@ impl eframe::App for App {
                     {
                         self.create();
                     }
-                    ui.add_space(6.0);
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     let list_height = controller_list_height(ctx.screen_rect().height());
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
@@ -1370,7 +1336,6 @@ impl eframe::App for App {
                     {
                         self.pending_cleanup = Some(CleanupRequest::All);
                     }
-                    ui.add_space(6.0);
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     egui::Frame::NONE
                         .fill(Color32::from_gray(8))
@@ -1405,24 +1370,22 @@ impl eframe::App for App {
                                     }
                                 });
                         });
-                    ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                        let status_color = if self.backend_healthy {
-                            Color32::GREEN
-                        } else {
-                            Color32::RED
-                        };
-                        ui.colored_label(
-                            status_color,
-                            format!(
-                                "● {}",
-                                if self.backend_healthy {
-                                    "Healthy"
-                                } else {
-                                    "Attention"
-                                }
-                            ),
-                        );
-                    });
+                    let status_color = if self.backend_healthy {
+                        Color32::GREEN
+                    } else {
+                        Color32::RED
+                    };
+                    ui.colored_label(
+                        status_color,
+                        format!(
+                            "● {}",
+                            if self.backend_healthy {
+                                "Healthy"
+                            } else {
+                                "Attention"
+                            }
+                        ),
+                    );
                 });
                 ui.separator();
                 ui.vertical(|ui| {
@@ -2961,13 +2924,6 @@ mod tests {
         assert_eq!(requested_create_count("", 0), 1);
         assert_eq!(requested_create_count("  ", 4), 4);
         assert_eq!(requested_create_count("Named pad", 9), 1);
-    }
-
-    #[test]
-    fn create_count_stepper_stays_at_one_without_an_arbitrary_upper_bound() {
-        assert_eq!(adjust_create_count(1, false), 1);
-        assert_eq!(adjust_create_count(4, false), 3);
-        assert_eq!(adjust_create_count(9_999, true), 10_000);
     }
 
     #[test]
