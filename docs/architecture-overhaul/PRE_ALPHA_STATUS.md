@@ -92,8 +92,14 @@ separate task they will create. This task stops at that gate after general
 preliminary-candidate polish. This is an ownership decision, not acceptance of
 controller behavior. No new task was created automatically.
 
-Resume on `codex/pre-alpha-stabilization`; the preliminary implementation commit
-is `e50b9ba`. Read [current functions and evidence](../CURRENT_CONTROLLER_REFINEMENT.md)
+Land `codex/pre-alpha-stabilization` into `main` first as the preliminary API
+stabilization PR. Its demo edits migrate the existing application to the new API;
+subsequent GUI refinement belongs in a fresh branch and separate PR based on the
+merged `main`. Keep further controller or GUI increments focused and land them
+before returning to the alpha gate checks. The preliminary implementation commit
+is `e50b9ba`.
+
+For the separate refinement task, start from the merged baseline and read [current functions and evidence](../CURRENT_CONTROLLER_REFINEMENT.md)
 and the [demo lab guide](../DEMO_LAB.md) before making focused changes. Preserve
 existing lifecycle, input-ordering and bounded-worker regressions. Record each
 reproduction, fix, deterministic regression and actual user feedback in this
