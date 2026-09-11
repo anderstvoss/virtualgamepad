@@ -34,6 +34,24 @@ const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
 const CONTROLLER_ROW_HEIGHT: f32 = 32.0;
+const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
+const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
+const CONTROLLER_SCROLLBAR_ALLOWANCE: f32 = 12.0;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControllerLabelMode {
+    AssignedName,
+    InternalIdentifier,
+}
+
+impl ControllerLabelMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::AssignedName => "Assigned name",
+            Self::InternalIdentifier => "Internal identifier",
+        }
+    }
+}
 
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
@@ -820,6 +838,7 @@ pub struct App {
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
+    controller_label_mode: ControllerLabelMode,
     output_log: Vec<String>,
     diagnostic_log: String,
     lifecycle_status: Option<ControllerLifecycleStatus>,
@@ -839,6 +858,7 @@ impl Default for App {
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
+            controller_label_mode: ControllerLabelMode::AssignedName,
             output_log: vec![],
             diagnostic_log: String::new(),
             lifecycle_status: None,
@@ -1086,28 +1106,51 @@ impl eframe::App for App {
                     }
                     ui.add_space(6.0);
                     ui.separator();
-                    let list_height = (ui.available_height() - 72.0).max(CONTROLLER_ROW_HEIGHT * 4.0);
+                    let list_height =
+                        (ui.available_height() - 72.0).max(CONTROLLER_ROW_HEIGHT * 4.0);
+                    let controller_list_width = SIDEBAR_WIDTH - CONTROLLER_SCROLLBAR_ALLOWANCE;
+                    let row_spacing = ui.spacing().item_spacing.x;
+                    let controller_button_width = (controller_list_width
+                        - CONTROLLER_NUMBER_WIDTH
+                        - CONTROLLER_DELETE_WIDTH
+                        - (row_spacing * 2.0))
+                        .max(40.0);
+                    egui::ComboBox::from_id_salt("controller_label_mode")
+                        .selected_text(self.controller_label_mode.label())
+                        .width(controller_list_width)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.controller_label_mode,
+                                ControllerLabelMode::AssignedName,
+                                ControllerLabelMode::AssignedName.label(),
+                            );
+                            ui.selectable_value(
+                                &mut self.controller_label_mode,
+                                ControllerLabelMode::InternalIdentifier,
+                                ControllerLabelMode::InternalIdentifier.label(),
+                            );
+                        });
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
                         .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
                         .max_height(list_height)
                         .auto_shrink([false, false])
                         .show(ui, |ui| {
-                            ui.set_width(SIDEBAR_WIDTH);
+                            ui.set_width(controller_list_width);
                             for index in controller_tab_indices(self.controllers.len()) {
                                 let controller = &self.controllers[index];
                                 let active = self.selected_controller == Some(index);
-                                let label = truncate_identifier(
-                                    &format!("{}  ·  {}", controller.name, controller_identifier(controller)),
-                                    32,
-                                );
+                                let label = match self.controller_label_mode {
+                                    ControllerLabelMode::AssignedName => controller.name.clone(),
+                                    ControllerLabelMode::InternalIdentifier => {
+                                        controller_identifier(controller)
+                                    }
+                                };
                                 ui.horizontal(|ui| {
                                     ui.add_sized(
-                                        [16.0, CONTROLLER_ROW_HEIGHT],
+                                        [CONTROLLER_NUMBER_WIDTH, CONTROLLER_ROW_HEIGHT],
                                         egui::Label::new(format!("{}", index + 1)),
                                     );
-                                    let remove_width = CONTROLLER_ROW_HEIGHT;
-                                    let button_width = (SIDEBAR_WIDTH - 16.0 - remove_width - 12.0).max(40.0);
                                     let fill = if active {
                                         ui.visuals().selection.bg_fill
                                     } else {
@@ -1115,7 +1158,7 @@ impl eframe::App for App {
                                     };
                                     if ui
                                         .add_sized(
-                                            [button_width, CONTROLLER_ROW_HEIGHT],
+                                            [controller_button_width, CONTROLLER_ROW_HEIGHT],
                                             egui::Button::new(label).fill(fill),
                                         )
                                         .clicked()
@@ -1124,7 +1167,7 @@ impl eframe::App for App {
                                     }
                                     if ui
                                         .add_sized(
-                                            [remove_width, CONTROLLER_ROW_HEIGHT],
+                                            [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
                                             egui::Button::new("×").fill(Color32::from_rgb(150, 45, 45)),
                                         )
                                         .on_hover_text("Remove controller")
