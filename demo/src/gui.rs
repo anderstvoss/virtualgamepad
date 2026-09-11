@@ -127,6 +127,10 @@ fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
     (log_height - f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)).max(0.0)
 }
 
+fn terminal_log_indices(entry_count: usize) -> impl Iterator<Item = usize> {
+    (0..entry_count).rev()
+}
+
 fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
     matches!(
         (kind, target),
@@ -1669,19 +1673,29 @@ impl eframe::App for App {
                                         .stick_to_bottom(true)
                                         .show(ui, |ui| {
                                             ui.set_width(SIDEBAR_WIDTH - 16.0);
-                                            if self.diagnostic_log.is_empty() {
-                                                ui.weak("Warnings and error codes will appear here");
-                                            }
-                                            for entry in &self.diagnostic_log {
-                                                ui.colored_label(
-                                                    if entry.success {
-                                                        Color32::from_rgb(105, 170, 105)
-                                                    } else {
-                                                        Color32::RED
-                                                    },
-                                                    &entry.message,
-                                                );
-                                            }
+                                            ui.with_layout(
+                                                egui::Layout::bottom_up(egui::Align::Min),
+                                                |ui| {
+                                                    if self.diagnostic_log.is_empty() {
+                                                        ui.weak(
+                                                            "Warnings and error codes will appear here",
+                                                        );
+                                                    }
+                                                    for index in terminal_log_indices(
+                                                        self.diagnostic_log.len(),
+                                                    ) {
+                                                        let entry = &self.diagnostic_log[index];
+                                                        ui.colored_label(
+                                                            if entry.success {
+                                                                Color32::from_rgb(105, 170, 105)
+                                                            } else {
+                                                                Color32::RED
+                                                            },
+                                                            &entry.message,
+                                                        );
+                                                    }
+                                                },
+                                            );
                                         });
                                 });
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
@@ -3089,6 +3103,14 @@ mod tests {
         assert!((diagnostic_log_height(200.0) - 120.0).abs() < 0.001);
         assert!((diagnostic_log_scroll_height(120.0) - 116.0).abs() < 0.001);
         assert!(diagnostic_log_scroll_height(2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn terminal_log_places_the_newest_entry_at_the_bottom() {
+        assert_eq!(
+            terminal_log_indices(4).collect::<Vec<_>>(),
+            vec![3, 2, 1, 0]
+        );
     }
 
     #[test]
