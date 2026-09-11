@@ -33,9 +33,9 @@ const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
-const DIAGNOSTIC_LOG_HEIGHT_FRACTION: f32 = 0.6;
-const DIAGNOSTIC_LOG_MIN_HEIGHT: f32 = 58.0;
+const DIAGNOSTIC_LOG_LINE_COUNT: f32 = 5.0;
 const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
+const HEALTH_BOTTOM_PADDING: f32 = 4.0;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
 const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
@@ -100,8 +100,8 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
-fn diagnostic_log_height(footer_height: f32) -> f32 {
-    (footer_height.max(0.0) * DIAGNOSTIC_LOG_HEIGHT_FRACTION).max(DIAGNOSTIC_LOG_MIN_HEIGHT)
+fn diagnostic_log_height(line_height: f32) -> f32 {
+    (line_height * DIAGNOSTIC_LOG_LINE_COUNT) + f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)
 }
 
 fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
@@ -122,9 +122,9 @@ struct SidebarLayoutBudget {
 fn sidebar_layout_budget(
     available_height: f32,
     footer_controls_height: f32,
+    diagnostic_log_height: f32,
 ) -> SidebarLayoutBudget {
     let available_height = available_height.max(0.0);
-    let diagnostic_log_height = diagnostic_log_height(available_height);
     let footer_height = diagnostic_log_height + footer_controls_height;
     let controller_list_height =
         (available_height - footer_height - CONTROLLER_LIST_FRAME_VERTICAL_MARGIN)
@@ -1544,9 +1544,15 @@ impl eframe::App for App {
                     );
                     let footer_controls_height = CONTROLLER_ROW_HEIGHT
                         + 1.0
-                        + ui.text_style_height(&egui::TextStyle::Body);
-                    let sidebar_layout =
-                        sidebar_layout_budget(ui.available_height(), footer_controls_height);
+                        + ui.text_style_height(&egui::TextStyle::Body)
+                        + HEALTH_BOTTOM_PADDING;
+                    let diagnostic_log_height =
+                        diagnostic_log_height(ui.text_style_height(&egui::TextStyle::Body));
+                    let sidebar_layout = sidebar_layout_budget(
+                        ui.available_height(),
+                        footer_controls_height,
+                        diagnostic_log_height,
+                    );
                     let list_height = sidebar_layout.controller_list;
                     let (controller_list_rect, _) = ui.allocate_exact_size(
                         Vec2::new(
@@ -1717,6 +1723,7 @@ impl eframe::App for App {
                         egui::TextStyle::Body.resolve(footer_ui.style()),
                         status_color,
                     );
+                    footer_ui.allocate_space(Vec2::new(SIDEBAR_WIDTH, HEALTH_BOTTOM_PADDING));
                 });
                 ui.separator();
                 ui.vertical(|ui| {
@@ -3092,10 +3099,10 @@ mod tests {
 
     #[test]
     fn sidebar_budget_reserves_space_for_list_and_footer_without_overlap() {
-        let layout = sidebar_layout_budget(500.0, 50.0);
-        assert!((layout.diagnostic_log - 300.0).abs() < 0.001);
-        assert!((layout.footer - 350.0).abs() < 0.001);
-        assert!((layout.controller_list - 142.0).abs() < 0.001);
+        let layout = sidebar_layout_budget(500.0, 50.0, 74.0);
+        assert!((layout.diagnostic_log - 74.0).abs() < 0.001);
+        assert!((layout.footer - 124.0).abs() < 0.001);
+        assert!((layout.controller_list - 368.0).abs() < 0.001);
         assert!(
             (layout.controller_list + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN + layout.footer
                 - 500.0)
@@ -3103,15 +3110,15 @@ mod tests {
                 < 0.001
         );
 
-        let constrained = sidebar_layout_budget(90.0, 50.0);
-        assert!((constrained.diagnostic_log - DIAGNOSTIC_LOG_MIN_HEIGHT).abs() < 0.001);
+        let constrained = sidebar_layout_budget(90.0, 50.0, 74.0);
+        assert!((constrained.diagnostic_log - 74.0).abs() < 0.001);
         assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
     }
 
     #[test]
-    fn diagnostic_log_uses_sixty_percent_of_the_available_sidebar_remainder() {
-        assert!((diagnostic_log_height(200.0) - 120.0).abs() < 0.001);
-        assert!((diagnostic_log_scroll_height(120.0) - 116.0).abs() < 0.001);
+    fn diagnostic_log_has_room_for_five_lines() {
+        assert!((diagnostic_log_height(14.0) - 74.0).abs() < 0.001);
+        assert!((diagnostic_log_scroll_height(74.0) - 70.0).abs() < 0.001);
         assert!(diagnostic_log_scroll_height(2.0).abs() < 0.001);
     }
 
