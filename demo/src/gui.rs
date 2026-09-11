@@ -527,6 +527,7 @@ struct ReverseIndicators {
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
+    rumble_seen: bool,
     hid_motors: [u8; 2],
     rumble_started: Option<Instant>,
 }
@@ -535,6 +536,7 @@ impl ReverseIndicators {
         self.rumble_until = Some(Instant::now() + Duration::from_millis(750));
     }
     fn set_rumble(&mut self, active: bool) {
+        self.rumble_seen = true;
         if active && !self.rumble_active {
             self.rumble_started = Some(Instant::now());
         }
@@ -572,6 +574,7 @@ impl ReverseIndicators {
             self.hid_motors[1] = value;
         }
         if right_motor.is_some() || left_motor.is_some() {
+            self.rumble_seen = true;
             self.set_rumble(self.hid_motors.iter().any(|value| *value != 0));
         }
         if let Some(lightbar_rgb) = lightbar_rgb {
@@ -1130,7 +1133,11 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
         ui.painter()
             .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
-        ui.label("LED");
+        ui.label(if indicators.led.is_some() {
+            "LED: received"
+        } else {
+            "LED: unknown"
+        });
 
         let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
         ui.painter().circle_filled(
@@ -1142,7 +1149,11 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 Color32::DARK_GRAY
             },
         );
-        ui.label("Mute LED");
+        ui.label(match indicators.mute_led {
+            Some(true) => "Mute LED: on",
+            Some(false) => "Mute LED: off",
+            None => "Mute LED: unknown",
+        });
 
         let remaining = indicators
             .rumble_until
@@ -1170,7 +1181,13 @@ fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 Color32::DARK_GRAY
             },
         );
-        ui.label("Rumble");
+        ui.label(if !indicators.rumble_seen {
+            "Rumble: unknown"
+        } else if active {
+            "Rumble: active"
+        } else {
+            "Rumble: inactive"
+        });
     });
 }
 
@@ -2501,6 +2518,22 @@ mod tests {
         });
         assert!(!indicators.rumble_active);
         assert!(indicators.rumble_until.is_none());
+    }
+
+    #[test]
+    fn reverse_indicators_start_unknown_until_host_output_is_observed() {
+        let mut indicators = ReverseIndicators::default();
+        assert!(indicators.led.is_none());
+        assert!(indicators.mute_led.is_none());
+        assert!(!indicators.rumble_seen);
+
+        indicators.apply_hid_output(None, None, None, Some(false));
+        assert_eq!(indicators.mute_led, Some(false));
+        assert!(!indicators.rumble_seen);
+
+        indicators.apply_hid_output(Some(0), Some(0), None, None);
+        assert!(indicators.rumble_seen);
+        assert!(!indicators.rumble_active);
     }
 
     #[test]
