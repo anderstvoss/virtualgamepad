@@ -37,9 +37,6 @@ const CONTROLLER_ROW_HEIGHT: f32 = 22.0;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
-const CREATE_COUNT_SPINBOX_MIN_WIDTH: f32 = 34.0;
-const CREATE_COUNT_SPINBOX_MAX_WIDTH: f32 = 58.0;
-const CREATE_COUNT_SPINBOX_DIGIT_WIDTH: f32 = 8.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -217,15 +214,6 @@ fn step_create_count(count: u32, increment: bool) -> u32 {
     }
 }
 
-fn create_count_spinbox_width(value: u32) -> f32 {
-    match value {
-        0..=9 => CREATE_COUNT_SPINBOX_MIN_WIDTH,
-        10..=99 => CREATE_COUNT_SPINBOX_MIN_WIDTH + CREATE_COUNT_SPINBOX_DIGIT_WIDTH,
-        100..=999 => CREATE_COUNT_SPINBOX_MIN_WIDTH + CREATE_COUNT_SPINBOX_DIGIT_WIDTH * 2.0,
-        _ => CREATE_COUNT_SPINBOX_MAX_WIDTH,
-    }
-}
-
 fn spinbox_arrow_rects(rect: egui::Rect, arrow_width: f32) -> (egui::Rect, egui::Rect) {
     let arrow_left = rect.right() - arrow_width;
     (
@@ -264,18 +252,18 @@ fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered
 }
 
 fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
+    const SPINBOX_WIDTH: f32 = 58.0;
     const ARROW_WIDTH: f32 = 16.0;
     const SPINBOX_HEIGHT: f32 = 22.0;
-    let spinbox_width = create_count_spinbox_width(*value);
     let id = ui.make_persistent_id("create_count_spinbox");
     let mut text = ui.data_mut(|data| {
         data.get_temp::<String>(id)
             .unwrap_or_else(|| value.to_string())
     });
     let text_response = ui.add_sized(
-        [spinbox_width, SPINBOX_HEIGHT],
+        [SPINBOX_WIDTH, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
-            .desired_width(spinbox_width)
+            .desired_width(SPINBOX_WIDTH)
             .horizontal_align(egui::Align::RIGHT)
             .vertical_align(egui::Align::Center)
             .margin(egui::Margin {
@@ -1243,7 +1231,7 @@ impl eframe::App for App {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let name_is_default = self.name_draft.trim().is_empty();
                         let clear_width = 18.0;
-                        let count_control_width = create_count_spinbox_width(self.create_count);
+                        let count_control_width = 58.0;
                         let edit_width = if name_is_default {
                             (ui.available_width()
                                 - count_control_width
@@ -1258,7 +1246,6 @@ impl eframe::App for App {
                                 egui::TextEdit::singleline(&mut self.name_draft)
                                     .hint_text(default_name)
                                     .desired_width(edit_width)
-                                    .vertical_align(egui::Align::Center)
                                     .margin(egui::Margin {
                                         left: 4,
                                         right: 22,
@@ -3037,23 +3024,6 @@ mod tests {
         assert_eq!(step_create_count(1, false), 1);
         assert_eq!(step_create_count(4, false), 3);
         assert_eq!(step_create_count(9_999, true), 10_000);
-    }
-
-    #[test]
-    fn create_count_spinbox_grows_to_its_four_digit_width() {
-        assert!(
-            (create_count_spinbox_width(1) - CREATE_COUNT_SPINBOX_MIN_WIDTH).abs() < f32::EPSILON
-        );
-        assert!((create_count_spinbox_width(10) - 42.0).abs() < f32::EPSILON);
-        assert!((create_count_spinbox_width(100) - 50.0).abs() < f32::EPSILON);
-        assert!(
-            (create_count_spinbox_width(9_999) - CREATE_COUNT_SPINBOX_MAX_WIDTH).abs()
-                < f32::EPSILON
-        );
-        assert!(
-            (create_count_spinbox_width(10_000) - CREATE_COUNT_SPINBOX_MAX_WIDTH).abs()
-                < f32::EPSILON
-        );
     }
 
     #[test]
