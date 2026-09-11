@@ -1349,6 +1349,17 @@ impl eframe::App for App {
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.set_min_width(448.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("live_panel_scroll")
+                        .max_height(ui.available_height())
+                        .auto_shrink([false, false])
+                        .scroll_source(egui::scroll_area::ScrollSource {
+                            scroll_bar: true,
+                            drag: false,
+                            mouse_wheel: true,
+                        })
+                        .show(ui, |ui| {
+                    ui.set_min_width(448.0);
                     ui.heading("Live controllers");
                     if let Some(index) = self
                         .selected_controller
@@ -1437,6 +1448,7 @@ impl eframe::App for App {
                             ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
                             ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
                             ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
+                        });
                         });
                 });
                 });
