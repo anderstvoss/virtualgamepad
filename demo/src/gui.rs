@@ -950,6 +950,8 @@ impl eframe::App for App {
                     mouse_wheel: true,
                 })
                 .show(ui, |ui| {
+            ui.heading("virtualgamepad Demo GUI");
+            ui.separator();
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
                     ui.set_width(200.0);
