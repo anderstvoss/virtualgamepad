@@ -1408,7 +1408,7 @@ impl eframe::App for App {
                         advanced_label,
                         egui::TextStyle::Button.resolve(ui.style()),
                         if advanced_available {
-                            ui.visuals().strong_text_color()
+                            ui.visuals().widgets.inactive.text_color()
                         } else {
                             ui.visuals().weak_text_color()
                         },
