@@ -942,6 +942,9 @@ impl eframe::App for App {
         }
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::SidePanel::left("create").show(ctx, |ui| {
+            egui::ScrollArea::both()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
                 .selected_text(self.kind.label())
@@ -1056,9 +1059,10 @@ impl eframe::App for App {
                     }
                 }
             }
+                });
         });
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.heading("Live controllers");
