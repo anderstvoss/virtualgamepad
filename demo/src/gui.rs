@@ -206,6 +206,14 @@ fn requested_create_count(name: &str, count: u32) -> u32 {
     }
 }
 
+fn adjust_create_count(count: u32, increase: bool) -> u32 {
+    if increase {
+        count.saturating_add(1)
+    } else {
+        count.saturating_sub(1).max(1)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ControllerLifecycleStatus {
     Created { name: String },
@@ -873,6 +881,7 @@ pub struct App {
     target: RealizationId,
     name_draft: String,
     create_count: u32,
+    create_count_text: String,
     next_session: u64,
     advance_session: bool,
     lab_notes: String,
@@ -894,6 +903,7 @@ impl Default for App {
             target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
             create_count: 1,
+            create_count_text: "1".to_owned(),
             next_session: 1,
             advance_session: true,
             lab_notes: String::new(),
@@ -1129,28 +1139,90 @@ impl eframe::App for App {
                         });
                     let default_name = self.next_default_name();
                     ui.horizontal(|ui| {
-                        let clear_width = 22.0;
-                        let edit_width = (ui.available_width() - clear_width).max(40.0);
-                        ui.add_sized(
-                            [edit_width, 20.0],
-                            egui::TextEdit::singleline(&mut self.name_draft)
-                                .hint_text(default_name)
-                                .desired_width(edit_width),
-                        )
-                        .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-                        if ui.small_button("×").on_hover_text("Clear name").clicked() {
-                            self.name_draft.clear();
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if self.name_draft.trim().is_empty() {
-                            ui.label("Make");
-                            ui.add(
-                                egui::DragValue::new(&mut self.create_count)
-                                    .range(1..=99)
-                                    .speed(0.1),
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        let name_is_default = self.name_draft.trim().is_empty();
+                        let clear_width = 18.0;
+                        let count_text_width = 42.0;
+                        let count_arrows_width = 16.0;
+                        let count_control_width = count_text_width + count_arrows_width;
+                        let make_label_width = 34.0;
+                        let edit_width = (ui.available_width()
+                            - make_label_width
+                            - count_control_width
+                            - (ui.spacing().item_spacing.x * 2.0))
+                            .max(40.0);
+                        let name_response = ui
+                            .add_sized(
+                                [edit_width, 22.0],
+                                egui::TextEdit::singleline(&mut self.name_draft)
+                                    .hint_text(default_name)
+                                    .desired_width(edit_width)
+                                    .margin(egui::Margin {
+                                        left: 4,
+                                        right: 22,
+                                        top: 2,
+                                        bottom: 2,
+                                    }),
+                            )
+                            .on_hover_text(
+                                "Optional name. Leave empty for the automatic controller name.",
                             );
+                        if !name_is_default {
+                            let clear_rect = egui::Rect::from_min_max(
+                                Pos2::new(name_response.rect.right() - clear_width, name_response.rect.top()),
+                                name_response.rect.right_bottom(),
+                            );
+                            if ui
+                                .put(
+                                    clear_rect,
+                                    Button::new("×")
+                                        .frame(false)
+                                        .min_size(Vec2::ZERO),
+                                )
+                                .on_hover_text("Clear name")
+                                .clicked()
+                            {
+                                self.name_draft.clear();
+                            }
                         }
+                        ui.add_sized([make_label_width, 22.0], egui::Label::new("Make"));
+                        ui.add_enabled_ui(name_is_default, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 0.0;
+                                let count_response = ui.add_sized(
+                                    [count_text_width, 22.0],
+                                    egui::TextEdit::singleline(&mut self.create_count_text)
+                                        .desired_width(count_text_width)
+                                        .horizontal_align(egui::Align::RIGHT)
+                                        .margin(egui::Margin::symmetric(4, 2)),
+                                );
+                                if count_response.changed() {
+                                    if let Ok(value) = self.create_count_text.trim().parse::<u32>() {
+                                        self.create_count = value.max(1);
+                                    }
+                                }
+                                if count_response.lost_focus() {
+                                    self.create_count_text = self.create_count.max(1).to_string();
+                                }
+                                ui.vertical(|ui| {
+                                    ui.spacing_mut().item_spacing.y = 0.0;
+                                    if ui
+                                        .add_sized([count_arrows_width, 11.0], Button::new("▲"))
+                                        .clicked()
+                                    {
+                                        self.create_count = adjust_create_count(self.create_count, true);
+                                        self.create_count_text = self.create_count.to_string();
+                                    }
+                                    if ui
+                                        .add_sized([count_arrows_width, 11.0], Button::new("▼"))
+                                        .clicked()
+                                    {
+                                        self.create_count = adjust_create_count(self.create_count, false);
+                                        self.create_count_text = self.create_count.to_string();
+                                    }
+                                });
+                            });
+                        });
                     });
                     if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
                         ui.small("Experimental USB gadget; requires the privileged broker, prepared dummy_hcd resources, and Gate G host setup.");
@@ -1298,10 +1370,16 @@ impl eframe::App for App {
                     {
                         self.pending_cleanup = Some(CleanupRequest::All);
                     }
+                    ui.add_space(6.0);
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                     egui::Frame::NONE
                         .fill(Color32::from_gray(8))
-                        .inner_margin(egui::Margin::same(4))
+                        .inner_margin(egui::Margin {
+                            left: 4,
+                            right: 4,
+                            top: 4,
+                            bottom: 0,
+                        })
                         .show(ui, |ui| {
                             ui.set_min_width(SIDEBAR_WIDTH - 8.0);
                             ui.set_max_width(SIDEBAR_WIDTH - 8.0);
@@ -2883,6 +2961,13 @@ mod tests {
         assert_eq!(requested_create_count("", 0), 1);
         assert_eq!(requested_create_count("  ", 4), 4);
         assert_eq!(requested_create_count("Named pad", 9), 1);
+    }
+
+    #[test]
+    fn create_count_stepper_stays_at_one_without_an_arbitrary_upper_bound() {
+        assert_eq!(adjust_create_count(1, false), 1);
+        assert_eq!(adjust_create_count(4, false), 3);
+        assert_eq!(adjust_create_count(9_999, true), 10_000);
     }
 
     #[test]
