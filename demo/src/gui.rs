@@ -146,6 +146,12 @@ enum ControllerLifecycleStatus {
     ClosedAfterFailure { name: String, error: String },
 }
 
+#[derive(Clone, Copy)]
+enum CleanupRequest {
+    One(usize),
+    All,
+}
+
 fn creation_error_message(
     error: &virtualgamepad::ControllerError,
     uhid_registered: Option<bool>,
@@ -786,6 +792,7 @@ pub struct App {
     selected_controller: Option<usize>,
     output_log: Vec<String>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
+    pending_cleanup: Option<CleanupRequest>,
 }
 impl Default for App {
     fn default() -> Self {
@@ -802,6 +809,7 @@ impl Default for App {
             selected_controller: None,
             output_log: vec![],
             lifecycle_status: None,
+            pending_cleanup: None,
         }
     }
 }
@@ -971,8 +979,12 @@ impl eframe::App for App {
             if ui.button("Create").clicked() {
                 self.create();
             }
-            if ui.button("Stop all controllers").clicked() { stop_all = true; }
-            ui.collapsing("Lab notes and gate prerequisites", |ui| {
+            if ui.button("Stop all controllers").clicked() {
+                self.pending_cleanup = Some(CleanupRequest::All);
+            }
+            egui::CollapsingHeader::new("Lab notes and gate prerequisites")
+                .default_open(false)
+                .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Lab correlation ID");
                 ui.add(egui::DragValue::new(&mut self.next_session));
@@ -988,7 +1000,7 @@ impl eframe::App for App {
                 ui.label("Observations");
                 ui.text_edit_multiline(&mut self.lab_notes);
                 if let Some(cleanup) = &self.last_cleanup {
-                    ui.label(format!("Last removed session: {cleanup}"));
+                    ui.label(format!("Last cleanup diagnostics: {cleanup}"));
                     if ui.button("Copy cleanup diagnostics").clicked() { ui.ctx().copy_text(cleanup.clone()); }
                 }
                 ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
@@ -1018,7 +1030,7 @@ impl eframe::App for App {
                                 .on_hover_text("Remove controller")
                                 .clicked()
                             {
-                                remove = Some(index);
+                                self.pending_cleanup = Some(CleanupRequest::One(index));
                             }
                         });
                     }
@@ -1106,6 +1118,49 @@ impl eframe::App for App {
                     }
                 });
         });
+        if let Some(request) = self.pending_cleanup {
+            let (title, message) = match request {
+                CleanupRequest::One(index) => {
+                    let name = self.controllers.get(index).map_or_else(
+                        || "this controller".to_owned(),
+                        |controller| controller.name.clone(),
+                    );
+                    (
+                        "Remove controller?",
+                        format!("Remove {name} and close its virtual device?"),
+                    )
+                }
+                CleanupRequest::All => (
+                    "Stop all controllers?",
+                    format!("Close all {} virtual controllers?", self.controllers.len()),
+                ),
+            };
+            let mut confirmed = false;
+            let mut cancelled = false;
+            egui::Window::new(title)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(message);
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancel").clicked() {
+                            cancelled = true;
+                        }
+                        if ui.button("Confirm").clicked() {
+                            confirmed = true;
+                        }
+                    });
+                });
+            if confirmed {
+                self.pending_cleanup = None;
+                match request {
+                    CleanupRequest::One(index) => remove = Some(index),
+                    CleanupRequest::All => stop_all = true,
+                }
+            } else if cancelled {
+                self.pending_cleanup = None;
+            }
+        }
         if stop_all {
             while !self.controllers.is_empty() {
                 self.remove_controller(self.controllers.len() - 1);
