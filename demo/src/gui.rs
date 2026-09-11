@@ -947,7 +947,7 @@ impl eframe::App for App {
                 .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.vertical(|ui| {
-                    ui.set_min_width(280.0);
+                    ui.set_width(200.0);
             ui.heading("Create controller");
             egui::ComboBox::from_label("Type")
                 .selected_text(self.kind.label())
