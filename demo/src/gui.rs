@@ -170,6 +170,10 @@ fn selection_after_controller_click(
     clicked.then_some(clicked_index).or(selected_index)
 }
 
+fn controller_removal_after_delete_click(index: usize, clicked: bool) -> Option<usize> {
+    clicked.then_some(index)
+}
+
 fn controller_row_fill(active: bool, selected_fill: Color32) -> Color32 {
     if active {
         selected_fill
@@ -327,7 +331,6 @@ enum ControllerLifecycleStatus {
 
 #[derive(Clone, Copy)]
 enum CleanupRequest {
-    One(usize),
     All,
 }
 
@@ -1416,15 +1419,17 @@ impl eframe::App for App {
                                         index,
                                         controller_response.clicked(),
                                     );
-                                    if ui
+                                    let delete_clicked = ui
                                         .add_sized(
                                             [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
                                             egui::Button::new("×").fill(Color32::from_rgb(150, 45, 45)),
                                         )
                                         .on_hover_text("Remove controller")
-                                        .clicked()
+                                        .clicked();
+                                    if let Some(index) =
+                                        controller_removal_after_delete_click(index, delete_clicked)
                                     {
-                                        self.pending_cleanup = Some(CleanupRequest::One(index));
+                                        remove = Some(index);
                                     }
                                     },
                                 );
@@ -1601,23 +1606,9 @@ impl eframe::App for App {
                 });
             });
         });
-        if let Some(request) = self.pending_cleanup {
-            let (title, message) = match request {
-                CleanupRequest::One(index) => {
-                    let name = self.controllers.get(index).map_or_else(
-                        || "this controller".to_owned(),
-                        |controller| controller.name.clone(),
-                    );
-                    (
-                        "Remove controller?",
-                        format!("Remove {name} and close its virtual device?"),
-                    )
-                }
-                CleanupRequest::All => (
-                    "Stop all controllers?",
-                    format!("Close all {} virtual controllers?", self.controllers.len()),
-                ),
-            };
+        if self.pending_cleanup.is_some() {
+            let title = "Stop all controllers?";
+            let message = format!("Close all {} virtual controllers?", self.controllers.len());
             let mut confirmed = false;
             let mut cancelled = false;
             egui::Window::new(title)
@@ -1636,10 +1627,7 @@ impl eframe::App for App {
                 });
             if confirmed {
                 self.pending_cleanup = None;
-                match request {
-                    CleanupRequest::One(index) => remove = Some(index),
-                    CleanupRequest::All => stop_all = true,
-                }
+                stop_all = true;
             } else if cancelled {
                 self.pending_cleanup = None;
             }
@@ -3076,6 +3064,12 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn controller_delete_click_requests_immediate_removal() {
+        assert_eq!(controller_removal_after_delete_click(3, false), None);
+        assert_eq!(controller_removal_after_delete_click(3, true), Some(3));
     }
 
     #[test]
