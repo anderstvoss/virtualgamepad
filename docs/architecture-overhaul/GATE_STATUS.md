@@ -1,5 +1,14 @@
 # Architecture gate status
 
+**Current execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
+on merged PR108. It supersedes the execution order below; historical experiment
+results remain unchanged. Gate T representation is required for alpha, while its
+unavailable physical evidence remains explicitly deferred. Final API review and
+release require the maintainer's controller/demo refinement checkpoint.
+
+## Historical planning and evidence
+
+
 PR #106 landed on `main` as `d3a683259778f57bfe60b37168a862f718252a18`.
 The active follow-up is [post-106 core refinement](POST_106_PLAN.md). Older execution
 batches below are historical; do not resume the merged rewrite branch.

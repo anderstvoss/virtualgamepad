@@ -39,6 +39,32 @@ pub(crate) const EV_ABS: u16 = 3;
 pub(crate) const EV_FF: u16 = 21;
 pub(crate) const SYN_REPORT: u16 = 0;
 
+#[cfg(feature = "test-support")]
+pub(crate) fn injected<D: HidDriver>(
+    driver: D,
+    session: Box<dyn NativeProviderSession>,
+) -> Result<ControllerSession<D>, ProviderError> {
+    let prepared =
+        prepare_realization(&driver, RealizationTarget::LINUX_UINPUT).map_err(|error| {
+            ProviderError::Open {
+                reason: error.to_string(),
+            }
+        })?;
+    ControllerRuntime::new(
+        driver,
+        ProviderSessionSink {
+            session,
+            closed: false,
+            close_error: None,
+        },
+        prepared,
+    )
+    .map(ControllerSession::native)
+    .map_err(|error| ProviderError::Open {
+        reason: error.to_string(),
+    })
+}
+
 pub(crate) const fn face_index(button: FaceButton) -> usize {
     match button {
         FaceButton::South => 0,
@@ -178,7 +204,7 @@ pub(crate) fn create_with_identity<D>(
 where
     D: HidDriver,
 {
-    if restored.is_some() && options.target != RealizationTarget::Uhid {
+    if restored.is_some() && options.target != RealizationTarget::LINUX_UHID_USB {
         return Err(ProviderError::Unsupported {
             reason: "identity restoration is supported only for USB/UHID".into(),
         });
@@ -210,8 +236,8 @@ where
     }
     let mut association = crate::ControllerAssociation::requested(&request.realization);
     let session: Box<dyn NativeProviderSession> = match options.target {
-        RealizationTarget::Evdev => LinuxUinputProvider.open(request)?,
-        RealizationTarget::DummyHcd => LinuxDummyHcdProvider.open(request)?,
+        RealizationTarget::LINUX_UINPUT => LinuxUinputProvider.open(request)?,
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => LinuxDummyHcdProvider.open(request)?,
         _ => {
             return Err(ProviderError::Unsupported {
                 reason: "unknown realization target".into(),
@@ -240,7 +266,7 @@ pub(crate) fn hid_realization(
     product_id: u16,
 ) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         bus_type: 0x03,
         device_name: name.into(),
         physical_path: "virtualgamepad/uhid".into(),

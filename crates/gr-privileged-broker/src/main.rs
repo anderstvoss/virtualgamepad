@@ -128,9 +128,9 @@ impl HostSessionFactory for DaemonFactory {
         _session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
         match target {
-            RealizationTarget::DummyHcd => Ok(Box::new(DummyHcdSession::open_authorized(
-                controller, &self.0,
-            )?)),
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => Ok(Box::new(
+                DummyHcdSession::open_authorized(controller, &self.0)?,
+            )),
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
     }
@@ -169,7 +169,7 @@ fn dispatch(
                 return Err(BrokerError::MalformedRequest);
             };
             let target = match target {
-                1 => RealizationTarget::DummyHcd,
+                1 => RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 _ => return Err(BrokerError::MalformedRequest),
             };
             let controller = match controller {

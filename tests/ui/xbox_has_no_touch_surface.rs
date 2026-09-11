@@ -1,7 +1,5 @@
-use virtualgamepad::{DualSenseTouchContact, Xbox360Controller};
-
-fn invalid(controller: &mut Xbox360Controller) {
-    controller.set_touch_contact(0, DualSenseTouchContact::neutral());
+use virtualgamepad::{DualSenseTouchContact, TouchSlot, Xbox360Controller};
+fn invalid(controller: &mut Xbox360Controller, contact: DualSenseTouchContact) {
+    controller.set_touch(TouchSlot::First, Some(contact));
 }
-
 fn main() {}

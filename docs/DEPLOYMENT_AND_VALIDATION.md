@@ -1,5 +1,11 @@
 # Deployment and validation
 
+The [application API](APPLICATION_API.md) exposes uinput and USB/UHID for the
+current controllers. Gadget sections below describe experimental research SPI,
+not normal root creation or a supported alpha target. No automatic fallback or
+runtime host preparation is introduced by the new application layer.
+
+
 The implemented realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.
@@ -79,7 +85,7 @@ behavior remain controller-specific acceptance criteria. Bluetooth realizations 
 
 ## Stateful UHID service and current migration boundary
 
-Applications must service `poll_output` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
+Applications must call `service` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
 
 The broker still uses its compiled startup feature path. Gate G must prove staged startup, control metadata/completion support, and latency before replacing it with unprivileged dynamic protocol handling. Do not infer gadget control-request parity from UHID tests. See [host prerequisites](architecture-overhaul/HOST_READINESS.md) and the [reviewable provisioning proposal](architecture-overhaul/HOST_PROVISIONING.md).
 

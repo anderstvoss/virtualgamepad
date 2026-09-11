@@ -190,7 +190,7 @@ impl<D: HidDriver> ControllerSession<D> {
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
         if let Backend::Native(r) = &mut self.backend {
-            if self.selection.target == gr_realization_api::RealizationTarget::Evdev {
+            if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT {
                 let result = r.with_sink(|sink| {
                     self.feedback.service(sink, &mut |event| {
                         if self.observations.len() == 32 {

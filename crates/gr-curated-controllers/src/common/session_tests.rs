@@ -341,7 +341,7 @@ fn malformed_set_completes_or_closes_in_its_consuming_cycle() {
 }
 
 fn evdev_rig<D: HidDriver>(driver: D) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
-    let prepared = prepare_realization(&driver, RealizationTarget::Evdev).unwrap();
+    let prepared = prepare_realization(&driver, RealizationTarget::LINUX_UINPUT).unwrap();
     assert!(
         prepared
             .entry()
@@ -739,7 +739,7 @@ fn evdev_face_positions<D: HidDriver>(driver: &D, west: u16, north: u16) {
     use gr_controller_contract::{DigitalControlUpdate, FaceButton};
     let selection = gr_realization_api::RealizationSelection {
         controller: driver.controller_id(),
-        target: RealizationTarget::Evdev,
+        target: RealizationTarget::LINUX_UINPUT,
     };
     for (button, code) in [
         (FaceButton::South, 304),
@@ -1165,7 +1165,7 @@ fn sony_hat_positions<D: HidDriver>(driver: &D, offset: usize) {
                 .encode(
                     gr_realization_api::RealizationSelection {
                         controller: driver.controller_id(),
-                        target: RealizationTarget::Uhid,
+                        target: RealizationTarget::LINUX_UHID_USB,
                     },
                     &state,
                 )

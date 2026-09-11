@@ -74,6 +74,7 @@ pub struct TargetRestriction {
 /// A realization is never promoted to physical fidelity merely because it
 /// advertises a familiar identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RealizationValidationStatus {
     ResearchBacked,
     HostValidated,
@@ -116,6 +117,7 @@ pub enum ControlError {
     Closed,
 }
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum CommitError {
     #[error("controller is closed")]
     Closed,
@@ -270,7 +272,7 @@ mod tests {
         }
         fn realization_manifest(&self) -> RealizationManifest {
             static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
                 },
@@ -281,9 +283,9 @@ mod tests {
     }
     #[test]
     fn independent_hardware_mode_needs_no_lower_mode() {
-        assert!(prepare_realization(&Hardware, RealizationTarget::DummyHcd).is_ok());
+        assert!(prepare_realization(&Hardware, RealizationTarget::LINUX_DUMMY_HCD_USB_HID).is_ok());
         assert!(matches!(
-            prepare_realization(&Hardware, RealizationTarget::Uhid),
+            prepare_realization(&Hardware, RealizationTarget::LINUX_UHID_USB),
             Err(ManifestError::UnsupportedTarget { .. })
         ));
     }
@@ -297,7 +299,7 @@ mod tests {
             }
             fn realization_manifest(&self) -> RealizationManifest {
                 static ENTRIES: [RealizationManifestEntry; 1] = [RealizationManifestEntry {
-                    target: RealizationTarget::Evdev,
+                    target: RealizationTarget::LINUX_UINPUT,
                     provider_requirements: ProviderRequirements {
                         requires_reverse_output: false,
                     },
@@ -309,7 +311,7 @@ mod tests {
             }
         }
         assert!(matches!(
-            prepare_realization(&InvalidAudio, RealizationTarget::Evdev),
+            prepare_realization(&InvalidAudio, RealizationTarget::LINUX_UINPUT),
             Err(ManifestError::InvalidAudioSidecar { .. })
         ));
     }

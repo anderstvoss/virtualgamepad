@@ -1,5 +1,14 @@
 # Post-106 core refinement
 
+**Current execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
+on merged PR108. It supersedes the execution order below; historical experiment
+results remain unchanged. Gate T representation is required for alpha, while its
+unavailable physical evidence remains explicitly deferred. Final API review and
+release require the maintainer's controller/demo refinement checkpoint.
+
+## Historical planning and evidence
+
+
 Baseline: merged PR #106, `d3a6832`; corpus `e65c044d062ed833ad13641f54c826db16d176e4`.
 One staged core PR and a companion corpus change. No second architecture rewrite.
 

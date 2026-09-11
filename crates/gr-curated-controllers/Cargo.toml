@@ -25,3 +25,7 @@ proptest.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# Deterministic fake-provider construction for workspace tests only; not a plugin API.
+test-support = []

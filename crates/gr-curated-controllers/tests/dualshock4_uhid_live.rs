@@ -37,7 +37,7 @@ fn repeated_application_ids_keep_three_kernel_sessions_independent() {
         .into_iter()
         .map(|session| {
             create_dualshock4(CreationOptions {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 session: RealizationSessionId(session),
             })
             .unwrap()

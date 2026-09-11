@@ -48,6 +48,7 @@ all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 
 [dependencies]
+gr-hid = { path = "crates/gr-hid", version = "0.1" }
 gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "crates/gr-controller-runtime", version = "0.1" }
 gr-realization-api = { path = "crates/gr-realization-api", version = "0.1" }
@@ -56,3 +57,11 @@ gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.
 
 [lints]
 workspace = true
+
+[features]
+default = []
+# Research/SPI only: excluded from the application API stability promise.
+experimental = []
+
+[dev-dependencies]
+gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }

@@ -7,7 +7,7 @@ use super::{
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    DualSenseState, DualSenseSurface, DualShock4State, DualShock4Surface, ProviderDiagnostics,
+    ControllerDiagnostics, DualSenseState, DualSenseSurface, DualShock4State, DualShock4Surface,
     SwitchProState, SwitchProSurface, Xbox360State, Xbox360Surface,
 };
 
@@ -21,8 +21,8 @@ pub(super) struct Editor<S, T: 'static> {
     surface: &'static T,
     edits: EditBatch,
     overflow: bool,
-    diagnostics: Option<ProviderDiagnostics>,
-    association: virtualgamepad::ControllerAssociation,
+    diagnostics: Option<ControllerDiagnostics>,
+    association: Option<virtualgamepad::ControllerAssociation>,
     streaming: bool,
     counter: u8,
 }
@@ -66,8 +66,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: Some(c.provider_diagnostics()),
-                association: c.association().clone(),
+                diagnostics: Some(c.diagnostics()),
+                association: Some(c.association().clone()),
                 streaming: false,
                 counter: 0,
             }),
@@ -76,8 +76,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: Some(c.provider_diagnostics()),
-                association: c.association().clone(),
+                diagnostics: Some(c.diagnostics()),
+                association: Some(c.association().clone()),
                 streaming: false,
                 counter: 0,
             }),
@@ -86,8 +86,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: Some(c.provider_diagnostics()),
-                association: c.association().clone(),
+                diagnostics: Some(c.diagnostics()),
+                association: Some(c.association().clone()),
                 streaming: false,
                 counter: 0,
             }),
@@ -96,8 +96,8 @@ impl Controller {
                 surface: c.surface(),
                 edits: Vec::new(),
                 overflow: false,
-                diagnostics: Some(c.provider_diagnostics()),
-                association: c.association().clone(),
+                diagnostics: Some(c.diagnostics()),
+                association: Some(c.association().clone()),
                 streaming: c.stream_enabled(),
                 counter: c.motion_report_counter(),
             }),
@@ -107,30 +107,10 @@ impl Controller {
 impl ControllerView {
     pub(super) fn lab_details(&self) -> String {
         match self {
-            Self::Xbox(c) => format!(
-                "{}: {:?}; {:?}",
-                c.association.role(),
-                c.association,
-                c.diagnostics
-            ),
-            Self::DualSense(c) => format!(
-                "{}: {:?}; {:?}",
-                c.association.role(),
-                c.association,
-                c.diagnostics
-            ),
-            Self::DualShock4(c) => format!(
-                "{}: {:?}; {:?}",
-                c.association.role(),
-                c.association,
-                c.diagnostics
-            ),
-            Self::SwitchPro(c) => format!(
-                "{}: {:?}; {:?}",
-                c.association.role(),
-                c.association,
-                c.diagnostics
-            ),
+            Self::Xbox(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
         }
     }
     pub(super) fn release_inputs(&mut self) -> Result<(), String> {
@@ -343,7 +323,7 @@ impl DualSenseEditor {
                 .map_err(|error| error.to_string())
         }))
     }
-    pub(super) fn provider_diagnostics(&self) -> &ProviderDiagnostics {
+    pub(super) fn diagnostics(&self) -> &ControllerDiagnostics {
         self.diagnostics
             .as_ref()
             .expect("DualSense diagnostics snapshot")
@@ -524,7 +504,7 @@ mod tests {
             edits: Vec::new(),
             overflow: false,
             diagnostics: None,
-            association: virtualgamepad::ControllerAssociation::default(),
+            association: None,
             streaming: false,
             counter: 0,
         };

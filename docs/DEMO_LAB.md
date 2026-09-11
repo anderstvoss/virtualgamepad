@@ -7,14 +7,14 @@ The demo does not install prerequisites or alter permissions.
 
 ## Controls and observations
 
-Choose the controller family and realization, enter a name and application
-session ID, then create it. Disable **Advance ID after creation** to create
-multiple devices with the same application ID; their kernel identities remain
-creation-owned. IDs wrap after the maximum u64 value. This is an application-ID
-stress tool, not a physical-identity override.
+Choose the controller family and realization, optionally enter a name, then
+create it. **Lab notes and gate prerequisites** contains a **Lab correlation ID**
+for grouping observations. Disable **Advance ID after creation** to reuse that
+label. Lab labels wrap after the maximum u64 value; library creation tokens do
+not wrap. Reusing a label does not reuse controller identity or session ownership.
 
 Select any controller to exercise its existing button, axis, motion, battery and
-touch controls where supported. The lab panel shows its realization, session ID,
+touch controls where supported. The lab panel shows its realization, lab correlation ID,
 worker service-cycle count, maximum observed service gap and omitted worker log
 count. These are process observations, not end-to-end latency or consumer passes.
 Optional log loss includes worker backlog eviction and busy display snapshots;
@@ -38,8 +38,9 @@ while GUI drawing or optional display consumption stalls. This is not a hard
 realtime guarantee. Live GUI/consumer acceptance remains separate from fake-worker
 tests; do not repeat touch injection on the active desktop.
 
-**Check broker socket** runs only when clicked. A reachable socket is merely
-connectivity evidence; it does not validate Gate G or authorize gadget resources.
+Gadget selection is disabled in this application demo. The compiled gadget
+profiles remain experimental research interfaces pending Gate G; a reachable
+broker socket does not establish request handling or controller support.
 
 ## Safe experiment order and next gates
 
@@ -47,7 +48,7 @@ connectivity evidence; it does not validate Gate G or authorize gadget resources
    the measured UHID profile. Record virtual observations separately from the
    physical DualSense, Xbox Series or Steam Controller reference. Xbox Series is
    not an Xbox 360 fidelity reference; record the Steam Controller generation.
-2. For concurrent-session tests, reuse an application ID, remove a middle device,
+2. For concurrent-session tests, reuse a lab correlation ID, remove a middle device,
    and observe continuing service on the others. Keep each consumer selection exact.
 3. Touch injection needs an isolated consumer environment. Do not use this active
    desktop to repeat EXP-0012. A separate VM clone with no desktop consumer of the
@@ -63,8 +64,10 @@ connectivity evidence; it does not validate Gate G or authorize gadget resources
    before those gates pass.
 
 Other families remain best-effort. See the [physical validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md)
-and [gate ledger](architecture-overhaul/GATE_STATUS.md). This GUI increment was
-validated with fake controllers and compilation, not a live desktop run.
+and [gate ledger](architecture-overhaul/GATE_STATUS.md). Deterministic worker tests
+and selected live UHID lifecycle checks have passed; interactive controller and
+consumer acceptance remains pending. See the
+[current refinement evidence](CURRENT_CONTROLLER_REFINEMENT.md).
 
 Face buttons show printed labels and spatial positions (Nintendo B is South).
 Stick pads now reach both signed endpoints, and Sony unsigned conversions preserve
@@ -83,7 +86,8 @@ and save a `DualSenseIdentity` or `DualShock4Identity`, create with the correspo
 identity. Record actual removal, fresh physical-path identity, stable pairing/uniq
 and consumer association separately. Use a different identity for each concurrently
 connected logical controller. No physical DualSense is required for deterministic
-session tests; live Linux/consumer reconnect acceptance is still pending.
+session tests. The root UHID identity-restoration test has passed on the prepared
+host; consumer reconnect/association behavior still requires hands-on evidence.
 
 
 ### Comparing Eden and Steam mappings
@@ -110,8 +114,9 @@ battery metadata, identity, protocol state and host-owned rumble/LED state. The
 button waits for the previous accepted edit; it cannot overtake a press. The UI
 skips other control edits that frame so stale touch state is not reasserted.
 
-Lab record v2 has separate consumer build, backend and mapping fields, plus the
-selected component role, requested creation labels and any cached host observation.
+Lab record v3 separates the lab correlation ID from library creation identity.
+It includes consumer build, backend and mapping fields, plus component roles,
+requested creation labels and any cached host observations.
 A cached path is historical: verify identity and ancestry after re-enumeration.
 After removal, **Copy cleanup diagnostics** preserves the last returned controller's
 terminal state and any cleanup error. A worker that returns no controller is

@@ -101,6 +101,11 @@ impl DualShock4TouchSlot {
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DualShock4Control {
+    Cross,
+    Circle,
+    Square,
+    Triangle,
+
     L1,
     R1,
     Share,
@@ -171,8 +176,40 @@ impl DualShock4State {
     pub const fn touch(&self, slot: DualShock4TouchSlot) -> Option<DualShock4TouchContact> {
         self.touches[slot.index()]
     }
+    /// Current accepted value of a controller-native button.
+    #[must_use]
+    pub const fn native_pressed(&self, control: DualShock4Control) -> bool {
+        match control {
+            DualShock4Control::Cross => self.face[0],
+            DualShock4Control::Circle => self.face[1],
+            DualShock4Control::Square => self.face[2],
+            DualShock4Control::Triangle => self.face[3],
+            DualShock4Control::L1 => self.buttons[0],
+            DualShock4Control::R1 => self.buttons[1],
+            DualShock4Control::Share => self.buttons[2],
+            DualShock4Control::Options => self.buttons[3],
+            DualShock4Control::PlayStation => self.buttons[4],
+            DualShock4Control::TouchpadClick => self.buttons[5],
+            DualShock4Control::LeftStickPress => self.buttons[6],
+            DualShock4Control::RightStickPress => self.buttons[7],
+        }
+    }
+    /// Current accepted D-pad direction, before realization-specific encoding.
+    #[must_use]
+    pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
+        self.dpad[common::dpad_index(direction)]
+    }
+    /// Current accepted spatial face button, independent of printed labels.
+    #[must_use]
+    pub const fn face_pressed(&self, button: gr_controller_contract::FaceButton) -> bool {
+        self.face[common::face_index(button)]
+    }
     fn set_native(&mut self, control: DualShock4Control, pressed: bool) {
         match control {
+            DualShock4Control::Cross => self.face[0] = pressed,
+            DualShock4Control::Circle => self.face[1] = pressed,
+            DualShock4Control::Square => self.face[2] = pressed,
+            DualShock4Control::Triangle => self.face[3] = pressed,
             DualShock4Control::L1 => self.buttons[0] = pressed,
             DualShock4Control::R1 => self.buttons[1] = pressed,
             DualShock4Control::Share => self.buttons[2] = pressed,
@@ -395,7 +432,7 @@ static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
 ];
 static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Evdev,
+        target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -405,7 +442,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static HID_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -415,7 +452,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: ControllerSurface {
-        target: RealizationTarget::DummyHcd,
+        target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -432,21 +469,21 @@ impl RealizationControllerDefinition for DualShock4Definition {
     fn realization_manifest(&self) -> RealizationManifest {
         static ENTRIES: [RealizationManifestEntry; 3] = [
             RealizationManifestEntry {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -484,7 +521,9 @@ impl TargetAwareControllerDriver for DualShock4Definition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
+            RealizationTarget::LINUX_UINPUT
+                | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             Ok(())
         } else {
@@ -496,11 +535,11 @@ impl TargetAwareControllerDriver for DualShock4Definition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<ProviderFrame, ControlError> {
-        if selection.target == RealizationTarget::Evdev {
+        if selection.target == RealizationTarget::LINUX_UINPUT {
             return Ok(ds4_evdev_frame(state));
         }
         let frame = ds4_frame(state);
-        if selection.target == RealizationTarget::Uhid {
+        if selection.target == RealizationTarget::LINUX_UHID_USB {
             let ProviderFrame::HidInput {
                 report_id: Some(id),
                 bytes,
@@ -712,7 +751,7 @@ fn features(identity: [u8; 6]) -> BTreeMap<NativeHidReportKey, Vec<u8>> {
 }
 fn hid(_session: RealizationSessionId) -> NativeControllerRealization {
     NativeControllerRealization::Uhid(NativeHidRealization {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         bus_type: 3,
         // Match the product name advertised by a physical DS4 and OpenPuck.
         device_name: "Wireless Controller".into(),
@@ -794,8 +833,8 @@ impl DualShock4Controller {
     #[must_use]
     pub fn surface(&self) -> &'static DualShock4Surface {
         match self.0.selection().target {
-            RealizationTarget::Evdev => &EVDEV_SURFACE,
-            RealizationTarget::Uhid => &HID_SURFACE,
+            RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
+            RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -915,6 +954,7 @@ pub enum DualShock4OutputEvent {
     Other,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DualShock4HidOutput {
     UsbOutput {
         raw: Vec<u8>,
@@ -1029,9 +1069,9 @@ fn create_dualshock4_inner(
     identity: Option<DualShock4Identity>,
 ) -> Result<DualShock4Controller, ProviderError> {
     let mut realization = match options.target {
-        RealizationTarget::Evdev => evdev_realization(),
-        RealizationTarget::Uhid => hid(options.session),
-        RealizationTarget::DummyHcd => {
+        RealizationTarget::LINUX_UINPUT => evdev_realization(),
+        RealizationTarget::LINUX_UHID_USB => hid(options.session),
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: CompiledControllerKind::DualShock4,
             })
@@ -1054,7 +1094,7 @@ fn create_dualshock4_inner(
     )?;
     if matches!(
         options.target,
-        RealizationTarget::Uhid | RealizationTarget::DummyHcd
+        RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
     ) {
         c.commit().map_err(|e| ProviderError::Open {
             reason: e.to_string(),
@@ -1108,6 +1148,15 @@ impl common::HidDriver for DualShock4Definition {
     }
 }
 
+/// Workspace test seam. Never opens a real provider or accepts runtime profiles.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_controller(
+    session: Box<dyn gr_realization_api::NativeProviderSession>,
+) -> Result<DualShock4Controller, ProviderError> {
+    common::injected(DualShock4Definition, session).map(DualShock4Controller)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1151,7 +1200,10 @@ mod tests {
             if let Some(identity) = restored {
                 assert_eq!(identity.to_bytes(), bytes);
                 assert!(identity.unique_id().len() < 64);
-                for target in [RealizationTarget::Evdev, RealizationTarget::DummyHcd] {
+                for target in [
+                    RealizationTarget::LINUX_UINPUT,
+                    RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                ] {
                     assert!(matches!(
                         create_dualshock4_with_identity(
                             CreationOptions {
@@ -1210,7 +1262,7 @@ mod tests {
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
             controller: DualShock4Definition.controller_id(),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
             (DualShock4Control::TouchpadClick, 704),
@@ -1244,7 +1296,7 @@ mod tests {
         assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
         let selection = RealizationSelection {
             controller: DualShock4Definition.controller_id(),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         for (left, right, expected) in [
             (0, 0, vec![]),
@@ -1361,7 +1413,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: DualShock4Definition.controller_id(),
-                    target: RealizationTarget::DummyHcd,
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &DualShock4State::default(),
             )
@@ -1374,7 +1426,7 @@ mod tests {
                 .realization_manifest()
                 .entries()
                 .iter()
-                .any(|entry| entry.target == RealizationTarget::DummyHcd)
+                .any(|entry| entry.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID)
         );
     }
 
@@ -1382,7 +1434,7 @@ mod tests {
     #[ignore = "requires the installed root-owned DummyHcd broker"]
     fn dummy_hcd_broker_opens_and_delivers_the_initial_ds4_report() {
         let mut controller = create_dualshock4(CreationOptions {
-            target: RealizationTarget::DummyHcd,
+            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             session: RealizationSessionId(0x4453_3401),
         })
         .expect("open DS4 through the privileged broker");
@@ -1395,7 +1447,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: DualShock4Definition.controller_id(),
-                    target: RealizationTarget::Uhid,
+                    target: RealizationTarget::LINUX_UHID_USB,
                 },
                 &DualShock4State::default(),
             )
@@ -1409,7 +1461,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: DualShock4Definition.controller_id(),
-                    target: RealizationTarget::Evdev,
+                    target: RealizationTarget::LINUX_UINPUT,
                 },
                 &DualShock4State::default(),
             )
@@ -1512,7 +1564,10 @@ mod tests {
             assert_eq!(host_active, touches.map(|contact| contact.is_some()));
             assert_eq!(bytes[32], 1);
             assert_eq!(usize::from(bytes[33]), sequence);
-            for target in [RealizationTarget::Uhid, RealizationTarget::DummyHcd] {
+            for target in [
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            ] {
                 let encoded = DualShock4Definition
                     .encode(
                         RealizationSelection {

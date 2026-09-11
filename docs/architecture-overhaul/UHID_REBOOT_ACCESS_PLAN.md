@@ -1,5 +1,14 @@
 # UHID access after reboot: research review and resolution plan
 
+**Current status: complete.** After PR108, the maintainer confirmed that post-reboot
+UHID creation and cleanup work with the installed boot policy. This removes the
+reboot issue from active blockers. That confirmation is separate from the original
+agent observations below; this update did not perform another reboot.
+See the [active pre-alpha ledger](PRE_ALPHA_STATUS.md).
+
+## Historical diagnosis before maintainer reboot acceptance
+
+
 Status: GUI recovery confirmed by the user; persistent boot configuration
 installed and verified. Reboot acceptance remains pending.
 Reviewed against `e0fb72196bf8d45c23b9b11a7dc5113125f06099` (post-107 main).

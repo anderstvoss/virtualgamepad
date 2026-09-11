@@ -10,7 +10,7 @@ use std::io::ErrorKind;
 pub struct LinuxUinputProvider;
 impl NativeProviderFactory for LinuxUinputProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(RealizationTarget::Evdev, true)
+        ProviderCapabilities::for_target(RealizationTarget::LINUX_UINPUT, true)
     }
     fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
         LiveLinuxIoFactory.preflight(request)
@@ -73,7 +73,7 @@ trait LinuxIo: Send {
 struct LiveLinuxIoFactory;
 impl LinuxIoFactory for LiveLinuxIoFactory {
     fn preflight(&self, _: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
-        check_device_node(RealizationTarget::Evdev, "/dev/uinput")
+        check_device_node(RealizationTarget::LINUX_UINPUT, "/dev/uinput")
     }
     fn open(
         &self,
@@ -708,7 +708,7 @@ mod integration_tests {
             session: RealizationSessionId(1),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uinput.integration"),
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -862,7 +862,7 @@ mod seam_tests {
             session: RealizationSessionId(7),
             selection: RealizationSelection {
                 controller: ControllerId::new("test.uinput"),
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
             },
             requirements: ProviderRequirements::default(),
             realization: NativeControllerRealization::Evdev(NativeEvdevRealization {
@@ -896,7 +896,7 @@ mod seam_tests {
         let provider = LinuxUinputProvider;
         let denied = FailingFactory {
             preflight: Some(ProviderPreflightError::AccessDenied {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 path: "/dev/uinput".into(),
             }),
             open: None,

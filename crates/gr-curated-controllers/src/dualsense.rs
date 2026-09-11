@@ -207,6 +207,30 @@ impl DualSenseState {
     pub const fn face_pressed(&self, button: FaceButton) -> bool {
         self.face[common::face_index(button)]
     }
+    /// Current accepted value of a controller-native button.
+    #[must_use]
+    pub const fn native_pressed(&self, control: DualSenseControl) -> bool {
+        match control {
+            DualSenseControl::Cross => self.face[0],
+            DualSenseControl::Circle => self.face[1],
+            DualSenseControl::Square => self.face[2],
+            DualSenseControl::Triangle => self.face[3],
+            DualSenseControl::L1 => self.buttons[0],
+            DualSenseControl::R1 => self.buttons[1],
+            DualSenseControl::Create => self.buttons[2],
+            DualSenseControl::Options => self.buttons[3],
+            DualSenseControl::PlayStation => self.buttons[4],
+            DualSenseControl::TouchpadClick => self.buttons[5],
+            DualSenseControl::MicrophoneMute => self.buttons[8],
+            DualSenseControl::LeftStickPress => self.buttons[6],
+            DualSenseControl::RightStickPress => self.buttons[7],
+        }
+    }
+    /// Current accepted D-pad direction, before realization-specific encoding.
+    #[must_use]
+    pub const fn dpad_pressed(&self, direction: gr_controller_contract::DpadDirection) -> bool {
+        self.dpad[common::dpad_index(direction)]
+    }
     fn set_native(&mut self, control: DualSenseControl, pressed: bool) {
         match control {
             DualSenseControl::Cross => self.face[0] = pressed,
@@ -448,7 +472,7 @@ static HID_RESTRICTIONS: [TargetRestriction; 2] = [
 ];
 static SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Evdev,
+        target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -458,7 +482,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
 };
 static HID_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -478,7 +502,7 @@ static USB_RESTRICTIONS: [TargetRestriction; 2] = [
 ];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
-        target: RealizationTarget::DummyHcd,
+        target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
         axes: &AXES,
@@ -488,7 +512,10 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
 };
 
 const fn motion_targets() -> RealizationTargetSet {
-    RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
+    RealizationTargetSet::new(&[
+        RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+    ])
 }
 
 const fn supports_motion(target: RealizationTarget) -> bool {
@@ -503,21 +530,21 @@ impl RealizationControllerDefinition for DualSenseDefinition {
     fn realization_manifest(&self) -> RealizationManifest {
         static ENTRIES: [RealizationManifestEntry; 3] = [
             RealizationManifestEntry {
-                target: RealizationTarget::Evdev,
+                target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::Uhid,
+                target: RealizationTarget::LINUX_UHID_USB,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
             RealizationManifestEntry {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -555,7 +582,9 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
     ) -> Result<(), ControlError> {
         if matches!(
             selection.target,
-            RealizationTarget::Evdev | RealizationTarget::Uhid | RealizationTarget::DummyHcd
+            RealizationTarget::LINUX_UINPUT
+                | RealizationTarget::LINUX_UHID_USB
+                | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
         ) {
             Ok(())
         } else {
@@ -567,10 +596,10 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
-        if selection.target == RealizationTarget::Uhid {
+        if selection.target == RealizationTarget::LINUX_UHID_USB {
             return Ok(dualsense_hid_input_report(state));
         }
-        if selection.target == RealizationTarget::DummyHcd {
+        if selection.target == RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
             let ProviderFrame::HidInput {
                 report_id: Some(report_id),
                 mut bytes,
@@ -832,6 +861,7 @@ pub enum DualSenseOutputEvent {
 /// adaptive-trigger and advanced-haptic effects that SDL does not model with a
 /// portable semantic API.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DualSenseHidOutput {
     UsbOutput {
         raw: Vec<u8>,
@@ -911,8 +941,8 @@ impl DualSenseController {
     #[must_use]
     pub fn surface(&self) -> &'static DualSenseSurface {
         match self.0.selection().target {
-            RealizationTarget::Uhid => &HID_SURFACE,
-            RealizationTarget::DummyHcd => &USB_SURFACE,
+            RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &USB_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -1213,7 +1243,7 @@ fn hid_realization(_session: RealizationSessionId) -> NativeControllerRealizatio
     // USB HID report structure is based on public research and the Linux
     // DualSense driver; physical comparison remains required for promotion.
     NativeControllerRealization::Uhid(NativeHidRealization {
-        target: RealizationTarget::Uhid,
+        target: RealizationTarget::LINUX_UHID_USB,
         bus_type: 0x03,
         device_name: "DualSense Wireless Controller".into(),
         physical_path: "virtualgamepad/uhid/dualsense".into(),
@@ -1287,9 +1317,9 @@ fn create_dualsense_inner(
     identity: Option<DualSenseIdentity>,
 ) -> Result<DualSenseController, ProviderError> {
     let mut realization = match options.target {
-        RealizationTarget::Evdev => realization(),
-        RealizationTarget::Uhid => hid_realization(options.session),
-        RealizationTarget::DummyHcd => {
+        RealizationTarget::LINUX_UINPUT => realization(),
+        RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
                 controller: CompiledControllerKind::DualSense,
             })
@@ -1318,6 +1348,15 @@ fn create_dualsense_inner(
         reason: format!("send initial DualSense input report: {error}"),
     })?;
     Ok(DualSenseController(controller))
+}
+
+/// Workspace test seam. Never opens a real provider or accepts runtime profiles.
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub fn test_controller(
+    session: Box<dyn gr_realization_api::NativeProviderSession>,
+) -> Result<DualSenseController, ProviderError> {
+    common::injected(DualSenseDefinition, session).map(DualSenseController)
 }
 
 #[cfg(test)]
@@ -1361,7 +1400,10 @@ mod tests {
             if let Some(identity) = restored {
                 assert_eq!(identity.to_bytes(), bytes);
                 assert!(identity.unique_id().len() < 64);
-                for target in [RealizationTarget::Evdev, RealizationTarget::DummyHcd] {
+                for target in [
+                    RealizationTarget::LINUX_UINPUT,
+                    RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                ] {
                     assert!(matches!(
                         create_dualsense_with_identity(
                             CreationOptions {
@@ -1406,7 +1448,7 @@ mod tests {
     fn evdev_auxiliary_buttons_do_not_alias_stick_presses() {
         let selection = RealizationSelection {
             controller: DualSenseDefinition.controller_id(),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         for (control, code) in [
             (DualSenseControl::TouchpadClick, 704),
@@ -1441,7 +1483,7 @@ mod tests {
         assert!(spec.key_codes.contains(&312) && spec.key_codes.contains(&313));
         let selection = RealizationSelection {
             controller: DualSenseDefinition.controller_id(),
-            target: RealizationTarget::Evdev,
+            target: RealizationTarget::LINUX_UINPUT,
         };
         for (left, right, expected) in [
             (0, 0, vec![]),
@@ -1551,7 +1593,7 @@ mod tests {
             HID_SURFACE.common.validation_status,
             RealizationValidationStatus::ResearchBacked
         );
-        assert_eq!(HID_SURFACE.common.target, RealizationTarget::Uhid);
+        assert_eq!(HID_SURFACE.common.target, RealizationTarget::LINUX_UHID_USB);
     }
 
     #[test]
@@ -1589,7 +1631,7 @@ mod tests {
             .encode(
                 RealizationSelection {
                     controller: DualSenseDefinition.controller_id(),
-                    target: RealizationTarget::DummyHcd,
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 },
                 &state,
             )
@@ -1601,12 +1643,15 @@ mod tests {
 
     #[test]
     fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
-        assert!(supports_motion(RealizationTarget::Uhid));
-        assert!(supports_motion(RealizationTarget::DummyHcd));
-        assert!(!supports_motion(RealizationTarget::Evdev));
+        assert!(supports_motion(RealizationTarget::LINUX_UHID_USB));
+        assert!(supports_motion(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
+        assert!(!supports_motion(RealizationTarget::LINUX_UINPUT));
         assert_eq!(
             motion_targets(),
-            RealizationTargetSet::new(&[RealizationTarget::Uhid, RealizationTarget::DummyHcd])
+            RealizationTargetSet::new(&[
+                RealizationTarget::LINUX_UHID_USB,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+            ])
         );
     }
 

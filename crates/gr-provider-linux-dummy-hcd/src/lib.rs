@@ -11,13 +11,13 @@ pub struct LinuxDummyHcdProvider;
 
 impl NativeProviderFactory for LinuxDummyHcdProvider {
     fn capabilities(&self) -> ProviderCapabilities {
-        ProviderCapabilities::for_target(RealizationTarget::DummyHcd, true)
+        ProviderCapabilities::for_target(RealizationTarget::LINUX_DUMMY_HCD_USB_HID, true)
     }
 
     fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
         if !cfg!(target_os = "linux") {
             return Err(ProviderPreflightError::UnsupportedPlatform {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             });
         }
         compiled_controller(request)?;
@@ -36,7 +36,7 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
         let controller = compiled_controller(&request).map_err(ProviderError::Preflight)?;
         let mut broker = BrokerClient::connect().map_err(open_error)?;
         let broker_session = broker
-            .open(RealizationTarget::DummyHcd, controller)
+            .open(RealizationTarget::LINUX_DUMMY_HCD_USB_HID, controller)
             .map_err(open_error)?;
         Ok(Box::new(Session {
             broker,
@@ -60,7 +60,7 @@ fn compiled_controller(
             Ok(*controller)
         }
         _ => Err(ProviderPreflightError::MissingDeviceNode {
-            target: RealizationTarget::DummyHcd,
+            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             path: BROKER_SOCKET_PATH.into(),
         }),
     }
@@ -81,12 +81,12 @@ fn preflight_error(error: BrokerClientError) -> ProviderPreflightError {
             if error.kind() == std::io::ErrorKind::PermissionDenied =>
         {
             ProviderPreflightError::AccessDenied {
-                target: RealizationTarget::DummyHcd,
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 path: BROKER_SOCKET_PATH.into(),
             }
         }
         _ => ProviderPreflightError::MissingDeviceNode {
-            target: RealizationTarget::DummyHcd,
+            target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
             path: BROKER_SOCKET_PATH.into(),
         },
     }
