@@ -5,6 +5,7 @@ fn main() -> Result<(), eframe::Error> {
     let native_options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_title("virtualgamepad Demo GUI")
+            .with_app_id("virtualgamepad-demo")
             .with_decorations(true)
             .with_minimize_button(true)
             .with_maximize_button(true)
