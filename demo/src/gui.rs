@@ -1043,6 +1043,11 @@ impl eframe::App for App {
                 })
             .show(ui, |ui| {
             ui.horizontal_top(|ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("sidebar_scroll")
+                    .max_height(ctx.screen_rect().height())
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.set_width(SIDEBAR_WIDTH);
                     ui.set_min_width(SIDEBAR_WIDTH);
@@ -1132,10 +1137,6 @@ impl eframe::App for App {
                         - CONTROLLER_DELETE_WIDTH
                         - (row_spacing * 2.0))
                         .max(40.0);
-                    egui::Frame::NONE
-                        .fill(Color32::from_gray(20))
-                        .inner_margin(egui::Margin::same(4))
-                        .show(ui, |ui| {
                     ui.set_width(controller_surface_width);
                     ui.horizontal(|ui| {
                         let chip_width =
@@ -1168,17 +1169,22 @@ impl eframe::App for App {
                         {
                             self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
                         }
-                    });
-                    egui::ScrollArea::vertical()
-                        .id_salt("controller_list")
-                        .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
-                        .max_height(list_height)
-                        .auto_shrink([false, false])
+                        });
+                    egui::Frame::NONE
+                        .fill(Color32::from_gray(20))
+                        .inner_margin(egui::Margin::same(4))
                         .show(ui, |ui| {
                             ui.set_width(controller_surface_width);
-                            ui.scope(|ui| {
-                                ui.spacing_mut().item_spacing.x = 1.0;
-                            for index in controller_tab_indices(self.controllers.len()) {
+                            egui::ScrollArea::vertical()
+                                .id_salt("controller_list")
+                                .min_scrolled_height(CONTROLLER_ROW_HEIGHT * 4.0)
+                                .max_height(list_height)
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.set_width(controller_surface_width);
+                                    ui.scope(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 1.0;
+                                        for index in controller_tab_indices(self.controllers.len()) {
                                 let controller = &self.controllers[index];
                                 let active = self.selected_controller == Some(index);
                                 let label = match self.controller_label_mode {
@@ -1188,6 +1194,8 @@ impl eframe::App for App {
                                     }
                                 };
                                 ui.horizontal(|ui| {
+                                    ui.set_min_width(controller_surface_width);
+                                    ui.set_max_width(controller_surface_width);
                                     ui.add_sized(
                                         [CONTROLLER_NUMBER_WIDTH, CONTROLLER_ROW_HEIGHT],
                                         egui::Label::new(format!("{}", index + 1)),
@@ -1224,10 +1232,10 @@ impl eframe::App for App {
                                         self.pending_cleanup = Some(CleanupRequest::One(index));
                                     }
                                 });
-                            }
+                                        }
+                                    });
+                                });
                             });
-                        });
-                    });
                     if ui
                         .add_sized(
                             [ui.available_width(), 22.0],
@@ -1293,7 +1301,13 @@ impl eframe::App for App {
                         },
                     );
                 });
+                    });
                 ui.separator();
+                egui::ScrollArea::vertical()
+                    .id_salt("live_controller_scroll")
+                    .max_height(ctx.screen_rect().height())
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.set_min_width(448.0);
                     ui.heading("Live controllers");
@@ -1386,6 +1400,7 @@ impl eframe::App for App {
                             ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
                         });
                 });
+                    });
                 });
             });
         });
