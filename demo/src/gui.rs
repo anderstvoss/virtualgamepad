@@ -1355,7 +1355,7 @@ impl eframe::App for App {
                         );
                     }
                     ui.painter().text(
-                        advanced_rect.left_center() + egui::vec2(6.0, 0.0),
+                        advanced_rect.left_center() + egui::vec2(24.0, 0.0),
                         egui::Align2::LEFT_CENTER,
                         advanced_label,
                         egui::TextStyle::Button.resolve(ui.style()),
@@ -1366,8 +1366,8 @@ impl eframe::App for App {
                         },
                     );
                     let arrow_rect = egui::Rect::from_min_max(
-                        Pos2::new(advanced_rect.right() - 18.0, advanced_rect.top()),
-                        advanced_rect.right_bottom(),
+                        advanced_rect.left_top(),
+                        Pos2::new(advanced_rect.left() + 18.0, advanced_rect.bottom()),
                     );
                     paint_spinbox_arrow(
                         ui,
@@ -1452,10 +1452,14 @@ impl eframe::App for App {
                         }
                         },
                     );
-                    egui::Frame::NONE
-                        .fill(Color32::from_gray(20))
-                        .inner_margin(egui::Margin::same(4))
-                        .show(ui, |ui| {
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(SIDEBAR_WIDTH, list_height + 8.0),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            egui::Frame::NONE
+                                .fill(Color32::from_gray(20))
+                                .inner_margin(egui::Margin::same(4))
+                                .show(ui, |ui| {
                     ui.set_width(controller_surface_width);
                     egui::ScrollArea::vertical()
                         .id_salt("controller_list")
@@ -1528,8 +1532,10 @@ impl eframe::App for App {
                                 );
                             }
                             });
-                        });
-                    });
+                                });
+                            });
+                        },
+                    );
                     let stop_all_clicked = ui
                         .add_sized(
                             [ui.available_width(), 22.0],
