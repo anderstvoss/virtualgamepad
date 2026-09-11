@@ -40,7 +40,6 @@ const SIDEBAR_FIXED_HEIGHT: f32 = 360.0;
 const CREATE_COUNT_SPINBOX_MIN_WIDTH: f32 = 34.0;
 const CREATE_COUNT_SPINBOX_MAX_WIDTH: f32 = 58.0;
 const CREATE_COUNT_SPINBOX_DIGIT_WIDTH: f32 = 8.0;
-const CREATE_COUNT_SPINBOX_TEXT_MARGIN_WIDTH: f32 = 24.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -227,14 +226,6 @@ fn create_count_spinbox_width(value: u32) -> f32 {
     }
 }
 
-fn create_count_spinbox_text_width(spinbox_width: f32) -> f32 {
-    spinbox_width - CREATE_COUNT_SPINBOX_TEXT_MARGIN_WIDTH
-}
-
-fn default_name_input_width(row_width: f32, count_width: f32, spacing: f32) -> f32 {
-    (row_width - count_width - spacing).max(40.0)
-}
-
 fn spinbox_arrow_rects(rect: egui::Rect, arrow_width: f32) -> (egui::Rect, egui::Rect) {
     let arrow_left = rect.right() - arrow_width;
     (
@@ -284,7 +275,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     let text_response = ui.add_sized(
         [spinbox_width, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
-            .desired_width(create_count_spinbox_text_width(spinbox_width))
+            .desired_width(spinbox_width)
             .horizontal_align(egui::Align::RIGHT)
             .vertical_align(egui::Align::Center)
             .margin(egui::Margin {
@@ -297,11 +288,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     );
     if text_response.changed() {
         if let Ok(parsed) = text.trim().parse::<u32>() {
-            let new_value = parsed.max(1);
-            if *value != new_value {
-                *value = new_value;
-                ui.ctx().request_repaint();
-            }
+            *value = parsed.max(1);
             if parsed == 0 {
                 text = value.to_string();
             }
@@ -316,19 +303,11 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
     paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
     if increment_response.clicked() {
-        let new_value = step_create_count(*value, true);
-        if *value != new_value {
-            *value = new_value;
-            ui.ctx().request_repaint();
-        }
+        *value = step_create_count(*value, true);
         text = value.to_string();
     }
     if decrement_response.clicked() {
-        let new_value = step_create_count(*value, false);
-        if *value != new_value {
-            *value = new_value;
-            ui.ctx().request_repaint();
-        }
+        *value = step_create_count(*value, false);
         text = value.to_string();
     }
     let response = text_response
@@ -1264,66 +1243,33 @@ impl eframe::App for App {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         let name_is_default = self.name_draft.trim().is_empty();
                         let clear_width = 18.0;
-                        if name_is_default {
-                            let row_width = ui.available_width();
-                            let spacing = ui.spacing().item_spacing.x;
-                            ui.allocate_ui_with_layout(
-                                Vec2::new(row_width, 22.0),
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    let count_control_width =
-                                        create_count_spinbox_width(self.create_count);
-                                    ui.allocate_ui_with_layout(
-                                        Vec2::new(count_control_width, 22.0),
-                                        egui::Layout::right_to_left(egui::Align::Center),
-                                        |ui| {
-                                            create_count_spinbox(ui, &mut self.create_count);
-                                        },
-                                    );
-                                    let edit_width = default_name_input_width(
-                                        row_width,
-                                        count_control_width,
-                                        spacing,
-                                    );
-                                    ui.add_sized(
-                                        [edit_width, 22.0],
-                                        egui::TextEdit::singleline(&mut self.name_draft)
-                                            .hint_text(default_name)
-                                            .desired_width(edit_width)
-                                            .horizontal_align(egui::Align::LEFT)
-                                            .vertical_align(egui::Align::Center)
-                                            .margin(egui::Margin {
-                                                left: 4,
-                                                right: 22,
-                                                top: 2,
-                                                bottom: 2,
-                                            }),
-                                    )
-                                    .on_hover_text(
-                                        "Optional name. Leave empty for the automatic controller name.",
-                                    );
-                                },
-                            );
+                        let count_control_width = create_count_spinbox_width(self.create_count);
+                        let edit_width = if name_is_default {
+                            (ui.available_width()
+                                - count_control_width
+                                - ui.spacing().item_spacing.x)
+                                .max(40.0)
                         } else {
-                            let edit_width = ui.available_width();
-                            let name_response = ui
-                                .add_sized(
-                                    [edit_width, 22.0],
-                                    egui::TextEdit::singleline(&mut self.name_draft)
-                                        .hint_text(default_name)
-                                        .desired_width(edit_width)
-                                        .horizontal_align(egui::Align::LEFT)
-                                        .vertical_align(egui::Align::Center)
-                                        .margin(egui::Margin {
-                                            left: 4,
-                                            right: 22,
-                                            top: 2,
-                                            bottom: 2,
-                                        }),
-                                )
-                                .on_hover_text(
-                                    "Optional name. Leave empty for the automatic controller name.",
-                                );
+                            ui.available_width()
+                        };
+                        let name_response = ui
+                            .add_sized(
+                                [edit_width, 22.0],
+                                egui::TextEdit::singleline(&mut self.name_draft)
+                                    .hint_text(default_name)
+                                    .desired_width(edit_width)
+                                    .vertical_align(egui::Align::Center)
+                                    .margin(egui::Margin {
+                                        left: 4,
+                                        right: 22,
+                                        top: 2,
+                                        bottom: 2,
+                                    }),
+                            )
+                            .on_hover_text(
+                                "Optional name. Leave empty for the automatic controller name.",
+                            );
+                        if !name_is_default {
                             let clear_rect = egui::Rect::from_min_max(
                                 Pos2::new(name_response.rect.right() - clear_width, name_response.rect.top()),
                                 name_response.rect.right_bottom(),
@@ -1340,6 +1286,15 @@ impl eframe::App for App {
                             {
                                 self.name_draft.clear();
                             }
+                        }
+                        if name_is_default {
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(count_control_width, 22.0),
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    create_count_spinbox(ui, &mut self.create_count);
+                                },
+                            );
                         }
                     });
                     if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID {
@@ -3099,37 +3054,6 @@ mod tests {
             (create_count_spinbox_width(10_000) - CREATE_COUNT_SPINBOX_MAX_WIDTH).abs()
                 < f32::EPSILON
         );
-    }
-
-    #[test]
-    fn compact_count_spinboxes_reserve_only_their_outer_width() {
-        assert!(
-            (create_count_spinbox_text_width(create_count_spinbox_width(1)) - 10.0).abs()
-                < f32::EPSILON
-        );
-        assert!(
-            (create_count_spinbox_text_width(create_count_spinbox_width(10)) - 18.0).abs()
-                < f32::EPSILON
-        );
-        assert!(
-            (create_count_spinbox_text_width(create_count_spinbox_width(9_999)) - 34.0).abs()
-                < f32::EPSILON
-        );
-    }
-
-    #[test]
-    fn default_name_input_reclaims_space_from_compact_count_spinboxes() {
-        let row_width = 200.0;
-        let spacing = 4.0;
-        let one_digit = default_name_input_width(row_width, create_count_spinbox_width(1), spacing);
-        let two_digits =
-            default_name_input_width(row_width, create_count_spinbox_width(10), spacing);
-        let three_digits =
-            default_name_input_width(row_width, create_count_spinbox_width(100), spacing);
-
-        assert!((one_digit - 162.0).abs() < f32::EPSILON);
-        assert!((two_digits - 154.0).abs() < f32::EPSILON);
-        assert!((three_digits - 146.0).abs() < f32::EPSILON);
     }
 
     #[test]
