@@ -34,6 +34,7 @@ const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const SIDEBAR_WIDTH: f32 = 200.0;
 const DIAGNOSTIC_LOG_HEIGHT_FRACTION: f32 = 0.6;
+const DIAGNOSTIC_LOG_MIN_HEIGHT: f32 = 58.0;
 const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
@@ -42,8 +43,8 @@ const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
-const SIDEBAR_FIXED_HEIGHT: f32 = 360.0 + CONTROLLER_ROW_HEIGHT;
-const CONTROLLER_LIST_MIN_HEIGHT: f32 = 0.0;
+const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
+const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -99,28 +100,8 @@ fn repaint_interval(controller_count: usize) -> Duration {
     }
 }
 
-fn controller_list_height(
-    viewport_height: f32,
-    advanced_options_open: bool,
-    advanced_options_spacing: f32,
-) -> f32 {
-    let advanced_options_height = if advanced_options_open {
-        ADVANCED_OPTIONS_BODY_HEIGHT + advanced_options_spacing
-    } else {
-        0.0
-    };
-    (viewport_height - SIDEBAR_FIXED_HEIGHT - advanced_options_height)
-        .max(CONTROLLER_LIST_MIN_HEIGHT)
-}
-
-/// Reserve all remaining sidebar height for the footer so its actions, log,
-/// and health status remain a single bottom-aligned group.
-fn sidebar_footer_height(available_height: f32) -> f32 {
-    available_height.max(0.0)
-}
-
 fn diagnostic_log_height(footer_height: f32) -> f32 {
-    sidebar_footer_height(footer_height) * DIAGNOSTIC_LOG_HEIGHT_FRACTION
+    (footer_height.max(0.0) * DIAGNOSTIC_LOG_HEIGHT_FRACTION).max(DIAGNOSTIC_LOG_MIN_HEIGHT)
 }
 
 fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
@@ -129,6 +110,30 @@ fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
 
 fn terminal_log_indices(entry_count: usize) -> impl Iterator<Item = usize> {
     (0..entry_count).rev()
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SidebarLayoutBudget {
+    controller_list: f32,
+    diagnostic_log: f32,
+    footer: f32,
+}
+
+fn sidebar_layout_budget(
+    available_height: f32,
+    footer_controls_height: f32,
+) -> SidebarLayoutBudget {
+    let available_height = available_height.max(0.0);
+    let diagnostic_log_height = diagnostic_log_height(available_height);
+    let footer_height = diagnostic_log_height + footer_controls_height;
+    let controller_list_height =
+        (available_height - footer_height - CONTROLLER_LIST_FRAME_VERTICAL_MARGIN)
+            .max(CONTROLLER_LIST_MIN_HEIGHT);
+    SidebarLayoutBudget {
+        controller_list: controller_list_height,
+        diagnostic_log: diagnostic_log_height,
+        footer: footer_height,
+    }
 }
 
 fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
@@ -1299,14 +1304,10 @@ impl eframe::App for App {
                     scroll_bar: true,
                     drag: false,
                     mouse_wheel: true,
-                })
+            })
             .show(ui, |ui| {
             ui.horizontal_top(|ui| {
-                let sidebar_height = ui.available_height();
-                ui.allocate_ui_with_layout(
-                    Vec2::new(SIDEBAR_WIDTH, sidebar_height),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
+                ui.vertical(|ui| {
                     ui.set_width(SIDEBAR_WIDTH);
                     ui.set_min_width(SIDEBAR_WIDTH);
                     ui.set_max_width(SIDEBAR_WIDTH);
@@ -1496,11 +1497,6 @@ impl eframe::App for App {
                             });
                     }
                     ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                    let list_height = controller_list_height(
-                        ctx.screen_rect().height(),
-                        self.advanced_options_open && advanced_available,
-                        ui.spacing().item_spacing.y,
-                    );
                     let controller_surface_width = SIDEBAR_WIDTH - 8.0;
                     let selector_spacing = ui.spacing().item_spacing.x;
                     let controller_content_width = controller_surface_width - selector_spacing;
@@ -1546,8 +1542,18 @@ impl eframe::App for App {
                         }
                         },
                     );
+                    let footer_controls_height = CONTROLLER_ROW_HEIGHT
+                        + 1.0
+                        + ui.text_style_height(&egui::TextStyle::Body)
+                        + (ui.spacing().item_spacing.y * 3.0);
+                    let sidebar_layout =
+                        sidebar_layout_budget(ui.available_height(), footer_controls_height);
+                    let list_height = sidebar_layout.controller_list;
                     ui.allocate_ui_with_layout(
-                        Vec2::new(SIDEBAR_WIDTH, list_height + 8.0),
+                        Vec2::new(
+                            SIDEBAR_WIDTH,
+                            list_height + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
+                        ),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             egui::Frame::NONE
@@ -1630,8 +1636,8 @@ impl eframe::App for App {
                             });
                         },
                     );
-                    let footer_height = sidebar_footer_height(ui.available_height());
-                    let log_height = diagnostic_log_height(footer_height);
+                    let footer_height = sidebar_layout.footer;
+                    let log_height = sidebar_layout.diagnostic_log;
                     let log_scroll_height = diagnostic_log_scroll_height(log_height);
                     ui.allocate_ui_with_layout(
                         Vec2::new(SIDEBAR_WIDTH, footer_height),
@@ -3083,23 +3089,25 @@ mod tests {
     }
 
     #[test]
-    fn advanced_options_only_reduce_the_list_budget_while_open() {
+    fn sidebar_budget_reserves_space_for_list_and_footer_without_overlap() {
+        let layout = sidebar_layout_budget(500.0, 50.0);
+        assert!((layout.diagnostic_log - 300.0).abs() < 0.001);
+        assert!((layout.footer - 350.0).abs() < 0.001);
+        assert!((layout.controller_list - 142.0).abs() < 0.001);
         assert!(
-            (controller_list_height(100.0, false, 3.0) - CONTROLLER_LIST_MIN_HEIGHT).abs()
-                < f32::EPSILON
+            (layout.controller_list + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN + layout.footer
+                - 500.0)
+                .abs()
+                < 0.001
         );
-        assert!((controller_list_height(600.0, false, 3.0) - 218.0).abs() < f32::EPSILON);
-        assert!((controller_list_height(600.0, true, 3.0) - 83.0).abs() < f32::EPSILON);
+
+        let constrained = sidebar_layout_budget(90.0, 50.0);
+        assert!((constrained.diagnostic_log - DIAGNOSTIC_LOG_MIN_HEIGHT).abs() < 0.001);
+        assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
     }
 
     #[test]
-    fn sidebar_footer_claims_all_remaining_height() {
-        assert!((sidebar_footer_height(128.0) - 128.0).abs() < f32::EPSILON);
-        assert!(sidebar_footer_height(-1.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn diagnostic_log_uses_sixty_percent_of_the_footer_region() {
+    fn diagnostic_log_uses_sixty_percent_of_the_available_sidebar_remainder() {
         assert!((diagnostic_log_height(200.0) - 120.0).abs() < 0.001);
         assert!((diagnostic_log_scroll_height(120.0) - 116.0).abs() < 0.001);
         assert!(diagnostic_log_scroll_height(2.0).abs() < 0.001);
