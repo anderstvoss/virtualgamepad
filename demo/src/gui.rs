@@ -111,6 +111,12 @@ fn controller_list_height(
         .max(CONTROLLER_LIST_MIN_HEIGHT)
 }
 
+/// Reserve all remaining sidebar height for the footer so its actions, log,
+/// and health status remain a single bottom-aligned group.
+fn sidebar_footer_height(available_height: f32) -> f32 {
+    available_height.max(0.0)
+}
+
 fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
     matches!(
         (kind, target),
@@ -1282,7 +1288,11 @@ impl eframe::App for App {
                 })
             .show(ui, |ui| {
             ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
+                let sidebar_height = ui.available_height();
+                ui.allocate_ui_with_layout(
+                    Vec2::new(SIDEBAR_WIDTH, sidebar_height),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
                     ui.set_width(SIDEBAR_WIDTH);
                     ui.set_min_width(SIDEBAR_WIDTH);
                     ui.set_max_width(SIDEBAR_WIDTH);
@@ -1606,63 +1616,70 @@ impl eframe::App for App {
                             });
                         },
                     );
-                    let stop_all_clicked = ui
-                        .add_sized(
-                            [ui.available_width(), 22.0],
-                            egui::Button::new("Stop all controllers")
-                                .fill(Color32::from_rgb(150, 45, 65)),
-                        )
-                        .clicked();
-                    stop_all = stop_all_after_click(stop_all_clicked);
-                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                    egui::Frame::NONE
-                        .fill(Color32::from_gray(8))
-                        .inner_margin(egui::Margin {
-                            left: 4,
-                            right: 4,
-                            top: 4,
-                            bottom: 0,
-                        })
-                        .show(ui, |ui| {
-                            ui.set_min_width(SIDEBAR_WIDTH - 8.0);
-                            ui.set_max_width(SIDEBAR_WIDTH - 8.0);
-                            egui::ScrollArea::vertical()
-                                .id_salt("diagnostic_log")
-                                .auto_shrink([false, false])
-                                .max_height(58.0)
-                                .stick_to_bottom(true)
-                                .show(ui, |ui| {
-                                    ui.set_width(SIDEBAR_WIDTH - 16.0);
-                                    if self.diagnostic_log.is_empty() {
-                                        ui.weak("Warnings and error codes will appear here");
-                                    }
-                                    for entry in &self.diagnostic_log {
-                                        ui.colored_label(
-                                            if entry.success {
-                                                Color32::from_rgb(105, 170, 105)
-                                            } else {
-                                                Color32::RED
-                                            },
-                                            &entry.message,
-                                        );
-                                    }
-                                });
-                        });
-                    let status_color = if self.backend_healthy {
-                        Color32::GREEN
-                    } else {
-                        Color32::RED
-                    };
-                    ui.colored_label(
-                        status_color,
-                        format!(
-                            "● {}",
-                            if self.backend_healthy {
-                                "Healthy"
+                    let footer_height = sidebar_footer_height(ui.available_height());
+                    ui.allocate_ui_with_layout(
+                        Vec2::new(SIDEBAR_WIDTH, footer_height),
+                        egui::Layout::bottom_up(egui::Align::Min),
+                        |ui| {
+                            let status_color = if self.backend_healthy {
+                                Color32::GREEN
                             } else {
-                                "Attention"
-                            }
-                        ),
+                                Color32::RED
+                            };
+                            ui.colored_label(
+                                status_color,
+                                format!(
+                                    "● {}",
+                                    if self.backend_healthy {
+                                        "Healthy"
+                                    } else {
+                                        "Attention"
+                                    }
+                                ),
+                            );
+                            egui::Frame::NONE
+                                .fill(Color32::from_gray(8))
+                                .inner_margin(egui::Margin {
+                                    left: 4,
+                                    right: 4,
+                                    top: 4,
+                                    bottom: 0,
+                                })
+                                .show(ui, |ui| {
+                                    ui.set_min_width(SIDEBAR_WIDTH - 8.0);
+                                    ui.set_max_width(SIDEBAR_WIDTH - 8.0);
+                                    egui::ScrollArea::vertical()
+                                        .id_salt("diagnostic_log")
+                                        .auto_shrink([false, false])
+                                        .max_height(58.0)
+                                        .stick_to_bottom(true)
+                                        .show(ui, |ui| {
+                                            ui.set_width(SIDEBAR_WIDTH - 16.0);
+                                            if self.diagnostic_log.is_empty() {
+                                                ui.weak("Warnings and error codes will appear here");
+                                            }
+                                            for entry in &self.diagnostic_log {
+                                                ui.colored_label(
+                                                    if entry.success {
+                                                        Color32::from_rgb(105, 170, 105)
+                                                    } else {
+                                                        Color32::RED
+                                                    },
+                                                    &entry.message,
+                                                );
+                                            }
+                                        });
+                                });
+                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            let stop_all_clicked = ui
+                                .add_sized(
+                                    [ui.available_width(), 22.0],
+                                    egui::Button::new("Stop all controllers")
+                                        .fill(Color32::from_rgb(150, 45, 65)),
+                                )
+                                .clicked();
+                            stop_all = stop_all_after_click(stop_all_clicked);
+                        },
                     );
                 });
                 ui.separator();
@@ -3045,6 +3062,12 @@ mod tests {
         );
         assert!((controller_list_height(600.0, false, 3.0) - 218.0).abs() < f32::EPSILON);
         assert!((controller_list_height(600.0, true, 3.0) - 83.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn sidebar_footer_claims_all_remaining_height() {
+        assert!((sidebar_footer_height(128.0) - 128.0).abs() < f32::EPSILON);
+        assert!(sidebar_footer_height(-1.0).abs() < f32::EPSILON);
     }
 
     #[test]
