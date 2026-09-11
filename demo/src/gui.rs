@@ -170,19 +170,16 @@ fn selection_after_controller_click(
     clicked.then_some(clicked_index).or(selected_index)
 }
 
-fn controller_row_fill(
-    active: bool,
-    hovered: bool,
-    selected_fill: Color32,
-    hover_fill: Color32,
-) -> Color32 {
+fn controller_row_fill(active: bool, selected_fill: Color32) -> Color32 {
     if active {
         selected_fill
-    } else if hovered {
-        hover_fill
     } else {
         Color32::from_gray(62)
     }
+}
+
+const fn controller_row_has_hover_outline(hovered: bool) -> bool {
+    hovered
 }
 
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
@@ -1396,11 +1393,17 @@ impl eframe::App for App {
                                     );
                                     let fill = controller_row_fill(
                                         active,
-                                        controller_response.hovered(),
                                         ui.visuals().selection.bg_fill,
-                                        ui.visuals().widgets.hovered.bg_fill,
                                     );
                                     ui.painter().rect_filled(rect, 0.0, fill);
+                                    if controller_row_has_hover_outline(controller_response.hovered()) {
+                                        ui.painter().rect_stroke(
+                                            rect,
+                                            0.0,
+                                            ui.visuals().widgets.hovered.bg_stroke,
+                                            egui::StrokeKind::Inside,
+                                        );
+                                    }
                                     ui.painter().text(
                                         rect.left_center() + egui::vec2(6.0, 0.0),
                                         egui::Align2::LEFT_CENTER,
@@ -3076,16 +3079,13 @@ mod tests {
     }
 
     #[test]
-    fn controller_rows_highlight_on_hover_without_overriding_selection() {
+    fn controller_rows_use_a_hover_outline_without_overriding_selection() {
         let selected = Color32::BLUE;
-        let hovered = Color32::GRAY;
 
-        assert_eq!(
-            controller_row_fill(false, false, selected, hovered),
-            Color32::from_gray(62)
-        );
-        assert_eq!(controller_row_fill(false, true, selected, hovered), hovered);
-        assert_eq!(controller_row_fill(true, true, selected, hovered), selected);
+        assert_eq!(controller_row_fill(false, selected), Color32::from_gray(62));
+        assert_eq!(controller_row_fill(true, selected), selected);
+        assert!(controller_row_has_hover_outline(true));
+        assert!(!controller_row_has_hover_outline(false));
     }
 
     #[test]
