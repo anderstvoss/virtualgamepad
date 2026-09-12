@@ -2008,7 +2008,6 @@ impl eframe::App for App {
                             mouse_wheel: true,
                         })
                         .show(ui, |ui| {
-                    ui.set_min_width(448.0);
                     let mut polling_period_seconds = self.polling_period_seconds;
                     if let Some(index) = self
                         .selected_controller
