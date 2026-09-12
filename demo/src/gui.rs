@@ -2104,15 +2104,26 @@ fn draw_controller_state(
         ui.separator();
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
-                ui.horizontal(|ui| {
-                    draw_state_row_label(ui, "Service cycles");
+                draw_right_aligned_state_row(ui, "Service cycles", |ui| {
                     ui.label(display.metrics.cycles.to_string());
-                    ui.label("Omitted logs:");
+                });
+                draw_right_aligned_state_row(ui, "Omitted logs", |ui| {
                     ui.label(display.metrics.omitted_logs.to_string());
                 });
-                ui.horizontal(|ui| {
-                    draw_state_row_label(ui, "Max gap");
-                    ui.label("Polling period:");
+                draw_right_aligned_state_row(ui, "Max gap", |ui| {
+                    let gaps = service_gap_percentiles(&display.metrics, *polling_period_seconds);
+                    for (label, gap) in [
+                        ("0.1%:", gaps.map(|gaps| gaps[2])),
+                        ("1%:", gaps.map(|gaps| gaps[1])),
+                        ("10%:", gaps.map(|gaps| gaps[0])),
+                    ] {
+                        if let Some(gap) = gap {
+                            ui.monospace(format_gap(gap));
+                        } else {
+                            ui.weak("—");
+                        }
+                        ui.label(label);
+                    }
                     ui.add_sized(
                         [38.0, NAME_INPUT_HEIGHT],
                         egui::DragValue::new(polling_period_seconds)
@@ -2120,19 +2131,7 @@ fn draw_controller_state(
                             .suffix("s"),
                     )
                     .on_hover_text("0 includes the controller's entire observed lifetime");
-                    let gaps = service_gap_percentiles(&display.metrics, *polling_period_seconds);
-                    for (label, gap) in [
-                        ("10%:", gaps.map(|gaps| gaps[0])),
-                        ("1%:", gaps.map(|gaps| gaps[1])),
-                        ("0.1%:", gaps.map(|gaps| gaps[2])),
-                    ] {
-                        ui.label(label);
-                        if let Some(gap) = gap {
-                            ui.monospace(format_gap(gap));
-                        } else {
-                            ui.weak("—");
-                        }
-                    }
+                    ui.label("Polling period:");
                 });
             }
         }
@@ -2153,21 +2152,21 @@ fn draw_state_row_label(ui: &mut egui::Ui, label: &str) {
     );
 }
 
-fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+fn draw_right_aligned_state_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    contents: impl FnOnce(&mut egui::Ui),
+) {
     ui.horizontal(|ui| {
-        draw_state_row_label(ui, "LED");
+        draw_state_row_label(ui, label);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), contents);
+    });
+}
+
+fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    draw_right_aligned_state_row(ui, "LED", |ui| {
         let lightbar = indicators.led.unwrap_or([30, 30, 30]);
-        draw_feedback_indicator(
-            ui,
-            "Lightbar",
-            Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
-            if indicators.led.is_some() {
-                "Lightbar output received"
-            } else {
-                "Lightbar output unknown"
-            },
-        );
-        draw_feedback_indicator(
+        draw_right_aligned_feedback_indicator(
             ui,
             "Mute",
             if indicators.mute_led == Some(true) {
@@ -2179,6 +2178,16 @@ fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 Some(true) => "Mute LED on",
                 Some(false) => "Mute LED off",
                 None => "Mute LED unknown",
+            },
+        );
+        draw_right_aligned_feedback_indicator(
+            ui,
+            "Lightbar",
+            Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
+            if indicators.led.is_some() {
+                "Lightbar output received"
+            } else {
+                "Lightbar output unknown"
             },
         );
     });
@@ -2201,9 +2210,16 @@ fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         (remaining.as_secs_f32() * 8.0).sin().abs()
     };
     let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-    ui.horizontal(|ui| {
-        draw_state_row_label(ui, "Rumble");
-        draw_feedback_indicator(
+    draw_right_aligned_state_row(ui, "Rumble", |ui| {
+        if active {
+            let (pulse_rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+            ui.painter().circle_stroke(
+                pulse_rect.center(),
+                radius,
+                Stroke::new(1.0, Color32::from_rgb(220, 80, 80)),
+            );
+        }
+        draw_right_aligned_feedback_indicator(
             ui,
             "Motors",
             if active {
@@ -2219,22 +2235,19 @@ fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
                 "Rumble inactive"
             },
         );
-        if active {
-            let (pulse_rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
-            ui.painter().circle_stroke(
-                pulse_rect.center(),
-                radius,
-                Stroke::new(1.0, Color32::from_rgb(220, 80, 80)),
-            );
-        }
     });
 }
 
-fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, tooltip: &str) {
-    ui.label(format!("{label}:"));
+fn draw_right_aligned_feedback_indicator(
+    ui: &mut egui::Ui,
+    label: &str,
+    color: Color32,
+    tooltip: &str,
+) {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
     ui.painter().circle_filled(rect.center(), 5.0, color);
     response.on_hover_text(tooltip);
+    ui.label(format!("{label}:"));
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
