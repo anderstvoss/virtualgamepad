@@ -256,6 +256,10 @@ const fn controller_row_has_hover_outline(hovered: bool) -> bool {
     hovered
 }
 
+fn sidebar_item_text_color(hovered: bool, normal: Color32, highlighted: Color32) -> Color32 {
+    if hovered { highlighted } else { normal }
+}
+
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
     let existing_names: std::collections::HashSet<String> = existing_names.collect();
     (0..=existing_names.len())
@@ -1461,16 +1465,22 @@ impl eframe::App for App {
                             egui::StrokeKind::Inside,
                         );
                     }
+                    let advanced_hovered =
+                        advanced_available && controller_row_has_hover_outline(advanced_response.hovered());
                     ui.painter().text(
                         advanced_rect.left_center() + egui::vec2(24.0, 0.0),
                         egui::Align2::LEFT_CENTER,
                         advanced_label,
                         egui::TextStyle::Button.resolve(ui.style()),
-                        if advanced_available {
-                            ui.visuals().widgets.inactive.text_color()
-                        } else {
-                            ui.visuals().weak_text_color()
-                        },
+                        sidebar_item_text_color(
+                            advanced_hovered,
+                            if advanced_available {
+                                ui.visuals().widgets.inactive.text_color()
+                            } else {
+                                ui.visuals().weak_text_color()
+                            },
+                            ui.visuals().strong_text_color(),
+                        ),
                     );
                     let arrow_rect = egui::Rect::from_min_max(
                         advanced_rect.left_top(),
@@ -1629,7 +1639,11 @@ impl eframe::App for App {
                                         egui::Align2::LEFT_CENTER,
                                         label,
                                         egui::TextStyle::Button.resolve(ui.style()),
-                                        ui.visuals().text_color(),
+                                        sidebar_item_text_color(
+                                            controller_response.hovered(),
+                                            ui.visuals().text_color(),
+                                            ui.visuals().strong_text_color(),
+                                        ),
                                     );
                                     self.selected_controller = selection_after_controller_click(
                                         self.selected_controller,
@@ -3366,6 +3380,14 @@ mod tests {
         assert_eq!(controller_row_fill(true, selected), selected);
         assert!(controller_row_has_hover_outline(true));
         assert!(!controller_row_has_hover_outline(false));
+        assert_eq!(
+            sidebar_item_text_color(true, Color32::GRAY, Color32::WHITE),
+            Color32::WHITE
+        );
+        assert_eq!(
+            sidebar_item_text_color(false, Color32::GRAY, Color32::WHITE),
+            Color32::GRAY
+        );
     }
 
     #[test]
