@@ -2315,12 +2315,13 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                 } else {
                     draw_inactive_battery_slider(ui, 120.0);
                     let mut empty = String::new();
-                    ui.add_enabled(
-                        false,
-                        egui::TextEdit::singleline(&mut empty)
-                            .desired_width(56.0)
-                            .vertical_align(egui::Align::Center),
-                    );
+                    ui.add_enabled_ui(false, |ui| {
+                        ui.add_sized(
+                            [56.0, NAME_INPUT_HEIGHT],
+                            egui::TextEdit::singleline(&mut empty)
+                                .vertical_align(egui::Align::Center),
+                        );
+                    });
                     if !supported {
                         ui.weak("unsupported");
                     }
