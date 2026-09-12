@@ -54,7 +54,8 @@ const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
-const STATE_ROW_LABEL_WIDTH: f32 = 96.0;
+const METRIC_ROW_LABEL_WIDTH: f32 = 96.0;
+const FEEDBACK_ROW_LABEL_WIDTH: f32 = 64.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -2104,13 +2105,13 @@ fn draw_controller_state(
         ui.separator();
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
-                draw_state_row(ui, "Service cycles", |ui| {
+                draw_metric_row(ui, "Service cycles", |ui| {
                     ui.label(display.metrics.cycles.to_string());
                 });
-                draw_state_row(ui, "Omitted logs", |ui| {
+                draw_metric_row(ui, "Omitted logs", |ui| {
                     ui.label(display.metrics.omitted_logs.to_string());
                 });
-                draw_state_row(ui, "Max gap", |ui| {
+                draw_metric_row(ui, "Max gap", |ui| {
                     let gaps = service_gap_percentiles(&display.metrics, *polling_period_seconds);
                     for (label, gap) in [
                         ("10%:", gaps.map(|gaps| gaps[0])),
@@ -2145,22 +2146,29 @@ fn format_gap(gap: Duration) -> String {
     format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
 }
 
-fn draw_state_row_label(ui: &mut egui::Ui, label: &str) {
+fn draw_state_row_label(ui: &mut egui::Ui, label: &str, width: f32) {
     ui.add_sized(
-        [STATE_ROW_LABEL_WIDTH, NAME_INPUT_HEIGHT],
-        egui::Label::new(label),
+        [width, NAME_INPUT_HEIGHT],
+        egui::Label::new(label).halign(egui::Align::LEFT),
     );
 }
 
-fn draw_state_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
+fn draw_metric_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal(|ui| {
-        draw_state_row_label(ui, label);
+        draw_state_row_label(ui, label, METRIC_ROW_LABEL_WIDTH);
+        contents(ui);
+    });
+}
+
+fn draw_feedback_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
+    ui.horizontal(|ui| {
+        draw_state_row_label(ui, label, FEEDBACK_ROW_LABEL_WIDTH);
         contents(ui);
     });
 }
 
 fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
-    draw_state_row(ui, "LED", |ui| {
+    draw_feedback_row(ui, "LED", |ui| {
         let lightbar = indicators.led.unwrap_or([30, 30, 30]);
         draw_feedback_indicator(
             ui,
@@ -2206,7 +2214,7 @@ fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         (remaining.as_secs_f32() * 8.0).sin().abs()
     };
     let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-    draw_state_row(ui, "Rumble", |ui| {
+    draw_feedback_row(ui, "Rumble", |ui| {
         draw_feedback_indicator(
             ui,
             "Motors",
@@ -2246,7 +2254,7 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
     ui.horizontal(|ui| {
-        draw_state_row_label(ui, "Battery");
+        draw_state_row_label(ui, "Battery", FEEDBACK_ROW_LABEL_WIDTH);
         let expose_response = ui.add_enabled(
             supported && editable,
             egui::Checkbox::new(&mut exposed, "Expose"),
