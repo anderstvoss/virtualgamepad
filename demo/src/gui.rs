@@ -2015,6 +2015,8 @@ impl eframe::App for App {
                         .filter(|index| *index < self.controllers.len())
                     {
                         let named = &mut self.controllers[index];
+                        ui.heading(&named.name);
+                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
                         draw_controller_state(ui, named, &mut polling_period_seconds);
                         let input_width = ui.available_width();
                         ui.group(|ui| {
@@ -2426,29 +2428,35 @@ fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<
     (next != previous).then_some(next)
 }
 fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
-    ui.add(Button::new("Target surface")).on_hover_ui(|ui| {
-        let surface = surface.common_surface();
-        ui.label(format!("Target: {}", surface.target));
-        ui.label(format!("Evidence: {:?}", surface.validation_status));
-        ui.label(format!(
-            "{} axes, {} digital controls, {} output channels",
-            surface.axes.len(),
-            surface.digital_controls.len(),
-            surface.outputs.len()
-        ));
-        for axis in surface.axes {
-            ui.monospace(format!(
-                "{}: code {} {}..={} (neutral {})",
-                axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
-            ));
-        }
-        for restriction in surface.restrictions {
-            ui.small(format!(
-                "Unavailable: {} — {}",
-                restriction.feature, restriction.reason
-            ));
-        }
-    });
+    let surface_response = ui.add_sized([112.0, NAME_INPUT_HEIGHT], Button::new("Target surface"));
+    if surface_response.hovered() {
+        egui::Tooltip::for_widget(&surface_response)
+            .at_pointer()
+            .show(|ui| {
+                let surface = surface.common_surface();
+                ui.strong("Selected target surface");
+                ui.label(format!("Target: {}", surface.target));
+                ui.label(format!("Evidence: {:?}", surface.validation_status));
+                ui.label(format!(
+                    "{} axes, {} digital controls, {} output channels",
+                    surface.axes.len(),
+                    surface.digital_controls.len(),
+                    surface.outputs.len()
+                ));
+                for axis in surface.axes {
+                    ui.monospace(format!(
+                        "{}: code {} {}..={} (neutral {})",
+                        axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
+                    ));
+                }
+                for restriction in surface.restrictions {
+                    ui.small(format!(
+                        "Unavailable: {} — {}",
+                        restriction.feature, restriction.reason
+                    ));
+                }
+            });
+    }
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
