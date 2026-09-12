@@ -156,14 +156,8 @@ fn sidebar_layout_budget(
     }
 }
 
-fn advanced_options_available(kind: Kind, target: RealizationId) -> bool {
-    matches!(
-        (kind, target),
-        (
-            Kind::Xbox360 | Kind::DualSense | Kind::DualShock4 | Kind::SwitchPro,
-            RealizationId::LINUX_DUMMY_HCD_USB_HID
-        )
-    )
+const fn advanced_options_available(_target: RealizationId) -> bool {
+    true
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -1510,13 +1504,17 @@ impl eframe::App for App {
                                             RealizationId::LINUX_DUMMY_HCD_USB_HID,
                                             target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
                                         );
-                                    });
+                                });
                                 if let Some(help) = help {
-                                    ui.add_sized([18.0, 18.0], Button::new("!"))
-                                        .on_hover_ui(|ui| {
+                                    let help_response = ui.add_sized([18.0, 18.0], Button::new("!"));
+                                    if help_response.hovered() {
+                                        egui::Tooltip::for_widget(&help_response)
+                                            .at_pointer()
+                                            .show(|ui| {
                                             ui.strong(help.title);
                                             ui.label(help.body);
-                                        });
+                                            });
+                                    }
                                 }
                             });
                             ui.end_row();
@@ -1594,7 +1592,7 @@ impl eframe::App for App {
                     if create_clicked {
                         self.create();
                     }
-                    let advanced_available = advanced_options_available(self.kind, self.target);
+                    let advanced_available = advanced_options_available(self.target);
                     if !advanced_available {
                         self.advanced_options_open = false;
                     }
@@ -1669,17 +1667,25 @@ impl eframe::App for App {
                                     .show(ui, |ui| {
                                         ui.set_width(SIDEBAR_WIDTH - 8.0);
                                         ui.strong("Controller ID preview");
-                                        ui.monospace(controller_id(
+                                        let mut preview = controller_id(
                                             self.next_controller_id,
                                             self.target,
                                             self.kind,
-                                        ));
-                                        ui.small(
-                                            "Assigned when this controller is created; it remains with the controller for this GUI session.",
                                         );
-                                        ui.separator();
-                                        ui.label("Experimental target options");
-                                        ui.small("Additional target-specific options will appear here.");
+                                        let preview_width = ui.available_width();
+                                        ui.add_sized(
+                                            [preview_width, NAME_INPUT_HEIGHT],
+                                            egui::TextEdit::singleline(&mut preview)
+                                                .interactive(false)
+                                                .desired_width(preview_width)
+                                                .vertical_align(egui::Align::Center)
+                                                .margin(egui::Margin {
+                                                    left: 4,
+                                                    right: 4,
+                                                    top: 2,
+                                                    bottom: 2,
+                                                }),
+                                        );
                                     });
                             });
                     }
@@ -3289,20 +3295,13 @@ mod tests {
     }
 
     #[test]
-    fn advanced_options_are_currently_available_for_dummy_hcd_targets() {
-        for kind in Kind::ALL {
-            assert!(advanced_options_available(
-                kind,
-                RealizationId::LINUX_DUMMY_HCD_USB_HID
-            ));
-            assert!(!advanced_options_available(
-                kind,
-                RealizationId::LINUX_UINPUT
-            ));
-            assert!(!advanced_options_available(
-                kind,
-                RealizationId::LINUX_UHID_USB
-            ));
+    fn advanced_options_are_available_for_every_target() {
+        for target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            assert!(advanced_options_available(target));
         }
     }
 
