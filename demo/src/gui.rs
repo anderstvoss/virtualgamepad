@@ -39,6 +39,8 @@ const HEALTH_BOTTOM_PADDING: f32 = 4.0;
 const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
 const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
+const CREATE_BUTTON_TEXT: Color32 = Color32::from_rgb(245, 250, 255);
+const SELECTED_CONTROLLER_TEXT: Color32 = Color32::from_rgb(235, 250, 255);
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
@@ -258,6 +260,36 @@ const fn controller_row_has_hover_outline(hovered: bool) -> bool {
 
 fn sidebar_item_text_color(hovered: bool, normal: Color32, highlighted: Color32) -> Color32 {
     if hovered { highlighted } else { normal }
+}
+
+fn controller_row_text_color(
+    active: bool,
+    hovered: bool,
+    normal: Color32,
+    highlighted: Color32,
+) -> Color32 {
+    if active {
+        SELECTED_CONTROLLER_TEXT
+    } else {
+        sidebar_item_text_color(hovered, normal, highlighted)
+    }
+}
+
+fn sidebar_choice_chip(
+    ui: &mut egui::Ui,
+    label: &'static str,
+    selected: bool,
+    width: f32,
+) -> egui::Response {
+    let highlighted = ui.visuals().strong_text_color();
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.hovered.fg_stroke.color = highlighted;
+        if selected {
+            ui.visuals_mut().widgets.inactive.fg_stroke.color = highlighted;
+        }
+        ui.add_sized([width, 22.0], egui::Button::new(label).selected(selected))
+    })
+    .inner
 }
 
 fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
@@ -1426,13 +1458,18 @@ impl eframe::App for App {
                             );
                         }
                     });
-                    if ui
-                        .add_sized(
-                            [ui.available_width(), 22.0],
-                            egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
-                        )
-                        .clicked()
-                    {
+                    let create_clicked = ui
+                        .scope(|ui| {
+                            ui.visuals_mut().widgets.inactive.fg_stroke.color = CREATE_BUTTON_TEXT;
+                            ui.visuals_mut().widgets.hovered.fg_stroke.color = CREATE_BUTTON_TEXT;
+                            ui.add_sized(
+                                [ui.available_width(), 22.0],
+                                egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
+                            )
+                        })
+                        .inner
+                        .clicked();
+                    if create_clicked {
                         self.create();
                     }
                     let advanced_available = advanced_options_available(self.kind, self.target);
@@ -1467,13 +1504,15 @@ impl eframe::App for App {
                     }
                     let advanced_hovered =
                         advanced_available && controller_row_has_hover_outline(advanced_response.hovered());
+                    let advanced_highlighted =
+                        advanced_available && (advanced_hovered || self.advanced_options_open);
                     ui.painter().text(
                         advanced_rect.left_center() + egui::vec2(24.0, 0.0),
                         egui::Align2::LEFT_CENTER,
                         advanced_label,
                         egui::TextStyle::Button.resolve(ui.style()),
                         sidebar_item_text_color(
-                            advanced_hovered,
+                            advanced_highlighted,
                             if advanced_available {
                                 ui.visuals().widgets.inactive.text_color()
                             } else {
@@ -1535,31 +1574,23 @@ impl eframe::App for App {
                         |ui| {
                             ui.spacing_mut().item_spacing.x = selector_spacing;
                             let chip_width = (SIDEBAR_WIDTH - selector_spacing) / 2.0;
-                        if ui
-                            .add_sized(
-                                [chip_width, 22.0],
-                                egui::Button::new(ControllerLabelMode::AssignedName.label())
-                                    .selected(
-                                        self.controller_label_mode
-                                            == ControllerLabelMode::AssignedName,
-                                    ),
-                            )
-                            .clicked()
+                        if sidebar_choice_chip(
+                            ui,
+                            ControllerLabelMode::AssignedName.label(),
+                            self.controller_label_mode == ControllerLabelMode::AssignedName,
+                            chip_width,
+                        )
+                        .clicked()
                         {
                             self.controller_label_mode = ControllerLabelMode::AssignedName;
                         }
-                        if ui
-                            .add_sized(
-                                [chip_width, 22.0],
-                                egui::Button::new(
-                                    ControllerLabelMode::InternalIdentifier.label(),
-                                )
-                                .selected(
-                                    self.controller_label_mode
-                                        == ControllerLabelMode::InternalIdentifier,
-                                ),
-                            )
-                            .clicked()
+                        if sidebar_choice_chip(
+                            ui,
+                            ControllerLabelMode::InternalIdentifier.label(),
+                            self.controller_label_mode == ControllerLabelMode::InternalIdentifier,
+                            chip_width,
+                        )
+                        .clicked()
                         {
                             self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
                         }
@@ -1639,7 +1670,8 @@ impl eframe::App for App {
                                         egui::Align2::LEFT_CENTER,
                                         label,
                                         egui::TextStyle::Button.resolve(ui.style()),
-                                        sidebar_item_text_color(
+                                        controller_row_text_color(
+                                            active,
                                             controller_response.hovered(),
                                             ui.visuals().text_color(),
                                             ui.visuals().strong_text_color(),
@@ -3387,6 +3419,14 @@ mod tests {
         assert_eq!(
             sidebar_item_text_color(false, Color32::GRAY, Color32::WHITE),
             Color32::GRAY
+        );
+        assert_eq!(
+            controller_row_text_color(true, false, Color32::GRAY, Color32::WHITE),
+            SELECTED_CONTROLLER_TEXT
+        );
+        assert_eq!(
+            controller_row_text_color(false, true, Color32::GRAY, Color32::WHITE),
+            Color32::WHITE
         );
     }
 
