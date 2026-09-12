@@ -8,24 +8,24 @@ The demo does not install prerequisites or alter permissions.
 ## Controls and observations
 
 Choose the controller family and realization, optionally enter a name, then
-create it. **Lab notes and gate prerequisites** contains a **Lab correlation ID**
-for grouping observations. Disable **Advance ID after creation** to reuse that
-label. Lab labels wrap after the maximum u64 value; library creation tokens do
-not wrap. Reusing a label does not reuse controller identity or session ownership.
+create it. Each controller receives a session-local **Controller ID** in the
+form `NNN-TGT-TYPE`: a three-digit creation sequence, realization abbreviation,
+and controller-family abbreviation. The ID is a GUI label, not library identity
+or session ownership. The Advanced options panel previews the next ID. Hover the
+`!` beside **USB / dummy_hcd** for the experimental-gadget requirements.
 
 Select any controller to exercise its existing button, axis, motion, battery and
-touch controls where supported. The lab panel shows its realization, lab correlation ID,
+touch controls where supported. The live panel shows its realization, controller ID,
 worker service-cycle count, maximum observed service gap and omitted worker log
 count. These are process observations, not end-to-end latency or consumer passes.
 Optional log loss includes worker backlog eviction and busy display snapshots;
 the global on-screen log also retains only its newest entries.
 
-Enter the reference model, firmware if known, USB/BT connection mode, consumer
-version, experiment condition and result in **Lab notes and gate prerequisites**.
-**Copy lab record** copies a versioned plain-text summary for the selected
-controller. Paste it into a private experiment record; nothing is automatically
-written, uploaded or added to the corpus. Typed reverse output and indicator
-snapshots remain visible separately.
+Use **Dump log** beside the health status to write the current application state,
+controller metadata, service diagnostics, GUI log and typed reverse output to the
+local state directory. The path is reported in the GUI log; nothing is uploaded
+or added to the corpus. Typed reverse output and indicator snapshots remain
+visible separately.
 
 Remove arbitrary controllers to test independence, or use **Stop all controllers**
 to stop/join workers and close all sessions. Verify consumer-side removal too;
@@ -48,8 +48,8 @@ broker socket does not establish request handling or controller support.
    the measured UHID profile. Record virtual observations separately from the
    physical DualSense, Xbox Series or Steam Controller reference. Xbox Series is
    not an Xbox 360 fidelity reference; record the Steam Controller generation.
-2. For concurrent-session tests, reuse a lab correlation ID, remove a middle device,
-   and observe continuing service on the others. Keep each consumer selection exact.
+2. For concurrent-session tests, record the controller IDs, remove a middle device,
+and observe continuing service on the others. Keep each consumer selection exact.
 3. Touch injection needs an isolated consumer environment. Do not use this active
    desktop to repeat EXP-0012. A separate VM clone with no desktop consumer of the
    test nodes is the current resumption path; headless SDL alone is insufficient.
@@ -106,7 +106,7 @@ are installed at creation. West is X and North is Y; legacy Linux BTN_X is
 numerically also named BTN_NORTH, so use observed printed/spatial action rather
 than that alias alone. See EXP-0016 for the old HID defect and retest scope.
 
-## Release and correlation records
+## Release and controller IDs
 
 **Release all inputs** queues one native `neutralize()` edit through the same
 acknowledged worker queue, then commits it. It releases contacts too, but preserves
@@ -114,11 +114,10 @@ battery metadata, identity, protocol state and host-owned rumble/LED state. The
 button waits for the previous accepted edit; it cannot overtake a press. The UI
 skips other control edits that frame so stale touch state is not reasserted.
 
-Lab record v3 separates the lab correlation ID from library creation identity.
-It includes consumer build, backend and mapping fields, plus component roles,
-requested creation labels and any cached host observations.
-A cached path is historical: verify identity and ancestry after re-enumeration.
-After removal, **Copy cleanup diagnostics** preserves the last returned controller's
-terminal state and any cleanup error. A worker that returns no controller is
-reported as requiring host verification. This is not proof that every kernel
-node was removed; verify that independently. Nothing is automatically saved.
+Controller IDs separate the GUI creation label from library creation identity.
+Use **Dump log** to preserve component roles, requested creation labels, cached
+host observations and cleanup diagnostics. A cached path is historical: verify
+identity and ancestry after re-enumeration. A worker that returns no controller
+is reported as requiring host verification. This is not proof that every kernel
+node was removed; verify that independently. Nothing is automatically saved
+unless you request a state dump.

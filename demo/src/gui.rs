@@ -5,9 +5,13 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::{
     cmp::Ordering,
+    env,
+    fmt::Write as _,
+    fs,
+    path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
@@ -21,14 +25,15 @@ use virtualgamepad::{
     create_dualshock4, create_switch_pro, create_xbox360,
 };
 
-// Lab correlation is application bookkeeping, never controller/session identity.
+// Controller IDs are demo-local labels, never library/session identity.
 #[derive(Clone, Copy)]
-struct LabOptions {
+struct ControllerOptions {
     target: RealizationId,
-    session: u64,
+    id: u64,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
+const CONTROLLER_ID_WIDTH: usize = 3;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
@@ -170,42 +175,6 @@ const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
 }
 
-const fn following_session(current: u64, advance: bool) -> u64 {
-    if advance {
-        current.wrapping_add(1)
-    } else {
-        current
-    }
-}
-
-#[derive(Default)]
-struct ConsumerNotes {
-    build: String,
-    backend: String,
-    mapping: String,
-}
-
-fn lab_record(
-    name: &str,
-    options: LabOptions,
-    metrics: &ServiceMetrics,
-    notes: &str,
-    consumer: &ConsumerNotes,
-    details: &str,
-) -> String {
-    format!(
-        "Virtualgamepad manual lab record v3\nController: {name}\nRealization: {}\nLab correlation: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
-        target_label(options.target),
-        options.session,
-        metrics.cycles,
-        metrics.max_gap.as_micros(),
-        metrics.omitted_logs,
-        consumer.build,
-        consumer.backend,
-        consumer.mapping
-    )
-}
-
 fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
     0..controller_count
 }
@@ -312,13 +281,64 @@ fn truncate_identifier(identifier: &str, max_chars: usize) -> String {
 
 fn controller_identifier(controller: &NamedController) -> String {
     truncate_identifier(
-        &format!(
-            "{} · lab {}",
-            target_label(controller.options.target),
-            controller.options.session
+        &controller_id(
+            controller.options.id,
+            controller.options.target,
+            controller.kind,
         ),
         28,
     )
+}
+
+fn controller_id(number: u64, target: RealizationId, kind: Kind) -> String {
+    format!(
+        "{:0width$}-{}-{}",
+        number % 1_000,
+        target_identifier_abbreviation(target),
+        kind.identifier_abbreviation(),
+        width = CONTROLLER_ID_WIDTH,
+    )
+}
+
+fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
+    match target {
+        RealizationId::LINUX_UINPUT => "UIN",
+        RealizationId::LINUX_UHID_USB => "HID",
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
+        _ => "UNK",
+    }
+}
+
+struct TargetHelp {
+    title: &'static str,
+    body: &'static str,
+}
+
+fn target_help(target: RealizationId) -> Option<TargetHelp> {
+    match target {
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
+            title: "Experimental USB gadget",
+            body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
+        }),
+        _ => None,
+    }
+}
+
+fn state_dump_directory() -> PathBuf {
+    env::var_os("XDG_STATE_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .unwrap_or_else(env::temp_dir)
+        .join("virtualgamepad")
+}
+
+fn state_dump_path(now: SystemTime) -> Result<PathBuf, String> {
+    let timestamp = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("system clock is before the Unix epoch: {error}"))?
+        .as_millis();
+    Ok(state_dump_directory().join(format!("demo-state-{timestamp}-{}.log", std::process::id())))
 }
 
 fn requested_create_count(name: &str, count: u32) -> u32 {
@@ -535,6 +555,15 @@ impl Kind {
             Self::SwitchPro => "Switch Pro Controller",
         }
     }
+
+    const fn identifier_abbreviation(self) -> &'static str {
+        match self {
+            Self::Xbox360 => "XB360",
+            Self::DualSense => "DUALSENSE",
+            Self::DualShock4 => "DS4",
+            Self::SwitchPro => "SWITCHPRO",
+        }
+    }
 }
 enum Controller {
     Xbox(Xbox360Controller),
@@ -584,7 +613,7 @@ impl EditProgress {
 
 struct NamedController {
     kind: Kind,
-    options: LabOptions,
+    options: ControllerOptions,
     name: String,
     view: ControllerView,
     edits: EditProgress,
@@ -1133,10 +1162,7 @@ pub struct App {
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
-    next_session: u64,
-    advance_session: bool,
-    lab_notes: String,
-    consumer_notes: ConsumerNotes,
+    next_controller_id: u64,
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
@@ -1154,10 +1180,7 @@ impl Default for App {
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
-            next_session: 1,
-            advance_session: true,
-            lab_notes: String::new(),
-            consumer_notes: ConsumerNotes::default(),
+            next_controller_id: 0,
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
@@ -1180,6 +1203,89 @@ impl App {
         )
     }
 
+    fn state_dump(&self) -> String {
+        let mut dump = format!(
+            "virtualgamepad demo state dump\nBackend health: {}\nSelected controller: {:?}\nController count: {}\n\n",
+            if self.backend_healthy {
+                "healthy"
+            } else {
+                "attention"
+            },
+            self.selected_controller,
+            self.controllers.len(),
+        );
+        for (index, controller) in self.controllers.iter().enumerate() {
+            let _ = writeln!(
+                dump,
+                "Controller {}\n  Name: {}\n  ID: {}\n  Target: {}\n  Type: {}\n  Input batch: applied {} / submitted {}\n  View diagnostics: {}",
+                index + 1,
+                controller.name,
+                controller_identifier(controller),
+                target_label(controller.options.target),
+                controller.kind.label(),
+                controller.edits.applied,
+                controller.edits.submitted,
+                controller.view.lab_details(),
+            );
+            if let Some(worker) = &controller.service_worker {
+                if let Ok(display) = worker.display.try_lock() {
+                    let _ = writeln!(
+                        dump,
+                        "  Service cycles: {}\n  Maximum observed service gap (us): {}\n  Omitted worker logs: {}\n  Backend healthy: {}",
+                        display.metrics.cycles,
+                        display.metrics.max_gap.as_micros(),
+                        display.metrics.omitted_logs,
+                        display.backend_healthy.unwrap_or(false),
+                    );
+                } else {
+                    dump.push_str("  Worker display: busy\n");
+                }
+            }
+            dump.push('\n');
+        }
+        if let Some(cleanup) = &self.last_cleanup {
+            let _ = writeln!(dump, "Last cleanup diagnostics:\n{cleanup}\n");
+        }
+        dump.push_str("GUI diagnostic log:\n");
+        for entry in &self.diagnostic_log {
+            let _ = writeln!(
+                dump,
+                "[{}] {}",
+                if entry.success { "success" } else { "error" },
+                entry.message
+            );
+        }
+        dump.push_str("\nTyped reverse output:\n");
+        for entry in &self.output_log {
+            let _ = writeln!(dump, "{entry}");
+        }
+        dump
+    }
+
+    fn write_state_dump(&mut self) {
+        let result = (|| {
+            let path = state_dump_path(SystemTime::now())?;
+            let directory = path
+                .parent()
+                .ok_or_else(|| "state dump path has no parent directory".to_owned())?;
+            fs::create_dir_all(directory)
+                .map_err(|error| format!("could not create state-log directory: {error}"))?;
+            fs::write(&path, self.state_dump())
+                .map_err(|error| format!("could not write state dump: {error}"))?;
+            Ok::<PathBuf, String>(path)
+        })();
+        match result {
+            Ok(path) => self.diagnostic_log.push(DiagnosticLogEntry {
+                message: format!("State dump saved to {}.", path.display()),
+                success: true,
+            }),
+            Err(error) => self.diagnostic_log.push(DiagnosticLogEntry {
+                message: format!("State dump failed: {error}"),
+                success: false,
+            }),
+        }
+    }
+
     fn create(&mut self) {
         let count = requested_create_count(&self.name_draft, self.create_count);
         for _ in 0..count {
@@ -1194,9 +1300,9 @@ impl App {
     }
 
     fn create_one(&mut self) {
-        let options = LabOptions {
+        let options = ControllerOptions {
             target: self.target,
-            session: self.next_session,
+            id: self.next_controller_id,
         };
         let result = match self.kind {
             Kind::Xbox360 => create_xbox360(virtualgamepad::CreationOptions::new(options.target))
@@ -1224,7 +1330,11 @@ impl App {
                 let view = controller.snapshot();
                 let service_worker = Some(spawn_service_worker_with_label(
                     controller,
-                    format!("{} · lab {}", name, options.session),
+                    format!(
+                        "{} · {}",
+                        name,
+                        controller_id(options.id, options.target, self.kind)
+                    ),
                 ));
                 self.controllers.push(NamedController {
                     kind: self.kind,
@@ -1238,7 +1348,7 @@ impl App {
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
-                self.next_session = following_session(self.next_session, self.advance_session);
+                self.next_controller_id = self.next_controller_id.wrapping_add(1);
                 self.diagnostic_log.push(DiagnosticLogEntry {
                     message: format!("Created {name}."),
                     success: true,
@@ -1314,6 +1424,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let mut remove = None;
         let mut stop_all = false;
+        let mut dump_state = false;
         let mut failed_controller = None;
         let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
@@ -1374,29 +1485,40 @@ impl eframe::App for App {
                                     for kind in Kind::ALL {
                                         ui.selectable_value(&mut self.kind, kind, kind.label());
                                     }
-                                });
+                            });
                             ui.end_row();
                             ui.label("Target");
-                            egui::ComboBox::from_id_salt("controller_target")
-                                .selected_text(target_label(self.target))
-                                .width(ui.available_width())
-                                .show_ui(ui, |ui| {
-                                    ui.selectable_value(
-                                        &mut self.target,
-                                        RealizationId::LINUX_UINPUT,
-                                        target_label(RealizationId::LINUX_UINPUT),
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.target,
-                                        RealizationId::LINUX_UHID_USB,
-                                        target_label(RealizationId::LINUX_UHID_USB),
-                                    );
-                                    ui.selectable_value(
-                                        &mut self.target,
-                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                        target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
-                                    );
-                                });
+                            ui.horizontal(|ui| {
+                                let help = target_help(self.target);
+                                let help_width = if help.is_some() { 26.0 } else { 0.0 };
+                                egui::ComboBox::from_id_salt("controller_target")
+                                    .selected_text(target_label(self.target))
+                                    .width((ui.available_width() - help_width).max(60.0))
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.target,
+                                            RealizationId::LINUX_UINPUT,
+                                            target_label(RealizationId::LINUX_UINPUT),
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.target,
+                                            RealizationId::LINUX_UHID_USB,
+                                            target_label(RealizationId::LINUX_UHID_USB),
+                                        );
+                                        ui.selectable_value(
+                                            &mut self.target,
+                                            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                            target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+                                        );
+                                    });
+                                if let Some(help) = help {
+                                    ui.add_sized([18.0, 18.0], Button::new("!"))
+                                        .on_hover_ui(|ui| {
+                                            ui.strong(help.title);
+                                            ui.label(help.body);
+                                        });
+                                }
+                            });
                             ui.end_row();
                         });
                     let default_name = self.next_default_name();
@@ -1546,15 +1668,18 @@ impl eframe::App for App {
                                     .auto_shrink([false, false])
                                     .show(ui, |ui| {
                                         ui.set_width(SIDEBAR_WIDTH - 8.0);
-                                        ui.strong("Experimental USB gadget");
-                                        ui.small("Requires the privileged broker and prepared dummy_hcd resources.");
-                                        ui.small("Complete Gate G host setup before validation.");
+                                        ui.strong("Controller ID preview");
+                                        ui.monospace(controller_id(
+                                            self.next_controller_id,
+                                            self.target,
+                                            self.kind,
+                                        ));
+                                        ui.small(
+                                            "Assigned when this controller is created; it remains with the controller for this GUI session.",
+                                        );
                                         ui.separator();
-                                        ui.label("Validation prerequisites");
-                                        ui.small("• Broker access is available to this session.");
-                                        ui.small("• dummy_hcd resources were prepared by the host.");
-                                        ui.small("• The target host is ready for USB gadget probing.");
-                                        ui.small("• Record the consumer and host result in lab notes.");
+                                        ui.label("Experimental target options");
+                                        ui.small("Additional target-specific options will appear here.");
                                     });
                             });
                     }
@@ -1596,10 +1721,8 @@ impl eframe::App for App {
                         }
                         },
                     );
-                    let footer_controls_height = CONTROLLER_ROW_HEIGHT
-                        + 1.0
-                        + ui.text_style_height(&egui::TextStyle::Body)
-                        + HEALTH_BOTTOM_PADDING;
+                    let footer_controls_height =
+                        (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
                     let diagnostic_log_height =
                         diagnostic_log_height(ui.text_style_height(&egui::TextStyle::Body));
                     let sidebar_layout = sidebar_layout_budget(
@@ -1762,29 +1885,39 @@ impl eframe::App for App {
                             }
                         });
 
-                    let status_height = ui.text_style_height(&egui::TextStyle::Body);
-                    let (status_rect, _) = footer_ui.allocate_exact_size(
-                        Vec2::new(SIDEBAR_WIDTH, status_height),
-                        Sense::hover(),
-                    );
                     let status_color = if self.backend_healthy {
                         Color32::GREEN
                     } else {
                         Color32::RED
                     };
-                    footer_ui.painter().text(
-                        status_rect.left_center(),
-                        egui::Align2::LEFT_CENTER,
-                        format!(
-                            "● {}",
-                            if self.backend_healthy {
-                                "Healthy"
-                            } else {
-                                "Attention"
-                            }
-                        ),
-                        egui::TextStyle::Body.resolve(footer_ui.style()),
-                        status_color,
+                    footer_ui.allocate_ui_with_layout(
+                        Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
+                        egui::Layout::right_to_left(egui::Align::Center),
+                        |ui| {
+                            let dump_width = 76.0;
+                            dump_state |= ui
+                                .add_sized(
+                                    [dump_width, CONTROLLER_ROW_HEIGHT],
+                                    Button::new("Dump log"),
+                                )
+                                .clicked();
+                            ui.with_layout(
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.colored_label(
+                                        status_color,
+                                        format!(
+                                            "● {}",
+                                            if self.backend_healthy {
+                                                "Healthy"
+                                            } else {
+                                                "Attention"
+                                            }
+                                        ),
+                                    );
+                                },
+                            );
+                        },
                     );
                     footer_ui.allocate_space(Vec2::new(SIDEBAR_WIDTH, HEALTH_BOTTOM_PADDING));
                 });
@@ -1815,17 +1948,14 @@ impl eframe::App for App {
                             });
                             draw_reverse_indicators(ui, &named.indicators);
                             ui.label(format!(
-                                "{} · lab correlation ID {}",
+                                "{} · Controller ID {}",
                                 target_label(named.options.target),
-                                named.options.session
+                                controller_identifier(named)
                             ));
                             if let Some(worker) = &named.service_worker {
                                 if let Ok(display) = worker.display.try_lock() {
                                     ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
                                         display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
-                                    if ui.button("Copy lab record").clicked() {
-                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes, &self.consumer_notes, &named.view.lab_details()));
-                                    }
                                 }
                             }
                             if named.edits.ready() {
@@ -1863,39 +1993,14 @@ impl eframe::App for App {
                         ui.monospace(entry);
                     }
                     ui.separator();
-                    egui::CollapsingHeader::new("Lab notes and gate prerequisites")
-                        .default_open(false)
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Lab correlation ID");
-                                ui.add(egui::DragValue::new(&mut self.next_session));
-                            });
-                            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
-                            ui.small("This ID labels lab records only. Controller identity and session tokens are library-owned.");
-                            ui.label("Consumer build/version");
-                            ui.text_edit_singleline(&mut self.consumer_notes.build);
-                            ui.label("Input backend (for example SDL HIDAPI or Linux event)");
-                            ui.text_edit_singleline(&mut self.consumer_notes.backend);
-                            ui.label("Observed mapping/profile");
-                            ui.text_edit_multiline(&mut self.consumer_notes.mapping);
-                            ui.label("Observations");
-                            ui.text_edit_multiline(&mut self.lab_notes);
-                            if let Some(cleanup) = &self.last_cleanup {
-                                ui.label(format!("Last cleanup diagnostics: {cleanup}"));
-                                if ui.button("Copy cleanup diagnostics").clicked() {
-                                    ui.ctx().copy_text(cleanup.clone());
-                                }
-                            }
-                            ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
-                            ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
-                            ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
-                            ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
-                        });
                         });
                 });
                 });
             });
         });
+        if dump_state {
+            self.write_state_dump();
+        }
         if stop_all {
             while !self.controllers.is_empty() {
                 self.remove_controller(self.controllers.len() - 1);
@@ -2789,50 +2894,41 @@ mod tests {
     }
 
     #[test]
-    fn lab_session_ids_can_repeat_and_advance_without_overflow() {
-        for id in [0, 7, 65543, u64::MAX] {
-            assert_eq!(following_session(id, false), id);
-        }
-        assert_eq!(following_session(7, true), 8);
-        assert_eq!(following_session(u64::MAX, true), 0);
+    fn controller_ids_use_the_requested_target_and_type_abbreviations() {
+        assert_eq!(
+            controller_id(0, RealizationId::LINUX_UINPUT, Kind::Xbox360),
+            "000-UIN-XB360"
+        );
+        assert_eq!(
+            controller_id(7, RealizationId::LINUX_UHID_USB, Kind::DualSense),
+            "007-HID-DUALSENSE"
+        );
+        assert_eq!(
+            controller_id(
+                1_234,
+                RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                Kind::SwitchPro
+            ),
+            "234-USB-SWITCHPRO"
+        );
     }
 
     #[test]
-    fn lab_metrics_and_record_preserve_measurement_scope() {
-        let start = Instant::now();
-        let mut metrics = ServiceMetrics::default();
-        for delta in [0, 4, 15, 19] {
-            metrics.record(start + Duration::from_millis(delta));
-        }
-        metrics.omit(4);
-        metrics.omit(8);
-        assert_eq!(metrics.cycles, 4);
-        assert_eq!(metrics.max_gap, Duration::from_millis(11));
-        assert_eq!(metrics.omitted_logs, 12);
-        let record = lab_record(
-            "Synthetic lab controller",
-            LabOptions {
-                session: 65543,
-                target: RealizationId::LINUX_UHID_USB,
-            },
-            &metrics,
-            "Reference disconnected; synthetic test",
-            &ConsumerNotes {
-                build: "synthetic build".into(),
-                backend: "fake backend".into(),
-                mapping: "fake mapping".into(),
-            },
-            "Closed; cleanup failed: synthetic",
-        );
-        assert!(record.starts_with("Virtualgamepad manual lab record v3"));
-        assert!(record.contains("Consumer build: synthetic build"));
-        assert!(record.contains("Consumer backend: fake backend"));
-        assert!(record.contains("Consumer mapping: fake mapping"));
-        assert!(record.contains("cleanup failed: synthetic"));
-        assert!(record.contains("Lab correlation: 65543"));
-        assert!(record.contains("Maximum observed service gap (us): 11000"));
-        assert!(record.contains("acceptance: not established"));
-        assert!(record.ends_with("Reference disconnected; synthetic test"));
+    fn target_help_is_available_only_for_the_experimental_gadget_target() {
+        assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
+        assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
+        let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
+            .expect("dummy_hcd has experimental-target help");
+        assert_eq!(help.title, "Experimental USB gadget");
+    }
+
+    #[test]
+    fn state_dump_reports_program_state_without_a_live_controller() {
+        let dump = App::default().state_dump();
+        assert!(dump.starts_with("virtualgamepad demo state dump"));
+        assert!(dump.contains("Backend health: healthy"));
+        assert!(dump.contains("Controller count: 0"));
+        assert!(dump.contains("GUI diagnostic log:"));
     }
 
     #[derive(Default)]
