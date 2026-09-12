@@ -2104,42 +2104,36 @@ fn draw_controller_state(
         ui.separator();
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
-                egui::Grid::new("controller_metrics")
-                    .num_columns(2)
-                    .spacing([8.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.label("Polling period");
-                        ui.add(
-                            egui::DragValue::new(polling_period_seconds)
-                                .speed(1.0)
-                                .suffix(" s"),
-                        )
-                        .on_hover_text("0 includes the controller's entire observed lifetime");
-                        ui.end_row();
-                        ui.label("Service cycles");
-                        ui.label(display.metrics.cycles.to_string());
-                        ui.end_row();
-                        if let Some([p90, p99, p999]) =
-                            service_gap_percentiles(&display.metrics, *polling_period_seconds)
-                        {
-                            for (label, gap) in [
-                                ("10% tail gap", p90),
-                                ("1% tail gap", p99),
-                                ("0.1% tail gap", p999),
-                            ] {
-                                ui.label(label);
-                                ui.label(format_gap(gap));
-                                ui.end_row();
-                            }
+                ui.horizontal(|ui| {
+                    draw_state_row_label(ui, "Service cycles");
+                    ui.label(display.metrics.cycles.to_string());
+                    ui.label("Omitted logs:");
+                    ui.label(display.metrics.omitted_logs.to_string());
+                });
+                ui.horizontal(|ui| {
+                    draw_state_row_label(ui, "Max gap");
+                    ui.label("Polling period:");
+                    ui.add_sized(
+                        [38.0, NAME_INPUT_HEIGHT],
+                        egui::DragValue::new(polling_period_seconds)
+                            .speed(1.0)
+                            .suffix("s"),
+                    )
+                    .on_hover_text("0 includes the controller's entire observed lifetime");
+                    let gaps = service_gap_percentiles(&display.metrics, *polling_period_seconds);
+                    for (label, gap) in [
+                        ("10%:", gaps.map(|gaps| gaps[0])),
+                        ("1%:", gaps.map(|gaps| gaps[1])),
+                        ("0.1%:", gaps.map(|gaps| gaps[2])),
+                    ] {
+                        ui.label(label);
+                        if let Some(gap) = gap {
+                            ui.monospace(format_gap(gap));
                         } else {
-                            ui.label("10% / 1% / 0.1% tail gaps");
-                            ui.weak("awaiting service samples");
-                            ui.end_row();
+                            ui.weak("—");
                         }
-                        ui.label("Omitted worker logs");
-                        ui.label(display.metrics.omitted_logs.to_string());
-                        ui.end_row();
-                    });
+                    }
+                });
             }
         }
         ui.separator();
