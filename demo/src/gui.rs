@@ -5,6 +5,7 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::{
     cmp::Ordering,
+    collections::VecDeque,
     env,
     fmt::Write as _,
     fs,
@@ -672,17 +673,33 @@ impl LatchedTouch {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ServiceMetrics {
     cycles: u64,
     max_gap: Duration,
     omitted_logs: u64,
     last_service: Option<Instant>,
+    gap_history: Arc<Mutex<VecDeque<(Instant, Duration)>>>,
+}
+impl Default for ServiceMetrics {
+    fn default() -> Self {
+        Self {
+            cycles: 0,
+            max_gap: Duration::ZERO,
+            omitted_logs: 0,
+            last_service: None,
+            gap_history: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
 }
 impl ServiceMetrics {
     fn record(&mut self, now: Instant) {
         if let Some(previous) = self.last_service {
-            self.max_gap = self.max_gap.max(now.saturating_duration_since(previous));
+            let gap = now.saturating_duration_since(previous);
+            self.max_gap = self.max_gap.max(gap);
+            if let Ok(mut history) = self.gap_history.lock() {
+                history.push_back((now, gap));
+            }
         }
         self.last_service = Some(now);
         self.cycles = self.cycles.saturating_add(1);
@@ -692,6 +709,33 @@ impl ServiceMetrics {
             .omitted_logs
             .saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
     }
+}
+
+fn service_gap_percentiles(metrics: &ServiceMetrics, period_seconds: u32) -> Option<[Duration; 3]> {
+    let cutoff = Instant::now().checked_sub(Duration::from_secs(u64::from(period_seconds)));
+    let mut gaps: Vec<Duration> = metrics
+        .gap_history
+        .lock()
+        .ok()?
+        .iter()
+        .filter(|(at, _)| period_seconds == 0 || cutoff.is_none_or(|cutoff| *at >= cutoff))
+        .map(|(_, gap)| *gap)
+        .collect();
+    if gaps.is_empty() {
+        return None;
+    }
+    gaps.sort_unstable();
+    let percentile = |numerator: usize, denominator: usize| {
+        let index = (gaps.len() * numerator)
+            .div_ceil(denominator)
+            .saturating_sub(1);
+        gaps[index]
+    };
+    Some([
+        percentile(90, 100),
+        percentile(99, 100),
+        percentile(999, 1_000),
+    ])
 }
 
 #[derive(Default)]
@@ -1169,6 +1213,7 @@ pub struct App {
     create_count: u32,
     advanced_options_open: bool,
     next_controller_id: u64,
+    polling_period_seconds: u32,
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
@@ -1186,6 +1231,7 @@ impl Default for App {
             create_count: 1,
             advanced_options_open: false,
             next_controller_id: 0,
+            polling_period_seconds: 0,
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
@@ -1954,6 +2000,7 @@ impl eframe::App for App {
                         })
                         .show(ui, |ui| {
                     ui.set_min_width(448.0);
+                    let mut polling_period_seconds = self.polling_period_seconds;
                     if let Some(index) = self
                         .selected_controller
                         .filter(|index| *index < self.controllers.len())
@@ -1961,9 +2008,13 @@ impl eframe::App for App {
                         let named = &mut self.controllers[index];
                         ui.heading(&named.name);
                         ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
-                        draw_controller_state(ui, named);
+                        draw_controller_state(ui, named, &mut polling_period_seconds);
+                        let input_width = ui.available_width();
                         ui.group(|ui| {
-                            if named.edits.ready() {
+                            ui.set_min_width(input_width - 8.0);
+                            let inputs_ready = named.edits.ready();
+                            draw_battery_emulation(ui, &mut named.view, inputs_ready);
+                            if inputs_ready {
                                 if ui.button("Release all inputs").clicked() {
                                     named.second_touch.active = false;
                                     if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
@@ -1981,6 +2032,7 @@ impl eframe::App for App {
                         });
                         draw_reverse_output_log(ui, &mut named.output_log);
                     }
+                    self.polling_period_seconds = polling_period_seconds;
                         });
                 });
                 });
@@ -2010,7 +2062,11 @@ fn target_label(target: RealizationId) -> &'static str {
     }
 }
 
-fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
+fn draw_controller_state(
+    ui: &mut egui::Ui,
+    controller: &mut NamedController,
+    polling_period_seconds: &mut u32,
+) {
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
     ui.group(|ui| {
@@ -2041,6 +2097,9 @@ fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
                 ui.label("Target");
                 ui.label(target);
                 ui.end_row();
+                ui.label("Type");
+                ui.label(controller.kind.label());
+                ui.end_row();
             });
         ui.separator();
         if let Some(worker) = &controller.service_worker {
@@ -2049,15 +2108,34 @@ fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
                     .num_columns(2)
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
+                        ui.label("Polling period");
+                        ui.add(
+                            egui::DragValue::new(polling_period_seconds)
+                                .speed(1.0)
+                                .suffix(" s"),
+                        )
+                        .on_hover_text("0 includes the controller's entire observed lifetime");
+                        ui.end_row();
                         ui.label("Service cycles");
                         ui.label(display.metrics.cycles.to_string());
                         ui.end_row();
-                        ui.label("Maximum gap");
-                        ui.label(format!(
-                            "{:.2} ms",
-                            display.metrics.max_gap.as_secs_f64() * 1000.0
-                        ));
-                        ui.end_row();
+                        if let Some([p90, p99, p999]) =
+                            service_gap_percentiles(&display.metrics, *polling_period_seconds)
+                        {
+                            for (label, gap) in [
+                                ("10% tail gap", p90),
+                                ("1% tail gap", p99),
+                                ("0.1% tail gap", p999),
+                            ] {
+                                ui.label(label);
+                                ui.label(format_gap(gap));
+                                ui.end_row();
+                            }
+                        } else {
+                            ui.label("10% / 1% / 0.1% tail gaps");
+                            ui.weak("awaiting service samples");
+                            ui.end_row();
+                        }
                         ui.label("Omitted worker logs");
                         ui.label(display.metrics.omitted_logs.to_string());
                         ui.end_row();
@@ -2067,8 +2145,11 @@ fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
         ui.separator();
         draw_led_line(ui, &controller.indicators);
         draw_rumble_line(ui, &controller.indicators);
-        draw_battery_emulation(ui, &mut controller.view);
     });
+}
+
+fn format_gap(gap: Duration) -> String {
+    format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
 }
 
 fn draw_state_row_label(ui: &mut egui::Ui, label: &str) {
@@ -2162,18 +2243,20 @@ fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, toolt
     response.on_hover_text(tooltip);
 }
 
-fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView) {
+fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
     ui.horizontal(|ui| {
         draw_state_row_label(ui, "Battery");
-        let expose_response =
-            ui.add_enabled(supported, egui::Checkbox::new(&mut exposed, "Expose"));
+        let expose_response = ui.add_enabled(
+            supported && editable,
+            egui::Checkbox::new(&mut exposed, "Expose"),
+        );
         if expose_response.changed() {
             let _ = view.set_battery_exposed(exposed);
         }
-        if battery_controls_are_active(supported, exposed) {
+        if battery_controls_are_active(supported && editable, exposed) {
             let mut percentage = battery.level().percent();
             let slider_changed = ui
                 .add_sized(
@@ -2221,15 +2304,17 @@ fn draw_inactive_battery_value(ui: &mut egui::Ui, width: f32) {
 
 fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
     ui.group(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button("Clear")
-                .on_hover_text("Clear reverse output")
-                .clicked()
-            {
-                output_log.clear();
-            }
+        ui.horizontal(|ui| {
             ui.label("Reverse output log");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .button("Clear")
+                    .on_hover_text("Clear reverse output")
+                    .clicked()
+                {
+                    output_log.clear();
+                }
+            });
         });
         egui::Frame::NONE
             .fill(Color32::from_gray(8))
@@ -3560,6 +3645,35 @@ mod tests {
         assert!(!battery_controls_are_active(false, true));
         assert!(!battery_controls_are_active(true, false));
         assert!(battery_controls_are_active(true, true));
+    }
+
+    #[test]
+    fn service_gap_tail_percentiles_cover_the_requested_observation_window() {
+        let start = Instant::now();
+        let mut metrics = ServiceMetrics::default();
+        metrics.record(start);
+        let mut elapsed = 0;
+        for milliseconds in 1..=10 {
+            elapsed += milliseconds;
+            metrics.record(start + Duration::from_millis(elapsed));
+        }
+        assert_eq!(
+            service_gap_percentiles(&metrics, 0),
+            Some([
+                Duration::from_millis(9),
+                Duration::from_millis(10),
+                Duration::from_millis(10)
+            ])
+        );
+        assert_eq!(
+            service_gap_percentiles(&metrics, 1),
+            Some([
+                Duration::from_millis(9),
+                Duration::from_millis(10),
+                Duration::from_millis(10)
+            ])
+        );
+        assert_eq!(format_gap(Duration::from_micros(1_250)), "1.25 ms");
     }
 
     #[test]
