@@ -55,7 +55,6 @@ const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
 const BATTERY_ROW_LABEL_WIDTH: f32 = 64.0;
-const LIVE_SECTION_GROUP_INNER_MARGIN: f32 = 6.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -2019,9 +2018,11 @@ impl eframe::App for App {
                         ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
                         draw_controller_state(ui, named, &mut polling_period_seconds);
                         let input_width = ui.available_width();
+                        let section_frame = egui::Frame::group(ui.style());
+                        let section_margin = section_frame.total_margin();
                         let section_content_width =
-                            (input_width - LIVE_SECTION_GROUP_INNER_MARGIN * 2.0).max(0.0);
-                        ui.group(|ui| {
+                            (input_width - section_margin.left - section_margin.right).max(0.0);
+                        section_frame.show(ui, |ui| {
                             ui.set_min_width(section_content_width);
                             ui.horizontal(|ui| {
                                 ui.heading("Reverse Output");
@@ -2032,7 +2033,7 @@ impl eframe::App for App {
                                 draw_reverse_output_log(ui, &mut named.output_log);
                             });
                         });
-                        ui.group(|ui| {
+                        section_frame.show(ui, |ui| {
                             ui.set_min_width(section_content_width);
                             ui.horizontal(|ui| {
                                 ui.heading("Input");
