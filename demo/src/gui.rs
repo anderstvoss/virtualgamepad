@@ -54,8 +54,7 @@ const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
-const METRIC_ROW_LABEL_WIDTH: f32 = 96.0;
-const FEEDBACK_ROW_LABEL_WIDTH: f32 = 64.0;
+const BATTERY_ROW_LABEL_WIDTH: f32 = 64.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -2015,7 +2014,6 @@ impl eframe::App for App {
                             ui.set_min_width(input_width - 8.0);
                             let inputs_ready = named.edits.ready();
                             draw_battery_emulation(ui, &mut named.view, inputs_ready);
-                            ui.separator();
                             if inputs_ready {
                                 if ui.button("Release all inputs").clicked() {
                                     named.second_touch.active = false;
@@ -2106,40 +2104,47 @@ fn draw_controller_state(
         ui.separator();
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
-                draw_metric_row(ui, "Service cycles", |ui| {
-                    ui.label(display.metrics.cycles.to_string());
-                });
-                draw_metric_row(ui, "Omitted logs", |ui| {
-                    ui.label(display.metrics.omitted_logs.to_string());
-                });
-                draw_metric_row(ui, "Max gap", |ui| {
-                    let gaps = service_gap_percentiles(&display.metrics, *polling_period_seconds);
-                    for (label, gap) in [
-                        ("10%:", gaps.map(|gaps| gaps[0])),
-                        ("1%:", gaps.map(|gaps| gaps[1])),
-                        ("0.1%:", gaps.map(|gaps| gaps[2])),
-                    ] {
-                        ui.label(label);
-                        if let Some(gap) = gap {
-                            ui.monospace(format_gap(gap));
-                        } else {
-                            ui.weak("—");
-                        }
-                    }
-                    ui.label("Polling period:");
-                    ui.add_sized(
-                        [38.0, NAME_INPUT_HEIGHT],
-                        egui::DragValue::new(polling_period_seconds)
-                            .speed(1.0)
-                            .suffix("s"),
-                    )
-                    .on_hover_text("0 includes the controller's entire observed lifetime");
-                });
+                egui::Grid::new("controller_metrics")
+                    .num_columns(2)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Service cycles");
+                        ui.label(display.metrics.cycles.to_string());
+                        ui.end_row();
+                        ui.label("Omitted logs");
+                        ui.label(display.metrics.omitted_logs.to_string());
+                        ui.end_row();
+                        ui.label("Max gap");
+                        let gaps =
+                            service_gap_percentiles(&display.metrics, *polling_period_seconds);
+                        ui.horizontal(|ui| {
+                            ui.label("Polling period:");
+                            ui.add_sized(
+                                [38.0, NAME_INPUT_HEIGHT],
+                                egui::DragValue::new(polling_period_seconds)
+                                    .speed(1.0)
+                                    .suffix("s"),
+                            )
+                            .on_hover_text("0 includes the controller's entire observed lifetime");
+                            for (label, gap) in [
+                                ("10%:", gaps.map(|gaps| gaps[0])),
+                                ("1%:", gaps.map(|gaps| gaps[1])),
+                                ("0.1%:", gaps.map(|gaps| gaps[2])),
+                            ] {
+                                ui.label(label);
+                                if let Some(gap) = gap {
+                                    ui.monospace(format_gap(gap));
+                                } else {
+                                    ui.weak("—");
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    });
             }
         }
         ui.separator();
-        draw_led_line(ui, &controller.indicators);
-        draw_rumble_line(ui, &controller.indicators);
+        draw_feedback_rows(ui, &controller.indicators);
     });
 }
 
@@ -2148,60 +2153,53 @@ fn format_gap(gap: Duration) -> String {
 }
 
 fn draw_state_row_label(ui: &mut egui::Ui, label: &str, width: f32) {
-    ui.allocate_ui_with_layout(
-        Vec2::new(width, NAME_INPUT_HEIGHT),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            ui.label(label);
-        },
+    ui.add_sized(
+        [width, NAME_INPUT_HEIGHT],
+        egui::Label::new(label).halign(egui::Align::LEFT),
     );
 }
 
-fn draw_metric_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
-    ui.horizontal(|ui| {
-        draw_state_row_label(ui, label, METRIC_ROW_LABEL_WIDTH);
-        contents(ui);
-    });
+fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    egui::Grid::new("controller_feedback")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("LED");
+            ui.horizontal(|ui| {
+                let lightbar = indicators.led.unwrap_or([30, 30, 30]);
+                draw_feedback_indicator(
+                    ui,
+                    "Lightbar",
+                    Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
+                    if indicators.led.is_some() {
+                        "Lightbar output received"
+                    } else {
+                        "Lightbar output unknown"
+                    },
+                );
+                draw_feedback_indicator(
+                    ui,
+                    "Mute",
+                    if indicators.mute_led == Some(true) {
+                        Color32::from_rgb(255, 130, 40)
+                    } else {
+                        Color32::DARK_GRAY
+                    },
+                    match indicators.mute_led {
+                        Some(true) => "Mute LED on",
+                        Some(false) => "Mute LED off",
+                        None => "Mute LED unknown",
+                    },
+                );
+            });
+            ui.end_row();
+            ui.label("Rumble");
+            draw_rumble_contents(ui, indicators);
+            ui.end_row();
+        });
 }
 
-fn draw_feedback_row(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut egui::Ui)) {
-    ui.horizontal(|ui| {
-        draw_state_row_label(ui, label, FEEDBACK_ROW_LABEL_WIDTH);
-        contents(ui);
-    });
-}
-
-fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
-    draw_feedback_row(ui, "LED", |ui| {
-        let lightbar = indicators.led.unwrap_or([30, 30, 30]);
-        draw_feedback_indicator(
-            ui,
-            "Lightbar",
-            Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
-            if indicators.led.is_some() {
-                "Lightbar output received"
-            } else {
-                "Lightbar output unknown"
-            },
-        );
-        draw_feedback_indicator(
-            ui,
-            "Mute",
-            if indicators.mute_led == Some(true) {
-                Color32::from_rgb(255, 130, 40)
-            } else {
-                Color32::DARK_GRAY
-            },
-            match indicators.mute_led {
-                Some(true) => "Mute LED on",
-                Some(false) => "Mute LED off",
-                None => "Mute LED unknown",
-            },
-        );
-    });
-}
-
-fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     let remaining = indicators
         .rumble_until
         .map(|until| until.saturating_duration_since(Instant::now()))
@@ -2218,7 +2216,7 @@ fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         (remaining.as_secs_f32() * 8.0).sin().abs()
     };
     let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-    draw_feedback_row(ui, "Rumble", |ui| {
+    ui.horizontal(|ui| {
         draw_feedback_indicator(
             ui,
             "Motors",
@@ -2258,7 +2256,7 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
     ui.horizontal(|ui| {
-        draw_state_row_label(ui, "Battery", FEEDBACK_ROW_LABEL_WIDTH);
+        draw_state_row_label(ui, "Battery", BATTERY_ROW_LABEL_WIDTH);
         let expose_response = ui.add_enabled(
             supported && editable,
             egui::Checkbox::new(&mut exposed, "Expose"),
