@@ -2015,6 +2015,7 @@ impl eframe::App for App {
                             ui.set_min_width(input_width - 8.0);
                             let inputs_ready = named.edits.ready();
                             draw_battery_emulation(ui, &mut named.view, inputs_ready);
+                            ui.separator();
                             if inputs_ready {
                                 if ui.button("Release all inputs").clicked() {
                                     named.second_touch.active = false;
@@ -2147,9 +2148,12 @@ fn format_gap(gap: Duration) -> String {
 }
 
 fn draw_state_row_label(ui: &mut egui::Ui, label: &str, width: f32) {
-    ui.add_sized(
-        [width, NAME_INPUT_HEIGHT],
-        egui::Label::new(label).halign(egui::Align::LEFT),
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, NAME_INPUT_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.label(label);
+        },
     );
 }
 
