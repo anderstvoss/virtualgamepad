@@ -1173,6 +1173,15 @@ impl Controller {
     }
 }
 impl ControllerView {
+    fn surface(&self) -> &dyn ControllerSurfaceInfo {
+        match self {
+            Self::Xbox(controller) => controller.surface(),
+            Self::DualSense(controller) => controller.surface(),
+            Self::DualShock4(controller) => controller.surface(),
+            Self::SwitchPro(controller) => controller.surface(),
+        }
+    }
+
     fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
         match self {
             Self::Xbox(controller) => draw_xbox(ui, controller),
@@ -2006,12 +2015,26 @@ impl eframe::App for App {
                         .filter(|index| *index < self.controllers.len())
                     {
                         let named = &mut self.controllers[index];
-                        ui.heading(&named.name);
-                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
                         draw_controller_state(ui, named, &mut polling_period_seconds);
                         let input_width = ui.available_width();
                         ui.group(|ui| {
                             ui.set_min_width(input_width - 8.0);
+                            ui.horizontal(|ui| {
+                                ui.heading("Reverse Output");
+                            });
+                            ui.separator();
+                            draw_feedback_rows(ui, &named.indicators);
+                            ui.collapsing("Reverse output log", |ui| {
+                                draw_reverse_output_log(ui, &mut named.output_log);
+                            });
+                        });
+                        ui.group(|ui| {
+                            ui.set_min_width(input_width - 8.0);
+                            ui.horizontal(|ui| {
+                                ui.heading("Input");
+                                draw_target_surface_tooltip(ui, named.view.surface());
+                            });
+                            ui.separator();
                             let inputs_ready = named.edits.ready();
                             draw_battery_emulation(ui, &mut named.view, inputs_ready);
                             if inputs_ready {
@@ -2030,7 +2053,6 @@ impl eframe::App for App {
                                 ui.small("Waiting for the previous input batch; servicing continues independently.");
                             }
                         });
-                        draw_reverse_output_log(ui, &mut named.output_log);
                     }
                     self.polling_period_seconds = polling_period_seconds;
                         });
@@ -2143,8 +2165,6 @@ fn draw_controller_state(
                     });
             }
         }
-        ui.separator();
-        draw_feedback_rows(ui, &controller.indicators);
     });
 }
 
@@ -2311,37 +2331,32 @@ fn draw_inactive_battery_value(ui: &mut egui::Ui, width: f32) {
 }
 
 fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
-    ui.group(|ui| {
-        ui.horizontal(|ui| {
-            ui.label("Reverse output log");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .button("Clear")
-                    .on_hover_text("Clear reverse output")
-                    .clicked()
-                {
-                    output_log.clear();
-                }
-            });
-        });
-        egui::Frame::NONE
-            .fill(Color32::from_gray(8))
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical()
-                    .id_salt("selected_controller_reverse_output")
-                    .max_height(NAME_INPUT_HEIGHT * 5.0)
-                    .stick_to_bottom(true)
-                    .show(ui, |ui| {
-                        if output_log.is_empty() {
-                            ui.weak("No reverse output received.");
-                        } else {
-                            for entry in output_log.iter() {
-                                ui.monospace(entry);
-                            }
-                        }
-                    });
-            });
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        if ui
+            .button("Clear")
+            .on_hover_text("Clear reverse output")
+            .clicked()
+        {
+            output_log.clear();
+        }
     });
+    egui::Frame::NONE
+        .fill(Color32::from_gray(8))
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("selected_controller_reverse_output")
+                .max_height(NAME_INPUT_HEIGHT * 5.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    if output_log.is_empty() {
+                        ui.weak("No reverse output received.");
+                    } else {
+                        for entry in output_log.iter() {
+                            ui.monospace(entry);
+                        }
+                    }
+                });
+        });
 }
 
 const fn face_labels(kind: Kind) -> [&'static str; 4] {
@@ -2410,8 +2425,8 @@ fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<
     let next = pointer_down || clicked;
     (next != previous).then_some(next)
 }
-fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
-    ui.collapsing("Selected target surface", |ui| {
+fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
+    ui.add(Button::new("Target surface")).on_hover_ui(|ui| {
         let surface = surface.common_surface();
         ui.label(format!("Target: {}", surface.target));
         ui.label(format!("Evidence: {:?}", surface.validation_status));
@@ -2531,7 +2546,6 @@ fn pad_axis_from_fraction(value: f32) -> i16 {
 }
 
 fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor) {
-    surface(ui, controller.surface());
     digital_controls(ui, Kind::Xbox360, |update| {
         let _ = controller.set_digital(update);
     });
@@ -2600,7 +2614,6 @@ fn draw_dualsense(
     controller: &mut DualSenseEditor,
     second_touch: &mut LatchedTouch,
 ) {
-    surface(ui, controller.surface());
     digital_controls(ui, Kind::DualSense, |update| {
         let _ = controller.set_digital(update);
     });
@@ -2713,7 +2726,6 @@ fn draw_dualsense(
 }
 
 fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
-    surface(ui, controller.surface());
     digital_controls(ui, Kind::DualShock4, |update| {
         let _ = controller.set_digital(update);
     });
@@ -2865,7 +2877,6 @@ fn draw_ds4_touch_slot(
 }
 
 fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
-    surface(ui, controller.surface());
     digital_controls(ui, Kind::SwitchPro, |update| {
         let _ = controller.set_digital(update);
     });
