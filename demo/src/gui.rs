@@ -54,7 +54,6 @@ const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
-const BATTERY_ROW_LABEL_WIDTH: f32 = 64.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -2042,20 +2041,20 @@ impl eframe::App for App {
                             ui.separator();
                             let inputs_ready = named.edits.ready();
                             draw_battery_emulation(ui, &mut named.view, inputs_ready);
-                            if inputs_ready {
+                            ui.add_enabled_ui(inputs_ready, |ui| {
                                 if ui.button("Release all inputs").clicked() {
                                     named.second_touch.active = false;
                                     if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
                                 } else {
                                     named.view.draw(ui, &mut named.second_touch);
                                 }
+                            });
+                            if inputs_ready {
                                 let result = named.view.take_edits().and_then(|edits| {
                                     let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
                                     named.edits.submit(&worker.edits, edits)
                                 });
                                 if let Err(error) = result { failed_controller = Some((index, error)); }
-                            } else {
-                                ui.small("Waiting for the previous input batch; servicing continues independently.");
                             }
                         });
                     }
@@ -2177,13 +2176,6 @@ fn format_gap(gap: Duration) -> String {
     format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
 }
 
-fn draw_state_row_label(ui: &mut egui::Ui, label: &str, width: f32) {
-    ui.add_sized(
-        [width, NAME_INPUT_HEIGHT],
-        egui::Label::new(label).halign(egui::Align::LEFT),
-    );
-}
-
 fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     egui::Grid::new("controller_feedback")
         .num_columns(2)
@@ -2280,57 +2272,77 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
-    ui.horizontal(|ui| {
-        draw_state_row_label(ui, "Battery", BATTERY_ROW_LABEL_WIDTH);
-        let expose_response = ui.add_enabled(
-            supported && editable,
-            egui::Checkbox::new(&mut exposed, "Expose"),
-        );
-        if expose_response.changed() {
-            let _ = view.set_battery_exposed(exposed);
-        }
-        if battery_controls_are_active(supported && editable, exposed) {
-            let mut percentage = battery.level().percent();
-            let slider_changed = ui
-                .add_sized(
-                    [120.0, NAME_INPUT_HEIGHT],
-                    egui::Slider::new(&mut percentage, 0..=100).show_value(false),
-                )
-                .changed();
-            let entry_changed = ui
-                .add_sized(
-                    [56.0, NAME_INPUT_HEIGHT],
-                    egui::DragValue::new(&mut percentage)
-                        .range(0..=100)
-                        .suffix("%"),
-                )
-                .changed();
-            if (slider_changed || entry_changed)
-                && let Ok(level) = BatteryLevel::new(percentage)
-            {
-                let _ = view.set_battery_level(level);
-            }
-        } else {
-            draw_inactive_battery_value(ui, 120.0);
-            draw_inactive_battery_value(ui, 56.0);
-            if !supported {
-                ui.weak("unsupported");
-            }
-        }
-    });
+    egui::Grid::new("battery_emulation")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Battery");
+            ui.horizontal(|ui| {
+                let expose_response = ui.add_enabled(
+                    supported && editable,
+                    egui::Checkbox::new(&mut exposed, "Expose"),
+                );
+                if expose_response.changed() {
+                    let _ = view.set_battery_exposed(exposed);
+                }
+                if battery_controls_are_visible(supported, exposed) {
+                    let mut percentage = battery.level().percent();
+                    let slider_changed = ui
+                        .add_enabled_ui(editable, |ui| {
+                            ui.add_sized(
+                                [120.0, NAME_INPUT_HEIGHT],
+                                egui::Slider::new(&mut percentage, 0..=100).show_value(false),
+                            )
+                        })
+                        .inner
+                        .changed();
+                    let entry_changed = ui
+                        .add_enabled_ui(editable, |ui| {
+                            ui.add_sized(
+                                [56.0, NAME_INPUT_HEIGHT],
+                                egui::DragValue::new(&mut percentage)
+                                    .range(0..=100)
+                                    .suffix("%"),
+                            )
+                        })
+                        .inner
+                        .changed();
+                    if (slider_changed || entry_changed)
+                        && let Ok(level) = BatteryLevel::new(percentage)
+                    {
+                        let _ = view.set_battery_level(level);
+                    }
+                } else {
+                    draw_inactive_battery_slider(ui, 120.0);
+                    let mut empty = String::new();
+                    ui.add_enabled(
+                        false,
+                        egui::TextEdit::singleline(&mut empty)
+                            .desired_width(56.0)
+                            .vertical_align(egui::Align::Center),
+                    );
+                    if !supported {
+                        ui.weak("unsupported");
+                    }
+                }
+            });
+            ui.end_row();
+        });
 }
 
-const fn battery_controls_are_active(supported: bool, exposed: bool) -> bool {
+const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
     supported && exposed
 }
 
-fn draw_inactive_battery_value(ui: &mut egui::Ui, width: f32) {
+fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
-    ui.painter().rect_filled(rect, 2.0, Color32::from_gray(24));
+    let track = egui::Rect::from_center_size(rect.center(), Vec2::new(width - 8.0, 4.0));
+    ui.painter()
+        .rect_filled(track, 2.0, ui.visuals().widgets.inactive.bg_fill);
     ui.painter().rect_stroke(
-        rect,
+        track,
         2.0,
-        Stroke::new(1.0, Color32::from_gray(42)),
+        ui.visuals().widgets.inactive.bg_stroke,
         egui::StrokeKind::Inside,
     );
 }
@@ -3671,10 +3683,10 @@ mod tests {
 
     #[test]
     fn battery_controls_require_an_exposed_supported_battery() {
-        assert!(!battery_controls_are_active(false, false));
-        assert!(!battery_controls_are_active(false, true));
-        assert!(!battery_controls_are_active(true, false));
-        assert!(battery_controls_are_active(true, true));
+        assert!(!battery_controls_are_visible(false, false));
+        assert!(!battery_controls_are_visible(false, true));
+        assert!(!battery_controls_are_visible(true, false));
+        assert!(battery_controls_are_visible(true, true));
     }
 
     #[test]
