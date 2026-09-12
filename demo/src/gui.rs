@@ -55,6 +55,7 @@ const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
 const BATTERY_ROW_LABEL_WIDTH: f32 = 64.0;
+const LIVE_SECTION_GROUP_INNER_MARGIN: f32 = 6.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -2018,8 +2019,10 @@ impl eframe::App for App {
                         ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
                         draw_controller_state(ui, named, &mut polling_period_seconds);
                         let input_width = ui.available_width();
+                        let section_content_width =
+                            (input_width - LIVE_SECTION_GROUP_INNER_MARGIN * 2.0).max(0.0);
                         ui.group(|ui| {
-                            ui.set_min_width(input_width - 8.0);
+                            ui.set_min_width(section_content_width);
                             ui.horizontal(|ui| {
                                 ui.heading("Reverse Output");
                             });
@@ -2030,7 +2033,7 @@ impl eframe::App for App {
                             });
                         });
                         ui.group(|ui| {
-                            ui.set_min_width(input_width - 8.0);
+                            ui.set_min_width(section_content_width);
                             ui.horizontal(|ui| {
                                 ui.heading("Input");
                                 draw_target_surface_tooltip(ui, named.view.surface());
