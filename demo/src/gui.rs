@@ -612,6 +612,7 @@ struct NamedController {
     view: ControllerView,
     edits: EditProgress,
     indicators: ReverseIndicators,
+    output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
     second_touch: LatchedTouch,
 }
@@ -1100,27 +1101,6 @@ impl Controller {
 }
 impl ControllerView {
     fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
-        if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
-            let battery = self.battery();
-            ui.group(|ui| {
-                ui.label("Battery emulation");
-                let mut exposed = battery.is_exposed();
-                if ui.checkbox(&mut exposed, "Expose battery").changed() {
-                    let _ = self.set_battery_exposed(exposed);
-                }
-                if exposed {
-                    let mut level = battery.level().percent();
-                    if ui
-                        .add(egui::Slider::new(&mut level, 0..=100).text("Battery level (%)"))
-                        .changed()
-                    {
-                        if let Ok(level) = BatteryLevel::new(level) {
-                            let _ = self.set_battery_level(level);
-                        }
-                    }
-                }
-            });
-        }
         match self {
             Self::Xbox(controller) => draw_xbox(ui, controller),
             Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
@@ -1134,6 +1114,9 @@ impl ControllerView {
             Self::DualSense(controller) => controller.state().battery(),
             Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
         }
+    }
+    const fn supports_battery_emulation(&self) -> bool {
+        matches!(self, Self::Xbox(_) | Self::DualSense(_))
     }
     fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), String> {
         match self {
@@ -1161,7 +1144,6 @@ pub struct App {
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
     controller_label_mode: ControllerLabelMode,
-    output_log: Vec<String>,
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     backend_healthy: bool,
@@ -1179,7 +1161,6 @@ impl Default for App {
             controllers: vec![],
             selected_controller: None,
             controller_label_mode: ControllerLabelMode::AssignedName,
-            output_log: vec![],
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
             backend_healthy: true,
@@ -1235,6 +1216,12 @@ impl App {
                     dump.push_str("  Worker display: busy\n");
                 }
             }
+            if !controller.output_log.is_empty() {
+                dump.push_str("  Typed reverse output:\n");
+                for entry in &controller.output_log {
+                    let _ = writeln!(dump, "    {entry}");
+                }
+            }
             dump.push('\n');
         }
         if let Some(cleanup) = &self.last_cleanup {
@@ -1248,10 +1235,6 @@ impl App {
                 if entry.success { "success" } else { "error" },
                 entry.message
             );
-        }
-        dump.push_str("\nTyped reverse output:\n");
-        for entry in &self.output_log {
-            let _ = writeln!(dump, "{entry}");
         }
         dump
     }
@@ -1337,6 +1320,7 @@ impl App {
                     view,
                     edits: EditProgress::default(),
                     indicators: ReverseIndicators::default(),
+                    output_log: Vec::new(),
                     service_worker,
                     second_touch: LatchedTouch::default(),
                 });
@@ -1431,7 +1415,9 @@ impl eframe::App for App {
             }
             if let Some(worker) = &named.service_worker {
                 if let Ok(mut display) = worker.display.try_lock() {
-                    self.output_log.append(&mut display.logs);
+                    named.output_log.append(&mut display.logs);
+                    let excess = named.output_log.len().saturating_sub(OUTPUT_LOG_LIMIT);
+                    named.output_log.drain(..excess);
                     named.indicators = display.indicators.clone();
                     if let Some(healthy) = display.backend_healthy {
                         backend_healthy &= healthy;
@@ -1441,10 +1427,6 @@ impl eframe::App for App {
                     }
                 }
             }
-        }
-        if self.output_log.len() > OUTPUT_LOG_LIMIT {
-            let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
-            self.output_log.drain(..excess);
         }
         self.backend_healthy = backend_healthy;
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(
@@ -1941,29 +1923,15 @@ impl eframe::App for App {
                         })
                         .show(ui, |ui| {
                     ui.set_min_width(448.0);
-                    ui.heading("Live controllers");
                     if let Some(index) = self
                         .selected_controller
                         .filter(|index| *index < self.controllers.len())
                     {
                         let named = &mut self.controllers[index];
+                        ui.heading(&named.name);
+                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
+                        draw_controller_state(ui, named);
                         ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label("Controller name:");
-                                ui.text_edit_singleline(&mut named.name);
-                            });
-                            draw_reverse_indicators(ui, &named.indicators);
-                            ui.label(format!(
-                                "{} · Controller ID {}",
-                                target_label(named.options.target),
-                                controller_identifier(named)
-                            ));
-                            if let Some(worker) = &named.service_worker {
-                                if let Ok(display) = worker.display.try_lock() {
-                                    ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
-                                        display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
-                                }
-                            }
                             if named.edits.ready() {
                                 if ui.button("Release all inputs").clicked() {
                                     named.second_touch.active = false;
@@ -1979,26 +1947,13 @@ impl eframe::App for App {
                             } else {
                                 ui.small("Waiting for the previous input batch; servicing continues independently.");
                             }
-                            ui.small("Input changes are sent automatically.");
                         });
+                        draw_reverse_output_log(ui, &mut named.output_log);
                     } else {
+                        ui.heading("Live controllers");
+                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
                         ui.small("Create a controller, then select its tab.");
                     }
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.heading("Live typed reverse output");
-                        if ui.button("Clear").clicked() {
-                            self.output_log.clear();
-                        }
-                    });
-                    ui.small("Background service uses a 4 ms fallback and earlier deadlines. This bounded log is observational, not an acceptance verdict.");
-                    if self.output_log.is_empty() {
-                        ui.small("No reverse output received.");
-                    }
-                    for entry in self.output_log.iter().rev().take(20) {
-                        ui.monospace(entry);
-                    }
-                    ui.separator();
                         });
                 });
                 });
@@ -2028,68 +1983,202 @@ fn target_label(target: RealizationId) -> &'static str {
     }
 }
 
-fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
+    let identifier = controller_identifier(controller);
+    let target = target_label(controller.options.target);
+    ui.group(|ui| {
+        egui::Grid::new("controller_topology")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Name");
+                ui.text_edit_singleline(&mut controller.name);
+                ui.end_row();
+                ui.label("ID");
+                ui.monospace(identifier);
+                ui.end_row();
+                ui.label("Target");
+                ui.label(target);
+                ui.end_row();
+            });
+        ui.separator();
+        draw_led_table(ui, &controller.indicators);
+        ui.horizontal(|ui| {
+            ui.label("Rumble");
+            draw_rumble_pulse(ui, &controller.indicators);
+        });
+        draw_battery_emulation(ui, &mut controller.view);
+        if let Some(worker) = &controller.service_worker {
+            if let Ok(display) = worker.display.try_lock() {
+                ui.small(format!(
+                    "Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
+                    display.metrics.cycles,
+                    display.metrics.max_gap.as_secs_f64() * 1000.0,
+                    display.metrics.omitted_logs
+                ));
+            }
+        }
+    });
+}
+
+fn draw_led_table(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    egui::Grid::new("controller_leds")
+        .num_columns(3)
+        .spacing([8.0, 3.0])
+        .show(ui, |ui| {
+            ui.label("Lightbar LED");
+            let led = indicators.led.unwrap_or([30, 30, 30]);
+            let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
+            ui.painter()
+                .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
+            ui.label(if indicators.led.is_some() {
+                "received"
+            } else {
+                "unknown"
+            });
+            ui.end_row();
+
+            ui.label("Mute LED");
+            let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
+            ui.painter().circle_filled(
+                mute_rect.center(),
+                6.0,
+                if indicators.mute_led == Some(true) {
+                    Color32::from_rgb(255, 130, 40)
+                } else {
+                    Color32::DARK_GRAY
+                },
+            );
+            ui.label(match indicators.mute_led {
+                Some(true) => "on",
+                Some(false) => "off",
+                None => "unknown",
+            });
+            ui.end_row();
+        });
+}
+
+fn draw_rumble_pulse(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    let remaining = indicators
+        .rumble_until
+        .map(|until| until.saturating_duration_since(Instant::now()))
+        .unwrap_or_default();
+    let active = indicators.rumble_active || !remaining.is_zero();
+    let (rumble_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+    let phase = if indicators.rumble_active {
+        indicators
+            .rumble_started
+            .map(|started| started.elapsed().as_secs_f32() * 8.0)
+            .unwrap_or_default()
+            .sin()
+            .abs()
+    } else {
+        (remaining.as_secs_f32() * 8.0).sin().abs()
+    };
+    let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
+    ui.painter().circle_filled(
+        rumble_rect.center(),
+        radius,
+        if active {
+            Color32::from_rgb(220, 80, 80)
+        } else {
+            Color32::DARK_GRAY
+        },
+    );
+    ui.label(if !indicators.rumble_seen {
+        "unknown"
+    } else if active {
+        "active"
+    } else {
+        "inactive"
+    });
+}
+
+fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView) {
+    let supported = view.supports_battery_emulation();
+    let battery = view.battery();
+    let mut exposed = battery.is_exposed();
     ui.horizontal(|ui| {
-        ui.label("Reverse effects:");
-        let led = indicators.led.unwrap_or([30, 30, 30]);
-        let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        ui.painter()
-            .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
-        ui.label(if indicators.led.is_some() {
-            "LED: received"
+        ui.label("Battery");
+        let expose_response =
+            ui.add_enabled(supported, egui::Checkbox::new(&mut exposed, "Expose"));
+        if expose_response.changed() {
+            let _ = view.set_battery_exposed(exposed);
+        }
+        if battery_controls_are_active(supported, exposed) {
+            let mut percentage = battery.level().percent();
+            let slider_changed = ui
+                .add_sized(
+                    [120.0, NAME_INPUT_HEIGHT],
+                    egui::Slider::new(&mut percentage, 0..=100).show_value(false),
+                )
+                .changed();
+            let entry_changed = ui
+                .add_sized(
+                    [56.0, NAME_INPUT_HEIGHT],
+                    egui::DragValue::new(&mut percentage)
+                        .range(0..=100)
+                        .suffix("%"),
+                )
+                .changed();
+            if (slider_changed || entry_changed)
+                && let Ok(level) = BatteryLevel::new(percentage)
+            {
+                let _ = view.set_battery_level(level);
+            }
         } else {
-            "LED: unknown"
-        });
+            draw_inactive_battery_value(ui, 120.0);
+            draw_inactive_battery_value(ui, 56.0);
+            if !supported {
+                ui.weak("unsupported");
+            }
+        }
+    });
+}
 
-        let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        ui.painter().circle_filled(
-            mute_rect.center(),
-            7.0,
-            if indicators.mute_led == Some(true) {
-                Color32::from_rgb(255, 130, 40)
-            } else {
-                Color32::DARK_GRAY
-            },
-        );
-        ui.label(match indicators.mute_led {
-            Some(true) => "Mute LED: on",
-            Some(false) => "Mute LED: off",
-            None => "Mute LED: unknown",
-        });
+const fn battery_controls_are_active(supported: bool, exposed: bool) -> bool {
+    supported && exposed
+}
 
-        let remaining = indicators
-            .rumble_until
-            .map(|until| until.saturating_duration_since(Instant::now()))
-            .unwrap_or_default();
-        let active = indicators.rumble_active || !remaining.is_zero();
-        let (rumble_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        let phase = if indicators.rumble_active {
-            indicators
-                .rumble_started
-                .map(|started| started.elapsed().as_secs_f32() * 8.0)
-                .unwrap_or_default()
-                .sin()
-                .abs()
-        } else {
-            (remaining.as_secs_f32() * 8.0).sin().abs()
-        };
-        let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-        ui.painter().circle_filled(
-            rumble_rect.center(),
-            radius,
-            if active {
-                Color32::from_rgb(220, 80, 80)
-            } else {
-                Color32::DARK_GRAY
-            },
-        );
-        ui.label(if !indicators.rumble_seen {
-            "Rumble: unknown"
-        } else if active {
-            "Rumble: active"
-        } else {
-            "Rumble: inactive"
+fn draw_inactive_battery_value(ui: &mut egui::Ui, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
+    ui.painter().rect_filled(rect, 2.0, Color32::from_gray(24));
+    ui.painter().rect_stroke(
+        rect,
+        2.0,
+        Stroke::new(1.0, Color32::from_gray(42)),
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
+    ui.group(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button("Clear")
+                .on_hover_text("Clear reverse output")
+                .clicked()
+            {
+                output_log.clear();
+            }
         });
+        egui::Frame::NONE
+            .fill(Color32::from_gray(8))
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("selected_controller_reverse_output")
+                    .max_height(NAME_INPUT_HEIGHT * 5.0)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        if output_log.is_empty() {
+                            ui.weak("No reverse output received.");
+                        } else {
+                            for entry in output_log.iter() {
+                                ui.monospace(entry);
+                            }
+                        }
+                    });
+            });
     });
 }
 
@@ -3386,14 +3475,22 @@ mod tests {
     #[test]
     fn reverse_output_logs_identify_the_controller_context() {
         let mut logs = vec!["ForceFeedback".to_owned(), "HidOutput".to_owned()];
-        label_output_logs("DualSense 1 · lab 4", &mut logs);
+        label_output_logs("DualSense 1 · 007-HID-DUALSENSE", &mut logs);
         assert_eq!(
             logs,
             vec![
-                "DualSense 1 · lab 4: ForceFeedback",
-                "DualSense 1 · lab 4: HidOutput"
+                "DualSense 1 · 007-HID-DUALSENSE: ForceFeedback",
+                "DualSense 1 · 007-HID-DUALSENSE: HidOutput"
             ]
         );
+    }
+
+    #[test]
+    fn battery_controls_require_an_exposed_supported_battery() {
+        assert!(!battery_controls_are_active(false, false));
+        assert!(!battery_controls_are_active(false, true));
+        assert!(!battery_controls_are_active(true, false));
+        assert!(battery_controls_are_active(true, true));
     }
 
     #[test]
