@@ -34,6 +34,7 @@ struct ControllerOptions {
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 const CONTROLLER_ID_WIDTH: usize = 3;
+const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
@@ -52,6 +53,7 @@ const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
 const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
+const STATE_ROW_LABEL_WIDTH: f32 = 64.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ControllerLabelMode {
@@ -261,6 +263,31 @@ fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>)
         .map(|number| format!("{} {number}", kind.label()))
         .find(|name| !existing_names.contains(name))
         .expect("unbounded controller name search must find an available name")
+}
+
+fn sanitized_controller_name(draft: &str) -> Result<String, &'static str> {
+    let name = draft.trim();
+    if name.is_empty() {
+        return Err("Name cannot be empty");
+    }
+    if name.chars().count() > CONTROLLER_NAME_MAX_CHARS {
+        return Err("Name must be 64 characters or fewer");
+    }
+    if name.chars().any(char::is_control) {
+        return Err("Name cannot contain control characters");
+    }
+    Ok(name.to_owned())
+}
+
+fn apply_controller_name(controller: &mut NamedController) {
+    match sanitized_controller_name(&controller.name_draft) {
+        Ok(name) => {
+            controller.name_draft.clone_from(&name);
+            controller.name = name;
+            controller.name_error = None;
+        }
+        Err(error) => controller.name_error = Some(error.into()),
+    }
 }
 
 fn truncate_identifier(identifier: &str, max_chars: usize) -> String {
@@ -609,6 +636,8 @@ struct NamedController {
     kind: Kind,
     options: ControllerOptions,
     name: String,
+    name_draft: String,
+    name_error: Option<String>,
     view: ControllerView,
     edits: EditProgress,
     indicators: ReverseIndicators,
@@ -1317,6 +1346,8 @@ impl App {
                     kind: self.kind,
                     options,
                     name: name.clone(),
+                    name_draft: name.clone(),
+                    name_error: None,
                     view,
                     edits: EditProgress::default(),
                     indicators: ReverseIndicators::default(),
@@ -1949,10 +1980,6 @@ impl eframe::App for App {
                             }
                         });
                         draw_reverse_output_log(ui, &mut named.output_log);
-                    } else {
-                        ui.heading("Live controllers");
-                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
-                        ui.small("Create a controller, then select its tab.");
                     }
                         });
                 });
@@ -1992,8 +2019,22 @@ fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
             .spacing([8.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Name");
-                ui.text_edit_singleline(&mut controller.name);
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [180.0, NAME_INPUT_HEIGHT],
+                        egui::TextEdit::singleline(&mut controller.name_draft)
+                            .vertical_align(egui::Align::Center),
+                    );
+                    if ui.button("Apply").clicked() {
+                        apply_controller_name(controller);
+                    }
+                });
                 ui.end_row();
+                if let Some(error) = &controller.name_error {
+                    ui.label("");
+                    ui.colored_label(Color32::RED, error);
+                    ui.end_row();
+                }
                 ui.label("ID");
                 ui.monospace(identifier);
                 ui.end_row();
@@ -2002,69 +2043,78 @@ fn draw_controller_state(ui: &mut egui::Ui, controller: &mut NamedController) {
                 ui.end_row();
             });
         ui.separator();
-        draw_led_table(ui, &controller.indicators);
-        ui.horizontal(|ui| {
-            ui.label("Rumble");
-            draw_rumble_pulse(ui, &controller.indicators);
-        });
-        draw_battery_emulation(ui, &mut controller.view);
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
-                ui.small(format!(
-                    "Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
-                    display.metrics.cycles,
-                    display.metrics.max_gap.as_secs_f64() * 1000.0,
-                    display.metrics.omitted_logs
-                ));
+                egui::Grid::new("controller_metrics")
+                    .num_columns(2)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Service cycles");
+                        ui.label(display.metrics.cycles.to_string());
+                        ui.end_row();
+                        ui.label("Maximum gap");
+                        ui.label(format!(
+                            "{:.2} ms",
+                            display.metrics.max_gap.as_secs_f64() * 1000.0
+                        ));
+                        ui.end_row();
+                        ui.label("Omitted worker logs");
+                        ui.label(display.metrics.omitted_logs.to_string());
+                        ui.end_row();
+                    });
             }
         }
+        ui.separator();
+        draw_led_line(ui, &controller.indicators);
+        draw_rumble_line(ui, &controller.indicators);
+        draw_battery_emulation(ui, &mut controller.view);
     });
 }
 
-fn draw_led_table(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
-    egui::Grid::new("controller_leds")
-        .num_columns(3)
-        .spacing([8.0, 3.0])
-        .show(ui, |ui| {
-            ui.label("Lightbar LED");
-            let led = indicators.led.unwrap_or([30, 30, 30]);
-            let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-            ui.painter()
-                .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
-            ui.label(if indicators.led.is_some() {
-                "received"
-            } else {
-                "unknown"
-            });
-            ui.end_row();
-
-            ui.label("Mute LED");
-            let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-            ui.painter().circle_filled(
-                mute_rect.center(),
-                6.0,
-                if indicators.mute_led == Some(true) {
-                    Color32::from_rgb(255, 130, 40)
-                } else {
-                    Color32::DARK_GRAY
-                },
-            );
-            ui.label(match indicators.mute_led {
-                Some(true) => "on",
-                Some(false) => "off",
-                None => "unknown",
-            });
-            ui.end_row();
-        });
+fn draw_state_row_label(ui: &mut egui::Ui, label: &str) {
+    ui.add_sized(
+        [STATE_ROW_LABEL_WIDTH, NAME_INPUT_HEIGHT],
+        egui::Label::new(label),
+    );
 }
 
-fn draw_rumble_pulse(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+fn draw_led_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    ui.horizontal(|ui| {
+        draw_state_row_label(ui, "LED");
+        let lightbar = indicators.led.unwrap_or([30, 30, 30]);
+        draw_feedback_indicator(
+            ui,
+            "Lightbar",
+            Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
+            if indicators.led.is_some() {
+                "Lightbar output received"
+            } else {
+                "Lightbar output unknown"
+            },
+        );
+        draw_feedback_indicator(
+            ui,
+            "Mute",
+            if indicators.mute_led == Some(true) {
+                Color32::from_rgb(255, 130, 40)
+            } else {
+                Color32::DARK_GRAY
+            },
+            match indicators.mute_led {
+                Some(true) => "Mute LED on",
+                Some(false) => "Mute LED off",
+                None => "Mute LED unknown",
+            },
+        );
+    });
+}
+
+fn draw_rumble_line(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
     let remaining = indicators
         .rumble_until
         .map(|until| until.saturating_duration_since(Instant::now()))
         .unwrap_or_default();
     let active = indicators.rumble_active || !remaining.is_zero();
-    let (rumble_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
     let phase = if indicators.rumble_active {
         indicators
             .rumble_started
@@ -2076,22 +2126,40 @@ fn draw_rumble_pulse(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
         (remaining.as_secs_f32() * 8.0).sin().abs()
     };
     let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-    ui.painter().circle_filled(
-        rumble_rect.center(),
-        radius,
+    ui.horizontal(|ui| {
+        draw_state_row_label(ui, "Rumble");
+        draw_feedback_indicator(
+            ui,
+            "Motors",
+            if active {
+                Color32::from_rgb(220, 80, 80)
+            } else {
+                Color32::DARK_GRAY
+            },
+            if !indicators.rumble_seen {
+                "Rumble unknown"
+            } else if active {
+                "Rumble active"
+            } else {
+                "Rumble inactive"
+            },
+        );
         if active {
-            Color32::from_rgb(220, 80, 80)
-        } else {
-            Color32::DARK_GRAY
-        },
-    );
-    ui.label(if !indicators.rumble_seen {
-        "unknown"
-    } else if active {
-        "active"
-    } else {
-        "inactive"
+            let (pulse_rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+            ui.painter().circle_stroke(
+                pulse_rect.center(),
+                radius,
+                Stroke::new(1.0, Color32::from_rgb(220, 80, 80)),
+            );
+        }
     });
+}
+
+fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, tooltip: &str) {
+    ui.label(format!("{label}:"));
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    ui.painter().circle_filled(rect.center(), 5.0, color);
+    response.on_hover_text(tooltip);
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView) {
@@ -2099,7 +2167,7 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView) {
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
     ui.horizontal(|ui| {
-        ui.label("Battery");
+        draw_state_row_label(ui, "Battery");
         let expose_response =
             ui.add_enabled(supported, egui::Checkbox::new(&mut exposed, "Expose"));
         if expose_response.changed() {
@@ -2161,6 +2229,7 @@ fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
             {
                 output_log.clear();
             }
+            ui.label("Reverse output log");
         });
         egui::Frame::NONE
             .fill(Color32::from_gray(8))
@@ -3520,6 +3589,26 @@ mod tests {
         assert_eq!(
             next_available_name(Kind::Xbox360, ["DualSense 0".to_owned()].into_iter(),),
             "Xbox 360 0"
+        );
+    }
+
+    #[test]
+    fn controller_name_sanitization_trims_and_rejects_invalid_drafts() {
+        assert_eq!(
+            sanitized_controller_name("  Player one  "),
+            Ok("Player one".into())
+        );
+        assert_eq!(
+            sanitized_controller_name("\t\n"),
+            Err("Name cannot be empty")
+        );
+        assert_eq!(
+            sanitized_controller_name("name\nnext"),
+            Err("Name cannot contain control characters")
+        );
+        assert_eq!(
+            sanitized_controller_name(&"x".repeat(CONTROLLER_NAME_MAX_CHARS + 1)),
+            Err("Name must be 64 characters or fewer")
         );
     }
 
