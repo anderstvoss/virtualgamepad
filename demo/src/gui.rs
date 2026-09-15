@@ -2486,7 +2486,7 @@ fn draw_xbox(
 ) {
     let topology = controller.surface().common().input_topology;
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
         for stick in topology.sticks {
@@ -2499,13 +2499,14 @@ fn draw_xbox(
                 ui,
                 stick,
                 (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
                 &mut events,
             );
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
         for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, &mut events);
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
@@ -2611,7 +2612,7 @@ fn draw_dualsense(
 ) {
     let topology = controller.surface().common().input_topology;
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
         for stick in topology.sticks {
@@ -2624,13 +2625,14 @@ fn draw_dualsense(
                 ui,
                 stick,
                 (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
                 &mut events,
             );
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
         for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, &mut events);
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
@@ -2788,7 +2790,7 @@ fn draw_dualshock4(
 ) {
     let topology = controller.surface().common().input_topology;
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
         for stick in topology.sticks {
@@ -2801,13 +2803,14 @@ fn draw_dualshock4(
                 ui,
                 stick,
                 (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
                 &mut events,
             );
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
         for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, &mut events);
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
@@ -2965,7 +2968,7 @@ fn draw_switch_pro(
 ) {
     let topology = controller.surface().common().input_topology;
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
         for stick in topology.sticks {
@@ -2978,13 +2981,14 @@ fn draw_switch_pro(
                 ui,
                 stick,
                 (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
                 &mut events,
             );
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
         for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, &mut events);
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
