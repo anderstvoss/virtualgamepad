@@ -1,10 +1,13 @@
 mod editor;
-#[allow(dead_code)] // Removed once all controller adapters use every shared cluster.
 mod input_clusters;
 use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
 };
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
+use input_clusters::{
+    InputEvent, InputUiState, InputValue, draw_auxiliary_buttons, draw_dpad_cluster,
+    draw_face_cluster, draw_stick, draw_trigger_stack, horizontal_cards,
+};
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -646,6 +649,7 @@ struct NamedController {
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
     second_touch: LatchedTouch,
+    input_ui: InputUiState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1183,9 +1187,14 @@ impl ControllerView {
         }
     }
 
-    fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
+    fn draw(
+        &mut self,
+        ui: &mut egui::Ui,
+        second_touch: &mut LatchedTouch,
+        input_ui: &mut InputUiState,
+    ) {
         match self {
-            Self::Xbox(controller) => draw_xbox(ui, controller),
+            Self::Xbox(controller) => draw_xbox(ui, controller, input_ui),
             Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
             Self::DualShock4(controller) => draw_dualshock4(ui, controller),
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
@@ -1410,6 +1419,7 @@ impl App {
                     output_log: Vec::new(),
                     service_worker,
                     second_touch: LatchedTouch::default(),
+                    input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
@@ -2105,12 +2115,17 @@ impl eframe::App for App {
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 if ui.button("Release all inputs").clicked() {
                                                     named.second_touch.active = false;
+                                                    named.input_ui.release_all();
                                                     if let Err(error) = named.view.release_inputs()
                                                     {
                                                         failed_controller = Some((index, error));
                                                     }
                                                 } else {
-                                                    named.view.draw(ui, &mut named.second_touch);
+                                                    named.view.draw(
+                                                        ui,
+                                                        &mut named.second_touch,
+                                                        &mut named.input_ui,
+                                                    );
                                                 }
                                             });
                                             if inputs_ready {
@@ -2652,68 +2667,124 @@ fn pad_axis_from_fraction(value: f32) -> i16 {
     (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
 }
 
-fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor) {
-    digital_controls(ui, Kind::Xbox360, |update| {
-        let _ = controller.set_digital(update);
+fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor, input_ui: &mut InputUiState) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+
+    horizontal_cards(ui, "xbox-sticks", false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                &mut events,
+            );
+        }
     });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Back", Xbox360Control::Back),
-                ("Start", Xbox360Control::Start),
-                ("Guide", Xbox360Control::Guide),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
+    horizontal_cards(ui, "xbox-spatial", false, |ui| {
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, &mut events);
+        }
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("left-shoulder"),
+            InputValue::Button(
+                controller
+                    .state()
+                    .native_pressed(Xbox360Control::LeftShoulder),
+            ),
+        ),
+        (
+            virtualgamepad::InputControlId::new("left-trigger"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("right-shoulder"),
+            InputValue::Button(
+                controller
+                    .state()
+                    .native_pressed(Xbox360Control::RightShoulder),
+            ),
+        ),
+        (
+            virtualgamepad::InputControlId::new("right-trigger"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, "xbox-triggers", false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
             }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = left_x.raw();
-    let mut y = left_y.raw();
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = right_x.raw();
-    let mut right_y = right_y.raw();
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Xbox left stick", &mut x, &mut y) {
-                    let _ = controller.set_left_stick(Xbox360Axis::new(x), Xbox360Axis::new(y));
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "back" => Xbox360Control::Back,
+                    "start" => Xbox360Control::Start,
+                    "guide" => Xbox360Control::Guide,
+                    "left-stick-press" => Xbox360Control::LeftStickPress,
+                    "right-stick-press" => Xbox360Control::RightStickPress,
+                    "left-shoulder" => Xbox360Control::LeftShoulder,
+                    "right-shoulder" => Xbox360Control::RightShoulder,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis1 { id, value } => {
+                let value = u8::try_from(value).expect("Xbox trigger topology uses u8 range");
+                match id.as_str() {
+                    "left-trigger" => triggers.0 = value,
+                    "right-trigger" => triggers.1 = value,
+                    _ => continue,
                 }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(Xbox360Control::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Xbox right stick", &mut right_x, &mut right_y) {
-                    let _ = controller
-                        .set_right_stick(Xbox360Axis::new(right_x), Xbox360Axis::new(right_y));
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x =
+                    Xbox360Axis::new(i16::try_from(x).expect("Xbox stick topology uses i16 range"));
+                let y =
+                    Xbox360Axis::new(i16::try_from(y).expect("Xbox stick topology uses i16 range"));
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
                 }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(Xbox360Control::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "Xbox left trigger", &mut left)
-        | momentary_trigger(ui, "Xbox right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(Xbox360Trigger::new(left), Xbox360Trigger::new(right));
+            }
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
     }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "Left shoulder", |pressed| {
-            let _ = controller.set_native(Xbox360Control::LeftShoulder, pressed);
-        });
-        hold(ui, "Right shoulder", |pressed| {
-            let _ = controller.set_native(Xbox360Control::RightShoulder, pressed);
-        });
-    });
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            Xbox360Trigger::new(triggers.0),
+            Xbox360Trigger::new(triggers.1),
+        );
+    }
 }
 #[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
 fn draw_dualsense(
