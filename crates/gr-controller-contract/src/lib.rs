@@ -260,6 +260,9 @@ impl InputTopology {
         for cluster in self.face_button_clusters {
             add_id(cluster.id)?;
             for (index, button) in cluster.buttons.iter().enumerate() {
+                if button.placement.column < 0 || button.placement.row < 0 {
+                    return Err(InputTopologyError::InvalidPlacement(cluster.id));
+                }
                 if cluster.buttons[..index]
                     .iter()
                     .any(|other| other.placement == button.placement)
@@ -355,6 +358,8 @@ pub enum InputTopologyError {
     DuplicateIdentifier(InputControlId),
     #[error("face-button cluster `{0:?}` contains duplicate placement")]
     DuplicatePlacement(InputControlId),
+    #[error("face-button cluster `{0:?}` contains a negative placement")]
+    InvalidPlacement(InputControlId),
     #[error("input `{0:?}` has an invalid axis range")]
     InvalidAxisRange(InputControlId),
     #[error("touchpad `{0:?}` has invalid dimensions or contact count")]
@@ -407,6 +412,16 @@ mod input_topology_tests {
             title: "Face",
             buttons: &DUPLICATE_FACE_BUTTONS,
         }];
+        static NEGATIVE_FACE_BUTTONS: [FaceButtonInput; 1] = [FaceButtonInput {
+            button: FaceButton::North,
+            label: "N",
+            placement: ClusterPlacement { column: -1, row: 0 },
+        }];
+        static NEGATIVE_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
+            id: InputControlId::new("negative-face"),
+            title: "Face",
+            buttons: &NEGATIVE_FACE_BUTTONS,
+        }];
         let duplicate_ids = InputTopology {
             auxiliary_buttons: &DUPLICATE_BUTTONS,
             ..InputTopology::EMPTY
@@ -425,6 +440,16 @@ mod input_topology_tests {
             duplicate_placement.validate(),
             Err(InputTopologyError::DuplicatePlacement(InputControlId::new(
                 "face"
+            )))
+        );
+        let negative_placement = InputTopology {
+            face_button_clusters: &NEGATIVE_FACE_CLUSTERS,
+            ..InputTopology::EMPTY
+        };
+        assert_eq!(
+            negative_placement.validate(),
+            Err(InputTopologyError::InvalidPlacement(InputControlId::new(
+                "negative-face"
             )))
         );
     }

@@ -181,15 +181,33 @@ pub(super) fn draw_face_cluster(
 ) {
     card(ui, cluster.title, |ui| {
         let origin = ui.cursor().min;
-        let cell = AXIS_PAD_SIZE / 3.0;
+        let columns = cluster
+            .buttons
+            .iter()
+            .map(|button| button.placement.column)
+            .max()
+            .map_or(1_i8, |column| column.saturating_add(1));
+        let rows = cluster
+            .buttons
+            .iter()
+            .map(|button| button.placement.row)
+            .max()
+            .map_or(1_i8, |row| row.saturating_add(1));
+        let cell = Vec2::new(
+            AXIS_PAD_SIZE / f32::from(columns),
+            AXIS_PAD_SIZE / f32::from(rows),
+        );
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
         for input in cluster.buttons {
             let center = origin
                 + egui::vec2(
-                    (f32::from(input.placement.column) + 0.5) * cell,
-                    (f32::from(input.placement.row) + 0.5) * cell,
+                    (f32::from(input.placement.column) + 0.5) * cell.x,
+                    (f32::from(input.placement.row) + 0.5) * cell.y,
                 );
-            let button_rect = egui::Rect::from_center_size(center, Vec2::splat(cell - 3.0));
+            let button_rect = egui::Rect::from_center_size(
+                center,
+                Vec2::new((cell.x - 3.0).max(1.0), (cell.y - 3.0).max(1.0)),
+            );
             let response = ui.put(button_rect, Button::new(input.label));
             emit_momentary(ui, &response, |pressed| {
                 events.push(InputEvent::Face {
@@ -457,15 +475,18 @@ pub(super) fn draw_touchpad(
                         let selected = touch_state.selected == index;
                         let response = ui.group(|ui| {
                             ui.set_min_width(88.0);
-                            let _ = ui.selectable_label(selected, format!("Contact {}", index + 1));
+                            let selected_clicked = ui
+                                .selectable_label(selected, format!("Contact {}", index + 1))
+                                .clicked();
                             ui.checkbox(&mut contact.persistent, "Persist");
                             ui.monospace(if contact.active {
                                 format!("{}, {}", contact.x, contact.y)
                             } else {
                                 "inactive".to_owned()
                             });
+                            selected_clicked
                         });
-                        if response.response.interact(Sense::click()).clicked() {
+                        if response.inner || response.response.interact(Sense::click()).clicked() {
                             next_selected = Some(index);
                         }
                     }
@@ -799,6 +820,9 @@ fn position_from_axis(value: i32, start: f32, end: f32, range: InputAxisRange) -
 }
 
 pub(super) fn apply_scale(value: i32, scale: InputScale, range: InputAxisRange) -> i32 {
+    if scale.denominator == 0 {
+        return range.neutral;
+    }
     let scaled = i64::from(value) * i64::from(scale.numerator) / i64::from(scale.denominator);
     i32::try_from(scaled)
         .unwrap_or(if scaled < 0 { i32::MIN } else { i32::MAX })
