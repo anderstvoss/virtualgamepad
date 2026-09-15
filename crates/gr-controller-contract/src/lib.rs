@@ -390,16 +390,6 @@ mod input_topology_tests {
                 label: "Two",
             },
         ];
-        let duplicate_ids = InputTopology {
-            auxiliary_buttons: &DUPLICATE_BUTTONS,
-            ..InputTopology::EMPTY
-        };
-        assert_eq!(
-            duplicate_ids.validate(),
-            Err(InputTopologyError::DuplicateIdentifier(
-                InputControlId::new("same")
-            ))
-        );
         static DUPLICATE_FACE_BUTTONS: [FaceButtonInput; 2] = [
             FaceButtonInput {
                 button: FaceButton::North,
@@ -417,6 +407,16 @@ mod input_topology_tests {
             title: "Face",
             buttons: &DUPLICATE_FACE_BUTTONS,
         }];
+        let duplicate_ids = InputTopology {
+            auxiliary_buttons: &DUPLICATE_BUTTONS,
+            ..InputTopology::EMPTY
+        };
+        assert_eq!(
+            duplicate_ids.validate(),
+            Err(InputTopologyError::DuplicateIdentifier(
+                InputControlId::new("same")
+            ))
+        );
         let duplicate_placement = InputTopology {
             face_button_clusters: &DUPLICATE_FACE_CLUSTERS,
             ..InputTopology::EMPTY
@@ -440,14 +440,6 @@ mod input_topology_tests {
                 neutral: 1,
             },
         }];
-        let invalid_axis = InputTopology {
-            extra_axes: &INVALID_AXES,
-            ..InputTopology::EMPTY
-        };
-        assert!(matches!(
-            invalid_axis.validate(),
-            Err(InputTopologyError::InvalidAxisRange(_))
-        ));
         static INVALID_TOUCHPADS: [TouchpadInput; 1] = [TouchpadInput {
             id: InputControlId::new("touch"),
             title: "Touch",
@@ -456,14 +448,6 @@ mod input_topology_tests {
             contacts: 1,
             actuation: TouchpadActuation::None,
         }];
-        let invalid_touch = InputTopology {
-            touchpads: &INVALID_TOUCHPADS,
-            ..InputTopology::EMPTY
-        };
-        assert!(matches!(
-            invalid_touch.validate(),
-            Err(InputTopologyError::InvalidTouchpad(_))
-        ));
         static INVALID_MOTION: [MotionInput; 1] = [MotionInput {
             id: InputControlId::new("motion"),
             title: "Motion",
@@ -478,6 +462,22 @@ mod input_topology_tests {
                 InputScale::IDENTITY,
             ],
         }];
+        let invalid_axis = InputTopology {
+            extra_axes: &INVALID_AXES,
+            ..InputTopology::EMPTY
+        };
+        assert!(matches!(
+            invalid_axis.validate(),
+            Err(InputTopologyError::InvalidAxisRange(_))
+        ));
+        let invalid_touch = InputTopology {
+            touchpads: &INVALID_TOUCHPADS,
+            ..InputTopology::EMPTY
+        };
+        assert!(matches!(
+            invalid_touch.validate(),
+            Err(InputTopologyError::InvalidTouchpad(_))
+        ));
         let invalid_scale = InputTopology {
             motion: &INVALID_MOTION,
             ..InputTopology::EMPTY

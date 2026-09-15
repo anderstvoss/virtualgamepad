@@ -940,6 +940,16 @@ mod tests {
     use gr_realization_api::RealizationSessionId;
 
     #[test]
+    fn every_xbox_target_has_the_valid_complete_input_topology() {
+        for surface in [&SURFACE, &HID_SURFACE, &DUMMY_HCD_SURFACE] {
+            assert_eq!(surface.common.input_topology.validate(), Ok(()));
+            assert_eq!(surface.common.input_topology.sticks.len(), 2);
+            assert_eq!(surface.common.input_topology.trigger_stacks.len(), 2);
+            assert!(surface.common.input_topology.motion.is_empty());
+        }
+    }
+
+    #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
         let mut expected = Xbox360State::default();
         expected.battery.set_exposed(true);

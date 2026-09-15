@@ -1157,6 +1157,18 @@ pub fn test_controller(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn switch_topology_tracks_target_motion_support() {
+        for topology in [&INPUT_TOPOLOGY, &INPUT_TOPOLOGY_WITH_MOTION] {
+            assert_eq!(topology.validate(), Ok(()));
+            assert_eq!(topology.trigger_stacks.len(), 2);
+        }
+        assert!(EVDEV_SURFACE.common.input_topology.motion.is_empty());
+        assert_eq!(HID_SURFACE.common.input_topology.motion.len(), 1);
+        assert_eq!(USB_SURFACE.common.input_topology.motion.len(), 1);
+    }
+
     #[test]
     fn rumble_words_skip_counter_and_keep_motor_order() {
         for id in [1, 0x10] {

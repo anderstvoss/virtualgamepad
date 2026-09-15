@@ -1328,6 +1328,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dualshock4_topology_tracks_target_motion_support() {
+        for topology in [&INPUT_TOPOLOGY, &INPUT_TOPOLOGY_WITH_MOTION] {
+            assert_eq!(topology.validate(), Ok(()));
+            assert_eq!(topology.touchpads[0].contacts, 2);
+        }
+        assert!(EVDEV_SURFACE.common.input_topology.motion.is_empty());
+        assert_eq!(HID_SURFACE.common.input_topology.motion.len(), 1);
+        assert_eq!(USB_SURFACE.common.input_topology.motion.len(), 1);
+    }
+
+    #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {
         let mut expected = DualShock4State::default();
         expected.battery.set_exposed(true);

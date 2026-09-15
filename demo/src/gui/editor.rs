@@ -23,8 +23,6 @@ pub(super) struct Editor<S, T: 'static> {
     overflow: bool,
     diagnostics: Option<ControllerDiagnostics>,
     association: Option<virtualgamepad::ControllerAssociation>,
-    streaming: bool,
-    counter: u8,
 }
 impl<S, T> Editor<S, T> {
     pub(super) fn state(&self) -> &S {
@@ -68,8 +66,6 @@ impl Controller {
                 overflow: false,
                 diagnostics: Some(c.diagnostics()),
                 association: Some(c.association().clone()),
-                streaming: false,
-                counter: 0,
             }),
             Self::DualSense(c) => ControllerView::DualSense(Editor {
                 state: c.state().clone(),
@@ -78,8 +74,6 @@ impl Controller {
                 overflow: false,
                 diagnostics: Some(c.diagnostics()),
                 association: Some(c.association().clone()),
-                streaming: false,
-                counter: 0,
             }),
             Self::DualShock4(c) => ControllerView::DualShock4(Editor {
                 state: c.state().clone(),
@@ -88,8 +82,6 @@ impl Controller {
                 overflow: false,
                 diagnostics: Some(c.diagnostics()),
                 association: Some(c.association().clone()),
-                streaming: false,
-                counter: 0,
             }),
             Self::SwitchPro(c) => ControllerView::SwitchPro(Editor {
                 state: c.state().clone(),
@@ -98,8 +90,6 @@ impl Controller {
                 overflow: false,
                 diagnostics: Some(c.diagnostics()),
                 association: Some(c.association().clone()),
-                streaming: c.stream_enabled(),
-                counter: c.motion_report_counter(),
             }),
         }
     }
@@ -323,11 +313,6 @@ impl DualSenseEditor {
                 .map_err(|error| error.to_string())
         }))
     }
-    pub(super) fn diagnostics(&self) -> &ControllerDiagnostics {
-        self.diagnostics
-            .as_ref()
-            .expect("DualSense diagnostics snapshot")
-    }
 }
 impl DualShock4Editor {
     pub(super) fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), String> {
@@ -484,12 +469,6 @@ impl SwitchProEditor {
                 .map_err(|error| error.to_string())
         }))
     }
-    pub(super) fn stream_enabled(&self) -> bool {
-        self.streaming
-    }
-    pub(super) fn motion_report_counter(&self) -> u8 {
-        self.counter
-    }
 }
 
 #[cfg(test)]
@@ -505,8 +484,6 @@ mod tests {
             overflow: false,
             diagnostics: None,
             association: None,
-            streaming: false,
-            counter: 0,
         };
         let original = editor.state.clone();
         for _ in 0..EDIT_LIMIT {

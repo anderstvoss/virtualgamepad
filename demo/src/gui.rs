@@ -22,11 +22,11 @@ use std::{
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DpadDirection,
-    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
+    BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DualSenseAxis,
+    DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationId, SwitchProAxis,
+    DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId, SwitchProAxis,
     SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
     Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
     create_dualshock4, create_switch_pro, create_xbox360,
@@ -92,6 +92,7 @@ fn dualsense_motion_target(target: RealizationId) -> bool {
     )
 }
 
+#[cfg(test)]
 fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
     if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
@@ -649,34 +650,7 @@ struct NamedController {
     indicators: ReverseIndicators,
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
-    second_touch: LatchedTouch,
     input_ui: InputUiState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LatchedTouch {
-    active: bool,
-    x: u16,
-    y: u16,
-}
-
-impl Default for LatchedTouch {
-    fn default() -> Self {
-        Self {
-            active: false,
-            x: 960,
-            y: 470,
-        }
-    }
-}
-
-impl LatchedTouch {
-    fn contact(self, id: u8) -> Option<DualSenseTouchContact> {
-        self.active
-            .then(|| DualSenseTouchContact::new(id, self.x, self.y))
-            .transpose()
-            .expect("latched touch coordinates are bounded by the GUI sliders")
-    }
 }
 
 #[derive(Clone)]
@@ -1188,18 +1162,12 @@ impl ControllerView {
         }
     }
 
-    fn draw(
-        &mut self,
-        ui: &mut egui::Ui,
-        controller_id: u64,
-        _second_touch: &mut LatchedTouch,
-        input_ui: &mut InputUiState,
-    ) {
+    fn draw(&mut self, ui: &mut egui::Ui, controller_id: u64, input_ui: &mut InputUiState) {
         match self {
             Self::Xbox(controller) => draw_xbox(ui, controller_id, controller, input_ui),
             Self::DualSense(controller) => draw_dualsense(ui, controller_id, controller, input_ui),
             Self::DualShock4(controller) => {
-                draw_dualshock4(ui, controller_id, controller, input_ui)
+                draw_dualshock4(ui, controller_id, controller, input_ui);
             }
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller_id, controller, input_ui),
         }
@@ -1422,7 +1390,6 @@ impl App {
                     indicators: ReverseIndicators::default(),
                     output_log: Vec::new(),
                     service_worker,
-                    second_touch: LatchedTouch::default(),
                     input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
@@ -2118,7 +2085,6 @@ impl eframe::App for App {
                                             );
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 if ui.button("Release all inputs").clicked() {
-                                                    named.second_touch.active = false;
                                                     named.input_ui.release_all();
                                                     if let Err(error) = named.view.release_inputs()
                                                     {
@@ -2128,7 +2094,6 @@ impl eframe::App for App {
                                                     named.view.draw(
                                                         ui,
                                                         named.options.id,
-                                                        &mut named.second_touch,
                                                         &mut named.input_ui,
                                                     );
                                                 }
@@ -2480,72 +2445,6 @@ fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
         });
 }
 
-const fn face_labels(kind: Kind) -> [&'static str; 4] {
-    match kind {
-        Kind::Xbox360 => ["A (South)", "B (East)", "X (West)", "Y (North)"],
-        Kind::DualSense | Kind::DualShock4 => [
-            "Cross (South)",
-            "Circle (East)",
-            "Square (West)",
-            "Triangle (North)",
-        ],
-        Kind::SwitchPro => ["B (South)", "A (East)", "Y (West)", "X (North)"],
-    }
-}
-
-fn digital_controls(ui: &mut egui::Ui, kind: Kind, mut set: impl FnMut(DigitalControlUpdate)) {
-    ui.group(|ui| {
-        ui.label("Face buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, button) in [
-                (face_labels(kind)[0], FaceButton::South),
-                (face_labels(kind)[1], FaceButton::East),
-                (face_labels(kind)[2], FaceButton::West),
-                (face_labels(kind)[3], FaceButton::North),
-            ] {
-                hold(ui, label, |pressed| {
-                    set(DigitalControlUpdate::FaceButton { button, pressed });
-                });
-            }
-        });
-        ui.label("D-pad");
-        ui.horizontal_wrapped(|ui| {
-            for (label, direction) in [
-                ("Up", DpadDirection::Up),
-                ("Down", DpadDirection::Down),
-                ("Left", DpadDirection::Left),
-                ("Right", DpadDirection::Right),
-            ] {
-                hold(ui, label, |pressed| {
-                    set(DigitalControlUpdate::Dpad { direction, pressed });
-                });
-            }
-        });
-    });
-}
-
-fn hold(ui: &mut egui::Ui, label: &str, mut set: impl FnMut(bool)) {
-    let response = ui.add(Button::new(label));
-    let previous = ui
-        .data(|data| data.get_temp::<bool>(response.id))
-        .unwrap_or(false);
-    if let Some(next) = next_hold_state(
-        previous,
-        response.is_pointer_button_down_on(),
-        response.clicked(),
-    ) {
-        ui.data_mut(|data| data.insert_temp(response.id, next));
-        set(next);
-    }
-}
-
-fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<bool> {
-    // A quick click may begin and end between rendered frames. Keep that click
-    // pressed for one complete frame so HID consumers observe a rising edge;
-    // the following frame emits the corresponding release.
-    let next = pointer_down || clicked;
-    (next != previous).then_some(next)
-}
 fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
     let surface_response = ui.add_sized([112.0, NAME_INPUT_HEIGHT], Button::new("Target surface"));
     if surface_response.hovered() {
@@ -2578,100 +2477,7 @@ fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfac
     }
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
-    ui.vertical(|ui| {
-        ui.label(label);
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(112.0), Sense::click_and_drag());
-        ui.painter().rect_stroke(
-            rect,
-            2.0,
-            Stroke::new(1.0, Color32::GRAY),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().line_segment(
-            [
-                Pos2::new(rect.left(), rect.center().y),
-                Pos2::new(rect.right(), rect.center().y),
-            ],
-            Stroke::new(1.0, Color32::DARK_GRAY),
-        );
-        ui.painter().line_segment(
-            [
-                Pos2::new(rect.center().x, rect.top()),
-                Pos2::new(rect.center().x, rect.bottom()),
-            ],
-            Stroke::new(1.0, Color32::DARK_GRAY),
-        );
-        let pointer = Pos2::new(
-            rect.center().x + f32::from(*x) / 32768.0 * rect.width() / 2.0,
-            rect.center().y + f32::from(*y) / 32768.0 * rect.height() / 2.0,
-        );
-        ui.painter()
-            .circle_filled(pointer, 5.0, Color32::LIGHT_BLUE);
-        let mut changed = false;
-        if response.is_pointer_button_down_on() {
-            if let Some(position) = response.interact_pointer_pos() {
-                let next_x =
-                    pad_axis_from_fraction((position.x - rect.center().x) / (rect.width() / 2.0));
-                let next_y =
-                    pad_axis_from_fraction((position.y - rect.center().y) / (rect.height() / 2.0));
-                changed = *x != next_x || *y != next_y;
-                *x = next_x;
-                *y = next_y;
-            }
-        } else if response.drag_stopped() || response.clicked() {
-            changed = *x != 0 || *y != 0;
-            *x = 0;
-            *y = 0;
-        }
-        ui.monospace(format!("x={x} y={y}"));
-        changed
-    })
-    .inner
-}
-
-fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u8) -> bool {
-    let response = ui.add(egui::Slider::new(value, 0..=255).text(label));
-    let mut changed = response.changed();
-    if response.drag_stopped() || response.clicked() {
-        changed |= *value != 0;
-        *value = 0;
-    }
-    changed
-}
-
-fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
-    ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label))
-        .changed()
-}
-
-fn dualsense_axis_to_pad(value: u8) -> i16 {
-    let offset = i32::from(value) - 128;
-    let mapped = if offset <= 0 {
-        offset * 256
-    } else {
-        (offset * 32767 + 63) / 127
-    };
-    i16::try_from(mapped).expect("unsigned axis maps into signed pad")
-}
-
-fn dualsense_axis_from_pad(value: i16) -> u8 {
-    let value = i32::from(value);
-    let mapped = if value <= 0 {
-        (value + 32768 + 128) / 256
-    } else {
-        128 + (value * 127 + 16383) / 32767
-    };
-    u8::try_from(mapped).expect("signed pad maps into unsigned axis")
-}
-
-#[allow(clippy::cast_possible_truncation)] // Rounded bounded normalized input fits i16.
-fn pad_axis_from_fraction(value: f32) -> i16 {
-    let value = value.clamp(-1.0, 1.0);
-    (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
-}
-
+#[allow(clippy::too_many_lines)]
 fn draw_xbox(
     ui: &mut egui::Ui,
     controller_id: u64,
@@ -2866,7 +2672,7 @@ fn draw_dualsense(
                     .touch(TouchSlot::Second)
                     .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
             ];
-            draw_touchpad_cluster(ui, touchpad, &current, input_ui, &mut events);
+            draw_touchpad_cluster(ui, controller_id, touchpad, &current, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
@@ -2973,123 +2779,6 @@ fn draw_dualsense(
     }
 }
 
-#[allow(dead_code, clippy::too_many_lines)]
-fn draw_dualsense_legacy(
-    ui: &mut egui::Ui,
-    controller: &mut DualSenseEditor,
-    second_touch: &mut LatchedTouch,
-) {
-    digital_controls(ui, Kind::DualSense, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Create", DualSenseControl::Create),
-                ("Options", DualSenseControl::Options),
-                ("PlayStation", DualSenseControl::PlayStation),
-                ("Touchpad click", DualSenseControl::TouchpadClick),
-                ("Microphone mute", DualSenseControl::MicrophoneMute),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = dualsense_axis_to_pad(left_x.raw());
-    let mut y = dualsense_axis_to_pad(left_y.raw());
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = dualsense_axis_to_pad(right_x.raw());
-    let mut right_y = dualsense_axis_to_pad(right_y.raw());
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "DualSense left stick", &mut x, &mut y) {
-                    let _ = controller.set_left_stick(
-                        DualSenseAxis::new(dualsense_axis_from_pad(x)),
-                        DualSenseAxis::new(dualsense_axis_from_pad(y)),
-                    );
-                }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(DualSenseControl::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "DualSense right stick", &mut right_x, &mut right_y) {
-                    let _ = controller.set_right_stick(
-                        DualSenseAxis::new(dualsense_axis_from_pad(right_x)),
-                        DualSenseAxis::new(dualsense_axis_from_pad(right_y)),
-                    );
-                }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(DualSenseControl::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "DualSense left trigger", &mut left)
-        | momentary_trigger(ui, "DualSense right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(DualSenseTrigger::new(left), DualSenseTrigger::new(right));
-    }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "L1", |pressed| {
-            let _ = controller.set_native(DualSenseControl::L1, pressed);
-        });
-        hold(ui, "R1", |pressed| {
-            let _ = controller.set_native(DualSenseControl::R1, pressed);
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Touchpad");
-        draw_touchpad(ui, controller);
-        draw_latched_touch_slot(ui, controller, TouchSlot::Second, 1, second_touch);
-    });
-    let target = controller.surface().common().target;
-    if dualsense_motion_target(target) {
-        ui.group(|ui| {
-            ui.label(dualsense_motion_target_label(target));
-            let diagnostics = controller.diagnostics();
-            ui.small(format!(
-                "HID reports sent: {}; host requests handled: {}",
-                diagnostics.frames_sent(),
-                diagnostics.reverse_events_drained()
-            ));
-            let motion = controller.state().motion();
-            let mut gyro = motion.gyroscope;
-            let mut accelerometer = motion.accelerometer;
-            let mut changed = false;
-            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                changed |= latched_motion_axis(ui, label, value);
-            }
-            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-                .into_iter()
-                .zip(&mut accelerometer)
-            {
-                changed |= latched_motion_axis(ui, label, value);
-            }
-            if ui.button("Reset gyro to neutral").clicked() {
-                gyro = [0; 3];
-                changed = true;
-            }
-            if changed {
-                let motion = MotionSample {
-                    gyroscope: gyro,
-                    accelerometer,
-                };
-                let _ = controller.set_motion(motion);
-            }
-        });
-    }
-}
-
 #[allow(clippy::too_many_lines)]
 fn draw_dualshock4(
     ui: &mut egui::Ui,
@@ -3160,7 +2849,7 @@ fn draw_dualshock4(
                     .touch(DualShock4TouchSlot::Second)
                     .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
             ];
-            draw_touchpad_cluster(ui, touchpad, &current, input_ui, &mut events);
+            draw_touchpad_cluster(ui, controller_id, touchpad, &current, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
@@ -3265,158 +2954,6 @@ fn draw_dualshock4(
             DualShock4Trigger::new(triggers.1),
         );
     }
-}
-
-#[allow(dead_code)]
-fn draw_dualshock4_legacy(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
-    digital_controls(ui, Kind::DualShock4, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Sticks and triggers");
-        let (left_x, left_y) = controller.state().left_stick();
-        let mut x = dualsense_axis_to_pad(left_x.raw());
-        let mut y = dualsense_axis_to_pad(left_y.raw());
-        if axis_pad(ui, "DualShock 4 left stick", &mut x, &mut y) {
-            let _ = controller.set_left_stick(
-                DualShock4Axis::new(dualsense_axis_from_pad(x)),
-                DualShock4Axis::new(dualsense_axis_from_pad(y)),
-            );
-        }
-        let (right_x, right_y) = controller.state().right_stick();
-        let mut right_x = dualsense_axis_to_pad(right_x.raw());
-        let mut right_y = dualsense_axis_to_pad(right_y.raw());
-        if axis_pad(ui, "DualShock 4 right stick", &mut right_x, &mut right_y) {
-            let _ = controller.set_right_stick(
-                DualShock4Axis::new(dualsense_axis_from_pad(right_x)),
-                DualShock4Axis::new(dualsense_axis_from_pad(right_y)),
-            );
-        }
-        let (left, right) = controller.state().triggers();
-        let mut left = left.raw();
-        let mut right = right.raw();
-        if momentary_trigger(ui, "L2", &mut left) | momentary_trigger(ui, "R2", &mut right) {
-            let _ = controller
-                .set_triggers(DualShock4Trigger::new(left), DualShock4Trigger::new(right));
-        }
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("L1", DualShock4Control::L1),
-                ("R1", DualShock4Control::R1),
-                ("Share", DualShock4Control::Share),
-                ("Options", DualShock4Control::Options),
-                ("PlayStation", DualShock4Control::PlayStation),
-                ("Touchpad click", DualShock4Control::TouchpadClick),
-                ("Left stick press", DualShock4Control::LeftStickPress),
-                ("Right stick press", DualShock4Control::RightStickPress),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Touchpad");
-        draw_ds4_touchpad(ui, controller);
-        draw_ds4_touch_slot(
-            ui,
-            controller,
-            DualShock4TouchSlot::Second,
-            1,
-            "Second contact",
-        );
-    });
-    ui.group(|ui| {
-        ui.label("UHID motion report");
-        ui.small(
-            "Motion controls retain their value; zero remains neutral with no implied gravity.",
-        );
-        let motion = controller.state().motion();
-        let mut gyro = motion.gyroscope;
-        let mut accel = motion.accelerometer;
-        let mut changed = false;
-        for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-            .into_iter()
-            .zip(&mut accel)
-        {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        if changed {
-            let _ = controller.set_motion(DualShock4MotionSample {
-                accelerometer: accel,
-                gyroscope: gyro,
-            });
-        }
-    });
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
-    ui.small("Click and drag to emulate the first DualShock 4 touch contact.");
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::GRAY),
-        egui::StrokeKind::Inside,
-    );
-    if response.is_pointer_button_down_on() {
-        if let Some(position) = response.interact_pointer_pos() {
-            let x = ((position.x - rect.left()) / rect.width() * 1919.0).clamp(0.0, 1919.0) as u16;
-            let y = ((position.y - rect.top()) / rect.height() * 941.0).clamp(0.0, 941.0) as u16;
-            if let Ok(contact) = DualShock4TouchContact::new(0, x, y) {
-                let _ = controller.set_touch(DualShock4TouchSlot::First, Some(contact));
-            }
-        }
-    } else if response.drag_stopped() || response.clicked() {
-        let _ = controller.set_touch(DualShock4TouchSlot::First, None);
-    }
-    for (slot, color) in [
-        (DualShock4TouchSlot::First, Color32::LIGHT_BLUE),
-        (DualShock4TouchSlot::Second, Color32::LIGHT_GREEN),
-    ] {
-        if let Some(contact) = controller.state().touch(slot) {
-            let x = rect.left() + f32::from(contact.x()) / 1919.0 * rect.width();
-            let y = rect.top() + f32::from(contact.y()) / 941.0 * rect.height();
-            ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
-        }
-    }
-}
-
-fn draw_ds4_touch_slot(
-    ui: &mut egui::Ui,
-    controller: &mut DualShock4Editor,
-    slot: DualShock4TouchSlot,
-    id: u8,
-    label: &str,
-) {
-    let contact = controller.state().touch(slot);
-    let mut x = i32::from(contact.map_or(0, DualShock4TouchContact::x));
-    let mut y = i32::from(contact.map_or(0, DualShock4TouchContact::y));
-    ui.group(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut x, 0..=1919).text("X"));
-        ui.add(egui::Slider::new(&mut y, 0..=941).text("Y"));
-        if ui.button("Set touch").clicked() {
-            if let Ok(contact) = DualShock4TouchContact::new(
-                id,
-                u16::try_from(x).expect("slider bounds fit u16"),
-                u16::try_from(y).expect("slider bounds fit u16"),
-            ) {
-                let _ = controller.set_touch(slot, Some(contact));
-            }
-        }
-        if ui.button("Clear touch").clicked() {
-            let _ = controller.set_touch(slot, None);
-        }
-    });
 }
 
 #[allow(clippy::too_many_lines)]
@@ -3548,135 +3085,6 @@ fn draw_switch_pro(
     }
 }
 
-#[allow(dead_code)]
-fn draw_switch_pro_legacy(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
-    digital_controls(ui, Kind::SwitchPro, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Sticks");
-        let (left_x, left_y) = controller.state().left_stick();
-        let mut x = left_x.raw();
-        let mut y = left_y.raw();
-        if axis_pad(ui, "Switch Pro left stick", &mut x, &mut y) {
-            let _ = controller.set_left_stick(SwitchProAxis::new(x), SwitchProAxis::new(y));
-        }
-        let (right_x, right_y) = controller.state().right_stick();
-        let mut right_x = right_x.raw();
-        let mut right_y = right_y.raw();
-        if axis_pad(ui, "Switch Pro right stick", &mut right_x, &mut right_y) {
-            let _ = controller
-                .set_right_stick(SwitchProAxis::new(right_x), SwitchProAxis::new(right_y));
-        }
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons and triggers");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("L", SwitchProControl::L),
-                ("R", SwitchProControl::R),
-                ("ZL", SwitchProControl::Zl),
-                ("ZR", SwitchProControl::Zr),
-                ("Minus", SwitchProControl::Minus),
-                ("Plus", SwitchProControl::Plus),
-                ("Home", SwitchProControl::Home),
-                ("Capture", SwitchProControl::Capture),
-                ("Left stick press", SwitchProControl::LeftStickPress),
-                ("Right stick press", SwitchProControl::RightStickPress),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Switch Pro motion report");
-        ui.small(if controller.stream_enabled() {
-            format!(
-                "Host selected report mode 0x30; streaming at 250 Hz (frame counter: {}).",
-                controller.motion_report_counter()
-            )
-        } else {
-            "Waiting for the host to select report mode 0x30.".to_owned()
-        });
-        let motion = controller.state().motion();
-        let mut gyro = motion.gyroscope;
-        let mut accel = motion.accelerometer;
-        let mut changed = false;
-        for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-            .into_iter()
-            .zip(&mut accel)
-        {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        if changed {
-            let _ = controller.set_motion(SwitchProMotionSample {
-                accelerometer: accel,
-                gyroscope: gyro,
-            });
-        }
-    });
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseEditor) {
-    ui.small("Click and drag to emulate the first physical touch contact.");
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::GRAY),
-        egui::StrokeKind::Inside,
-    );
-    if response.is_pointer_button_down_on() {
-        if let Some(position) = response.interact_pointer_pos() {
-            let x = ((position.x - rect.left()) / rect.width() * 1919.0).clamp(0.0, 1919.0) as u16;
-            let y = ((position.y - rect.top()) / rect.height() * 941.0).clamp(0.0, 941.0) as u16;
-            if let Ok(contact) = DualSenseTouchContact::new(0, x, y) {
-                let _ = controller.set_touch(TouchSlot::First, Some(contact));
-            }
-        }
-    } else if response.drag_stopped() || response.clicked() {
-        let _ = controller.set_touch(TouchSlot::First, None);
-    }
-    for (slot, color) in [
-        (TouchSlot::First, Color32::LIGHT_BLUE),
-        (TouchSlot::Second, Color32::LIGHT_GREEN),
-    ] {
-        if let Some(contact) = controller.state().touch(slot) {
-            let x = rect.left() + f32::from(contact.x()) / 1919.0 * rect.width();
-            let y = rect.top() + f32::from(contact.y()) / 941.0 * rect.height();
-            ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
-        }
-    }
-}
-
-fn draw_latched_touch_slot(
-    ui: &mut egui::Ui,
-    controller: &mut DualSenseEditor,
-    slot: TouchSlot,
-    id: u8,
-    touch: &mut LatchedTouch,
-) {
-    ui.group(|ui| {
-        ui.label("Second contact");
-        let mut changed = ui.checkbox(&mut touch.active, "Active").changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut touch.x, 0..=1919).text("X"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut touch.y, 0..=941).text("Y"))
-            .changed();
-        if changed {
-            let _ = controller.set_touch(slot, touch.contact(id));
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3797,41 +3205,6 @@ mod tests {
         // App shutdown joins and closes all remaining workers.
         drop(app);
         wait_for_nodes(0);
-    }
-
-    #[test]
-    fn sony_pad_conversion_covers_full_domain_and_round_trips_every_axis_value() {
-        assert_eq!(dualsense_axis_to_pad(0), i16::MIN);
-        assert_eq!(dualsense_axis_to_pad(128), 0);
-        assert_eq!(dualsense_axis_to_pad(255), i16::MAX);
-        for value in 0..=255 {
-            assert_eq!(dualsense_axis_from_pad(dualsense_axis_to_pad(value)), value);
-        }
-        let mut previous = 0;
-        for value in i16::MIN..=i16::MAX {
-            let mapped = dualsense_axis_from_pad(value);
-            assert!(mapped >= previous);
-            previous = mapped;
-        }
-        for (fraction, expected) in [
-            (-2.0, i16::MIN),
-            (-1.0, i16::MIN),
-            (0.0, 0),
-            (1.0, i16::MAX),
-            (2.0, i16::MAX),
-        ] {
-            assert_eq!(pad_axis_from_fraction(fraction), expected);
-        }
-    }
-
-    #[test]
-    fn printed_face_labels_preserve_spatial_nintendo_and_sony_layouts() {
-        assert_eq!(
-            face_labels(Kind::SwitchPro),
-            ["B (South)", "A (East)", "Y (West)", "X (North)"]
-        );
-        assert_eq!(face_labels(Kind::DualShock4), face_labels(Kind::DualSense));
-        assert_eq!(face_labels(Kind::Xbox360)[0], "A (South)");
     }
 
     #[test]
@@ -4249,35 +3622,6 @@ mod tests {
         assert_eq!(
             advanced_disclosure_direction(true),
             DisclosureDirection::Down
-        );
-    }
-
-    #[test]
-    fn quick_button_click_is_held_for_one_report_before_release() {
-        assert_eq!(next_hold_state(false, false, true), Some(true));
-        assert_eq!(next_hold_state(true, false, false), Some(false));
-        assert_eq!(next_hold_state(false, false, false), None);
-        assert_eq!(next_hold_state(true, true, false), None);
-    }
-
-    #[test]
-    fn second_touch_latches_its_coordinates_while_inactive() {
-        let mut touch = LatchedTouch {
-            active: true,
-            x: 123,
-            y: 456,
-        };
-        assert_eq!(
-            touch.contact(1),
-            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
-        );
-        touch.active = false;
-        assert_eq!(touch.contact(1), None);
-        assert_eq!((touch.x, touch.y), (123, 456));
-        touch.active = true;
-        assert_eq!(
-            touch.contact(1),
-            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
         );
     }
 

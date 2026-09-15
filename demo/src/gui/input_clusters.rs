@@ -54,23 +54,13 @@ pub(super) enum InputEvent {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TouchContactState {
     pub(super) active: bool,
     pub(super) persistent: bool,
     pub(super) x: u32,
     pub(super) y: u32,
-}
-
-impl Default for TouchContactState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            persistent: false,
-            x: 0,
-            y: 0,
-        }
-    }
+    release_pending: bool,
 }
 
 #[derive(Debug, Default)]
@@ -82,8 +72,14 @@ struct TouchpadState {
 #[derive(Debug, Default)]
 pub(super) struct InputUiState {
     trigger_holds: HashMap<InputControlId, bool>,
-    snapping_dpads: HashMap<InputControlId, (i8, i8)>,
+    snapping_dpads: HashMap<InputControlId, SnappingDpadState>,
     touchpads: HashMap<InputControlId, TouchpadState>,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct SnappingDpadState {
+    direction: (i8, i8),
+    release_pending: bool,
 }
 
 impl InputUiState {
@@ -113,7 +109,7 @@ pub(super) fn horizontal_cards(
     id: impl std::hash::Hash,
     bottom_aligned: bool,
     add: impl FnOnce(&mut egui::Ui),
-) {
+) -> egui::scroll_area::ScrollAreaOutput<()> {
     egui::ScrollArea::horizontal()
         .id_salt(id)
         .auto_shrink([false, true])
@@ -132,7 +128,7 @@ pub(super) fn horizontal_cards(
                 }),
                 add,
             );
-        });
+        })
 }
 
 pub(super) fn card(
@@ -159,8 +155,11 @@ pub(super) fn draw_auxiliary_buttons(
     if controls.is_empty() {
         return;
     }
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_min_width(ui.available_width());
+    let available = ui.available_width();
+    let frame = egui::Frame::group(ui.style());
+    let margin = frame.total_margin();
+    frame.show(ui, |ui| {
+        ui.set_min_width((available - margin.left - margin.right).max(0.0));
         ui.label("Auxiliary buttons");
         ui.horizontal_wrapped(|ui| {
             for control in controls {
@@ -215,13 +214,16 @@ pub(super) fn draw_dpad_cluster(
             let cell = AXIS_PAD_SIZE / 3.0;
             ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
             for (label, direction, column, row) in [
-                ("Up", DpadDirection::Up, 1, 0),
-                ("Down", DpadDirection::Down, 1, 2),
-                ("Left", DpadDirection::Left, 0, 1),
-                ("Right", DpadDirection::Right, 2, 1),
+                ("Up", DpadDirection::Up, 1_i8, 0_i8),
+                ("Down", DpadDirection::Down, 1_i8, 2_i8),
+                ("Left", DpadDirection::Left, 0_i8, 1_i8),
+                ("Right", DpadDirection::Right, 2_i8, 1_i8),
             ] {
-                let center =
-                    origin + egui::vec2((column as f32 + 0.5) * cell, (row as f32 + 0.5) * cell);
+                let center = origin
+                    + egui::vec2(
+                        (f32::from(column) + 0.5) * cell,
+                        (f32::from(row) + 0.5) * cell,
+                    );
                 let response = ui.put(
                     egui::Rect::from_center_size(center, Vec2::splat(cell - 3.0)),
                     Button::new(label),
@@ -232,12 +234,15 @@ pub(super) fn draw_dpad_cluster(
             }
         }
         DpadPresentation::SnappingAxis => {
-            let previous = *state.snapping_dpads.entry(cluster.id).or_insert((0, 0));
-            let (next, changed) = snapping_pad(ui, previous);
+            let dpad = state.snapping_dpads.entry(cluster.id).or_default();
+            let previous = dpad.direction;
+            let (next, release_pending) = snapping_pad(ui, previous, dpad.release_pending);
+            let changed = next != previous;
             if changed {
                 emit_dpad_transition(previous, next, events);
-                state.snapping_dpads.insert(cluster.id, next);
             }
+            dpad.direction = next;
+            dpad.release_pending = release_pending;
         }
     });
 }
@@ -288,17 +293,18 @@ pub(super) fn draw_trigger_stack(
                     TriggerInputKind::Button { id } => {
                         let current = value_button(values, id);
                         let response = ui.selectable_label(current, control.label);
-                        if *hold {
-                            if response.clicked() {
-                                events.push(InputEvent::Button {
-                                    id,
-                                    pressed: !current,
-                                });
-                            }
-                        } else {
-                            emit_momentary(ui, &response, |pressed| {
-                                events.push(InputEvent::Button { id, pressed });
-                            });
+                        let previous = ui
+                            .data(|data| data.get_temp::<bool>(response.id))
+                            .unwrap_or(false);
+                        if let Some(pressed) = trigger_button_next(TriggerButtonInteraction {
+                            current,
+                            hold: *hold,
+                            previous_momentary: previous,
+                            pointer_down: response.is_pointer_button_down_on(),
+                            clicked: response.clicked(),
+                        }) {
+                            ui.data_mut(|data| data.insert_temp(response.id, pressed));
+                            events.push(InputEvent::Button { id, pressed });
                         }
                     }
                     TriggerInputKind::Axis { id, range } => {
@@ -322,23 +328,15 @@ pub(super) fn draw_trigger_stack(
             });
         }
         if ui.button("Reset stack").clicked() {
-            for control in stack.controls {
-                match control.kind {
-                    TriggerInputKind::Button { id } => {
-                        events.push(InputEvent::Button { id, pressed: false })
-                    }
-                    TriggerInputKind::Axis { id, range } => events.push(InputEvent::Axis1 {
-                        id,
-                        value: range.neutral,
-                    }),
-                }
-            }
+            events.extend(trigger_reset_events(stack));
         }
     });
 }
 
+#[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
 pub(super) fn draw_touchpad(
     ui: &mut egui::Ui,
+    controller_id: u64,
     input: &TouchpadInput,
     current: &[Option<(u32, u32)>],
     state: &mut InputUiState,
@@ -347,6 +345,16 @@ pub(super) fn draw_touchpad(
     let touch_state = state.touchpad(input);
     for (index, point) in current.iter().copied().enumerate() {
         if let Some(contact) = touch_state.contacts.get_mut(index) {
+            if contact.release_pending {
+                contact.active = false;
+                contact.release_pending = false;
+                events.push(InputEvent::Touch {
+                    id: input.id,
+                    contact: u8::try_from(index).expect("contact count is u8"),
+                    point: None,
+                });
+                continue;
+            }
             if let Some((x, y)) = point {
                 contact.active = true;
                 contact.x = x;
@@ -386,14 +394,14 @@ pub(super) fn draw_touchpad(
 
         let height = touchpad_display_height(input.width, input.height);
         let (rect, response) =
-            ui.allocate_exact_size(Vec2::new(TOUCHPAD_WIDTH, height), Sense::drag());
+            ui.allocate_exact_size(Vec2::new(TOUCHPAD_WIDTH, height), Sense::click_and_drag());
         ui.painter().rect_stroke(
             rect,
             3.0,
             Stroke::new(1.0, Color32::GRAY),
             egui::StrokeKind::Inside,
         );
-        if response.is_pointer_button_down_on() {
+        if response.is_pointer_button_down_on() || response.clicked() {
             if let Some(position) = response.interact_pointer_pos() {
                 let (x, y) = touch_point(rect, position, input.width, input.height);
                 let selected = touch_state.selected;
@@ -401,6 +409,7 @@ pub(super) fn draw_touchpad(
                 contact.active = true;
                 contact.x = x;
                 contact.y = y;
+                contact.release_pending = response.clicked() && !contact.persistent;
                 events.push(InputEvent::Touch {
                     id: input.id,
                     contact: u8::try_from(selected).expect("contact count is u8"),
@@ -412,6 +421,7 @@ pub(super) fn draw_touchpad(
             let contact = &mut touch_state.contacts[selected];
             if !contact.persistent {
                 contact.active = false;
+                contact.release_pending = false;
                 events.push(InputEvent::Touch {
                     id: input.id,
                     contact: u8::try_from(selected).expect("contact count is u8"),
@@ -438,10 +448,11 @@ pub(super) fn draw_touchpad(
         }
 
         egui::ScrollArea::horizontal()
-            .id_salt((input.id.as_str(), "contacts"))
+            .id_salt((controller_id, input.id.as_str(), "contacts"))
             .auto_shrink([false, true])
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
+                    let mut next_selected = None;
                     for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
                         let selected = touch_state.selected == index;
                         let response = ui.group(|ui| {
@@ -455,8 +466,11 @@ pub(super) fn draw_touchpad(
                             });
                         });
                         if response.response.interact(Sense::click()).clicked() {
-                            touch_state.selected = index;
+                            next_selected = Some(index);
                         }
+                    }
+                    if let Some(index) = next_selected {
+                        let _ = select_touch_contact(touch_state, index);
                     }
                 });
             });
@@ -506,6 +520,7 @@ pub(super) fn draw_motion(
     });
 }
 
+#[allow(dead_code)] // Exercised by the synthetic surface until a curated controller declares one.
 pub(super) fn draw_extra_axis(
     ui: &mut egui::Ui,
     input: &ExtraAxisInput,
@@ -546,7 +561,7 @@ pub(super) fn draw_extra_axis(
 }
 
 fn momentary_button(ui: &mut egui::Ui, label: &str, set: impl FnMut(bool)) {
-    let response = ui.add(Button::new(label));
+    let response = ui.add(Button::new(label).min_size(Vec2::new(0.0, CONTROL_HEIGHT)));
     emit_momentary(ui, &response, set);
 }
 
@@ -554,11 +569,63 @@ fn emit_momentary(ui: &mut egui::Ui, response: &egui::Response, mut set: impl Fn
     let previous = ui
         .data(|data| data.get_temp::<bool>(response.id))
         .unwrap_or(false);
-    let next = response.is_pointer_button_down_on() || response.clicked();
-    if next != previous {
+    if let Some(next) = next_momentary_state(
+        previous,
+        response.is_pointer_button_down_on(),
+        response.clicked(),
+    ) {
         ui.data_mut(|data| data.insert_temp(response.id, next));
         set(next);
     }
+}
+
+fn next_momentary_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<bool> {
+    let next = pointer_down || clicked;
+    (next != previous).then_some(next)
+}
+
+#[derive(Debug, Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // Independent sampled widget and semantic states.
+struct TriggerButtonInteraction {
+    current: bool,
+    hold: bool,
+    previous_momentary: bool,
+    pointer_down: bool,
+    clicked: bool,
+}
+
+fn trigger_button_next(interaction: TriggerButtonInteraction) -> Option<bool> {
+    if interaction.hold {
+        interaction.clicked.then_some(!interaction.current)
+    } else {
+        next_momentary_state(
+            interaction.previous_momentary,
+            interaction.pointer_down,
+            interaction.clicked,
+        )
+    }
+}
+
+fn trigger_reset_events(stack: &TriggerStack) -> Vec<InputEvent> {
+    stack
+        .controls
+        .iter()
+        .map(|control| match control.kind {
+            TriggerInputKind::Button { id } => InputEvent::Button { id, pressed: false },
+            TriggerInputKind::Axis { id, range } => InputEvent::Axis1 {
+                id,
+                value: range.neutral,
+            },
+        })
+        .collect()
+}
+
+fn select_touch_contact(state: &mut TouchpadState, index: usize) -> bool {
+    if index >= state.contacts.len() {
+        return false;
+    }
+    state.selected = index;
+    true
 }
 
 fn value_button(values: &[(InputControlId, InputValue)], id: InputControlId) -> bool {
@@ -640,8 +707,9 @@ fn paint_axis_pad(
     ui.painter().circle_filled(point, 5.0, Color32::LIGHT_BLUE);
 }
 
-fn snapping_pad(ui: &mut egui::Ui, previous: (i8, i8)) -> ((i8, i8), bool) {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::drag());
+fn snapping_pad(ui: &mut egui::Ui, previous: (i8, i8), release_pending: bool) -> ((i8, i8), bool) {
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::click_and_drag());
     let range = InputAxisRange {
         minimum: -1,
         maximum: 1,
@@ -654,16 +722,18 @@ fn snapping_pad(ui: &mut egui::Ui, previous: (i8, i8)) -> ((i8, i8), bool) {
         range,
         range,
     );
-    let next = if response.is_pointer_button_down_on() {
+    let mut next_release_pending = false;
+    let next = if response.is_pointer_button_down_on() || response.clicked() {
+        next_release_pending = response.clicked();
         response
             .interact_pointer_pos()
             .map_or(previous, |position| snap_direction(rect, position))
-    } else if response.drag_stopped() {
+    } else if response.drag_stopped() || release_pending {
         (0, 0)
     } else {
         previous
     };
-    (next, next != previous)
+    (next, next_release_pending)
 }
 
 fn emit_dpad_transition(previous: (i8, i8), next: (i8, i8), events: &mut Vec<InputEvent>) {
@@ -697,10 +767,16 @@ pub(super) fn snap_direction(rect: egui::Rect, position: Pos2) -> (i8, i8) {
     (snap(relative.x), snap(relative.y))
 }
 
+#[allow(clippy::cast_precision_loss)]
 pub(super) fn touchpad_display_height(width: u32, height: u32) -> f32 {
     TOUCHPAD_WIDTH * height as f32 / width as f32
 }
 
+#[allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss
+)]
 pub(super) fn touch_point(rect: egui::Rect, position: Pos2, width: u32, height: u32) -> (u32, u32) {
     let x = ((position.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
     let y = ((position.y - rect.top()) / rect.height()).clamp(0.0, 1.0);
@@ -710,11 +786,13 @@ pub(super) fn touch_point(rect: egui::Rect, position: Pos2, width: u32, height: 
     )
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_precision_loss)]
 fn axis_from_position(position: f32, start: f32, end: f32, range: InputAxisRange) -> i32 {
     let fraction = ((position - start) / (end - start)).clamp(0.0, 1.0);
     (range.minimum as f32 + fraction * (range.maximum - range.minimum) as f32).round() as i32
 }
 
+#[allow(clippy::cast_precision_loss)]
 fn position_from_axis(value: i32, start: f32, end: f32, range: InputAxisRange) -> f32 {
     let fraction = (value - range.minimum) as f32 / (range.maximum - range.minimum) as f32;
     start + fraction * (end - start)
@@ -755,6 +833,127 @@ mod tests {
         assert_eq!(snap_direction(rect, Pos2::new(50.0, 0.0)), (0, -1));
         assert_eq!(snap_direction(rect, Pos2::new(100.0, 50.0)), (1, 0));
         assert_eq!(snap_direction(rect, Pos2::new(0.0, 100.0)), (-1, 1));
+    }
+
+    #[test]
+    fn quick_button_click_is_held_for_one_complete_frame() {
+        assert_eq!(next_momentary_state(false, false, true), Some(true));
+        assert_eq!(next_momentary_state(true, false, false), Some(false));
+        assert_eq!(next_momentary_state(false, false, false), None);
+        assert_eq!(next_momentary_state(true, true, false), None);
+    }
+
+    #[test]
+    fn trigger_hold_latches_and_stack_reset_neutralizes_each_kind() {
+        static CONTROLS: [virtualgamepad::TriggerInput; 2] = [
+            virtualgamepad::TriggerInput {
+                label: "Button",
+                kind: TriggerInputKind::Button {
+                    id: InputControlId::new("button"),
+                },
+            },
+            virtualgamepad::TriggerInput {
+                label: "Axis",
+                kind: TriggerInputKind::Axis {
+                    id: InputControlId::new("axis"),
+                    range: InputAxisRange {
+                        minimum: 10,
+                        maximum: 20,
+                        neutral: 12,
+                    },
+                },
+            },
+        ];
+        assert_eq!(
+            trigger_button_next(TriggerButtonInteraction {
+                current: false,
+                hold: true,
+                previous_momentary: false,
+                pointer_down: false,
+                clicked: true,
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            trigger_button_next(TriggerButtonInteraction {
+                current: true,
+                hold: true,
+                previous_momentary: false,
+                pointer_down: false,
+                clicked: true,
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            trigger_button_next(TriggerButtonInteraction {
+                current: false,
+                hold: false,
+                previous_momentary: false,
+                pointer_down: true,
+                clicked: false,
+            }),
+            Some(true)
+        );
+        let stack = TriggerStack {
+            id: InputControlId::new("stack"),
+            title: "Stack",
+            controls: &CONTROLS,
+        };
+        assert_eq!(
+            trigger_reset_events(&stack),
+            vec![
+                InputEvent::Button {
+                    id: InputControlId::new("button"),
+                    pressed: false,
+                },
+                InputEvent::Axis1 {
+                    id: InputControlId::new("axis"),
+                    value: 12,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn touch_selection_supports_lists_larger_than_the_viewport() {
+        let mut state = TouchpadState {
+            selected: 0,
+            contacts: vec![TouchContactState::default(); 12],
+        };
+        assert!(select_touch_contact(&mut state, 11));
+        assert_eq!(state.selected, 11);
+        assert!(!select_touch_contact(&mut state, 12));
+        assert_eq!(state.selected, 11);
+    }
+
+    #[test]
+    fn cards_have_fixed_width_and_long_rows_stay_inside_the_viewport() {
+        let ctx = egui::Context::default();
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                Pos2::ZERO,
+                Vec2::new(448.0, 1_000.0),
+            )),
+            ..egui::RawInput::default()
+        };
+        let _ = ctx.run(input, |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let card_response = card(ui, "Card", |_| {});
+                assert!((card_response.response.rect.width() - CARD_WIDTH).abs() < 0.001);
+                let row = horizontal_cards(ui, "test-row", false, |ui| {
+                    for _ in 0..6 {
+                        card(ui, "Card", |_| {});
+                    }
+                });
+                assert!(
+                    row.content_size.x > row.inner_rect.width(),
+                    "content={} viewport={}",
+                    row.content_size.x,
+                    row.inner_rect.width()
+                );
+                assert!(row.inner_rect.width() <= 448.0);
+            });
+        });
     }
 
     #[test]
@@ -836,15 +1035,20 @@ mod tests {
         state
             .trigger_holds
             .insert(InputControlId::new("trigger"), true);
-        state
-            .snapping_dpads
-            .insert(InputControlId::new("dpad"), (1, 1));
+        state.snapping_dpads.insert(
+            InputControlId::new("dpad"),
+            SnappingDpadState {
+                direction: (1, 1),
+                release_pending: false,
+            },
+        );
         let touch = state.touchpad(&touchpad);
         touch.contacts[1] = TouchContactState {
             active: true,
             persistent: true,
             x: 7,
             y: 8,
+            release_pending: false,
         };
         state.release_all();
         assert!(state.trigger_holds.is_empty());
