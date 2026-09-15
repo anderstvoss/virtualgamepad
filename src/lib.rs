@@ -60,9 +60,13 @@ pub use output::*;
 #[cfg(feature = "experimental")]
 pub mod experimental;
 pub use gr_controller_contract::{
-    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
-    DigitalControlSurface, DigitalControlUpdate, DpadDirection, FaceButton, OutputSurface,
-    RealizationValidationStatus, TargetRestriction,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
+    ControllerSurface, ControllerSurfaceInfo, CustomInputModule, DigitalControlSurface,
+    DigitalControlUpdate, DpadCluster, DpadDirection, DpadPresentation, ExtraAxisInput, FaceButton,
+    FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology,
+    InputTopologyError, MotionInput, OutputSurface, RealizationValidationStatus, StickInput,
+    TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind,
+    TriggerStack,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAxis, DualSenseControl, DualSenseFeature,

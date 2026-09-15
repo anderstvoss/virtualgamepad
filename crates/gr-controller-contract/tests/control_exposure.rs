@@ -1,7 +1,8 @@
 //! Gate T: typed native controls survive target restrictions. Test-only models,
 //! not production Edge/8BitDo support or physical protocol evidence.
 use gr_controller_contract::{
-    ControllerSurface, DigitalControlSurface, RealizationValidationStatus, TargetRestriction,
+    ControllerSurface, DigitalControlSurface, InputTopology, RealizationValidationStatus,
+    TargetRestriction,
 };
 use gr_realization_api::RealizationId;
 
@@ -29,6 +30,7 @@ fn restricted_target() -> EdgeSurface {
                 feature: "left_paddle/right_paddle/left_fn/right_fn",
                 reason: "Synthetic target has no event mapping for these controls; real Linux mapping requires separate evidence.",
             }],
+            input_topology: &InputTopology::EMPTY,
         },
         raw_independent: &["left_paddle", "right_paddle", "left_fn", "right_fn"],
     }

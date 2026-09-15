@@ -7,11 +7,15 @@ pub use gr_audio_contract::{
     AudioSidecarRequirement, AudioStreamRequirement, ChannelLayout, ClockRequirement, RouteIntent,
 };
 pub use gr_controller_contract::{
-    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
-    DigitalControlSurface, DigitalControlUpdate, DpadDirection, FaceButton, ManifestError,
-    OutputSurface, PreparedRealization, RealizationControllerDefinition, RealizationManifest,
-    RealizationManifestEntry, RealizationValidationStatus, TargetAwareControllerDriver,
-    TargetRestriction, prepare_realization,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
+    ControllerSurface, ControllerSurfaceInfo, CustomInputModule, DigitalControlSurface,
+    DigitalControlUpdate, DpadCluster, DpadDirection, DpadPresentation, ExtraAxisInput, FaceButton,
+    FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology,
+    InputTopologyError, ManifestError, MotionInput, OutputSurface, PreparedRealization,
+    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
+    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
+    prepare_realization,
 };
 pub use gr_controller_runtime::{ControllerRuntime, FrameSink};
 pub use gr_curated_controllers::{

@@ -324,6 +324,7 @@ mod tests {
             axes: &[],
             outputs: &[],
             restrictions: &[],
+            input_topology: &crate::InputTopology::EMPTY,
         };
         let roles = ["gamepad", "touch", "motion", "display"];
         let association = ControllerAssociation {

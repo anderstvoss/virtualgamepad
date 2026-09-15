@@ -438,6 +438,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static HID_SURFACE: DualShock4Surface = DualShock4Surface {
@@ -448,6 +449,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
@@ -458,6 +460,7 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 

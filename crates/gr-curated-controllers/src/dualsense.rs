@@ -478,6 +478,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static HID_SURFACE: DualSenseSurface = DualSenseSurface {
@@ -488,6 +489,7 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &HID_RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static USB_RESTRICTIONS: [TargetRestriction; 2] = [
@@ -508,6 +510,7 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &USB_RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 

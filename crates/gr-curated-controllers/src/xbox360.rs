@@ -306,6 +306,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static HID_SURFACE: Xbox360Surface = Xbox360Surface {
@@ -316,6 +317,7 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
@@ -326,6 +328,7 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &DUMMY_HCD_RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 

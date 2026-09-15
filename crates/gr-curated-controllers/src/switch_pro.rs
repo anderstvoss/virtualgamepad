@@ -298,6 +298,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static HID_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -308,6 +309,7 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -318,6 +320,7 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &gr_controller_contract::InputTopology::EMPTY,
     },
 };
 pub struct SwitchProDefinition;
