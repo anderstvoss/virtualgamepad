@@ -1201,7 +1201,7 @@ impl ControllerView {
             Self::DualShock4(controller) => {
                 draw_dualshock4(ui, controller_id, controller, input_ui)
             }
-            Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
+            Self::SwitchPro(controller) => draw_switch_pro(ui, controller_id, controller, input_ui),
         }
     }
     fn battery(&self) -> BatteryState {
@@ -3419,7 +3419,137 @@ fn draw_ds4_touch_slot(
     });
 }
 
-fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
+#[allow(clippy::too_many_lines)]
+fn draw_switch_pro(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut SwitchProEditor,
+    input_ui: &mut InputUiState,
+) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                &mut events,
+            );
+        }
+    });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, &mut events);
+        }
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+    });
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::L)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("zl"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::Zl)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::R)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("zr"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::Zr)),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                &mut events,
+            );
+        }
+    });
+
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "minus" => SwitchProControl::Minus,
+                    "plus" => SwitchProControl::Plus,
+                    "home" => SwitchProControl::Home,
+                    "capture" => SwitchProControl::Capture,
+                    "left-stick-press" => SwitchProControl::LeftStickPress,
+                    "right-stick-press" => SwitchProControl::RightStickPress,
+                    "l" => SwitchProControl::L,
+                    "zl" => SwitchProControl::Zl,
+                    "r" => SwitchProControl::R,
+                    "zr" => SwitchProControl::Zr,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = SwitchProAxis::new(
+                    i16::try_from(x).expect("Switch Pro stick topology uses i16 range"),
+                );
+                let y = SwitchProAxis::new(
+                    i16::try_from(y).expect("Switch Pro stick topology uses i16 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Motion {
+                id,
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(SwitchProMotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                });
+            }
+            InputEvent::Axis1 { .. } | InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn draw_switch_pro_legacy(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
     digital_controls(ui, Kind::SwitchPro, |update| {
         let _ = controller.set_digital(update);
     });
