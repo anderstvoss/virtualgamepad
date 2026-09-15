@@ -6,7 +6,8 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{
     InputEvent, InputUiState, InputValue, draw_auxiliary_buttons, draw_dpad_cluster,
-    draw_face_cluster, draw_stick, draw_trigger_stack, horizontal_cards,
+    draw_face_cluster, draw_motion, draw_stick, draw_touchpad as draw_touchpad_cluster,
+    draw_trigger_stack, horizontal_cards,
 };
 use std::{
     cmp::Ordering,
@@ -1190,12 +1191,13 @@ impl ControllerView {
     fn draw(
         &mut self,
         ui: &mut egui::Ui,
-        second_touch: &mut LatchedTouch,
+        controller_id: u64,
+        _second_touch: &mut LatchedTouch,
         input_ui: &mut InputUiState,
     ) {
         match self {
-            Self::Xbox(controller) => draw_xbox(ui, controller, input_ui),
-            Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
+            Self::Xbox(controller) => draw_xbox(ui, controller_id, controller, input_ui),
+            Self::DualSense(controller) => draw_dualsense(ui, controller_id, controller, input_ui),
             Self::DualShock4(controller) => draw_dualshock4(ui, controller),
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
         }
@@ -2123,6 +2125,7 @@ impl eframe::App for App {
                                                 } else {
                                                     named.view.draw(
                                                         ui,
+                                                        named.options.id,
                                                         &mut named.second_touch,
                                                         &mut named.input_ui,
                                                     );
@@ -2667,12 +2670,17 @@ fn pad_axis_from_fraction(value: f32) -> i16 {
     (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
 }
 
-fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor, input_ui: &mut InputUiState) {
+fn draw_xbox(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut Xbox360Editor,
+    input_ui: &mut InputUiState,
+) {
     let topology = controller.surface().common().input_topology;
     let mut events = Vec::new();
     draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
 
-    horizontal_cards(ui, "xbox-sticks", false, |ui| {
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
         for stick in topology.sticks {
             let value = match stick.id.as_str() {
                 "left-stick" => controller.state().left_stick(),
@@ -2687,7 +2695,7 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor, input_ui: &mut I
             );
         }
     });
-    horizontal_cards(ui, "xbox-spatial", false, |ui| {
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
         for cluster in topology.face_button_clusters {
             draw_face_cluster(ui, cluster, &mut events);
         }
@@ -2722,7 +2730,7 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor, input_ui: &mut I
             InputValue::Axis(i32::from(right_trigger.raw())),
         ),
     ];
-    horizontal_cards(ui, "xbox-triggers", false, |ui| {
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
         for stack in topology.trigger_stacks {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
@@ -2786,8 +2794,185 @@ fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor, input_ui: &mut I
         );
     }
 }
-#[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
+#[allow(clippy::too_many_lines)]
 fn draw_dualsense(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut DualSenseEditor,
+    input_ui: &mut InputUiState,
+) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                &mut events,
+            );
+        }
+    });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, &mut events);
+        }
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l1"),
+            InputValue::Button(controller.state().native_pressed(DualSenseControl::L1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("l2"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r1"),
+            InputValue::Button(controller.state().native_pressed(DualSenseControl::R1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r2"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
+        for touchpad in topology.touchpads {
+            let current = [
+                controller
+                    .state()
+                    .touch(TouchSlot::First)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+                controller
+                    .state()
+                    .touch(TouchSlot::Second)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+            ];
+            draw_touchpad_cluster(ui, touchpad, &current, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                &mut events,
+            );
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "create" => DualSenseControl::Create,
+                    "options" => DualSenseControl::Options,
+                    "playstation" => DualSenseControl::PlayStation,
+                    "microphone-mute" => DualSenseControl::MicrophoneMute,
+                    "touchpad-click" => DualSenseControl::TouchpadClick,
+                    "left-stick-press" => DualSenseControl::LeftStickPress,
+                    "right-stick-press" => DualSenseControl::RightStickPress,
+                    "l1" => DualSenseControl::L1,
+                    "r1" => DualSenseControl::R1,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis1 { id, value } => {
+                let value = u8::try_from(value).expect("DualSense trigger topology uses u8 range");
+                match id.as_str() {
+                    "l2" => triggers.0 = value,
+                    "r2" => triggers.1 = value,
+                    _ => continue,
+                }
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = DualSenseAxis::new(
+                    u8::try_from(x).expect("DualSense stick topology uses u8 range"),
+                );
+                let y = DualSenseAxis::new(
+                    u8::try_from(y).expect("DualSense stick topology uses u8 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Touch { id, contact, point } if id.as_str() == "touchpad" => {
+                let slot = if contact == 0 {
+                    TouchSlot::First
+                } else {
+                    TouchSlot::Second
+                };
+                let point = point.map(|(x, y)| {
+                    DualSenseTouchContact::new(
+                        contact,
+                        u16::try_from(x).expect("touch topology uses u16 width"),
+                        u16::try_from(y).expect("touch topology uses u16 height"),
+                    )
+                    .expect("touch topology matches DualSense domain")
+                });
+                let _ = controller.set_touch(slot, point);
+            }
+            InputEvent::Motion {
+                id,
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(MotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                });
+            }
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            DualSenseTrigger::new(triggers.0),
+            DualSenseTrigger::new(triggers.1),
+        );
+    }
+}
+
+#[allow(dead_code, clippy::too_many_lines)]
+fn draw_dualsense_legacy(
     ui: &mut egui::Ui,
     controller: &mut DualSenseEditor,
     second_touch: &mut LatchedTouch,
