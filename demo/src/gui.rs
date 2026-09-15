@@ -1525,82 +1525,89 @@ impl eframe::App for App {
                     scroll_bar: true,
                     drag: false,
                     mouse_wheel: true,
-            })
-            .show(ui, |ui| {
-            ui.horizontal_top(|ui| {
-                ui.vertical(|ui| {
-                    ui.set_width(SIDEBAR_WIDTH);
-                    ui.set_min_width(SIDEBAR_WIDTH);
-                    ui.set_max_width(SIDEBAR_WIDTH);
-                    ui.heading("Add Controller");
-                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                    egui::Grid::new("controller_creation_grid")
-                        .num_columns(2)
-                        .spacing([6.0, 4.0])
-                        .show(ui, |ui| {
-                            ui.label("Type");
-                            egui::ComboBox::from_id_salt("controller_type")
-                                .selected_text(self.kind.label())
-                                .width(ui.available_width())
-                                .show_ui(ui, |ui| {
-                                    for kind in Kind::ALL {
-                                        ui.selectable_value(&mut self.kind, kind, kind.label());
-                                    }
-                            });
-                            ui.end_row();
-                            ui.label("Target");
-                            ui.horizontal(|ui| {
-                                let help = target_help(self.target);
-                                let help_width = if help.is_some() { 26.0 } else { 0.0 };
-                                egui::ComboBox::from_id_salt("controller_target")
-                                    .selected_text(target_label(self.target))
-                                    .width((ui.available_width() - help_width).max(60.0))
-                                    .show_ui(ui, |ui| {
-                                        ui.selectable_value(
-                                            &mut self.target,
-                                            RealizationId::LINUX_UINPUT,
-                                            target_label(RealizationId::LINUX_UINPUT),
-                                        );
-                                        ui.selectable_value(
-                                            &mut self.target,
-                                            RealizationId::LINUX_UHID_USB,
-                                            target_label(RealizationId::LINUX_UHID_USB),
-                                        );
-                                        ui.selectable_value(
-                                            &mut self.target,
-                                            RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                            target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
-                                        );
-                                });
-                                if let Some(help) = help {
-                                    let help_response = ui.add_sized([18.0, 18.0], Button::new("!"));
-                                    if help_response.hovered() {
-                                        egui::Tooltip::for_widget(&help_response)
-                                            .at_pointer()
-                                            .show(|ui| {
-                                            ui.strong(help.title);
-                                            ui.label(help.body);
+                })
+                .show(ui, |ui| {
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(SIDEBAR_WIDTH);
+                            ui.set_min_width(SIDEBAR_WIDTH);
+                            ui.set_max_width(SIDEBAR_WIDTH);
+                            ui.heading("Add Controller");
+                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            egui::Grid::new("controller_creation_grid")
+                                .num_columns(2)
+                                .spacing([6.0, 4.0])
+                                .show(ui, |ui| {
+                                    ui.label("Type");
+                                    egui::ComboBox::from_id_salt("controller_type")
+                                        .selected_text(self.kind.label())
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            for kind in Kind::ALL {
+                                                ui.selectable_value(
+                                                    &mut self.kind,
+                                                    kind,
+                                                    kind.label(),
+                                                );
+                                            }
+                                        });
+                                    ui.end_row();
+                                    ui.label("Target");
+                                    ui.horizontal(|ui| {
+                                        let help = target_help(self.target);
+                                        let help_width = if help.is_some() { 26.0 } else { 0.0 };
+                                        egui::ComboBox::from_id_salt("controller_target")
+                                            .selected_text(target_label(self.target))
+                                            .width((ui.available_width() - help_width).max(60.0))
+                                            .show_ui(ui, |ui| {
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_UINPUT,
+                                                    target_label(RealizationId::LINUX_UINPUT),
+                                                );
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_UHID_USB,
+                                                    target_label(RealizationId::LINUX_UHID_USB),
+                                                );
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                                    target_label(
+                                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                                    ),
+                                                );
                                             });
-                                    }
-                                }
-                            });
-                            ui.end_row();
-                        });
-                    let default_name = self.next_default_name();
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        let name_is_default = self.name_draft.trim().is_empty();
-                        let clear_width = 18.0;
-                        let count_control_width = CREATE_COUNT_SPINBOX_WIDTH;
-                        let edit_width = if name_is_default {
-                            (ui.available_width()
-                                - count_control_width
-                                - ui.spacing().item_spacing.x)
-                                .max(40.0)
-                        } else {
-                            ui.available_width()
-                        };
-                        let name_response = ui
+                                        if let Some(help) = help {
+                                            let help_response =
+                                                ui.add_sized([18.0, 18.0], Button::new("!"));
+                                            if help_response.hovered() {
+                                                egui::Tooltip::for_widget(&help_response)
+                                                    .at_pointer()
+                                                    .show(|ui| {
+                                                        ui.strong(help.title);
+                                                        ui.label(help.body);
+                                                    });
+                                            }
+                                        }
+                                    });
+                                    ui.end_row();
+                                });
+                            let default_name = self.next_default_name();
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let name_is_default = self.name_draft.trim().is_empty();
+                                let clear_width = 18.0;
+                                let count_control_width = CREATE_COUNT_SPINBOX_WIDTH;
+                                let edit_width = if name_is_default {
+                                    (ui.available_width()
+                                        - count_control_width
+                                        - ui.spacing().item_spacing.x)
+                                        .max(40.0)
+                                } else {
+                                    ui.available_width()
+                                };
+                                let name_response = ui
                             .add_sized(
                                 [edit_width, NAME_INPUT_HEIGHT],
                                 egui::TextEdit::singleline(&mut self.name_draft)
@@ -1617,452 +1624,513 @@ impl eframe::App for App {
                             .on_hover_text(
                                 "Optional name. Leave empty for the automatic controller name.",
                             );
-                        if !name_is_default {
-                            let clear_rect = egui::Rect::from_min_max(
-                                Pos2::new(name_response.rect.right() - clear_width, name_response.rect.top()),
-                                name_response.rect.right_bottom(),
-                            );
-                            if ui
-                                .put(
-                                    clear_rect,
-                                    Button::new("×")
-                                        .frame(false)
-                                        .min_size(Vec2::ZERO),
-                                )
-                                .on_hover_text("Clear name")
-                                .clicked()
-                            {
-                                self.name_draft.clear();
-                            }
-                        }
-                        if name_is_default {
-                            ui.allocate_ui_with_layout(
-                                Vec2::new(count_control_width, 22.0),
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    create_count_spinbox(ui, &mut self.create_count);
-                                },
-                            );
-                        }
-                    });
-                    let create_clicked = ui
-                        .scope(|ui| {
-                            ui.visuals_mut().widgets.inactive.fg_stroke.color = CREATE_BUTTON_TEXT;
-                            ui.visuals_mut().widgets.hovered.fg_stroke.color = CREATE_BUTTON_TEXT;
-                            ui.add_sized(
-                                [ui.available_width(), 22.0],
-                                egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
-                            )
-                        })
-                        .inner
-                        .clicked();
-                    if create_clicked {
-                        self.create();
-                    }
-                    let advanced_available = advanced_options_available(self.target);
-                    if !advanced_available {
-                        self.advanced_options_open = false;
-                    }
-                    let advanced_label = "Advanced options";
-                    let advanced_width = ui.available_width();
-                    let (advanced_rect, advanced_response) = ui.allocate_exact_size(
-                        Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT),
-                        if advanced_available {
-                            Sense::click()
-                        } else {
-                            Sense::hover()
-                        },
-                    );
-                    let advanced_fill = if advanced_available {
-                        Color32::from_gray(62)
-                    } else {
-                        ui.visuals().widgets.noninteractive.bg_fill
-                    };
-                    ui.painter().rect_filled(advanced_rect, 0.0, advanced_fill);
-                    if advanced_available
-                        && controller_row_has_hover_outline(advanced_response.hovered())
-                    {
-                        ui.painter().rect_stroke(
-                            advanced_rect,
-                            0.0,
-                            ui.visuals().widgets.hovered.bg_stroke,
-                            egui::StrokeKind::Inside,
-                        );
-                    }
-                    let advanced_hovered =
-                        advanced_available && controller_row_has_hover_outline(advanced_response.hovered());
-                    let advanced_highlighted =
-                        advanced_available && (advanced_hovered || self.advanced_options_open);
-                    ui.painter().text(
-                        advanced_rect.left_center() + egui::vec2(24.0, 0.0),
-                        egui::Align2::LEFT_CENTER,
-                        advanced_label,
-                        egui::TextStyle::Button.resolve(ui.style()),
-                        sidebar_item_text_color(
-                            advanced_highlighted,
-                            if advanced_available {
-                                ui.visuals().widgets.inactive.text_color()
-                            } else {
-                                ui.visuals().weak_text_color()
-                            },
-                            ui.visuals().strong_text_color(),
-                        ),
-                    );
-                    let arrow_rect = egui::Rect::from_min_max(
-                        advanced_rect.left_top(),
-                        Pos2::new(advanced_rect.left() + 18.0, advanced_rect.bottom()),
-                    );
-                    paint_advanced_disclosure_arrow(
-                        ui,
-                        arrow_rect,
-                        advanced_disclosure_direction(self.advanced_options_open),
-                        advanced_available && advanced_response.hovered(),
-                    );
-                    if advanced_response.clicked() {
-                        self.advanced_options_open = !self.advanced_options_open;
-                    }
-                    if self.advanced_options_open && advanced_available {
-                        egui::Frame::NONE
-                            .fill(Color32::from_gray(20))
-                            .show(ui, |ui| {
-                                ui.set_width(SIDEBAR_WIDTH);
-                                egui::ScrollArea::vertical()
-                                    .id_salt("advanced_options")
-                                    .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                    .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                    .auto_shrink([false, false])
-                                    .show(ui, |ui| {
-                                        ui.set_width(SIDEBAR_WIDTH - 8.0);
-                                        ui.strong("Controller ID preview");
-                                        let mut preview = controller_id(
-                                            self.next_controller_id,
-                                            self.target,
-                                            self.kind,
-                                        );
-                                        let preview_width = ui.available_width();
-                                        ui.add_sized(
-                                            [preview_width, NAME_INPUT_HEIGHT],
-                                            egui::TextEdit::singleline(&mut preview)
-                                                .interactive(false)
-                                                .desired_width(preview_width)
-                                                .vertical_align(egui::Align::Center)
-                                                .margin(egui::Margin {
-                                                    left: 4,
-                                                    right: 4,
-                                                    top: 2,
-                                                    bottom: 2,
-                                                }),
-                                        );
-                                    });
-                            });
-                    }
-                    ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-                    let controller_surface_width = SIDEBAR_WIDTH - 8.0;
-                    let selector_spacing = ui.spacing().item_spacing.x;
-                    let controller_content_width = controller_surface_width - selector_spacing;
-                    let row_spacing = 1.0;
-                    let controller_button_width = (controller_content_width
-                        - CONTROLLER_NUMBER_WIDTH
-                        - CONTROLLER_DELETE_WIDTH
-                        - (row_spacing * 2.0))
-                        .max(40.0);
-                    ui.allocate_ui_with_layout(
-                        Vec2::new(SIDEBAR_WIDTH, 22.0),
-                        egui::Layout::left_to_right(egui::Align::Center),
-                        |ui| {
-                            ui.spacing_mut().item_spacing.x = selector_spacing;
-                            let chip_width = (SIDEBAR_WIDTH - selector_spacing) / 2.0;
-                        if sidebar_choice_chip(
-                            ui,
-                            ControllerLabelMode::AssignedName.label(),
-                            self.controller_label_mode == ControllerLabelMode::AssignedName,
-                            chip_width,
-                        )
-                        .clicked()
-                        {
-                            self.controller_label_mode = ControllerLabelMode::AssignedName;
-                        }
-                        if sidebar_choice_chip(
-                            ui,
-                            ControllerLabelMode::InternalIdentifier.label(),
-                            self.controller_label_mode == ControllerLabelMode::InternalIdentifier,
-                            chip_width,
-                        )
-                        .clicked()
-                        {
-                            self.controller_label_mode = ControllerLabelMode::InternalIdentifier;
-                        }
-                        },
-                    );
-                    let footer_controls_height =
-                        (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
-                    let diagnostic_log_height =
-                        diagnostic_log_height(ui.text_style_height(&egui::TextStyle::Body));
-                    let sidebar_layout = sidebar_layout_budget(
-                        ui.available_height(),
-                        footer_controls_height,
-                        diagnostic_log_height,
-                        ui.spacing().item_spacing.y,
-                    );
-                    let list_height = sidebar_layout.controller_list;
-                    let (controller_list_rect, _) = ui.allocate_exact_size(
-                        Vec2::new(
-                            SIDEBAR_WIDTH,
-                            list_height + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
-                        ),
-                        Sense::hover(),
-                    );
-                    ui.painter()
-                        .rect_filled(controller_list_rect, 0.0, Color32::from_gray(20));
-                    let controller_content_rect = controller_list_rect.shrink(4.0);
-                    let mut list_ui = ui.new_child(
-                        egui::UiBuilder::new().max_rect(controller_content_rect),
-                    );
-                    egui::ScrollArea::vertical()
-                        .id_salt("controller_list")
-                        .min_scrolled_height(list_height)
-                        .max_height(list_height)
-                        .auto_shrink([false, false])
-                        .show(&mut list_ui, |ui| {
-                            ui.set_width(controller_surface_width);
-                            ui.scope(|ui| {
-                                ui.spacing_mut().item_spacing.x = 1.0;
-                            for index in controller_tab_indices(self.controllers.len()) {
-                                let controller = &self.controllers[index];
-                                let active = self.selected_controller == Some(index);
-                                let label = match self.controller_label_mode {
-                                    ControllerLabelMode::AssignedName => controller.name.clone(),
-                                    ControllerLabelMode::InternalIdentifier => {
-                                        controller_identifier(controller)
-                                    }
-                                };
-                                ui.allocate_ui_with_layout(
-                                    Vec2::new(controller_content_width, CONTROLLER_ROW_HEIGHT),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| {
-                                    ui.add_sized(
-                                        [CONTROLLER_NUMBER_WIDTH, CONTROLLER_ROW_HEIGHT],
-                                        egui::Label::new(format!("{}", index + 1)),
-                                    );
-                                    let (rect, controller_response) = ui.allocate_exact_size(
-                                        Vec2::new(controller_button_width, CONTROLLER_ROW_HEIGHT),
-                                        Sense::click(),
-                                    );
-                                    let fill = controller_row_fill(
-                                        active,
-                                        ui.visuals().selection.bg_fill,
-                                    );
-                                    ui.painter().rect_filled(rect, 0.0, fill);
-                                    if controller_row_has_hover_outline(controller_response.hovered()) {
-                                        ui.painter().rect_stroke(
-                                            rect,
-                                            0.0,
-                                            ui.visuals().widgets.hovered.bg_stroke,
-                                            egui::StrokeKind::Inside,
-                                        );
-                                    }
-                                    ui.painter().text(
-                                        rect.left_center() + egui::vec2(6.0, 0.0),
-                                        egui::Align2::LEFT_CENTER,
-                                        label,
-                                        egui::TextStyle::Button.resolve(ui.style()),
-                                        controller_row_text_color(
-                                            active,
-                                            controller_response.hovered(),
-                                            ui.visuals().text_color(),
-                                            ui.visuals().strong_text_color(),
+                                if !name_is_default {
+                                    let clear_rect = egui::Rect::from_min_max(
+                                        Pos2::new(
+                                            name_response.rect.right() - clear_width,
+                                            name_response.rect.top(),
                                         ),
+                                        name_response.rect.right_bottom(),
                                     );
-                                    self.selected_controller = selection_after_controller_click(
-                                        self.selected_controller,
-                                        index,
-                                        controller_response.clicked(),
-                                    );
-                                    let delete_clicked = ui
-                                        .add_sized(
-                                            [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
-                                            egui::Button::new("×").fill(Color32::from_rgb(150, 45, 45)),
+                                    if ui
+                                        .put(
+                                            clear_rect,
+                                            Button::new("×").frame(false).min_size(Vec2::ZERO),
                                         )
-                                        .on_hover_text("Remove controller")
-                                        .clicked();
-                                    if let Some(index) =
-                                        controller_removal_after_delete_click(index, delete_clicked)
+                                        .on_hover_text("Clear name")
+                                        .clicked()
                                     {
-                                        remove = Some(index);
+                                        self.name_draft.clear();
                                     }
-                                    },
-                                );
-                            }
-                            });
-                        });
-                    let footer_height = sidebar_layout.footer;
-                    let log_height = sidebar_layout.diagnostic_log;
-                    let (footer_rect, _) = ui.allocate_exact_size(
-                        Vec2::new(SIDEBAR_WIDTH, footer_height),
-                        Sense::hover(),
-                    );
-                    let mut footer_ui = ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
-                    footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
-                    let stop_all_clicked = footer_ui
-                        .add_sized(
-                            [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
-                            egui::Button::new("Stop all controllers")
-                                .fill(Color32::from_rgb(150, 45, 65)),
-                        )
-                        .clicked();
-                    stop_all = stop_all_after_click(stop_all_clicked);
-                    footer_ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
-
-                    let (log_rect, _) = footer_ui.allocate_exact_size(
-                        Vec2::new(SIDEBAR_WIDTH, log_height),
-                        Sense::hover(),
-                    );
-                    footer_ui
-                        .painter()
-                        .rect_filled(log_rect, 0.0, Color32::from_gray(8));
-                    let log_content_rect = egui::Rect::from_min_max(
-                        log_rect.left_top()
-                            + egui::vec2(4.0, f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)),
-                        log_rect.right_bottom() - egui::vec2(4.0, 0.0),
-                    );
-                    let mut log_ui = footer_ui.new_child(
-                        egui::UiBuilder::new().max_rect(log_content_rect),
-                    );
-                    let log_scroll_height = diagnostic_log_scroll_height(log_height);
-                    egui::ScrollArea::vertical()
-                        .id_salt("diagnostic_log")
-                        .auto_shrink([false, false])
-                        .min_scrolled_height(log_scroll_height)
-                        .max_height(log_scroll_height)
-                        .stick_to_bottom(true)
-                        .show(&mut log_ui, |ui| {
-                            ui.set_width(SIDEBAR_WIDTH - 16.0);
-                            ui.add_space(diagnostic_log_top_padding(
-                                log_scroll_height,
-                                ui.text_style_height(&egui::TextStyle::Body),
-                                self.diagnostic_log.len(),
-                                ui.spacing().item_spacing.y,
-                            ));
-                            if self.diagnostic_log.is_empty() {
-                                ui.weak("Warnings and error codes will appear here");
-                            }
-                            for entry in &self.diagnostic_log {
-                                ui.colored_label(
-                                    if entry.success {
-                                        Color32::from_rgb(105, 170, 105)
-                                    } else {
-                                        Color32::RED
-                                    },
-                                    &entry.message,
-                                );
-                            }
-                        });
-
-                    let status_color = if self.backend_healthy {
-                        Color32::GREEN
-                    } else {
-                        Color32::RED
-                    };
-                    footer_ui.allocate_ui_with_layout(
-                        Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            let dump_width = 76.0;
-                            dump_state |= ui
-                                .add_sized(
-                                    [dump_width, CONTROLLER_ROW_HEIGHT],
-                                    Button::new("Dump log"),
-                                )
-                                .clicked();
-                            ui.with_layout(
-                                egui::Layout::left_to_right(egui::Align::Center),
-                                |ui| {
-                                    ui.colored_label(
-                                        status_color,
-                                        format!(
-                                            "● {}",
-                                            if self.backend_healthy {
-                                                "Healthy"
-                                            } else {
-                                                "Attention"
-                                            }
-                                        ),
+                                }
+                                if name_is_default {
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(count_control_width, 22.0),
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            create_count_spinbox(ui, &mut self.create_count);
+                                        },
                                     );
-                                },
-                            );
-                        },
-                    );
-                    footer_ui.allocate_space(Vec2::new(SIDEBAR_WIDTH, HEALTH_BOTTOM_PADDING));
-                });
-                ui.separator();
-                ui.vertical(|ui| {
-                    ui.set_min_width(448.0);
-                    egui::ScrollArea::vertical()
-                        .id_salt("live_panel_scroll")
-                        .max_height(ui.available_height())
-                        .auto_shrink([false, false])
-                        .scroll_source(egui::scroll_area::ScrollSource {
-                            scroll_bar: true,
-                            drag: false,
-                            mouse_wheel: true,
-                        })
-                        .show(ui, |ui| {
-                    let mut polling_period_seconds = self.polling_period_seconds;
-                    if let Some(index) = self
-                        .selected_controller
-                        .filter(|index| *index < self.controllers.len())
-                    {
-                        let named = &mut self.controllers[index];
-                        ui.heading(&named.name);
-                        ui.add_sized([ui.available_width(), 1.0], egui::Separator::default());
-                        draw_controller_state(ui, named, &mut polling_period_seconds);
-                        let input_width = ui.available_width();
-                        let section_frame = egui::Frame::group(ui.style());
-                        let section_margin = section_frame.total_margin();
-                        let section_content_width =
-                            (input_width - section_margin.left - section_margin.right).max(0.0);
-                        section_frame.show(ui, |ui| {
-                            ui.set_min_width(section_content_width);
-                            ui.horizontal(|ui| {
-                                ui.heading("Reverse Output");
-                            });
-                            ui.separator();
-                            draw_feedback_rows(ui, &named.indicators);
-                            ui.collapsing("Reverse output log", |ui| {
-                                draw_reverse_output_log(ui, &mut named.output_log);
-                            });
-                        });
-                        section_frame.show(ui, |ui| {
-                            ui.set_min_width(section_content_width);
-                            ui.horizontal(|ui| {
-                                ui.heading("Input");
-                                draw_target_surface_tooltip(ui, named.view.surface());
-                            });
-                            ui.separator();
-                            let inputs_ready = named.edits.ready();
-                            draw_battery_emulation(ui, &mut named.view, inputs_ready);
-                            ui.add_enabled_ui(inputs_ready, |ui| {
-                                if ui.button("Release all inputs").clicked() {
-                                    named.second_touch.active = false;
-                                    if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
-                                } else {
-                                    named.view.draw(ui, &mut named.second_touch);
                                 }
                             });
-                            if inputs_ready {
-                                let result = named.view.take_edits().and_then(|edits| {
-                                    let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
-                                    named.edits.submit(&worker.edits, edits)
-                                });
-                                if let Err(error) = result { failed_controller = Some((index, error)); }
+                            let create_clicked = ui
+                                .scope(|ui| {
+                                    ui.visuals_mut().widgets.inactive.fg_stroke.color =
+                                        CREATE_BUTTON_TEXT;
+                                    ui.visuals_mut().widgets.hovered.fg_stroke.color =
+                                        CREATE_BUTTON_TEXT;
+                                    ui.add_sized(
+                                        [ui.available_width(), 22.0],
+                                        egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
+                                    )
+                                })
+                                .inner
+                                .clicked();
+                            if create_clicked {
+                                self.create();
                             }
+                            let advanced_available = advanced_options_available(self.target);
+                            if !advanced_available {
+                                self.advanced_options_open = false;
+                            }
+                            let advanced_label = "Advanced options";
+                            let advanced_width = ui.available_width();
+                            let (advanced_rect, advanced_response) = ui.allocate_exact_size(
+                                Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT),
+                                if advanced_available {
+                                    Sense::click()
+                                } else {
+                                    Sense::hover()
+                                },
+                            );
+                            let advanced_fill = if advanced_available {
+                                Color32::from_gray(62)
+                            } else {
+                                ui.visuals().widgets.noninteractive.bg_fill
+                            };
+                            ui.painter().rect_filled(advanced_rect, 0.0, advanced_fill);
+                            if advanced_available
+                                && controller_row_has_hover_outline(advanced_response.hovered())
+                            {
+                                ui.painter().rect_stroke(
+                                    advanced_rect,
+                                    0.0,
+                                    ui.visuals().widgets.hovered.bg_stroke,
+                                    egui::StrokeKind::Inside,
+                                );
+                            }
+                            let advanced_hovered = advanced_available
+                                && controller_row_has_hover_outline(advanced_response.hovered());
+                            let advanced_highlighted = advanced_available
+                                && (advanced_hovered || self.advanced_options_open);
+                            ui.painter().text(
+                                advanced_rect.left_center() + egui::vec2(24.0, 0.0),
+                                egui::Align2::LEFT_CENTER,
+                                advanced_label,
+                                egui::TextStyle::Button.resolve(ui.style()),
+                                sidebar_item_text_color(
+                                    advanced_highlighted,
+                                    if advanced_available {
+                                        ui.visuals().widgets.inactive.text_color()
+                                    } else {
+                                        ui.visuals().weak_text_color()
+                                    },
+                                    ui.visuals().strong_text_color(),
+                                ),
+                            );
+                            let arrow_rect = egui::Rect::from_min_max(
+                                advanced_rect.left_top(),
+                                Pos2::new(advanced_rect.left() + 18.0, advanced_rect.bottom()),
+                            );
+                            paint_advanced_disclosure_arrow(
+                                ui,
+                                arrow_rect,
+                                advanced_disclosure_direction(self.advanced_options_open),
+                                advanced_available && advanced_response.hovered(),
+                            );
+                            if advanced_response.clicked() {
+                                self.advanced_options_open = !self.advanced_options_open;
+                            }
+                            if self.advanced_options_open && advanced_available {
+                                egui::Frame::NONE
+                                    .fill(Color32::from_gray(20))
+                                    .show(ui, |ui| {
+                                        ui.set_width(SIDEBAR_WIDTH);
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("advanced_options")
+                                            .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                            .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                            .auto_shrink([false, false])
+                                            .show(ui, |ui| {
+                                                ui.set_width(SIDEBAR_WIDTH - 8.0);
+                                                ui.strong("Controller ID preview");
+                                                let mut preview = controller_id(
+                                                    self.next_controller_id,
+                                                    self.target,
+                                                    self.kind,
+                                                );
+                                                let preview_width = ui.available_width();
+                                                ui.add_sized(
+                                                    [preview_width, NAME_INPUT_HEIGHT],
+                                                    egui::TextEdit::singleline(&mut preview)
+                                                        .interactive(false)
+                                                        .desired_width(preview_width)
+                                                        .vertical_align(egui::Align::Center)
+                                                        .margin(egui::Margin {
+                                                            left: 4,
+                                                            right: 4,
+                                                            top: 2,
+                                                            bottom: 2,
+                                                        }),
+                                                );
+                                            });
+                                    });
+                            }
+                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            let controller_surface_width = SIDEBAR_WIDTH - 8.0;
+                            let selector_spacing = ui.spacing().item_spacing.x;
+                            let controller_content_width =
+                                controller_surface_width - selector_spacing;
+                            let row_spacing = 1.0;
+                            let controller_button_width = (controller_content_width
+                                - CONTROLLER_NUMBER_WIDTH
+                                - CONTROLLER_DELETE_WIDTH
+                                - (row_spacing * 2.0))
+                                .max(40.0);
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(SIDEBAR_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.x = selector_spacing;
+                                    let chip_width = (SIDEBAR_WIDTH - selector_spacing) / 2.0;
+                                    if sidebar_choice_chip(
+                                        ui,
+                                        ControllerLabelMode::AssignedName.label(),
+                                        self.controller_label_mode
+                                            == ControllerLabelMode::AssignedName,
+                                        chip_width,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.controller_label_mode =
+                                            ControllerLabelMode::AssignedName;
+                                    }
+                                    if sidebar_choice_chip(
+                                        ui,
+                                        ControllerLabelMode::InternalIdentifier.label(),
+                                        self.controller_label_mode
+                                            == ControllerLabelMode::InternalIdentifier,
+                                        chip_width,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.controller_label_mode =
+                                            ControllerLabelMode::InternalIdentifier;
+                                    }
+                                },
+                            );
+                            let footer_controls_height =
+                                (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
+                            let diagnostic_log_height =
+                                diagnostic_log_height(ui.text_style_height(&egui::TextStyle::Body));
+                            let sidebar_layout = sidebar_layout_budget(
+                                ui.available_height(),
+                                footer_controls_height,
+                                diagnostic_log_height,
+                                ui.spacing().item_spacing.y,
+                            );
+                            let list_height = sidebar_layout.controller_list;
+                            let (controller_list_rect, _) = ui.allocate_exact_size(
+                                Vec2::new(
+                                    SIDEBAR_WIDTH,
+                                    list_height + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
+                                ),
+                                Sense::hover(),
+                            );
+                            ui.painter().rect_filled(
+                                controller_list_rect,
+                                0.0,
+                                Color32::from_gray(20),
+                            );
+                            let controller_content_rect = controller_list_rect.shrink(4.0);
+                            let mut list_ui = ui.new_child(
+                                egui::UiBuilder::new().max_rect(controller_content_rect),
+                            );
+                            egui::ScrollArea::vertical()
+                                .id_salt("controller_list")
+                                .min_scrolled_height(list_height)
+                                .max_height(list_height)
+                                .auto_shrink([false, false])
+                                .show(&mut list_ui, |ui| {
+                                    ui.set_width(controller_surface_width);
+                                    ui.scope(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 1.0;
+                                        for index in controller_tab_indices(self.controllers.len())
+                                        {
+                                            let controller = &self.controllers[index];
+                                            let active = self.selected_controller == Some(index);
+                                            let label = match self.controller_label_mode {
+                                                ControllerLabelMode::AssignedName => {
+                                                    controller.name.clone()
+                                                }
+                                                ControllerLabelMode::InternalIdentifier => {
+                                                    controller_identifier(controller)
+                                                }
+                                            };
+                                            ui.allocate_ui_with_layout(
+                                                Vec2::new(
+                                                    controller_content_width,
+                                                    CONTROLLER_ROW_HEIGHT,
+                                                ),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    ui.add_sized(
+                                                        [
+                                                            CONTROLLER_NUMBER_WIDTH,
+                                                            CONTROLLER_ROW_HEIGHT,
+                                                        ],
+                                                        egui::Label::new(format!("{}", index + 1)),
+                                                    );
+                                                    let (rect, controller_response) = ui
+                                                        .allocate_exact_size(
+                                                            Vec2::new(
+                                                                controller_button_width,
+                                                                CONTROLLER_ROW_HEIGHT,
+                                                            ),
+                                                            Sense::click(),
+                                                        );
+                                                    let fill = controller_row_fill(
+                                                        active,
+                                                        ui.visuals().selection.bg_fill,
+                                                    );
+                                                    ui.painter().rect_filled(rect, 0.0, fill);
+                                                    if controller_row_has_hover_outline(
+                                                        controller_response.hovered(),
+                                                    ) {
+                                                        ui.painter().rect_stroke(
+                                                            rect,
+                                                            0.0,
+                                                            ui.visuals().widgets.hovered.bg_stroke,
+                                                            egui::StrokeKind::Inside,
+                                                        );
+                                                    }
+                                                    ui.painter().text(
+                                                        rect.left_center() + egui::vec2(6.0, 0.0),
+                                                        egui::Align2::LEFT_CENTER,
+                                                        label,
+                                                        egui::TextStyle::Button.resolve(ui.style()),
+                                                        controller_row_text_color(
+                                                            active,
+                                                            controller_response.hovered(),
+                                                            ui.visuals().text_color(),
+                                                            ui.visuals().strong_text_color(),
+                                                        ),
+                                                    );
+                                                    self.selected_controller =
+                                                        selection_after_controller_click(
+                                                            self.selected_controller,
+                                                            index,
+                                                            controller_response.clicked(),
+                                                        );
+                                                    let delete_clicked = ui
+                                                        .add_sized(
+                                                            [
+                                                                CONTROLLER_DELETE_WIDTH,
+                                                                CONTROLLER_ROW_HEIGHT,
+                                                            ],
+                                                            egui::Button::new("×").fill(
+                                                                Color32::from_rgb(150, 45, 45),
+                                                            ),
+                                                        )
+                                                        .on_hover_text("Remove controller")
+                                                        .clicked();
+                                                    if let Some(index) =
+                                                        controller_removal_after_delete_click(
+                                                            index,
+                                                            delete_clicked,
+                                                        )
+                                                    {
+                                                        remove = Some(index);
+                                                    }
+                                                },
+                                            );
+                                        }
+                                    });
+                                });
+                            let footer_height = sidebar_layout.footer;
+                            let log_height = sidebar_layout.diagnostic_log;
+                            let (footer_rect, _) = ui.allocate_exact_size(
+                                Vec2::new(SIDEBAR_WIDTH, footer_height),
+                                Sense::hover(),
+                            );
+                            let mut footer_ui =
+                                ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+                            footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            let stop_all_clicked = footer_ui
+                                .add_sized(
+                                    [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                    egui::Button::new("Stop all controllers")
+                                        .fill(Color32::from_rgb(150, 45, 65)),
+                                )
+                                .clicked();
+                            stop_all = stop_all_after_click(stop_all_clicked);
+                            footer_ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+
+                            let (log_rect, _) = footer_ui.allocate_exact_size(
+                                Vec2::new(SIDEBAR_WIDTH, log_height),
+                                Sense::hover(),
+                            );
+                            footer_ui
+                                .painter()
+                                .rect_filled(log_rect, 0.0, Color32::from_gray(8));
+                            let log_content_rect = egui::Rect::from_min_max(
+                                log_rect.left_top()
+                                    + egui::vec2(4.0, f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)),
+                                log_rect.right_bottom() - egui::vec2(4.0, 0.0),
+                            );
+                            let mut log_ui = footer_ui
+                                .new_child(egui::UiBuilder::new().max_rect(log_content_rect));
+                            let log_scroll_height = diagnostic_log_scroll_height(log_height);
+                            egui::ScrollArea::vertical()
+                                .id_salt("diagnostic_log")
+                                .auto_shrink([false, false])
+                                .min_scrolled_height(log_scroll_height)
+                                .max_height(log_scroll_height)
+                                .stick_to_bottom(true)
+                                .show(&mut log_ui, |ui| {
+                                    ui.set_width(SIDEBAR_WIDTH - 16.0);
+                                    ui.add_space(diagnostic_log_top_padding(
+                                        log_scroll_height,
+                                        ui.text_style_height(&egui::TextStyle::Body),
+                                        self.diagnostic_log.len(),
+                                        ui.spacing().item_spacing.y,
+                                    ));
+                                    if self.diagnostic_log.is_empty() {
+                                        ui.weak("Warnings and error codes will appear here");
+                                    }
+                                    for entry in &self.diagnostic_log {
+                                        ui.colored_label(
+                                            if entry.success {
+                                                Color32::from_rgb(105, 170, 105)
+                                            } else {
+                                                Color32::RED
+                                            },
+                                            &entry.message,
+                                        );
+                                    }
+                                });
+
+                            let status_color = if self.backend_healthy {
+                                Color32::GREEN
+                            } else {
+                                Color32::RED
+                            };
+                            footer_ui.allocate_ui_with_layout(
+                                Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let dump_width = 76.0;
+                                    dump_state |= ui
+                                        .add_sized(
+                                            [dump_width, CONTROLLER_ROW_HEIGHT],
+                                            Button::new("Dump log"),
+                                        )
+                                        .clicked();
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.colored_label(
+                                                status_color,
+                                                format!(
+                                                    "● {}",
+                                                    if self.backend_healthy {
+                                                        "Healthy"
+                                                    } else {
+                                                        "Attention"
+                                                    }
+                                                ),
+                                            );
+                                        },
+                                    );
+                                },
+                            );
+                            footer_ui
+                                .allocate_space(Vec2::new(SIDEBAR_WIDTH, HEALTH_BOTTOM_PADDING));
                         });
-                    }
-                    self.polling_period_seconds = polling_period_seconds;
+                        ui.separator();
+                        ui.vertical(|ui| {
+                            ui.set_min_width(448.0);
+                            egui::ScrollArea::vertical()
+                                .id_salt("live_panel_scroll")
+                                .max_height(ui.available_height())
+                                .auto_shrink([false, false])
+                                .scroll_source(egui::scroll_area::ScrollSource {
+                                    scroll_bar: true,
+                                    drag: false,
+                                    mouse_wheel: true,
+                                })
+                                .show(ui, |ui| {
+                                    let mut polling_period_seconds = self.polling_period_seconds;
+                                    if let Some(index) = self
+                                        .selected_controller
+                                        .filter(|index| *index < self.controllers.len())
+                                    {
+                                        let named = &mut self.controllers[index];
+                                        ui.heading(&named.name);
+                                        ui.add_sized(
+                                            [ui.available_width(), 1.0],
+                                            egui::Separator::default(),
+                                        );
+                                        draw_controller_state(
+                                            ui,
+                                            named,
+                                            &mut polling_period_seconds,
+                                        );
+                                        let input_width = ui.available_width();
+                                        let section_frame = egui::Frame::group(ui.style());
+                                        let section_margin = section_frame.total_margin();
+                                        let section_content_width = (input_width
+                                            - section_margin.left
+                                            - section_margin.right)
+                                            .max(0.0);
+                                        section_frame.show(ui, |ui| {
+                                            ui.set_min_width(section_content_width);
+                                            ui.horizontal(|ui| {
+                                                ui.heading("Reverse Output");
+                                            });
+                                            ui.separator();
+                                            draw_feedback_rows(ui, &named.indicators);
+                                            ui.collapsing("Reverse output log", |ui| {
+                                                draw_reverse_output_log(ui, &mut named.output_log);
+                                            });
+                                        });
+                                        section_frame.show(ui, |ui| {
+                                            ui.set_min_width(section_content_width);
+                                            ui.horizontal(|ui| {
+                                                ui.heading("Input");
+                                                draw_target_surface_tooltip(
+                                                    ui,
+                                                    named.view.surface(),
+                                                );
+                                            });
+                                            ui.separator();
+                                            let inputs_ready = named.edits.ready();
+                                            draw_battery_emulation(
+                                                ui,
+                                                &mut named.view,
+                                                inputs_ready,
+                                            );
+                                            ui.add_enabled_ui(inputs_ready, |ui| {
+                                                if ui.button("Release all inputs").clicked() {
+                                                    named.second_touch.active = false;
+                                                    if let Err(error) = named.view.release_inputs()
+                                                    {
+                                                        failed_controller = Some((index, error));
+                                                    }
+                                                } else {
+                                                    named.view.draw(ui, &mut named.second_touch);
+                                                }
+                                            });
+                                            if inputs_ready {
+                                                let result =
+                                                    named.view.take_edits().and_then(|edits| {
+                                                        let worker = named
+                                                            .service_worker
+                                                            .as_ref()
+                                                            .ok_or("worker unavailable")?;
+                                                        named.edits.submit(&worker.edits, edits)
+                                                    });
+                                                if let Err(error) = result {
+                                                    failed_controller = Some((index, error));
+                                                }
+                                            }
+                                        });
+                                    }
+                                    self.polling_period_seconds = polling_period_seconds;
+                                });
                         });
+                    });
                 });
-                });
-            });
         });
         if dump_state {
             self.write_state_dump();
@@ -2332,7 +2400,8 @@ fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
     // `add_sized` only advances by the native slider width. Reserve that same
     // width without painting a disabled widget (and its handle).
     let native_width = ui.spacing().slider_width.min(width);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(native_width, NAME_INPUT_HEIGHT), Sense::hover());
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(native_width, NAME_INPUT_HEIGHT), Sense::hover());
     let rail_height = ui.style().spacing.slider_rail_height;
     let rail = egui::Rect::from_min_max(
         Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
@@ -3714,9 +3783,7 @@ mod tests {
                     egui::Slider::new(&mut value, 0..=100).show_value(false),
                 );
                 assert!((response.rect.left() - slot_left).abs() < f32::EPSILON);
-                assert!(
-                    (response.rect.width() - ui.spacing().slider_width).abs() < f32::EPSILON
-                );
+                assert!((response.rect.width() - ui.spacing().slider_width).abs() < f32::EPSILON);
             });
         });
     }
