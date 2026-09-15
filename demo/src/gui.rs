@@ -2333,7 +2333,7 @@ fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
     // Reserve that same slot without painting a disabled widget (and its handle).
     let (slot, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
     let native_width = ui.spacing().slider_width.min(width);
-    let rect = egui::Rect::from_center_size(slot.center(), Vec2::new(native_width, slot.height()));
+    let rect = egui::Rect::from_min_size(slot.left_top(), Vec2::new(native_width, slot.height()));
     let rail_height = ui.style().spacing.slider_rail_height;
     let rail = egui::Rect::from_min_max(
         Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
@@ -3701,6 +3701,25 @@ mod tests {
         assert!(!battery_controls_are_visible(false, true));
         assert!(!battery_controls_are_visible(true, false));
         assert!(battery_controls_are_visible(true, true));
+    }
+
+    #[test]
+    fn sized_battery_slider_uses_native_left_aligned_rail() {
+        let ctx = egui::Context::default();
+        let mut value = 50_u8;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let slot_left = ui.cursor().left();
+                let response = ui.add_sized(
+                    [120.0, NAME_INPUT_HEIGHT],
+                    egui::Slider::new(&mut value, 0..=100).show_value(false),
+                );
+                assert!((response.rect.left() - slot_left).abs() < f32::EPSILON);
+                assert!(
+                    (response.rect.width() - ui.spacing().slider_width).abs() < f32::EPSILON
+                );
+            });
+        });
     }
 
     #[test]
