@@ -2329,7 +2329,20 @@ const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
 }
 
 fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
+    // `add_sized` centers the slider's native desired width within this slot.
+    // Reuse that response rect so the placeholder rail exactly matches it.
+    let mut placeholder = 0_u8;
+    let rect = ui
+        .add_enabled_ui(false, |ui| {
+            ui.add_sized(
+                [width, NAME_INPUT_HEIGHT],
+                egui::Slider::new(&mut placeholder, 0..=100)
+                    .show_value(false)
+                    .trailing_fill(false),
+            )
+        })
+        .inner
+        .rect;
     let rail_height = ui.style().spacing.slider_rail_height;
     let rail = egui::Rect::from_min_max(
         Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
