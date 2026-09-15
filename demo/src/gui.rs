@@ -2337,14 +2337,15 @@ const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
 
 fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
-    let track = egui::Rect::from_center_size(rect.center(), Vec2::new(width - 8.0, 4.0));
-    ui.painter()
-        .rect_filled(track, 2.0, ui.visuals().widgets.inactive.bg_fill);
-    ui.painter().rect_stroke(
-        track,
-        2.0,
-        ui.visuals().widgets.inactive.bg_stroke,
-        egui::StrokeKind::Inside,
+    let rail_height = ui.style().spacing.slider_rail_height;
+    let rail = egui::Rect::from_min_max(
+        Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
+        Pos2::new(rect.right(), rect.center().y + rail_height / 2.0),
+    );
+    ui.painter().rect_filled(
+        rail,
+        ui.visuals().widgets.inactive.corner_radius,
+        ui.visuals().widgets.inactive.bg_fill,
     );
 }
 
