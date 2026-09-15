@@ -2314,14 +2314,7 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                     }
                 } else {
                     draw_inactive_battery_slider(ui, 120.0);
-                    let mut empty = String::new();
-                    ui.add_enabled_ui(false, |ui| {
-                        ui.add_sized(
-                            [56.0, NAME_INPUT_HEIGHT],
-                            egui::TextEdit::singleline(&mut empty)
-                                .vertical_align(egui::Align::Center),
-                        );
-                    });
+                    draw_inactive_battery_field(ui, 56.0);
                     if !supported {
                         ui.weak("unsupported");
                     }
@@ -2336,21 +2329,31 @@ const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
 }
 
 fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
-    let mut placeholder = 50_u8;
-    let response = ui
-        .add_enabled_ui(false, |ui| {
-            ui.add_sized(
-                [width, NAME_INPUT_HEIGHT],
-                egui::Slider::new(&mut placeholder, 0..=100)
-                    .show_value(false)
-                    .trailing_fill(false),
-            )
-        })
-        .inner;
-    ui.painter().circle_filled(
-        response.rect.center(),
-        response.rect.height() / 2.5 + 1.0,
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
+    let rail_height = ui.style().spacing.slider_rail_height;
+    let rail = egui::Rect::from_min_max(
+        Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
+        Pos2::new(rect.right(), rect.center().y + rail_height / 2.0),
+    );
+    ui.painter().rect_filled(
+        rail,
+        ui.visuals().widgets.inactive.corner_radius,
         ui.visuals().widgets.inactive.bg_fill,
+    );
+}
+
+fn draw_inactive_battery_field(ui: &mut egui::Ui, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        ui.visuals().widgets.inactive.corner_radius,
+        Color32::from_gray(48),
+    );
+    ui.painter().rect_stroke(
+        rect,
+        ui.visuals().widgets.inactive.corner_radius,
+        ui.visuals().widgets.inactive.bg_stroke,
+        egui::StrokeKind::Inside,
     );
 }
 
