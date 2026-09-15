@@ -1198,7 +1198,9 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => draw_xbox(ui, controller_id, controller, input_ui),
             Self::DualSense(controller) => draw_dualsense(ui, controller_id, controller, input_ui),
-            Self::DualShock4(controller) => draw_dualshock4(ui, controller),
+            Self::DualShock4(controller) => {
+                draw_dualshock4(ui, controller_id, controller, input_ui)
+            }
             Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
         }
     }
@@ -3088,7 +3090,185 @@ fn draw_dualsense_legacy(
     }
 }
 
-fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
+#[allow(clippy::too_many_lines)]
+fn draw_dualshock4(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut DualShock4Editor,
+    input_ui: &mut InputUiState,
+) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                &mut events,
+            );
+        }
+    });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, &mut events);
+        }
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l1"),
+            InputValue::Button(controller.state().native_pressed(DualShock4Control::L1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("l2"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r1"),
+            InputValue::Button(controller.state().native_pressed(DualShock4Control::R1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r2"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
+        for touchpad in topology.touchpads {
+            let current = [
+                controller
+                    .state()
+                    .touch(DualShock4TouchSlot::First)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+                controller
+                    .state()
+                    .touch(DualShock4TouchSlot::Second)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+            ];
+            draw_touchpad_cluster(ui, touchpad, &current, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                &mut events,
+            );
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "share" => DualShock4Control::Share,
+                    "options" => DualShock4Control::Options,
+                    "playstation" => DualShock4Control::PlayStation,
+                    "touchpad-click" => DualShock4Control::TouchpadClick,
+                    "left-stick-press" => DualShock4Control::LeftStickPress,
+                    "right-stick-press" => DualShock4Control::RightStickPress,
+                    "l1" => DualShock4Control::L1,
+                    "r1" => DualShock4Control::R1,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis1 { id, value } => {
+                let value =
+                    u8::try_from(value).expect("DualShock 4 trigger topology uses u8 range");
+                match id.as_str() {
+                    "l2" => triggers.0 = value,
+                    "r2" => triggers.1 = value,
+                    _ => continue,
+                }
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = DualShock4Axis::new(
+                    u8::try_from(x).expect("DualShock 4 stick topology uses u8 range"),
+                );
+                let y = DualShock4Axis::new(
+                    u8::try_from(y).expect("DualShock 4 stick topology uses u8 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Touch { id, contact, point } if id.as_str() == "touchpad" => {
+                let slot = if contact == 0 {
+                    DualShock4TouchSlot::First
+                } else {
+                    DualShock4TouchSlot::Second
+                };
+                let point = point.map(|(x, y)| {
+                    DualShock4TouchContact::new(
+                        contact,
+                        u16::try_from(x).expect("touch topology uses u16 width"),
+                        u16::try_from(y).expect("touch topology uses u16 height"),
+                    )
+                    .expect("touch topology matches DualShock 4 domain")
+                });
+                let _ = controller.set_touch(slot, point);
+            }
+            InputEvent::Motion {
+                id,
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(DualShock4MotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                });
+            }
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            DualShock4Trigger::new(triggers.0),
+            DualShock4Trigger::new(triggers.1),
+        );
+    }
+}
+
+#[allow(dead_code)]
+fn draw_dualshock4_legacy(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
     digital_controls(ui, Kind::DualShock4, |update| {
         let _ = controller.set_digital(update);
     });
