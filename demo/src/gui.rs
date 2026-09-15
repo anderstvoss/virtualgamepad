@@ -1,4 +1,6 @@
 mod editor;
+#[allow(dead_code)] // Removed once all controller adapters use every shared cluster.
+mod input_clusters;
 use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
 };
