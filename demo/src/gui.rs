@@ -46,6 +46,8 @@ const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
 const INPUT_HEADER_BUTTON_WIDTH: f32 = 112.0;
+// Checkbox, native-width slider, and percentage field plus their stable spacing.
+const BATTERY_CARD_CONTENT_WIDTH: f32 = 232.0;
 const SIDEBAR_WIDTH: f32 = 200.0;
 const DIAGNOSTIC_LOG_LINE_COUNT: f32 = 5.0;
 const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
@@ -2339,6 +2341,10 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
     card(ui, "Battery", |ui| {
+        // Exposure changes the widget implementation, not this card's footprint. Keeping the
+        // allocation fixed prevents parent scroll areas from clamping their position mid-click.
+        ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+        ui.set_min_height(NAME_INPUT_HEIGHT);
         ui.horizontal(|ui| {
             let expose_response = ui.add_enabled(
                 supported && editable,
@@ -3722,6 +3728,21 @@ mod tests {
                 );
                 assert!((response.rect.left() - slot_left).abs() < f32::EPSILON);
                 assert!((response.rect.width() - ui.spacing().slider_width).abs() < f32::EPSILON);
+            });
+        });
+    }
+
+    #[test]
+    fn battery_card_reserves_a_stable_content_footprint() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let card = card(ui, "Battery", |ui| {
+                    ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+                    ui.set_min_height(NAME_INPUT_HEIGHT);
+                });
+                assert!(card.response.rect.width() >= BATTERY_CARD_CONTENT_WIDTH);
+                assert!(card.response.rect.height() >= NAME_INPUT_HEIGHT);
             });
         });
     }
