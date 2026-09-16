@@ -698,27 +698,41 @@ pub(super) fn draw_touchpad(
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut next_selected = None;
-                        let previous_holds: Vec<bool> = touch_state
+                        let previous_contacts: Vec<(bool, bool)> = touch_state
                             .contacts
                             .iter()
-                            .map(|contact| contact.held)
+                            .map(|contact| (contact.active, contact.held))
                             .collect();
                         for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
                             let selected = touch_state.selected == index;
                             let selectable =
-                                touch_contact_selectable(index, multitouch, &previous_holds);
+                                touch_contact_selectable(index, multitouch, &previous_contacts);
                             let response = ui.group(|ui| {
                                 ui.vertical(|ui| {
                                     ui.set_min_width(88.0);
                                     let selected_clicked = ui
-                                        .add_enabled(
-                                            selectable,
-                                            Button::selectable(
-                                                selected,
-                                                format!("Contact {}", index + 1),
-                                            ),
-                                        )
-                                        .clicked();
+                                        .horizontal(|ui| {
+                                            let clicked = ui
+                                                .add_enabled(
+                                                    selectable,
+                                                    Button::selectable(
+                                                        selected,
+                                                        format!("Contact {}", index + 1),
+                                                    ),
+                                                )
+                                                .clicked();
+                                            let (indicator, _) = ui.allocate_exact_size(
+                                                Vec2::splat(10.0),
+                                                Sense::hover(),
+                                            );
+                                            ui.painter().circle_filled(
+                                                indicator.center(),
+                                                4.0,
+                                                touch_contact_color(contact, selected),
+                                            );
+                                            clicked
+                                        })
+                                        .inner;
                                     holds_changed |= ui
                                         .add_enabled(
                                             multitouch && selectable,
@@ -811,8 +825,22 @@ fn normalize_touch_contacts(
     }
 }
 
-fn touch_contact_selectable(index: usize, multitouch: bool, held: &[bool]) -> bool {
-    index == 0 || (multitouch && held.get(index.saturating_sub(1)).copied().unwrap_or(false))
+fn touch_contact_selectable(index: usize, multitouch: bool, contacts: &[(bool, bool)]) -> bool {
+    index == 0
+        || (multitouch
+            && contacts
+                .get(index.saturating_sub(1))
+                .is_some_and(|(active, held)| *active && *held))
+}
+
+fn touch_contact_color(contact: &TouchContactState, selected: bool) -> Color32 {
+    if !contact.active {
+        Color32::DARK_GRAY
+    } else if selected {
+        Color32::LIGHT_BLUE
+    } else {
+        Color32::LIGHT_GREEN
+    }
 }
 
 fn emit_touch_move(
@@ -1427,11 +1455,43 @@ mod tests {
 
     #[test]
     fn touch_contacts_unlock_in_order_only_when_multitouch_holds_the_previous_contact() {
-        assert!(touch_contact_selectable(0, false, &[false, false]));
-        assert!(!touch_contact_selectable(1, false, &[true, false]));
-        assert!(!touch_contact_selectable(1, true, &[false, false]));
-        assert!(touch_contact_selectable(1, true, &[true, false]));
-        assert!(touch_contact_selectable(2, true, &[true, true]));
+        assert!(touch_contact_selectable(0, false, &[(false, false)]));
+        assert!(!touch_contact_selectable(1, false, &[(true, true)]));
+        assert!(!touch_contact_selectable(1, true, &[(false, true)]));
+        assert!(touch_contact_selectable(1, true, &[(true, true)]));
+        assert!(touch_contact_selectable(
+            2,
+            true,
+            &[(true, true), (true, true)]
+        ));
+    }
+
+    #[test]
+    fn selecting_another_contact_keeps_existing_contact_coordinates() {
+        let first = TouchContactState {
+            active: true,
+            held: true,
+            relative: false,
+            x: 7,
+            y: 8,
+            release_pending: false,
+        };
+        let mut state = TouchpadState {
+            selected: 0,
+            contacts: vec![first, TouchContactState::default()],
+            relative_input: false,
+        };
+        assert!(select_touch_contact(&mut state, 1));
+        assert_eq!(state.selected, 1);
+        assert_eq!(state.contacts[0], first);
+        assert_eq!(
+            touch_contact_color(&state.contacts[0], false),
+            Color32::LIGHT_GREEN
+        );
+        assert_eq!(
+            touch_contact_color(&state.contacts[1], true),
+            Color32::DARK_GRAY
+        );
     }
 
     #[test]
