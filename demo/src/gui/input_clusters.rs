@@ -916,30 +916,32 @@ pub(super) fn draw_motion(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(ui, input.title, input.id, state, |ui, _state, _released| {
+    hold_card(ui, input.title, input.id, state, |ui, state, released| {
         let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale);
         let mut accel = unscale_vector(accelerometer, input.accelerometer_scale);
         let mut changed = false;
+        let hold = state.held(input.id);
+        let mut interaction_finished = false;
         for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= ui
-                .add(
-                    egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
-                )
-                .changed();
+            let response = ui.add(
+                egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
+            );
+            changed |= response.changed();
+            interaction_finished |= response.drag_stopped() || response.clicked();
         }
         for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
             .into_iter()
             .zip(&mut accel)
         {
-            changed |= ui
-                .add(
-                    egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
-                )
-                .changed();
+            let response = ui.add(
+                egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
+            );
+            changed |= response.changed();
+            interaction_finished |= response.drag_stopped() || response.clicked();
         }
-        if ui.button("Reset motion").clicked() {
-            gyro = [0; 3];
-            accel = [0; 3];
+        if motion_should_neutralize(released, hold, interaction_finished) {
+            gyro = [input.range.neutral; 3];
+            accel = [input.range.neutral; 3];
             changed = true;
         }
         if changed {
@@ -950,6 +952,10 @@ pub(super) fn draw_motion(
             });
         }
     });
+}
+
+fn motion_should_neutralize(released: bool, hold: bool, interaction_finished: bool) -> bool {
+    released || (!hold && interaction_finished)
 }
 
 #[allow(dead_code)] // Exercised by the synthetic surface until a curated controller declares one.
@@ -1735,6 +1741,14 @@ mod tests {
         assert!(!state.touchpads[&touchpad.id].contacts[1].active);
         assert!(!state.touchpads[&touchpad.id].contacts[1].held);
         assert!(!state.touchpads[&touchpad.id].contacts[1].relative);
+    }
+
+    #[test]
+    fn motion_returns_to_neutral_on_release_or_when_hold_is_disabled() {
+        assert!(motion_should_neutralize(true, true, false));
+        assert!(motion_should_neutralize(false, false, true));
+        assert!(!motion_should_neutralize(false, true, true));
+        assert!(!motion_should_neutralize(false, false, false));
     }
 
     #[test]
