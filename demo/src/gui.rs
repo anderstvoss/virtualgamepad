@@ -56,7 +56,6 @@ const NAME_INPUT_HEIGHT: f32 = 22.0;
 const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
 const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
 const CREATE_BUTTON_TEXT: Color32 = Color32::from_rgb(245, 250, 255);
-const SELECTED_CONTROLLER_TEXT: Color32 = Color32::from_rgb(235, 250, 255);
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
@@ -221,34 +220,15 @@ const fn stop_all_after_click(clicked: bool) -> bool {
     clicked
 }
 
-fn controller_row_fill(active: bool, selected_fill: Color32) -> Color32 {
-    if active {
-        selected_fill
-    } else {
-        Color32::from_gray(62)
-    }
+fn sidebar_list_fill(ui: &egui::Ui) -> Color32 {
+    ui.visuals().extreme_bg_color
 }
 
-const fn controller_row_has_hover_outline(hovered: bool) -> bool {
-    hovered
+fn destructive_button_fill(ui: &egui::Ui) -> Color32 {
+    ui.visuals().error_fg_color.gamma_multiply(0.55)
 }
 
-fn sidebar_item_text_color(hovered: bool, normal: Color32, highlighted: Color32) -> Color32 {
-    if hovered { highlighted } else { normal }
-}
-
-fn controller_row_text_color(
-    active: bool,
-    hovered: bool,
-    normal: Color32,
-    highlighted: Color32,
-) -> Color32 {
-    if active {
-        SELECTED_CONTROLLER_TEXT
-    } else {
-        sidebar_item_text_color(hovered, normal, highlighted)
-    }
-}
+const SUCCESS_LOG_COLOR: Color32 = Color32::from_rgb(105, 170, 105);
 
 fn sidebar_choice_chip(
     ui: &mut egui::Ui,
@@ -415,50 +395,6 @@ fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered
             Pos2::new(center.x + half_width, rect.top() + inset),
             Pos2::new(center.x, rect.bottom() - inset),
         ]
-    };
-    let color = if hovered {
-        ui.visuals().strong_text_color()
-    } else {
-        ui.visuals().weak_text_color()
-    };
-    ui.painter()
-        .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DisclosureDirection {
-    Right,
-    Down,
-}
-
-const fn advanced_disclosure_direction(expanded: bool) -> DisclosureDirection {
-    if expanded {
-        DisclosureDirection::Down
-    } else {
-        DisclosureDirection::Right
-    }
-}
-
-fn paint_advanced_disclosure_arrow(
-    ui: &egui::Ui,
-    rect: egui::Rect,
-    direction: DisclosureDirection,
-    hovered: bool,
-) {
-    let center = rect.center();
-    let inset = 5.0;
-    let half_width = 3.0;
-    let points = match direction {
-        DisclosureDirection::Right => vec![
-            Pos2::new(rect.left() + inset, center.y - half_width),
-            Pos2::new(rect.left() + inset, center.y + half_width),
-            Pos2::new(rect.right() - inset, center.y),
-        ],
-        DisclosureDirection::Down => vec![
-            Pos2::new(center.x - half_width, rect.top() + inset),
-            Pos2::new(center.x + half_width, rect.top() + inset),
-            Pos2::new(center.x, rect.bottom() - inset),
-        ],
     };
     let color = if hovered {
         ui.visuals().strong_text_color()
@@ -1656,67 +1592,24 @@ impl eframe::App for App {
                             if !advanced_available {
                                 self.advanced_options_open = false;
                             }
-                            let advanced_label = "Advanced options";
-                            let advanced_width = ui.available_width();
-                            let (advanced_rect, advanced_response) = ui.allocate_exact_size(
-                                Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT),
-                                if advanced_available {
-                                    Sense::click()
-                                } else {
-                                    Sense::hover()
-                                },
-                            );
-                            let advanced_fill = if advanced_available {
-                                Color32::from_gray(62)
+                            let advanced_label = if self.advanced_options_open {
+                                "v  Advanced options"
                             } else {
-                                ui.visuals().widgets.noninteractive.bg_fill
+                                ">  Advanced options"
                             };
-                            ui.painter().rect_filled(advanced_rect, 0.0, advanced_fill);
-                            if advanced_available
-                                && controller_row_has_hover_outline(advanced_response.hovered())
-                            {
-                                ui.painter().rect_stroke(
-                                    advanced_rect,
-                                    0.0,
-                                    ui.visuals().widgets.hovered.bg_stroke,
-                                    egui::StrokeKind::Inside,
-                                );
-                            }
-                            let advanced_hovered = advanced_available
-                                && controller_row_has_hover_outline(advanced_response.hovered());
-                            let advanced_highlighted = advanced_available
-                                && (advanced_hovered || self.advanced_options_open);
-                            ui.painter().text(
-                                advanced_rect.left_center() + egui::vec2(24.0, 0.0),
-                                egui::Align2::LEFT_CENTER,
-                                advanced_label,
-                                egui::TextStyle::Button.resolve(ui.style()),
-                                sidebar_item_text_color(
-                                    advanced_highlighted,
-                                    if advanced_available {
-                                        ui.visuals().widgets.inactive.text_color()
-                                    } else {
-                                        ui.visuals().weak_text_color()
-                                    },
-                                    ui.visuals().strong_text_color(),
-                                ),
-                            );
-                            let arrow_rect = egui::Rect::from_min_max(
-                                advanced_rect.left_top(),
-                                Pos2::new(advanced_rect.left() + 18.0, advanced_rect.bottom()),
-                            );
-                            paint_advanced_disclosure_arrow(
-                                ui,
-                                arrow_rect,
-                                advanced_disclosure_direction(self.advanced_options_open),
-                                advanced_available && advanced_response.hovered(),
+                            let advanced_width = ui.available_width();
+                            let advanced_response = ui.add_enabled(
+                                advanced_available,
+                                Button::new(advanced_label)
+                                    .selected(self.advanced_options_open)
+                                    .min_size(Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT)),
                             );
                             if advanced_response.clicked() {
                                 self.advanced_options_open = !self.advanced_options_open;
                             }
                             if self.advanced_options_open && advanced_available {
                                 egui::Frame::NONE
-                                    .fill(Color32::from_gray(20))
+                                    .fill(sidebar_list_fill(ui))
                                     .show(ui, |ui| {
                                         ui.set_width(SIDEBAR_WIDTH);
                                         egui::ScrollArea::vertical()
@@ -1813,7 +1706,7 @@ impl eframe::App for App {
                             ui.painter().rect_filled(
                                 controller_list_rect,
                                 0.0,
-                                Color32::from_gray(20),
+                                sidebar_list_fill(ui),
                             );
                             let controller_content_rect = controller_list_rect.shrink(4.0);
                             let mut list_ui = ui.new_child(
@@ -1854,40 +1747,14 @@ impl eframe::App for App {
                                                         ],
                                                         egui::Label::new(format!("{}", index + 1)),
                                                     );
-                                                    let (rect, controller_response) = ui
-                                                        .allocate_exact_size(
-                                                            Vec2::new(
-                                                                controller_button_width,
-                                                                CONTROLLER_ROW_HEIGHT,
-                                                            ),
-                                                            Sense::click(),
-                                                        );
-                                                    let fill = controller_row_fill(
-                                                        active,
-                                                        ui.visuals().selection.bg_fill,
-                                                    );
-                                                    ui.painter().rect_filled(rect, 0.0, fill);
-                                                    if controller_row_has_hover_outline(
-                                                        controller_response.hovered(),
-                                                    ) {
-                                                        ui.painter().rect_stroke(
-                                                            rect,
-                                                            0.0,
-                                                            ui.visuals().widgets.hovered.bg_stroke,
-                                                            egui::StrokeKind::Inside,
-                                                        );
-                                                    }
-                                                    ui.painter().text(
-                                                        rect.left_center() + egui::vec2(6.0, 0.0),
-                                                        egui::Align2::LEFT_CENTER,
-                                                        label,
-                                                        egui::TextStyle::Button.resolve(ui.style()),
-                                                        controller_row_text_color(
-                                                            active,
-                                                            controller_response.hovered(),
-                                                            ui.visuals().text_color(),
-                                                            ui.visuals().strong_text_color(),
-                                                        ),
+                                                    let controller_response = ui.add_sized(
+                                                        [
+                                                            controller_button_width,
+                                                            CONTROLLER_ROW_HEIGHT,
+                                                        ],
+                                                        Button::new(label)
+                                                            .selected(active)
+                                                            .truncate(),
                                                     );
                                                     self.selected_controller =
                                                         selection_after_controller_click(
@@ -1901,9 +1768,8 @@ impl eframe::App for App {
                                                                 CONTROLLER_DELETE_WIDTH,
                                                                 CONTROLLER_ROW_HEIGHT,
                                                             ],
-                                                            egui::Button::new("×").fill(
-                                                                Color32::from_rgb(150, 45, 45),
-                                                            ),
+                                                            egui::Button::new("×")
+                                                                .fill(destructive_button_fill(ui)),
                                                         )
                                                         .on_hover_text("Remove controller")
                                                         .clicked();
@@ -1933,7 +1799,7 @@ impl eframe::App for App {
                                 .add_sized(
                                     [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
                                     egui::Button::new("Stop all controllers")
-                                        .fill(Color32::from_rgb(150, 45, 65)),
+                                        .fill(destructive_button_fill(&footer_ui)),
                                 )
                                 .clicked();
                             stop_all = stop_all_after_click(stop_all_clicked);
@@ -1974,9 +1840,9 @@ impl eframe::App for App {
                                     for entry in &self.diagnostic_log {
                                         ui.colored_label(
                                             if entry.success {
-                                                Color32::from_rgb(105, 170, 105)
+                                                SUCCESS_LOG_COLOR
                                             } else {
-                                                Color32::RED
+                                                footer_ui.visuals().error_fg_color
                                             },
                                             &entry.message,
                                         );
@@ -2081,7 +1947,7 @@ impl eframe::App for App {
                                                     .add_enabled(
                                                         inputs_ready,
                                                         Button::new("Release all inputs")
-                                                            .fill(Color32::from_rgb(150, 45, 65))
+                                                            .fill(destructive_button_fill(ui))
                                                             .min_size(Vec2::new(
                                                                 INPUT_HEADER_BUTTON_WIDTH,
                                                                 NAME_INPUT_HEIGHT,
@@ -3654,18 +3520,6 @@ mod tests {
     }
 
     #[test]
-    fn advanced_disclosure_arrow_tracks_expansion() {
-        assert_eq!(
-            advanced_disclosure_direction(false),
-            DisclosureDirection::Right
-        );
-        assert_eq!(
-            advanced_disclosure_direction(true),
-            DisclosureDirection::Down
-        );
-    }
-
-    #[test]
     fn dualsense_motion_refresh_is_available_for_uhid_and_dummy_hcd() {
         assert!(dualsense_motion_target(RealizationId::LINUX_UHID_USB));
         assert!(dualsense_motion_target(
@@ -3905,32 +3759,6 @@ mod tests {
     fn stop_all_click_requests_immediate_cleanup() {
         assert!(!stop_all_after_click(false));
         assert!(stop_all_after_click(true));
-    }
-
-    #[test]
-    fn controller_rows_use_a_hover_outline_without_overriding_selection() {
-        let selected = Color32::BLUE;
-
-        assert_eq!(controller_row_fill(false, selected), Color32::from_gray(62));
-        assert_eq!(controller_row_fill(true, selected), selected);
-        assert!(controller_row_has_hover_outline(true));
-        assert!(!controller_row_has_hover_outline(false));
-        assert_eq!(
-            sidebar_item_text_color(true, Color32::GRAY, Color32::WHITE),
-            Color32::WHITE
-        );
-        assert_eq!(
-            sidebar_item_text_color(false, Color32::GRAY, Color32::WHITE),
-            Color32::GRAY
-        );
-        assert_eq!(
-            controller_row_text_color(true, false, Color32::GRAY, Color32::WHITE),
-            SELECTED_CONTROLLER_TEXT
-        );
-        assert_eq!(
-            controller_row_text_color(false, true, Color32::GRAY, Color32::WHITE),
-            Color32::WHITE
-        );
     }
 
     #[test]
