@@ -502,7 +502,7 @@ pub(super) fn draw_trigger_stack(
             }
         }
         for control in stack.controls {
-            ui.vertical(|ui| {
+            ui.horizontal(|ui| {
                 ui.label(control.label);
                 match control.kind {
                     TriggerInputKind::Button { id } => {
