@@ -8,9 +8,9 @@ use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
-    DpadCluster, DpadPresentation, FaceButton, FaceButtonCluster, FaceButtonInput, InputAxisRange,
-    InputControlId, InputScale, InputTopology, MotionInput, OutputSurface,
-    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
+    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
     TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
 };
@@ -537,6 +537,7 @@ static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
     id: InputControlId::new("dpad"),
     title: "D-pad",
     presentation: DpadPresentation::IndependentButtons,
+    hold_behavior: DpadHoldBehavior::AdjacentPair,
 }];
 static INPUT_STICKS: [StickInput; 2] = [
     StickInput {

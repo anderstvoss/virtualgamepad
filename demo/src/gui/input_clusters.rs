@@ -1,12 +1,13 @@
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::collections::{HashMap, HashSet};
 use virtualgamepad::{
-    AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadPresentation, ExtraAxisInput, FaceButton,
-    FaceButtonCluster, InputAxisRange, InputControlId, InputScale, MotionInput, StickInput,
-    TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
+    AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
+    ExtraAxisInput, FaceButton, FaceButtonCluster, InputAxisRange, InputControlId, InputScale,
+    MotionInput, StickInput, TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
 };
 
-pub(super) const CARD_WIDTH: f32 = 240.0;
+pub(super) const CARD_MIN_WIDTH: f32 = 144.0;
+pub(super) const CARD_MAX_WIDTH: f32 = 240.0;
 pub(super) const CARD_PADDING: f32 = 8.0;
 pub(super) const CARD_SPACING: f32 = 8.0;
 pub(super) const CONTROL_HEIGHT: f32 = 22.0;
@@ -14,6 +15,7 @@ pub(super) const AXIS_PAD_SIZE: f32 = 112.0;
 pub(super) const TOUCHPAD_WIDTH: f32 = 220.0;
 // Caps horizontal rows without clipping the tallest current touchpad card.
 const CLUSTER_ROW_HEIGHT: f32 = 320.0;
+const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InputValue {
@@ -73,7 +75,7 @@ struct TouchpadState {
 
 #[derive(Debug, Default)]
 pub(super) struct InputUiState {
-    holds: HashMap<HoldKey, bool>,
+    holds: HashMap<InputControlId, bool>,
     latched_buttons: HashSet<HoldKey>,
     snapping_dpads: HashMap<InputControlId, SnappingDpadState>,
     touchpads: HashMap<InputControlId, TouchpadState>,
@@ -85,6 +87,13 @@ enum HoldKey {
     Face(FaceButton),
     Dpad(DpadDirection),
 }
+
+const ALL_DPAD_DIRECTIONS: [DpadDirection; 4] = [
+    DpadDirection::Up,
+    DpadDirection::Down,
+    DpadDirection::Left,
+    DpadDirection::Right,
+];
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct SnappingDpadState {
@@ -112,6 +121,18 @@ impl InputUiState {
             .resize(usize::from(input.contacts), TouchContactState::default());
         state.selected = state.selected.min(state.contacts.len().saturating_sub(1));
         state
+    }
+
+    fn held(&self, category: InputControlId) -> bool {
+        self.holds.get(&category).copied().unwrap_or(false)
+    }
+
+    fn set_hold(&mut self, category: InputControlId, held: bool) {
+        if held {
+            self.holds.insert(category, true);
+        } else {
+            self.holds.remove(&category);
+        }
     }
 }
 
@@ -151,14 +172,60 @@ pub(super) fn card(
     let frame = egui::Frame::group(ui.style()).inner_margin(CARD_PADDING);
     let margins = frame.total_margin();
     frame.show(ui, |ui| {
-        ui.set_min_width((CARD_WIDTH - margins.left - margins.right).max(0.0));
-        ui.set_max_width((CARD_WIDTH - margins.left - margins.right).max(0.0));
+        ui.set_min_width((CARD_MIN_WIDTH - margins.left - margins.right).max(0.0));
+        ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.strong(title);
             ui.separator();
             add(ui);
         });
     })
+}
+
+fn hold_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    category: InputControlId,
+    state: &mut InputUiState,
+    add: impl FnOnce(&mut egui::Ui, &mut InputUiState, bool),
+) {
+    let frame = egui::Frame::group(ui.style()).inner_margin(CARD_PADDING);
+    let margins = frame.total_margin();
+    frame.show(ui, |ui| {
+        ui.set_min_width((CARD_MIN_WIDTH - margins.left - margins.right).max(0.0));
+        ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
+        ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+            let released = hold_header(ui, title, category, state);
+            ui.separator();
+            add(ui, state, released);
+        });
+    });
+}
+
+fn hold_header(
+    ui: &mut egui::Ui,
+    title: &str,
+    category: InputControlId,
+    state: &mut InputUiState,
+) -> bool {
+    let mut hold = state.held(category);
+    let mut released = false;
+    ui.horizontal(|ui| {
+        ui.strong(title);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.checkbox(&mut hold, "Hold").changed() {
+                released = !hold;
+                state.set_hold(category, hold);
+            }
+        });
+    });
+    released
+}
+
+fn release_latched_button(state: &mut InputUiState, key: HoldKey, mut release: impl FnMut()) {
+    if state.latched_buttons.remove(&key) {
+        release();
+    }
 }
 
 pub(super) fn draw_auxiliary_buttons(
@@ -176,11 +243,20 @@ pub(super) fn draw_auxiliary_buttons(
     frame.show(ui, |ui| {
         ui.set_min_width((available - margin.left - margin.right).max(0.0));
         ui.vertical(|ui| {
-            ui.label("Auxiliary buttons");
+            let released = hold_header(ui, "Auxiliary buttons", AUXILIARY_HOLD, state);
             ui.horizontal_wrapped(|ui| {
                 for control in controls {
+                    if released {
+                        release_latched_button(state, HoldKey::Control(control.id), || {
+                            events.push(InputEvent::Button {
+                                id: control.id,
+                                pressed: false,
+                            });
+                        });
+                    }
                     holdable_button(
                         ui,
+                        AUXILIARY_HOLD,
                         HoldKey::Control(control.id),
                         control.label,
                         state,
@@ -203,64 +279,65 @@ pub(super) fn draw_face_cluster(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    card(ui, cluster.title, |ui| {
-        let origin = ui.cursor().min;
-        let columns = cluster
-            .buttons
-            .iter()
-            .map(|button| button.placement.column)
-            .max()
-            .map_or(1_i8, |column| column.saturating_add(1));
-        let rows = cluster
-            .buttons
-            .iter()
-            .map(|button| button.placement.row)
-            .max()
-            .map_or(1_i8, |row| row.saturating_add(1));
-        let cell = Vec2::new(
-            AXIS_PAD_SIZE / f32::from(columns),
-            AXIS_PAD_SIZE / f32::from(rows),
-        );
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
-        for input in cluster.buttons {
-            let center = origin
-                + egui::vec2(
-                    (f32::from(input.placement.column) + 0.5) * cell.x,
-                    (f32::from(input.placement.row) + 0.5) * cell.y,
-                );
-            let button_rect = egui::Rect::from_center_size(
-                center,
-                Vec2::new((cell.x - 3.0).max(1.0), (cell.y - 3.0).max(1.0)),
-            );
-            let key = HoldKey::Face(input.button);
-            let response = ui.put(
-                button_rect,
-                Button::new(input.label).selected(state.latched_buttons.contains(&key)),
-            );
-            emit_holdable(ui, &response, key, state, |pressed| {
-                events.push(InputEvent::Face {
-                    button: input.button,
-                    pressed,
-                });
-            });
-        }
-        debug_assert_eq!(rect.min, origin);
-        hold_choices(
-            ui,
-            cluster
+    hold_card(
+        ui,
+        cluster.title,
+        cluster.id,
+        state,
+        |ui, state, released| {
+            if released {
+                for input in cluster.buttons {
+                    release_latched_button(state, HoldKey::Face(input.button), || {
+                        events.push(InputEvent::Face {
+                            button: input.button,
+                            pressed: false,
+                        });
+                    });
+                }
+            }
+            let origin = ui.cursor().min;
+            let columns = cluster
                 .buttons
                 .iter()
-                .map(|input| (HoldKey::Face(input.button), input.label)),
-            state,
-            |key| match key {
-                HoldKey::Face(button) => events.push(InputEvent::Face {
-                    button,
-                    pressed: false,
-                }),
-                HoldKey::Control(_) | HoldKey::Dpad(_) => unreachable!(),
-            },
-        );
-    });
+                .map(|button| button.placement.column)
+                .max()
+                .map_or(1_i8, |column| column.saturating_add(1));
+            let rows = cluster
+                .buttons
+                .iter()
+                .map(|button| button.placement.row)
+                .max()
+                .map_or(1_i8, |row| row.saturating_add(1));
+            let cell = Vec2::new(
+                AXIS_PAD_SIZE / f32::from(columns),
+                AXIS_PAD_SIZE / f32::from(rows),
+            );
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
+            for input in cluster.buttons {
+                let center = origin
+                    + egui::vec2(
+                        (f32::from(input.placement.column) + 0.5) * cell.x,
+                        (f32::from(input.placement.row) + 0.5) * cell.y,
+                    );
+                let button_rect = egui::Rect::from_center_size(
+                    center,
+                    Vec2::new((cell.x - 3.0).max(1.0), (cell.y - 3.0).max(1.0)),
+                );
+                let key = HoldKey::Face(input.button);
+                let response = ui.put(
+                    button_rect,
+                    Button::new(input.label).selected(state.latched_buttons.contains(&key)),
+                );
+                emit_holdable(ui, &response, cluster.id, key, state, |pressed| {
+                    events.push(InputEvent::Face {
+                        button: input.button,
+                        pressed,
+                    });
+                });
+            }
+            debug_assert_eq!(rect.min, origin);
+        },
+    );
 }
 
 pub(super) fn draw_dpad_cluster(
@@ -269,62 +346,65 @@ pub(super) fn draw_dpad_cluster(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    card(ui, cluster.title, |ui| match cluster.presentation {
-        DpadPresentation::IndependentButtons => {
-            let origin = ui.cursor().min;
-            let cell = AXIS_PAD_SIZE / 3.0;
-            ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
-            for (label, direction, column, row) in [
-                ("Up", DpadDirection::Up, 1_i8, 0_i8),
-                ("Down", DpadDirection::Down, 1_i8, 2_i8),
-                ("Left", DpadDirection::Left, 0_i8, 1_i8),
-                ("Right", DpadDirection::Right, 2_i8, 1_i8),
-            ] {
-                let center = origin
-                    + egui::vec2(
-                        (f32::from(column) + 0.5) * cell,
-                        (f32::from(row) + 0.5) * cell,
+    hold_card(
+        ui,
+        cluster.title,
+        cluster.id,
+        state,
+        |ui, state, released| match cluster.presentation {
+            DpadPresentation::IndependentButtons => {
+                if released {
+                    for direction in ALL_DPAD_DIRECTIONS {
+                        release_latched_button(state, HoldKey::Dpad(direction), || {
+                            events.push(InputEvent::Dpad {
+                                direction,
+                                pressed: false,
+                            });
+                        });
+                    }
+                }
+                let origin = ui.cursor().min;
+                let cell = AXIS_PAD_SIZE / 3.0;
+                ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::hover());
+                for (label, direction, column, row) in [
+                    ("Up", DpadDirection::Up, 1_i8, 0_i8),
+                    ("Down", DpadDirection::Down, 1_i8, 2_i8),
+                    ("Left", DpadDirection::Left, 0_i8, 1_i8),
+                    ("Right", DpadDirection::Right, 2_i8, 1_i8),
+                ] {
+                    let center = origin
+                        + egui::vec2(
+                            (f32::from(column) + 0.5) * cell,
+                            (f32::from(row) + 0.5) * cell,
+                        );
+                    let key = HoldKey::Dpad(direction);
+                    let response = ui.put(
+                        egui::Rect::from_center_size(center, Vec2::splat(cell - 3.0)),
+                        Button::new(label).selected(state.latched_buttons.contains(&key)),
                     );
-                let key = HoldKey::Dpad(direction);
-                let response = ui.put(
-                    egui::Rect::from_center_size(center, Vec2::splat(cell - 3.0)),
-                    Button::new(label).selected(state.latched_buttons.contains(&key)),
-                );
-                emit_holdable(ui, &response, key, state, |pressed| {
-                    events.push(InputEvent::Dpad { direction, pressed });
-                });
+                    emit_dpad_holdable(ui, &response, cluster, key, state, events);
+                }
             }
-            hold_choices(
-                ui,
-                [
-                    (HoldKey::Dpad(DpadDirection::Up), "Up"),
-                    (HoldKey::Dpad(DpadDirection::Down), "Down"),
-                    (HoldKey::Dpad(DpadDirection::Left), "Left"),
-                    (HoldKey::Dpad(DpadDirection::Right), "Right"),
-                ]
-                .into_iter(),
-                state,
-                |key| match key {
-                    HoldKey::Dpad(direction) => events.push(InputEvent::Dpad {
-                        direction,
-                        pressed: false,
-                    }),
-                    HoldKey::Control(_) | HoldKey::Face(_) => unreachable!(),
-                },
-            );
-        }
-        DpadPresentation::SnappingAxis => {
-            let dpad = state.snapping_dpads.entry(cluster.id).or_default();
-            let previous = dpad.direction;
-            let (next, release_pending) = snapping_pad(ui, previous, dpad.release_pending);
-            let changed = next != previous;
-            if changed {
-                emit_dpad_transition(previous, next, events);
+            DpadPresentation::SnappingAxis => {
+                let held = state.held(cluster.id);
+                let dpad = state.snapping_dpads.entry(cluster.id).or_default();
+                if released && dpad.direction != (0, 0) {
+                    emit_dpad_transition(dpad.direction, (0, 0), events);
+                    dpad.direction = (0, 0);
+                    dpad.release_pending = false;
+                }
+                let previous = dpad.direction;
+                let (next, release_pending) =
+                    snapping_pad(ui, previous, dpad.release_pending, held);
+                let changed = next != previous;
+                if changed {
+                    emit_dpad_transition(previous, next, events);
+                }
+                dpad.direction = next;
+                dpad.release_pending = release_pending;
             }
-            dpad.direction = next;
-            dpad.release_pending = release_pending;
-        }
-    });
+        },
+    );
 }
 
 pub(super) fn draw_stick(
@@ -334,8 +414,23 @@ pub(super) fn draw_stick(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    card(ui, stick.title, |ui| {
-        let (next, changed) = axis_pad(ui, value, stick.x, stick.y);
+    hold_card(ui, stick.title, stick.id, state, |ui, state, released| {
+        if released {
+            events.push(InputEvent::Axis2 {
+                id: stick.id,
+                x: stick.x.neutral,
+                y: stick.y.neutral,
+            });
+            for control in [stick.press, stick.capacitive].into_iter().flatten() {
+                release_latched_button(state, HoldKey::Control(control.id), || {
+                    events.push(InputEvent::Button {
+                        id: control.id,
+                        pressed: false,
+                    });
+                });
+            }
+        }
+        let (next, changed) = axis_pad(ui, value, stick.x, stick.y, state.held(stick.id));
         if changed {
             events.push(InputEvent::Axis2 {
                 id: stick.id,
@@ -346,6 +441,7 @@ pub(super) fn draw_stick(
         for control in [stick.press, stick.capacitive].into_iter().flatten() {
             holdable_button(
                 ui,
+                stick.id,
                 HoldKey::Control(control.id),
                 control.label,
                 state,
@@ -367,7 +463,15 @@ pub(super) fn draw_trigger_stack(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    card(ui, stack.title, |ui| {
+    hold_card(ui, stack.title, stack.id, state, |ui, state, released| {
+        if released {
+            events.extend(trigger_reset_events(stack));
+            for control in stack.controls {
+                if let TriggerInputKind::Button { id } = control.kind {
+                    state.latched_buttons.remove(&HoldKey::Control(id));
+                }
+            }
+        }
         for control in stack.controls {
             ui.vertical(|ui| {
                 ui.label(control.label);
@@ -380,16 +484,12 @@ pub(super) fn draw_trigger_stack(
                                 .selected(current || state.latched_buttons.contains(&key))
                                 .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
                         );
-                        emit_holdable(ui, &response, key, state, |pressed| {
-                            events.push(InputEvent::Button { id, pressed });
-                        });
-                        hold_checkbox(ui, key, state, |pressed| {
+                        emit_holdable(ui, &response, stack.id, key, state, |pressed| {
                             events.push(InputEvent::Button { id, pressed });
                         });
                     }
                     TriggerInputKind::Axis { id, range } => {
                         let mut value = value_axis(values, id, range.neutral);
-                        let key = HoldKey::Control(id);
                         let response = ui.add(
                             egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                 .show_value(true),
@@ -397,23 +497,12 @@ pub(super) fn draw_trigger_stack(
                         if response.changed() {
                             events.push(InputEvent::Axis1 { id, value });
                         }
-                        if !state.holds.get(&key).copied().unwrap_or(false)
-                            && (response.drag_stopped() || response.clicked())
+                        if !state.held(stack.id) && (response.drag_stopped() || response.clicked())
                         {
                             events.push(InputEvent::Axis1 {
                                 id,
                                 value: range.neutral,
                             });
-                        }
-                        let mut hold = state.holds.get(&key).copied().unwrap_or(false);
-                        if ui.checkbox(&mut hold, "Hold").changed() {
-                            state.holds.insert(key, hold);
-                            if !hold {
-                                events.push(InputEvent::Axis1 {
-                                    id,
-                                    value: range.neutral,
-                                });
-                            }
                         }
                     }
                 }
@@ -464,12 +553,21 @@ pub(super) fn draw_touchpad(
             }
         }
     }
-    card(ui, input.title, |ui| {
+    hold_card(ui, input.title, input.id, state, |ui, state, released| {
         match input.actuation {
             TouchpadActuation::None => {}
             TouchpadActuation::Button(button) => {
+                if released {
+                    release_latched_button(state, HoldKey::Control(button.id), || {
+                        events.push(InputEvent::Button {
+                            id: button.id,
+                            pressed: false,
+                        });
+                    });
+                }
                 holdable_button(
                     ui,
+                    input.id,
                     HoldKey::Control(button.id),
                     button.label,
                     state,
@@ -482,6 +580,12 @@ pub(super) fn draw_touchpad(
                 );
             }
             TouchpadActuation::Deflection { id, range } => {
+                if released {
+                    events.push(InputEvent::Axis1 {
+                        id,
+                        value: range.neutral,
+                    });
+                }
                 let mut value = range.neutral;
                 let response = ui.add(
                     egui::Slider::new(&mut value, range.minimum..=range.maximum).text("Deflection"),
@@ -489,7 +593,7 @@ pub(super) fn draw_touchpad(
                 if response.changed() {
                     events.push(InputEvent::Axis1 { id, value });
                 }
-                if response.drag_stopped() || response.clicked() {
+                if !state.held(input.id) && (response.drag_stopped() || response.clicked()) {
                     events.push(InputEvent::Axis1 {
                         id,
                         value: range.neutral,
@@ -563,17 +667,20 @@ pub(super) fn draw_touchpad(
                     for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
                         let selected = touch_state.selected == index;
                         let response = ui.group(|ui| {
-                            ui.set_min_width(88.0);
-                            let selected_clicked = ui
-                                .selectable_label(selected, format!("Contact {}", index + 1))
-                                .clicked();
-                            ui.checkbox(&mut contact.persistent, "Persist");
-                            ui.monospace(if contact.active {
-                                format!("{}, {}", contact.x, contact.y)
-                            } else {
-                                "inactive".to_owned()
-                            });
-                            selected_clicked
+                            ui.vertical(|ui| {
+                                ui.set_min_width(88.0);
+                                let selected_clicked = ui
+                                    .selectable_label(selected, format!("Contact {}", index + 1))
+                                    .clicked();
+                                ui.checkbox(&mut contact.persistent, "Persist");
+                                ui.monospace(if contact.active {
+                                    format!("{}, {}", contact.x, contact.y)
+                                } else {
+                                    "inactive".to_owned()
+                                });
+                                selected_clicked
+                            })
+                            .inner
                         });
                         if response.inner || response.response.interact(Sense::click()).clicked() {
                             next_selected = Some(index);
@@ -657,7 +764,7 @@ pub(super) fn draw_extra_axis(
         }
         ExtraAxisInput::TwoDimensional { id, title, x, y } => {
             card(ui, title, |ui| {
-                let (next, changed) = axis_pad(ui, value, x, y);
+                let (next, changed) = axis_pad(ui, value, x, y, false);
                 if changed {
                     events.push(InputEvent::Axis2 {
                         id,
@@ -672,65 +779,29 @@ pub(super) fn draw_extra_axis(
 
 fn holdable_button(
     ui: &mut egui::Ui,
+    category: InputControlId,
     key: HoldKey,
     label: &str,
     state: &mut InputUiState,
-    mut set: impl FnMut(bool),
+    set: impl FnMut(bool),
 ) {
-    ui.vertical(|ui| {
-        let response = ui.add(
-            Button::new(label)
-                .selected(state.latched_buttons.contains(&key))
-                .min_size(Vec2::new(0.0, CONTROL_HEIGHT)),
-        );
-        emit_holdable(ui, &response, key, state, &mut set);
-        hold_checkbox(ui, key, state, set);
-    });
-}
-
-fn hold_choices<'a>(
-    ui: &mut egui::Ui,
-    choices: impl Iterator<Item = (HoldKey, &'a str)>,
-    state: &mut InputUiState,
-    mut release: impl FnMut(HoldKey),
-) {
-    ui.horizontal_wrapped(|ui| {
-        ui.label("Hold:");
-        for (key, label) in choices {
-            let mut hold = state.holds.get(&key).copied().unwrap_or(false);
-            if ui.checkbox(&mut hold, label).changed() {
-                state.holds.insert(key, hold);
-                if !hold && state.latched_buttons.remove(&key) {
-                    release(key);
-                }
-            }
-        }
-    });
-}
-
-fn hold_checkbox(
-    ui: &mut egui::Ui,
-    key: HoldKey,
-    state: &mut InputUiState,
-    mut set: impl FnMut(bool),
-) {
-    let mut hold = state.holds.get(&key).copied().unwrap_or(false);
-    if ui.checkbox(&mut hold, "Hold").changed() {
-        state.holds.insert(key, hold);
-        if !hold && state.latched_buttons.remove(&key) {
-            set(false);
-        }
-    }
+    let response = ui.add(
+        Button::new(label)
+            .selected(state.latched_buttons.contains(&key))
+            .min_size(Vec2::new(0.0, CONTROL_HEIGHT)),
+    );
+    emit_holdable(ui, &response, category, key, state, set);
 }
 
 fn emit_holdable(
     ui: &mut egui::Ui,
     response: &egui::Response,
+    category: InputControlId,
     key: HoldKey,
     state: &mut InputUiState,
     mut set: impl FnMut(bool),
 ) {
-    let hold = state.holds.get(&key).copied().unwrap_or(false);
+    let hold = state.held(category);
     let latched = state.latched_buttons.contains(&key);
     let previous = ui
         .data(|data| data.get_temp::<bool>(response.id))
@@ -753,6 +824,61 @@ fn emit_holdable(
         }
         set(pressed);
     }
+}
+
+fn emit_dpad_holdable(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    cluster: &DpadCluster,
+    key: HoldKey,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    let HoldKey::Dpad(direction) = key else {
+        unreachable!("D-pad controls always use a D-pad hold key");
+    };
+    if state.held(cluster.id) && response.clicked() {
+        let pressed = !state.latched_buttons.contains(&key);
+        if let Some(opposite) = held_dpad_opposite(cluster.hold_behavior, pressed, direction) {
+            release_dpad_latch(opposite, state, events);
+        }
+        if pressed {
+            state.latched_buttons.insert(key);
+        } else {
+            state.latched_buttons.remove(&key);
+        }
+        events.push(InputEvent::Dpad { direction, pressed });
+    } else if !state.held(cluster.id) {
+        emit_holdable(ui, response, cluster.id, key, state, |pressed| {
+            events.push(InputEvent::Dpad { direction, pressed });
+        });
+    }
+}
+
+fn held_dpad_opposite(
+    behavior: DpadHoldBehavior,
+    pressed: bool,
+    direction: DpadDirection,
+) -> Option<DpadDirection> {
+    (pressed && behavior == DpadHoldBehavior::AdjacentPair).then_some(match direction {
+        DpadDirection::Up => DpadDirection::Down,
+        DpadDirection::Down => DpadDirection::Up,
+        DpadDirection::Left => DpadDirection::Right,
+        DpadDirection::Right => DpadDirection::Left,
+    })
+}
+
+fn release_dpad_latch(
+    direction: DpadDirection,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    release_latched_button(state, HoldKey::Dpad(direction), || {
+        events.push(InputEvent::Dpad {
+            direction,
+            pressed: false,
+        });
+    });
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -831,6 +957,7 @@ fn axis_pad(
     value: (i32, i32),
     x_range: InputAxisRange,
     y_range: InputAxisRange,
+    hold: bool,
 ) -> ((i32, i32), bool) {
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::drag());
     paint_axis_pad(ui, rect, value, x_range, y_range);
@@ -843,10 +970,23 @@ fn axis_pad(
             );
         }
     } else if response.drag_stopped() {
-        next = (x_range.neutral, y_range.neutral);
+        next = axis_release_value(value, x_range, y_range, hold);
     }
     ui.monospace(format!("x={} y={}", next.0, next.1));
     (next, next != value)
+}
+
+fn axis_release_value(
+    value: (i32, i32),
+    x_range: InputAxisRange,
+    y_range: InputAxisRange,
+    hold: bool,
+) -> (i32, i32) {
+    if hold {
+        value
+    } else {
+        (x_range.neutral, y_range.neutral)
+    }
 }
 
 fn paint_axis_pad(
@@ -883,7 +1023,12 @@ fn paint_axis_pad(
     ui.painter().circle_filled(point, 5.0, Color32::LIGHT_BLUE);
 }
 
-fn snapping_pad(ui: &mut egui::Ui, previous: (i8, i8), release_pending: bool) -> ((i8, i8), bool) {
+fn snapping_pad(
+    ui: &mut egui::Ui,
+    previous: (i8, i8),
+    release_pending: bool,
+    hold: bool,
+) -> ((i8, i8), bool) {
     let (rect, response) =
         ui.allocate_exact_size(Vec2::splat(AXIS_PAD_SIZE), Sense::click_and_drag());
     let range = InputAxisRange {
@@ -904,7 +1049,7 @@ fn snapping_pad(ui: &mut egui::Ui, previous: (i8, i8), release_pending: bool) ->
         response
             .interact_pointer_pos()
             .map_or(previous, |position| snap_direction(rect, position))
-    } else if response.drag_stopped() || release_pending {
+    } else if (response.drag_stopped() || release_pending) && !hold {
         (0, 0)
     } else {
         previous
@@ -1023,6 +1168,17 @@ mod tests {
     }
 
     #[test]
+    fn held_stick_axis_keeps_its_last_position() {
+        let range = InputAxisRange {
+            minimum: -10,
+            maximum: 10,
+            neutral: 0,
+        };
+        assert_eq!(axis_release_value((4, -7), range, range, true), (4, -7));
+        assert_eq!(axis_release_value((4, -7), range, range, false), (0, 0));
+    }
+
+    #[test]
     fn trigger_hold_latches_and_stack_reset_neutralizes_each_kind() {
         static CONTROLS: [virtualgamepad::TriggerInput; 2] = [
             virtualgamepad::TriggerInput {
@@ -1120,7 +1276,10 @@ mod tests {
             let _ = ctx.run(input, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let card_response = card(ui, "Card", |_| {});
-                    assert!((card_response.response.rect.width() - CARD_WIDTH).abs() < 0.001);
+                    assert!(
+                        (CARD_MIN_WIDTH..=CARD_MAX_WIDTH)
+                            .contains(&card_response.response.rect.width())
+                    );
                     let row = horizontal_cards(ui, "test-row", false, |ui| {
                         for _ in 0..6 {
                             card(ui, "Card", |_| {});
@@ -1161,6 +1320,26 @@ mod tests {
                     pressed: false,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn held_physical_dpad_keeps_an_adjacent_pair_but_separate_buttons_do_not_conflict() {
+        assert_eq!(
+            held_dpad_opposite(DpadHoldBehavior::AdjacentPair, true, DpadDirection::Right),
+            Some(DpadDirection::Left)
+        );
+        assert_eq!(
+            held_dpad_opposite(DpadHoldBehavior::AdjacentPair, true, DpadDirection::Up),
+            Some(DpadDirection::Down)
+        );
+        assert_eq!(
+            held_dpad_opposite(
+                DpadHoldBehavior::IndependentButtons,
+                true,
+                DpadDirection::Right
+            ),
+            None
         );
     }
 
@@ -1219,7 +1398,7 @@ mod tests {
         let mut state = InputUiState::default();
         state
             .holds
-            .insert(HoldKey::Control(InputControlId::new("trigger")), true);
+            .insert(InputControlId::new("trigger-stack"), true);
         state
             .latched_buttons
             .insert(HoldKey::Control(InputControlId::new("button")));

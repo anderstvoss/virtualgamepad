@@ -101,11 +101,21 @@ pub enum DpadPresentation {
     SnappingAxis,
 }
 
+/// How a held four-button cluster resolves simultaneous directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DpadHoldBehavior {
+    /// Model a physical hat: retain at most one vertical and one horizontal direction.
+    AdjacentPair,
+    /// Model independently wired controls: retain every pressed direction.
+    IndependentButtons,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DpadCluster {
     pub id: InputControlId,
     pub title: &'static str,
     pub presentation: DpadPresentation,
+    pub hold_behavior: DpadHoldBehavior,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

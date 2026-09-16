@@ -62,11 +62,11 @@ pub mod experimental;
 pub use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, CustomInputModule, DigitalControlSurface,
-    DigitalControlUpdate, DpadCluster, DpadDirection, DpadPresentation, ExtraAxisInput, FaceButton,
-    FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology,
-    InputTopologyError, MotionInput, OutputSurface, RealizationValidationStatus, StickInput,
-    TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind,
-    TriggerStack,
+    DigitalControlUpdate, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
+    ExtraAxisInput, FaceButton, FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId,
+    InputScale, InputTopology, InputTopologyError, MotionInput, OutputSurface,
+    RealizationValidationStatus, StickInput, TargetRestriction, TouchpadActuation, TouchpadInput,
+    TriggerInput, TriggerInputKind, TriggerStack,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAxis, DualSenseControl, DualSenseFeature,
