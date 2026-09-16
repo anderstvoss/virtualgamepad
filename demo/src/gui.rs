@@ -2685,6 +2685,7 @@ fn draw_dualsense(
                 motion,
                 current.gyroscope.map(i32::from),
                 current.accelerometer.map(i32::from),
+                input_ui,
                 &mut events,
             );
         }
@@ -2863,6 +2864,7 @@ fn draw_dualshock4(
                 motion,
                 current.gyroscope.map(i32::from),
                 current.accelerometer.map(i32::from),
+                input_ui,
                 &mut events,
             );
         }
@@ -3025,6 +3027,7 @@ fn draw_switch_pro(
                 motion,
                 current.gyroscope.map(i32::from),
                 current.accelerometer.map(i32::from),
+                input_ui,
                 &mut events,
             );
         }
