@@ -1602,6 +1602,7 @@ impl eframe::App for App {
                                 advanced_available,
                                 Button::new(advanced_label)
                                     .selected(self.advanced_options_open)
+                                    .right_text("")
                                     .min_size(Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT)),
                             );
                             if advanced_response.clicked() {
@@ -1754,6 +1755,7 @@ impl eframe::App for App {
                                                         ],
                                                         Button::new(label)
                                                             .selected(active)
+                                                            .right_text("")
                                                             .truncate(),
                                                     );
                                                     self.selected_controller =
@@ -1809,9 +1811,11 @@ impl eframe::App for App {
                                 Vec2::new(SIDEBAR_WIDTH, log_height),
                                 Sense::hover(),
                             );
-                            footer_ui
-                                .painter()
-                                .rect_filled(log_rect, 0.0, Color32::from_gray(8));
+                            footer_ui.painter().rect_filled(
+                                log_rect,
+                                0.0,
+                                sidebar_list_fill(&footer_ui),
+                            );
                             let log_content_rect = egui::Rect::from_min_max(
                                 log_rect.left_top()
                                     + egui::vec2(4.0, f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)),
@@ -2302,7 +2306,7 @@ fn draw_inactive_battery_field(ui: &mut egui::Ui, width: f32) {
     ui.painter().rect_filled(
         rect,
         ui.visuals().widgets.inactive.corner_radius,
-        Color32::from_gray(48),
+        ui.visuals().widgets.inactive.bg_fill,
     );
     ui.painter().rect_stroke(
         rect,
@@ -2323,7 +2327,7 @@ fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
         }
     });
     egui::Frame::NONE
-        .fill(Color32::from_gray(8))
+        .fill(ui.visuals().extreme_bg_color)
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("selected_controller_reverse_output")
