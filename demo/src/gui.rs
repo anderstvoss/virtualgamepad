@@ -1497,9 +1497,6 @@ impl eframe::App for App {
             }
         }
         self.backend_healthy = backend_healthy;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-            "virtualgamepad Demo GUI".to_owned(),
-        ));
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::both()
@@ -2090,13 +2087,14 @@ impl eframe::App for App {
                                                     {
                                                         failed_controller = Some((index, error));
                                                     }
-                                                } else {
-                                                    named.view.draw(
-                                                        ui,
-                                                        named.options.id,
-                                                        &mut named.input_ui,
-                                                    );
                                                 }
+                                                // Keep the input surface allocated on the action frame. Skipping it
+                                                // shrinks the parent scroll area and causes its offset to be clamped.
+                                                named.view.draw(
+                                                    ui,
+                                                    named.options.id,
+                                                    &mut named.input_ui,
+                                                );
                                             });
                                             if inputs_ready {
                                                 let result =
