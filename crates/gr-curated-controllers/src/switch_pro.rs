@@ -5,10 +5,13 @@
 
 use crate::{CreationOptions, common};
 use gr_controller_contract::{
-    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
-    DigitalControlSurface, DigitalControlUpdate, OutputSurface, RealizationControllerDefinition,
-    RealizationManifest, RealizationManifestEntry, RealizationValidationStatus,
-    TargetAwareControllerDriver, TargetRestriction,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
+    ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
+    DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
+    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
+    TriggerInput, TriggerInputKind, TriggerStack,
 };
 mod protocol;
 
@@ -290,6 +293,154 @@ static EVDEV_RESTRICTIONS: [TargetRestriction; 4] = [
     },
     RESTRICTIONS[0],
 ];
+const STICK_AXIS: InputAxisRange = InputAxisRange {
+    minimum: i16::MIN as i32,
+    maximum: i16::MAX as i32,
+    neutral: 0,
+};
+const MOTION_AXIS: InputAxisRange = InputAxisRange {
+    minimum: i16::MIN as i32,
+    maximum: i16::MAX as i32,
+    neutral: 0,
+};
+static INPUT_AUXILIARY: [AuxiliaryButtonInput; 4] = [
+    AuxiliaryButtonInput {
+        id: InputControlId::new("minus"),
+        label: "Minus",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("plus"),
+        label: "Plus",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("home"),
+        label: "Home",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("capture"),
+        label: "Capture",
+    },
+];
+static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
+    FaceButtonInput {
+        button: FaceButton::South,
+        label: "B",
+        placement: ClusterPlacement::SOUTH,
+    },
+    FaceButtonInput {
+        button: FaceButton::East,
+        label: "A",
+        placement: ClusterPlacement::EAST,
+    },
+    FaceButtonInput {
+        button: FaceButton::West,
+        label: "Y",
+        placement: ClusterPlacement::WEST,
+    },
+    FaceButtonInput {
+        button: FaceButton::North,
+        label: "X",
+        placement: ClusterPlacement::NORTH,
+    },
+];
+static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
+    id: InputControlId::new("face"),
+    title: "Face buttons",
+    button_width: 56,
+    buttons: &INPUT_FACE_BUTTONS,
+}];
+static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
+    id: InputControlId::new("dpad"),
+    title: "D-pad",
+    presentation: DpadPresentation::IndependentButtons,
+    hold_behavior: DpadHoldBehavior::AdjacentPair,
+}];
+static INPUT_STICKS: [StickInput; 2] = [
+    StickInput {
+        id: InputControlId::new("left-stick"),
+        title: "Left stick",
+        x: STICK_AXIS,
+        y: STICK_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("left-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+    StickInput {
+        id: InputControlId::new("right-stick"),
+        title: "Right stick",
+        x: STICK_AXIS,
+        y: STICK_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("right-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+];
+static LEFT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "L",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("l"),
+        },
+    },
+    TriggerInput {
+        label: "ZL",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("zl"),
+        },
+    },
+];
+static RIGHT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "R",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("r"),
+        },
+    },
+    TriggerInput {
+        label: "ZR",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("zr"),
+        },
+    },
+];
+static INPUT_TRIGGER_STACKS: [TriggerStack; 2] = [
+    TriggerStack {
+        id: InputControlId::new("left-trigger-stack"),
+        title: "Left trigger stack",
+        controls: &LEFT_TRIGGER_CONTROLS,
+    },
+    TriggerStack {
+        id: InputControlId::new("right-trigger-stack"),
+        title: "Right trigger stack",
+        controls: &RIGHT_TRIGGER_CONTROLS,
+    },
+];
+static INPUT_MOTION: [MotionInput; 1] = [MotionInput {
+    id: InputControlId::new("motion"),
+    title: "Motion",
+    range: MOTION_AXIS,
+    gyroscope_scale: [InputScale::IDENTITY; 3],
+    accelerometer_scale: [InputScale::IDENTITY; 3],
+}];
+static INPUT_TOPOLOGY: InputTopology = InputTopology {
+    auxiliary_buttons: &INPUT_AUXILIARY,
+    face_button_clusters: &INPUT_FACE_CLUSTERS,
+    dpads: &INPUT_DPADS,
+    sticks: &INPUT_STICKS,
+    trigger_stacks: &INPUT_TRIGGER_STACKS,
+    touchpads: &[],
+    motion: &[],
+    extra_axes: &[],
+    custom_modules: &[],
+};
+static INPUT_TOPOLOGY_WITH_MOTION: InputTopology = InputTopology {
+    motion: &INPUT_MOTION,
+    ..INPUT_TOPOLOGY
+};
 static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
     common: ControllerSurface {
         target: RealizationTarget::LINUX_UINPUT,
@@ -298,6 +449,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
     },
 };
 static HID_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -308,6 +460,7 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
@@ -318,6 +471,7 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
 pub struct SwitchProDefinition;
@@ -1005,6 +1159,18 @@ pub fn test_controller(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn switch_topology_tracks_target_motion_support() {
+        for topology in [&INPUT_TOPOLOGY, &INPUT_TOPOLOGY_WITH_MOTION] {
+            assert_eq!(topology.validate(), Ok(()));
+            assert_eq!(topology.trigger_stacks.len(), 2);
+        }
+        assert!(EVDEV_SURFACE.common.input_topology.motion.is_empty());
+        assert_eq!(HID_SURFACE.common.input_topology.motion.len(), 1);
+        assert_eq!(USB_SURFACE.common.input_topology.motion.len(), 1);
+    }
+
     #[test]
     fn rumble_words_skip_counter_and_keep_motor_order() {
         for id in [1, 0x10] {

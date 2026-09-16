@@ -6,10 +6,13 @@ mod protocol;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
-    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
-    DigitalControlSurface, DigitalControlUpdate, FaceButton, OutputSurface,
-    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
+    ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
+    DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
+    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
+    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
 };
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
@@ -470,6 +473,172 @@ static HID_RESTRICTIONS: [TargetRestriction; 2] = [
         reason: "the USB HID report contract is research-backed until reference-device comparison",
     },
 ];
+const BYTE_AXIS: InputAxisRange = InputAxisRange {
+    minimum: 0,
+    maximum: 255,
+    neutral: 128,
+};
+const TRIGGER_AXIS: InputAxisRange = InputAxisRange {
+    minimum: 0,
+    maximum: 255,
+    neutral: 0,
+};
+const MOTION_AXIS: InputAxisRange = InputAxisRange {
+    minimum: i16::MIN as i32,
+    maximum: i16::MAX as i32,
+    neutral: 0,
+};
+static INPUT_AUXILIARY: [AuxiliaryButtonInput; 4] = [
+    AuxiliaryButtonInput {
+        id: InputControlId::new("create"),
+        label: "Create",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("options"),
+        label: "Options",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("playstation"),
+        label: "PlayStation",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("microphone-mute"),
+        label: "Microphone mute",
+    },
+];
+static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
+    FaceButtonInput {
+        button: FaceButton::South,
+        label: "Cross",
+        placement: ClusterPlacement::SOUTH,
+    },
+    FaceButtonInput {
+        button: FaceButton::East,
+        label: "Circle",
+        placement: ClusterPlacement::EAST,
+    },
+    FaceButtonInput {
+        button: FaceButton::West,
+        label: "Square",
+        placement: ClusterPlacement::WEST,
+    },
+    FaceButtonInput {
+        button: FaceButton::North,
+        label: "Triangle",
+        placement: ClusterPlacement::NORTH,
+    },
+];
+static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
+    id: InputControlId::new("face"),
+    title: "Face buttons",
+    button_width: 72,
+    buttons: &INPUT_FACE_BUTTONS,
+}];
+static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
+    id: InputControlId::new("dpad"),
+    title: "D-pad",
+    presentation: DpadPresentation::IndependentButtons,
+    hold_behavior: DpadHoldBehavior::AdjacentPair,
+}];
+static INPUT_STICKS: [StickInput; 2] = [
+    StickInput {
+        id: InputControlId::new("left-stick"),
+        title: "Left stick",
+        x: BYTE_AXIS,
+        y: BYTE_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("left-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+    StickInput {
+        id: InputControlId::new("right-stick"),
+        title: "Right stick",
+        x: BYTE_AXIS,
+        y: BYTE_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("right-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+];
+static LEFT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "L1",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("l1"),
+        },
+    },
+    TriggerInput {
+        label: "L2",
+        kind: TriggerInputKind::Axis {
+            id: InputControlId::new("l2"),
+            range: TRIGGER_AXIS,
+        },
+    },
+];
+static RIGHT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "R1",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("r1"),
+        },
+    },
+    TriggerInput {
+        label: "R2",
+        kind: TriggerInputKind::Axis {
+            id: InputControlId::new("r2"),
+            range: TRIGGER_AXIS,
+        },
+    },
+];
+static INPUT_TRIGGER_STACKS: [TriggerStack; 2] = [
+    TriggerStack {
+        id: InputControlId::new("left-trigger-stack"),
+        title: "Left trigger stack",
+        controls: &LEFT_TRIGGER_CONTROLS,
+    },
+    TriggerStack {
+        id: InputControlId::new("right-trigger-stack"),
+        title: "Right trigger stack",
+        controls: &RIGHT_TRIGGER_CONTROLS,
+    },
+];
+static INPUT_TOUCHPADS: [TouchpadInput; 1] = [TouchpadInput {
+    id: InputControlId::new("touchpad"),
+    title: "Touchpad",
+    width: 1920,
+    height: 942,
+    contacts: 2,
+    actuation: TouchpadActuation::Button(AuxiliaryButtonInput {
+        id: InputControlId::new("touchpad-click"),
+        label: "Touchpad click",
+    }),
+}];
+static INPUT_MOTION: [MotionInput; 1] = [MotionInput {
+    id: InputControlId::new("motion"),
+    title: "Motion",
+    range: MOTION_AXIS,
+    gyroscope_scale: [InputScale::IDENTITY; 3],
+    accelerometer_scale: [InputScale::IDENTITY; 3],
+}];
+static INPUT_TOPOLOGY: InputTopology = InputTopology {
+    auxiliary_buttons: &INPUT_AUXILIARY,
+    face_button_clusters: &INPUT_FACE_CLUSTERS,
+    dpads: &INPUT_DPADS,
+    sticks: &INPUT_STICKS,
+    trigger_stacks: &INPUT_TRIGGER_STACKS,
+    touchpads: &INPUT_TOUCHPADS,
+    motion: &[],
+    extra_axes: &[],
+    custom_modules: &[],
+};
+static INPUT_TOPOLOGY_WITH_MOTION: InputTopology = InputTopology {
+    motion: &INPUT_MOTION,
+    ..INPUT_TOPOLOGY
+};
 static SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
         target: RealizationTarget::LINUX_UINPUT,
@@ -478,6 +647,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
     },
 };
 static HID_SURFACE: DualSenseSurface = DualSenseSurface {
@@ -488,6 +658,7 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &HID_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
 static USB_RESTRICTIONS: [TargetRestriction; 2] = [
@@ -508,6 +679,7 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &USB_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
 
@@ -1362,6 +1534,17 @@ pub fn test_controller(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dualsense_topology_tracks_target_motion_support() {
+        for topology in [&INPUT_TOPOLOGY, &INPUT_TOPOLOGY_WITH_MOTION] {
+            assert_eq!(topology.validate(), Ok(()));
+            assert_eq!(topology.touchpads[0].contacts, 2);
+        }
+        assert!(SURFACE.common.input_topology.motion.is_empty());
+        assert_eq!(HID_SURFACE.common.input_topology.motion.len(), 1);
+        assert_eq!(USB_SURFACE.common.input_topology.motion.len(), 1);
+    }
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {

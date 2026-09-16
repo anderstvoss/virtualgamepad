@@ -2,10 +2,13 @@
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
-    AbsoluteAxisSurface, CommitError, ControlError, ControllerSurface, ControllerSurfaceInfo,
-    DigitalControlSurface, DigitalControlUpdate, FaceButton, OutputSurface,
+    AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
+    ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
+    DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
+    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, OutputSurface,
     RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, TargetAwareControllerDriver, TargetRestriction,
+    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
+    TriggerInput, TriggerInputKind, TriggerStack,
 };
 use gr_realization_api::{
     CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
@@ -298,6 +301,141 @@ static RESTRICTIONS: [TargetRestriction; 3] = [
         reason: "requires controller-native accessory transport",
     },
 ];
+const STICK_AXIS: InputAxisRange = InputAxisRange {
+    minimum: i16::MIN as i32,
+    maximum: i16::MAX as i32,
+    neutral: 0,
+};
+const TRIGGER_AXIS: InputAxisRange = InputAxisRange {
+    minimum: 0,
+    maximum: 255,
+    neutral: 0,
+};
+static INPUT_AUXILIARY: [AuxiliaryButtonInput; 3] = [
+    AuxiliaryButtonInput {
+        id: InputControlId::new("back"),
+        label: "Back",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("start"),
+        label: "Start",
+    },
+    AuxiliaryButtonInput {
+        id: InputControlId::new("guide"),
+        label: "Guide",
+    },
+];
+static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
+    FaceButtonInput {
+        button: FaceButton::South,
+        label: "A",
+        placement: ClusterPlacement::SOUTH,
+    },
+    FaceButtonInput {
+        button: FaceButton::East,
+        label: "B",
+        placement: ClusterPlacement::EAST,
+    },
+    FaceButtonInput {
+        button: FaceButton::West,
+        label: "X",
+        placement: ClusterPlacement::WEST,
+    },
+    FaceButtonInput {
+        button: FaceButton::North,
+        label: "Y",
+        placement: ClusterPlacement::NORTH,
+    },
+];
+static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
+    id: InputControlId::new("face"),
+    title: "Face buttons",
+    button_width: 56,
+    buttons: &INPUT_FACE_BUTTONS,
+}];
+static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
+    id: InputControlId::new("dpad"),
+    title: "D-pad",
+    presentation: DpadPresentation::IndependentButtons,
+    hold_behavior: DpadHoldBehavior::AdjacentPair,
+}];
+static INPUT_STICKS: [StickInput; 2] = [
+    StickInput {
+        id: InputControlId::new("left-stick"),
+        title: "Left stick",
+        x: STICK_AXIS,
+        y: STICK_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("left-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+    StickInput {
+        id: InputControlId::new("right-stick"),
+        title: "Right stick",
+        x: STICK_AXIS,
+        y: STICK_AXIS,
+        press: Some(AuxiliaryButtonInput {
+            id: InputControlId::new("right-stick-press"),
+            label: "Stick press",
+        }),
+        capacitive: None,
+    },
+];
+static LEFT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "Left shoulder",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("left-shoulder"),
+        },
+    },
+    TriggerInput {
+        label: "Left trigger",
+        kind: TriggerInputKind::Axis {
+            id: InputControlId::new("left-trigger"),
+            range: TRIGGER_AXIS,
+        },
+    },
+];
+static RIGHT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
+    TriggerInput {
+        label: "Right shoulder",
+        kind: TriggerInputKind::Button {
+            id: InputControlId::new("right-shoulder"),
+        },
+    },
+    TriggerInput {
+        label: "Right trigger",
+        kind: TriggerInputKind::Axis {
+            id: InputControlId::new("right-trigger"),
+            range: TRIGGER_AXIS,
+        },
+    },
+];
+static INPUT_TRIGGER_STACKS: [TriggerStack; 2] = [
+    TriggerStack {
+        id: InputControlId::new("left-trigger-stack"),
+        title: "Left trigger stack",
+        controls: &LEFT_TRIGGER_CONTROLS,
+    },
+    TriggerStack {
+        id: InputControlId::new("right-trigger-stack"),
+        title: "Right trigger stack",
+        controls: &RIGHT_TRIGGER_CONTROLS,
+    },
+];
+static INPUT_TOPOLOGY: InputTopology = InputTopology {
+    auxiliary_buttons: &INPUT_AUXILIARY,
+    face_button_clusters: &INPUT_FACE_CLUSTERS,
+    dpads: &INPUT_DPADS,
+    sticks: &INPUT_STICKS,
+    trigger_stacks: &INPUT_TRIGGER_STACKS,
+    touchpads: &[],
+    motion: &[],
+    extra_axes: &[],
+    custom_modules: &[],
+};
 static SURFACE: Xbox360Surface = Xbox360Surface {
     common: ControllerSurface {
         target: RealizationTarget::LINUX_UINPUT,
@@ -306,6 +444,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
     },
 };
 static HID_SURFACE: Xbox360Surface = Xbox360Surface {
@@ -316,6 +455,7 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
     },
 };
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
@@ -326,6 +466,7 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         axes: &AXES,
         outputs: &HID_OUTPUTS,
         restrictions: &DUMMY_HCD_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
     },
 };
 
@@ -800,6 +941,16 @@ pub fn test_controller(
 mod tests {
     use super::*;
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn every_xbox_target_has_the_valid_complete_input_topology() {
+        for surface in [&SURFACE, &HID_SURFACE, &DUMMY_HCD_SURFACE] {
+            assert_eq!(surface.common.input_topology.validate(), Ok(()));
+            assert_eq!(surface.common.input_topology.sticks.len(), 2);
+            assert_eq!(surface.common.input_topology.trigger_stacks.len(), 2);
+            assert!(surface.common.input_topology.motion.is_empty());
+        }
+    }
 
     #[test]
     fn neutralization_releases_native_inputs_and_preserves_metadata() {

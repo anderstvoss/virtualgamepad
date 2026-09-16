@@ -1,35 +1,91 @@
 mod editor;
+mod input_clusters;
 use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
 };
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
+use input_clusters::{
+    InputEvent, InputUiState, InputValue, card, draw_auxiliary_buttons, draw_dpad_cluster,
+    draw_face_cluster, draw_motion, draw_stick, draw_touchpad as draw_touchpad_cluster,
+    draw_trigger_stack, horizontal_cards,
+};
 use std::{
+    cmp::Ordering,
+    collections::VecDeque,
+    env,
+    fmt::Write as _,
+    fs,
+    path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     thread::{self, JoinHandle},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use virtualgamepad::ControllerSurfaceInfo;
 use virtualgamepad::{
-    BatteryLevel, BatteryState, DigitalControlUpdate, DpadDirection, DualSenseAxis,
+    BatteryLevel, BatteryState, ControllerStatus, DigitalControlUpdate, DualSenseAxis,
     DualSenseControl, DualSenseController, DualSenseHidOutput, DualSenseOutputEvent,
     DualSenseTouchContact, DualSenseTrigger, DualShock4Axis, DualShock4Control,
     DualShock4Controller, DualShock4HidOutput, DualShock4MotionSample, DualShock4TouchContact,
-    DualShock4TouchSlot, DualShock4Trigger, FaceButton, MotionSample, RealizationId, SwitchProAxis,
+    DualShock4TouchSlot, DualShock4Trigger, MotionSample, RealizationId, SwitchProAxis,
     SwitchProControl, SwitchProController, SwitchProMotionSample, TouchSlot, Xbox360Axis,
     Xbox360Control, Xbox360Controller, Xbox360OutputEvent, Xbox360Trigger, create_dualsense,
     create_dualshock4, create_switch_pro, create_xbox360,
 };
 
-// Lab correlation is application bookkeeping, never controller/session identity.
+// Controller IDs are demo-local labels, never library/session identity.
 #[derive(Clone, Copy)]
-struct LabOptions {
+struct ControllerOptions {
     target: RealizationId,
-    session: u64,
+    id: u64,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
+const CONTROLLER_ID_WIDTH: usize = 3;
+const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
+const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+const INPUT_HEADER_BUTTON_WIDTH: f32 = 112.0;
+// Checkbox, native-width slider, and percentage field plus their stable spacing.
+const BATTERY_CARD_CONTENT_WIDTH: f32 = 232.0;
+const SIDEBAR_WIDTH: f32 = 200.0;
+const DIAGNOSTIC_LOG_LINE_COUNT: f32 = 5.0;
+const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
+const HEALTH_BOTTOM_PADDING: f32 = 4.0;
+const NAME_INPUT_HEIGHT: f32 = 22.0;
+const CREATE_COUNT_SPINBOX_WIDTH: f32 = 58.0;
+const CREATE_BUTTON_FILL: Color32 = Color32::from_rgb(92, 151, 183);
+const CREATE_BUTTON_TEXT: Color32 = Color32::from_rgb(245, 250, 255);
+const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
+const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
+const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
+const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
+const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
+const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControllerLabelMode {
+    AssignedName,
+    InternalIdentifier,
+}
+
+struct DiagnosticLogEntry {
+    message: String,
+    success: bool,
+}
+
+impl ControllerLabelMode {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::AssignedName => "Name",
+            Self::InternalIdentifier => "Identifier",
+        }
+    }
+}
+
+const fn backend_status_is_healthy(status: ControllerStatus) -> bool {
+    matches!(status, ControllerStatus::Open)
+}
 
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
@@ -38,6 +94,7 @@ fn dualsense_motion_target(target: RealizationId) -> bool {
     )
 }
 
+#[cfg(test)]
 fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
     if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
@@ -57,8 +114,61 @@ fn repaint_interval(controller_count: usize) -> Duration {
     if controller_count == 0 {
         IDLE_REPAINT_INTERVAL
     } else {
-        DUALSENSE_MOTION_INTERVAL
+        GUI_REPAINT_INTERVAL
     }
+}
+
+fn diagnostic_log_height(line_height: f32) -> f32 {
+    (line_height * DIAGNOSTIC_LOG_LINE_COUNT) + f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)
+}
+
+fn diagnostic_log_scroll_height(log_height: f32) -> f32 {
+    (log_height - f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)).max(0.0)
+}
+
+fn diagnostic_log_top_padding(
+    viewport_height: f32,
+    line_height: f32,
+    entry_count: usize,
+    line_spacing: f32,
+) -> f32 {
+    let entry_count = f32::from(
+        u8::try_from(entry_count.clamp(1, OUTPUT_LOG_LIMIT))
+            .expect("diagnostic log limit fits in u8"),
+    );
+    let content_height = (line_height * entry_count) + (line_spacing * (entry_count - 1.0));
+    (viewport_height - content_height).max(0.0)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SidebarLayoutBudget {
+    controller_list: f32,
+    diagnostic_log: f32,
+    footer: f32,
+}
+
+fn sidebar_layout_budget(
+    available_height: f32,
+    footer_controls_height: f32,
+    diagnostic_log_height: f32,
+    section_spacing: f32,
+) -> SidebarLayoutBudget {
+    let available_height = available_height.max(0.0);
+    let footer_height = diagnostic_log_height + footer_controls_height;
+    let controller_list_height = (available_height
+        - footer_height
+        - CONTROLLER_LIST_FRAME_VERTICAL_MARGIN
+        - (section_spacing * 2.0))
+        .max(CONTROLLER_LIST_MIN_HEIGHT);
+    SidebarLayoutBudget {
+        controller_list: controller_list_height,
+        diagnostic_log: diagnostic_log_height,
+        footer: footer_height,
+    }
+}
+
+const fn advanced_options_available(_target: RealizationId) -> bool {
+    true
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -70,52 +180,282 @@ const fn motion_worker_interval() -> Duration {
     DUALSENSE_MOTION_INTERVAL
 }
 
-const fn following_session(current: u64, advance: bool) -> u64 {
-    if advance {
-        current.wrapping_add(1)
-    } else {
-        current
-    }
-}
-
-#[derive(Default)]
-struct ConsumerNotes {
-    build: String,
-    backend: String,
-    mapping: String,
-}
-
-fn lab_record(
-    name: &str,
-    options: LabOptions,
-    metrics: &ServiceMetrics,
-    notes: &str,
-    consumer: &ConsumerNotes,
-    details: &str,
-) -> String {
-    format!(
-        "Virtualgamepad manual lab record v3\nController: {name}\nRealization: {}\nLab correlation: {}\nService cycles: {}\nMaximum observed service gap (us): {}\nOmitted worker logs: {}\nConsumer build: {}\nConsumer backend: {}\nConsumer mapping: {}\nSession diagnostics: {details}\nPhysical/consumer acceptance: not established by this record\nNotes:\n{notes}",
-        target_label(options.target),
-        options.session,
-        metrics.cycles,
-        metrics.max_gap.as_micros(),
-        metrics.omitted_logs,
-        consumer.build,
-        consumer.backend,
-        consumer.mapping
-    )
-}
-
 fn controller_tab_indices(controller_count: usize) -> std::ops::Range<usize> {
     0..controller_count
 }
 
-fn selection_after_removal(remaining_count: usize, removed_index: usize) -> Option<usize> {
+fn selection_after_removal(
+    remaining_count: usize,
+    removed_index: usize,
+    selected_index: Option<usize>,
+) -> Option<usize> {
     if remaining_count == 0 {
         None
     } else {
-        Some(removed_index.min(remaining_count - 1))
+        selected_index.map(|selected_index| match selected_index.cmp(&removed_index) {
+            Ordering::Equal => removed_index.min(remaining_count - 1),
+            Ordering::Greater => selected_index - 1,
+            Ordering::Less => selected_index,
+        })
     }
+}
+
+fn selection_after_controller_click(
+    selected_index: Option<usize>,
+    clicked_index: usize,
+    clicked: bool,
+) -> Option<usize> {
+    clicked.then_some(clicked_index).or(selected_index)
+}
+
+fn controller_removal_after_delete_click(index: usize, clicked: bool) -> Option<usize> {
+    clicked.then_some(index)
+}
+
+fn successful_controller_close_message(name: &str) -> String {
+    format!("Closed {name}.")
+}
+
+const fn stop_all_after_click(clicked: bool) -> bool {
+    clicked
+}
+
+fn sidebar_list_fill(ui: &egui::Ui) -> Color32 {
+    ui.visuals().extreme_bg_color
+}
+
+fn destructive_button_fill(ui: &egui::Ui) -> Color32 {
+    ui.visuals().error_fg_color.gamma_multiply(0.55)
+}
+
+const SUCCESS_LOG_COLOR: Color32 = Color32::from_rgb(105, 170, 105);
+
+fn sidebar_choice_chip(
+    ui: &mut egui::Ui,
+    label: &'static str,
+    selected: bool,
+    width: f32,
+) -> egui::Response {
+    let highlighted = ui.visuals().strong_text_color();
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.hovered.fg_stroke.color = highlighted;
+        if selected {
+            ui.visuals_mut().widgets.inactive.fg_stroke.color = highlighted;
+        }
+        ui.add_sized([width, 22.0], egui::Button::new(label).selected(selected))
+    })
+    .inner
+}
+
+fn next_available_name(kind: Kind, existing_names: impl Iterator<Item = String>) -> String {
+    let existing_names: std::collections::HashSet<String> = existing_names.collect();
+    (0..=existing_names.len())
+        .map(|number| format!("{} {number}", kind.label()))
+        .find(|name| !existing_names.contains(name))
+        .expect("unbounded controller name search must find an available name")
+}
+
+fn sanitized_controller_name(draft: &str) -> Result<String, &'static str> {
+    let name = draft.trim();
+    if name.is_empty() {
+        return Err("Name cannot be empty");
+    }
+    if name.chars().count() > CONTROLLER_NAME_MAX_CHARS {
+        return Err("Name must be 64 characters or fewer");
+    }
+    if name.chars().any(char::is_control) {
+        return Err("Name cannot contain control characters");
+    }
+    Ok(name.to_owned())
+}
+
+fn apply_controller_name(controller: &mut NamedController) {
+    match sanitized_controller_name(&controller.name_draft) {
+        Ok(name) => {
+            controller.name_draft.clone_from(&name);
+            controller.name = name;
+            controller.name_error = None;
+        }
+        Err(error) => controller.name_error = Some(error.into()),
+    }
+}
+
+fn truncate_identifier(identifier: &str, max_chars: usize) -> String {
+    let mut chars = identifier.chars();
+    let visible: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{visible}…")
+    } else {
+        visible
+    }
+}
+
+fn controller_identifier(controller: &NamedController) -> String {
+    truncate_identifier(
+        &controller_id(
+            controller.options.id,
+            controller.options.target,
+            controller.kind,
+        ),
+        28,
+    )
+}
+
+fn controller_id(number: u64, target: RealizationId, kind: Kind) -> String {
+    format!(
+        "{:0width$}-{}-{}",
+        number % 1_000,
+        target_identifier_abbreviation(target),
+        kind.identifier_abbreviation(),
+        width = CONTROLLER_ID_WIDTH,
+    )
+}
+
+fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
+    match target {
+        RealizationId::LINUX_UINPUT => "UIN",
+        RealizationId::LINUX_UHID_USB => "HID",
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
+        _ => "UNK",
+    }
+}
+
+struct TargetHelp {
+    title: &'static str,
+    body: &'static str,
+}
+
+fn target_help(target: RealizationId) -> Option<TargetHelp> {
+    match target {
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
+            title: "Experimental USB gadget",
+            body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
+        }),
+        _ => None,
+    }
+}
+
+fn state_dump_directory() -> PathBuf {
+    env::var_os("XDG_STATE_HOME")
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .unwrap_or_else(env::temp_dir)
+        .join("virtualgamepad")
+}
+
+fn state_dump_path(now: SystemTime) -> Result<PathBuf, String> {
+    let timestamp = now
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("system clock is before the Unix epoch: {error}"))?
+        .as_millis();
+    Ok(state_dump_directory().join(format!("demo-state-{timestamp}-{}.log", std::process::id())))
+}
+
+fn requested_create_count(name: &str, count: u32) -> u32 {
+    if name.trim().is_empty() {
+        count.max(1)
+    } else {
+        1
+    }
+}
+
+fn step_create_count(count: u32, increment: bool) -> u32 {
+    if increment {
+        count.saturating_add(1)
+    } else {
+        count.saturating_sub(1).max(1)
+    }
+}
+
+fn spinbox_arrow_rects(rect: egui::Rect, arrow_width: f32) -> (egui::Rect, egui::Rect) {
+    let arrow_left = rect.right() - arrow_width;
+    (
+        egui::Rect::from_min_max(
+            Pos2::new(arrow_left, rect.top()),
+            Pos2::new(rect.right(), rect.center().y),
+        ),
+        egui::Rect::from_min_max(Pos2::new(arrow_left, rect.center().y), rect.right_bottom()),
+    )
+}
+
+fn paint_spinbox_arrow(ui: &egui::Ui, rect: egui::Rect, points_up: bool, hovered: bool) {
+    let center = rect.center();
+    let inset = 3.0;
+    let half_width = 3.0;
+    let points = if points_up {
+        vec![
+            Pos2::new(center.x, rect.top() + inset),
+            Pos2::new(center.x - half_width, rect.bottom() - inset),
+            Pos2::new(center.x + half_width, rect.bottom() - inset),
+        ]
+    } else {
+        vec![
+            Pos2::new(center.x - half_width, rect.top() + inset),
+            Pos2::new(center.x + half_width, rect.top() + inset),
+            Pos2::new(center.x, rect.bottom() - inset),
+        ]
+    };
+    let color = if hovered {
+        ui.visuals().strong_text_color()
+    } else {
+        ui.visuals().weak_text_color()
+    };
+    ui.painter()
+        .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
+fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
+    const ARROW_WIDTH: f32 = 16.0;
+    const SPINBOX_HEIGHT: f32 = 22.0;
+    let id = ui.make_persistent_id("create_count_spinbox");
+    let mut text = ui.data_mut(|data| {
+        data.get_temp::<String>(id)
+            .unwrap_or_else(|| value.to_string())
+    });
+    let text_response = ui.add_sized(
+        [CREATE_COUNT_SPINBOX_WIDTH, SPINBOX_HEIGHT],
+        egui::TextEdit::singleline(&mut text)
+            .desired_width(CREATE_COUNT_SPINBOX_WIDTH)
+            .horizontal_align(egui::Align::RIGHT)
+            .vertical_align(egui::Align::Center)
+            .margin(egui::Margin {
+                left: 4,
+                right: 20,
+                top: 2,
+                bottom: 2,
+            })
+            .id(id),
+    );
+    if text_response.changed() {
+        if let Ok(parsed) = text.trim().parse::<u32>() {
+            *value = parsed.max(1);
+            if parsed == 0 {
+                text = value.to_string();
+            }
+        }
+    }
+    if text_response.lost_focus() {
+        text = value.to_string();
+    }
+    let (increment_rect, decrement_rect) = spinbox_arrow_rects(text_response.rect, ARROW_WIDTH);
+    let increment_response = ui.interact(increment_rect, id.with("increment"), Sense::click());
+    let decrement_response = ui.interact(decrement_rect, id.with("decrement"), Sense::click());
+    paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
+    paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
+    if increment_response.clicked() {
+        *value = step_create_count(*value, true);
+        text = value.to_string();
+    }
+    if decrement_response.clicked() {
+        *value = step_create_count(*value, false);
+        text = value.to_string();
+    }
+    let response = text_response
+        .union(increment_response)
+        .union(decrement_response);
+    ui.data_mut(|data| data.insert_temp(id, text));
+    response
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -182,6 +522,15 @@ impl Kind {
             Self::SwitchPro => "Switch Pro Controller",
         }
     }
+
+    const fn identifier_abbreviation(self) -> &'static str {
+        match self {
+            Self::Xbox360 => "XB360",
+            Self::DualSense => "DUALSENSE",
+            Self::DualShock4 => "DS4",
+            Self::SwitchPro => "SWITCHPRO",
+        }
+    }
 }
 enum Controller {
     Xbox(Xbox360Controller),
@@ -231,52 +580,45 @@ impl EditProgress {
 
 struct NamedController {
     kind: Kind,
-    options: LabOptions,
+    options: ControllerOptions,
     name: String,
+    name_draft: String,
+    name_error: Option<String>,
     view: ControllerView,
     edits: EditProgress,
     indicators: ReverseIndicators,
+    output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
-    second_touch: LatchedTouch,
+    input_ui: InputUiState,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LatchedTouch {
-    active: bool,
-    x: u16,
-    y: u16,
-}
-
-impl Default for LatchedTouch {
-    fn default() -> Self {
-        Self {
-            active: false,
-            x: 960,
-            y: 470,
-        }
-    }
-}
-
-impl LatchedTouch {
-    fn contact(self, id: u8) -> Option<DualSenseTouchContact> {
-        self.active
-            .then(|| DualSenseTouchContact::new(id, self.x, self.y))
-            .transpose()
-            .expect("latched touch coordinates are bounded by the GUI sliders")
-    }
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ServiceMetrics {
     cycles: u64,
     max_gap: Duration,
     omitted_logs: u64,
     last_service: Option<Instant>,
+    gap_history: Arc<Mutex<VecDeque<(Instant, Duration)>>>,
+}
+impl Default for ServiceMetrics {
+    fn default() -> Self {
+        Self {
+            cycles: 0,
+            max_gap: Duration::ZERO,
+            omitted_logs: 0,
+            last_service: None,
+            gap_history: Arc::new(Mutex::new(VecDeque::new())),
+        }
+    }
 }
 impl ServiceMetrics {
     fn record(&mut self, now: Instant) {
         if let Some(previous) = self.last_service {
-            self.max_gap = self.max_gap.max(now.saturating_duration_since(previous));
+            let gap = now.saturating_duration_since(previous);
+            self.max_gap = self.max_gap.max(gap);
+            if let Ok(mut history) = self.gap_history.lock() {
+                history.push_back((now, gap));
+            }
         }
         self.last_service = Some(now);
         self.cycles = self.cycles.saturating_add(1);
@@ -288,6 +630,33 @@ impl ServiceMetrics {
     }
 }
 
+fn service_gap_percentiles(metrics: &ServiceMetrics, period_seconds: u32) -> Option<[Duration; 3]> {
+    let cutoff = Instant::now().checked_sub(Duration::from_secs(u64::from(period_seconds)));
+    let mut gaps: Vec<Duration> = metrics
+        .gap_history
+        .lock()
+        .ok()?
+        .iter()
+        .filter(|(at, _)| period_seconds == 0 || cutoff.is_none_or(|cutoff| *at >= cutoff))
+        .map(|(_, gap)| *gap)
+        .collect();
+    if gaps.is_empty() {
+        return None;
+    }
+    gaps.sort_unstable();
+    let percentile = |numerator: usize, denominator: usize| {
+        let index = (gaps.len() * numerator)
+            .div_ceil(denominator)
+            .saturating_sub(1);
+        gaps[index]
+    };
+    Some([
+        percentile(90, 100),
+        percentile(99, 100),
+        percentile(999, 1_000),
+    ])
+}
+
 #[derive(Default)]
 struct WorkerDisplay {
     snapshot: Option<ControllerView>,
@@ -295,6 +664,7 @@ struct WorkerDisplay {
     logs: Vec<String>,
     metrics: ServiceMetrics,
     indicators: ReverseIndicators,
+    backend_healthy: Option<bool>,
 }
 
 struct ServiceWorker<C> {
@@ -323,6 +693,10 @@ impl<C> ServiceWorker<C> {
 }
 
 trait ServicedController: Send + Sized {
+    fn backend_healthy(&mut self) -> bool {
+        true
+    }
+
     fn snapshot(&mut self) -> Option<ControllerView> {
         None
     }
@@ -353,6 +727,10 @@ fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
 }
 
 impl ServicedController for Controller {
+    fn backend_healthy(&mut self) -> bool {
+        Controller::backend_healthy(self)
+    }
+
     fn neutralize(&mut self) -> Result<(), String> {
         match self {
             Self::Xbox(c) => c.neutralize(),
@@ -414,7 +792,21 @@ fn publish_display(display: &mut WorkerDisplay, logs: Vec<String>, indicators: &
     display.indicators = indicators.clone();
 }
 
-fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> ServiceWorker<C> {
+fn label_output_logs(label: &str, logs: &mut [String]) {
+    for log in logs {
+        *log = format!("{label}: {log}");
+    }
+}
+
+#[cfg(test)]
+fn spawn_service_worker<C: ServicedController + 'static>(controller: C) -> ServiceWorker<C> {
+    spawn_service_worker_with_label(controller, "Controller".into())
+}
+
+fn spawn_service_worker_with_label<C: ServicedController + 'static>(
+    mut controller: C,
+    log_label: String,
+) -> ServiceWorker<C> {
     let (stop_sender, stop_receiver) = mpsc::channel();
     let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
     let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
@@ -449,6 +841,8 @@ fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> S
                     &mut indicators,
                 )
             })();
+            label_output_logs(&log_label, &mut logs);
+            let backend_healthy = controller.backend_healthy();
             // Optional UI output never owns or delays protocol replies.
             metrics.record(Instant::now());
             if let Ok(mut display) = worker_display.try_lock() {
@@ -463,6 +857,7 @@ fn spawn_service_worker<C: ServicedController + 'static>(mut controller: C) -> S
                 display.metrics = metrics.clone();
                 display.snapshot = controller.snapshot();
                 display.applied = applied;
+                display.backend_healthy = Some(backend_healthy);
             } else {
                 metrics.omit(logs.len());
             }
@@ -493,6 +888,7 @@ struct ReverseIndicators {
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
     rumble_active: bool,
+    rumble_seen: bool,
     hid_motors: [u8; 2],
     rumble_started: Option<Instant>,
 }
@@ -501,6 +897,7 @@ impl ReverseIndicators {
         self.rumble_until = Some(Instant::now() + Duration::from_millis(750));
     }
     fn set_rumble(&mut self, active: bool) {
+        self.rumble_seen = true;
         if active && !self.rumble_active {
             self.rumble_started = Some(Instant::now());
         }
@@ -538,6 +935,7 @@ impl ReverseIndicators {
             self.hid_motors[1] = value;
         }
         if right_motor.is_some() || left_motor.is_some() {
+            self.rumble_seen = true;
             self.set_rumble(self.hid_motors.iter().any(|value| *value != 0));
         }
         if let Some(lightbar_rgb) = lightbar_rgb {
@@ -549,6 +947,16 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
+    fn backend_healthy(&mut self) -> bool {
+        let status = match self {
+            Self::Xbox(controller) => controller.diagnostics().status(),
+            Self::DualSense(controller) => controller.diagnostics().status(),
+            Self::DualShock4(controller) => controller.diagnostics().status(),
+            Self::SwitchPro(controller) => controller.diagnostics().status(),
+        };
+        backend_status_is_healthy(status)
+    }
+
     fn next_service_in(&self) -> Option<Duration> {
         match self {
             Self::Xbox(controller) => controller.next_service_in(),
@@ -684,33 +1092,23 @@ impl Controller {
     }
 }
 impl ControllerView {
-    fn draw(&mut self, ui: &mut egui::Ui, second_touch: &mut LatchedTouch) {
-        if matches!(self, Self::Xbox(_) | Self::DualSense(_)) {
-            let battery = self.battery();
-            ui.group(|ui| {
-                ui.label("Battery emulation");
-                let mut exposed = battery.is_exposed();
-                if ui.checkbox(&mut exposed, "Expose battery").changed() {
-                    let _ = self.set_battery_exposed(exposed);
-                }
-                if exposed {
-                    let mut level = battery.level().percent();
-                    if ui
-                        .add(egui::Slider::new(&mut level, 0..=100).text("Battery level (%)"))
-                        .changed()
-                    {
-                        if let Ok(level) = BatteryLevel::new(level) {
-                            let _ = self.set_battery_level(level);
-                        }
-                    }
-                }
-            });
-        }
+    fn surface(&self) -> &dyn ControllerSurfaceInfo {
         match self {
-            Self::Xbox(controller) => draw_xbox(ui, controller),
-            Self::DualSense(controller) => draw_dualsense(ui, controller, second_touch),
-            Self::DualShock4(controller) => draw_dualshock4(ui, controller),
-            Self::SwitchPro(controller) => draw_switch_pro(ui, controller),
+            Self::Xbox(controller) => controller.surface(),
+            Self::DualSense(controller) => controller.surface(),
+            Self::DualShock4(controller) => controller.surface(),
+            Self::SwitchPro(controller) => controller.surface(),
+        }
+    }
+
+    fn draw(&mut self, ui: &mut egui::Ui, controller_id: u64, input_ui: &mut InputUiState) {
+        match self {
+            Self::Xbox(controller) => draw_xbox(ui, controller_id, controller, input_ui),
+            Self::DualSense(controller) => draw_dualsense(ui, controller_id, controller, input_ui),
+            Self::DualShock4(controller) => {
+                draw_dualshock4(ui, controller_id, controller, input_ui);
+            }
+            Self::SwitchPro(controller) => draw_switch_pro(ui, controller_id, controller, input_ui),
         }
     }
     fn battery(&self) -> BatteryState {
@@ -719,6 +1117,9 @@ impl ControllerView {
             Self::DualSense(controller) => controller.state().battery(),
             Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
         }
+    }
+    const fn supports_battery_emulation(&self) -> bool {
+        matches!(self, Self::Xbox(_) | Self::DualSense(_))
     }
     fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), String> {
         match self {
@@ -739,15 +1140,17 @@ pub struct App {
     kind: Kind,
     target: RealizationId,
     name_draft: String,
-    next_session: u64,
-    advance_session: bool,
-    lab_notes: String,
-    consumer_notes: ConsumerNotes,
+    create_count: u32,
+    advanced_options_open: bool,
+    next_controller_id: u64,
+    polling_period_seconds: u32,
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
-    output_log: Vec<String>,
+    controller_label_mode: ControllerLabelMode,
+    diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
+    backend_healthy: bool,
 }
 impl Default for App {
     fn default() -> Self {
@@ -755,32 +1158,133 @@ impl Default for App {
             kind: Kind::Xbox360,
             target: RealizationId::LINUX_UINPUT,
             name_draft: String::new(),
-            next_session: 1,
-            advance_session: true,
-            lab_notes: String::new(),
-            consumer_notes: ConsumerNotes::default(),
+            create_count: 1,
+            advanced_options_open: false,
+            next_controller_id: 0,
+            polling_period_seconds: 0,
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
-            output_log: vec![],
+            controller_label_mode: ControllerLabelMode::AssignedName,
+            diagnostic_log: Vec::new(),
             lifecycle_status: None,
+            backend_healthy: true,
         }
     }
 }
 impl App {
     fn next_default_name(&self) -> String {
-        let number = self
-            .controllers
-            .iter()
-            .filter(|controller| controller.kind == self.kind)
-            .count();
-        format!("{} {number}", self.kind.label())
+        next_available_name(
+            self.kind,
+            self.controllers
+                .iter()
+                .filter(|controller| controller.kind == self.kind)
+                .map(|controller| controller.name.clone()),
+        )
+    }
+
+    fn state_dump(&self) -> String {
+        let mut dump = format!(
+            "virtualgamepad demo state dump\nBackend health: {}\nSelected controller: {:?}\nController count: {}\n\n",
+            if self.backend_healthy {
+                "healthy"
+            } else {
+                "attention"
+            },
+            self.selected_controller,
+            self.controllers.len(),
+        );
+        for (index, controller) in self.controllers.iter().enumerate() {
+            let _ = writeln!(
+                dump,
+                "Controller {}\n  Name: {}\n  ID: {}\n  Target: {}\n  Type: {}\n  Input batch: applied {} / submitted {}\n  View diagnostics: {}",
+                index + 1,
+                controller.name,
+                controller_identifier(controller),
+                target_label(controller.options.target),
+                controller.kind.label(),
+                controller.edits.applied,
+                controller.edits.submitted,
+                controller.view.lab_details(),
+            );
+            if let Some(worker) = &controller.service_worker {
+                if let Ok(display) = worker.display.try_lock() {
+                    let _ = writeln!(
+                        dump,
+                        "  Service cycles: {}\n  Maximum observed service gap (us): {}\n  Omitted worker logs: {}\n  Backend healthy: {}",
+                        display.metrics.cycles,
+                        display.metrics.max_gap.as_micros(),
+                        display.metrics.omitted_logs,
+                        display.backend_healthy.unwrap_or(false),
+                    );
+                } else {
+                    dump.push_str("  Worker display: busy\n");
+                }
+            }
+            if !controller.output_log.is_empty() {
+                dump.push_str("  Typed reverse output:\n");
+                for entry in &controller.output_log {
+                    let _ = writeln!(dump, "    {entry}");
+                }
+            }
+            dump.push('\n');
+        }
+        if let Some(cleanup) = &self.last_cleanup {
+            let _ = writeln!(dump, "Last cleanup diagnostics:\n{cleanup}\n");
+        }
+        dump.push_str("GUI diagnostic log:\n");
+        for entry in &self.diagnostic_log {
+            let _ = writeln!(
+                dump,
+                "[{}] {}",
+                if entry.success { "success" } else { "error" },
+                entry.message
+            );
+        }
+        dump
+    }
+
+    fn write_state_dump(&mut self) {
+        let result = (|| {
+            let path = state_dump_path(SystemTime::now())?;
+            let directory = path
+                .parent()
+                .ok_or_else(|| "state dump path has no parent directory".to_owned())?;
+            fs::create_dir_all(directory)
+                .map_err(|error| format!("could not create state-log directory: {error}"))?;
+            fs::write(&path, self.state_dump())
+                .map_err(|error| format!("could not write state dump: {error}"))?;
+            Ok::<PathBuf, String>(path)
+        })();
+        match result {
+            Ok(path) => self.diagnostic_log.push(DiagnosticLogEntry {
+                message: format!("State dump saved to {}.", path.display()),
+                success: true,
+            }),
+            Err(error) => self.diagnostic_log.push(DiagnosticLogEntry {
+                message: format!("State dump failed: {error}"),
+                success: false,
+            }),
+        }
     }
 
     fn create(&mut self) {
-        let options = LabOptions {
+        let count = requested_create_count(&self.name_draft, self.create_count);
+        for _ in 0..count {
+            self.create_one();
+            if matches!(
+                self.lifecycle_status,
+                Some(ControllerLifecycleStatus::CreationFailed { .. })
+            ) {
+                break;
+            }
+        }
+    }
+
+    fn create_one(&mut self) {
+        let options = ControllerOptions {
             target: self.target,
-            session: self.next_session,
+            id: self.next_controller_id,
         };
         let result = match self.kind {
             Kind::Xbox360 => create_xbox360(virtualgamepad::CreationOptions::new(options.target))
@@ -806,20 +1310,34 @@ impl App {
                     self.name_draft.trim().to_owned()
                 };
                 let view = controller.snapshot();
-                let service_worker = Some(spawn_service_worker(controller));
+                let service_worker = Some(spawn_service_worker_with_label(
+                    controller,
+                    format!(
+                        "{} · {}",
+                        name,
+                        controller_id(options.id, options.target, self.kind)
+                    ),
+                ));
                 self.controllers.push(NamedController {
                     kind: self.kind,
                     options,
                     name: name.clone(),
+                    name_draft: name.clone(),
+                    name_error: None,
                     view,
                     edits: EditProgress::default(),
                     indicators: ReverseIndicators::default(),
+                    output_log: Vec::new(),
                     service_worker,
-                    second_touch: LatchedTouch::default(),
+                    input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
                 self.name_draft.clear();
-                self.next_session = following_session(self.next_session, self.advance_session);
+                self.next_controller_id = self.next_controller_id.wrapping_add(1);
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Created {name}."),
+                    success: true,
+                });
                 self.lifecycle_status = Some(ControllerLifecycleStatus::Created { name });
             }
             Err(error) => {
@@ -829,6 +1347,10 @@ impl App {
                         .try_exists()
                         .ok(),
                 );
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Creation failed: {error}"),
+                    success: false,
+                });
                 self.lifecycle_status = Some(ControllerLifecycleStatus::CreationFailed { error });
             }
         }
@@ -838,18 +1360,37 @@ impl App {
         if index >= self.controllers.len() {
             return;
         }
+        let selected_index = self.selected_controller;
         let mut removed = self.controllers.remove(index);
+        let name = removed.name.clone();
         if let Some(worker) = removed.service_worker.take() {
-            self.last_cleanup = Some(worker.stop().map_or_else(
-                || "Worker exited without a returned controller; host cleanup requires verification".into(),
-                |mut controller| controller.snapshot().lab_details(),
-            ));
+            if let Some(mut controller) = worker.stop() {
+                self.last_cleanup = Some(controller.snapshot().lab_details());
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: successful_controller_close_message(&name),
+                    success: true,
+                });
+            } else {
+                self.last_cleanup = Some(
+                    "Worker exited without a returned controller; host cleanup requires verification"
+                        .into(),
+                );
+                self.diagnostic_log.push(DiagnosticLogEntry {
+                    message: format!("Close of {name} could not be verified."),
+                    success: false,
+                });
+            }
         }
-        self.selected_controller = selection_after_removal(self.controllers.len(), index);
+        self.selected_controller =
+            selection_after_removal(self.controllers.len(), index, selected_index);
     }
 
     fn close_failed_controller(&mut self, index: usize, error: String) {
         let name = self.controllers[index].name.clone();
+        self.diagnostic_log.push(DiagnosticLogEntry {
+            message: format!("{name} closed after provider failure: {error}"),
+            success: false,
+        });
         self.lifecycle_status = Some(status_after_runtime_failure(&name, error));
         self.remove_controller(index);
     }
@@ -868,196 +1409,602 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
         let mut remove = None;
         let mut stop_all = false;
+        let mut dump_state = false;
         let mut failed_controller = None;
+        let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
                 if let Some(error) = worker_failure(&worker.failure) {
+                    backend_healthy = false;
                     failed_controller = Some((index, error));
                     break;
                 }
             }
             if let Some(worker) = &named.service_worker {
                 if let Ok(mut display) = worker.display.try_lock() {
-                    self.output_log.append(&mut display.logs);
+                    named.output_log.append(&mut display.logs);
+                    let excess = named.output_log.len().saturating_sub(OUTPUT_LOG_LIMIT);
+                    named.output_log.drain(..excess);
                     named.indicators = display.indicators.clone();
+                    if let Some(healthy) = display.backend_healthy {
+                        backend_healthy &= healthy;
+                    }
                     if display.snapshot.is_some() && named.edits.observe(display.applied) {
                         named.view = display.snapshot.take().expect("checked snapshot");
                     }
                 }
             }
         }
-        if self.output_log.len() > OUTPUT_LOG_LIMIT {
-            let excess = self.output_log.len() - OUTPUT_LOG_LIMIT;
-            self.output_log.drain(..excess);
-        }
+        self.backend_healthy = backend_healthy;
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
-        egui::SidePanel::left("create").show(ctx, |ui| {
-            ui.heading("Create controller");
-            egui::ComboBox::from_label("Type")
-                .selected_text(self.kind.label())
-                .show_ui(ui, |ui| {
-                    for kind in Kind::ALL {
-                        ui.selectable_value(&mut self.kind, kind, kind.label());
-                    }
-                });
-            egui::ComboBox::from_label("Target")
-                .selected_text(target_label(self.target))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationId::LINUX_UINPUT,
-                        target_label(RealizationId::LINUX_UINPUT),
-                    );
-                    ui.selectable_value(
-                        &mut self.target,
-                        RealizationId::LINUX_UHID_USB,
-                        target_label(RealizationId::LINUX_UHID_USB),
-                    );
-                    ui.add_enabled(false, egui::Button::new("USB gadget (experimental)"))
-                        .on_disabled_hover_text("Gate G is unresolved: required USB requests still need the research protocol API.");
-                });
-            let default_name = self.next_default_name();
-            ui.add(
-                egui::TextEdit::singleline(&mut self.name_draft)
-                    .hint_text(default_name)
-                    .desired_width(f32::INFINITY),
-            )
-            .on_hover_text("Optional name. Leave empty for the automatic controller name.");
-            ui.small("UHID requires administrator-prepared device access.");
-            if ui.button("Create").clicked() {
-                self.create();
-            }
-            if ui.button("Stop all controllers").clicked() { stop_all = true; }
-            ui.collapsing("Lab notes and gate prerequisites", |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Lab correlation ID");
-                ui.add(egui::DragValue::new(&mut self.next_session));
-            });
-            ui.checkbox(&mut self.advance_session, "Advance ID after creation");
-            ui.small("This ID labels lab records only. Controller identity and session tokens are library-owned.");
-                ui.label("Consumer build/version");
-                ui.text_edit_singleline(&mut self.consumer_notes.build);
-                ui.label("Input backend (for example SDL HIDAPI or Linux event)");
-                ui.text_edit_singleline(&mut self.consumer_notes.backend);
-                ui.label("Observed mapping/profile");
-                ui.text_edit_multiline(&mut self.consumer_notes.mapping);
-                ui.label("Observations");
-                ui.text_edit_multiline(&mut self.lab_notes);
-                if let Some(cleanup) = &self.last_cleanup {
-                    ui.label(format!("Last removed session: {cleanup}"));
-                    if ui.button("Copy cleanup diagnostics").clicked() { ui.ctx().copy_text(cleanup.clone()); }
-                }
-                ui.small("Record reference model, firmware, USB/BT mode, consumer/version and observed result.");
-                ui.small("References: DualSense, Xbox Series, Steam Controller. Other families: best-effort.");
-                ui.small("DS4 split touch is test-only; isolated consumers are required before live acceptance.");
-                ui.small("Gadget: run scripts/host-preflight.py first. Socket access alone does not pass Gate G.");
-            });
-            ui.separator();
-            ui.label("Controllers");
-            egui::ScrollArea::vertical()
-                .max_height(260.0)
-                .show(ui, |ui| {
-                    for index in controller_tab_indices(self.controllers.len()) {
-                        let controller = &self.controllers[index];
-                        ui.horizontal(|ui| {
-                            if ui
-                                .selectable_label(
-                                    self.selected_controller == Some(index),
-                                    &controller.name,
-                                )
-                                .clicked()
-                            {
-                                self.selected_controller = Some(index);
-                            }
-                            if ui
-                                .small_button("×")
-                                .on_hover_text("Remove controller")
-                                .clicked()
-                            {
-                                remove = Some(index);
-                            }
-                        });
-                    }
-                });
-            if let Some(status) = &self.lifecycle_status {
-                match status {
-                    ControllerLifecycleStatus::Created { name } => {
-                        ui.colored_label(Color32::GREEN, format!("Created {name}."));
-                    }
-                    ControllerLifecycleStatus::CreationFailed { error } => {
-                        ui.colored_label(Color32::RED, format!("Creation failed: {error}"));
-                    }
-                    ControllerLifecycleStatus::ClosedAfterFailure { name, error } => {
-                        ui.colored_label(
-                            Color32::RED,
-                            format!("{name} closed after provider failure: {error}"),
-                        );
-                    }
-                }
-            }
-        });
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .auto_shrink([false, false])
+                .scroll_source(egui::scroll_area::ScrollSource {
+                    scroll_bar: true,
+                    drag: false,
+                    mouse_wheel: true,
+                })
                 .show(ui, |ui| {
-                    ui.heading("Live controllers");
-                    if let Some(index) = self
-                        .selected_controller
-                        .filter(|index| *index < self.controllers.len())
-                    {
-                        let named = &mut self.controllers[index];
-                        ui.group(|ui| {
+                    ui.horizontal_top(|ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(SIDEBAR_WIDTH);
+                            ui.set_min_width(SIDEBAR_WIDTH);
+                            ui.set_max_width(SIDEBAR_WIDTH);
+                            ui.heading("Add Controller");
+                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            egui::Grid::new("controller_creation_grid")
+                                .num_columns(2)
+                                .spacing([6.0, 4.0])
+                                .show(ui, |ui| {
+                                    ui.label("Type");
+                                    egui::ComboBox::from_id_salt("controller_type")
+                                        .selected_text(self.kind.label())
+                                        .width(ui.available_width())
+                                        .show_ui(ui, |ui| {
+                                            for kind in Kind::ALL {
+                                                ui.selectable_value(
+                                                    &mut self.kind,
+                                                    kind,
+                                                    kind.label(),
+                                                );
+                                            }
+                                        });
+                                    ui.end_row();
+                                    ui.label("Target");
+                                    ui.horizontal(|ui| {
+                                        let help = target_help(self.target);
+                                        let help_width = if help.is_some() { 26.0 } else { 0.0 };
+                                        egui::ComboBox::from_id_salt("controller_target")
+                                            .selected_text(target_label(self.target))
+                                            .width((ui.available_width() - help_width).max(60.0))
+                                            .show_ui(ui, |ui| {
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_UINPUT,
+                                                    target_label(RealizationId::LINUX_UINPUT),
+                                                );
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_UHID_USB,
+                                                    target_label(RealizationId::LINUX_UHID_USB),
+                                                );
+                                                ui.selectable_value(
+                                                    &mut self.target,
+                                                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                                    target_label(
+                                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                                                    ),
+                                                );
+                                            });
+                                        if let Some(help) = help {
+                                            let help_response =
+                                                ui.add_sized([18.0, 18.0], Button::new("!"));
+                                            if help_response.hovered() {
+                                                egui::Tooltip::for_widget(&help_response)
+                                                    .at_pointer()
+                                                    .show(|ui| {
+                                                        ui.strong(help.title);
+                                                        ui.label(help.body);
+                                                    });
+                                            }
+                                        }
+                                    });
+                                    ui.end_row();
+                                });
+                            let default_name = self.next_default_name();
                             ui.horizontal(|ui| {
-                                ui.label("Controller name:");
-                                ui.text_edit_singleline(&mut named.name);
-                            });
-                            draw_reverse_indicators(ui, &named.indicators);
-                            ui.label(format!("{} · application ID {}", target_label(named.options.target), named.options.session));
-                            if let Some(worker) = &named.service_worker {
-                                if let Ok(display) = worker.display.try_lock() {
-                                    ui.label(format!("Service cycles: {} · max observed gap: {:.2} ms · omitted worker logs: {}",
-                                        display.metrics.cycles, display.metrics.max_gap.as_secs_f64() * 1000.0, display.metrics.omitted_logs));
-                                    if ui.button("Copy lab record").clicked() {
-                                        ui.ctx().copy_text(lab_record(&named.name, named.options, &display.metrics, &self.lab_notes, &self.consumer_notes, &named.view.lab_details()));
+                                ui.spacing_mut().item_spacing.x = 4.0;
+                                let name_is_default = self.name_draft.trim().is_empty();
+                                let clear_width = 18.0;
+                                let count_control_width = CREATE_COUNT_SPINBOX_WIDTH;
+                                let edit_width = if name_is_default {
+                                    (ui.available_width()
+                                        - count_control_width
+                                        - ui.spacing().item_spacing.x)
+                                        .max(40.0)
+                                } else {
+                                    ui.available_width()
+                                };
+                                let name_response = ui
+                            .add_sized(
+                                [edit_width, NAME_INPUT_HEIGHT],
+                                egui::TextEdit::singleline(&mut self.name_draft)
+                                    .hint_text(default_name)
+                                    .desired_width(edit_width)
+                                    .vertical_align(egui::Align::Center)
+                                    .margin(egui::Margin {
+                                        left: 4,
+                                        right: 22,
+                                        top: 2,
+                                        bottom: 2,
+                                    }),
+                            )
+                            .on_hover_text(
+                                "Optional name. Leave empty for the automatic controller name.",
+                            );
+                                if !name_is_default {
+                                    let clear_rect = egui::Rect::from_min_max(
+                                        Pos2::new(
+                                            name_response.rect.right() - clear_width,
+                                            name_response.rect.top(),
+                                        ),
+                                        name_response.rect.right_bottom(),
+                                    );
+                                    if ui
+                                        .put(
+                                            clear_rect,
+                                            Button::new("×").frame(false).min_size(Vec2::ZERO),
+                                        )
+                                        .on_hover_text("Clear name")
+                                        .clicked()
+                                    {
+                                        self.name_draft.clear();
                                     }
                                 }
-                            }
-                            if named.edits.ready() {
-                                if ui.button("Release all inputs").clicked() {
-                                    named.second_touch.active = false;
-                                    if let Err(error) = named.view.release_inputs() { failed_controller = Some((index, error)); }
-                                } else {
-                                    named.view.draw(ui, &mut named.second_touch);
+                                if name_is_default {
+                                    ui.allocate_ui_with_layout(
+                                        Vec2::new(count_control_width, 22.0),
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            create_count_spinbox(ui, &mut self.create_count);
+                                        },
+                                    );
                                 }
-                                let result = named.view.take_edits().and_then(|edits| {
-                                    let worker = named.service_worker.as_ref().ok_or("worker unavailable")?;
-                                    named.edits.submit(&worker.edits, edits)
-                                });
-                                if let Err(error) = result { failed_controller = Some((index, error)); }
-                            } else {
-                                ui.small("Waiting for the previous input batch; servicing continues independently.");
+                            });
+                            let create_clicked = ui
+                                .scope(|ui| {
+                                    ui.visuals_mut().widgets.inactive.fg_stroke.color =
+                                        CREATE_BUTTON_TEXT;
+                                    ui.visuals_mut().widgets.hovered.fg_stroke.color =
+                                        CREATE_BUTTON_TEXT;
+                                    ui.add_sized(
+                                        [ui.available_width(), 22.0],
+                                        egui::Button::new("Create").fill(CREATE_BUTTON_FILL),
+                                    )
+                                })
+                                .inner
+                                .clicked();
+                            if create_clicked {
+                                self.create();
                             }
-                            ui.small("Input changes are sent automatically.");
+                            let advanced_available = advanced_options_available(self.target);
+                            if !advanced_available {
+                                self.advanced_options_open = false;
+                            }
+                            let advanced_label = if self.advanced_options_open {
+                                "v  Advanced options"
+                            } else {
+                                ">  Advanced options"
+                            };
+                            let advanced_width = ui.available_width();
+                            let advanced_response = ui.add_enabled(
+                                advanced_available,
+                                Button::new(advanced_label)
+                                    .selected(self.advanced_options_open)
+                                    .right_text("")
+                                    .min_size(Vec2::new(advanced_width, CONTROLLER_ROW_HEIGHT)),
+                            );
+                            if advanced_response.clicked() {
+                                self.advanced_options_open = !self.advanced_options_open;
+                            }
+                            if self.advanced_options_open && advanced_available {
+                                egui::Frame::NONE
+                                    .fill(sidebar_list_fill(ui))
+                                    .show(ui, |ui| {
+                                        ui.set_width(SIDEBAR_WIDTH);
+                                        egui::ScrollArea::vertical()
+                                            .id_salt("advanced_options")
+                                            .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                            .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                                            .auto_shrink([false, false])
+                                            .show(ui, |ui| {
+                                                ui.set_width(SIDEBAR_WIDTH - 8.0);
+                                                ui.strong("Controller ID preview");
+                                                let mut preview = controller_id(
+                                                    self.next_controller_id,
+                                                    self.target,
+                                                    self.kind,
+                                                );
+                                                let preview_width = ui.available_width();
+                                                ui.add_sized(
+                                                    [preview_width, NAME_INPUT_HEIGHT],
+                                                    egui::TextEdit::singleline(&mut preview)
+                                                        .interactive(false)
+                                                        .desired_width(preview_width)
+                                                        .vertical_align(egui::Align::Center)
+                                                        .margin(egui::Margin {
+                                                            left: 4,
+                                                            right: 4,
+                                                            top: 2,
+                                                            bottom: 2,
+                                                        }),
+                                                );
+                                            });
+                                    });
+                            }
+                            ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            let controller_surface_width = SIDEBAR_WIDTH - 8.0;
+                            let selector_spacing = ui.spacing().item_spacing.x;
+                            let controller_content_width =
+                                controller_surface_width - selector_spacing;
+                            let row_spacing = 1.0;
+                            let controller_button_width = (controller_content_width
+                                - CONTROLLER_NUMBER_WIDTH
+                                - CONTROLLER_DELETE_WIDTH
+                                - (row_spacing * 2.0))
+                                .max(40.0);
+                            ui.allocate_ui_with_layout(
+                                Vec2::new(SIDEBAR_WIDTH, 22.0),
+                                egui::Layout::left_to_right(egui::Align::Center),
+                                |ui| {
+                                    ui.spacing_mut().item_spacing.x = selector_spacing;
+                                    let chip_width = (SIDEBAR_WIDTH - selector_spacing) / 2.0;
+                                    if sidebar_choice_chip(
+                                        ui,
+                                        ControllerLabelMode::AssignedName.label(),
+                                        self.controller_label_mode
+                                            == ControllerLabelMode::AssignedName,
+                                        chip_width,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.controller_label_mode =
+                                            ControllerLabelMode::AssignedName;
+                                    }
+                                    if sidebar_choice_chip(
+                                        ui,
+                                        ControllerLabelMode::InternalIdentifier.label(),
+                                        self.controller_label_mode
+                                            == ControllerLabelMode::InternalIdentifier,
+                                        chip_width,
+                                    )
+                                    .clicked()
+                                    {
+                                        self.controller_label_mode =
+                                            ControllerLabelMode::InternalIdentifier;
+                                    }
+                                },
+                            );
+                            let footer_controls_height =
+                                (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
+                            let diagnostic_log_height =
+                                diagnostic_log_height(ui.text_style_height(&egui::TextStyle::Body));
+                            let sidebar_layout = sidebar_layout_budget(
+                                ui.available_height(),
+                                footer_controls_height,
+                                diagnostic_log_height,
+                                ui.spacing().item_spacing.y,
+                            );
+                            let list_height = sidebar_layout.controller_list;
+                            let (controller_list_rect, _) = ui.allocate_exact_size(
+                                Vec2::new(
+                                    SIDEBAR_WIDTH,
+                                    list_height + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
+                                ),
+                                Sense::hover(),
+                            );
+                            ui.painter().rect_filled(
+                                controller_list_rect,
+                                0.0,
+                                sidebar_list_fill(ui),
+                            );
+                            let controller_content_rect = controller_list_rect.shrink(4.0);
+                            let mut list_ui = ui.new_child(
+                                egui::UiBuilder::new().max_rect(controller_content_rect),
+                            );
+                            egui::ScrollArea::vertical()
+                                .id_salt("controller_list")
+                                .min_scrolled_height(list_height)
+                                .max_height(list_height)
+                                .auto_shrink([false, false])
+                                .show(&mut list_ui, |ui| {
+                                    ui.set_width(controller_surface_width);
+                                    ui.scope(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 1.0;
+                                        for index in controller_tab_indices(self.controllers.len())
+                                        {
+                                            let controller = &self.controllers[index];
+                                            let active = self.selected_controller == Some(index);
+                                            let label = match self.controller_label_mode {
+                                                ControllerLabelMode::AssignedName => {
+                                                    controller.name.clone()
+                                                }
+                                                ControllerLabelMode::InternalIdentifier => {
+                                                    controller_identifier(controller)
+                                                }
+                                            };
+                                            ui.allocate_ui_with_layout(
+                                                Vec2::new(
+                                                    controller_content_width,
+                                                    CONTROLLER_ROW_HEIGHT,
+                                                ),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    ui.add_sized(
+                                                        [
+                                                            CONTROLLER_NUMBER_WIDTH,
+                                                            CONTROLLER_ROW_HEIGHT,
+                                                        ],
+                                                        egui::Label::new(format!("{}", index + 1)),
+                                                    );
+                                                    let controller_response = ui.add_sized(
+                                                        [
+                                                            controller_button_width,
+                                                            CONTROLLER_ROW_HEIGHT,
+                                                        ],
+                                                        Button::new(label)
+                                                            .selected(active)
+                                                            .right_text("")
+                                                            .truncate(),
+                                                    );
+                                                    self.selected_controller =
+                                                        selection_after_controller_click(
+                                                            self.selected_controller,
+                                                            index,
+                                                            controller_response.clicked(),
+                                                        );
+                                                    let delete_clicked = ui
+                                                        .add_sized(
+                                                            [
+                                                                CONTROLLER_DELETE_WIDTH,
+                                                                CONTROLLER_ROW_HEIGHT,
+                                                            ],
+                                                            egui::Button::new("×")
+                                                                .fill(destructive_button_fill(ui)),
+                                                        )
+                                                        .on_hover_text("Remove controller")
+                                                        .clicked();
+                                                    if let Some(index) =
+                                                        controller_removal_after_delete_click(
+                                                            index,
+                                                            delete_clicked,
+                                                        )
+                                                    {
+                                                        remove = Some(index);
+                                                    }
+                                                },
+                                            );
+                                        }
+                                    });
+                                });
+                            let footer_height = sidebar_layout.footer;
+                            let log_height = sidebar_layout.diagnostic_log;
+                            let (footer_rect, _) = ui.allocate_exact_size(
+                                Vec2::new(SIDEBAR_WIDTH, footer_height),
+                                Sense::hover(),
+                            );
+                            let mut footer_ui =
+                                ui.new_child(egui::UiBuilder::new().max_rect(footer_rect));
+                            footer_ui.spacing_mut().item_spacing = Vec2::ZERO;
+                            let stop_all_clicked = footer_ui
+                                .add_sized(
+                                    [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                    egui::Button::new("Stop all controllers")
+                                        .fill(destructive_button_fill(&footer_ui)),
+                                )
+                                .clicked();
+                            stop_all = stop_all_after_click(stop_all_clicked);
+                            footer_ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+
+                            let (log_rect, _) = footer_ui.allocate_exact_size(
+                                Vec2::new(SIDEBAR_WIDTH, log_height),
+                                Sense::hover(),
+                            );
+                            footer_ui.painter().rect_filled(
+                                log_rect,
+                                0.0,
+                                sidebar_list_fill(&footer_ui),
+                            );
+                            let log_content_rect = egui::Rect::from_min_max(
+                                log_rect.left_top()
+                                    + egui::vec2(4.0, f32::from(DIAGNOSTIC_LOG_TOP_MARGIN)),
+                                log_rect.right_bottom() - egui::vec2(4.0, 0.0),
+                            );
+                            let mut log_ui = footer_ui
+                                .new_child(egui::UiBuilder::new().max_rect(log_content_rect));
+                            let log_scroll_height = diagnostic_log_scroll_height(log_height);
+                            egui::ScrollArea::vertical()
+                                .id_salt("diagnostic_log")
+                                .auto_shrink([false, false])
+                                .min_scrolled_height(log_scroll_height)
+                                .max_height(log_scroll_height)
+                                .stick_to_bottom(true)
+                                .show(&mut log_ui, |ui| {
+                                    ui.set_width(SIDEBAR_WIDTH - 16.0);
+                                    ui.add_space(diagnostic_log_top_padding(
+                                        log_scroll_height,
+                                        ui.text_style_height(&egui::TextStyle::Body),
+                                        self.diagnostic_log.len(),
+                                        ui.spacing().item_spacing.y,
+                                    ));
+                                    if self.diagnostic_log.is_empty() {
+                                        ui.weak("Warnings and error codes will appear here");
+                                    }
+                                    for entry in &self.diagnostic_log {
+                                        ui.colored_label(
+                                            if entry.success {
+                                                SUCCESS_LOG_COLOR
+                                            } else {
+                                                footer_ui.visuals().error_fg_color
+                                            },
+                                            &entry.message,
+                                        );
+                                    }
+                                });
+
+                            let status_color = if self.backend_healthy {
+                                Color32::GREEN
+                            } else {
+                                Color32::RED
+                            };
+                            footer_ui.allocate_ui_with_layout(
+                                Vec2::new(SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT),
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let dump_width = 76.0;
+                                    dump_state |= ui
+                                        .add_sized(
+                                            [dump_width, CONTROLLER_ROW_HEIGHT],
+                                            Button::new("Dump log"),
+                                        )
+                                        .clicked();
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.colored_label(
+                                                status_color,
+                                                format!(
+                                                    "● {}",
+                                                    if self.backend_healthy {
+                                                        "Healthy"
+                                                    } else {
+                                                        "Attention"
+                                                    }
+                                                ),
+                                            );
+                                        },
+                                    );
+                                },
+                            );
+                            footer_ui
+                                .allocate_space(Vec2::new(SIDEBAR_WIDTH, HEALTH_BOTTOM_PADDING));
                         });
-                    } else {
-                        ui.small("Create a controller, then select its tab.");
-                    }
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.heading("Live typed reverse output");
-                        if ui.button("Clear").clicked() {
-                            self.output_log.clear();
-                        }
+                        ui.separator();
+                        ui.vertical(|ui| {
+                            ui.set_min_width(448.0);
+                            egui::ScrollArea::vertical()
+                                .id_salt("live_panel_scroll")
+                                .max_height(ui.available_height())
+                                .auto_shrink([false, false])
+                                .scroll_source(egui::scroll_area::ScrollSource {
+                                    scroll_bar: true,
+                                    drag: false,
+                                    mouse_wheel: true,
+                                })
+                                .show(ui, |ui| {
+                                    let mut polling_period_seconds = self.polling_period_seconds;
+                                    if let Some(index) = self
+                                        .selected_controller
+                                        .filter(|index| *index < self.controllers.len())
+                                    {
+                                        let named = &mut self.controllers[index];
+                                        ui.heading(&named.name);
+                                        ui.add_sized(
+                                            [ui.available_width(), 1.0],
+                                            egui::Separator::default(),
+                                        );
+                                        draw_controller_state(
+                                            ui,
+                                            named,
+                                            &mut polling_period_seconds,
+                                        );
+                                        let input_width = ui.available_width();
+                                        let section_frame = egui::Frame::group(ui.style());
+                                        let section_margin = section_frame.total_margin();
+                                        let section_content_width = (input_width
+                                            - section_margin.left
+                                            - section_margin.right)
+                                            .max(0.0);
+                                        section_frame.show(ui, |ui| {
+                                            ui.set_min_width(section_content_width);
+                                            ui.horizontal(|ui| {
+                                                ui.heading("Reverse Output");
+                                            });
+                                            ui.separator();
+                                            draw_feedback_rows(ui, &named.indicators);
+                                            ui.collapsing("Reverse output log", |ui| {
+                                                draw_reverse_output_log(ui, &mut named.output_log);
+                                            });
+                                        });
+                                        section_frame.show(ui, |ui| {
+                                            ui.set_min_width(section_content_width);
+                                            let inputs_ready = named.edits.ready();
+                                            let mut release_all = false;
+                                            ui.horizontal(|ui| {
+                                                ui.heading("Input");
+                                                draw_target_surface_tooltip(
+                                                    ui,
+                                                    named.view.surface(),
+                                                );
+                                                release_all = ui
+                                                    .add_enabled(
+                                                        inputs_ready,
+                                                        Button::new("Release all inputs")
+                                                            .fill(destructive_button_fill(ui))
+                                                            .min_size(Vec2::new(
+                                                                INPUT_HEADER_BUTTON_WIDTH,
+                                                                NAME_INPUT_HEIGHT,
+                                                            )),
+                                                    )
+                                                    .clicked();
+                                            });
+                                            ui.separator();
+                                            if release_all {
+                                                named.input_ui.release_all();
+                                                if let Err(error) = named.view.release_inputs() {
+                                                    failed_controller = Some((index, error));
+                                                }
+                                            }
+                                            draw_battery_emulation(
+                                                ui,
+                                                &mut named.view,
+                                                inputs_ready,
+                                            );
+                                            draw_dummy_audio_input(ui);
+                                            ui.add_enabled_ui(inputs_ready, |ui| {
+                                                // Keep the input surface allocated on the action frame. Skipping it
+                                                // shrinks the parent scroll area and causes its offset to be clamped.
+                                                named.view.draw(
+                                                    ui,
+                                                    named.options.id,
+                                                    &mut named.input_ui,
+                                                );
+                                            });
+                                            if inputs_ready {
+                                                let result =
+                                                    named.view.take_edits().and_then(|edits| {
+                                                        let worker = named
+                                                            .service_worker
+                                                            .as_ref()
+                                                            .ok_or("worker unavailable")?;
+                                                        named.edits.submit(&worker.edits, edits)
+                                                    });
+                                                if let Err(error) = result {
+                                                    failed_controller = Some((index, error));
+                                                }
+                                            }
+                                        });
+                                    }
+                                    self.polling_period_seconds = polling_period_seconds;
+                                });
+                        });
                     });
-                    ui.small("Background service uses a 4 ms fallback and earlier deadlines. This bounded log is observational, not an acceptance verdict.");
-                    if self.output_log.is_empty() {
-                        ui.small("No reverse output received.");
-                    }
-                    for entry in self.output_log.iter().rev().take(20) {
-                        ui.monospace(entry);
-                    }
                 });
         });
+        if dump_state {
+            self.write_state_dump();
+        }
         if stop_all {
             while !self.controllers.is_empty() {
                 self.remove_controller(self.controllers.len() - 1);
@@ -1079,704 +2026,973 @@ fn target_label(target: RealizationId) -> &'static str {
     }
 }
 
-fn draw_reverse_indicators(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+fn draw_controller_state(
+    ui: &mut egui::Ui,
+    controller: &mut NamedController,
+    polling_period_seconds: &mut u32,
+) {
+    let identifier = controller_identifier(controller);
+    let target = target_label(controller.options.target);
+    ui.group(|ui| {
+        egui::Grid::new("controller_topology")
+            .num_columns(2)
+            .spacing([8.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Name");
+                ui.horizontal(|ui| {
+                    ui.add_sized(
+                        [180.0, NAME_INPUT_HEIGHT],
+                        egui::TextEdit::singleline(&mut controller.name_draft)
+                            .vertical_align(egui::Align::Center),
+                    );
+                    if ui.button("Apply").clicked() {
+                        apply_controller_name(controller);
+                    }
+                });
+                ui.end_row();
+                if let Some(error) = &controller.name_error {
+                    ui.label("");
+                    ui.colored_label(Color32::RED, error);
+                    ui.end_row();
+                }
+                ui.label("ID");
+                ui.monospace(identifier);
+                ui.end_row();
+                ui.label("Target");
+                ui.label(target);
+                ui.end_row();
+                ui.label("Type");
+                ui.label(controller.kind.label());
+                ui.end_row();
+            });
+        ui.separator();
+        if let Some(worker) = &controller.service_worker {
+            if let Ok(display) = worker.display.try_lock() {
+                egui::Grid::new("controller_metrics")
+                    .num_columns(2)
+                    .spacing([8.0, 4.0])
+                    .show(ui, |ui| {
+                        ui.label("Service cycles");
+                        boxed_metric_output(ui, display.metrics.cycles.to_string());
+                        ui.end_row();
+                        ui.label("Omitted logs");
+                        boxed_metric_output(ui, display.metrics.omitted_logs.to_string());
+                        ui.end_row();
+                        ui.label("Max gap");
+                        let gaps =
+                            service_gap_percentiles(&display.metrics, *polling_period_seconds);
+                        ui.horizontal(|ui| {
+                            ui.label("Polling period:");
+                            ui.add_sized(
+                                [38.0, NAME_INPUT_HEIGHT],
+                                egui::DragValue::new(polling_period_seconds)
+                                    .speed(1.0)
+                                    .suffix("s"),
+                            )
+                            .on_hover_text("0 includes the controller's entire observed lifetime");
+                            for (label, gap) in [
+                                ("10%:", gaps.map(|gaps| gaps[0])),
+                                ("1%:", gaps.map(|gaps| gaps[1])),
+                                ("0.1%:", gaps.map(|gaps| gaps[2])),
+                            ] {
+                                ui.label(label);
+                                if let Some(gap) = gap {
+                                    boxed_metric_output(ui, format_gap(gap));
+                                } else {
+                                    boxed_metric_output(ui, "—");
+                                }
+                            }
+                        });
+                        ui.end_row();
+                    });
+            }
+        }
+    });
+}
+
+fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
+    egui::Frame::group(ui.style())
+        .inner_margin(egui::Margin::symmetric(4, 2))
+        .show(ui, |ui| {
+            ui.monospace(value.to_string());
+        });
+}
+
+fn format_gap(gap: Duration) -> String {
+    format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
+}
+
+fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    egui::Grid::new("controller_feedback")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("LED");
+            ui.horizontal(|ui| {
+                let lightbar = indicators.led.unwrap_or([30, 30, 30]);
+                draw_feedback_indicator(
+                    ui,
+                    "Lightbar",
+                    Color32::from_rgb(lightbar[0], lightbar[1], lightbar[2]),
+                    if indicators.led.is_some() {
+                        "Lightbar output received"
+                    } else {
+                        "Lightbar output unknown"
+                    },
+                );
+                draw_feedback_indicator(
+                    ui,
+                    "Mute",
+                    if indicators.mute_led == Some(true) {
+                        Color32::from_rgb(255, 130, 40)
+                    } else {
+                        Color32::DARK_GRAY
+                    },
+                    match indicators.mute_led {
+                        Some(true) => "Mute LED on",
+                        Some(false) => "Mute LED off",
+                        None => "Mute LED unknown",
+                    },
+                );
+            });
+            ui.end_row();
+            ui.label("Rumble");
+            draw_rumble_contents(ui, indicators);
+            ui.end_row();
+        });
+}
+
+fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
+    let remaining = indicators
+        .rumble_until
+        .map(|until| until.saturating_duration_since(Instant::now()))
+        .unwrap_or_default();
+    let active = indicators.rumble_active || !remaining.is_zero();
+    let phase = if indicators.rumble_active {
+        indicators
+            .rumble_started
+            .map(|started| started.elapsed().as_secs_f32() * 8.0)
+            .unwrap_or_default()
+            .sin()
+            .abs()
+    } else {
+        (remaining.as_secs_f32() * 8.0).sin().abs()
+    };
+    let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
     ui.horizontal(|ui| {
-        ui.label("Reverse effects:");
-        let led = indicators.led.unwrap_or([30, 30, 30]);
-        let (led_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        ui.painter()
-            .rect_filled(led_rect, 2.0, Color32::from_rgb(led[0], led[1], led[2]));
-        ui.label("LED");
-
-        let (mute_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        ui.painter().circle_filled(
-            mute_rect.center(),
-            7.0,
-            if indicators.mute_led == Some(true) {
-                Color32::from_rgb(255, 130, 40)
-            } else {
-                Color32::DARK_GRAY
-            },
-        );
-        ui.label("Mute LED");
-
-        let remaining = indicators
-            .rumble_until
-            .map(|until| until.saturating_duration_since(Instant::now()))
-            .unwrap_or_default();
-        let active = indicators.rumble_active || !remaining.is_zero();
-        let (rumble_rect, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-        let phase = if indicators.rumble_active {
-            indicators
-                .rumble_started
-                .map(|started| started.elapsed().as_secs_f32() * 8.0)
-                .unwrap_or_default()
-                .sin()
-                .abs()
-        } else {
-            (remaining.as_secs_f32() * 8.0).sin().abs()
-        };
-        let radius = if active { 5.0 + phase * 4.0 } else { 5.0 };
-        ui.painter().circle_filled(
-            rumble_rect.center(),
-            radius,
+        draw_feedback_indicator(
+            ui,
+            "Motors",
             if active {
                 Color32::from_rgb(220, 80, 80)
             } else {
                 Color32::DARK_GRAY
             },
+            if !indicators.rumble_seen {
+                "Rumble unknown"
+            } else if active {
+                "Rumble active"
+            } else {
+                "Rumble inactive"
+            },
         );
-        ui.label("Rumble");
-    });
-}
-
-const fn face_labels(kind: Kind) -> [&'static str; 4] {
-    match kind {
-        Kind::Xbox360 => ["A (South)", "B (East)", "X (West)", "Y (North)"],
-        Kind::DualSense | Kind::DualShock4 => [
-            "Cross (South)",
-            "Circle (East)",
-            "Square (West)",
-            "Triangle (North)",
-        ],
-        Kind::SwitchPro => ["B (South)", "A (East)", "Y (West)", "X (North)"],
-    }
-}
-
-fn digital_controls(ui: &mut egui::Ui, kind: Kind, mut set: impl FnMut(DigitalControlUpdate)) {
-    ui.group(|ui| {
-        ui.label("Face buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, button) in [
-                (face_labels(kind)[0], FaceButton::South),
-                (face_labels(kind)[1], FaceButton::East),
-                (face_labels(kind)[2], FaceButton::West),
-                (face_labels(kind)[3], FaceButton::North),
-            ] {
-                hold(ui, label, |pressed| {
-                    set(DigitalControlUpdate::FaceButton { button, pressed });
-                });
-            }
-        });
-        ui.label("D-pad");
-        ui.horizontal_wrapped(|ui| {
-            for (label, direction) in [
-                ("Up", DpadDirection::Up),
-                ("Down", DpadDirection::Down),
-                ("Left", DpadDirection::Left),
-                ("Right", DpadDirection::Right),
-            ] {
-                hold(ui, label, |pressed| {
-                    set(DigitalControlUpdate::Dpad { direction, pressed });
-                });
-            }
-        });
-    });
-}
-
-fn hold(ui: &mut egui::Ui, label: &str, mut set: impl FnMut(bool)) {
-    let response = ui.add(Button::new(label));
-    let previous = ui
-        .data(|data| data.get_temp::<bool>(response.id))
-        .unwrap_or(false);
-    if let Some(next) = next_hold_state(
-        previous,
-        response.is_pointer_button_down_on(),
-        response.clicked(),
-    ) {
-        ui.data_mut(|data| data.insert_temp(response.id, next));
-        set(next);
-    }
-}
-
-fn next_hold_state(previous: bool, pointer_down: bool, clicked: bool) -> Option<bool> {
-    // A quick click may begin and end between rendered frames. Keep that click
-    // pressed for one complete frame so HID consumers observe a rising edge;
-    // the following frame emits the corresponding release.
-    let next = pointer_down || clicked;
-    (next != previous).then_some(next)
-}
-fn surface(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
-    ui.collapsing("Selected target surface", |ui| {
-        let surface = surface.common_surface();
-        ui.label(format!("Target: {}", surface.target));
-        ui.label(format!("Evidence: {:?}", surface.validation_status));
-        ui.label(format!(
-            "{} axes, {} digital controls, {} output channels",
-            surface.axes.len(),
-            surface.digital_controls.len(),
-            surface.outputs.len()
-        ));
-        for axis in surface.axes {
-            ui.monospace(format!(
-                "{}: code {} {}..={} (neutral {})",
-                axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
-            ));
-        }
-        for restriction in surface.restrictions {
-            ui.small(format!(
-                "Unavailable: {} — {}",
-                restriction.feature, restriction.reason
-            ));
+        if active {
+            let (pulse_rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+            ui.painter().circle_stroke(
+                pulse_rect.center(),
+                radius,
+                Stroke::new(1.0, Color32::from_rgb(220, 80, 80)),
+            );
         }
     });
 }
 
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn axis_pad(ui: &mut egui::Ui, label: &str, x: &mut i16, y: &mut i16) -> bool {
-    ui.vertical(|ui| {
-        ui.label(label);
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(112.0), Sense::click_and_drag());
-        ui.painter().rect_stroke(
-            rect,
-            2.0,
-            Stroke::new(1.0, Color32::GRAY),
-            egui::StrokeKind::Inside,
-        );
-        ui.painter().line_segment(
-            [
-                Pos2::new(rect.left(), rect.center().y),
-                Pos2::new(rect.right(), rect.center().y),
-            ],
-            Stroke::new(1.0, Color32::DARK_GRAY),
-        );
-        ui.painter().line_segment(
-            [
-                Pos2::new(rect.center().x, rect.top()),
-                Pos2::new(rect.center().x, rect.bottom()),
-            ],
-            Stroke::new(1.0, Color32::DARK_GRAY),
-        );
-        let pointer = Pos2::new(
-            rect.center().x + f32::from(*x) / 32768.0 * rect.width() / 2.0,
-            rect.center().y + f32::from(*y) / 32768.0 * rect.height() / 2.0,
-        );
-        ui.painter()
-            .circle_filled(pointer, 5.0, Color32::LIGHT_BLUE);
-        let mut changed = false;
-        if response.is_pointer_button_down_on() {
-            if let Some(position) = response.interact_pointer_pos() {
-                let next_x =
-                    pad_axis_from_fraction((position.x - rect.center().x) / (rect.width() / 2.0));
-                let next_y =
-                    pad_axis_from_fraction((position.y - rect.center().y) / (rect.height() / 2.0));
-                changed = *x != next_x || *y != next_y;
-                *x = next_x;
-                *y = next_y;
+fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, tooltip: &str) {
+    ui.label(format!("{label}:"));
+    let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    ui.painter().circle_filled(rect.center(), 5.0, color);
+    response.on_hover_text(tooltip);
+}
+
+fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
+    let supported = view.supports_battery_emulation();
+    let battery = view.battery();
+    let mut exposed = battery.is_exposed();
+    card(ui, "Battery", |ui| {
+        // Exposure changes the widget implementation, not this card's footprint. Keeping the
+        // allocation fixed prevents parent scroll areas from clamping their position mid-click.
+        ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+        ui.set_min_height(NAME_INPUT_HEIGHT);
+        ui.horizontal(|ui| {
+            let expose_response = ui.add_enabled(
+                supported && editable,
+                egui::Checkbox::new(&mut exposed, "Expose"),
+            );
+            if expose_response.changed() {
+                let _ = view.set_battery_exposed(exposed);
             }
-        } else if response.drag_stopped() || response.clicked() {
-            changed = *x != 0 || *y != 0;
-            *x = 0;
-            *y = 0;
-        }
-        ui.monospace(format!("x={x} y={y}"));
-        changed
-    })
-    .inner
-}
-
-fn momentary_trigger(ui: &mut egui::Ui, label: &str, value: &mut u8) -> bool {
-    let response = ui.add(egui::Slider::new(value, 0..=255).text(label));
-    let mut changed = response.changed();
-    if response.drag_stopped() || response.clicked() {
-        changed |= *value != 0;
-        *value = 0;
-    }
-    changed
-}
-
-fn latched_motion_axis(ui: &mut egui::Ui, label: &str, value: &mut i16) -> bool {
-    ui.add(egui::Slider::new(value, i16::MIN..=i16::MAX).text(label))
-        .changed()
-}
-
-fn dualsense_axis_to_pad(value: u8) -> i16 {
-    let offset = i32::from(value) - 128;
-    let mapped = if offset <= 0 {
-        offset * 256
-    } else {
-        (offset * 32767 + 63) / 127
-    };
-    i16::try_from(mapped).expect("unsigned axis maps into signed pad")
-}
-
-fn dualsense_axis_from_pad(value: i16) -> u8 {
-    let value = i32::from(value);
-    let mapped = if value <= 0 {
-        (value + 32768 + 128) / 256
-    } else {
-        128 + (value * 127 + 16383) / 32767
-    };
-    u8::try_from(mapped).expect("signed pad maps into unsigned axis")
-}
-
-#[allow(clippy::cast_possible_truncation)] // Rounded bounded normalized input fits i16.
-fn pad_axis_from_fraction(value: f32) -> i16 {
-    let value = value.clamp(-1.0, 1.0);
-    (value * if value < 0.0 { 32768.0 } else { 32767.0 }).round() as i16
-}
-
-fn draw_xbox(ui: &mut egui::Ui, controller: &mut Xbox360Editor) {
-    surface(ui, controller.surface());
-    digital_controls(ui, Kind::Xbox360, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Back", Xbox360Control::Back),
-                ("Start", Xbox360Control::Start),
-                ("Guide", Xbox360Control::Guide),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
-            }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = left_x.raw();
-    let mut y = left_y.raw();
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = right_x.raw();
-    let mut right_y = right_y.raw();
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Xbox left stick", &mut x, &mut y) {
-                    let _ = controller.set_left_stick(Xbox360Axis::new(x), Xbox360Axis::new(y));
+            if battery_controls_are_visible(supported, exposed) {
+                let mut percentage = battery.level().percent();
+                let slider_changed = ui
+                    .add_enabled_ui(editable, |ui| {
+                        ui.add_sized(
+                            [120.0, NAME_INPUT_HEIGHT],
+                            egui::Slider::new(&mut percentage, 0..=100).show_value(false),
+                        )
+                    })
+                    .inner
+                    .changed();
+                let entry_changed = ui
+                    .add_enabled_ui(editable, |ui| {
+                        ui.add_sized(
+                            [56.0, NAME_INPUT_HEIGHT],
+                            egui::DragValue::new(&mut percentage)
+                                .range(0..=100)
+                                .suffix("%"),
+                        )
+                    })
+                    .inner
+                    .changed();
+                if (slider_changed || entry_changed)
+                    && let Ok(level) = BatteryLevel::new(percentage)
+                {
+                    let _ = view.set_battery_level(level);
                 }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(Xbox360Control::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "Xbox right stick", &mut right_x, &mut right_y) {
-                    let _ = controller
-                        .set_right_stick(Xbox360Axis::new(right_x), Xbox360Axis::new(right_y));
+            } else {
+                draw_inactive_battery_slider(ui, 120.0);
+                draw_inactive_battery_field(ui, 56.0);
+                if !supported {
+                    ui.weak("unsupported");
                 }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(Xbox360Control::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "Xbox left trigger", &mut left)
-        | momentary_trigger(ui, "Xbox right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(Xbox360Trigger::new(left), Xbox360Trigger::new(right));
-    }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "Left shoulder", |pressed| {
-            let _ = controller.set_native(Xbox360Control::LeftShoulder, pressed);
-        });
-        hold(ui, "Right shoulder", |pressed| {
-            let _ = controller.set_native(Xbox360Control::RightShoulder, pressed);
+            }
         });
     });
 }
-#[allow(clippy::too_many_lines)] // Keeps the controller-specific test surface together.
+
+fn draw_dummy_audio_input(ui: &mut egui::Ui) {
+    card(ui, "Audio input", |ui| {
+        ui.add_enabled(
+            false,
+            Button::new("No input configured").min_size(Vec2::new(144.0, NAME_INPUT_HEIGHT)),
+        );
+        ui.weak("Demo placeholder");
+    });
+}
+
+const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
+    supported && exposed
+}
+
+fn draw_inactive_battery_slider(ui: &mut egui::Ui, width: f32) {
+    // `add_sized` only advances by the native slider width. Reserve that same
+    // width without painting a disabled widget (and its handle).
+    let native_width = ui.spacing().slider_width.min(width);
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(native_width, NAME_INPUT_HEIGHT), Sense::hover());
+    let rail_height = ui.style().spacing.slider_rail_height;
+    let rail = egui::Rect::from_min_max(
+        Pos2::new(rect.left(), rect.center().y - rail_height / 2.0),
+        Pos2::new(rect.right(), rect.center().y + rail_height / 2.0),
+    );
+    ui.painter().rect_filled(
+        rail,
+        ui.visuals().widgets.inactive.corner_radius,
+        ui.visuals().widgets.inactive.bg_fill,
+    );
+}
+
+fn draw_inactive_battery_field(ui: &mut egui::Ui, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, NAME_INPUT_HEIGHT), Sense::hover());
+    ui.painter().rect_filled(
+        rect,
+        ui.visuals().widgets.inactive.corner_radius,
+        ui.visuals().widgets.inactive.bg_fill,
+    );
+    ui.painter().rect_stroke(
+        rect,
+        ui.visuals().widgets.inactive.corner_radius,
+        ui.visuals().widgets.inactive.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+}
+
+fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
+    ui.horizontal(|ui| {
+        if ui
+            .button("Clear")
+            .on_hover_text("Clear reverse output")
+            .clicked()
+        {
+            output_log.clear();
+        }
+    });
+    egui::Frame::NONE
+        .fill(ui.visuals().extreme_bg_color)
+        .show(ui, |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt("selected_controller_reverse_output")
+                .max_height(NAME_INPUT_HEIGHT * 5.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    if output_log.is_empty() {
+                        ui.weak("No reverse output received.");
+                    } else {
+                        for entry in output_log.iter() {
+                            ui.monospace(entry);
+                        }
+                    }
+                });
+        });
+}
+
+fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
+    let surface_response = ui.add_sized(
+        [INPUT_HEADER_BUTTON_WIDTH, NAME_INPUT_HEIGHT],
+        Button::new("Target surface"),
+    );
+    if surface_response.hovered() {
+        egui::Tooltip::for_widget(&surface_response)
+            .at_pointer()
+            .show(|ui| {
+                let surface = surface.common_surface();
+                ui.strong("Selected target surface");
+                ui.label(format!("Target: {}", surface.target));
+                ui.label(format!("Evidence: {:?}", surface.validation_status));
+                ui.label(format!(
+                    "{} axes, {} digital controls, {} output channels",
+                    surface.axes.len(),
+                    surface.digital_controls.len(),
+                    surface.outputs.len()
+                ));
+                for axis in surface.axes {
+                    ui.monospace(format!(
+                        "{}: code {} {}..={} (neutral {})",
+                        axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
+                    ));
+                }
+                for restriction in surface.restrictions {
+                    ui.small(format!(
+                        "Unavailable: {} — {}",
+                        restriction.feature, restriction.reason
+                    ));
+                }
+            });
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn draw_xbox(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut Xbox360Editor,
+    input_ui: &mut InputUiState,
+) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
+                &mut events,
+            );
+        }
+    });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("left-shoulder"),
+            InputValue::Button(
+                controller
+                    .state()
+                    .native_pressed(Xbox360Control::LeftShoulder),
+            ),
+        ),
+        (
+            virtualgamepad::InputControlId::new("left-trigger"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("right-shoulder"),
+            InputValue::Button(
+                controller
+                    .state()
+                    .native_pressed(Xbox360Control::RightShoulder),
+            ),
+        ),
+        (
+            virtualgamepad::InputControlId::new("right-trigger"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "back" => Xbox360Control::Back,
+                    "start" => Xbox360Control::Start,
+                    "guide" => Xbox360Control::Guide,
+                    "left-stick-press" => Xbox360Control::LeftStickPress,
+                    "right-stick-press" => Xbox360Control::RightStickPress,
+                    "left-shoulder" => Xbox360Control::LeftShoulder,
+                    "right-shoulder" => Xbox360Control::RightShoulder,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis1 { id, value } => {
+                let value = u8::try_from(value).expect("Xbox trigger topology uses u8 range");
+                match id.as_str() {
+                    "left-trigger" => triggers.0 = value,
+                    "right-trigger" => triggers.1 = value,
+                    _ => continue,
+                }
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x =
+                    Xbox360Axis::new(i16::try_from(x).expect("Xbox stick topology uses i16 range"));
+                let y =
+                    Xbox360Axis::new(i16::try_from(y).expect("Xbox stick topology uses i16 range"));
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            Xbox360Trigger::new(triggers.0),
+            Xbox360Trigger::new(triggers.1),
+        );
+    }
+}
+#[allow(clippy::too_many_lines)]
 fn draw_dualsense(
     ui: &mut egui::Ui,
+    controller_id: u64,
     controller: &mut DualSenseEditor,
-    second_touch: &mut LatchedTouch,
+    input_ui: &mut InputUiState,
 ) {
-    surface(ui, controller.surface());
-    digital_controls(ui, Kind::DualSense, |update| {
-        let _ = controller.set_digital(update);
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
+                &mut events,
+            );
+        }
     });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("Create", DualSenseControl::Create),
-                ("Options", DualSenseControl::Options),
-                ("PlayStation", DualSenseControl::PlayStation),
-                ("Touchpad click", DualSenseControl::TouchpadClick),
-                ("Microphone mute", DualSenseControl::MicrophoneMute),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
-                });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l1"),
+            InputValue::Button(controller.state().native_pressed(DualSenseControl::L1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("l2"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r1"),
+            InputValue::Button(controller.state().native_pressed(DualSenseControl::R1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r2"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
+        for touchpad in topology.touchpads {
+            let current = [
+                controller
+                    .state()
+                    .touch(TouchSlot::First)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+                controller
+                    .state()
+                    .touch(TouchSlot::Second)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+            ];
+            draw_touchpad_cluster(ui, controller_id, touchpad, &current, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                input_ui,
+                &mut events,
+            );
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
             }
-        });
-    });
-    let (left_x, left_y) = controller.state().left_stick();
-    let mut x = dualsense_axis_to_pad(left_x.raw());
-    let mut y = dualsense_axis_to_pad(left_y.raw());
-    let (right_x, right_y) = controller.state().right_stick();
-    let mut right_x = dualsense_axis_to_pad(right_x.raw());
-    let mut right_y = dualsense_axis_to_pad(right_y.raw());
-    ui.group(|ui| {
-        ui.label("Sticks");
-        ui.horizontal_wrapped(|ui| {
-            ui.vertical(|ui| {
-                if axis_pad(ui, "DualSense left stick", &mut x, &mut y) {
-                    let _ = controller.set_left_stick(
-                        DualSenseAxis::new(dualsense_axis_from_pad(x)),
-                        DualSenseAxis::new(dualsense_axis_from_pad(y)),
-                    );
-                }
-                hold(ui, "Left stick press", |pressed| {
-                    let _ = controller.set_native(DualSenseControl::LeftStickPress, pressed);
-                });
-            });
-            ui.vertical(|ui| {
-                if axis_pad(ui, "DualSense right stick", &mut right_x, &mut right_y) {
-                    let _ = controller.set_right_stick(
-                        DualSenseAxis::new(dualsense_axis_from_pad(right_x)),
-                        DualSenseAxis::new(dualsense_axis_from_pad(right_y)),
-                    );
-                }
-                hold(ui, "Right stick press", |pressed| {
-                    let _ = controller.set_native(DualSenseControl::RightStickPress, pressed);
-                });
-            });
-        });
-    });
-    let (left, right) = controller.state().triggers();
-    let mut left = left.raw();
-    let mut right = right.raw();
-    if momentary_trigger(ui, "DualSense left trigger", &mut left)
-        | momentary_trigger(ui, "DualSense right trigger", &mut right)
-    {
-        let _ = controller.set_triggers(DualSenseTrigger::new(left), DualSenseTrigger::new(right));
-    }
-    ui.horizontal_wrapped(|ui| {
-        hold(ui, "L1", |pressed| {
-            let _ = controller.set_native(DualSenseControl::L1, pressed);
-        });
-        hold(ui, "R1", |pressed| {
-            let _ = controller.set_native(DualSenseControl::R1, pressed);
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Touchpad");
-        draw_touchpad(ui, controller);
-        draw_latched_touch_slot(ui, controller, TouchSlot::Second, 1, second_touch);
-    });
-    let target = controller.surface().common().target;
-    if dualsense_motion_target(target) {
-        ui.group(|ui| {
-            ui.label(dualsense_motion_target_label(target));
-            let diagnostics = controller.diagnostics();
-            ui.small(format!(
-                "HID reports sent: {}; host requests handled: {}",
-                diagnostics.frames_sent(),
-                diagnostics.reverse_events_drained()
-            ));
-            let motion = controller.state().motion();
-            let mut gyro = motion.gyroscope;
-            let mut accelerometer = motion.accelerometer;
-            let mut changed = false;
-            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                changed |= latched_motion_axis(ui, label, value);
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
             }
-            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-                .into_iter()
-                .zip(&mut accelerometer)
-            {
-                changed |= latched_motion_axis(ui, label, value);
-            }
-            if ui.button("Reset gyro to neutral").clicked() {
-                gyro = [0; 3];
-                changed = true;
-            }
-            if changed {
-                let motion = MotionSample {
-                    gyroscope: gyro,
-                    accelerometer,
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "create" => DualSenseControl::Create,
+                    "options" => DualSenseControl::Options,
+                    "playstation" => DualSenseControl::PlayStation,
+                    "microphone-mute" => DualSenseControl::MicrophoneMute,
+                    "touchpad-click" => DualSenseControl::TouchpadClick,
+                    "left-stick-press" => DualSenseControl::LeftStickPress,
+                    "right-stick-press" => DualSenseControl::RightStickPress,
+                    "l1" => DualSenseControl::L1,
+                    "r1" => DualSenseControl::R1,
+                    _ => continue,
                 };
-                let _ = controller.set_motion(motion);
+                let _ = controller.set_native(control, pressed);
             }
-        });
-    }
-}
-
-fn draw_dualshock4(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
-    surface(ui, controller.surface());
-    digital_controls(ui, Kind::DualShock4, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Sticks and triggers");
-        let (left_x, left_y) = controller.state().left_stick();
-        let mut x = dualsense_axis_to_pad(left_x.raw());
-        let mut y = dualsense_axis_to_pad(left_y.raw());
-        if axis_pad(ui, "DualShock 4 left stick", &mut x, &mut y) {
-            let _ = controller.set_left_stick(
-                DualShock4Axis::new(dualsense_axis_from_pad(x)),
-                DualShock4Axis::new(dualsense_axis_from_pad(y)),
-            );
-        }
-        let (right_x, right_y) = controller.state().right_stick();
-        let mut right_x = dualsense_axis_to_pad(right_x.raw());
-        let mut right_y = dualsense_axis_to_pad(right_y.raw());
-        if axis_pad(ui, "DualShock 4 right stick", &mut right_x, &mut right_y) {
-            let _ = controller.set_right_stick(
-                DualShock4Axis::new(dualsense_axis_from_pad(right_x)),
-                DualShock4Axis::new(dualsense_axis_from_pad(right_y)),
-            );
-        }
-        let (left, right) = controller.state().triggers();
-        let mut left = left.raw();
-        let mut right = right.raw();
-        if momentary_trigger(ui, "L2", &mut left) | momentary_trigger(ui, "R2", &mut right) {
-            let _ = controller
-                .set_triggers(DualShock4Trigger::new(left), DualShock4Trigger::new(right));
-        }
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("L1", DualShock4Control::L1),
-                ("R1", DualShock4Control::R1),
-                ("Share", DualShock4Control::Share),
-                ("Options", DualShock4Control::Options),
-                ("PlayStation", DualShock4Control::PlayStation),
-                ("Touchpad click", DualShock4Control::TouchpadClick),
-                ("Left stick press", DualShock4Control::LeftStickPress),
-                ("Right stick press", DualShock4Control::RightStickPress),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
+            InputEvent::Axis1 { id, value } => {
+                let value = u8::try_from(value).expect("DualSense trigger topology uses u8 range");
+                match id.as_str() {
+                    "l2" => triggers.0 = value,
+                    "r2" => triggers.1 = value,
+                    _ => continue,
+                }
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = DualSenseAxis::new(
+                    u8::try_from(x).expect("DualSense stick topology uses u8 range"),
+                );
+                let y = DualSenseAxis::new(
+                    u8::try_from(y).expect("DualSense stick topology uses u8 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Touch { id, contact, point } if id.as_str() == "touchpad" => {
+                let slot = if contact == 0 {
+                    TouchSlot::First
+                } else {
+                    TouchSlot::Second
+                };
+                let point = point.map(|(x, y)| {
+                    DualSenseTouchContact::new(
+                        contact,
+                        u16::try_from(x).expect("touch topology uses u16 width"),
+                        u16::try_from(y).expect("touch topology uses u16 height"),
+                    )
+                    .expect("touch topology matches DualSense domain")
                 });
+                let _ = controller.set_touch(slot, point);
             }
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Touchpad");
-        draw_ds4_touchpad(ui, controller);
-        draw_ds4_touch_slot(
-            ui,
-            controller,
-            DualShock4TouchSlot::Second,
-            1,
-            "Second contact",
-        );
-    });
-    ui.group(|ui| {
-        ui.label("UHID motion report");
-        ui.small(
-            "Motion controls retain their value; zero remains neutral with no implied gravity.",
-        );
-        let motion = controller.state().motion();
-        let mut gyro = motion.gyroscope;
-        let mut accel = motion.accelerometer;
-        let mut changed = false;
-        for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-            .into_iter()
-            .zip(&mut accel)
-        {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        if changed {
-            let _ = controller.set_motion(DualShock4MotionSample {
-                accelerometer: accel,
-                gyroscope: gyro,
-            });
-        }
-    });
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_ds4_touchpad(ui: &mut egui::Ui, controller: &mut DualShock4Editor) {
-    ui.small("Click and drag to emulate the first DualShock 4 touch contact.");
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::GRAY),
-        egui::StrokeKind::Inside,
-    );
-    if response.is_pointer_button_down_on() {
-        if let Some(position) = response.interact_pointer_pos() {
-            let x = ((position.x - rect.left()) / rect.width() * 1919.0).clamp(0.0, 1919.0) as u16;
-            let y = ((position.y - rect.top()) / rect.height() * 941.0).clamp(0.0, 941.0) as u16;
-            if let Ok(contact) = DualShock4TouchContact::new(0, x, y) {
-                let _ = controller.set_touch(DualShock4TouchSlot::First, Some(contact));
-            }
-        }
-    } else if response.drag_stopped() || response.clicked() {
-        let _ = controller.set_touch(DualShock4TouchSlot::First, None);
-    }
-    for (slot, color) in [
-        (DualShock4TouchSlot::First, Color32::LIGHT_BLUE),
-        (DualShock4TouchSlot::Second, Color32::LIGHT_GREEN),
-    ] {
-        if let Some(contact) = controller.state().touch(slot) {
-            let x = rect.left() + f32::from(contact.x()) / 1919.0 * rect.width();
-            let y = rect.top() + f32::from(contact.y()) / 941.0 * rect.height();
-            ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
-        }
-    }
-}
-
-fn draw_ds4_touch_slot(
-    ui: &mut egui::Ui,
-    controller: &mut DualShock4Editor,
-    slot: DualShock4TouchSlot,
-    id: u8,
-    label: &str,
-) {
-    let contact = controller.state().touch(slot);
-    let mut x = i32::from(contact.map_or(0, DualShock4TouchContact::x));
-    let mut y = i32::from(contact.map_or(0, DualShock4TouchContact::y));
-    ui.group(|ui| {
-        ui.label(label);
-        ui.add(egui::Slider::new(&mut x, 0..=1919).text("X"));
-        ui.add(egui::Slider::new(&mut y, 0..=941).text("Y"));
-        if ui.button("Set touch").clicked() {
-            if let Ok(contact) = DualShock4TouchContact::new(
+            InputEvent::Motion {
                 id,
-                u16::try_from(x).expect("slider bounds fit u16"),
-                u16::try_from(y).expect("slider bounds fit u16"),
-            ) {
-                let _ = controller.set_touch(slot, Some(contact));
-            }
-        }
-        if ui.button("Clear touch").clicked() {
-            let _ = controller.set_touch(slot, None);
-        }
-    });
-}
-
-fn draw_switch_pro(ui: &mut egui::Ui, controller: &mut SwitchProEditor) {
-    surface(ui, controller.surface());
-    digital_controls(ui, Kind::SwitchPro, |update| {
-        let _ = controller.set_digital(update);
-    });
-    ui.group(|ui| {
-        ui.label("Sticks");
-        let (left_x, left_y) = controller.state().left_stick();
-        let mut x = left_x.raw();
-        let mut y = left_y.raw();
-        if axis_pad(ui, "Switch Pro left stick", &mut x, &mut y) {
-            let _ = controller.set_left_stick(SwitchProAxis::new(x), SwitchProAxis::new(y));
-        }
-        let (right_x, right_y) = controller.state().right_stick();
-        let mut right_x = right_x.raw();
-        let mut right_y = right_y.raw();
-        if axis_pad(ui, "Switch Pro right stick", &mut right_x, &mut right_y) {
-            let _ = controller
-                .set_right_stick(SwitchProAxis::new(right_x), SwitchProAxis::new(right_y));
-        }
-    });
-    ui.group(|ui| {
-        ui.label("Additional buttons and triggers");
-        ui.horizontal_wrapped(|ui| {
-            for (label, control) in [
-                ("L", SwitchProControl::L),
-                ("R", SwitchProControl::R),
-                ("ZL", SwitchProControl::Zl),
-                ("ZR", SwitchProControl::Zr),
-                ("Minus", SwitchProControl::Minus),
-                ("Plus", SwitchProControl::Plus),
-                ("Home", SwitchProControl::Home),
-                ("Capture", SwitchProControl::Capture),
-                ("Left stick press", SwitchProControl::LeftStickPress),
-                ("Right stick press", SwitchProControl::RightStickPress),
-            ] {
-                hold(ui, label, |pressed| {
-                    let _ = controller.set_native(control, pressed);
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(MotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
                 });
             }
-        });
-    });
-    ui.group(|ui| {
-        ui.label("Switch Pro motion report");
-        ui.small(if controller.stream_enabled() {
-            format!(
-                "Host selected report mode 0x30; streaming at 250 Hz (frame counter: {}).",
-                controller.motion_report_counter()
-            )
-        } else {
-            "Waiting for the host to select report mode 0x30.".to_owned()
-        });
-        let motion = controller.state().motion();
-        let mut gyro = motion.gyroscope;
-        let mut accel = motion.accelerometer;
-        let mut changed = false;
-        for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            changed |= latched_motion_axis(ui, label, value);
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
         }
-        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-            .into_iter()
-            .zip(&mut accel)
-        {
-            changed |= latched_motion_axis(ui, label, value);
-        }
-        if changed {
-            let _ = controller.set_motion(SwitchProMotionSample {
-                accelerometer: accel,
-                gyroscope: gyro,
-            });
-        }
-    });
-}
-
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn draw_touchpad(ui: &mut egui::Ui, controller: &mut DualSenseEditor) {
-    ui.small("Click and drag to emulate the first physical touch contact.");
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(220.0, 125.0), Sense::click_and_drag());
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0, Color32::GRAY),
-        egui::StrokeKind::Inside,
-    );
-    if response.is_pointer_button_down_on() {
-        if let Some(position) = response.interact_pointer_pos() {
-            let x = ((position.x - rect.left()) / rect.width() * 1919.0).clamp(0.0, 1919.0) as u16;
-            let y = ((position.y - rect.top()) / rect.height() * 941.0).clamp(0.0, 941.0) as u16;
-            if let Ok(contact) = DualSenseTouchContact::new(0, x, y) {
-                let _ = controller.set_touch(TouchSlot::First, Some(contact));
-            }
-        }
-    } else if response.drag_stopped() || response.clicked() {
-        let _ = controller.set_touch(TouchSlot::First, None);
     }
-    for (slot, color) in [
-        (TouchSlot::First, Color32::LIGHT_BLUE),
-        (TouchSlot::Second, Color32::LIGHT_GREEN),
-    ] {
-        if let Some(contact) = controller.state().touch(slot) {
-            let x = rect.left() + f32::from(contact.x()) / 1919.0 * rect.width();
-            let y = rect.top() + f32::from(contact.y()) / 941.0 * rect.height();
-            ui.painter().circle_filled(Pos2::new(x, y), 5.0, color);
-        }
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            DualSenseTrigger::new(triggers.0),
+            DualSenseTrigger::new(triggers.1),
+        );
     }
 }
 
-fn draw_latched_touch_slot(
+#[allow(clippy::too_many_lines)]
+fn draw_dualshock4(
     ui: &mut egui::Ui,
-    controller: &mut DualSenseEditor,
-    slot: TouchSlot,
-    id: u8,
-    touch: &mut LatchedTouch,
+    controller_id: u64,
+    controller: &mut DualShock4Editor,
+    input_ui: &mut InputUiState,
 ) {
-    ui.group(|ui| {
-        ui.label("Second contact");
-        let mut changed = ui.checkbox(&mut touch.active, "Active").changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut touch.x, 0..=1919).text("X"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut touch.y, 0..=941).text("Y"))
-            .changed();
-        if changed {
-            let _ = controller.set_touch(slot, touch.contact(id));
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
+                &mut events,
+            );
         }
     });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
+        }
+    });
+    let (left_trigger, right_trigger) = controller.state().triggers();
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l1"),
+            InputValue::Button(controller.state().native_pressed(DualShock4Control::L1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("l2"),
+            InputValue::Axis(i32::from(left_trigger.raw())),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r1"),
+            InputValue::Button(controller.state().native_pressed(DualShock4Control::R1)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r2"),
+            InputValue::Axis(i32::from(right_trigger.raw())),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
+        for touchpad in topology.touchpads {
+            let current = [
+                controller
+                    .state()
+                    .touch(DualShock4TouchSlot::First)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+                controller
+                    .state()
+                    .touch(DualShock4TouchSlot::Second)
+                    .map(|contact| (u32::from(contact.x()), u32::from(contact.y()))),
+            ];
+            draw_touchpad_cluster(ui, controller_id, touchpad, &current, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                input_ui,
+                &mut events,
+            );
+        }
+    });
+
+    let mut triggers = (left_trigger.raw(), right_trigger.raw());
+    let mut triggers_changed = false;
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "share" => DualShock4Control::Share,
+                    "options" => DualShock4Control::Options,
+                    "playstation" => DualShock4Control::PlayStation,
+                    "touchpad-click" => DualShock4Control::TouchpadClick,
+                    "left-stick-press" => DualShock4Control::LeftStickPress,
+                    "right-stick-press" => DualShock4Control::RightStickPress,
+                    "l1" => DualShock4Control::L1,
+                    "r1" => DualShock4Control::R1,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis1 { id, value } => {
+                let value =
+                    u8::try_from(value).expect("DualShock 4 trigger topology uses u8 range");
+                match id.as_str() {
+                    "l2" => triggers.0 = value,
+                    "r2" => triggers.1 = value,
+                    _ => continue,
+                }
+                triggers_changed = true;
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = DualShock4Axis::new(
+                    u8::try_from(x).expect("DualShock 4 stick topology uses u8 range"),
+                );
+                let y = DualShock4Axis::new(
+                    u8::try_from(y).expect("DualShock 4 stick topology uses u8 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Touch { id, contact, point } if id.as_str() == "touchpad" => {
+                let slot = if contact == 0 {
+                    DualShock4TouchSlot::First
+                } else {
+                    DualShock4TouchSlot::Second
+                };
+                let point = point.map(|(x, y)| {
+                    DualShock4TouchContact::new(
+                        contact,
+                        u16::try_from(x).expect("touch topology uses u16 width"),
+                        u16::try_from(y).expect("touch topology uses u16 height"),
+                    )
+                    .expect("touch topology matches DualShock 4 domain")
+                });
+                let _ = controller.set_touch(slot, point);
+            }
+            InputEvent::Motion {
+                id,
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(DualShock4MotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                });
+            }
+            InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
+    if triggers_changed {
+        let _ = controller.set_triggers(
+            DualShock4Trigger::new(triggers.0),
+            DualShock4Trigger::new(triggers.1),
+        );
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn draw_switch_pro(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    controller: &mut SwitchProEditor,
+    input_ui: &mut InputUiState,
+) {
+    let topology = controller.surface().common().input_topology;
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+
+    horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+        for stick in topology.sticks {
+            let value = match stick.id.as_str() {
+                "left-stick" => controller.state().left_stick(),
+                "right-stick" => controller.state().right_stick(),
+                _ => continue,
+            };
+            draw_stick(
+                ui,
+                stick,
+                (i32::from(value.0.raw()), i32::from(value.1.raw())),
+                input_ui,
+                &mut events,
+            );
+        }
+    });
+    horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+        for dpad in topology.dpads {
+            draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
+        }
+    });
+    let trigger_values = [
+        (
+            virtualgamepad::InputControlId::new("l"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::L)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("zl"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::Zl)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("r"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::R)),
+        ),
+        (
+            virtualgamepad::InputControlId::new("zr"),
+            InputValue::Button(controller.state().native_pressed(SwitchProControl::Zr)),
+        ),
+    ];
+    horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+        for stack in topology.trigger_stacks {
+            draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
+        }
+    });
+    horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+        for motion in topology.motion {
+            let current = controller.state().motion();
+            draw_motion(
+                ui,
+                motion,
+                current.gyroscope.map(i32::from),
+                current.accelerometer.map(i32::from),
+                input_ui,
+                &mut events,
+            );
+        }
+    });
+
+    for event in events {
+        match event {
+            InputEvent::Face { button, pressed } => {
+                let _ =
+                    controller.set_digital(DigitalControlUpdate::FaceButton { button, pressed });
+            }
+            InputEvent::Dpad { direction, pressed } => {
+                let _ = controller.set_digital(DigitalControlUpdate::Dpad { direction, pressed });
+            }
+            InputEvent::Button { id, pressed } => {
+                let control = match id.as_str() {
+                    "minus" => SwitchProControl::Minus,
+                    "plus" => SwitchProControl::Plus,
+                    "home" => SwitchProControl::Home,
+                    "capture" => SwitchProControl::Capture,
+                    "left-stick-press" => SwitchProControl::LeftStickPress,
+                    "right-stick-press" => SwitchProControl::RightStickPress,
+                    "l" => SwitchProControl::L,
+                    "zl" => SwitchProControl::Zl,
+                    "r" => SwitchProControl::R,
+                    "zr" => SwitchProControl::Zr,
+                    _ => continue,
+                };
+                let _ = controller.set_native(control, pressed);
+            }
+            InputEvent::Axis2 { id, x, y } => {
+                let x = SwitchProAxis::new(
+                    i16::try_from(x).expect("Switch Pro stick topology uses i16 range"),
+                );
+                let y = SwitchProAxis::new(
+                    i16::try_from(y).expect("Switch Pro stick topology uses i16 range"),
+                );
+                match id.as_str() {
+                    "left-stick" => {
+                        let _ = controller.set_left_stick(x, y);
+                    }
+                    "right-stick" => {
+                        let _ = controller.set_right_stick(x, y);
+                    }
+                    _ => {}
+                }
+            }
+            InputEvent::Motion {
+                id,
+                gyroscope,
+                accelerometer,
+            } if id.as_str() == "motion" => {
+                let _ = controller.set_motion(SwitchProMotionSample {
+                    gyroscope: gyroscope
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                    accelerometer: accelerometer
+                        .map(|value| i16::try_from(value).expect("motion topology uses i16 range")),
+                });
+            }
+            InputEvent::Axis1 { .. } | InputEvent::Touch { .. } | InputEvent::Motion { .. } => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1902,85 +3118,41 @@ mod tests {
     }
 
     #[test]
-    fn sony_pad_conversion_covers_full_domain_and_round_trips_every_axis_value() {
-        assert_eq!(dualsense_axis_to_pad(0), i16::MIN);
-        assert_eq!(dualsense_axis_to_pad(128), 0);
-        assert_eq!(dualsense_axis_to_pad(255), i16::MAX);
-        for value in 0..=255 {
-            assert_eq!(dualsense_axis_from_pad(dualsense_axis_to_pad(value)), value);
-        }
-        let mut previous = 0;
-        for value in i16::MIN..=i16::MAX {
-            let mapped = dualsense_axis_from_pad(value);
-            assert!(mapped >= previous);
-            previous = mapped;
-        }
-        for (fraction, expected) in [
-            (-2.0, i16::MIN),
-            (-1.0, i16::MIN),
-            (0.0, 0),
-            (1.0, i16::MAX),
-            (2.0, i16::MAX),
-        ] {
-            assert_eq!(pad_axis_from_fraction(fraction), expected);
-        }
-    }
-
-    #[test]
-    fn printed_face_labels_preserve_spatial_nintendo_and_sony_layouts() {
+    fn controller_ids_use_the_requested_target_and_type_abbreviations() {
         assert_eq!(
-            face_labels(Kind::SwitchPro),
-            ["B (South)", "A (East)", "Y (West)", "X (North)"]
+            controller_id(0, RealizationId::LINUX_UINPUT, Kind::Xbox360),
+            "000-UIN-XB360"
         );
-        assert_eq!(face_labels(Kind::DualShock4), face_labels(Kind::DualSense));
-        assert_eq!(face_labels(Kind::Xbox360)[0], "A (South)");
+        assert_eq!(
+            controller_id(7, RealizationId::LINUX_UHID_USB, Kind::DualSense),
+            "007-HID-DUALSENSE"
+        );
+        assert_eq!(
+            controller_id(
+                1_234,
+                RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                Kind::SwitchPro
+            ),
+            "234-USB-SWITCHPRO"
+        );
     }
 
     #[test]
-    fn lab_session_ids_can_repeat_and_advance_without_overflow() {
-        for id in [0, 7, 65543, u64::MAX] {
-            assert_eq!(following_session(id, false), id);
-        }
-        assert_eq!(following_session(7, true), 8);
-        assert_eq!(following_session(u64::MAX, true), 0);
+    fn target_help_is_available_only_for_the_experimental_gadget_target() {
+        assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
+        assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
+        let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
+            .expect("dummy_hcd has experimental-target help");
+        assert_eq!(help.title, "Experimental USB gadget");
     }
 
     #[test]
-    fn lab_metrics_and_record_preserve_measurement_scope() {
-        let start = Instant::now();
-        let mut metrics = ServiceMetrics::default();
-        for delta in [0, 4, 15, 19] {
-            metrics.record(start + Duration::from_millis(delta));
-        }
-        metrics.omit(4);
-        metrics.omit(8);
-        assert_eq!(metrics.cycles, 4);
-        assert_eq!(metrics.max_gap, Duration::from_millis(11));
-        assert_eq!(metrics.omitted_logs, 12);
-        let record = lab_record(
-            "Synthetic lab controller",
-            LabOptions {
-                session: 65543,
-                target: RealizationId::LINUX_UHID_USB,
-            },
-            &metrics,
-            "Reference disconnected; synthetic test",
-            &ConsumerNotes {
-                build: "synthetic build".into(),
-                backend: "fake backend".into(),
-                mapping: "fake mapping".into(),
-            },
-            "Closed; cleanup failed: synthetic",
-        );
-        assert!(record.starts_with("Virtualgamepad manual lab record v3"));
-        assert!(record.contains("Consumer build: synthetic build"));
-        assert!(record.contains("Consumer backend: fake backend"));
-        assert!(record.contains("Consumer mapping: fake mapping"));
-        assert!(record.contains("cleanup failed: synthetic"));
-        assert!(record.contains("Lab correlation: 65543"));
-        assert!(record.contains("Maximum observed service gap (us): 11000"));
-        assert!(record.contains("acceptance: not established"));
-        assert!(record.ends_with("Reference disconnected; synthetic test"));
+    fn state_dump_reports_program_state_without_a_live_controller() {
+        let dump = App::default().state_dump();
+        assert!(dump.starts_with("virtualgamepad demo state dump"));
+        assert!(dump.contains("Backend health: healthy"));
+        assert!(dump.contains("Controller count: 0"));
+        assert!(dump.contains("GUI diagnostic log:"));
     }
 
     #[derive(Default)]
@@ -2286,11 +3458,11 @@ mod tests {
             }
             assert_eq!(
                 service_repaint_interval(count, Some(Duration::from_secs(1))),
-                Duration::from_millis(4)
+                Duration::from_millis(16)
             );
             assert_eq!(
                 service_repaint_interval(count, None),
-                Duration::from_millis(4)
+                Duration::from_millis(16)
             );
         }
         assert_eq!(service_repaint_interval(0, None), Duration::from_millis(50));
@@ -2304,37 +3476,51 @@ mod tests {
     #[test]
     fn live_controllers_poll_reverse_output_at_the_usb_cadence() {
         assert_eq!(repaint_interval(0), Duration::from_millis(50));
-        assert_eq!(repaint_interval(1), Duration::from_millis(4));
-        assert_eq!(repaint_interval(8), Duration::from_millis(4));
+        assert_eq!(repaint_interval(1), Duration::from_millis(16));
+        assert_eq!(repaint_interval(8), Duration::from_millis(16));
     }
 
     #[test]
-    fn quick_button_click_is_held_for_one_report_before_release() {
-        assert_eq!(next_hold_state(false, false, true), Some(true));
-        assert_eq!(next_hold_state(true, false, false), Some(false));
-        assert_eq!(next_hold_state(false, false, false), None);
-        assert_eq!(next_hold_state(true, true, false), None);
+    fn sidebar_budget_reserves_space_for_list_and_footer_without_overlap() {
+        let layout = sidebar_layout_budget(500.0, 50.0, 74.0, 3.0);
+        assert!((layout.diagnostic_log - 74.0).abs() < 0.001);
+        assert!((layout.footer - 124.0).abs() < 0.001);
+        assert!((layout.controller_list - 362.0).abs() < 0.001);
+        assert!(
+            (layout.controller_list + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN + layout.footer + 6.0
+                - 500.0)
+                .abs()
+                < 0.001
+        );
+
+        let constrained = sidebar_layout_budget(90.0, 50.0, 74.0, 3.0);
+        assert!((constrained.diagnostic_log - 74.0).abs() < 0.001);
+        assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
     }
 
     #[test]
-    fn second_touch_latches_its_coordinates_while_inactive() {
-        let mut touch = LatchedTouch {
-            active: true,
-            x: 123,
-            y: 456,
-        };
-        assert_eq!(
-            touch.contact(1),
-            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
-        );
-        touch.active = false;
-        assert_eq!(touch.contact(1), None);
-        assert_eq!((touch.x, touch.y), (123, 456));
-        touch.active = true;
-        assert_eq!(
-            touch.contact(1),
-            Some(DualSenseTouchContact::new(1, 123, 456).expect("bounded contact"))
-        );
+    fn diagnostic_log_has_room_for_five_lines() {
+        assert!((diagnostic_log_height(14.0) - 74.0).abs() < 0.001);
+        assert!((diagnostic_log_scroll_height(74.0) - 70.0).abs() < 0.001);
+        assert!(diagnostic_log_scroll_height(2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn diagnostic_log_bottom_aligns_without_expanding_short_content() {
+        assert!((diagnostic_log_top_padding(70.0, 14.0, 4, 3.0) - 5.0).abs() < 0.001);
+        assert!(diagnostic_log_top_padding(70.0, 14.0, 5, 3.0).abs() < 0.001);
+        assert!(diagnostic_log_top_padding(70.0, 14.0, 9, 3.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn advanced_options_are_available_for_every_target() {
+        for target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            assert!(advanced_options_available(target));
+        }
     }
 
     #[test]
@@ -2375,11 +3561,173 @@ mod tests {
     }
 
     #[test]
+    fn reverse_output_logs_identify_the_controller_context() {
+        let mut logs = vec!["ForceFeedback".to_owned(), "HidOutput".to_owned()];
+        label_output_logs("DualSense 1 · 007-HID-DUALSENSE", &mut logs);
+        assert_eq!(
+            logs,
+            vec![
+                "DualSense 1 · 007-HID-DUALSENSE: ForceFeedback",
+                "DualSense 1 · 007-HID-DUALSENSE: HidOutput"
+            ]
+        );
+    }
+
+    #[test]
+    fn battery_controls_require_an_exposed_supported_battery() {
+        assert!(!battery_controls_are_visible(false, false));
+        assert!(!battery_controls_are_visible(false, true));
+        assert!(!battery_controls_are_visible(true, false));
+        assert!(battery_controls_are_visible(true, true));
+    }
+
+    #[test]
+    fn sized_battery_slider_uses_native_left_aligned_rail() {
+        let ctx = egui::Context::default();
+        let mut value = 50_u8;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let slot_left = ui.cursor().left();
+                let response = ui.add_sized(
+                    [120.0, NAME_INPUT_HEIGHT],
+                    egui::Slider::new(&mut value, 0..=100).show_value(false),
+                );
+                assert!((response.rect.left() - slot_left).abs() < f32::EPSILON);
+                assert!((response.rect.width() - ui.spacing().slider_width).abs() < f32::EPSILON);
+            });
+        });
+    }
+
+    #[test]
+    fn battery_card_reserves_a_stable_content_footprint() {
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let card = card(ui, "Battery", |ui| {
+                    ui.set_min_width(BATTERY_CARD_CONTENT_WIDTH);
+                    ui.set_min_height(NAME_INPUT_HEIGHT);
+                });
+                assert!(card.response.rect.width() >= BATTERY_CARD_CONTENT_WIDTH);
+                assert!(card.response.rect.height() >= NAME_INPUT_HEIGHT);
+            });
+        });
+    }
+
+    #[test]
+    fn service_gap_tail_percentiles_cover_the_requested_observation_window() {
+        let start = Instant::now();
+        let mut metrics = ServiceMetrics::default();
+        metrics.record(start);
+        let mut elapsed = 0;
+        for milliseconds in 1..=10 {
+            elapsed += milliseconds;
+            metrics.record(start + Duration::from_millis(elapsed));
+        }
+        assert_eq!(
+            service_gap_percentiles(&metrics, 0),
+            Some([
+                Duration::from_millis(9),
+                Duration::from_millis(10),
+                Duration::from_millis(10)
+            ])
+        );
+        assert_eq!(
+            service_gap_percentiles(&metrics, 1),
+            Some([
+                Duration::from_millis(9),
+                Duration::from_millis(10),
+                Duration::from_millis(10)
+            ])
+        );
+        assert_eq!(format_gap(Duration::from_micros(1_250)), "1.25 ms");
+    }
+
+    #[test]
     fn removing_any_tab_selects_the_nearest_remaining_controller() {
-        assert_eq!(selection_after_removal(0, 0), None);
-        assert_eq!(selection_after_removal(2, 0), Some(0));
-        assert_eq!(selection_after_removal(2, 1), Some(1));
-        assert_eq!(selection_after_removal(2, 2), Some(1));
+        assert_eq!(selection_after_removal(0, 0, Some(0)), None);
+        assert_eq!(selection_after_removal(2, 0, Some(0)), Some(0));
+        assert_eq!(selection_after_removal(2, 1, Some(1)), Some(1));
+        assert_eq!(selection_after_removal(2, 2, Some(2)), Some(1));
+    }
+
+    #[test]
+    fn removing_another_tab_preserves_the_selected_controller() {
+        assert_eq!(selection_after_removal(2, 0, Some(2)), Some(1));
+        assert_eq!(selection_after_removal(2, 2, Some(0)), Some(0));
+        assert_eq!(selection_after_removal(2, 1, None), None);
+    }
+
+    #[test]
+    fn automatic_controller_names_reuse_only_unused_suffixes() {
+        assert_eq!(
+            next_available_name(
+                Kind::DualSense,
+                ["DualSense 0".to_owned(), "DualSense 2".to_owned()].into_iter(),
+            ),
+            "DualSense 1"
+        );
+        assert_eq!(
+            next_available_name(Kind::Xbox360, ["DualSense 0".to_owned()].into_iter(),),
+            "Xbox 360 0"
+        );
+    }
+
+    #[test]
+    fn controller_name_sanitization_trims_and_rejects_invalid_drafts() {
+        assert_eq!(
+            sanitized_controller_name("  Player one  "),
+            Ok("Player one".into())
+        );
+        assert_eq!(
+            sanitized_controller_name("\t\n"),
+            Err("Name cannot be empty")
+        );
+        assert_eq!(
+            sanitized_controller_name("name\nnext"),
+            Err("Name cannot contain control characters")
+        );
+        assert_eq!(
+            sanitized_controller_name(&"x".repeat(CONTROLLER_NAME_MAX_CHARS + 1)),
+            Err("Name must be 64 characters or fewer")
+        );
+    }
+
+    #[test]
+    fn default_creation_count_is_bounded_to_automatic_names() {
+        assert_eq!(requested_create_count("", 0), 1);
+        assert_eq!(requested_create_count("  ", 4), 4);
+        assert_eq!(requested_create_count("Named pad", 9), 1);
+    }
+
+    #[test]
+    fn create_count_spinbox_steps_without_crossing_its_minimum() {
+        assert_eq!(step_create_count(1, false), 1);
+        assert_eq!(step_create_count(4, false), 3);
+        assert_eq!(step_create_count(9_999, true), 10_000);
+    }
+
+    #[test]
+    fn controller_rows_match_the_name_input_height() {
+        assert!((CONTROLLER_ROW_HEIGHT - NAME_INPUT_HEIGHT).abs() < f32::EPSILON);
+        assert!((CONTROLLER_DELETE_WIDTH - NAME_INPUT_HEIGHT).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn spinbox_arrows_stay_inside_the_number_field() {
+        let field = egui::Rect::from_min_size(Pos2::new(20.0, 30.0), Vec2::new(58.0, 22.0));
+        let (increment, decrement) = spinbox_arrow_rects(field, 16.0);
+
+        assert!(field.contains_rect(increment));
+        assert!(field.contains_rect(decrement));
+        assert!((increment.bottom() - decrement.top()).abs() < f32::EPSILON);
+        assert!((increment.right() - field.right()).abs() < f32::EPSILON);
+        assert!((decrement.right() - field.right()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn controller_identifier_is_truncated_for_sidebar_rows() {
+        assert_eq!(truncate_identifier("abc", 4), "abc");
+        assert_eq!(truncate_identifier("abcdef", 4), "abcd…");
     }
 
     #[test]
@@ -2389,6 +3737,40 @@ mod tests {
             vec![0, 1, 2, 3]
         );
         assert_eq!(controller_tab_indices(12).count(), 12);
+    }
+
+    #[test]
+    fn controller_row_click_selects_the_clicked_controller() {
+        assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
+        assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn controller_delete_click_requests_immediate_removal() {
+        assert_eq!(controller_removal_after_delete_click(3, false), None);
+        assert_eq!(controller_removal_after_delete_click(3, true), Some(3));
+    }
+
+    #[test]
+    fn successful_controller_close_is_logged() {
+        assert_eq!(
+            successful_controller_close_message("Xbox 360 0"),
+            "Closed Xbox 360 0."
+        );
+    }
+
+    #[test]
+    fn stop_all_click_requests_immediate_cleanup() {
+        assert!(!stop_all_after_click(false));
+        assert!(stop_all_after_click(true));
+    }
+
+    #[test]
+    fn only_an_open_backend_reports_healthy() {
+        assert!(backend_status_is_healthy(ControllerStatus::Open));
+        assert!(!backend_status_is_healthy(ControllerStatus::NotOpen));
+        assert!(!backend_status_is_healthy(ControllerStatus::Closed));
+        assert!(!backend_status_is_healthy(ControllerStatus::Failed));
     }
 
     #[test]
@@ -2422,6 +3804,22 @@ mod tests {
         });
         assert!(!indicators.rumble_active);
         assert!(indicators.rumble_until.is_none());
+    }
+
+    #[test]
+    fn reverse_indicators_start_unknown_until_host_output_is_observed() {
+        let mut indicators = ReverseIndicators::default();
+        assert!(indicators.led.is_none());
+        assert!(indicators.mute_led.is_none());
+        assert!(!indicators.rumble_seen);
+
+        indicators.apply_hid_output(None, None, None, Some(false));
+        assert_eq!(indicators.mute_led, Some(false));
+        assert!(!indicators.rumble_seen);
+
+        indicators.apply_hid_output(Some(0), Some(0), None, None);
+        assert!(indicators.rumble_seen);
+        assert!(!indicators.rumble_active);
     }
 
     #[test]
