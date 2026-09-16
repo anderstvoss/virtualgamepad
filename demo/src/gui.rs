@@ -2203,10 +2203,10 @@ fn draw_controller_state(
                     .spacing([8.0, 4.0])
                     .show(ui, |ui| {
                         ui.label("Service cycles");
-                        ui.label(display.metrics.cycles.to_string());
+                        boxed_metric_output(ui, display.metrics.cycles.to_string());
                         ui.end_row();
                         ui.label("Omitted logs");
-                        ui.label(display.metrics.omitted_logs.to_string());
+                        boxed_metric_output(ui, display.metrics.omitted_logs.to_string());
                         ui.end_row();
                         ui.label("Max gap");
                         let gaps =
@@ -2227,9 +2227,9 @@ fn draw_controller_state(
                             ] {
                                 ui.label(label);
                                 if let Some(gap) = gap {
-                                    ui.monospace(format_gap(gap));
+                                    boxed_metric_output(ui, format_gap(gap));
                                 } else {
-                                    ui.weak("—");
+                                    boxed_metric_output(ui, "—");
                                 }
                             }
                         });
@@ -2238,6 +2238,14 @@ fn draw_controller_state(
             }
         }
     });
+}
+
+fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
+    egui::Frame::group(ui.style())
+        .inner_margin(egui::Margin::symmetric(4, 2))
+        .show(ui, |ui| {
+            ui.monospace(value.to_string());
+        });
 }
 
 fn format_gap(gap: Duration) -> String {
