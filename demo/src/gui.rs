@@ -2505,11 +2505,11 @@ fn draw_xbox(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, input_ui, &mut events);
-        }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
     let (left_trigger, right_trigger) = controller.state().triggers();
@@ -2631,11 +2631,11 @@ fn draw_dualsense(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, input_ui, &mut events);
-        }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
     let (left_trigger, right_trigger) = controller.state().triggers();
@@ -2810,11 +2810,11 @@ fn draw_dualshock4(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, input_ui, &mut events);
-        }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
     let (left_trigger, right_trigger) = controller.state().triggers();
@@ -2989,11 +2989,11 @@ fn draw_switch_pro(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for cluster in topology.face_button_clusters {
-            draw_face_cluster(ui, cluster, input_ui, &mut events);
-        }
         for dpad in topology.dpads {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
+        }
+        for cluster in topology.face_button_clusters {
+            draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
     let trigger_values = [

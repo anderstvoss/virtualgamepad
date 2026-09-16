@@ -178,8 +178,8 @@ pub(super) fn card(
     frame.show(ui, |ui| {
         ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-            ui.strong(title);
-            ui.add_space(2.0);
+            let title = ui.strong(title);
+            title_separator(ui, title.rect.width());
             add(ui);
         });
     })
@@ -208,8 +208,8 @@ fn labeled_hold_card(
     frame.show(ui, |ui| {
         ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-            let released = hold_header(ui, title, hold_label, category, state);
-            ui.add_space(2.0);
+            let (released, header_width) = hold_header(ui, title, hold_label, category, state);
+            title_separator(ui, header_width);
             add(ui, state, released);
         });
     });
@@ -221,17 +221,26 @@ fn hold_header(
     hold_label: &str,
     category: InputControlId,
     state: &mut InputUiState,
-) -> bool {
+) -> (bool, f32) {
     let mut hold = state.held(category);
     let mut released = false;
-    ui.horizontal(|ui| {
+    let response = ui.horizontal(|ui| {
         ui.strong(title);
         if ui.checkbox(&mut hold, hold_label).changed() {
             released = !hold;
             state.set_hold(category, hold);
         }
     });
-    released
+    (released, response.response.rect.width())
+}
+
+/// Draw a title divider without `Ui::separator` claiming the card's maximum width.
+fn title_separator(ui: &mut egui::Ui, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 3.0), Sense::hover());
+    ui.painter().line_segment(
+        [rect.left_center(), rect.right_center()],
+        Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+    );
 }
 
 fn release_latched_button(state: &mut InputUiState, key: HoldKey, mut release: impl FnMut()) {
@@ -252,7 +261,9 @@ pub(super) fn draw_auxiliary_buttons(
     let frame = egui::Frame::group(ui.style());
     frame.show(ui, |ui| {
         ui.vertical(|ui| {
-            let released = hold_header(ui, "Auxiliary buttons", "Hold", AUXILIARY_HOLD, state);
+            let (released, header_width) =
+                hold_header(ui, "Auxiliary buttons", "Hold", AUXILIARY_HOLD, state);
+            title_separator(ui, header_width);
             ui.horizontal_wrapped(|ui| {
                 for control in controls {
                     if released {
