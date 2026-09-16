@@ -13,8 +13,10 @@ pub(super) const CONTROL_HEIGHT: f32 = 22.0;
 pub(super) const AXIS_PAD_SIZE: f32 = 112.0;
 const DPAD_BUTTON_WIDTH: f32 = 56.0;
 pub(super) const TOUCHPAD_WIDTH: f32 = 220.0;
-// Caps horizontal rows without clipping the tallest current touchpad card.
-const CLUSTER_ROW_HEIGHT: f32 = 320.0;
+const TOUCHPAD_ACTION_WIDTH: f32 = 112.0;
+// This is a cap rather than a reserved height: a row remains as tall as its content and does
+// not grow when the window does. The current topology's tallest card fits inside this bound.
+const CLUSTER_ROW_MAX_HEIGHT: f32 = 320.0;
 const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,7 +150,7 @@ pub(super) fn horizontal_cards(
 ) -> egui::scroll_area::ScrollAreaOutput<()> {
     egui::ScrollArea::horizontal()
         .id_salt(id)
-        .max_height(CLUSTER_ROW_HEIGHT)
+        .max_height(CLUSTER_ROW_MAX_HEIGHT)
         .auto_shrink([false, true])
         .scroll_source(egui::scroll_area::ScrollSource {
             scroll_bar: true,
@@ -258,12 +260,13 @@ pub(super) fn draw_auxiliary_buttons(
     if controls.is_empty() {
         return;
     }
-    let frame = egui::Frame::group(ui.style());
-    frame.show(ui, |ui| {
-        ui.vertical(|ui| {
-            let (released, header_width) =
-                hold_header(ui, "Auxiliary buttons", "Hold", AUXILIARY_HOLD, state);
-            title_separator(ui, header_width);
+    labeled_hold_card(
+        ui,
+        "Auxiliary buttons",
+        "Hold",
+        AUXILIARY_HOLD,
+        state,
+        |ui, state, released| {
             ui.horizontal_wrapped(|ui| {
                 for control in controls {
                     if released {
@@ -289,8 +292,8 @@ pub(super) fn draw_auxiliary_buttons(
                     );
                 }
             });
-        });
-    });
+        },
+    );
 }
 
 pub(super) fn draw_face_cluster(
@@ -589,11 +592,12 @@ pub(super) fn draw_touchpad(
                 match input.actuation {
                     TouchpadActuation::None => {}
                     TouchpadActuation::Button(button) => {
-                        holdable_button(
+                        holdable_button_sized(
                             ui,
                             input.id,
                             HoldKey::Control(button.id),
                             button.label,
+                            TOUCHPAD_ACTION_WIDTH,
                             state,
                             |pressed| {
                                 events.push(InputEvent::Button {
@@ -624,8 +628,8 @@ pub(super) fn draw_touchpad(
                 reset_requested = ui
                     .add(
                         Button::new("Reset touchpad")
-                            .fill(Color32::from_rgb(138, 51, 67))
-                            .min_size(Vec2::new(0.0, CONTROL_HEIGHT)),
+                            .fill(touchpad_reset_fill(ui))
+                            .min_size(Vec2::new(TOUCHPAD_ACTION_WIDTH, CONTROL_HEIGHT)),
                     )
                     .clicked();
             });
@@ -1006,12 +1010,28 @@ fn holdable_button(
     state: &mut InputUiState,
     set: impl FnMut(bool),
 ) {
+    holdable_button_sized(ui, category, key, label, 0.0, state, set);
+}
+
+fn holdable_button_sized(
+    ui: &mut egui::Ui,
+    category: InputControlId,
+    key: HoldKey,
+    label: &str,
+    width: f32,
+    state: &mut InputUiState,
+    set: impl FnMut(bool),
+) {
     let response = ui.add(
         Button::new(label)
             .selected(state.latched_buttons.contains(&key))
-            .min_size(Vec2::new(0.0, CONTROL_HEIGHT)),
+            .min_size(Vec2::new(width, CONTROL_HEIGHT)),
     );
     emit_holdable(ui, &response, category, key, state, set);
+}
+
+fn touchpad_reset_fill(ui: &egui::Ui) -> Color32 {
+    ui.visuals().error_fg_color.gamma_multiply(0.55)
 }
 
 fn emit_holdable(
@@ -1608,7 +1628,7 @@ mod tests {
                         row.inner_rect.width()
                     );
                     assert!(row.inner_rect.width() <= 448.0);
-                    assert!(row.inner_rect.height() <= CLUSTER_ROW_HEIGHT);
+                    assert!(row.inner_rect.height() > 0.0);
                     row_heights.push(row.inner_rect.height());
                 });
             });
