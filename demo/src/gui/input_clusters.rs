@@ -179,7 +179,7 @@ pub(super) fn card(
         ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
             ui.strong(title);
-            ui.separator();
+            ui.add_space(2.0);
             add(ui);
         });
     })
@@ -209,7 +209,7 @@ fn labeled_hold_card(
         ui.set_max_width((CARD_MAX_WIDTH - margins.left - margins.right).max(0.0));
         ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
             let released = hold_header(ui, title, hold_label, category, state);
-            ui.separator();
+            ui.add_space(2.0);
             add(ui, state, released);
         });
     });
@@ -610,7 +610,13 @@ pub(super) fn draw_touchpad(
                         }
                     }
                 }
-                reset_requested = ui.button("Reset touchpad").clicked();
+                reset_requested = ui
+                    .add(
+                        Button::new("Reset touchpad")
+                            .fill(Color32::from_rgb(138, 51, 67))
+                            .min_size(Vec2::new(0.0, CONTROL_HEIGHT)),
+                    )
+                    .clicked();
             });
             if reset_requested {
                 state.set_hold(input.id, false);
@@ -733,9 +739,7 @@ pub(super) fn draw_touchpad(
                                 })
                                 .inner
                             });
-                            if response.inner
-                                || response.response.interact(Sense::click()).clicked()
-                            {
+                            if response.inner {
                                 next_selected = Some(index);
                             }
                         }
@@ -1479,7 +1483,7 @@ mod tests {
     }
 
     #[test]
-    fn cards_have_fixed_width_and_long_rows_stay_inside_the_viewport() {
+    fn cards_fit_content_and_long_rows_stay_inside_the_viewport() {
         let mut row_heights = Vec::new();
         for screen_height in [400.0, 1_000.0] {
             let ctx = egui::Context::default();
@@ -1493,10 +1497,15 @@ mod tests {
             let _ = ctx.run(input, |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     let card_response = card(ui, "Card", |_| {});
-                    assert!(card_response.response.rect.width() <= CARD_MAX_WIDTH);
+                    assert!(card_response.response.rect.width() < CARD_MAX_WIDTH);
                     let row = horizontal_cards(ui, "test-row", false, |ui| {
                         for _ in 0..6 {
-                            card(ui, "Card", |_| {});
+                            card(ui, "Card", |ui| {
+                                ui.add_sized(
+                                    Vec2::new(180.0, CONTROL_HEIGHT),
+                                    Button::new("Wide content"),
+                                );
+                            });
                         }
                     });
                     assert!(
