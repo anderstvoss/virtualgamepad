@@ -2313,7 +2313,7 @@ fn draw_inactive_battery_field(ui: &mut egui::Ui, width: f32) {
 }
 
 fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    ui.horizontal(|ui| {
         if ui
             .button("Clear")
             .on_hover_text("Clear reverse output")
