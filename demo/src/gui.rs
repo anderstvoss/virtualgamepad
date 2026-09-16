@@ -45,6 +45,7 @@ const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
 const GUI_REPAINT_INTERVAL: Duration = Duration::from_millis(16);
 const IDLE_REPAINT_INTERVAL: Duration = Duration::from_millis(50);
+const INPUT_HEADER_BUTTON_WIDTH: f32 = 112.0;
 const SIDEBAR_WIDTH: f32 = 200.0;
 const DIAGNOSTIC_LOG_LINE_COUNT: f32 = 5.0;
 const DIAGNOSTIC_LOG_TOP_MARGIN: i8 = 4;
@@ -2066,28 +2067,39 @@ impl eframe::App for App {
                                         });
                                         section_frame.show(ui, |ui| {
                                             ui.set_min_width(section_content_width);
+                                            let inputs_ready = named.edits.ready();
+                                            let mut release_all = false;
                                             ui.horizontal(|ui| {
                                                 ui.heading("Input");
                                                 draw_target_surface_tooltip(
                                                     ui,
                                                     named.view.surface(),
                                                 );
+                                                release_all = ui
+                                                    .add_enabled(
+                                                        inputs_ready,
+                                                        Button::new("Release all inputs")
+                                                            .fill(Color32::from_rgb(150, 45, 65))
+                                                            .min_size(Vec2::new(
+                                                                INPUT_HEADER_BUTTON_WIDTH,
+                                                                NAME_INPUT_HEIGHT,
+                                                            )),
+                                                    )
+                                                    .clicked();
                                             });
                                             ui.separator();
-                                            let inputs_ready = named.edits.ready();
+                                            if release_all {
+                                                named.input_ui.release_all();
+                                                if let Err(error) = named.view.release_inputs() {
+                                                    failed_controller = Some((index, error));
+                                                }
+                                            }
                                             draw_battery_emulation(
                                                 ui,
                                                 &mut named.view,
                                                 inputs_ready,
                                             );
                                             ui.add_enabled_ui(inputs_ready, |ui| {
-                                                if ui.button("Release all inputs").clicked() {
-                                                    named.input_ui.release_all();
-                                                    if let Err(error) = named.view.release_inputs()
-                                                    {
-                                                        failed_controller = Some((index, error));
-                                                    }
-                                                }
                                                 // Keep the input surface allocated on the action frame. Skipping it
                                                 // shrinks the parent scroll area and causes its offset to be clamped.
                                                 named.view.draw(
@@ -2444,7 +2456,10 @@ fn draw_reverse_output_log(ui: &mut egui::Ui, output_log: &mut Vec<String>) {
 }
 
 fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfaceInfo) {
-    let surface_response = ui.add_sized([112.0, NAME_INPUT_HEIGHT], Button::new("Target surface"));
+    let surface_response = ui.add_sized(
+        [INPUT_HEADER_BUTTON_WIDTH, NAME_INPUT_HEIGHT],
+        Button::new("Target surface"),
+    );
     if surface_response.hovered() {
         egui::Tooltip::for_widget(&surface_response)
             .at_pointer()
