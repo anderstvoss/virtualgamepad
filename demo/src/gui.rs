@@ -2094,19 +2094,12 @@ impl eframe::App for App {
                                                     failed_controller = Some((index, error));
                                                 }
                                             }
-                                            horizontal_cards(
+                                            draw_battery_emulation(
                                                 ui,
-                                                (named.options.id, "state-inputs"),
-                                                false,
-                                                |ui| {
-                                                    draw_battery_emulation(
-                                                        ui,
-                                                        &mut named.view,
-                                                        inputs_ready,
-                                                    );
-                                                    draw_dummy_audio_input(ui);
-                                                },
+                                                &mut named.view,
+                                                inputs_ready,
                                             );
+                                            draw_dummy_audio_input(ui);
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 // Keep the input surface allocated on the action frame. Skipping it
                                                 // shrinks the parent scroll area and causes its offset to be clamped.
