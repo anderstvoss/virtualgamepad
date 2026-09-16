@@ -5,7 +5,7 @@ use editor::{
 };
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{
-    InputEvent, InputUiState, InputValue, draw_auxiliary_buttons, draw_dpad_cluster,
+    InputEvent, InputUiState, InputValue, card, draw_auxiliary_buttons, draw_dpad_cluster,
     draw_face_cluster, draw_motion, draw_stick, draw_touchpad as draw_touchpad_cluster,
     draw_trigger_stack, horizontal_cards,
 };
@@ -2094,10 +2094,18 @@ impl eframe::App for App {
                                                     failed_controller = Some((index, error));
                                                 }
                                             }
-                                            draw_battery_emulation(
+                                            horizontal_cards(
                                                 ui,
-                                                &mut named.view,
-                                                inputs_ready,
+                                                (named.options.id, "state-inputs"),
+                                                false,
+                                                |ui| {
+                                                    draw_battery_emulation(
+                                                        ui,
+                                                        &mut named.view,
+                                                        inputs_ready,
+                                                    );
+                                                    draw_dummy_audio_input(ui);
+                                                },
                                             );
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 // Keep the input surface allocated on the action frame. Skipping it
@@ -2337,56 +2345,61 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     let supported = view.supports_battery_emulation();
     let battery = view.battery();
     let mut exposed = battery.is_exposed();
-    egui::Grid::new("battery_emulation")
-        .num_columns(2)
-        .spacing([8.0, 4.0])
-        .show(ui, |ui| {
-            ui.label("Battery");
-            ui.horizontal(|ui| {
-                let expose_response = ui.add_enabled(
-                    supported && editable,
-                    egui::Checkbox::new(&mut exposed, "Expose"),
-                );
-                if expose_response.changed() {
-                    let _ = view.set_battery_exposed(exposed);
+    card(ui, "Battery", |ui| {
+        ui.horizontal(|ui| {
+            let expose_response = ui.add_enabled(
+                supported && editable,
+                egui::Checkbox::new(&mut exposed, "Expose"),
+            );
+            if expose_response.changed() {
+                let _ = view.set_battery_exposed(exposed);
+            }
+            if battery_controls_are_visible(supported, exposed) {
+                let mut percentage = battery.level().percent();
+                let slider_changed = ui
+                    .add_enabled_ui(editable, |ui| {
+                        ui.add_sized(
+                            [120.0, NAME_INPUT_HEIGHT],
+                            egui::Slider::new(&mut percentage, 0..=100).show_value(false),
+                        )
+                    })
+                    .inner
+                    .changed();
+                let entry_changed = ui
+                    .add_enabled_ui(editable, |ui| {
+                        ui.add_sized(
+                            [56.0, NAME_INPUT_HEIGHT],
+                            egui::DragValue::new(&mut percentage)
+                                .range(0..=100)
+                                .suffix("%"),
+                        )
+                    })
+                    .inner
+                    .changed();
+                if (slider_changed || entry_changed)
+                    && let Ok(level) = BatteryLevel::new(percentage)
+                {
+                    let _ = view.set_battery_level(level);
                 }
-                if battery_controls_are_visible(supported, exposed) {
-                    let mut percentage = battery.level().percent();
-                    let slider_changed = ui
-                        .add_enabled_ui(editable, |ui| {
-                            ui.add_sized(
-                                [120.0, NAME_INPUT_HEIGHT],
-                                egui::Slider::new(&mut percentage, 0..=100).show_value(false),
-                            )
-                        })
-                        .inner
-                        .changed();
-                    let entry_changed = ui
-                        .add_enabled_ui(editable, |ui| {
-                            ui.add_sized(
-                                [56.0, NAME_INPUT_HEIGHT],
-                                egui::DragValue::new(&mut percentage)
-                                    .range(0..=100)
-                                    .suffix("%"),
-                            )
-                        })
-                        .inner
-                        .changed();
-                    if (slider_changed || entry_changed)
-                        && let Ok(level) = BatteryLevel::new(percentage)
-                    {
-                        let _ = view.set_battery_level(level);
-                    }
-                } else {
-                    draw_inactive_battery_slider(ui, 120.0);
-                    draw_inactive_battery_field(ui, 56.0);
-                    if !supported {
-                        ui.weak("unsupported");
-                    }
+            } else {
+                draw_inactive_battery_slider(ui, 120.0);
+                draw_inactive_battery_field(ui, 56.0);
+                if !supported {
+                    ui.weak("unsupported");
                 }
-            });
-            ui.end_row();
+            }
         });
+    });
+}
+
+fn draw_dummy_audio_input(ui: &mut egui::Ui) {
+    card(ui, "Audio input", |ui| {
+        ui.add_enabled(
+            false,
+            Button::new("No input configured").min_size(Vec2::new(144.0, NAME_INPUT_HEIGHT)),
+        );
+        ui.weak("Demo placeholder");
+    });
 }
 
 const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
