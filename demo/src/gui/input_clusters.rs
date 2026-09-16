@@ -11,7 +11,7 @@ pub(super) const CARD_PADDING: f32 = 8.0;
 pub(super) const CARD_SPACING: f32 = 8.0;
 pub(super) const CONTROL_HEIGHT: f32 = 22.0;
 pub(super) const AXIS_PAD_SIZE: f32 = 112.0;
-const SPATIAL_PAD_WIDTH: f32 = 168.0;
+const DPAD_BUTTON_WIDTH: f32 = 56.0;
 pub(super) const TOUCHPAD_WIDTH: f32 = 220.0;
 // Caps horizontal rows without clipping the tallest current touchpad card.
 const CLUSTER_ROW_HEIGHT: f32 = 320.0;
@@ -226,12 +226,10 @@ fn hold_header(
     let mut released = false;
     ui.horizontal(|ui| {
         ui.strong(title);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.checkbox(&mut hold, hold_label).changed() {
-                released = !hold;
-                state.set_hold(category, hold);
-            }
-        });
+        if ui.checkbox(&mut hold, hold_label).changed() {
+            released = !hold;
+            state.set_hold(category, hold);
+        }
     });
     released
 }
@@ -251,11 +249,8 @@ pub(super) fn draw_auxiliary_buttons(
     if controls.is_empty() {
         return;
     }
-    let available = ui.available_width();
     let frame = egui::Frame::group(ui.style());
-    let margin = frame.total_margin();
     frame.show(ui, |ui| {
-        ui.set_min_width((available - margin.left - margin.right).max(0.0));
         ui.vertical(|ui| {
             let released = hold_header(ui, "Auxiliary buttons", "Hold", AUXILIARY_HOLD, state);
             ui.horizontal_wrapped(|ui| {
@@ -323,11 +318,13 @@ pub(super) fn draw_face_cluster(
                 .max()
                 .map_or(1_i8, |row| row.saturating_add(1));
             let cell = Vec2::new(
-                SPATIAL_PAD_WIDTH / f32::from(columns),
+                f32::from(cluster.button_width),
                 AXIS_PAD_SIZE / f32::from(rows),
             );
-            let (rect, _) =
-                ui.allocate_exact_size(Vec2::new(SPATIAL_PAD_WIDTH, AXIS_PAD_SIZE), Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(
+                Vec2::new(cell.x * f32::from(columns), AXIS_PAD_SIZE),
+                Sense::hover(),
+            );
             for input in cluster.buttons {
                 let center = origin
                     + egui::vec2(
@@ -379,8 +376,11 @@ pub(super) fn draw_dpad_cluster(
                     }
                 }
                 let origin = ui.cursor().min;
-                let cell = Vec2::new(SPATIAL_PAD_WIDTH / 3.0, AXIS_PAD_SIZE / 3.0);
-                ui.allocate_exact_size(Vec2::new(SPATIAL_PAD_WIDTH, AXIS_PAD_SIZE), Sense::hover());
+                let cell = Vec2::new(DPAD_BUTTON_WIDTH, AXIS_PAD_SIZE / 3.0);
+                ui.allocate_exact_size(
+                    Vec2::new(DPAD_BUTTON_WIDTH * 3.0, AXIS_PAD_SIZE),
+                    Sense::hover(),
+                );
                 for (label, direction, column, row) in [
                     ("Up", DpadDirection::Up, 1_i8, 0_i8),
                     ("Down", DpadDirection::Down, 1_i8, 2_i8),
@@ -657,13 +657,14 @@ pub(super) fn draw_touchpad(
                     let selected = touch_state.selected;
                     let contact = &mut touch_state.contacts[selected];
                     contact.active = true;
-                    contact.release_pending = response.clicked() && !(multitouch && contact.held);
+                    contact.release_pending = response.clicked()
+                        && !touch_contact_persists(selected, multitouch, contact.held);
                     emit_touch_move(input, touch_state, selected, (x, y), events);
                 }
             } else if response.drag_stopped() {
                 let selected = touch_state.selected;
                 let contact = &mut touch_state.contacts[selected];
-                if !(multitouch && contact.held) {
+                if !touch_contact_persists(selected, multitouch, contact.held) {
                     contact.active = false;
                     contact.release_pending = false;
                     events.push(InputEvent::Touch {
@@ -679,15 +680,12 @@ pub(super) fn draw_touchpad(
                         rect.left() + contact.x as f32 / input.width as f32 * rect.width(),
                         rect.top() + contact.y as f32 / input.height as f32 * rect.height(),
                     );
-                    ui.painter().circle_filled(
-                        point,
-                        5.0,
-                        if index == touch_state.selected {
-                            Color32::LIGHT_BLUE
-                        } else {
-                            Color32::LIGHT_GREEN
-                        },
-                    );
+                    ui.painter()
+                        .circle_filled(point, 5.0, touch_contact_color(index, true));
+                    if index == touch_state.selected {
+                        ui.painter()
+                            .circle_stroke(point, 7.0, Stroke::new(1.0, Color32::WHITE));
+                    }
                 }
             }
 
@@ -728,14 +726,14 @@ pub(super) fn draw_touchpad(
                                             ui.painter().circle_filled(
                                                 indicator.center(),
                                                 4.0,
-                                                touch_contact_color(contact, selected),
+                                                touch_contact_color(index, contact.active),
                                             );
                                             clicked
                                         })
                                         .inner;
                                     holds_changed |= ui
                                         .add_enabled(
-                                            multitouch && selectable,
+                                            selectable && (index == 0 || multitouch),
                                             egui::Checkbox::new(&mut contact.held, "Hold"),
                                         )
                                         .changed();
@@ -800,9 +798,13 @@ fn normalize_touch_contacts(
     multitouch: bool,
     events: &mut Vec<InputEvent>,
 ) {
-    let mut prior_held = true;
+    let mut prior_held_active = true;
     for (index, contact) in state.contacts.iter_mut().enumerate() {
-        let valid = multitouch && prior_held && contact.held;
+        let valid = if index == 0 {
+            contact.held
+        } else {
+            multitouch && prior_held_active && contact.held
+        };
         if !valid {
             if contact.active {
                 events.push(InputEvent::Touch {
@@ -814,12 +816,13 @@ fn normalize_touch_contacts(
             contact.active = false;
             contact.relative = false;
         }
-        prior_held &= contact.held;
+        prior_held_active &= contact.active && contact.held;
     }
     if state.selected > 0
-        && !state.contacts[..state.selected]
-            .iter()
-            .all(|contact| contact.held)
+        && !(multitouch
+            && state.contacts[..state.selected]
+                .iter()
+                .all(|contact| contact.active && contact.held))
     {
         state.selected = 0;
     }
@@ -833,13 +836,23 @@ fn touch_contact_selectable(index: usize, multitouch: bool, contacts: &[(bool, b
                 .is_some_and(|(active, held)| *active && *held))
 }
 
-fn touch_contact_color(contact: &TouchContactState, selected: bool) -> Color32 {
-    if !contact.active {
-        Color32::DARK_GRAY
-    } else if selected {
-        Color32::LIGHT_BLUE
+fn touch_contact_persists(index: usize, multitouch: bool, held: bool) -> bool {
+    held && (index == 0 || multitouch)
+}
+
+/// Contact colour is tied to its slot, never selection state. The white ring on the pad marks
+/// selection, so switching contacts cannot make an existing touch appear to become another one.
+fn touch_contact_color(index: usize, active: bool) -> Color32 {
+    let (active_colour, inactive_colour) = match index % 4 {
+        0 => (Color32::LIGHT_BLUE, Color32::from_rgb(43, 74, 91)),
+        1 => (Color32::LIGHT_GREEN, Color32::from_rgb(48, 79, 53)),
+        2 => (Color32::LIGHT_YELLOW, Color32::from_rgb(85, 77, 42)),
+        _ => (Color32::LIGHT_RED, Color32::from_rgb(88, 48, 51)),
+    };
+    if active {
+        active_colour
     } else {
-        Color32::LIGHT_GREEN
+        inactive_colour
     }
 }
 
@@ -1484,14 +1497,17 @@ mod tests {
         assert!(select_touch_contact(&mut state, 1));
         assert_eq!(state.selected, 1);
         assert_eq!(state.contacts[0], first);
-        assert_eq!(
-            touch_contact_color(&state.contacts[0], false),
-            Color32::LIGHT_GREEN
-        );
-        assert_eq!(
-            touch_contact_color(&state.contacts[1], true),
-            Color32::DARK_GRAY
-        );
+        assert_eq!(touch_contact_color(0, true), Color32::LIGHT_BLUE);
+        assert_eq!(touch_contact_color(1, false), Color32::from_rgb(48, 79, 53));
+        assert_eq!(touch_contact_color(1, true), Color32::LIGHT_GREEN);
+    }
+
+    #[test]
+    fn primary_touch_can_hold_without_multitouch_but_later_contacts_cannot() {
+        assert!(touch_contact_persists(0, false, true));
+        assert!(!touch_contact_persists(1, false, true));
+        assert!(!touch_contact_persists(0, true, false));
+        assert!(touch_contact_persists(1, true, true));
     }
 
     #[test]

@@ -487,6 +487,7 @@ static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
 static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
     id: InputControlId::new("face"),
     title: "Face buttons",
+    button_width: 72,
     buttons: &INPUT_FACE_BUTTONS,
 }];
 static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {

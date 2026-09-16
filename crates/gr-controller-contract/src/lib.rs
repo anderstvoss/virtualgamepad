@@ -92,6 +92,8 @@ pub struct FaceButtonInput {
 pub struct FaceButtonCluster {
     pub id: InputControlId,
     pub title: &'static str,
+    /// Width in logical pixels requested for each face-button cell by a GUI.
+    pub button_width: u16,
     pub buttons: &'static [FaceButtonInput],
 }
 
@@ -269,6 +271,9 @@ impl InputTopology {
         }
         for cluster in self.face_button_clusters {
             add_id(cluster.id)?;
+            if cluster.button_width == 0 {
+                return Err(InputTopologyError::InvalidFaceButtonWidth(cluster.id));
+            }
             for (index, button) in cluster.buttons.iter().enumerate() {
                 if button.placement.column < 0 || button.placement.row < 0 {
                     return Err(InputTopologyError::InvalidPlacement(cluster.id));
@@ -370,6 +375,8 @@ pub enum InputTopologyError {
     DuplicatePlacement(InputControlId),
     #[error("face-button cluster `{0:?}` contains a negative placement")]
     InvalidPlacement(InputControlId),
+    #[error("face-button cluster `{0:?}` has an invalid button width")]
+    InvalidFaceButtonWidth(InputControlId),
     #[error("input `{0:?}` has an invalid axis range")]
     InvalidAxisRange(InputControlId),
     #[error("touchpad `{0:?}` has invalid dimensions or contact count")]
@@ -420,6 +427,7 @@ mod input_topology_tests {
         static DUPLICATE_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
             id: InputControlId::new("face"),
             title: "Face",
+            button_width: 48,
             buttons: &DUPLICATE_FACE_BUTTONS,
         }];
         static NEGATIVE_FACE_BUTTONS: [FaceButtonInput; 1] = [FaceButtonInput {
@@ -430,6 +438,13 @@ mod input_topology_tests {
         static NEGATIVE_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
             id: InputControlId::new("negative-face"),
             title: "Face",
+            button_width: 48,
+            buttons: &NEGATIVE_FACE_BUTTONS,
+        }];
+        static ZERO_WIDTH_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
+            id: InputControlId::new("zero-width-face"),
+            title: "Face",
+            button_width: 0,
             buttons: &NEGATIVE_FACE_BUTTONS,
         }];
         let duplicate_ids = InputTopology {
@@ -461,6 +476,16 @@ mod input_topology_tests {
             Err(InputTopologyError::InvalidPlacement(InputControlId::new(
                 "negative-face"
             )))
+        );
+        let zero_width = InputTopology {
+            face_button_clusters: &ZERO_WIDTH_FACE_CLUSTERS,
+            ..InputTopology::EMPTY
+        };
+        assert_eq!(
+            zero_width.validate(),
+            Err(InputTopologyError::InvalidFaceButtonWidth(
+                InputControlId::new("zero-width-face")
+            ))
         );
     }
 
