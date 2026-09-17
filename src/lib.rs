@@ -81,3 +81,7 @@ pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,
     RumbleEffect,
 };
+
+pub use gr_audio_contract::{
+    AudioAccess, AudioChannel, AudioError, AudioExposure, AudioOptions, PcmFormat, SampleDirection,
+};

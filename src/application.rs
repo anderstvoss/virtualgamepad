@@ -12,19 +12,38 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CreationOptions {
     target: RealizationId,
+    audio: crate::AudioOptions,
 }
 impl CreationOptions {
     #[must_use]
     pub const fn new(target: RealizationId) -> Self {
-        Self { target }
+        Self {
+            target,
+            audio: crate::AudioOptions::new(crate::AudioExposure::Disabled),
+        }
     }
     #[must_use]
     pub const fn realization(self) -> RealizationId {
         self.target
     }
+    /// Select immutable audio exposure and stream ownership. Requires recreation to change.
+    #[must_use]
+    pub const fn with_audio(mut self, audio: crate::AudioOptions) -> Self {
+        self.audio = audio;
+        self
+    }
+    #[must_use]
+    pub const fn audio(self) -> crate::AudioOptions {
+        self.audio
+    }
     pub(crate) fn internal(
         self,
     ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
+        if self.audio.exposure() != crate::AudioExposure::Disabled {
+            return Err(ControllerError::Unsupported {
+                reason: "audio exposure requires a validated audio backend/profile; this build has no enabled audio realization".into(),
+            });
+        }
         if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID && !cfg!(feature = "experimental")
         {
             return Err(ControllerError::Unsupported { reason: "dummy_hcd requires experimental protocol ownership (Gate G); use the experimental research API".into() });
@@ -312,6 +331,43 @@ mod tests {
             assert!(result.is_ok());
         } else {
             assert!(matches!(result, Err(ControllerError::Unsupported { .. })));
+        }
+    }
+
+    #[test]
+    fn audio_policy_is_immutable_and_rejects_before_controller_io() {
+        use crate::{AudioAccess, AudioExposure, AudioOptions};
+        let plain = CreationOptions::new(RealizationId::LINUX_UHID_USB);
+        assert_eq!(plain.audio().exposure(), AudioExposure::Disabled);
+        for exposure in [AudioExposure::Emulated, AudioExposure::ControllerMatching] {
+            let options = plain.with_audio(
+                AudioOptions::new(exposure)
+                    .with_playback_access(AudioAccess::NativeClient)
+                    .with_microphone_access(AudioAccess::Samples),
+            );
+            assert_eq!(options.audio().playback_access(), AudioAccess::NativeClient);
+            assert_eq!(options.audio().microphone_access(), AudioAccess::Samples);
+            assert_eq!(plain.audio().exposure(), AudioExposure::Disabled);
+            assert!(matches!(
+                options.internal(),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_dualsense(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_dualshock4(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_xbox360(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_switch_pro(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
         }
     }
 

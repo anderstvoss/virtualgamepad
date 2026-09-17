@@ -28,6 +28,7 @@
 //! Optional observations may be dropped; consult `dropped_output_events`.
 //! The legacy compiled gadget path retains its separately documented Gate G limits.
 
+pub mod audio;
 mod common;
 pub mod dualsense;
 pub mod dualshock4;

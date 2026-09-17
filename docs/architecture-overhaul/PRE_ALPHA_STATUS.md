@@ -25,6 +25,18 @@ Required sequence: API/stress work → preliminary candidate → controller/demo
 refinement and maintainer hands-on feedback → fresh API review → separate quality
 review → release. An unattended demo run cannot complete the feedback checkpoint.
 
+## Audio work authorized after GUI refinement
+
+GUI refinement and reusable input topology landed in PR #110 (`476056a`). The
+maintainer subsequently authorized backend audio before the final alpha API
+review. The old checkpoint instructions below record the preceding handoff;
+current execution follows [the audio ledger](AUDIO_IMPLEMENTATION.md).
+
+Audio exposure is fixed at creation. Implement functional UHID/PipeWire and USB
+composite audio, typed samples and native-client access, with broker security
+included from the first USB increment. Physical DualSense testing informs the
+first matching profile. Audio GUI integration remains a separate later PR.
+
 ## Work packages
 
 | Package | Status | Evidence / exit |

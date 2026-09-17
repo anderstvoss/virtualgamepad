@@ -5,6 +5,10 @@
 //! implementation. A future backend crate implements [`AudioBackendFactory`]
 //! without requiring changes to controller, realization, or runtime crates.
 
+mod pcm;
+pub use pcm::*;
+pub mod queue;
+
 use thiserror::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
