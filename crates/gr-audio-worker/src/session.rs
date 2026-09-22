@@ -411,6 +411,16 @@ fn control_loop(
                 }
                 write_message(&mut socket, 3, &response)?;
             }
+            5 if body.len() == 8 => {
+                let mut response = generation.to_le_bytes().to_vec();
+                response.extend(
+                    counters
+                        .microphone_consumed_frames
+                        .load(Ordering::Relaxed)
+                        .to_le_bytes(),
+                );
+                write_message(&mut socket, 5, &response)?;
+            }
             4 if body.len() == 8 => {
                 return Ok(());
             }
@@ -493,6 +503,11 @@ mod tests {
             let (tag, stats) = read_message(&mut client).unwrap();
             assert_eq!(tag, 3);
             assert_eq!(stats.len(), 72);
+            write_message(&mut client, 5, &9_u64.to_le_bytes()).unwrap();
+            assert_eq!(
+                read_message(&mut client).unwrap(),
+                (5, [9_u64.to_le_bytes(), 0_u64.to_le_bytes()].concat())
+            );
             write_message(&mut client, 4, &9_u64.to_le_bytes()).unwrap();
             assert_eq!(
                 read_message(&mut client).unwrap(),

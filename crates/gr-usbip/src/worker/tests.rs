@@ -409,3 +409,36 @@ fn retained_audio_diagnostics_distinguish_inactive_stalls_from_scheduling_delay(
     drop(f);
     assert_eq!(counters.inactive_audio_transfers.load(Ordering::Relaxed), 1);
 }
+
+#[test]
+fn microphone_credit_tracks_queue_consumption_before_transfer_completion() {
+    let mut f = Fixture::new();
+    f.configure();
+    f.microphone.push(&[123; 96]).unwrap();
+    f.enqueue(&iso(10, 1, 32, 196, &[]), 1);
+    let index = f.worker.next_ready(1001).unwrap();
+    f.worker.capture_one(index).unwrap();
+    assert_eq!(f.worker.counters.capture_frames.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        f.worker
+            .counters
+            .microphone_consumed_frames
+            .load(Ordering::Relaxed),
+        48
+    );
+    f.worker.capture_one(index).unwrap();
+    assert_eq!(
+        f.worker
+            .counters
+            .microphone_consumed_frames
+            .load(Ordering::Relaxed),
+        48
+    );
+    assert_eq!(
+        f.worker
+            .counters
+            .microphone_silence_frames
+            .load(Ordering::Relaxed),
+        48
+    );
+}

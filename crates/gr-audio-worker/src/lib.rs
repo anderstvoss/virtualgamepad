@@ -5,3 +5,6 @@
 mod session;
 #[cfg(target_os = "linux")]
 pub use session::{Channels, Setup, run};
+
+#[cfg(target_os = "linux")]
+pub mod client;

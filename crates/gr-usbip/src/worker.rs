@@ -44,6 +44,8 @@ pub struct Counters {
     pub inactive_audio_transfers: AtomicU64,
     pub playback_frames: AtomicU64,
     pub capture_frames: AtomicU64,
+    /// Actual microphone queue consumption, before USB completion batching.
+    pub microphone_consumed_frames: AtomicU64,
     /// Collected microphone frames abandoned before a USB completion.
     pub abandoned_capture_frames: AtomicU64,
     pub maximum_audio_lateness_us: AtomicU64,
@@ -545,6 +547,10 @@ fn capture_packet(
         return Err(error("invalid capture ISO packet"));
     }
     let read = microphone.read(&mut samples[..count]).map_err(error)?;
+    counters.microphone_consumed_frames.fetch_add(
+        u64::try_from(read.frames).map_err(error)?,
+        Ordering::Relaxed,
+    );
     counters.microphone_silence_frames.fetch_add(
         u64::try_from(48 - read.frames).map_err(error)?,
         Ordering::Relaxed,

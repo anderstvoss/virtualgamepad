@@ -1,19 +1,40 @@
 //! Ordinary-user installed-broker smoke test. No physical audio is opened.
-use gr_privileged_broker::{
-    audio_client::Client, audio_launch::Profile, read_message, write_message,
-};
+use gr_privileged_broker::{audio_client::Client, audio_launch::Profile};
 use std::{io, time::Duration};
 fn main() -> io::Result<()> {
     for profile in [Profile::DualSense, Profile::DualShock4, Profile::Xbox360] {
-        let (mut client, [mut control, playback, microphone]) =
+        let (mut client, [control, playback, microphone]) =
             Client::open(profile, [2, 1, 2, 3, 4, 5])?;
         control.set_read_timeout(Some(Duration::from_secs(2)))?;
         control.set_write_timeout(Some(Duration::from_secs(1)))?;
-        write_message(&mut control, 3, &client.generation().to_le_bytes())?;
-        let (tag, stats) = read_message(&mut control)?;
-        if tag != 3 || stats.len() != 72 {
-            return Err(io::Error::other("invalid worker diagnostics"));
-        }
+        let (family, state) = match profile {
+            Profile::DualSense => (
+                1,
+                gr_curated_controllers::usb_personality::state::NativeState::DualSense(
+                    gr_curated_controllers::DualSenseState::default(),
+                ),
+            ),
+            Profile::DualShock4 => (
+                2,
+                gr_curated_controllers::usb_personality::state::NativeState::DualShock4(
+                    gr_curated_controllers::DualShock4State::default(),
+                ),
+            ),
+            Profile::Xbox360 => (
+                3,
+                gr_curated_controllers::usb_personality::state::NativeState::Xbox360(
+                    gr_curated_controllers::Xbox360State::default(),
+                ),
+            ),
+        };
+        let mut commands = gr_audio_worker::client::Control::new(
+            control.try_clone()?,
+            client.generation(),
+            family,
+        )?;
+        commands.update(&state)?;
+        commands.update(&state)?;
+        commands.diagnostics()?;
         println!(
             "{}: device={} bus={} worker diagnostics received",
             profile.name(),
