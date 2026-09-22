@@ -1,0 +1,18 @@
+[package]
+name = "gr-usbip"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
+gr-hid = { path = "../gr-hid", version = "0.1" }
+gr-controller-wire = { path = "../gr-controller-wire", version = "0.1" }
+
+[dev-dependencies]
+gr-curated-controllers = { path = "../gr-curated-controllers", version = "0.1" }
+
+[lints]
+workspace = true

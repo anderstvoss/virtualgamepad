@@ -145,6 +145,7 @@ mod tests {
             right_trigger_effect: [11; 11],
             left_trigger_effect: [22; 11],
             mute_button_led: Some(true),
+            microphone_muted: None,
             player_leds: Some(3),
             lightbar_rgb: Some([1, 2, 3]),
         };

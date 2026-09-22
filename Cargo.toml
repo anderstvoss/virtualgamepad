@@ -16,6 +16,8 @@ members = [
     "crates/gr-dualsense-wire",
     "crates/gr-controller-wire",
     "crates/gr-audio-contract",
+    "crates/gr-audio-linux",
+    "crates/gr-usbip",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
     "crates/gr-curated-controllers",
@@ -62,6 +64,10 @@ workspace = true
 default = []
 # Research/SPI only: excluded from the application API stability promise.
 experimental = []
+audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
 
 [dev-dependencies]
 gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }

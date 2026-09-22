@@ -7,6 +7,7 @@ use std::sync::{
 };
 
 struct Shared {
+    format: PcmFormat,
     samples: Box<[AtomicI16]>,
     positions: Box<[AtomicU64]>,
     channels: usize,
@@ -15,11 +16,23 @@ struct Shared {
     tail: AtomicUsize,
     closed: AtomicBool,
     discarded: AtomicU64,
+    flush_before: AtomicU64,
 }
 /// Producer endpoint. Dropping either endpoint closes the whole stream.
 pub struct PcmProducer {
     shared: Arc<Shared>,
     next_frame: u64,
+}
+/// Read-only diagnostics survive endpoint closure without keeping a stream open.
+#[derive(Clone)]
+pub struct PcmObserver {
+    shared: Arc<Shared>,
+}
+impl PcmObserver {
+    #[must_use]
+    pub fn discarded_frames(&self) -> u64 {
+        self.shared.discarded.load(Ordering::Relaxed)
+    }
 }
 /// Consumer endpoint. Format changes require a fresh queue/generation.
 pub struct PcmConsumer {
@@ -28,6 +41,7 @@ pub struct PcmConsumer {
 }
 /// One contiguous segment; a read stops before crossing a discontinuity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PcmRead {
     pub frames: usize,
     pub first_frame: u64,
@@ -45,6 +59,7 @@ pub fn pcm_queue(
     }
     let slots = capacity + 1;
     let shared = Arc::new(Shared {
+        format: format.clone(),
         samples: (0..slots * format.channels().len())
             .map(|_| AtomicI16::new(0))
             .collect(),
@@ -55,6 +70,7 @@ pub fn pcm_queue(
         tail: AtomicUsize::new(0),
         closed: AtomicBool::new(false),
         discarded: AtomicU64::new(0),
+        flush_before: AtomicU64::new(0),
     });
     Ok((
         PcmProducer {
@@ -79,6 +95,40 @@ impl Shared {
     }
 }
 impl PcmProducer {
+    /// Published frames awaiting consumption. Only this endpoint can add frames;
+    /// the consumer may reduce this count immediately after the snapshot.
+    #[must_use]
+    pub fn queued_frames(&self) -> usize {
+        let head = self.shared.head.load(Ordering::Relaxed);
+        let tail = self.shared.tail.load(Ordering::Acquire);
+        (head + self.shared.slots - tail) % self.shared.slots
+    }
+
+    /// Discard frames published before this call at the next consumer read.
+    /// An already executing read may finish; already delivered audio is unaffected.
+    /// Capacity is reclaimed by the consumer, never by changing its cursor here.
+    /// # Errors
+    /// Returns Closed for a terminal stream.
+    pub fn flush(&mut self) -> Result<(), AudioError> {
+        self.shared.validate(0)?;
+        self.shared
+            .flush_before
+            .store(self.next_frame, Ordering::Release);
+        Ok(())
+    }
+
+    #[must_use]
+    pub fn format(&self) -> &PcmFormat {
+        &self.shared.format
+    }
+
+    #[must_use]
+    pub fn observer(&self) -> PcmObserver {
+        PcmObserver {
+            shared: self.shared.clone(),
+        }
+    }
+
     /// Accept a prefix of complete frames. The caller owns the unsent suffix.
     /// # Errors
     /// Returns `Closed` or `InvalidRequirement` for incomplete frames/clock exhaustion.
@@ -125,6 +175,11 @@ impl PcmProducer {
     }
 }
 impl PcmConsumer {
+    #[must_use]
+    pub fn format(&self) -> &PcmFormat {
+        &self.shared.format
+    }
+
     /// Read complete frames without crossing a gap. Empty queues return zero.
     /// # Errors
     /// Returns `Closed` or `InvalidRequirement` for an incomplete destination frame.
@@ -133,6 +188,10 @@ impl PcmConsumer {
         q.validate(dest.len())?;
         let mut tail = q.tail.load(Ordering::Relaxed);
         let head = q.head.load(Ordering::Acquire);
+        let flush_before = q.flush_before.load(Ordering::Acquire);
+        while tail != head && q.positions[tail].load(Ordering::Relaxed) < flush_before {
+            tail = (tail + 1) % q.slots;
+        }
         let mut result = PcmRead {
             frames: 0,
             first_frame: self.expected_frame,
@@ -208,6 +267,19 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn observer_retains_loss_without_retaining_stream_access() {
+        let format = PcmFormat::new(48_000, &[crate::AudioChannel::Microphone]).unwrap();
+        let (mut tx, mut rx) = pcm_queue(&format, 2).unwrap();
+        let observer = tx.observer();
+        tx.push(&[1, 2]).unwrap();
+        tx.discard(3).unwrap();
+        drop(tx);
+        assert_eq!(rx.read(&mut [0; 2]), Err(AudioError::Closed));
+        drop(rx);
+        assert_eq!(observer.discarded_frames(), 3);
+    }
+
+    #[test]
     fn prefix_retry_wrap_and_channel_order() {
         let (mut tx, mut rx) = pcm_queue(&format(), 2).unwrap();
         let frames = [1, 2, 101, 102, 3, 4, 103, 104, 5, 6, 105, 106];
@@ -229,6 +301,35 @@ mod tests {
         );
         assert_eq!(rest, frames[4..]);
         assert_eq!(rx.read(&mut rest).unwrap().frames, 0);
+    }
+    #[test]
+    fn producer_flush_preserves_new_frames_and_consumer_cursor_ownership() {
+        let f = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
+        let (mut tx, mut rx) = pcm_queue(&f, 3).unwrap();
+        tx.push(&[1, 2]).unwrap();
+        tx.flush().unwrap();
+        tx.flush().unwrap();
+        assert_eq!(tx.queued_frames(), 2);
+        // New publication can wrap; old slots remain owned until consumer read.
+        assert_eq!(tx.push(&[3, 4]).unwrap(), 1);
+        let mut dest = [0; 3];
+        let read = rx.read(&mut dest).unwrap();
+        assert_eq!(read.frames, 1);
+        assert_eq!(read.first_frame, 2);
+        assert!(read.discontinuity);
+        assert_eq!(dest[0], 3);
+        assert_eq!(tx.queued_frames(), 0);
+        tx.push(&[4, 5, 6]).unwrap();
+        tx.flush().unwrap();
+        assert_eq!(tx.push(&[7]).unwrap(), 0);
+        assert_eq!(rx.read(&mut dest).unwrap().frames, 0);
+        assert_eq!(tx.push(&[7]).unwrap(), 1);
+        let read = rx.read(&mut dest).unwrap();
+        assert_eq!(read.first_frame, 6);
+        assert!(read.discontinuity);
+        assert_eq!(dest[0], 7);
+        tx.close();
+        assert_eq!(tx.flush(), Err(AudioError::Closed));
     }
     #[test]
     fn loss_boundaries_are_observable_and_not_merged() {

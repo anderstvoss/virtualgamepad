@@ -51,6 +51,9 @@
 //! }
 //! ```
 mod application;
+mod audio;
+pub use audio::{AudioEndpoint, AudioStreamTiming, ControllerAudio};
+pub use gr_audio_contract::queue::PcmRead as AudioRead;
 mod controllers;
 mod output;
 pub use application::*;

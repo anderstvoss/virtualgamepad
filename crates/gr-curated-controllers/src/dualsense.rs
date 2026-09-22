@@ -1048,6 +1048,9 @@ pub enum DualSenseHidOutput {
         left_trigger_effect: [u8; 11],
         /// Present only when the host set the mic-mute LED valid bit.
         mute_button_led: Option<bool>,
+        /// Native microphone mute request, present only when power-save control
+        /// is valid. Independent of the LED; observation does not alter PCM.
+        microphone_muted: Option<bool>,
         /// Present only when the host set the player-indicator valid bit.
         player_leds: Option<u8>,
         /// Present only when the host set the lightbar valid bit.
@@ -1076,6 +1079,8 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
             right_trigger_effect,
             left_trigger_effect,
             mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
+            // Linux hid-playstation: power-save validity bit 1, mic-mute bit 4.
+            microphone_muted: (raw[1] & 0x02 != 0).then_some(raw[9] & 0x10 != 0),
             player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
             lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
@@ -2014,10 +2019,41 @@ mod tests {
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
                 mute_button_led: Some(true),
+                microphone_muted: None,
                 player_leds: Some(0x1f),
                 lightbar_rgb: Some([0x11, 0x22, 0x33]),
             }
         );
+    }
+
+    #[test]
+    fn microphone_mute_is_validity_gated_and_independent_of_indicator() {
+        for length in [47, 62] {
+            for valid in [false, true] {
+                for muted in [false, true] {
+                    let mut raw = vec![0_u8; length];
+                    raw[1] = 1 | if valid { 2 } else { 0 };
+                    raw[8] = u8::from(!muted); // Deliberately disagree with mute.
+                    raw[9] = 0x80 | if muted { 0x10 } else { 0 };
+                    let DualSenseHidOutput::UsbOutput {
+                        microphone_muted,
+                        mute_button_led,
+                        raw: retained,
+                        ..
+                    } = decode_dualsense_hid_output(Some(2), raw.clone())
+                    else {
+                        panic!()
+                    };
+                    assert_eq!(microphone_muted, valid.then_some(muted));
+                    assert_eq!(mute_button_led, Some(!muted));
+                    assert_eq!(retained, raw);
+                }
+            }
+        }
+        assert!(matches!(
+            decode_dualsense_hid_output(Some(2), vec![0; 46]),
+            DualSenseHidOutput::Unknown { .. }
+        ));
     }
 
     #[test]
