@@ -22,6 +22,16 @@ pub mod dummy_hcd;
 #[cfg(target_os = "linux")]
 pub mod host_access;
 
+/// Connection and session admission limits.
+pub mod admission;
+
+/// Staged VHCI port admission; production attachment remains gated separately.
+pub mod vhci_policy;
+
+/// Strict Linux socket framing.
+#[cfg(target_os = "linux")]
+pub mod socket_wire;
+
 /// Broker-owned host resource. Implementations are never constructed by an
 /// application client and must make `close` safe to repeat after partial open.
 pub trait HostSession: Send {
@@ -72,9 +82,9 @@ impl BrokerClient {
     pub fn connect() -> Result<Self, BrokerClientError> {
         #[cfg(unix)]
         {
-            UnixStream::connect(BROKER_SOCKET_PATH)
-                .map(|stream| Self { stream })
-                .map_err(BrokerClientError::Unavailable)
+            let stream =
+                UnixStream::connect(BROKER_SOCKET_PATH).map_err(BrokerClientError::Unavailable)?;
+            Self::from_stream(stream).map_err(BrokerClientError::Unavailable)
         }
         #[cfg(not(unix))]
         {
@@ -83,6 +93,14 @@ impl BrokerClient {
                 "the privileged broker client requires Unix-domain sockets",
             )))
         }
+    }
+
+    #[cfg(unix)]
+    fn from_stream(stream: UnixStream) -> io::Result<Self> {
+        let timeout = Some(std::time::Duration::from_secs(1));
+        stream.set_read_timeout(timeout)?;
+        stream.set_write_timeout(timeout)?;
+        Ok(Self { stream })
     }
 
     pub fn open(
@@ -138,15 +156,26 @@ impl BrokerClient {
 
     #[cfg(unix)]
     fn request(&mut self, tag: u8, body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
-        write_message(&mut self.stream, tag, body).map_err(BrokerClientError::Unavailable)?;
-        let (tag, body) = read_message(&mut self.stream).map_err(BrokerClientError::Unavailable)?;
-        match tag {
-            0x80 => Ok(body),
-            0x81 => Err(BrokerClientError::Rejected(
-                String::from_utf8(body).unwrap_or_else(|_| "non-UTF-8 broker error".into()),
-            )),
-            _ => Err(BrokerClientError::Protocol("unexpected response tag")),
+        let response = (|| {
+            write_message(&mut self.stream, tag, body).map_err(BrokerClientError::Unavailable)?;
+            let (tag, body) =
+                read_message(&mut self.stream).map_err(BrokerClientError::Unavailable)?;
+            match tag {
+                0x80 => Ok(body),
+                0x81 => Err(BrokerClientError::Rejected(
+                    String::from_utf8(body).unwrap_or_else(|_| "non-UTF-8 broker error".into()),
+                )),
+                _ => Err(BrokerClientError::Protocol("unexpected response tag")),
+            }
+        })();
+        if matches!(
+            &response,
+            Err(BrokerClientError::Unavailable(_) | BrokerClientError::Protocol(_))
+        ) {
+            // A partial or late response must not become the next request's reply.
+            let _ = self.stream.shutdown(std::net::Shutdown::Both);
         }
+        response
     }
 
     #[cfg(not(unix))]
@@ -216,6 +245,8 @@ pub fn read_message(reader: &mut impl Read) -> Result<(u8, Vec<u8>), io::Error> 
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum BrokerError {
+    #[error("broker resource limit reached")]
+    Capacity,
     #[error("peer {peer} is not authorized")]
     Unauthorized { peer: u32 },
     #[error("{target} does not support controller {controller:?}")]
@@ -245,15 +276,25 @@ pub struct BrokerRegistry {
     policy: BrokerPolicy,
     sessions: BTreeMap<RealizationSessionId, Box<dyn HostSession>>,
     next: u64,
+    admission: admission::Admission,
+    permits: BTreeMap<RealizationSessionId, admission::Permit>,
 }
 
 impl BrokerRegistry {
     #[must_use]
     pub fn new(allowed_peers: Vec<u32>) -> Self {
+        Self::with_admission(allowed_peers, admission::Admission::new(16, 4))
+    }
+
+    /// Each connection owns its registry; only admission accounting is shared.
+    #[must_use]
+    pub fn with_admission(allowed_peers: Vec<u32>, admission: admission::Admission) -> Self {
         Self {
             policy: BrokerPolicy::new(allowed_peers),
             sessions: BTreeMap::new(),
             next: 1,
+            admission,
+            permits: BTreeMap::new(),
         }
     }
 
@@ -270,9 +311,17 @@ impl BrokerRegistry {
             .checked_add(1)
             .ok_or(BrokerError::MalformedRequest)?;
         self.policy.open(peer, session, target, controller)?;
+        let permit = match self.admission.reserve(peer) {
+            Ok(permit) => permit,
+            Err(error) => {
+                let _ = self.policy.close(peer, session);
+                return Err(error);
+            }
+        };
         match factory.open(target, controller, session) {
             Ok(host) => {
                 self.sessions.insert(session, host);
+                self.permits.insert(session, permit);
                 Ok(session)
             }
             Err(error) => {
@@ -326,6 +375,7 @@ impl BrokerRegistry {
 
     pub fn close(&mut self, peer: u32, session: RealizationSessionId) -> Result<(), BrokerError> {
         self.policy.close(peer, session)?;
+        let _permit = self.permits.remove(&session);
         if let Some(mut host) = self.sessions.remove(&session) {
             host.close()?;
         }
@@ -336,6 +386,8 @@ impl BrokerRegistry {
         for (_, mut host) in std::mem::take(&mut self.sessions) {
             let _ = host.close();
         }
+        self.permits.clear();
+        self.policy.sessions.clear();
     }
 
     fn terminal_on_host_error<T>(
@@ -346,6 +398,7 @@ impl BrokerRegistry {
     ) -> Result<T, BrokerError> {
         if result.is_err() {
             let _ = self.policy.close(peer, session);
+            let _permit = self.permits.remove(&session);
             if let Some(mut host) = self.sessions.remove(&session) {
                 let _ = host.close();
             }
@@ -398,6 +451,9 @@ impl BrokerPolicy {
         }
         if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
             return Err(BrokerError::UnsupportedController { target, controller });
+        }
+        if self.sessions.contains_key(&session) {
+            return Err(BrokerError::MalformedRequest);
         }
         self.sessions.insert(
             session,
@@ -526,6 +582,91 @@ mod tests {
                 fail_send: false,
             }))
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn malformed_response_terminally_closes_client_before_a_stale_reply() {
+        let (client, mut server) = UnixStream::pair().unwrap();
+        let mut client = BrokerClient::from_stream(client).unwrap();
+        write_message(&mut server, 0xff, &[]).unwrap();
+        assert!(matches!(
+            client.request(3, &[]),
+            Err(BrokerClientError::Protocol(_))
+        ));
+        assert!(matches!(
+            client.request(3, &[]),
+            Err(BrokerClientError::Unavailable(_))
+        ));
+        assert!(write_message(&mut server, 0x80, &[1]).is_err());
+    }
+
+    #[test]
+    fn registry_quotas_precede_setup_and_release_on_client_death() {
+        let closed = Arc::new(Mutex::new(0));
+        let factory = FakeFactory {
+            closed: closed.clone(),
+        };
+        let quota = admission::Admission::new(2, 1);
+        let mut first = BrokerRegistry::with_admission(vec![10, 11], quota.clone());
+        let mut second = BrokerRegistry::with_admission(vec![10, 11], quota.clone());
+        let target = RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
+        let kind = CompiledControllerKind::DualSense;
+        let id = first.open(10, target, kind, &factory).unwrap();
+        assert!(matches!(
+            second.diagnostics(10, id),
+            Err(BrokerError::UnknownSession { .. })
+        ));
+        assert!(matches!(
+            second.open(10, target, kind, &factory),
+            Err(BrokerError::Capacity)
+        ));
+        assert!(second.policy.sessions.is_empty());
+        assert_eq!(*closed.lock().unwrap(), 0);
+        second.open(11, target, kind, &factory).unwrap();
+        drop(first);
+        assert_eq!(*closed.lock().unwrap(), 1);
+        second.open(10, target, kind, &factory).unwrap();
+        second.close_all();
+        assert!(second.policy.sessions.is_empty());
+        assert_eq!(*closed.lock().unwrap(), 3);
+        second.open(10, target, kind, &factory).unwrap();
+    }
+
+    #[test]
+    fn failed_setup_releases_quota_and_duplicate_policy_ids_never_replace_owners() {
+        struct Fails;
+        impl HostSessionFactory for Fails {
+            fn open(
+                &self,
+                _: RealizationTarget,
+                _: CompiledControllerKind,
+                _: RealizationSessionId,
+            ) -> Result<Box<dyn HostSession>, BrokerError> {
+                Err(BrokerError::Host {
+                    reason: "simulated setup failure".into(),
+                })
+            }
+        }
+        let quota = admission::Admission::new(1, 1);
+        let mut registry = BrokerRegistry::with_admission(vec![10], quota.clone());
+        let target = RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
+        let kind = CompiledControllerKind::DualSense;
+        assert!(registry.open(10, target, kind, &Fails).is_err());
+        assert!(quota.reserve(10).is_ok());
+        assert!(registry.policy.sessions.is_empty());
+        let mut policy = BrokerPolicy::new(vec![10, 11]);
+        let id = RealizationSessionId(1);
+        policy.open(10, id, target, kind).unwrap();
+        assert_eq!(
+            policy.open(11, id, target, kind),
+            Err(BrokerError::MalformedRequest)
+        );
+        assert!(policy.diagnostics(10, id).is_ok());
+        assert!(matches!(
+            policy.diagnostics(11, id),
+            Err(BrokerError::WrongOwner { .. })
+        ));
     }
 
     #[test]

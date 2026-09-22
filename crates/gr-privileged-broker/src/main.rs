@@ -10,7 +10,7 @@ use gr_privileged_broker::{
     BROKER_SOCKET_PATH, BrokerError, BrokerRegistry, HostSessionFactory,
     dummy_hcd::{DummyHcdSession, cleanup_stale_sessions},
     host_access::{HostAccess, HostConfig},
-    read_message, write_message,
+    write_message,
 };
 #[cfg(target_os = "linux")]
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
@@ -65,13 +65,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if socket_activated {
         cleanup_stale_sessions(&access)?;
     }
+    let connections = gr_privileged_broker::admission::Admission::new(32, 8);
+    let sessions = gr_privileged_broker::admission::Admission::new(16, 4);
     for connection in listener.incoming() {
         match connection {
             Ok(stream) => {
+                let Ok(peer) = peer_uid(&stream) else {
+                    continue;
+                };
+                if !allowed.contains(&peer) {
+                    continue;
+                }
+                let Ok(permit) = connections.reserve(peer) else {
+                    continue;
+                };
+                let sessions = sessions.clone();
                 let allowed = allowed.clone();
                 let access = Arc::clone(&access);
                 thread::spawn(move || {
-                    let _ = serve(stream, allowed, access);
+                    let _permit = permit;
+                    let _ = serve(stream, peer, allowed, access, sessions);
                 });
             }
             Err(error) => eprintln!("broker accept failed: {error}"),
@@ -139,13 +152,17 @@ impl HostSessionFactory for DaemonFactory {
 #[cfg(target_os = "linux")]
 fn serve(
     mut stream: UnixStream,
+    peer: u32,
     allowed: Vec<u32>,
     access: Arc<HostAccess>,
+    sessions: gr_privileged_broker::admission::Admission,
 ) -> Result<(), io::Error> {
-    let peer = peer_uid(&stream)?;
     let factory = DaemonFactory(access);
-    let mut registry = BrokerRegistry::new(allowed);
-    while let Ok((tag, body)) = read_message(&mut stream) {
+    let mut registry = BrokerRegistry::with_admission(allowed, sessions);
+    stream.set_write_timeout(Some(std::time::Duration::from_secs(1)))?;
+    while let Ok((tag, body)) =
+        gr_privileged_broker::socket_wire::read_frame(&stream, std::time::Duration::from_secs(1))
+    {
         let reply = dispatch(&mut registry, peer, tag, &body, &factory);
         match reply {
             Ok(body) => write_message(&mut stream, 0x80, &body)?,
