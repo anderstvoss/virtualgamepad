@@ -202,3 +202,17 @@ supported by the [Linux v6.12.107 PlayStation driver](https://github.com/gregkh/
 It reports a host request; it does not automatically transform PCM. Gain, routing,
 other audio bytes and physical mute behavior still require their own evidence and
 application/transport integration.
+
+## Cleanup and buffer-validation follow-up
+
+Ordinary registration/backend failures now explicitly disconnect every created
+endpoint and retain cleanup errors alongside the initial cause. Drop remains the
+unwinding fallback. Interleaved playback validates byte bounds, frame alignment
+and stride before queue delivery; missing mapped buffers terminate the backend.
+Regression tests cover malformed layouts and multiple cleanup failures. The
+headless root example prints retained graph timing after closure.
+
+At `9dc68a0`, the longer four-path DualSense check passed exact continuity with
+p99 1.087–11.476 ms (maximum 15.007 ms). See EXP-0023 for distributions and scope.
+Three-trial/full-duplex/mixed-session acceptance and production USB integration
+remain open.

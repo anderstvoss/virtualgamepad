@@ -235,3 +235,24 @@ Five close-during-processing/recreation cycles also passed with retained clocks,
 invalidated handles and an unaffected sibling session. Stream-local graph clock
 snapshots now distinguish missed graph frames from bounded queue loss. Upstream
 client loss is not automatically included in either counter.
+
+### Longer DualSense graph-path check
+
+At revision `9dc68a0`, four sequential 62-second probes (two seconds excluded as
+warm-up) passed on the private 512-frame graph. Each used the curated DualSense
+emulated profile. All measured marker frames were present exactly once, with no
+invalid channel frames. Host-to-library graph diagnostics reported zero missed
+graph frames and discontinuities.
+
+| Path | Measured frames | p50 ms | p95 ms | p99 ms | Maximum ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Library microphone to host | 2881152 | 6.773 | 10.541 | 10.848 | 14.214 |
+| Native caller to host | 2881280 | 10.759 | 11.131 | 11.429 | 15.007 |
+| Host to native caller | 2880768 | 10.788 | 11.165 | 11.476 | 13.527 |
+| Host to library samples | 2880256 | 0.651 | 1.014 | 1.087 | 5.625 |
+
+These application-to-application measurements include client buffering and
+scheduling. They do not measure physical converters or prove independent clock
+synchronization. This is one trial per path, run sequentially, not the required
+three consecutive full-duplex trials across families and transports. Earlier
+failed runs remain part of the evidence; this run does not explain them all.

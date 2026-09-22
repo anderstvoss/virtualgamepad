@@ -187,6 +187,10 @@ impl Observations {
         )
     }
     fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
+        if channels == 0 || bytes.len() % (channels * 2) != 0 {
+            self.invalid.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
         for frame in bytes.chunks_exact(channels * 2) {
             if frame.iter().all(|v| *v == 0) {
                 continue;
@@ -250,6 +254,14 @@ pub fn capture(
                 };
                 let offset = data.chunk().offset() as usize;
                 let size = data.chunk().size() as usize;
+                if data
+                    .chunk()
+                    .flags()
+                    .contains(spa::buffer::ChunkFlags::CORRUPTED)
+                {
+                    observations.invalid.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
                 if data.chunk().flags().bits() & 2 != 0 {
                     return;
                 }
@@ -257,6 +269,7 @@ pub fn capture(
                     .data()
                     .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
                 else {
+                    observations.invalid.fetch_add(1, Ordering::Relaxed);
                     return;
                 };
                 observations.record(
@@ -303,4 +316,16 @@ fn capture_observations_preserve_duplicates_and_reject_channel_corruption() {
     assert_eq!(times, vec![100; 128]);
     assert_eq!(counts, [129]);
     assert_eq!(invalid, 1);
+}
+
+#[test]
+fn capture_rejects_partial_frames_without_counting_the_valid_prefix() {
+    let stamps = [AtomicU64::new(2_000_000_001)];
+    let observed = Observations::new(1);
+    observed.record(&[1, 0, 1, 0, 1], 2, &stamps, 2_000_000_100);
+    observed.record(&[], 0, &stamps, 2_000_000_100);
+    let (times, counts, invalid) = observed.snapshot(&stamps);
+    assert!(times.is_empty());
+    assert_eq!(counts, [0]);
+    assert_eq!(invalid, 2);
 }

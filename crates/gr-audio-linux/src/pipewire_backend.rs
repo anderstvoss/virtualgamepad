@@ -276,6 +276,8 @@ impl ManagedStream {
         underruns: &Arc<AtomicU64>,
     ) -> Result<Self, AudioError> {
         let input = matches!(spec.io, Io::Sink(_));
+        let bytes = format_pod(&spec.format)?;
+        let pod = spa::pod::Pod::from_bytes(&bytes).ok_or(AudioError::InvalidRequirement)?;
         let stream = pw::stream::StreamRc::new(
             core.clone(),
             &spec.name,
@@ -324,14 +326,12 @@ impl ManagedStream {
             .process(process)
             .register()
             .map_err(backend)?;
-        let managed = ManagedStream {
+        let mut managed = ManagedStream {
             stream,
             control: Some(control),
             process: Some(process),
         };
-        let bytes = format_pod(&spec.format)?;
-        let pod = spa::pod::Pod::from_bytes(&bytes).ok_or(AudioError::InvalidRequirement)?;
-        managed
+        let connected = managed
             .stream
             .connect(
                 if input {
@@ -343,7 +343,10 @@ impl ManagedStream {
                 stream_flags(),
                 &mut [pod],
             )
-            .map_err(backend)?;
+            .map_err(backend);
+        if connected.is_err() {
+            finish_cleanup(connected, std::iter::once(managed.disconnect()))?;
+        }
         Ok(managed)
     }
 
@@ -386,42 +389,54 @@ fn run(
         })
         .register();
     let mut streams = Vec::new();
-    for spec in specs {
-        streams.push(ManagedStream::open(&core, spec, failed, underruns)?);
-    }
-    let deadline = Instant::now() + Duration::from_secs(3);
-    let mut notified = false;
-    while !stop.load(Ordering::Acquire) {
-        if failed.load(Ordering::Acquire) {
-            return Err(backend("PipeWire endpoint or server failed"));
+    let result = (|| {
+        for spec in specs {
+            streams.push(ManagedStream::open(&core, spec, failed, underruns)?);
         }
-        main.loop_()
-            .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(5)));
-        if !notified {
-            if streams.iter().all(|s| {
-                matches!(
-                    s.stream.state(),
-                    pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming
-                )
-            }) {
-                ready.send(()).map_err(backend)?;
-                notified = true;
-            } else if Instant::now() >= deadline {
-                return Err(backend("PipeWire registration deadline exceeded"));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut notified = false;
+        while !stop.load(Ordering::Acquire) {
+            if failed.load(Ordering::Acquire) {
+                return Err(backend("PipeWire endpoint or server failed"));
+            }
+            main.loop_()
+                .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(5)));
+            if !notified {
+                if streams.iter().all(|s| {
+                    matches!(
+                        s.stream.state(),
+                        pw::stream::StreamState::Paused | pw::stream::StreamState::Streaming
+                    )
+                }) {
+                    ready.send(()).map_err(backend)?;
+                    notified = true;
+                } else if Instant::now() >= deadline {
+                    return Err(backend("PipeWire registration deadline exceeded"));
+                }
             }
         }
-    }
-    let mut cleanup_error = None;
-    for stream in &mut streams {
-        if let Err(error) = stream.disconnect() {
-            cleanup_error.get_or_insert(error);
+        Ok(())
+    })();
+    // Drain every teardown, including partial registration and backend failure.
+    // Drop still protects unwinding, but ordinary errors must retain cleanup causes.
+    finish_cleanup(result, streams.iter_mut().map(ManagedStream::disconnect))
+}
+
+fn finish_cleanup(
+    mut result: Result<(), AudioError>,
+    cleanup: impl Iterator<Item = Result<(), AudioError>>,
+) -> Result<(), AudioError> {
+    for next in cleanup {
+        if let Err(cleanup_error) = next {
+            result = Err(match result {
+                Ok(()) => cleanup_error,
+                Err(primary) => backend(format!("{primary}; cleanup: {cleanup_error}")),
+            });
         }
     }
-    if let Some(error) = cleanup_error {
-        return Err(error);
-    }
-    Ok(())
+    result
 }
+
 // Request a ~2.67 ms quantum, without forcing global graph settings. Host
 // policy can clamp this request; acceptance must measure the resulting path.
 fn endpoint_properties(name: &str, input: bool, rate: u32) -> pw::properties::PropertiesBox {
@@ -454,19 +469,22 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
     let clock_time = stream.time().ok();
     let requested = usize::try_from(buffer.requested()).unwrap_or(0);
     let Some(block) = buffer.datas_mut().first_mut() else {
+        data.failed.store(true, Ordering::Release);
         return;
     };
+    let stride = block.chunk().stride();
     let offset = block.chunk().offset() as usize;
     let size = block.chunk().size() as usize;
     let flags = block.chunk().flags().bits();
     let Some(bytes) = block.data() else {
+        data.failed.store(true, Ordering::Release);
         return;
     };
     let channels = data.channels;
     let transferred;
     match &mut data.io {
         Io::Sink(tx) => {
-            let Some(bytes) = bytes.get(offset..offset.saturating_add(size)) else {
+            let Some(bytes) = playback_payload(bytes, offset, size, stride, channels) else {
                 data.failed.store(true, Ordering::Release);
                 return;
             };
@@ -517,6 +535,22 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
             (time.now(), time.delay()),
         );
     }
+}
+
+// Only interleaved S16LE is negotiated. Reject a mismatched layout rather than
+// silently interpreting padding or a partial frame as controller samples.
+fn playback_payload(
+    bytes: &[u8],
+    offset: usize,
+    size: usize,
+    stride: i32,
+    channels: usize,
+) -> Option<&[u8]> {
+    let frame_bytes = channels.checked_mul(2).filter(|n| *n != 0)?;
+    if size % frame_bytes != 0 || (stride != 0 && usize::try_from(stride).ok()? != frame_bytes) {
+        return None;
+    }
+    bytes.get(offset..offset.checked_add(size)?)
 }
 
 fn ingest(
@@ -709,6 +743,50 @@ fn format_pod(format: &PcmFormat) -> Result<Vec<u8>, AudioError> {
 mod tests {
     use super::*;
     use gr_audio_contract::{AudioChannel as C, AudioStreamDescription};
+    #[test]
+    fn malformed_playback_layout_never_reaches_the_pcm_queue() {
+        let bytes = [99, 1, 0, 2, 0, 99];
+        for stride in [0, 4] {
+            assert_eq!(
+                playback_payload(&bytes, 1, 4, stride, 2),
+                Some(&bytes[1..5])
+            );
+        }
+        for (offset, size, stride, channels) in [
+            (1, 3, 4, 2),
+            (1, 4, 2, 2),
+            (1, 4, -4, 2),
+            (3, 4, 4, 2),
+            (usize::MAX, 4, 4, 2),
+            (0, 0, 0, 0),
+        ] {
+            assert!(playback_payload(&bytes, offset, size, stride, channels).is_none());
+        }
+    }
+    #[test]
+    fn failure_and_partial_registration_cleanup_retains_every_cause() {
+        for primary in [Ok(()), Err(backend("registration failed"))] {
+            let had_primary = primary.is_err();
+            let mut attempts = 0;
+            let cleanup = [
+                Err(backend("first endpoint")),
+                Ok(()),
+                Err(backend("last endpoint")),
+            ];
+            let error = finish_cleanup(primary, cleanup.into_iter().inspect(|_| attempts += 1))
+                .unwrap_err()
+                .to_string();
+            assert_eq!(attempts, 3);
+            assert!(error.contains("first endpoint"));
+            assert!(error.contains("last endpoint"));
+            assert_eq!(error.contains("registration failed"), had_primary);
+        }
+        assert_eq!(
+            finish_cleanup(Err(AudioError::Closed), std::iter::empty()),
+            Err(AudioError::Closed)
+        );
+        assert_eq!(finish_cleanup(Ok(()), [Ok(()), Ok(())].into_iter()), Ok(()));
+    }
     #[test]
     fn endpoints_request_small_quanta_without_forcing_graph_or_routing() {
         for input in [true, false] {

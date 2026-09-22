@@ -65,6 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 audio.underrun_frames(),
                 audio.last_error()
             );
+            for timing in audio.stream_timings() {
+                println!("retained_graph_timing={timing:?}");
+            }
             println!("controller={:?}", controller.diagnostics());
         }};
     }
