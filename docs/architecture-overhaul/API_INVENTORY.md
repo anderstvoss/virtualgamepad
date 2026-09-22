@@ -28,7 +28,8 @@ Storage/fields are private.
 
 ```rust
 pub const fn role(&self) -> &'static str
-pub const fn surface(&self) -> &'static crate::ControllerSurface
+pub const fn surface(&self) -> Option<&'static crate::ControllerSurface>
+pub fn audio_endpoint(&self) -> Option<&crate::AudioEndpoint>
 pub fn requested_physical_path(&self) -> Option<&str>
 pub fn requested_unique_id(&self) -> Option<&str>
 pub fn observed_host_path(&self) -> Option<&str>
@@ -895,3 +896,34 @@ Same-named experimental handles/options/errors retain their SPI meaning and are
 not interchangeable with the root application handles. Root handles expose no
 provider factories, raw requests, manual replies, generic protocol edits, or
 compatibility polling alias. `RealizationId` no longer has ambiguous aliases.
+
+## Audio work in progress (after GUI PR #110)
+
+`CreationOptions::with_audio(AudioOptions)` selects immutable exposure and sample
+ownership. Root exports `AudioOptions`, `AudioExposure`, `AudioAccess`,
+`AudioChannel`, `PcmFormat`, `SampleDirection`, `AudioRead`, `AudioError`,
+`AudioEndpoint`, `AudioStreamTiming` and `ControllerAudio`. DualSense, DS4 and Xbox handles expose
+`audio(&mut self) -> Option<&mut ControllerAudio>`.
+
+Audio sessions expose read-only endpoints/limitations, nonblocking playback reads,
+microphone writes, explicit playback and microphone flushing, terminal state, retained error and
+loss/underrun counters. Endpoint metadata exposes exact host/caller node names,
+direction, access ownership and format. Factories and backend workers stay private.
+This addition is not yet the final alpha inventory or API acceptance.
+
+
+The internal `gr-usbip` codec/profile/worker interfaces and
+`gr_curated_controllers::usb_personality` factories are workspace implementation
+interfaces only. The latter reuse existing controller-owned HID policy in trusted
+workers; neither is re-exported by the intended root application API. The USB
+realization remains unavailable to applications pending its production gates.
+
+`DualSenseHidOutput::UsbOutput` additionally exposes
+`microphone_muted: Option<bool>` for valid native power-save/microphone requests.
+`None` means no update, not unmuted. The mute indicator remains independent;
+observing this field does not itself transform the sample stream.
+
+`ControllerAudio::stream_timings()` returns retained stream-local graph-clock
+snapshots, rate, observation time, estimated graph delay and discontinuity/loss
+counters. These ticks are distinct from application PCM positions and do not
+establish a shared hardware clock or measured end-to-end latency.

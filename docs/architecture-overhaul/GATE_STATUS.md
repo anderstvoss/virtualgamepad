@@ -22,9 +22,9 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | C | Stateful synchronous protocol contract | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
-| F | Host audio coherence | E6 host audio | not_run | unassigned | None |
+| F | Host audio coherence | E6 host audio | blocked | Codex | [EXP-0023](experiments/EXP-0023-controller-audio.md): short PipeWire checks pass; sustained failures and routing/fidelity work remain |
 | G | Broker capability/startup/latency | Early probe; E5 replacement | blocked | Codex | [EXP-0004](experiments/EXP-0004-gadget-capability.md); source API lacks full control metadata/completion, live profile unprovisioned |
-| H | USB Audio implementation depth | E6 USB audio | not_run | unassigned | None |
+| H | USB Audio implementation depth | E6 USB audio | blocked | Codex | [EXP-0025](experiments/EXP-0025-local-usbip-audio.md): scoped DualSense stock-VHCI duplex feasibility; production and full acceptance remain |
 | I | Realization variant granularity | Affected E6 variants | not_run | unassigned | None |
 | J | Required replies and deadlines | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | K | Corpus generation boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
@@ -376,3 +376,14 @@ startup/reopen regression. No scoped core blocker remains identified. PR readine
 requires green final-head checks; it does not promote any gate or support cell.
 Interactive GUI/consumer interpretation, isolated DS4 touch/association, physical
 fidelity and the original extension prerequisites remain as recorded.
+
+
+## Controller audio transport revision
+
+The maintainer requires stock Linux. [EXP-0024](experiments/EXP-0024-usb-audio-transport-gates.md)
+records why dummy_hcd/FunctionFS cannot meet the planned PCM and SET completion
+requirements. The revised local USB/IP design has deterministic worker coverage
+and scoped live DualSense HID/UAC2 duplex evidence in [EXP-0025](experiments/EXP-0025-local-usbip-audio.md).
+Gate G remains blocked on production broker isolation/ownership and live completion
+fault tests; Gate H is not promoted by enumeration or the scoped streaming result.
+Current work is tracked in the [audio ledger](AUDIO_IMPLEMENTATION.md).
