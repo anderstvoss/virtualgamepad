@@ -118,10 +118,15 @@ where
         }
     }
 }
-struct CloseOnExit(UnixStream);
+struct CloseOnExit {
+    socket: UnixStream,
+    stopping: Arc<AtomicBool>,
+}
 impl Drop for CloseOnExit {
     fn drop(&mut self) {
-        let _ = self.0.shutdown(Shutdown::Both);
+        if !self.stopping.load(Ordering::Acquire) {
+            let _ = self.socket.shutdown(Shutdown::Both);
+        }
     }
 }
 struct Threads {
@@ -269,7 +274,10 @@ where
     };
     let control = channels.control;
     control.set_write_timeout(Some(Duration::from_secs(1)))?;
-    let notify = CloseOnExit(control.try_clone()?);
+    let notify = CloseOnExit {
+        socket: control.try_clone()?,
+        stopping: threads.stop.clone(),
+    };
     let stop = threads.stop.clone();
     threads.joins.push(
         thread::Builder::new()
@@ -279,7 +287,10 @@ where
                 worker.run(&stop)
             })?,
     );
-    let notify = CloseOnExit(control.try_clone()?);
+    let notify = CloseOnExit {
+        socket: control.try_clone()?,
+        stopping: threads.stop.clone(),
+    };
     let stop = threads.stop.clone();
     threads.joins.push(
         thread::Builder::new()
@@ -308,14 +319,28 @@ where
         &lost,
         &counters,
     );
-    let cleanup = threads.close();
+    finish(&control, setup.generation, result, threads.close())
+}
+fn finish(
+    control: &UnixStream,
+    generation: u64,
+    result: io::Result<()>,
+    cleanup: io::Result<()>,
+) -> io::Result<()> {
+    // A close acknowledgement certifies both processing threads have stopped.
+    // Failures close the control channel without claiming successful cleanup.
+    let acknowledgement = if result.is_ok() && cleanup.is_ok() {
+        gr_privileged_broker::write_message(&mut &*control, 4, &generation.to_le_bytes())
+    } else {
+        Ok(())
+    };
     let _ = control.shutdown(Shutdown::Both);
     match (result, cleanup) {
         (Err(primary), Err(cleanup)) => {
             Err(io::Error::other(format!("{primary}; cleanup: {cleanup}")))
         }
         (Err(error), _) | (_, Err(error)) => Err(error),
-        _ => Ok(()),
+        _ => acknowledgement,
     }
 }
 fn control_loop(
@@ -387,7 +412,6 @@ fn control_loop(
                 write_message(&mut socket, 3, &response)?;
             }
             4 if body.len() == 8 => {
-                write_message(&mut socket, 4, &body)?;
                 return Ok(());
             }
             _ => return Err(io::Error::other("unknown worker control operation")),
@@ -405,6 +429,12 @@ mod tests {
         a.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         b.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         (a, b)
+    }
+    #[test]
+    fn cleanup_failure_never_acknowledges_success() {
+        let (control, mut client) = pair();
+        assert!(finish(&control, 9, Ok(()), Err(io::Error::other("cleanup failed"))).is_err());
+        assert_eq!(client.read(&mut [0]).unwrap(), 0);
     }
     #[test]
     fn every_family_updates_without_host_polling_and_closes_owned_channels() {
@@ -468,8 +498,9 @@ mod tests {
                 read_message(&mut client).unwrap(),
                 (4, 9_u64.to_le_bytes().to_vec())
             );
-            assert!(worker.join().unwrap().is_ok());
+            samples.set_nonblocking(true).unwrap();
             assert_eq!(samples.read(&mut [0]).unwrap(), 0);
+            assert!(worker.join().unwrap().is_ok());
         }
     }
     #[test]

@@ -32,6 +32,8 @@ pub mod vhci_policy;
 pub mod audio_fds;
 #[cfg(target_os = "linux")]
 pub mod audio_launch;
+#[cfg(target_os = "linux")]
+pub mod audio_session;
 /// Strict Linux socket framing.
 #[cfg(target_os = "linux")]
 pub mod socket_wire;

@@ -193,3 +193,14 @@ python3 scripts/validate-production-audio-worker.py --worker target/debug/gr-aud
 These checks cover enumeration, exact bidirectional sample patterns, diagnostics
 and closure. They do not substitute for the installed-worker security tests or
 sustained kernel latency and continuity acceptance.
+
+The staged session owner now validates the worker's exact readiness version and
+generation, retains the child and kernel socket, and supports bounded, idempotent
+cleanup. Child death closes that socket; rollback never detaches by port number.
+Deterministic tests cover readiness rejection, child death, repeated cleanup and
+preservation of unrelated sockets. This owner still needs wiring into the daemon's
+attachment operation and ownership journal before ordinary-caller use is enabled.
+
+Worker close acknowledgement now follows successful USB/PCM thread shutdown.
+An acknowledgement therefore certifies processing has stopped and sample endpoints
+are closed; cleanup failure terminates the control channel without a success reply.
