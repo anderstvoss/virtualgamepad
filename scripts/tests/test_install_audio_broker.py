@@ -18,6 +18,7 @@ class AudioInstallerTests(unittest.TestCase):
         unit = module.service()
         self.assertIn(b'CAP_SETUID CAP_SETGID', unit)
         self.assertIn(b'NoNewPrivileges=true', unit)
+        self.assertIn(b'AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID', unit)
         self.assertIn(b'/sys/devices/platform/vhci_hcd.0/attach', unit)
         self.assertNotIn(b'/dev/snd', unit)
         self.assertNotIn(b'ExecStartPre', unit)

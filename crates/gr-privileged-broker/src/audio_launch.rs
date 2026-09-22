@@ -89,6 +89,7 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
     {
         return Err(io::Error::other("invalid worker launch identity"));
     }
+    required_capabilities(&fs::read_to_string("/proc/thread-self/status")?)?;
     let file = executable(Path::new(WORKER))?;
     let image = duplicate(&file)?;
     drop(file);
@@ -162,6 +163,7 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
             {
                 return Err(io::Error::last_os_error());
             }
+            clear_capabilities()?;
             // Set after dropping UID: Linux clears PDEATHSIG on credential change.
             if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0
                 || libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL, 0, 0, 0) != 0
@@ -177,6 +179,39 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
     let child = command.spawn();
     drop(image);
     child
+}
+fn required_capabilities(status: &str) -> io::Result<()> {
+    let effective = status
+        .lines()
+        .find_map(|line| line.strip_prefix("CapEff:\t"))
+        .and_then(|value| u64::from_str_radix(value, 16).ok())
+        .ok_or_else(|| io::Error::other("cannot inspect broker effective capabilities"))?;
+    for (bit, name) in [(6, "CAP_SETGID"), (7, "CAP_SETUID"), (21, "CAP_SYS_ADMIN")] {
+        if effective & (1 << bit) == 0 {
+            return Err(io::Error::other(format!(
+                "broker is missing effective {name}; update the installed systemd capability configuration"
+            )));
+        }
+    }
+    Ok(())
+}
+fn clear_capabilities() -> io::Result<()> {
+    #[repr(C)]
+    struct Header {
+        version: u32,
+        pid: i32,
+    }
+    let header = Header {
+        version: 0x2008_0522,
+        pid: 0,
+    };
+    // Two Linux capability records: effective, permitted, inheritable (u32 each).
+    let empty = [0_u32; 6];
+    // SAFETY: fixed Linux v3 capability ABI, live buffers of exact required size.
+    if unsafe { libc::syscall(libc::SYS_capset, &raw const header, empty.as_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
 }
 // Execute the verified descriptor directly. Resolving /proc/self/fd after a UID
 // transition can fail because Linux resets dumpability and procfs ownership.
@@ -202,6 +237,36 @@ fn exec_image(fd: libc::c_int, args: &[CString], env: &[CString]) -> io::Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn missing_effective_launch_capability_has_actionable_error() {
+        required_capabilities("CapEff:\t00000000002000c0\n").unwrap();
+        let error = required_capabilities("CapEff:\t0000000000200040\n").unwrap_err();
+        assert!(error.to_string().contains("CAP_SETUID"));
+        assert!(required_capabilities("CapBnd:\t00000000002000c0\n").is_err());
+    }
+    #[test]
+    fn worker_exec_has_no_effective_permitted_or_inheritable_capabilities() {
+        let image = File::open("/usr/bin/cat").unwrap();
+        let args = [
+            CString::new("cat").unwrap(),
+            CString::new("/proc/self/status").unwrap(),
+        ];
+        let mut command = Command::new("/nonexistent-not-used");
+        // SAFETY: only capability dropping and descriptor execution occur after fork.
+        unsafe {
+            command.pre_exec(move || {
+                clear_capabilities()?;
+                exec_image(image.as_raw_fd(), &args, &[])
+            });
+        }
+        let output = command.output().unwrap();
+        assert!(output.status.success());
+        let status = String::from_utf8(output.stdout).unwrap();
+        for key in ["CapInh:", "CapPrm:", "CapEff:", "CapAmb:"] {
+            let line = status.lines().find(|line| line.starts_with(key)).unwrap();
+            assert_eq!(line.split_whitespace().nth(1), Some("0000000000000000"));
+        }
+    }
     #[test]
     fn executes_verified_descriptor_without_resolving_command_path() {
         let image = File::open("/usr/bin/true").unwrap();

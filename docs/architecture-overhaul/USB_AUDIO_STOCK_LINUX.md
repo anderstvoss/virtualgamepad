@@ -284,3 +284,15 @@ reply, with a regression for failure before handoff. Reinstallation and a fresh
 installed-service probe are required to identify or confirm resolution of the
 host failure. The physical DualSense is disconnected; physical acceptance remains
 pending reattachment and explicit readiness confirmation.
+
+The next installed probe returned `EPERM`. The running root broker exposed
+`CAP_SYS_ADMIN` and `CAP_SETGID` as effective capabilities but lacked `CAP_SETUID`,
+despite all three being in its bounding set. The installer now explicitly carries
+these three capabilities in its ambient set, following the distinction described
+in [systemd's execution documentation](https://github.com/systemd/systemd/blob/main/man/systemd.exec.xml).
+The worker explicitly clears effective, permitted and inheritable sets after
+credential dropping. Regressions check missing effective launch capabilities and
+zero worker capability sets across exec. A fresh installed run is still required;
+the precise cause of the original effective-set omission is not established.
+The installer migrates only the exact prior generated service template; differing
+administrator configurations still require manual review.

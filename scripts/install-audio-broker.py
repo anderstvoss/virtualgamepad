@@ -81,7 +81,7 @@ ReadWritePaths=/run/virtualgamepad /run/virtualgamepad-state /sys/devices/platfo
 RestrictAddressFamilies=AF_UNIX
 IPAddressDeny=any
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID
-AmbientCapabilities=
+AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID
 ProtectKernelModules=true
 SystemCallArchitectures=native
 TasksMax=128
@@ -152,7 +152,10 @@ def main():
     install(Path('/etc/virtualgamepad/broker.conf'), config, 0o600)
     for destination, content in binaries.items():
         install(destination, content, 0o755, replace=True)
-    install(Path('/etc/systemd/system/virtualgamepad-broker.service'), service(), 0o644)
+    service_path = Path('/etc/systemd/system/virtualgamepad-broker.service')
+    previous = service().replace(b'AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID', b'AmbientCapabilities=')
+    known_previous = service_path.is_file() and not service_path.is_symlink() and service_path.read_bytes() == previous
+    install(service_path, service(), 0o644, replace=known_previous)
     install(Path('/etc/systemd/system/virtualgamepad-broker.socket'), socket_unit(grp.getgrgid(account.pw_gid).gr_name), 0o644)
     tmpfiles = b'd /run/virtualgamepad-state 0700 root root -\nd /run/virtualgamepad-state/default 0700 root root -\nd /run/virtualgamepad-state/default.audio 0700 root root -\n'
     install(Path('/etc/tmpfiles.d/virtualgamepad-broker.conf'), tmpfiles, 0o644)
