@@ -174,12 +174,23 @@ fn attached_bus(status: &str, port: u16, device: u32) -> io::Result<Option<Strin
             return Err(io::Error::other("duplicate VHCI port"));
         }
         seen = true;
-        if fields[2] == "004" {
+        if fields[0] != "hs" {
+            return Err(io::Error::other("reserved VHCI port changed hub"));
+        }
+        // Linux hides identity fields until VDEV_ST_USED (006). State 005
+        // means attached but not yet assigned, not an identity mismatch.
+        if matches!(fields[2], "004" | "005") {
+            if fields[3..] != ["000", "00000000", "000000", "0-0"] {
+                return Err(io::Error::other("inconsistent pending VHCI status"));
+            }
             continue;
         }
-        if fields[0] != "hs"
-            || u32::from_str_radix(fields[4], 16).map_err(io::Error::other)? != device
-        {
+        if fields[2] != "006" {
+            return Err(io::Error::other(
+                "VHCI attachment entered terminal or unknown state",
+            ));
+        }
+        if u32::from_str_radix(fields[4], 16).map_err(io::Error::other)? != device {
             return Err(io::Error::other("VHCI attachment identity changed"));
         }
         if fields[2] == "006" && fields[3] == "003" {
@@ -200,13 +211,38 @@ mod tests {
     use super::*;
     const HEADER: &str = "hub port sta spd dev sockfd local_busid\n";
     #[test]
+    fn enumeration_waits_through_not_assigned_without_accepting_unknown_identity() {
+        for state in ["004", "005"] {
+            assert_eq!(
+                attached_bus(
+                    &format!("{HEADER}hs 0 {state} 000 00000000 000000 0-0"),
+                    0,
+                    0x10001
+                )
+                .unwrap(),
+                None
+            );
+        }
+        assert_eq!(
+            attached_bus(&format!("{HEADER}hs 0 006 003 00010001 4 4-1"), 0, 0x10001).unwrap(),
+            Some("4-1".into())
+        );
+        for row in [
+            "hs 0 007 000 00000000 000000 0-0",
+            "hs 0 005 003 00010001 4 4-1",
+            "ss 0 005 000 00000000 000000 0-0",
+        ] {
+            assert!(attached_bus(&format!("{HEADER}{row}"), 0, 0x10001).is_err());
+        }
+    }
+    #[test]
     fn enumeration_requires_exact_owned_high_speed_device() {
         assert_eq!(
             attached_bus(&format!("{HEADER}hs 0 006 003 00010001 4 4-1"), 0, 0x10001).unwrap(),
             Some("4-1".into())
         );
         assert_eq!(
-            attached_bus(&format!("{HEADER}hs 0 004 000 0 0 0-0"), 0, 1).unwrap(),
+            attached_bus(&format!("{HEADER}hs 0 004 000 00000000 000000 0-0"), 0, 1).unwrap(),
             None
         );
         for row in [

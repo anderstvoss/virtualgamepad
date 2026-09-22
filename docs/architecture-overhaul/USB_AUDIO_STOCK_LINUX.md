@@ -296,3 +296,12 @@ zero worker capability sets across exec. A fresh installed run is still required
 the precise cause of the original effective-set omission is not established.
 The installer migrates only the exact prior generated service template; differing
 administrator configurations still require manual review.
+
+After the capability update, installed creation reached VHCI attachment but the
+broker rejected enumeration with an identity mismatch. Linux `port_show_vhci`
+reports zero speed/device/socket fields until `VDEV_ST_USED`; the intervening
+`VDEV_ST_NOTASSIGNED` state therefore cannot be checked against the final device
+identity. The parser now waits through canonical 004/005 rows, validates identity
+only at 006, and rejects malformed pending rows, wrong hubs, and terminal/unknown
+states. The regression covers the full 004→005→006 sequence plus failures. This
+fix needs installation and a fresh probe; the previous run remains a failure.
