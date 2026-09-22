@@ -123,3 +123,31 @@ patterns, and reports ALSA errors. It resolves the current card through VHCI
 ancestry and refuses a different session between trials. Run only one checker on
 a lab device. It retains no raw recordings and does not equate playback submission
 with exact worker-side sample acceptance.
+
+## Worker scheduling and PCM channel increment
+
+The USB worker now waits for socket readiness or absolute capture/completion
+deadlines instead of sleeping a fixed millisecond each cycle. A preallocated,
+32-entry completion FIFO retains exact partial-write offsets; delivery has a
+one-second absolute deadline and queue exhaustion terminates the connection.
+Pending-request ownership is also preallocated. The safe readiness wrapper uses
+`rustix` 1.1 (`event` feature), already present transitively in the workspace.
+See the [rustix poll API](https://docs.rs/rustix/1.1.4/rustix/event/fn.poll.html).
+
+Implementation-only PCM IPC now provides separate anonymous stream channels and
+queue/socket pumps with fixed buffers. Packets validate protocol version, compiled
+profile, direction, generation, frame count and position; declared gaps survive
+queue transfer. Normal packets contain at most 128 frames. Partial I/O preserves
+its offset, and pending consumer blocks preserve their unaccepted suffix. Invalid
+input, expired partial transfers and one-second consumer stalls close the channel
+and its owned queue. These implementation limits are not public tuning options.
+
+Deterministic tests cover short writes, backpressure, FIFO wrap/reuse, deadlines,
+wrong generations/formats, malformed packets, replayed frames, all profile/channel
+layouts, propagated discontinuities and terminal closure. The three-family lab
+process checks passed after the scheduler change. This does not establish kernel
+latency acceptance or explain the historical Xbox interruption.
+
+The PCM primitives are not yet connected to a production-installed worker and
+broker operation. Typed native-state/output IPC, descriptor-transfer validation,
+installation, root USB creation and the full security/live matrix remain open.

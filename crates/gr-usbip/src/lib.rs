@@ -5,6 +5,8 @@
 #![allow(clippy::missing_errors_doc)]
 
 pub mod control;
+#[cfg(unix)]
+pub mod pcm_ipc;
 pub mod pending;
 pub mod profile;
 #[cfg(unix)]
