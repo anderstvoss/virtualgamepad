@@ -28,6 +28,10 @@ pub mod admission;
 /// Staged VHCI port admission; production attachment remains gated separately.
 pub mod vhci_policy;
 
+#[cfg(target_os = "linux")]
+pub mod audio_fds;
+#[cfg(target_os = "linux")]
+pub mod audio_launch;
 /// Strict Linux socket framing.
 #[cfg(target_os = "linux")]
 pub mod socket_wire;
@@ -206,6 +210,21 @@ fn controller_tag(controller: CompiledControllerKind) -> u8 {
 
 /// Encode one bounded protocol message. Exposed for deterministic daemon tests.
 pub fn write_message(writer: &mut impl Write, tag: u8, body: &[u8]) -> Result<(), io::Error> {
+    write_versioned_message(writer, PROTOCOL_VERSION, tag, body)
+}
+
+pub fn write_versioned_message(
+    writer: &mut impl Write,
+    version: u16,
+    tag: u8,
+    body: &[u8],
+) -> io::Result<()> {
+    if !matches!(version, 1 | 2) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unsupported broker version",
+        ));
+    }
     if body.len() > MAX_WIRE_PAYLOAD {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -215,13 +234,24 @@ pub fn write_message(writer: &mut impl Write, tag: u8, body: &[u8]) -> Result<()
     let length = u32::try_from(3 + body.len())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "oversized broker message"))?;
     writer.write_all(&length.to_le_bytes())?;
-    writer.write_all(&PROTOCOL_VERSION.to_le_bytes())?;
+    writer.write_all(&version.to_le_bytes())?;
     writer.write_all(&[tag])?;
     writer.write_all(body)
 }
 
 /// Decode one bounded protocol message. Exposed for deterministic daemon tests.
 pub fn read_message(reader: &mut impl Read) -> Result<(u8, Vec<u8>), io::Error> {
+    let (version, tag, body) = read_versioned_message(reader)?;
+    if version != PROTOCOL_VERSION {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "unsupported broker version",
+        ));
+    }
+    Ok((tag, body))
+}
+
+pub fn read_versioned_message(reader: &mut impl Read) -> io::Result<(u16, u8, Vec<u8>)> {
     let mut length = [0_u8; 4];
     reader.read_exact(&mut length)?;
     let length = usize::try_from(u32::from_le_bytes(length))
@@ -234,13 +264,14 @@ pub fn read_message(reader: &mut impl Read) -> Result<(u8, Vec<u8>), io::Error> 
     }
     let mut message = vec![0_u8; length];
     reader.read_exact(&mut message)?;
-    if u16::from_le_bytes([message[0], message[1]]) != PROTOCOL_VERSION {
+    let version = u16::from_le_bytes([message[0], message[1]]);
+    if !matches!(version, 1 | 2) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "unsupported broker version",
         ));
     }
-    Ok((message[2], message[3..].to_vec()))
+    Ok((version, message[2], message[3..].to_vec()))
 }
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]

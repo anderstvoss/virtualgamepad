@@ -37,16 +37,16 @@ def wait(pid, timeout):
     raise TimeoutError('worker did not exit')
 
 
-def trial(worker, family, tag, channels, microphones):
+def trial(worker, family, tag, channels, microphones, slots):
     pairs = [socket.socketpair() for _ in range(4)]
     pid = os.fork()
     if pid == 0:
         try:
             # Duplicate away from all fixed ABI slots before remapping any slot.
             copies = [fcntl.fcntl(child.fileno(), fcntl.F_DUPFD_CLOEXEC, 10) for _, child in pairs]
-            for source, destination in zip(copies, (0, 3, 4, 5)):
+            for source, destination in zip(copies, (0, *slots)):
                 os.dup2(source, destination, inheritable=True)
-            os.execv(str(worker), [str(worker), family, str(0x10001), '7', '020102030405'])
+            os.execv(str(worker), [str(worker), family, str(0x10001), '7', '020102030405', *map(str, slots)])
         except BaseException:
             os._exit(125)
     reaped = False
@@ -98,7 +98,7 @@ def trial(worker, family, tag, channels, microphones):
         reaped = True
         assert status == 0, status
         assert playback.recv(1) == b''
-        print(f'{family}: production worker enumeration, bidirectional PCM IPC, diagnostics and closure passed')
+        print(f'{family} descriptors={slots}: production worker enumeration, bidirectional PCM IPC, diagnostics and closure passed')
     finally:
         if not reaped:
             found, _ = os.waitpid(pid,os.WNOHANG)
@@ -115,7 +115,8 @@ def main():
     args = parser.parse_args()
     worker = args.worker.resolve(strict=True)
     for family, tag, channels, microphones in [('dualsense',1,4,2),('dualshock4',2,2,1),('xbox360',3,2,1)]:
-        trial(worker,family,tag,channels,microphones)
+        for slots in [(3, 4, 5), (64, 65, 66)]:
+            trial(worker,family,tag,channels,microphones,slots)
 
 
 if __name__ == '__main__':

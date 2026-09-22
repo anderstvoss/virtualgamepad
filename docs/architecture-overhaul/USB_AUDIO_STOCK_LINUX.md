@@ -148,9 +148,11 @@ layouts, propagated discontinuities and terminal closure. The three-family lab
 process checks passed after the scheduler change. This does not establish kernel
 latency acceptance or explain the historical Xbox interruption.
 
-The PCM primitives are not yet connected to a production-installed worker and
-broker operation. Typed native-state/output IPC, descriptor-transfer validation,
-installation, root USB creation and the full security/live matrix remain open.
+The separate `gr-audio-worker` executable now connects PCM channels, curated HID
+personalities, native-state transactions, reverse outputs and diagnostics. Its
+process harness exercises all three families without privileges or host devices.
+It is not yet installed or connected to a broker attachment operation; root USB
+creation and the full security/live matrix remain open.
 
 Native-state snapshot codecs now preserve the complete DS4, DualSense and Xbox360
 state, including controller-specific sequence/sensor fields, constrained touch
@@ -159,4 +161,35 @@ before replacing state. The transaction ledger binds updates to a generation,
 requires consecutive sequence numbers, acknowledges an identical last retry
 without applying it twice, and rejects conflicting/stale retries. Invalid
 snapshots leave accepted state and sequence unchanged. These are worker-side
-primitives; installation and live control-message integration remain outstanding.
+primitives integrated into the separate worker; installation and ordinary-caller
+USB creation remain outstanding.
+
+
+## Production launch and descriptor boundary
+
+The broker launch helper accepts only a compiled profile and administrator-owned
+worker at `/usr/libexec/virtualgamepad/gr-audio-worker`. It validates ownership,
+permissions and parent directories, then executes the verified open inode. Before
+exec it clears the environment and supplementary groups, drops UID/GID, disables
+privilege gain, bounds resources and requests termination on broker death. Worker
+channels use broker-selected inherited descriptors; applications do not select
+these descriptors or receive the kernel-facing socket.
+
+Version-two framing is available alongside strict version-one compatibility.
+Successful audio descriptor handoff is a separate bounded message containing
+exactly three distinct connected Unix stream sockets. Wrong counts, duplicate
+sockets, files and unexpected ancillary data are rejected with received resources
+closed. Ordinary request frames still reject descriptor transfers. These helpers
+are not yet an enabled daemon operation or evidence of privileged-launch acceptance.
+
+The process harness validates both low and high inherited descriptor numbers for
+all three families:
+
+```sh
+cargo build -p gr-audio-worker
+python3 scripts/validate-production-audio-worker.py --worker target/debug/gr-audio-worker
+```
+
+These checks cover enumeration, exact bidirectional sample patterns, diagnostics
+and closure. They do not substitute for the installed-worker security tests or
+sustained kernel latency and continuity acceptance.

@@ -18,6 +18,25 @@ pub fn read_frame(stream: &UnixStream, timeout: Duration) -> io::Result<(u8, Vec
         started: None,
     })
 }
+/// Version-aware daemon entry; uses the same deadline and ancillary rejection.
+pub fn read_versioned_frame(
+    stream: &UnixStream,
+    timeout: Duration,
+) -> io::Result<(u16, u8, Vec<u8>)> {
+    crate::read_versioned_message(&mut FrameReader {
+        stream,
+        timeout,
+        started: None,
+    })
+}
+/// Bounded startup read: unlike an established connection, idle time counts.
+pub fn read_startup_frame(stream: &UnixStream, timeout: Duration) -> io::Result<(u8, Vec<u8>)> {
+    crate::read_message(&mut FrameReader {
+        stream,
+        timeout,
+        started: Some(Instant::now()),
+    })
+}
 struct FrameReader<'a> {
     stream: &'a UnixStream,
     timeout: Duration,
@@ -106,6 +125,20 @@ impl Read for FrameReader<'_> {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn audio_version_is_explicit_and_v1_clients_reject_it() {
+        let (mut tx, rx) = UnixStream::pair().unwrap();
+        crate::write_versioned_message(&mut tx, 2, 1, &[1, 2, 3]).unwrap();
+        assert_eq!(
+            read_versioned_frame(&rx, Duration::from_millis(100)).unwrap(),
+            (2, 1, vec![1, 2, 3])
+        );
+        crate::write_versioned_message(&mut tx, 2, 1, &[]).unwrap();
+        assert!(read_frame(&rx, Duration::from_millis(100)).is_err());
+        let mut bytes = Vec::new();
+        assert!(crate::write_versioned_message(&mut bytes, 3, 1, &[]).is_err());
+        assert!(bytes.is_empty());
+    }
     #[test]
     fn exact_frame_and_client_death() {
         let (mut tx, rx) = UnixStream::pair().unwrap();

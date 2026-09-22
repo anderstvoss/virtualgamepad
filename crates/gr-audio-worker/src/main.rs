@@ -64,8 +64,8 @@ mod linux {
             return Err("audio worker must run unprivileged".into());
         }
         let args: Vec<_> = std::env::args().skip(1).collect();
-        if args.len() != 4 {
-            return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY".into());
+        if args.len() != 7 {
+            return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY CONTROL_FD PLAYBACK_FD MICROPHONE_FD".into());
         }
         let profile = match args[0].as_str() {
             "dualsense" => ProfileId::DualSenseEmulated,
@@ -86,13 +86,24 @@ mod linux {
             generation: args[2].parse()?,
             identity,
         };
-        // Slots are fixed in the broker/worker ABI; no runtime paths or sockets
-        // selected by the application are accepted here.
+        let slots = args[4..]
+            .iter()
+            .map(|s| s.parse::<libc::c_int>())
+            .collect::<Result<Vec<_>, _>>()?;
+        if slots.iter().any(|fd| *fd < 3)
+            || slots[0] == slots[1]
+            || slots[0] == slots[2]
+            || slots[1] == slots[2]
+        {
+            return Err("invalid broker-owned channel descriptors".into());
+        }
+        // These positional descriptors are assigned only by the broker, never
+        // accepted from an application-facing broker request.
         let channels = Channels {
             usb: socket(0)?,
-            control: socket(3)?,
-            playback: socket(4)?,
-            microphone: socket(5)?,
+            control: socket(slots[0])?,
+            playback: socket(slots[1])?,
+            microphone: socket(slots[2])?,
         };
         gr_audio_worker::run(setup, channels)?;
         Ok(())
