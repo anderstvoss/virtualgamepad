@@ -305,3 +305,46 @@ identity. The parser now waits through canonical 004/005 rows, validates identit
 only at 006, and rejects malformed pending rows, wrong hubs, and terminal/unknown
 states. The regression covers the full 004→005→006 sequence plus failures. This
 fix needs installation and a fresh probe; the previous run remains a failure.
+
+## Installed production path: lifecycle and initial duplex evidence
+
+With the assignment-state fix installed, the ordinary-user probe passed all three
+families: creation, worker diagnostics, native-state updates, acknowledged repeated
+closure and endpoint EOF. The isolation probe also passed duplicate/mixed sessions,
+three-port exhaustion, independent middle removal, recreation, abrupt client
+closure and malformed-generation worker termination. These are scoped lifecycle
+results, not the complete privileged crash/restart/security matrix.
+
+The new `validate-broker-audio-live.py` uses the installed broker's PCM channels
+and host ALSA simultaneously. It resolves the current owned card, waits for udev
+settlement and disables only that virtual card's PipeWire profile for the direct
+ALSA trial (`save=false`); the owned device is removed afterward. It does not
+select physical devices or modify desktop defaults. Initial direct-ALSA failures
+were a udev readiness race and session-manager contention; both remain recorded
+as failed attempts, and the harness now prepares explicit exclusive access.
+
+Three-second post-warm-up duplex trials passed exact playback/microphone patterns
+for DS4, DualSense and Xbox360. Longer DualSense trials with 4 ms operating fill
+failed with 48 silence frames. At 8 ms fill, DualSense trial 0 passed all 2,880,000
+post-warm-up microphone frames and 2,976,000 total playback frames, but trial 1
+failed with 48 silence frames. DS4 trial 0 failed with 96 silence frames. Playback
+remained exact in these longer runs. Command interval and worker scheduling
+lateness are not end-to-end latency measurements; no sub-20 ms acceptance is claimed.
+
+The refill feedback had used USB completion counters, which lag per-packet queue
+consumption. A new private worker operation exposes actual microphone frames
+removed from the queue, excluding underrun silence. A deterministic multi-packet
+request regression proves consumption advances before completion and silence does
+not advance consumption. The new control client validates native transactions,
+outputs, counters and acknowledgements; stale replies terminate it. Reinstall the
+updated worker before rerunning the revised consumption-based harness:
+
+```sh
+cargo run -p gr-audio-worker --example broker_audio_isolation
+python3 scripts/validate-broker-audio-live.py --profile dualsense --seconds 60 --trials 3
+```
+
+The 8 ms value is test operating fill, not a public API buffer-size promise. Whether
+the corrected feedback eliminates the observed underruns remains a live-test gate.
+Public root USB integration, native-client bridging, measured directional latency,
+full acceptance matrix and remaining physical comparisons are still outstanding.
