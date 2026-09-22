@@ -273,3 +273,14 @@ is not the sustained audio acceptance harness. The private broker client verifie
 a root peer, protocol version, nonzero creation identity, exact descriptor handoff
 and bounded creation/cleanup replies. Public root API integration remains gated
 on installed-broker acceptance.
+
+The first installed-service smoke run started the broker but creation returned EOF
+before attachment; VHCI ports remained free and no worker survived. This is a
+failed run, not installation acceptance. The launch path now uses `fexecve` on the
+verified image descriptor instead of resolving a procfs descriptor pathname after
+credential changes. A process regression exercises descriptor execution without
+a usable command pathname. Version-two setup errors now return a bounded error
+reply, with a regression for failure before handoff. Reinstallation and a fresh
+installed-service probe are required to identify or confirm resolution of the
+host failure. The physical DualSense is disconnected; physical acceptance remains
+pending reattachment and explicit readiness confirmation.

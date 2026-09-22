@@ -1,11 +1,13 @@
 //! Privileged worker launch boundary. Only this fixed installed executable is used.
 #![allow(unsafe_code)]
 use std::{
+    ffi::CString,
     fs::{self, File, OpenOptions},
     io,
     os::{
         fd::{AsRawFd, FromRawFd, OwnedFd},
         unix::{
+            ffi::OsStrExt,
             fs::{MetadataExt, OpenOptionsExt},
             net::UnixStream,
             process::CommandExt,
@@ -122,6 +124,12 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
         .map(duplicate)
         .collect::<io::Result<Vec<_>>>()?;
     command.args(descriptors.iter().map(|fd| fd.as_raw_fd().to_string()));
+    let argv = std::iter::once(std::ffi::OsStr::new(WORKER))
+        .chain(command.get_args())
+        .map(|arg| CString::new(arg.as_bytes()).map_err(io::Error::other))
+        .collect::<io::Result<Vec<_>>>()?;
+    let env = [CString::new("LANG=C").map_err(io::Error::other)?];
+    let image_fd = image.as_raw_fd();
     // SAFETY: getpid has no pointer arguments or preconditions.
     let parent = unsafe { libc::getpid() };
     // SAFETY: after fork this closure uses only fixed storage and async-signal-safe
@@ -163,16 +171,49 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
             if libc::getppid() != parent || libc::geteuid() == 0 {
                 return Err(io::Error::from_raw_os_error(libc::EPERM));
             }
-            Ok(())
+            exec_image(image_fd, &argv, &env)
         });
     }
     let child = command.spawn();
     drop(image);
     child
 }
+// Execute the verified descriptor directly. Resolving /proc/self/fd after a UID
+// transition can fail because Linux resets dumpability and procfs ownership.
+fn exec_image(fd: libc::c_int, args: &[CString], env: &[CString]) -> io::Result<()> {
+    if args.len() >= 16 || env.len() >= 16 {
+        return Err(io::Error::from_raw_os_error(libc::E2BIG));
+    }
+    let mut arguments = [std::ptr::null(); 16];
+    let mut envp = [std::ptr::null(); 16];
+    for (pointer, value) in arguments.iter_mut().zip(args) {
+        *pointer = value.as_ptr();
+    }
+    for (pointer, value) in envp.iter_mut().zip(env) {
+        *pointer = value.as_ptr();
+    }
+    // SAFETY: descriptor is live, pointer arrays are terminated and C strings
+    // remain live. fexecve is async-signal-safe and success never returns.
+    unsafe {
+        libc::fexecve(fd, arguments.as_ptr(), envp.as_ptr());
+    }
+    Err(io::Error::last_os_error())
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn executes_verified_descriptor_without_resolving_command_path() {
+        let image = File::open("/usr/bin/true").unwrap();
+        let args = [CString::new("verified-worker").unwrap()];
+        let mut command = Command::new("/nonexistent-not-used");
+        // SAFETY: closure only calls the bounded async-signal-safe helper;
+        // captured File keeps the descriptor alive through exec.
+        unsafe {
+            command.pre_exec(move || exec_image(image.as_raw_fd(), &args, &[]));
+        }
+        assert!(command.status().unwrap().success());
+    }
     #[test]
     fn profiles_are_compiled_and_unprivileged_ids_are_required_before_resources() {
         assert!(Profile::from_tag(0).is_err());

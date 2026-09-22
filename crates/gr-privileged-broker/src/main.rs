@@ -187,7 +187,7 @@ fn serve(
                 )?;
                 return Ok(());
             };
-            return gr_privileged_broker::audio_connection::serve(
+            return gr_privileged_broker::audio_connection::serve_reported(
                 stream,
                 peer,
                 sessions,

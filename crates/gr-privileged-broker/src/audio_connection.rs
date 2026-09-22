@@ -36,6 +36,26 @@ struct Active {
 /// `peer` is obtained by the daemon from `SO_PEERCRED` after authorization. This
 /// function accepts no client-supplied UID or cross-connection session identifier.
 /// The first frame is supplied by the version-dispatching daemon.
+pub fn serve_reported(
+    stream: UnixStream,
+    peer: u32,
+    limits: &Admission,
+    factory: &impl Factory,
+    first: (u8, Vec<u8>),
+) -> io::Result<()> {
+    let mut response = stream.try_clone()?;
+    let result = serve(stream, peer, limits, factory, first);
+    if let Err(error) = &result {
+        let text = error.to_string();
+        let mut end = text.len().min(256);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        let _ = crate::write_versioned_message(&mut response, 2, 0x81, &text.as_bytes()[..end]);
+    }
+    result
+}
+
 pub fn serve(
     mut stream: UnixStream,
     peer: u32,
@@ -186,6 +206,18 @@ mod tests {
         assert_eq!((version, tag), (2, 0x80));
         assert_eq!(&body[..8], &7_u64.to_le_bytes());
         audio_fds::receive(client).unwrap()
+    }
+    #[test]
+    fn setup_failure_returns_actionable_versioned_error() {
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            serve_reported(server, 10, &Admission::new(1, 1), &factory(true), request())
+        });
+        assert_eq!(
+            crate::read_versioned_message(&mut client).unwrap(),
+            (2, 0x81, b"injected setup failure".to_vec())
+        );
+        assert!(task.join().unwrap().is_err());
     }
     #[test]
     fn invalid_requests_cannot_create_resources_or_exhaust_admission() {
