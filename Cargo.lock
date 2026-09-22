@@ -931,6 +931,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "gr-audio-worker"
+version = "0.1.0"
+dependencies = [
+ "gr-audio-contract",
+ "gr-curated-controllers",
+ "gr-hid",
+ "gr-privileged-broker",
+ "gr-realization-api",
+ "gr-usbip",
+ "libc",
+]
+
+[[package]]
 name = "gr-controller-contract"
 version = "0.1.0"
 dependencies = [

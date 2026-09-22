@@ -1,0 +1,21 @@
+[package]
+name = "gr-audio-worker"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gr-usbip = { path = "../gr-usbip", version = "0.1" }
+gr-hid = { path = "../gr-hid", version = "0.1" }
+gr-curated-controllers = { path = "../gr-curated-controllers", version = "0.1" }
+gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
+gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
+gr-privileged-broker = { path = "../gr-privileged-broker", version = "0.1" }
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true

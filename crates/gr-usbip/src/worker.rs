@@ -25,6 +25,10 @@ const SLOT_COUNT: usize = 32;
 /// Implemented by the trusted worker's controller personality, never privileged
 /// broker code. Required report replies are synchronous and never optional events.
 pub trait HidHandler {
+    /// Service trusted worker control independently of host HID polling.
+    fn service(&mut self, _now_us: u64) -> io::Result<()> {
+        Ok(())
+    }
     fn request(&mut self, request: &RequestKind, now_us: u64) -> Reply;
     /// Current compiled personalities must always supply an input report.
     /// `None` indicates terminal personality failure, not a USB endpoint stall.
@@ -177,6 +181,7 @@ impl<H: HidHandler> Worker<H> {
         let mut data = vec![0; MAX_TRANSFER_BYTES];
         while !stop.load(Ordering::Acquire) {
             let now = u64::try_from(started.elapsed().as_micros()).map_err(error)?;
+            self.hid.service(now)?;
             for _ in 0..SLOT_COUNT {
                 if !self.receive_one(now, &mut reply)? {
                     break;

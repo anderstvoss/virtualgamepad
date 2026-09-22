@@ -18,6 +18,7 @@ members = [
     "crates/gr-audio-contract",
     "crates/gr-audio-linux",
     "crates/gr-usbip",
+    "crates/gr-audio-worker",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
     "crates/gr-curated-controllers",
