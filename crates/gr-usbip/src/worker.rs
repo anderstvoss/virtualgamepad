@@ -9,7 +9,7 @@ use crate::{
 use gr_audio_contract::queue::{PcmConsumer, PcmProducer};
 use gr_hid::{Reply, Report, RequestKind};
 use std::{
-    io::{self, Read, Write},
+    io::{self, Read},
     os::unix::net::UnixStream,
     sync::{
         Arc,
@@ -17,6 +17,9 @@ use std::{
     },
     time::{Duration, Instant},
 };
+
+mod completion_queue;
+use completion_queue::CompletionQueue;
 
 const SLOT_COUNT: usize = 32;
 /// Implemented by the trusted worker's controller personality, never privileged
@@ -99,6 +102,7 @@ pub struct Worker<H> {
     expected: usize,
     frame_started: Option<u64>,
     next_order: u64,
+    outgoing: CompletionQueue,
 }
 impl<H: HidHandler> Worker<H> {
     /// Allocate all USB frame storage before streaming starts.
@@ -147,6 +151,7 @@ impl<H: HidHandler> Worker<H> {
             expected: HEADER_BYTES,
             frame_started: None,
             next_order: 0,
+            outgoing: CompletionQueue::new(SLOT_COUNT, MAX_FRAME_BYTES),
         })
     }
     /// Runs independently from GUI/HID caller polling. Stop or any I/O/protocol
@@ -187,9 +192,8 @@ impl<H: HidHandler> Worker<H> {
                     continue;
                 }
                 let size = self.complete(index, now, &mut reply, &mut data)?;
-                // A partial write is uncertain delivery: close rather than
-                // replay a completion or let unbounded output accumulate.
-                self.socket.write_all(&reply[..size])?;
+                self.outgoing.push(&reply[..size], now)?;
+                self.outgoing.flush(&mut self.socket, now)?;
                 if crate::word(&reply, 20) != 0 {
                     self.counters
                         .abandoned_capture_frames
@@ -209,9 +213,39 @@ impl<H: HidHandler> Worker<H> {
             {
                 return Err(error("partial USB/IP frame deadline exceeded"));
             }
-            std::thread::sleep(Duration::from_millis(1));
+            self.outgoing.flush(&mut self.socket, now)?;
+            self.wait_ready(started)?;
         }
         Ok(())
+    }
+    fn wait_ready(&self, started: Instant) -> io::Result<()> {
+        use rustix::event::{PollFd, PollFlags, Timespec, poll};
+        let now = u64::try_from(started.elapsed().as_micros()).map_err(error)?;
+        // The stop flag is checked at least every 10 ms even when idle. During
+        // streaming, packet/completion deadlines bound the wait more tightly.
+        let due = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(_, slot)| slot.ticket.is_some())
+            .map(|(index, slot)| self.capture_due(index).unwrap_or(slot.ready))
+            .chain(self.pending.next_deadline())
+            .chain(self.frame_started.map(|t| t.saturating_add(1_000_000)))
+            .chain(self.outgoing.deadline())
+            .min()
+            .unwrap_or(now.saturating_add(10_000));
+        let timeout =
+            Timespec::try_from(Duration::from_micros(due.saturating_sub(now).min(10_000)))
+                .map_err(error)?;
+        let mut flags = PollFlags::IN;
+        if !self.outgoing.is_empty() {
+            flags |= PollFlags::OUT;
+        }
+        let mut fds = [PollFd::new(&self.socket, flags)];
+        match poll(&mut fds, Some(&timeout)) {
+            Ok(_) | Err(rustix::io::Errno::INTR) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
     fn next_ready(&self, now: u64) -> Option<usize> {
         self.slots
@@ -296,7 +330,8 @@ impl<H: HidHandler> Worker<H> {
                     }
                 }
                 let size = crate::unlink_reply(reply, sequence, cancelled).map_err(error)?;
-                self.socket.write_all(&reply[..size])?;
+                self.outgoing.push(&reply[..size], now)?;
+                self.outgoing.flush(&mut self.socket, now)?;
             }
             Request::Submit(_) => {
                 let stream = usize::from(header.endpoint())

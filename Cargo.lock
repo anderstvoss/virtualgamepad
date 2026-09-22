@@ -1034,6 +1034,7 @@ dependencies = [
  "gr-controller-wire",
  "gr-curated-controllers",
  "gr-hid",
+ "rustix 1.1.4",
 ]
 
 [[package]]

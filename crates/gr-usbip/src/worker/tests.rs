@@ -2,6 +2,7 @@ use super::*;
 use crate::{profile::ProfileId, put, word};
 use gr_audio_contract::{AudioChannel, PcmFormat, queue::pcm_queue};
 use gr_hid::{ReplyError, ReportType};
+use std::io::Write;
 
 struct Echo {
     input_kind: Option<ReportType>,

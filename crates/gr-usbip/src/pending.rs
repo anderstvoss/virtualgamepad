@@ -1,7 +1,6 @@
 //! Per-connection request ownership. Kernel sequence numbers may be reused;
 //! worker tickets carry a separate monotonic generation to reject late replies.
 use crate::Header;
-use std::collections::BTreeMap;
 
 const MAX_PENDING: usize = 128;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,7 +34,7 @@ pub struct Pending {
     connection: u64,
     generation: u64,
     now: u64,
-    entries: BTreeMap<u32, Entry>,
+    entries: [Option<Entry>; MAX_PENDING],
 }
 impl Pending {
     #[must_use]
@@ -44,7 +43,7 @@ impl Pending {
             connection,
             generation: 0,
             now: 0,
-            entries: BTreeMap::new(),
+            entries: std::array::from_fn(|_| None),
         }
     }
     pub fn insert(
@@ -60,10 +59,15 @@ impl Pending {
         if header.unlink_sequence().is_some() {
             return Err(PendingError::NotSubmit);
         }
-        if self.entries.contains_key(&header.sequence()) {
+        if self
+            .entries
+            .iter()
+            .flatten()
+            .any(|entry| entry.ticket.sequence == header.sequence())
+        {
             return Err(PendingError::Duplicate);
         }
-        if self.entries.len() >= MAX_PENDING {
+        if self.entries.iter().all(Option::is_some) {
             return Err(PendingError::Full);
         }
         // The worker chooses deadlines within this hard maximum, not a client.
@@ -78,14 +82,16 @@ impl Pending {
             generation,
             sequence: header.sequence(),
         };
-        self.entries.insert(
-            header.sequence(),
-            Entry {
-                header,
-                ticket,
-                deadline,
-            },
-        );
+        let slot = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.is_none())
+            .ok_or(PendingError::Full)?;
+        *slot = Some(Entry {
+            header,
+            ticket,
+            deadline,
+        });
         Ok(ticket)
     }
     /// Successful completion transfers ownership exactly once. An expired entry
@@ -95,25 +101,34 @@ impl Pending {
             return Err(PendingError::Clock);
         }
         self.now = now;
-        let entry = self
+        let slot = self
             .entries
-            .get(&ticket.sequence)
+            .iter_mut()
+            .find(|entry| {
+                entry
+                    .as_ref()
+                    .is_some_and(|e| e.ticket.sequence == ticket.sequence)
+            })
             .ok_or(PendingError::Stale)?;
+        let entry = slot.as_ref().ok_or(PendingError::Stale)?;
         if entry.ticket != ticket {
             return Err(PendingError::Stale);
         }
         if now >= entry.deadline {
             return Err(PendingError::Deadline);
         }
-        Ok(self
-            .entries
-            .remove(&ticket.sequence)
-            .ok_or(PendingError::Stale)?
-            .header)
+        Ok(slot.take().ok_or(PendingError::Stale)?.header)
     }
     /// A successful unlink owns cancellation; no later submit completion is sent.
     pub fn unlink(&mut self, sequence: u32) -> bool {
-        self.entries.remove(&sequence).is_some()
+        self.entries
+            .iter_mut()
+            .find(|entry| {
+                entry
+                    .as_ref()
+                    .is_some_and(|e| e.ticket.sequence == sequence)
+            })
+            .is_some_and(|entry| entry.take().is_some())
     }
     /// Drain one timeout at a time without allocating an output batch.
     pub fn expire(&mut self, now: u64) -> Result<Option<Header>, PendingError> {
@@ -121,21 +136,22 @@ impl Pending {
             return Err(PendingError::Clock);
         }
         self.now = now;
-        let expired = self
+        Ok(self
             .entries
-            .iter()
-            .find_map(|(seq, entry)| (now >= entry.deadline).then_some(*seq));
-        Ok(expired
-            .and_then(|seq| self.entries.remove(&seq))
-            .map(|e| e.header))
+            .iter_mut()
+            .find(|entry| entry.as_ref().is_some_and(|e| now >= e.deadline))
+            .and_then(Option::take)
+            .map(|entry| entry.header))
     }
     /// Terminal connection shutdown invalidates every outstanding ticket.
     pub fn cancel_all(&mut self) {
-        self.entries.clear();
+        for entry in &mut self.entries {
+            *entry = None;
+        }
     }
     #[must_use]
     pub fn next_deadline(&self) -> Option<u64> {
-        self.entries.values().map(|e| e.deadline).min()
+        self.entries.iter().flatten().map(|e| e.deadline).min()
     }
 }
 #[cfg(test)]
