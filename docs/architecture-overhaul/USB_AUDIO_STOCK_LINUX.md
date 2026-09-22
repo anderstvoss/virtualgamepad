@@ -151,3 +151,12 @@ latency acceptance or explain the historical Xbox interruption.
 The PCM primitives are not yet connected to a production-installed worker and
 broker operation. Typed native-state/output IPC, descriptor-transfer validation,
 installation, root USB creation and the full security/live matrix remain open.
+
+Native-state snapshot codecs now preserve the complete DS4, DualSense and Xbox360
+state, including controller-specific sequence/sensor fields, constrained touch
+coordinates and battery metadata. Their private version/family tags are validated
+before replacing state. The transaction ledger binds updates to a generation,
+requires consecutive sequence numbers, acknowledges an identical last retry
+without applying it twice, and rejects conflicting/stale retries. Invalid
+snapshots leave accepted state and sequence unchanged. These are worker-side
+primitives; installation and live control-message integration remain outstanding.

@@ -73,3 +73,6 @@ mod tests {
         assert_eq!(reply, Reply::Get(Err(ReplyError::Unsupported)));
     }
 }
+
+/// Implementation-only native state transactions for the installed worker.
+pub mod state;

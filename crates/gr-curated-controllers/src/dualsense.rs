@@ -3,6 +3,7 @@
 #[cfg(all(test, target_os = "linux"))]
 mod host_probe;
 mod protocol;
+mod worker_state;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{

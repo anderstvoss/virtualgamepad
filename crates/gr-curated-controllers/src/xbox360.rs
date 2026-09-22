@@ -1,5 +1,6 @@
 //! Xbox 360 controller with XInput-native numeric domains.
 
+mod worker_state;
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,

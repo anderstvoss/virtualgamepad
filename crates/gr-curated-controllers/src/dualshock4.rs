@@ -1,6 +1,7 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
 #[cfg(test)]
 mod evdev;
+mod worker_state;
 
 use crate::{BatteryState, CreationOptions, common};
 use gr_controller_contract::{
