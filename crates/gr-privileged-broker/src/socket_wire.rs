@@ -37,6 +37,17 @@ pub fn read_startup_frame(stream: &UnixStream, timeout: Duration) -> io::Result<
         started: Some(Instant::now()),
     })
 }
+/// Include idle time in bounded versioned setup and close handshakes.
+pub fn read_versioned_startup_frame(
+    stream: &UnixStream,
+    timeout: Duration,
+) -> io::Result<(u16, u8, Vec<u8>)> {
+    crate::read_versioned_message(&mut FrameReader {
+        stream,
+        timeout,
+        started: Some(Instant::now()),
+    })
+}
 struct FrameReader<'a> {
     stream: &'a UnixStream,
     timeout: Duration,

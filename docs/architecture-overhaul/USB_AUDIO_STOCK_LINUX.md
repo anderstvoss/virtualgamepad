@@ -235,3 +235,41 @@ replacement/symlink protection and enumeration identity mismatches. Installation
 privileged failure injection, public consumers and sustained latency acceptance
 remain required. Physical tests requiring human observations must begin only after
 the maintainer confirms readiness; mere device attachment is not that confirmation.
+
+## Explicit audio-broker installation and ordinary-user probe
+
+Build the fixed production binaries before installation:
+
+```sh
+cargo build -p gr-privileged-broker -p gr-audio-worker
+python3 scripts/install-audio-broker.py --port 0 --port 1 --port 2
+sudo /usr/bin/python3 -I scripts/install-audio-broker.py --apply --port 0 --port 1 --port 2
+```
+
+Select ports reserved by the administrator; this example authorizes three ports.
+The installer creates a dedicated non-login worker account, root-owned binaries,
+policy and runtime journals, and an audio-specific socket-activated service. It
+refuses differing existing policy/service files and refuses to replace an active
+broker. It does not load modules, grant sound-device access, route physical audio,
+or install sudo delegation. Provision the stock VHCI module separately. The
+socket uses the invoking user's primary group, while the daemon still authorizes
+the exact numeric UID using peer credentials. No group-login refresh is needed.
+
+The service permits credential dropping and the fixed VHCI attachment operation;
+workers drop credentials, supplementary groups and capabilities before processing.
+This configuration requires live privileged acceptance and is not a security
+acceptance result by itself. Existing gadget-only service files are not silently
+replaced by the audio installer; migration needs administrator review.
+
+After installation, run the bounded ordinary-user probe:
+
+```sh
+cargo run -p gr-audio-worker --example broker_audio_probe
+```
+
+It creates each compiled family, reads worker diagnostics, verifies acknowledged
+idempotent closure and checks endpoint EOF. It opens no physical audio device and
+is not the sustained audio acceptance harness. The private broker client verifies
+a root peer, protocol version, nonzero creation identity, exact descriptor handoff
+and bounded creation/cleanup replies. Public root API integration remains gated
+on installed-broker acceptance.
