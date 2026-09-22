@@ -99,7 +99,7 @@ fn metadata(opened: &Opened) -> io::Result<Vec<u8>> {
     response.extend(opened.bus_id.as_bytes());
     Ok(response)
 }
-fn valid_bus_id(value: &str) -> bool {
+pub(crate) fn valid_bus_id(value: &str) -> bool {
     if value.len() > 31 {
         return false;
     }

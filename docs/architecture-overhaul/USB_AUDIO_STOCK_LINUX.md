@@ -204,3 +204,34 @@ attachment operation and ownership journal before ordinary-caller use is enabled
 Worker close acknowledgement now follows successful USB/PCM thread shutdown.
 An acknowledgement therefore certifies processing has stopped and sample endpoints
 are closed; cleanup failure terminates the control channel without a success reply.
+
+## Staged daemon attachment and conservative recovery
+
+The daemon now dispatches an explicit version-two audio connection to the fixed
+VHCI factory when the administrator configures audio ports and worker credentials.
+Version one remains available for existing realizations; switching versions within
+a connection is rejected. USB-only configuration no longer requires ConfigFS
+recovery. The public root USB realization remains disabled pending installation
+and security acceptance.
+
+The factory reserves a shared allowlisted port, starts the installed worker,
+validates readiness, creates a durable ownership record and rechecks the port
+immediately before attachment. Before handoff it checks the owned device identity,
+high-speed status, selected configuration and all four compiled audio/HID interface
+classes. Setup failures close only the owned socket and process. This path has not
+yet received privileged live acceptance.
+
+Provisioning must create `/run/virtualgamepad-state/<instance>.audio` owned by root
+and not writable by other users. Records contain generated creation identity,
+USB/IP device number and reserved port; none authorizes detach or process killing.
+Successful owned-resource cleanup removes only the record with the saved inode.
+A replaced or symlinked record is retained. Startup reports remaining records and
+refuses new audio work for administrator review; it leaves unverifiable attachments
+untouched. Automatic reconciliation of stale records remains deferred rather than
+inferring ownership from a reused port or PID.
+
+Regression tests cover durable retained records, duplicate identities, capacity,
+replacement/symlink protection and enumeration identity mismatches. Installation,
+privileged failure injection, public consumers and sustained latency acceptance
+remain required. Physical tests requiring human observations must begin only after
+the maintainer confirms readiness; mere device attachment is not that confirmation.

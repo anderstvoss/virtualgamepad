@@ -15,7 +15,7 @@ use crate::{audio_launch, socket_wire, vhci_policy::PortLease};
 pub struct Session {
     kernel: UnixStream,
     child: Option<Child>,
-    _port: PortLease,
+    port: PortLease,
 }
 impl Session {
     /// Launch and validate readiness before any kernel attachment is attempted.
@@ -36,7 +36,7 @@ impl Session {
         let mut session = Self {
             kernel: parent.remove(0),
             child: Some(child),
-            _port: port,
+            port,
         };
         let channels: [UnixStream; 3] = parent
             .try_into()
@@ -55,6 +55,10 @@ impl Session {
     #[must_use]
     pub fn kernel_socket(&self) -> &UnixStream {
         &self.kernel
+    }
+
+    pub fn revalidate_port(&self, inventory: &str) -> io::Result<()> {
+        self.port.revalidate(inventory)
     }
 
     pub fn check_alive(&mut self) -> io::Result<()> {
@@ -170,7 +174,7 @@ mod tests {
         let mut session = Session {
             kernel,
             child: Some(child),
-            _port: lease(&pool),
+            port: lease(&pool),
         };
         session.check_alive().unwrap();
         session.close().unwrap();
@@ -194,7 +198,7 @@ mod tests {
         let mut session = Session {
             kernel,
             child: Some(child),
-            _port: lease(&pool),
+            port: lease(&pool),
         };
         assert!(session.check_alive().is_err());
         assert_eq!(peer.read(&mut [0]).unwrap(), 0);

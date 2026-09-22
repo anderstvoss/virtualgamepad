@@ -33,6 +33,10 @@ pub mod audio_connection;
 #[cfg(target_os = "linux")]
 pub mod audio_fds;
 #[cfg(target_os = "linux")]
+pub mod audio_host;
+#[cfg(target_os = "linux")]
+pub mod audio_journal;
+#[cfg(target_os = "linux")]
 pub mod audio_launch;
 #[cfg(target_os = "linux")]
 pub mod audio_session;
