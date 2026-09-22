@@ -216,3 +216,41 @@ At `9dc68a0`, the longer four-path DualSense check passed exact continuity with
 p99 1.087–11.476 ms (maximum 15.007 ms). See EXP-0023 for distributions and scope.
 Three-trial/full-duplex/mixed-session acceptance and production USB integration
 remain open.
+
+## Remaining production closure sequence
+
+Continue on the current branch with tested local commits. The worker launch,
+strict descriptor handoff and staged cleanup helpers are implemented; they do not
+constitute an enabled ordinary-caller USB realization.
+
+1. **Daemon attachment and recovery.** Connect the version-two connection handler
+   to a shared VHCI port pool and the staged worker owner. Generate creation
+   identities internally, durably journal ownership before attachment, validate
+   enumeration, and hand off only control/playback/microphone descriptors. Test
+   every setup/death boundary. Recovery must report unverifiable attachments and
+   never detach by a remembered port. Exit: authenticated clients can acquire and
+   release a compiled profile through the installed broker with security tests.
+2. **Installation.** Extend the explicit administrator installer and systemd
+   restrictions for the fixed worker, dedicated UID/GID, VHCI access and ownership
+   directory. Verify credential dropping and broker/worker restart behavior on the
+   prepared host. Module loading and permission grants remain outside creation.
+3. **Application integration.** Add the optional explicit USB audio realization,
+   worker state/output client, bounded PCM pumps and native-client bridge. Resolve
+   typed ALSA endpoints from current owned ancestry. Complete flushing, terminal
+   failure diagnostics and root-only consumer/lifecycle tests before enablement.
+4. **Reliability acceptance.** Run the full family/transport/access matrix: three
+   consecutive 60-second full-duplex trials after readiness, exact patterns and
+   channel isolation, no unexplained loss, and measured p99 below 20 ms separately
+   in each direction. Include mixed/duplicate sessions, HID load and bounded stall
+   recovery. Preserve failures and measurement boundaries.
+5. **Physical comparison and handoff.** Complete DualSense microphone selection,
+   mute/gain, routing and reconnect observations with controls restored and no raw
+   recordings retained. Preserve the confirmed four-channel mapping. Matching
+   remains unavailable until comparison acceptance; GUI/API/quality/alpha remain
+   subsequent gates.
+
+The private version-two connection handler now has deterministic socket tests for
+malformed operations, admission before setup, setup/handoff rollback, stale
+requests, version changes, disconnects and independent same-UID clients. A
+connection owns at most one audio session and cannot name another connection's
+resources. This handler is not yet connected to privileged VHCI attachment.

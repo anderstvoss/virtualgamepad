@@ -29,6 +29,8 @@ pub mod admission;
 pub mod vhci_policy;
 
 #[cfg(target_os = "linux")]
+pub mod audio_connection;
+#[cfg(target_os = "linux")]
 pub mod audio_fds;
 #[cfg(target_os = "linux")]
 pub mod audio_launch;
