@@ -11,6 +11,13 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_test_only_microphone_fill_stays_below_one_pcm_queue(self):
+        self.assertEqual(module.microphone_fill_frames(8),384)
+        self.assertEqual(module.microphone_fill_frames(12),576)
+        self.assertEqual(module.microphone_fill_frames(16),768)
+        for invalid in (0,17,-1):
+            with self.assertRaises(ValueError): module.microphone_fill_frames(invalid)
+
     def test_worker_timing_reply_is_generation_checked_and_distinct_from_usb_lateness(self):
         def exchange(generation_in_timing):
             server,client = socket.socketpair()

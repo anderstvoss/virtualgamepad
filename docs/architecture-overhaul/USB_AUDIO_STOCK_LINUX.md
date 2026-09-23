@@ -13,8 +13,10 @@ probe. The production USB PCM path completed three exact 60-second full-duplex
 DualSense sample-access trials after warm-up. A subsequent DS4 trial failed
 with a correlated approximately 200 ms host scheduling interruption and
 observable silence/gaps. A fresh Xbox360 attempt passed three consecutive
-60-second full-duplex trials with exact synthetic patterns. These findings are detailed below; previous failures
-are retained as historical evidence. Public root USB creation, native-client
+60-second full-duplex trials with exact synthetic patterns. DS4 then passed
+three consecutive trials at a test-only 12 ms microphone operating fill,
+following another failed 8 ms-fill attempt. These findings are detailed below;
+previous failures are retained as historical evidence. Public root USB creation, native-client
 bridging, directional end-to-end latency measurements and the complete sustained
 matrix remain open. Physical DualSense headset/grip channel order was confirmed
 again, while speaker routing and microphone response remain unproven on this
@@ -433,6 +435,20 @@ zero abandoned capture frames, and maximum USB-audio/PCM-pump lateness of
 the DS4 profile itself has a different stream mapping. It is still an
 acceptance failure; an 8 ms operating fill cannot cover a 200 ms host stall
 while satisfying the sub-20 ms design target.
+
+At the original 8 ms test-client fill, the DS4 retry passed trial 0 but failed
+trial 1 with 576 microphone silence frames. Playback remained exact and
+gap-free. The maximum recorded USB/PCM-pump lateness was 8.147/8.128 ms and
+the largest caller refill interval was 10.255 ms. The harness now accepts an
+explicit, bounded 1–16 ms test-only microphone fill and records the selected
+value. At 12 ms, DS4 passed three consecutive 60-second full-duplex trials:
+each had 2,880,000/2,880,000 exact measured microphone frames, 2,976,000
+exact playback frames including warm-up, and zero reported silence, playback
+invalid frames, gaps, abandoned capture frames or IPC errors. Maximum USB-audio
+lateness was 3.219, 3.445 and 4.115 ms. This supports a larger normal fill
+for that host/profile under those conditions; the earlier failures remain
+valid. The 12 ms fill's directional end-to-end latency remains unmeasured, so
+this is not a sub-20 ms latency acceptance result.
 
 A fresh installed Xbox360 run then passed three consecutive 60-second
 full-duplex trials. Each trial had 2,880,000/2,880,000 exact measured

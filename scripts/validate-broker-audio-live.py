@@ -82,6 +82,12 @@ def worker_diagnostics(control,generation):
     return result
 
 
+def microphone_fill_frames(milliseconds):
+    if not 1 <= milliseconds <= 16:
+        raise ValueError('microphone fill must be 1..16 ms')
+    return milliseconds*48
+
+
 def opened(profile):
     peer = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     peer.settimeout(10)
@@ -139,12 +145,13 @@ def reserve_direct_alsa(card, bus):
     raise TimeoutError('owned PipeWire card not ready for exclusive ALSA test')
 
 
-def trial(profile, seconds):
+def trial(profile, seconds, microphone_fill_ms=8):
     broker, generation, device, bus, tag, channels = opened(profile)
     control, playback, microphone = channels
     stop = threading.Event()
     totals = dict(playback_frames=0,playback_invalid=0,playback_gaps=0,microphone_submitted=0)
     _, nout, nin = live.PROFILES[profile]
+    fill_frames = microphone_fill_frames(microphone_fill_ms)
     errors = []
     delays = RefillDelays()
     def consume():
@@ -176,8 +183,8 @@ def trial(profile, seconds):
                 if consumed > submitted: raise ValueError('microphone credit exceeds submitted frames')
                 delays.record(started,time.monotonic_ns(),consumed)
                 totals['microphone_consumed'] = consumed
-                # Test-only eight-millisecond operating fill; queue capacity is separate.
-                available = max(0,consumed+384-submitted)
+                # Test-only operating fill; queue capacity is separate.
+                available = max(0,consumed+fill_frames-submitted)
                 while available:
                     frames = min(128,available)
                     values = [100+(submitted+frame)%97+100*c for frame in range(frames) for c in range(nin)]
@@ -210,6 +217,7 @@ def trial(profile, seconds):
         result.update(totals)
         result['ipc_errors'] = errors
         result['microphone_refill_largest_delays'] = delays.summary()
+        result['microphone_fill_ms'] = microphone_fill_ms
         result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+2)*48000
         return result
     finally:
@@ -231,12 +239,16 @@ def main():
     parser.add_argument('--profile',choices=live.PROFILES,required=True)
     parser.add_argument('--seconds',type=int,default=3)
     parser.add_argument('--trials',type=int,default=1)
+    parser.add_argument('--microphone-fill-ms',type=int,default=8,
+                        help='test-only operating fill, 1..16 ms (default: 8)')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60: parser.error('seconds must be 1..60')
     if not 1 <= args.trials <= 3: parser.error('trials must be 1..3')
+    try: microphone_fill_frames(args.microphone_fill_ms)
+    except ValueError as error: parser.error(str(error))
     for index in range(args.trials):
         print(json.dumps(dict(event='start',profile=args.profile,trial=index,seconds=args.seconds)),flush=True)
-        result = trial(args.profile,args.seconds)
+        result = trial(args.profile,args.seconds,args.microphone_fill_ms)
         result.update(profile=args.profile,trial=index)
         print(json.dumps(result),flush=True)
         if not result['passed']: raise SystemExit(1)
