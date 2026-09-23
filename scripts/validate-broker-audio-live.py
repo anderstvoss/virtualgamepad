@@ -116,33 +116,8 @@ def opened(profile):
     return peer,generation,device,bus,tag,received
 
 
-def owned_pipewire_device(objects, card):
-    candidates = [item for item in objects if item.get('type') == 'PipeWire:Interface:Device'
-                  and item.get('info',{}).get('props',{}).get('api.alsa.card') == card
-                  and item.get('info',{}).get('props',{}).get('device.bus-path','').startswith('platform-vhci_hcd.0-usb-')]
-    if len(candidates) > 1: raise ValueError('ambiguous owned PipeWire device')
-    return candidates[0] if candidates else None
-
-
-def reserve_direct_alsa(card, bus):
-    # Test-harness-only exclusion of the session manager from this newly owned
-    # virtual card. Do not alter defaults or any physical audio device.
-    device = (Path('/sys/bus/usb/devices')/bus).resolve(strict=True)
-    if 'vhci_hcd.0' not in device.parts or not (Path('/sys/class/sound')/f'card{card}'/'device').resolve().is_relative_to(device):
-        raise ValueError('ALSA ancestry changed before reservation')
-    deadline = time.monotonic()+2
-    while time.monotonic() < deadline:
-        result = subprocess.run(['pw-dump'],capture_output=True,timeout=3)
-        if result.returncode: return
-        item = owned_pipewire_device(json.loads(result.stdout),card)
-        if item:
-            profiles = item['info'].get('params',{}).get('EnumProfile',[])
-            off = [profile['index'] for profile in profiles if profile.get('name') == 'off']
-            if len(off) != 1: raise ValueError('owned PipeWire device has no unique off profile')
-            subprocess.run(['pw-cli','set-param',str(item['id']),'Profile',json.dumps(dict(index=off[0],save=False))],check=True,stdout=subprocess.DEVNULL,timeout=3)
-            return
-        time.sleep(.02)
-    raise TimeoutError('owned PipeWire card not ready for exclusive ALSA test')
+owned_pipewire_device = live.owned_pipewire_device
+reserve_direct_alsa = live.reserve_direct_alsa
 
 
 def trial(profile, seconds, microphone_fill_ms=8):

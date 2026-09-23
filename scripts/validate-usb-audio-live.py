@@ -52,6 +52,38 @@ def resolve_card(port, family, previous=None):
     return ownership, int(cards[0].name[4:])
 
 
+def owned_pipewire_device(objects, card):
+    candidates = [item for item in objects if item.get('type') == 'PipeWire:Interface:Device'
+                  and item.get('info',{}).get('props',{}).get('api.alsa.card') == card
+                  and item.get('info',{}).get('props',{}).get('device.bus-path','').startswith('platform-vhci_hcd.0-usb-')]
+    if len(candidates) > 1:
+        raise ValueError('ambiguous owned PipeWire device')
+    return candidates[0] if candidates else None
+
+
+def reserve_direct_alsa(card, bus):
+    # Test-harness-only exclusion of the session manager from this newly owned
+    # virtual card. Never change defaults or a physical audio device.
+    device = (Path('/sys/bus/usb/devices')/bus).resolve(strict=True)
+    if 'vhci_hcd.0' not in device.parts or not (Path('/sys/class/sound')/f'card{card}'/'device').resolve().is_relative_to(device):
+        raise ValueError('ALSA ancestry changed before reservation')
+    deadline = time.monotonic()+2
+    while time.monotonic() < deadline:
+        result = subprocess.run(['pw-dump'],capture_output=True,timeout=3)
+        if result.returncode:
+            return
+        item = owned_pipewire_device(json.loads(result.stdout),card)
+        if item:
+            profiles = item['info'].get('params',{}).get('EnumProfile',[])
+            off = [profile['index'] for profile in profiles if profile.get('name') == 'off']
+            if len(off) != 1:
+                raise ValueError('owned PipeWire device has no unique off profile')
+            subprocess.run(['pw-cli','set-param',str(item['id']),'Profile',json.dumps(dict(index=off[0],save=False))],check=True,stdout=subprocess.DEVNULL,timeout=3)
+            return
+        time.sleep(.02)
+    raise TimeoutError('owned PipeWire card not ready for exclusive ALSA test')
+
+
 def inspect_capture(data, channels):
     if len(data) % (channels*2):
         raise ValueError('partial captured PCM frame')
@@ -111,12 +143,16 @@ def main():
     parser.add_argument('--profile',choices=PROFILES,required=True)
     parser.add_argument('--seconds',type=int,default=60)
     parser.add_argument('--trials',type=int,default=3)
+    parser.add_argument('--reserve-owned-card',action='store_true',
+                        help='temporarily release only this owned virtual card from PipeWire')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60 or not 1 <= args.trials <= 3 or args.port < 0:
         parser.error('seconds must be 1..60, trials 1..3, and port nonnegative')
     ownership = None
     for trial in range(args.trials):
         ownership, card = resolve_card(args.port,args.profile,ownership)
+        if args.reserve_owned_card:
+            reserve_direct_alsa(card,ownership[1])
         print(json.dumps(dict(status='running',profile=args.profile,trial=trial,
                               duration_seconds=args.seconds)),flush=True)
         result = run_trial(card,args.profile,args.seconds)
