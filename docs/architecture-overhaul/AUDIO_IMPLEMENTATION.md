@@ -18,6 +18,17 @@ captures had near-zero signal. The physical DualSense is now disconnected.
 The maintainer requires confirmation before any additional physical DualSense
 run. Matching remains unavailable.
 
+After VHCI reload, ordinary-caller root USB creation passed for all three
+families in sample and native-client mode. Short root full-duplex sample trials
+also passed for all three. Sustained root DualSense attempts exposed 32
+measured microphone-silence frames at both 12 and 16 ms operating fill, and
+one worker termination. Direct broker IPC at 16 ms fill passed one 60-second
+DualSense trial without measured-interval silence, so the extra root
+sample/control path remains under investigation. Root audio now requests
+host-frame progress, including silence, in one versioned worker exchange;
+the matching worker must be installed before further root live testing. No
+sustained root or native-client matrix is claimed complete.
+
 ## Contract
 
 The accepted closure target is measured p99 below 20 ms in each direction on the
@@ -61,10 +72,9 @@ UID/GID, with the UID distinct from every authorized client. Staged port admissi
 has bounded inventory parsing, concurrent reservations and pre-attach revalidation.
 The installed broker has passed ordinary-client attachment and scoped lifecycle
 probes; the complete security matrix and post-reboot recovery acceptance remain
-open. The installer now provisions stock VHCI module loading at boot. The
-current host's socket is in `service-start-limit-hit` after boot without VHCI;
-the modules are loaded, but an administrator must reset and restart the socket
-before further live creation checks.
+open. The installer now provisions stock VHCI module loading at boot. This
+host's earlier `service-start-limit-hit` was cleared by the maintainer, and
+the installed socket passed subsequent ordinary-caller creation checks.
 
 Audio exposure and per-group sample ownership are selected in `CreationOptions`.
 Disabled remains default. Emulated and controller-matching are distinct requests;
@@ -227,8 +237,8 @@ UID/GID/supplementary groups, applies no-new-privileges and resource limits, bou
 readiness/lifetime/output, and shuts down its owned socket for cleanup. It never
 detaches by a reusable port number. This helper remains separate from the
 installed production broker. The installer provisions VHCI module loading at
-boot. After the latest reboot, VHCI was loaded manually, but the failed broker
-socket still needs a reset and restart.
+boot. After the latest reboot, VHCI was loaded manually and the maintainer
+reset the failed socket. The updated worker protocol still needs installation.
 
 
 The subsequent administrator-run DualSense VHCI probe successfully enumerated HID

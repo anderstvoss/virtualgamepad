@@ -155,6 +155,15 @@ impl ControllerAudio {
     pub fn dropped_playback_frames(&self) -> u64 {
         self.session.dropped_playback_frames()
     }
+    /// USB host microphone frames since creation, including underrun silence,
+    /// for sample-owned
+    /// streams. Use this with a small operating fill; queue capacity is only
+    /// spare room for bounded stalls. Other backends return `None`.
+    /// # Errors
+    /// Returns a terminal backend error if consumption can no longer be read.
+    pub fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
+        self.session.microphone_host_frames()
+    }
     #[must_use]
     pub fn last_error(&self) -> Option<&AudioError> {
         self.session.error()
@@ -324,10 +333,11 @@ mod tests {
         use gr_usbip::profile::ProfileId;
         use std::{
             os::unix::net::UnixStream,
-            sync::{Arc, atomic::AtomicU64},
+            sync::{Arc, Mutex, atomic::AtomicU64},
         };
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let (worker_control, client_control) = UnixStream::pair().unwrap();
         let id = ProfileId::DualSenseEmulated;
         let streams = gr_audio_worker::client_pcm::SampleStreams::new(
             id,
@@ -338,9 +348,18 @@ mod tests {
         .unwrap();
         let options = AudioOptions::new(AudioExposure::Emulated);
         let profile = gr_curated_controllers::audio::dualsense(AudioExposure::Emulated).unwrap();
-        let (backend, nodes) =
-            crate::usb_audio::Pcm::new(streams, options, &profile, 7, Arc::new(AtomicU64::new(0)))
-                .unwrap();
+        let control = Arc::new(Mutex::new(
+            gr_audio_worker::client::Control::new(client_control, 7, 1).unwrap(),
+        ));
+        let (backend, nodes) = crate::usb_audio::Pcm::new(
+            streams,
+            options,
+            &profile,
+            7,
+            Arc::new(AtomicU64::new(0)),
+            control,
+        )
+        .unwrap();
         let mut audio = super::usb_audio(options, id, "Virtual_7", "4-1", &nodes, backend).unwrap();
         assert_eq!(audio.endpoints().len(), 2);
         assert_eq!(
@@ -355,7 +374,7 @@ mod tests {
                 .all(|endpoint| endpoint.caller().is_none())
         );
         audio.close();
-        drop((worker_playback, worker_microphone));
+        drop((worker_playback, worker_microphone, worker_control));
     }
     #[test]
     fn audio_failure_checks_do_not_lose_earlier_hid_deadlines() {

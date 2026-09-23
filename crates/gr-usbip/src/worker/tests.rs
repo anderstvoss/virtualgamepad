@@ -426,6 +426,13 @@ fn microphone_credit_tracks_queue_consumption_before_transfer_completion() {
             .load(Ordering::Relaxed),
         48
     );
+    assert_eq!(
+        f.worker
+            .counters
+            .microphone_host_frames
+            .load(Ordering::Relaxed),
+        48
+    );
     f.worker.capture_one(index).unwrap();
     assert_eq!(
         f.worker
@@ -440,5 +447,12 @@ fn microphone_credit_tracks_queue_consumption_before_transfer_completion() {
             .microphone_silence_frames
             .load(Ordering::Relaxed),
         48
+    );
+    assert_eq!(
+        f.worker
+            .counters
+            .microphone_host_frames
+            .load(Ordering::Relaxed),
+        96
     );
 }

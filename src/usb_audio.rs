@@ -21,7 +21,7 @@ use std::{
 };
 
 pub(crate) struct Session<S> {
-    control: Control,
+    control: Arc<Mutex<Control>>,
     broker: Client,
     state: fn(&S) -> NativeState,
     retained: ProviderDiagnostics,
@@ -31,9 +31,13 @@ pub(crate) struct Session<S> {
 
 impl<S: Send> WorkerBridge<S> for Session<S> {
     fn update(&mut self, state: &S) -> Result<(), ProviderError> {
-        self.control.update(&(self.state)(state)).map_err(|error| {
+        let mut control = self
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        control.update(&(self.state)(state)).map_err(|error| {
             self.retained.write_failures += 1;
-            if self.control.is_closed() {
+            if control.is_closed() {
                 self.retained.state = ProviderState::Failed;
             }
             self.retained.last_error = Some(error.to_string());
@@ -46,6 +50,8 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
     }
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
         self.control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .output()
             .inspect(|event| {
                 if event.is_some() {
@@ -62,7 +68,12 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
     }
     fn diagnostics(&mut self) -> ProviderDiagnostics {
         if self.retained.state == ProviderState::Open {
-            match self.control.diagnostics() {
+            match self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .diagnostics()
+            {
                 Ok(counters) => self
                     .microphone_silence
                     .store(counters[2], Ordering::Release),
@@ -78,7 +89,11 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
         if self.retained.state == ProviderState::Closed {
             return Ok(());
         }
-        let control = self.control.close();
+        let control = self
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .close();
         let broker = self.broker.close();
         self.retained.state = ProviderState::Closed;
         if let Err(error) = control.and(broker) {
@@ -150,6 +165,7 @@ pub(crate) struct Pcm {
     error: OnceLock<AudioError>,
     access: AudioOptions,
     microphone_silence: Arc<AtomicU64>,
+    control: Arc<Mutex<Control>>,
     #[cfg(feature = "audio-pipewire")]
     bridge: Option<crate::usb_audio_bridge::Bridge>,
 }
@@ -160,6 +176,7 @@ impl Pcm {
         profile: &gr_audio_contract::AudioProfile,
         creation: u64,
         microphone_silence: Arc<AtomicU64>,
+        control: Arc<Mutex<Control>>,
     ) -> Result<(Self, [Option<String>; 2]), AudioError> {
         let streams = Arc::new(Mutex::new(streams));
         #[cfg(feature = "audio-pipewire")]
@@ -176,6 +193,7 @@ impl Pcm {
                 error: OnceLock::new(),
                 access,
                 microphone_silence,
+                control,
                 #[cfg(feature = "audio-pipewire")]
                 bridge,
             },
@@ -239,6 +257,27 @@ impl crate::audio::backend::Backend for Pcm {
     fn dropped_playback_frames(&self) -> u64 {
         self.lock().dropped_playback_frames()
     }
+    fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
+        if self.access.microphone_access() != AudioAccess::Samples {
+            return Err(AudioError::AccessDenied);
+        }
+        let result = (|| -> io::Result<u64> {
+            let mut control = self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let (host_frames, silence) = control.microphone_host_frames()?;
+            self.microphone_silence.store(silence, Ordering::Release);
+            Ok(host_frames)
+        })()
+        .map_err(|error| AudioError::Backend {
+            reason: error.to_string(),
+        });
+        if let Err(error) = &result {
+            let _ = self.error.set(error.clone());
+        }
+        result.map(Some)
+    }
     fn error(&self) -> Option<&AudioError> {
         self.inspect_failure();
         self.error.get()
@@ -285,8 +324,12 @@ pub(crate) fn open<S: Send + 'static>(
             Err(error) => return Err(io_open(&error)),
         }
     };
-    let control =
+    let mut control =
         Control::new(control, broker.generation(), family).map_err(|error| io_open(&error))?;
+    control.microphone_host_frames().map_err(|error| ControllerError::Open {
+        reason: format!("installed audio worker lacks host-frame progress: {error}; reinstall the matching broker and worker"),
+    })?;
+    let control = Arc::new(Mutex::new(control));
     let microphone_silence = Arc::new(AtomicU64::new(0));
     let streams = SampleStreams::new(id, broker.generation(), playback, microphone)
         .map_err(|error| io_open(&error))?;
@@ -308,6 +351,7 @@ pub(crate) fn open<S: Send + 'static>(
         &definition,
         creation,
         microphone_silence.clone(),
+        control.clone(),
     )
     .map_err(|error| ControllerError::Open {
         reason: error.to_string(),

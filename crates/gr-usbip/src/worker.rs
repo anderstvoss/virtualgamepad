@@ -46,6 +46,8 @@ pub struct Counters {
     pub capture_frames: AtomicU64,
     /// Actual microphone queue consumption, before USB completion batching.
     pub microphone_consumed_frames: AtomicU64,
+    /// Scheduled host microphone media time, including underrun silence.
+    pub microphone_host_frames: AtomicU64,
     /// Collected microphone frames abandoned before a USB completion.
     pub abandoned_capture_frames: AtomicU64,
     pub maximum_audio_lateness_us: AtomicU64,
@@ -555,6 +557,9 @@ fn capture_packet(
         u64::try_from(48 - read.frames).map_err(error)?,
         Ordering::Relaxed,
     );
+    counters
+        .microphone_host_frames
+        .fetch_add(48, Ordering::Relaxed);
     for (pair, sample) in data[..bytes].chunks_exact_mut(2).zip(&samples[..count]) {
         pair.copy_from_slice(&sample.to_le_bytes());
     }

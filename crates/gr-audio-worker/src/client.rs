@@ -122,6 +122,22 @@ impl Control {
             response.as_slice().try_into().map_err(io::Error::other)?,
         ))
     }
+    /// Host media-frame progress and underrun count in one bounded exchange.
+    /// Operation 7 is required by the root audio scheduler.
+    pub fn microphone_host_frames(&mut self) -> io::Result<(u64, u64)> {
+        let response = self.exchange(7, &[])?;
+        if response.len() != 16 {
+            self.terminal();
+            return Err(io::Error::other("invalid microphone host-frame reply"));
+        }
+        let host = u64::from_le_bytes(response[..8].try_into().map_err(io::Error::other)?);
+        let silence = u64::from_le_bytes(response[8..].try_into().map_err(io::Error::other)?);
+        if silence > host {
+            self.terminal();
+            return Err(io::Error::other("microphone silence exceeds host frames"));
+        }
+        Ok((host, silence))
+    }
     /// Largest excess over the PCM pump's 500 µs nominal iteration interval.
     /// A scheduling diagnostic, not an end-to-end latency measurement.
     pub fn maximum_pcm_pump_lateness_us(&mut self) -> io::Result<u64> {
@@ -214,6 +230,52 @@ mod tests {
         });
         assert!(control.diagnostics().is_err());
         assert!(control.output().is_err());
+        task.join().unwrap();
+    }
+    #[test]
+    fn microphone_consumption_uses_current_generation_and_rejects_stale_reply() {
+        let (mut server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let (tag, body) = read_message(&mut server).unwrap();
+            assert_eq!((tag, body.as_slice()), (5, &7_u64.to_le_bytes()[..]));
+            let mut reply = body.clone();
+            reply.extend(384_u64.to_le_bytes());
+            write_message(&mut server, 5, &reply).unwrap();
+            let (tag, body) = read_message(&mut server).unwrap();
+            assert_eq!((tag, body.as_slice()), (5, &7_u64.to_le_bytes()[..]));
+            write_message(
+                &mut server,
+                5,
+                &[8_u64.to_le_bytes(), 512_u64.to_le_bytes()].concat(),
+            )
+            .unwrap();
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        assert_eq!(control.microphone_consumed_frames().unwrap(), 384);
+        assert!(control.microphone_consumed_frames().is_err());
+        assert!(control.is_closed());
+        task.join().unwrap();
+    }
+    #[test]
+    fn host_frame_reply_includes_silence_and_rejects_invalid_count() {
+        let (mut server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            for (host, silence) in [(96_u64, 48_u64), (96, 97)] {
+                let (tag, body) = read_message(&mut server).unwrap();
+                assert_eq!((tag, body.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+                let reply = [
+                    7_u64.to_le_bytes(),
+                    host.to_le_bytes(),
+                    silence.to_le_bytes(),
+                ]
+                .concat();
+                write_message(&mut server, 7, &reply).unwrap();
+            }
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        assert_eq!(control.microphone_host_frames().unwrap(), (96, 48));
+        assert!(control.microphone_host_frames().is_err());
+        assert!(control.is_closed());
         task.join().unwrap();
     }
 }
