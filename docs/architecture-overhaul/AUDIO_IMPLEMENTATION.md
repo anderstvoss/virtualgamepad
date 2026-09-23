@@ -361,3 +361,12 @@ both nodes reported graph discontinuities. Delivered-frame p99 was below 20 ms
 in these runs, but a latency percentile over surviving frames does not cancel
 the continuity failure. The native graph harness now emits endpoint timing and
 underrun counters with each result.
+
+The USB native caller bridge now publishes its PipeWire graph timing and a
+distinct caller-playback source-underrun count through the root audio API. The
+headless `usb_audio_native_probe` uses only root controller creation and typed
+endpoint selectors, and checks ALSA microphone capture together with a native
+PipeWire playback capture. Short runs for all three families passed the measured microphone pattern
+but failed strict playback continuity because interior silence remained. This
+is a measured native-client failure, separate from the nine successful root
+USB sample-access trials recorded in the stock-Linux ledger.

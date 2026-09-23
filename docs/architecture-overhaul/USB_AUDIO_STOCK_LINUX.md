@@ -16,11 +16,35 @@ observable silence/gaps. A fresh Xbox360 attempt passed three consecutive
 60-second full-duplex trials with exact synthetic patterns. DS4 then passed
 three consecutive trials at a test-only 12 ms microphone operating fill,
 following another failed 8 ms-fill attempt. These findings are detailed below;
-previous failures are retained as historical evidence. Public root USB creation, native-client
-bridging, directional end-to-end latency measurements and the complete sustained
-matrix remain open. Physical DualSense headset/grip channel order was confirmed
+previous failures are retained as historical evidence. The installed worker was
+then updated to the built binary (matching SHA-256), and the ordinary-caller
+root API passed sample and native-client creation/update/close smoke checks for
+all three families. The root sample-access full-duplex harness subsequently
+passed three consecutive 60-second trials per family at a test-only 16 ms
+microphone fill. Each measured trial captured 2,880,000 exact microphone frames
+with no silence or pattern gaps; the root audit counted zero playback
+discontinuities, interior bad frames, dropped frames or microphone-silence frames
+across each family's three trials. The checker used a separate two-second
+warm-up per trial. These nine passes strengthen sample-access continuity
+evidence, but 16 ms fill plus transport/host scheduling has not been measured
+against the directional p99 below 20 ms target. Native-client sustained
+streaming, directional end-to-end latency and the complete mixed-session matrix
+remain open. Physical DualSense headset/grip channel order was confirmed
 again, while speaker routing and microphone response remain unproven on this
 host. No matching profile is enabled.
+
+An ordinary-caller native-client USB probe now connects explicit `pw-cat`
+clients to the caller-session PipeWire endpoints while ALSA exercises the owned
+virtual USB device. The three families captured the exact measured microphone
+pattern in short probes, but each caller playback capture contained interior
+zero frames: 448–704 for repeated DualSense runs, 528 for DS4 and 1,040 for
+Xbox360. The USB playback queue reported no drops and the PipeWire endpoint
+timing reported no graph-clock discontinuities in these runs. A separate
+retained native-source underrun counter confirms source starvation (including
+startup and teardown); it cannot yet assign every counted frame to the measured
+interior. Shortening the bridge's idle sleep, skipping idle waits after progress
+and adding a startup prebuffer did not correct the gap; those trials were
+removed. Native-client continuity is therefore unaccepted.
 
 ## Candidate: local USB/IP VHCI with an unprivileged device worker
 
@@ -39,8 +63,10 @@ SET request. The initial source-backed feasibility finding is now supported by t
 DualSense VHCI/ALSA run in [EXP-0025](experiments/EXP-0025-local-usbip-audio.md).
 Full transport and broker acceptance remain open.
 
-The host kernel configuration includes `CONFIG_USBIP_VHCI_HCD=m`. The module was
-prepared by the maintainer previously, but is absent after the latest host restart.
+The host kernel configuration includes `CONFIG_USBIP_VHCI_HCD=m`. The explicit
+administrator installer now provisions boot-time module loading; VHCI was
+loaded and the installed broker socket recovered on this host before the latest
+root-API trials.
 The subsequent lab run confirmed anonymous local stream sockets: [VHCI attach](https://github.com/gregkh/linux/blob/v6.12.107/drivers/usb/usbip/vhci_sysfs.c)
 requires a stream socket and reserves only an unused port. Do not add a network
 listener, remote USB export/import service or arbitrary-device forwarding.
@@ -474,6 +500,6 @@ and maximum USB audio lateness of 2.066 ms. The largest caller refill interval,
 worker's microphone supply at capture time; neither counter establishes the
 PCM pump thread's scheduling history. A separate private worker operation now
 reports maximum excess over that thread's 500 µs nominal pump interval. The
-installed worker must be updated before a longer run can use this counter. The
-failure remains unresolved, and no end-to-end latency claim follows from these
-scheduling counters.
+installed worker has since been updated and the root sample-access harness
+passed the nine trials recorded above. Those passes do not identify the earlier
+96-frame supply gap's precise cause or establish an end-to-end latency claim.
