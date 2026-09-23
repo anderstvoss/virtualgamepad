@@ -1168,12 +1168,16 @@ fn latency_graph_library_microphone() {
         std::thread::sleep(Duration::from_nanos(128 * 1_000_000_000 / 48000));
     }
     let streaming_started = Instant::now();
-    // Follow graph consumption instead of a separate wall-clock producer. A
-    // free-running timer can build an entire queue of latency when the private
-    // graph runs slightly slower than its nominal sample rate.
+    // Follow graph consumption instead of a separate wall-clock producer. Keep
+    // one graph block available, but do not accumulate spare queue capacity as
+    // steady-state latency. The private lab controls the nominal quantum.
+    let graph_quantum = std::env::var("VIRTUALGAMEPAD_AUDIO_LAB_QUANTUM")
+        .ok()
+        .map_or(512, |value| value.parse().expect("integer graph quantum"));
+    assert!([128, 256, 512].contains(&graph_quantum));
     for block in 1..blocks {
         let ready_deadline = Instant::now() + Duration::from_secs(1);
-        while session.queued_microphone_frames().unwrap() > 128 {
+        while session.queued_microphone_frames().unwrap() > graph_quantum - 128 {
             assert!(
                 Instant::now() < ready_deadline,
                 "graph stopped consuming microphone"

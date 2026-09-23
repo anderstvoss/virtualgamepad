@@ -57,6 +57,7 @@ def run(command, timeout, quantum=512):
         for name in ('config', 'state', 'cache'):
             (root/name).mkdir(mode=0o700)
         env = environment(root, os.environ)
+        env['VIRTUALGAMEPAD_AUDIO_LAB_QUANTUM'] = str(quantum)
         processes = []
         try:
             daemon = subprocess.Popen(['pipewire'], env=env, start_new_session=True)

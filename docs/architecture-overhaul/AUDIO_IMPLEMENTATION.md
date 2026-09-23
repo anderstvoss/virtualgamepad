@@ -340,17 +340,17 @@ has passed its remaining security and latency acceptance.
 The reverse PipeWire sample-access harness now paces its microphone producer
 against consumed queue frames. A free-running nominal-rate timer accumulated
 1,100–1,400 queued frames and yielded 25–52 ms latency despite spare queue
-capacity being intended only for stalls. At a private 512-frame graph quantum,
-short runs for DualSense, DS4 and Xbox360 had exact marker continuity and p99
-18.5–18.9 ms (maximum 23.7–25.9 ms). This is a test-producer correction, not a
-claim of end-to-end production acceptance: the virtual graph delivered the
-nominal eight seconds of samples in about sixteen wall-clock seconds. A
-128-frame graph run had p99 below 20 ms but missed 5,888 marker frames, so it
-failed continuity. The harness now reports elapsed wall time and graph timing
-alongside its marker distribution and rejects delivery below 90% of nominal
-real-time rate. A repeat at 512 frames failed that guard at 16.1 seconds despite
-exact markers and 17.8 ms p99. Sustained real-time throughput, full-duplex
-latency and both USB access modes remain open.
+capacity being intended only for stalls. The first queue-paced version capped
+fill below the 512-frame callback size. Its exact-marker, 18.5–18.9 ms p99
+short runs for the three families were misleading: eight seconds of samples
+took about sixteen wall-clock seconds. The harness now communicates the lab
+quantum to its producer, keeps one graph block ready, reports wall-clock rate
+and rejects delivery below 90% of nominal real time. At 512 frames, a DualSense
+run took 8.1 seconds but missed 512 markers and had 20.7 ms p99. At 256 frames,
+it missed 3,072 markers with 13.3 ms p99. Graph timing reported discontinuities
+in both runs. Neither path meets the combined continuity, throughput and p99
+target. Sustained real-time throughput, full-duplex latency and both USB access
+modes remain open.
 
 The graph-driven native-client bridge also remains unaccepted. On the private
 512-frame graph, one DualSense microphone run missed 512 measured marker frames
