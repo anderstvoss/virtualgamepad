@@ -8,3 +8,5 @@ pub use session::{Channels, Setup, run};
 
 #[cfg(target_os = "linux")]
 pub mod client;
+#[cfg(target_os = "linux")]
+pub mod client_pcm;

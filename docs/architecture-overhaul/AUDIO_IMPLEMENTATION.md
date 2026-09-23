@@ -249,8 +249,32 @@ constitute an enabled ordinary-caller USB realization.
    remains unavailable until comparison acceptance; GUI/API/quality/alpha remain
    subsequent gates.
 
-The private version-two connection handler now has deterministic socket tests for
+The private version-two connection handler has deterministic socket tests for
 malformed operations, admission before setup, setup/handoff rollback, stale
 requests, version changes, disconnects and independent same-UID clients. A
 connection owns at most one audio session and cannot name another connection's
-resources. This handler is not yet connected to privileged VHCI attachment.
+resources. It is now connected to staged privileged VHCI attachment and the explicit
+administrator installer. Ordinary-user installed probes have passed creation,
+native updates and closure for all three families, plus duplicate/mixed sessions,
+port exhaustion, independent removal, recreation, client death and worker death.
+These results cover parts of steps 1 and 2, not the complete security acceptance
+matrix. Restart recovery remains fail-closed for unverifiable journal records.
+
+The latest lifecycle correction releases reservations on worker death even when
+the client retains an idle broker connection. Its deterministic regression passes;
+the updated installed isolation probe still needs a broker binary update and live
+verification. Steps 3–5 remain open. In particular, consumption-based microphone
+refill did not complete sustained acceptance: DualSense and DS4 each passed two
+60-second duplex trials and failed the third with microphone underruns. See the
+[current evidence ledger](USB_AUDIO_STOCK_LINUX.md#consumption-feedback-and-idle-worker-recovery-follow-up).
+The physical DualSense has been reattached, but interactive physical tests require
+the maintainer's explicit readiness confirmation before they begin.
+
+An unprivileged `SampleStreams` pump now handles the production worker's two
+anonymous PCM channels independently of application polling. It uses fixed
+capacity queues and preallocated packet buffers, preserves frame positions and
+discontinuities, reports slow-reader loss, accepts partial microphone writes,
+offers explicit per-direction flushing and retains a terminal channel error.
+Deterministic three-family round-trip, slow-reader overflow and worker-death
+tests pass. This is a private sample-access building block. Root USB creation,
+native-client bridging and directional latency acceptance are still open.
