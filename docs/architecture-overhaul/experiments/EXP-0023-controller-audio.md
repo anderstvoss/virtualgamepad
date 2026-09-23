@@ -92,6 +92,15 @@ The current result is therefore an exact blocker for a speaker claim on this
 host; USB transfer success alone is insufficient. No experimental HID routing
 report was sent to the physical device, and adaptive triggers were untouched.
 
+The USB HID reverse-output decoder now exposes validity-gated audio path,
+speaker and microphone volume, and speaker preamp fields alongside the full
+native report bytes. Its four path values follow the upstream Linux
+`hid-playstation` mapping: stereo headset, dual-mono headset, headset-left
+plus speaker-right, and speaker-right only. This is an observation of a host
+request, not proof of physical routing. The decoder does not alter PCM; a
+backend must not also apply those controller-native levels to samples unless
+it explicitly owns that transformation.
+
 Two bounded three-second, 48 kHz, stereo S16_LE headset-microphone captures
 returned 144,000 frames each, but their levels stayed near zero: RMS about
 0.5/32767 per channel, with peaks at most 8/32767. The maintainer confirmed

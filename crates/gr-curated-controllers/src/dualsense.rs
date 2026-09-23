@@ -1033,6 +1033,15 @@ pub enum DualSenseOutputEvent {
 /// HID `PlayStation` driver while retaining the complete raw payload for
 /// adaptive-trigger and advanced-haptic effects that SDL does not model with a
 /// portable semantic API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DualSenseAudioPath {
+    HeadphonesStereo,
+    HeadphonesDualMono,
+    HeadphonesLeftSpeakerRight,
+    SpeakerRightOnly,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DualSenseHidOutput {
@@ -1052,6 +1061,15 @@ pub enum DualSenseHidOutput {
         /// Native microphone mute request, present only when power-save control
         /// is valid. Independent of the LED; observation does not alter PCM.
         microphone_muted: Option<bool>,
+        /// USB HID audio route requested by the host. Observation does not
+        /// modify PCM or establish that the physical destination responded.
+        audio_path: Option<DualSenseAudioPath>,
+        /// Controller-native speaker volume, validity-gated and not applied to PCM.
+        speaker_volume: Option<u8>,
+        /// Controller-native microphone volume, validity-gated and not applied to PCM.
+        microphone_volume: Option<u8>,
+        /// Controller-native speaker preamp field, validity-gated and not applied to PCM.
+        speaker_preamp: Option<u8>,
         /// Present only when the host set the player-indicator valid bit.
         player_leds: Option<u8>,
         /// Present only when the host set the lightbar valid bit.
@@ -1082,6 +1100,15 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
             mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
             // Linux hid-playstation: power-save validity bit 1, mic-mute bit 4.
             microphone_muted: (raw[1] & 0x02 != 0).then_some(raw[9] & 0x10 != 0),
+            audio_path: (raw[0] & 0x80 != 0).then(|| match (raw[7] >> 4) & 0x03 {
+                0 => DualSenseAudioPath::HeadphonesStereo,
+                1 => DualSenseAudioPath::HeadphonesDualMono,
+                2 => DualSenseAudioPath::HeadphonesLeftSpeakerRight,
+                _ => DualSenseAudioPath::SpeakerRightOnly,
+            }),
+            speaker_volume: (raw[0] & 0x20 != 0).then_some(raw[5]),
+            microphone_volume: (raw[0] & 0x40 != 0).then_some(raw[6]),
+            speaker_preamp: (raw[1] & 0x80 != 0).then_some(raw[37] & 0x07),
             player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
             lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
@@ -2021,6 +2048,10 @@ mod tests {
                 left_trigger_effect: [2; 11],
                 mute_button_led: Some(true),
                 microphone_muted: None,
+                audio_path: None,
+                speaker_volume: None,
+                microphone_volume: None,
+                speaker_preamp: None,
                 player_leds: Some(0x1f),
                 lightbar_rgb: Some([0x11, 0x22, 0x33]),
             }
@@ -2055,6 +2086,51 @@ mod tests {
             decode_dualsense_hid_output(Some(2), vec![0; 46]),
             DualSenseHidOutput::Unknown { .. }
         ));
+    }
+
+    #[test]
+    fn native_audio_route_and_levels_are_validity_gated_without_touching_raw() {
+        let routes = [
+            DualSenseAudioPath::HeadphonesStereo,
+            DualSenseAudioPath::HeadphonesDualMono,
+            DualSenseAudioPath::HeadphonesLeftSpeakerRight,
+            DualSenseAudioPath::SpeakerRightOnly,
+        ];
+        for (index, expected) in routes.into_iter().enumerate() {
+            let mut raw = vec![0_u8; 47];
+            raw[5] = 0x64;
+            raw[6] = 0x40;
+            raw[7] = u8::try_from(index).unwrap() << 4;
+            raw[37] = 0xfa;
+            assert!(matches!(
+                decode_dualsense_hid_output(Some(2), raw.clone()),
+                DualSenseHidOutput::UsbOutput {
+                    audio_path: None,
+                    speaker_volume: None,
+                    microphone_volume: None,
+                    speaker_preamp: None,
+                    ..
+                }
+            ));
+            raw[0] = 0xe0;
+            raw[1] = 0x80;
+            let DualSenseHidOutput::UsbOutput {
+                audio_path,
+                speaker_volume,
+                microphone_volume,
+                speaker_preamp,
+                raw: retained,
+                ..
+            } = decode_dualsense_hid_output(Some(2), raw.clone())
+            else {
+                panic!()
+            };
+            assert_eq!(audio_path, Some(expected));
+            assert_eq!(speaker_volume, Some(0x64));
+            assert_eq!(microphone_volume, Some(0x40));
+            assert_eq!(speaker_preamp, Some(2));
+            assert_eq!(retained, raw);
+        }
     }
 
     #[test]

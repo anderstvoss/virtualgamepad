@@ -22,7 +22,7 @@ pub fn dualsense(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
             C::HapticRight,
         ],
         &[C::MicrophoneLeft, C::MicrophoneRight],
-        "Functional 48 kHz signed-16 profile; USB topology, channel routing and haptic fidelity require physical lab acceptance.",
+        "Functional 48 kHz signed-16 headphone/haptic profile; onboard-speaker routing is unavailable. Headset microphone response, USB topology and haptic fidelity require physical comparison.",
     )
 }
 /// # Errors
@@ -109,6 +109,10 @@ mod tests {
         assert_eq!(
             p.streams()[0].format().channels()[2..],
             [C::HapticLeft, C::HapticRight]
+        );
+        assert!(
+            p.limitation()
+                .contains("onboard-speaker routing is unavailable")
         );
     }
 }

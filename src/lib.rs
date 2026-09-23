@@ -72,13 +72,13 @@ pub use gr_controller_contract::{
     TriggerInput, TriggerInputKind, TriggerStack,
 };
 pub use gr_curated_controllers::{
-    BatteryLevel, BatteryState, DualSenseAxis, DualSenseControl, DualSenseFeature,
-    DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger,
-    DualShock4Axis, DualShock4Control, DualShock4HidOutput, DualShock4MotionSample,
-    DualShock4State, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
-    DualShock4Trigger, MotionSample, SwitchProAxis, SwitchProControl, SwitchProMotionSample,
-    SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
-    Xbox360State, Xbox360Surface, Xbox360Trigger,
+    BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
+    DualSenseFeature, DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact,
+    DualSenseTrigger, DualShock4Axis, DualShock4Control, DualShock4HidOutput,
+    DualShock4MotionSample, DualShock4State, DualShock4Surface, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis, SwitchProControl,
+    SwitchProMotionSample, SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360State, Xbox360Surface, Xbox360Trigger,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,
