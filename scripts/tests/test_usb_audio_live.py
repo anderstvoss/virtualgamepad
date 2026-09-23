@@ -67,6 +67,19 @@ class LiveHarness(unittest.TestCase):
              patch.object(lab,'run_trial',side_effect=trial):
             self.assertEqual(lab.main(),0)
 
+    def test_prepare_only_reserves_exact_owned_card_without_streaming(self):
+        output = io.StringIO()
+        with patch('sys.argv',['validator','--profile','dualsense','--port','1',
+                               '--reserve-owned-card','--prepare-only']), \
+             patch('sys.stdout',output), \
+             patch.object(lab,'resolve_card',return_value=((17,'4-2'),9)), \
+             patch.object(lab,'reserve_direct_alsa') as reserve, \
+             patch.object(lab,'run_trial') as trial:
+            self.assertEqual(lab.main(),0)
+        reserve.assert_called_once_with(9,'4-2')
+        trial.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())['card'],9)
+
     def test_disappearance_preserves_pcm_result_and_stops_trials(self):
         output = io.StringIO()
         with patch('sys.argv',['validator','--profile','xbox360','--port','0']), \

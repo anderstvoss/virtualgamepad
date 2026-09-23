@@ -145,9 +145,19 @@ def main():
     parser.add_argument('--trials',type=int,default=3)
     parser.add_argument('--reserve-owned-card',action='store_true',
                         help='temporarily release only this owned virtual card from PipeWire')
+    parser.add_argument('--prepare-only',action='store_true',
+                        help='verify and reserve the owned virtual card without streaming')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 60 or not 1 <= args.trials <= 3 or args.port < 0:
         parser.error('seconds must be 1..60, trials 1..3, and port nonnegative')
+    if args.prepare_only:
+        if not args.reserve_owned_card:
+            parser.error('--prepare-only requires --reserve-owned-card')
+        ownership, card = resolve_card(args.port,args.profile)
+        reserve_direct_alsa(card,ownership[1])
+        print(json.dumps(dict(profile=args.profile,card=card,port=args.port,
+                              ownership=ownership[1])),flush=True)
+        return 0
     ownership = None
     for trial in range(args.trials):
         ownership, card = resolve_card(args.port,args.profile,ownership)

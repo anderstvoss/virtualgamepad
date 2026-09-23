@@ -46,6 +46,29 @@ interior. Shortening the bridge's idle sleep, skipping idle waits after progress
 and adding a startup prebuffer did not correct the gap; those trials were
 removed. Native-client continuity is therefore unaccepted.
 
+The root-only `usb_audio_latency` example now stamps paced marker blocks at
+`aplay` stdin and matches them after `ControllerAudio::read_playback`. Its
+measurement includes application pipe, ALSA, USB and IPC buffering, and the
+128-frame timestamp has up to 2.667 ms position uncertainty. Three-second
+post-warm-up probes returned exact frames with no marker loss or duplicate:
+DualSense p50/p95/p99/max 23.141/27.172/28.931/30.379 ms, DS4
+23.825/28.627/31.028/34.095 ms, Xbox360 21.090/25.128/26.540/29.793 ms.
+All three **fail** the below-20-ms p99 target. A 64-frame ALSA period and
+256-frame buffer increased a short DualSense p99 to 92.276 ms, so the 128/512
+probe settings were retained. These are host-to-controller application-boundary
+measurements only; the controller-to-host direction and native-client latency
+remain unmeasured. The new `--prepare-only` harness mode verifies the owned
+virtual card and releases just that card from PipeWire before the marker run.
+
+This VM's PipeWire settings report a 1,024-frame minimum graph quantum at
+48 kHz (21.333 ms), even though the endpoints request about 2.67 ms. A short
+native DualSense test with a temporary 128-frame minimum/default quantum
+still failed: 1,376 host microphone silence frames, 4,112 interior caller
+playback zero frames, 928 dropped frames and graph discontinuities. The
+shared settings were restored to 1,024 immediately after the run. Lowering
+the graph quantum alone does not resolve the native path on this VM; a
+production change must not quietly alter global PipeWire policy.
+
 ## Candidate: local USB/IP VHCI with an unprivileged device worker
 
 Use the stock `vhci_hcd` virtual host controller and a compiled userspace USB
