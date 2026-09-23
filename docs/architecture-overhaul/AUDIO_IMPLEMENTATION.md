@@ -349,3 +349,13 @@ nominal eight seconds of samples in about sixteen wall-clock seconds. A
 failed continuity. The harness now reports elapsed wall time and graph timing
 alongside its marker distribution. Sustained real-time throughput, full-duplex
 latency and both USB access modes remain open.
+
+The graph-driven native-client bridge also remains unaccepted. On the private
+512-frame graph, one DualSense microphone run missed 512 measured marker frames
+with zero bridge-queue underruns; both endpoint timing records showed graph
+discontinuities and 1,024 missed graph frames. The playback-direction run also
+missed 512 markers, while the caller source reported 1,536 underrun frames and
+both nodes reported graph discontinuities. Delivered-frame p99 was below 20 ms
+in these runs, but a latency percentile over surviving frames does not cancel
+the continuity failure. The native graph harness now emits endpoint timing and
+underrun counters with each result.

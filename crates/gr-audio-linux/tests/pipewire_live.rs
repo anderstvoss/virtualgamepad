@@ -1048,6 +1048,11 @@ fn native_graph_latency(direction: SampleDirection) {
     drop(source);
     drop(capture);
     let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
+    eprintln!(
+        "native_graph_timings={:?} underrun_frames={}",
+        session.timings(),
+        session.underrun_frames()
+    );
     session.close();
     assert!(session.error().is_none());
     assert!(!session.failed());
