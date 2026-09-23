@@ -222,6 +222,10 @@ impl Pcm {
 }
 impl crate::audio::backend::Backend for Pcm {
     fn timings(&self) -> Vec<crate::AudioStreamTiming> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return bridge.timings();
+        }
         Vec::new()
     }
     fn read_playback(&mut self, dest: &mut [i16]) -> Result<crate::AudioRead, AudioError> {
@@ -256,6 +260,13 @@ impl crate::audio::backend::Backend for Pcm {
     }
     fn dropped_playback_frames(&self) -> u64 {
         self.lock().dropped_playback_frames()
+    }
+    fn native_playback_underrun_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.source_underrun_frames());
+        }
+        None
     }
     fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         if self.access.microphone_access() != AudioAccess::Samples {

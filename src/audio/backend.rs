@@ -10,6 +10,9 @@ pub(crate) trait Backend: Send + Sync {
     fn is_closed(&self) -> bool;
     fn underrun_frames(&self) -> u64;
     fn dropped_playback_frames(&self) -> u64;
+    fn native_playback_underrun_frames(&self) -> Option<u64> {
+        None
+    }
     fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         Ok(None)
     }

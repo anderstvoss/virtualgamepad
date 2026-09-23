@@ -79,6 +79,10 @@ required-features = ["audio-usbip"]
 name = "usb_audio_acceptance"
 required-features = ["audio-usbip"]
 
+[[example]]
+name = "usb_audio_native_probe"
+required-features = ["audio-usbip", "audio-pipewire"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }
 gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1", optional = true }

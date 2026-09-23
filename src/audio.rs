@@ -155,6 +155,14 @@ impl ControllerAudio {
     pub fn dropped_playback_frames(&self) -> u64 {
         self.session.dropped_playback_frames()
     }
+    /// Frames emitted as silence by a native caller playback endpoint because
+    /// its associated source queue was empty. This is distinct from USB host
+    /// microphone silence and from discarded playback queue frames. `None`
+    /// means this backend does not report the separate native-source counter.
+    #[must_use]
+    pub fn native_playback_underrun_frames(&self) -> Option<u64> {
+        self.session.native_playback_underrun_frames()
+    }
     /// USB capture frames serviced since creation, including underrun silence.
     /// This is scheduling credit for sample-owned streams, not proof that a
     /// canceled USB request reached the host. Use a small operating fill;
@@ -389,6 +397,7 @@ mod tests {
         );
         assert_eq!(audio.microphone_host_frames().unwrap(), Some(96));
         assert_eq!(audio.underrun_frames(), 48);
+        assert_eq!(audio.native_playback_underrun_frames(), None);
         audio.close();
         worker_reply.join().unwrap();
         drop((worker_playback, worker_microphone));

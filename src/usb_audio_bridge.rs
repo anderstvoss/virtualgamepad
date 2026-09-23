@@ -4,15 +4,54 @@ use crate::{AudioAccess, AudioError, AudioOptions, SampleDirection};
 use gr_audio_contract::{AudioProfile, AudioStreamDescription};
 use gr_audio_worker::client_pcm::SampleStreams;
 use std::{
-    sync::{Arc, Mutex, mpsc},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 pub(crate) struct Bridge {
     stop: Arc<std::sync::atomic::AtomicBool>,
     error: Arc<Mutex<Option<AudioError>>>,
+    metrics: Arc<Metrics>,
     thread: Option<JoinHandle<()>>,
+}
+#[derive(Default)]
+struct Metrics {
+    timings: Mutex<Vec<crate::AudioStreamTiming>>,
+    source_underruns: AtomicU64,
+}
+impl Metrics {
+    fn capture(&self, session: &gr_audio_linux::Session) {
+        self.source_underruns
+            .store(session.underrun_frames(), Ordering::Release);
+        *self
+            .timings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session
+            .timings()
+            .into_iter()
+            .map(|timing| crate::AudioStreamTiming {
+                endpoint: timing.endpoint,
+                graph_ticks: timing.graph_ticks,
+                tick_rate: (timing.rate_num, timing.rate_denom),
+                observed_at_ns: timing.monotonic_ns,
+                estimated_graph_delay_ticks: timing.delay_ticks,
+                discontinuities: timing.discontinuities,
+                missed_graph_frames: timing.missed_graph_frames,
+            })
+            .collect();
+    }
+}
+#[derive(Clone, Copy)]
+struct PumpConfig {
+    playback_native: bool,
+    microphone_native: bool,
+    playback_channels: usize,
+    microphone_channels: usize,
 }
 impl Bridge {
     pub(crate) fn start(
@@ -28,12 +67,16 @@ impl Bridge {
         let (startup, ready) = mpsc::sync_channel(1);
         let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
+        let metrics = Arc::new(Metrics::default());
         let thread_stop = stop.clone();
         let thread_error = error.clone();
-        let playback_channels = profile.streams()[0].format().channels().len();
-        let microphone_channels = profile.streams()[1].format().channels().len();
-        let playback_native = options.playback_access() == AudioAccess::NativeClient;
-        let microphone_native = options.microphone_access() == AudioAccess::NativeClient;
+        let thread_metrics = metrics.clone();
+        let config = PumpConfig {
+            playback_channels: profile.streams()[0].format().channels().len(),
+            microphone_channels: profile.streams()[1].format().channels().len(),
+            playback_native: options.playback_access() == AudioAccess::NativeClient,
+            microphone_native: options.microphone_access() == AudioAccess::NativeClient,
+        };
         let thread = thread::Builder::new()
             .name("usb-audio-pipewire-bridge".into())
             .spawn(move || {
@@ -52,11 +95,10 @@ impl Bridge {
                         &mut session,
                         &streams,
                         &thread_stop,
-                        playback_native,
-                        microphone_native,
-                        playback_channels,
-                        microphone_channels,
+                        &thread_metrics,
+                        config,
                     );
+                    thread_metrics.capture(&session);
                     session.close();
                     result
                 })();
@@ -75,6 +117,7 @@ impl Bridge {
                 Some(Self {
                     stop,
                     error,
+                    metrics,
                     thread: Some(thread),
                 }),
                 names,
@@ -98,6 +141,16 @@ impl Bridge {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+    pub(crate) fn timings(&self) -> Vec<crate::AudioStreamTiming> {
+        self.metrics
+            .timings
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+    pub(crate) fn source_underrun_frames(&self) -> u64 {
+        self.metrics.source_underruns.load(Ordering::Acquire)
     }
     pub(crate) fn close(&mut self) {
         self.stop.store(true, std::sync::atomic::Ordering::Release);
@@ -162,45 +215,48 @@ fn run(
     session: &mut gr_audio_linux::Session,
     streams: &Arc<Mutex<SampleStreams>>,
     stop: &std::sync::atomic::AtomicBool,
-    playback_native: bool,
-    microphone_native: bool,
-    playback_channels: usize,
-    microphone_channels: usize,
+    metrics: &Metrics,
+    config: PumpConfig,
 ) -> Result<(), AudioError> {
     const FRAMES: usize = 128;
     let mut playback = [0_i16; FRAMES * 4];
     let mut microphone = [0_i16; FRAMES * 4];
     let mut playback_pending = (0, 0);
     let mut microphone_pending = (0, 0);
+    let mut last_timing = Instant::now();
     while !stop.load(std::sync::atomic::Ordering::Acquire) {
-        if playback_native {
+        if config.playback_native {
             if playback_pending.0 == playback_pending.1 {
                 let block = streams
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .read_playback(&mut playback[..FRAMES * playback_channels])?;
+                    .read_playback(&mut playback[..FRAMES * config.playback_channels])?;
                 playback_pending = (0, block.frames);
             }
             if playback_pending.0 < playback_pending.1 {
-                let offset = playback_pending.0 * playback_channels;
-                let end = playback_pending.1 * playback_channels;
+                let offset = playback_pending.0 * config.playback_channels;
+                let end = playback_pending.1 * config.playback_channels;
                 playback_pending.0 += session.write_microphone(&playback[offset..end])?;
             }
         }
-        if microphone_native {
+        if config.microphone_native {
             if microphone_pending.0 == microphone_pending.1 {
-                let block =
-                    session.read_playback(&mut microphone[..FRAMES * microphone_channels])?;
+                let block = session
+                    .read_playback(&mut microphone[..FRAMES * config.microphone_channels])?;
                 microphone_pending = (0, block.frames);
             }
             if microphone_pending.0 < microphone_pending.1 {
-                let offset = microphone_pending.0 * microphone_channels;
-                let end = microphone_pending.1 * microphone_channels;
+                let offset = microphone_pending.0 * config.microphone_channels;
+                let end = microphone_pending.1 * config.microphone_channels;
                 microphone_pending.0 += streams
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .write_microphone(&microphone[offset..end])?;
             }
+        }
+        if last_timing.elapsed() >= Duration::from_millis(100) {
+            metrics.capture(session);
+            last_timing = Instant::now();
         }
         thread::sleep(Duration::from_micros(500));
     }
@@ -213,6 +269,31 @@ mod tests {
     use crate::{AudioExposure, AudioOptions};
     use gr_usbip::profile::ProfileId;
     use std::os::unix::net::UnixStream;
+    #[test]
+    fn graph_diagnostics_remain_readable_after_bridge_closure() {
+        let timing = crate::AudioStreamTiming {
+            endpoint: "synthetic.native".into(),
+            graph_ticks: 42,
+            tick_rate: (1, 48_000),
+            observed_at_ns: 123,
+            estimated_graph_delay_ticks: 7,
+            discontinuities: 2,
+            missed_graph_frames: 256,
+        };
+        let mut bridge = Bridge {
+            stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            error: Arc::new(Mutex::new(None)),
+            metrics: Arc::new(Metrics {
+                timings: Mutex::new(vec![timing.clone()]),
+                source_underruns: AtomicU64::new(512),
+            }),
+            thread: None,
+        };
+        bridge.close();
+        bridge.close();
+        assert_eq!(bridge.timings(), vec![timing]);
+        assert_eq!(bridge.source_underrun_frames(), 512);
+    }
     #[test]
     fn mirror_preserves_group_formats_and_reverses_only_native_directions() {
         for profile in [
