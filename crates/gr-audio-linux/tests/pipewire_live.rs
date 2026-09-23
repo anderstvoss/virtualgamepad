@@ -1200,9 +1200,10 @@ fn latency_graph_library_microphone() {
     {
         std::thread::sleep(Duration::from_millis(1));
     }
+    let streaming_elapsed = streaming_started.elapsed();
     eprintln!(
         "graph_library_microphone_wall_seconds={:.3} timings={:?}",
-        streaming_started.elapsed().as_secs_f64(),
+        streaming_elapsed.as_secs_f64(),
         session.timings()
     );
     drop(capture);
@@ -1217,5 +1218,9 @@ fn latency_graph_library_microphone() {
         None,
         measured_marker_frames(&stamps),
         marker_frame_errors(&counts, &stamps),
+    );
+    assert!(
+        streaming_elapsed <= Duration::from_millis(seconds * 1_100),
+        "graph delivered microphone frames below 90% of nominal real-time rate"
     );
 }

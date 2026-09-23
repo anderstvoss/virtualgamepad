@@ -347,7 +347,9 @@ claim of end-to-end production acceptance: the virtual graph delivered the
 nominal eight seconds of samples in about sixteen wall-clock seconds. A
 128-frame graph run had p99 below 20 ms but missed 5,888 marker frames, so it
 failed continuity. The harness now reports elapsed wall time and graph timing
-alongside its marker distribution. Sustained real-time throughput, full-duplex
+alongside its marker distribution and rejects delivery below 90% of nominal
+real-time rate. A repeat at 512 frames failed that guard at 16.1 seconds despite
+exact markers and 17.8 ms p99. Sustained real-time throughput, full-duplex
 latency and both USB access modes remain open.
 
 The graph-driven native-client bridge also remains unaccepted. On the private
