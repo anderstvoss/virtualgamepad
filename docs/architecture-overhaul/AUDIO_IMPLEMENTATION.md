@@ -336,3 +336,16 @@ selectors and reports its stream-group and clock-domain identities. The previous
 generic node-string getters were migrated in the root-only example. `AlsaPcm`
 is resolved from current owned VHCI ancestry; it does not imply that the broker
 has passed its remaining security and latency acceptance.
+
+The reverse PipeWire sample-access harness now paces its microphone producer
+against consumed queue frames. A free-running nominal-rate timer accumulated
+1,100–1,400 queued frames and yielded 25–52 ms latency despite spare queue
+capacity being intended only for stalls. At a private 512-frame graph quantum,
+short runs for DualSense, DS4 and Xbox360 had exact marker continuity and p99
+18.5–18.9 ms (maximum 23.7–25.9 ms). This is a test-producer correction, not a
+claim of end-to-end production acceptance: the virtual graph delivered the
+nominal eight seconds of samples in about sixteen wall-clock seconds. A
+128-frame graph run had p99 below 20 ms but missed 5,888 marker frames, so it
+failed continuity. The harness now reports elapsed wall time and graph timing
+alongside its marker distribution. Sustained real-time throughput, full-duplex
+latency and both USB access modes remain open.

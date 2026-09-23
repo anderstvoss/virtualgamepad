@@ -156,6 +156,10 @@ impl Session {
             .ok_or(AudioError::IncompatibleTopology)?
             .push(samples)
     }
+    #[must_use]
+    pub fn queued_microphone_frames(&self) -> Option<usize> {
+        self.microphone.as_ref().map(PcmProducer::queued_frames)
+    }
     /// Discard queued microphone audio at the next backend read.
     /// # Errors
     /// Returns Closed or incompatible access mode.

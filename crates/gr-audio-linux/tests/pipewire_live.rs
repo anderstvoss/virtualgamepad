@@ -1162,13 +1162,19 @@ fn latency_graph_library_microphone() {
         session.write_microphone(&priming).unwrap();
         std::thread::sleep(Duration::from_nanos(128 * 1_000_000_000 / 48000));
     }
-    let streaming = Instant::now();
+    let streaming_started = Instant::now();
+    // Follow graph consumption instead of a separate wall-clock producer. A
+    // free-running timer can build an entire queue of latency when the private
+    // graph runs slightly slower than its nominal sample rate.
     for block in 1..blocks {
-        let due = streaming
-            + Duration::from_nanos(
-                u64::try_from((block - 1) * 128).unwrap() * 1_000_000_000 / 48000,
+        let ready_deadline = Instant::now() + Duration::from_secs(1);
+        while session.queued_microphone_frames().unwrap() > 128 {
+            assert!(
+                Instant::now() < ready_deadline,
+                "graph stopped consuming microphone"
             );
-        std::thread::sleep(due.saturating_duration_since(Instant::now()));
+            std::thread::sleep(Duration::from_micros(250));
+        }
         let samples = vec![i16::try_from(block + 1).unwrap(); 128 * channels];
         stamps[block].store(
             u64::try_from(started.elapsed().as_nanos()).unwrap() + 1,
@@ -1189,6 +1195,11 @@ fn latency_graph_library_microphone() {
     {
         std::thread::sleep(Duration::from_millis(1));
     }
+    eprintln!(
+        "graph_library_microphone_wall_seconds={:.3} timings={:?}",
+        streaming_started.elapsed().as_secs_f64(),
+        session.timings()
+    );
     drop(capture);
     let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
     session.close();
