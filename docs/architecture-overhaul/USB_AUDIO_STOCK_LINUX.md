@@ -383,3 +383,23 @@ retains all client descriptors and verifies cleanup and quota release on worker
 death alone. The installed isolation probe now also requires all three ports to
 be reusable while the failed client's broker connection remains open. Installation
 of the updated broker and a fresh isolation run remain necessary for live proof.
+
+A second DualSense three-trial attempt ran without concurrent workspace builds.
+Trial 0 passed exactly; trial 1 failed with 96 microphone silence frames at
+captured positions 1,602,864–1,602,959. Playback remained exact and no device or
+IPC failure was reported. The largest caller refill interval was 9.196 ms at a
+later consumption position, so that observation does not explain the gap. The
+harness now captures worker transfer, microphone-silence, stall, frame,
+abandonment and maximum scheduling-lateness counters after its PCM client
+threads stop. A short three-second check confirmed that diagnostics path; the
+longer counter-correlated run subsequently passed trials 0 and 1, then failed
+trial 2 with 96 silence frames at positions 1,631,712–1,631,807. The worker
+reported exactly 96 microphone silence frames, zero abandoned capture frames,
+and maximum USB audio lateness of 2.066 ms. The largest caller refill interval,
+8.610 ms, occurred at a later consumption position. This narrows the gap to the
+worker's microphone supply at capture time; neither counter establishes the
+PCM pump thread's scheduling history. A separate private worker operation now
+reports maximum excess over that thread's 500 µs nominal pump interval. The
+installed worker must be updated before a longer run can use this counter. The
+failure remains unresolved, and no end-to-end latency claim follows from these
+scheduling counters.

@@ -118,6 +118,18 @@ impl Control {
             response.as_slice().try_into().map_err(io::Error::other)?,
         ))
     }
+    /// Largest excess over the PCM pump's 500 µs nominal iteration interval.
+    /// A scheduling diagnostic, not an end-to-end latency measurement.
+    pub fn maximum_pcm_pump_lateness_us(&mut self) -> io::Result<u64> {
+        let response = self.exchange(6, &[])?;
+        if response.len() != 8 {
+            self.terminal();
+            return Err(io::Error::other("invalid PCM pump timing reply"));
+        }
+        Ok(u64::from_le_bytes(
+            response.as_slice().try_into().map_err(io::Error::other)?,
+        ))
+    }
     pub fn close(&mut self) -> io::Result<()> {
         if self.closed {
             return Ok(());

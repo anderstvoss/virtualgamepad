@@ -248,6 +248,7 @@ where
     let (events, receive_events) = mpsc::sync_channel(128);
     let lost = Arc::new(AtomicU64::new(0));
     let counters = Arc::new(Counters::default());
+    let pcm_lateness = Arc::new(AtomicU64::new(0));
     let handler = Handler {
         protocol,
         state: Transactions::new(setup.generation, neutral)
@@ -279,6 +280,7 @@ where
         stopping: threads.stop.clone(),
     };
     let stop = threads.stop.clone();
+    let pump_lateness = pcm_lateness.clone();
     threads.joins.push(
         thread::Builder::new()
             .name("controller-usb".into())
@@ -297,17 +299,7 @@ where
             .name("controller-pcm".into())
             .spawn(move || {
                 let _notify = notify;
-                let started = Instant::now();
-                while !stop.load(Ordering::Acquire) {
-                    let now =
-                        u64::try_from(started.elapsed().as_micros()).map_err(io::Error::other)?;
-                    outbound.pump(now)?;
-                    inbound.pump(now)?;
-                    thread::sleep(Duration::from_micros(500));
-                }
-                outbound.close();
-                inbound.close();
-                Ok(())
+                run_pcm(&mut outbound, &mut inbound, &stop, &pump_lateness)
             })?,
     );
     let result = control_loop(
@@ -316,10 +308,42 @@ where
         &updates,
         &receive_acknowledgements,
         &receive_events,
-        &lost,
-        &counters,
+        &ControlStats {
+            lost: &lost,
+            usb: &counters,
+            pcm_lateness: &pcm_lateness,
+        },
     );
     finish(&control, setup.generation, result, threads.close())
+}
+fn run_pcm(
+    outbound: &mut Outbound,
+    inbound: &mut Inbound,
+    stop: &AtomicBool,
+    lateness: &AtomicU64,
+) -> io::Result<()> {
+    let started = Instant::now();
+    let mut previous = started;
+    while !stop.load(Ordering::Acquire) {
+        let observed = Instant::now();
+        lateness.fetch_max(
+            pcm_lateness_us(observed.duration_since(previous)),
+            Ordering::Relaxed,
+        );
+        previous = observed;
+        let now = u64::try_from(started.elapsed().as_micros()).map_err(io::Error::other)?;
+        outbound.pump(now)?;
+        inbound.pump(now)?;
+        thread::sleep(Duration::from_micros(500));
+    }
+    outbound.close();
+    inbound.close();
+    Ok(())
+}
+fn pcm_lateness_us(interval: Duration) -> u64 {
+    u64::try_from(interval.as_micros())
+        .unwrap_or(u64::MAX)
+        .saturating_sub(500)
 }
 fn finish(
     control: &UnixStream,
@@ -343,14 +367,18 @@ fn finish(
         _ => acknowledgement,
     }
 }
+struct ControlStats<'a> {
+    lost: &'a AtomicU64,
+    usb: &'a Counters,
+    pcm_lateness: &'a AtomicU64,
+}
 fn control_loop(
     socket: &UnixStream,
     generation: u64,
     updates: &mpsc::SyncSender<Update>,
     acknowledgements: &mpsc::Receiver<(u64, bool)>,
     events: &mpsc::Receiver<RawReverseEvent>,
-    lost: &AtomicU64,
-    counters: &Counters,
+    stats: &ControlStats<'_>,
 ) -> io::Result<()> {
     use gr_privileged_broker::{socket_wire::read_frame, write_message};
     let mut socket = socket;
@@ -398,14 +426,14 @@ fn control_loop(
             3 if body.len() == 8 => {
                 let mut response = generation.to_le_bytes().to_vec();
                 for counter in [
-                    lost,
-                    &counters.completed_transfers,
-                    &counters.microphone_silence_frames,
-                    &counters.stalled_transfers,
-                    &counters.playback_frames,
-                    &counters.capture_frames,
-                    &counters.abandoned_capture_frames,
-                    &counters.maximum_audio_lateness_us,
+                    stats.lost,
+                    &stats.usb.completed_transfers,
+                    &stats.usb.microphone_silence_frames,
+                    &stats.usb.stalled_transfers,
+                    &stats.usb.playback_frames,
+                    &stats.usb.capture_frames,
+                    &stats.usb.abandoned_capture_frames,
+                    &stats.usb.maximum_audio_lateness_us,
                 ] {
                     response.extend(counter.load(Ordering::Relaxed).to_le_bytes());
                 }
@@ -414,12 +442,18 @@ fn control_loop(
             5 if body.len() == 8 => {
                 let mut response = generation.to_le_bytes().to_vec();
                 response.extend(
-                    counters
+                    stats
+                        .usb
                         .microphone_consumed_frames
                         .load(Ordering::Relaxed)
                         .to_le_bytes(),
                 );
                 write_message(&mut socket, 5, &response)?;
+            }
+            6 if body.len() == 8 => {
+                let mut response = generation.to_le_bytes().to_vec();
+                response.extend(stats.pcm_lateness.load(Ordering::Relaxed).to_le_bytes());
+                write_message(&mut socket, 6, &response)?;
             }
             4 if body.len() == 8 => {
                 return Ok(());
@@ -439,6 +473,13 @@ mod tests {
         a.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         b.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         (a, b)
+    }
+    #[test]
+    fn pcm_pump_delay_reports_only_excess_over_nominal_interval() {
+        assert_eq!(pcm_lateness_us(Duration::ZERO), 0);
+        assert_eq!(pcm_lateness_us(Duration::from_micros(499)), 0);
+        assert_eq!(pcm_lateness_us(Duration::from_micros(500)), 0);
+        assert_eq!(pcm_lateness_us(Duration::from_millis(2)), 1_500);
     }
     #[test]
     fn cleanup_failure_never_acknowledges_success() {
@@ -508,6 +549,11 @@ mod tests {
                 read_message(&mut client).unwrap(),
                 (5, [9_u64.to_le_bytes(), 0_u64.to_le_bytes()].concat())
             );
+            write_message(&mut client, 6, &9_u64.to_le_bytes()).unwrap();
+            let (tag, timing) = read_message(&mut client).unwrap();
+            assert_eq!(tag, 6);
+            assert_eq!(&timing[..8], &9_u64.to_le_bytes());
+            assert_eq!(timing.len(), 16);
             write_message(&mut client, 4, &9_u64.to_le_bytes()).unwrap();
             assert_eq!(
                 read_message(&mut client).unwrap(),

@@ -65,6 +65,23 @@ def reply(peer):
     return struct.unpack('<HB',data[:3]) + (data[3:],)
 
 
+def worker_diagnostics(control,generation):
+    message(control,1,3,struct.pack('<Q',generation))
+    version, operation, data = reply(control)
+    if (version,operation,len(data)) != (1,3,72) or data[:8] != struct.pack('<Q',generation):
+        raise ValueError('invalid worker diagnostics')
+    keys = ('lost_outputs','completed_transfers','microphone_silence_frames',
+            'stalled_transfers','playback_frames','capture_frames',
+            'abandoned_capture_frames','maximum_audio_lateness_us')
+    result = dict(zip(keys,struct.unpack('<8Q',data[8:])))
+    message(control,1,6,struct.pack('<Q',generation))
+    version, operation, data = reply(control)
+    if (version,operation,len(data)) != (1,6,16) or data[:8] != struct.pack('<Q',generation):
+        raise ValueError('installed worker lacks PCM pump timing diagnostics')
+    result['maximum_pcm_pump_lateness_us'], = struct.unpack('<Q',data[8:])
+    return result
+
+
 def opened(profile):
     peer = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
     peer.settimeout(10)
@@ -185,7 +202,11 @@ def trial(profile, seconds):
         reserve_direct_alsa(int(cards[0].name[4:]),bus)
         for thread in threads: thread.start()
         result = live.run_trial(int(cards[0].name[4:]),profile,seconds)
-        time.sleep(.1)
+        stop.set()
+        for thread in threads:
+            thread.join(3)
+            if thread.is_alive(): errors.append('PCM client thread failed to stop')
+        result['worker_diagnostics'] = worker_diagnostics(control,generation)
         result.update(totals)
         result['ipc_errors'] = errors
         result['microphone_refill_largest_delays'] = delays.summary()

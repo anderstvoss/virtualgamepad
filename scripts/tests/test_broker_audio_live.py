@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import socket
 import struct
+import threading
 import unittest
 
 spec = importlib.util.spec_from_file_location('broker_live',Path(__file__).parents[1]/'validate-broker-audio-live.py')
@@ -10,6 +11,30 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_worker_timing_reply_is_generation_checked_and_distinct_from_usb_lateness(self):
+        def exchange(generation_in_timing):
+            server,client = socket.socketpair()
+            def serve():
+                try:
+                    for tag,body in ((3,struct.pack('<Q8Q',7,*range(8))),
+                                     (6,struct.pack('<QQ',generation_in_timing,1234))):
+                        self.assertEqual(module.reply(server),(1,tag,struct.pack('<Q',7)))
+                        module.message(server,1,tag,body)
+                finally:
+                    server.close()
+            task = threading.Thread(target=serve)
+            task.start()
+            try: return module.worker_diagnostics(client,7)
+            finally:
+                client.close()
+                task.join(2)
+                self.assertFalse(task.is_alive())
+        result = exchange(7)
+        self.assertEqual(result['maximum_audio_lateness_us'],7)
+        self.assertEqual(result['maximum_pcm_pump_lateness_us'],1234)
+        with self.assertRaisesRegex(ValueError,'PCM pump timing'):
+            exchange(8)
+
     def test_refill_diagnostics_are_bounded_and_preserve_frame_correlation(self):
         delays = module.RefillDelays()
         self.assertEqual(delays.summary(),[])
