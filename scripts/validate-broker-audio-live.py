@@ -5,6 +5,7 @@ Synthetic samples only. This is continuity evidence, not end-to-end latency.
 import argparse
 import array
 import importlib.util
+import heapq
 import json
 from pathlib import Path
 import socket
@@ -16,6 +17,30 @@ import time
 spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('validate-usb-audio-live.py'))
 live = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(live)
+
+
+class RefillDelays:
+    """Bounded caller-scheduling evidence; never an audio latency measurement."""
+    def __init__(self):
+        self.previous = None
+        self.consumed = 0
+        self.largest = []
+
+    def record(self, started_ns, replied_ns, consumed):
+        if replied_ns < started_ns or (self.previous is not None and started_ns < self.previous):
+            raise ValueError('nonmonotonic refill observation')
+        if consumed < self.consumed:
+            raise ValueError('microphone consumption moved backwards')
+        if self.previous is not None and consumed > self.consumed:
+            entry = ((started_ns-self.previous)//1000, (replied_ns-started_ns)//1000, consumed)
+            if len(self.largest) < 8: heapq.heappush(self.largest,entry)
+            else: heapq.heappushpop(self.largest,entry)
+        self.previous = started_ns
+        self.consumed = consumed
+
+    def summary(self):
+        return [dict(interval_us=interval,credit_roundtrip_us=rtt,consumed_frame=frame)
+                for interval,rtt,frame in sorted(self.largest,reverse=True)]
 
 
 def exact(peer, count):
@@ -104,6 +129,7 @@ def trial(profile, seconds):
     totals = dict(playback_frames=0,playback_invalid=0,playback_gaps=0,microphone_submitted=0)
     _, nout, nin = live.PROFILES[profile]
     errors = []
+    delays = RefillDelays()
     def consume():
         position = 0
         pattern = tuple([101,-202,303,-404][:nout])
@@ -124,10 +150,14 @@ def trial(profile, seconds):
         submitted = 0
         try:
             while not stop.is_set():
+                started = time.monotonic_ns()
                 message(control,1,5,struct.pack('<Q',generation))
                 version, operation, data = reply(control)
                 if (version,operation,len(data)) != (1,5,16): raise ValueError('invalid microphone credit')
+                if data[:8] != struct.pack('<Q',generation): raise ValueError('foreign microphone credit')
                 consumed, = struct.unpack('<Q',data[8:])
+                if consumed > submitted: raise ValueError('microphone credit exceeds submitted frames')
+                delays.record(started,time.monotonic_ns(),consumed)
                 totals['microphone_consumed'] = consumed
                 # Test-only eight-millisecond operating fill; queue capacity is separate.
                 available = max(0,consumed+384-submitted)
@@ -158,6 +188,7 @@ def trial(profile, seconds):
         time.sleep(.1)
         result.update(totals)
         result['ipc_errors'] = errors
+        result['microphone_refill_largest_delays'] = delays.summary()
         result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+2)*48000
         return result
     finally:

@@ -165,6 +165,26 @@ mod tests {
     use super::*;
     use std::io::Write;
     #[test]
+    fn idle_wait_preserves_frames_and_observes_disconnect() {
+        let (mut tx, rx) = UnixStream::pair().unwrap();
+        assert!(!wait_readable(&rx, Duration::ZERO).unwrap());
+        crate::write_versioned_message(&mut tx, 2, 2, &[7; 8]).unwrap();
+        assert!(wait_readable(&rx, Duration::ZERO).unwrap());
+        assert_eq!(
+            read_versioned_frame(&rx, Duration::from_millis(100)).unwrap(),
+            (2, 2, vec![7; 8])
+        );
+        assert!(!wait_readable(&rx, Duration::ZERO).unwrap());
+        drop(tx);
+        assert!(wait_readable(&rx, Duration::from_millis(100)).unwrap());
+        assert_eq!(
+            read_versioned_frame(&rx, Duration::from_millis(100))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::UnexpectedEof
+        );
+    }
+    #[test]
     fn audio_version_is_explicit_and_v1_clients_reject_it() {
         let (mut tx, rx) = UnixStream::pair().unwrap();
         crate::write_versioned_message(&mut tx, 2, 1, &[1, 2, 3]).unwrap();

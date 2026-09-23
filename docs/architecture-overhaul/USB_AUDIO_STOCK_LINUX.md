@@ -348,3 +348,38 @@ The 8 ms value is test operating fill, not a public API buffer-size promise. Whe
 the corrected feedback eliminates the observed underruns remains a live-test gate.
 Public root USB integration, native-client bridging, measured directional latency,
 full acceptance matrix and remaining physical comparisons are still outstanding.
+
+## Consumption feedback and idle-worker recovery follow-up
+
+The consumption-credit worker was installed and tested through the production
+broker. DualSense and DS4 each passed their first two consecutive 60-second
+post-warm-up duplex trials: 2,880,000 exact microphone frames and 2,976,000 exact
+playback frames including warm-up, with no gaps or silence. Their third trials
+failed: DualSense had 144 microphone silence frames and DS4 had 384. Playback
+remained exact throughout, without device disappearance or IPC errors. Workspace
+validation overlapped parts of these runs; causation is not established. These
+are failed three-trial acceptance attempts, not sustained acceptance passes.
+Xbox360 then passed three consecutive 60-second post-warm-up duplex trials
+with the same exact counts, zero gaps, silence, IPC errors, or device loss. Its
+refill-timing field in that run included inactive intervals after capture ended;
+the later harness correction excludes those intervals. The result demonstrates
+continuity for one installed Xbox sample-access path, not the required latency
+or native-client acceptance.
+
+The harness now retains the eight largest caller refill intervals, credit reply
+durations, and associated microphone consumption positions. Storage stays bounded;
+these observations diagnose scheduling and refill behavior, not end-to-end audio
+latency. A deterministic test covers retention bounds and frame correlation.
+Microphone credit replies also validate their generation and cannot exceed frames
+submitted by that client.
+
+An independent lifecycle audit found that worker death while a client remained
+idle could retain the broker's reservation and ownership record until the client
+closed its connection. The broker now checks its owned child while waiting for
+requests, with a 100 ms idle check interval; partial requests still have the
+existing absolute one-second deadline and ancillary rejection. Failure unwinds
+the connection-owned session and admission permit. A deterministic regression
+retains all client descriptors and verifies cleanup and quota release on worker
+death alone. The installed isolation probe now also requires all three ports to
+be reusable while the failed client's broker connection remains open. Installation
+of the updated broker and a fresh isolation run remain necessary for live proof.

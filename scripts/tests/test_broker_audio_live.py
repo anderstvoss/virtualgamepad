@@ -10,6 +10,24 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_refill_diagnostics_are_bounded_and_preserve_frame_correlation(self):
+        delays = module.RefillDelays()
+        self.assertEqual(delays.summary(),[])
+        started = 0
+        for index in range(100):
+            started += index*1000
+            delays.record(started,started+2000,index*48)
+        result = delays.summary()
+        self.assertEqual(len(result),8)
+        self.assertEqual(result[0],dict(interval_us=99,credit_roundtrip_us=2,consumed_frame=99*48))
+        self.assertEqual(result[-1]['interval_us'],92)
+        # Analysis after capture may hold the interpreter; no consumption means
+        # those delays must not displace observations from active streaming.
+        delays.record(started+1_000_000_000,started+1_000_000_001,99*48)
+        self.assertEqual(delays.summary(),result)
+        with self.assertRaises(ValueError): delays.record(0,1,0)
+        with self.assertRaises(ValueError): module.RefillDelays().record(2,1,0)
+
     def test_owned_card_selector_rejects_physical_same_card_and_ambiguity(self):
         def device(path):
             return {'id':7,'type':'PipeWire:Interface:Device','info':{'props':{'api.alsa.card':2,'device.bus-path':path}}}
