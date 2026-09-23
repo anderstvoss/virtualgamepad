@@ -5,6 +5,17 @@ Baseline: GUI PR #110 (`476056a`), audio work on its descendant branch.
 
 ## Physical DualSense observation
 
+On 2026-09-23 the reference device was visible again in this Linux VM as
+054c:0ce6, bcdDevice 1.00, high-speed, configuration 1. Read-only inspection
+again showed audio-control interface 0, two audio-streaming interfaces 1/2,
+HID interface 3, and an ALSA playback/capture card. The ALSA mixer exposed
+headphone-jack and headset-microphone-jack indicators, both reporting `off` at
+inspection time, plus enabled playback/capture switches and volume values 97/31.
+No audio stream, mixer control or HID effect was exercised during this check.
+The `off` indicators are a snapshot, not evidence that the headset or mic is
+absent; jack routing and capture remain subject to an interactive test after
+the maintainer confirms readiness.
+
 The attached device was identified by USB VID/PID 054c:0ce6, bcdDevice 1.00.
 No serial number or microphone recording is included in this record. A complete
 firmware revision was not established. Cached descriptors, ALSA stream information
