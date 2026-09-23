@@ -384,6 +384,30 @@ death alone. The installed isolation probe now also requires all three ports to
 be reusable while the failed client's broker connection remains open. Installation
 of the updated broker and a fresh isolation run remain necessary for live proof.
 
+After the broker and worker update, installed file hashes matched the tested
+builds. The ordinary-user isolation probe passed again, including the new case
+where a malformed-generation request kills one worker while its client keeps the
+broker connection open: all three allowlisted ports became reusable, and the
+other sessions remained independent. A three-second DualSense duplex run with
+the new PCM-pump counter passed exact samples in both directions, zero
+microphone silence and zero abandoned capture frames. Its maximum recorded USB
+audio and PCM-pump lateness were 1.390 ms and 1.786 ms respectively. A longer
+counter-correlated run was then completed; the short observation alone does not
+close the continuity or end-to-end latency gates.
+
+The installed DualSense USB sample-access path passed three consecutive
+60-second full-duplex trials after a two-second warm-up. Each trial captured
+2,880,000/2,880,000 exact microphone frames and the worker accepted the
+2,976,000 playback frames including warm-up; no playback-invalid frames,
+playback gaps, microphone silence, abandoned capture frames or IPC errors were
+reported. The maximum recorded USB audio deadline lateness was 4.179, 3.213
+and 2.581 ms; maximum PCM-pump lateness was 3.256, 4.026 and 3.785 ms.
+The largest client refill intervals were 5.940, 7.590 and 5.934 ms. These
+are correlated process/host counters, not measured end-to-end latency.
+Prior failed runs below remain part of the evidence; this pass supports
+continuity under the measured conditions without proving all access modes or
+families stable.
+
 A second DualSense three-trial attempt ran without concurrent workspace builds.
 Trial 0 passed exactly; trial 1 failed with 96 microphone silence frames at
 captured positions 1,602,864–1,602,959. Playback remained exact and no device or

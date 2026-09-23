@@ -71,6 +71,35 @@ commands were sent. Headset microphone routing, speaker/headset switching,
 reconnect behavior and physical-versus-virtual comparison remain open; this
 observation alone does not enable controller-matching support.
 
+### Reattached physical controller, five-output and microphone check
+
+On 2026-09-23 the maintainer confirmed a fresh four-channel sequence through
+the physical controller: left headset audio, right headset audio, left grip,
+right grip, in that order. Playback was 48 kHz, four-channel S16_LE through
+the physical DualSense PipeWire sink, with independent 750 ms tones and
+one-second silence gaps. Headset channels used 440 Hz at 1000/32767; grip
+channels used 110 Hz at 1600/32767. The stream returned successfully. The
+result confirms human-observed routing again, not quantitative crosstalk or
+latency.
+
+With the headset unplugged, a one-second 440 Hz tone on the right audio
+channel transferred successfully, but the maintainer heard **no onboard
+speaker output**. The headset was then reconnected. This host runs Linux
+6.12.107. The upstream [DualSense audio-jack routing patch](https://www.spinics.net/lists/linux-input/msg101514.html)
+explains that the default path stays on headphones even when unplugged and
+that speaker output needs HID path selection plus speaker volume/preamp setup.
+The current result is therefore an exact blocker for a speaker claim on this
+host; USB transfer success alone is insufficient. No experimental HID routing
+report was sent to the physical device, and adaptive triggers were untouched.
+
+Two bounded three-second, 48 kHz, stereo S16_LE headset-microphone captures
+returned 144,000 frames each, but their levels stayed near zero: RMS about
+0.5/32767 per channel, with peaks at most 8/32767. The maintainer confirmed
+the headset was seated and unmuted. The ALSA headset-jack indicators still
+reported off. Capture availability is established; headset microphone routing
+and meaningful signal response are **not** established. The checker retained
+only frame counts and per-channel RMS/peak aggregates, no PCM recording.
+
 ## PipeWire transport evidence
 
 Ignored live tests were explicitly run on a prepared host. Four backend tests
