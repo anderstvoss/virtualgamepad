@@ -12,6 +12,7 @@ import tempfile
 ENV = {'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'}
 WORKER = 'virtualgamepad-audio'
 BASE = Path('/usr/libexec/virtualgamepad')
+MODULES_BOOT = b'usbip_core\nvhci_hcd\n'
 
 
 def trusted_directory(path):
@@ -68,6 +69,7 @@ def service():
 Description=VirtualGamepad stock-Linux USB audio broker
 Requires=virtualgamepad-broker.socket
 After=virtualgamepad-broker.socket
+ConditionPathExists=/sys/devices/platform/vhci_hcd.0/attach
 [Service]
 Type=exec
 ExecStart=/usr/libexec/virtualgamepad/virtualgamepad-broker --socket-activation --config /etc/virtualgamepad/broker.conf
@@ -126,9 +128,9 @@ def main():
             raise ValueError('build the broker and worker ELF executables first')
         binaries[BASE / dest] = content
     if not args.apply:
-        print('Plan: install fixed broker/worker, dedicated unprivileged account, root policy/state, and socket-activated service.')
+        print('Plan: install fixed broker/worker, dedicated unprivileged account, root policy/state, socket-activated service, and stock VHCI module loading on later boots.')
         print('Allowlisted VHCI ports:', ', '.join(map(str, args.port)))
-        print('No modules, sound permissions, physical routing, or sudo rules will be changed.')
+        print('No module is loaded now; prepare this boot separately. Sound permissions, physical routing, and sudo rules remain unchanged.')
         return
     if os.geteuid() != 0 or not __import__('sys').flags.isolated:
         raise ValueError('apply requires sudo /usr/bin/python3 -I')
@@ -153,9 +155,11 @@ def main():
     for destination, content in binaries.items():
         install(destination, content, 0o755, replace=True)
     service_path = Path('/etc/systemd/system/virtualgamepad-broker.service')
-    previous = service().replace(b'AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID', b'AmbientCapabilities=')
-    known_previous = service_path.is_file() and not service_path.is_symlink() and service_path.read_bytes() == previous
+    current_without_condition = service().replace(b'ConditionPathExists=/sys/devices/platform/vhci_hcd.0/attach\n', b'')
+    previous = current_without_condition.replace(b'AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID', b'AmbientCapabilities=')
+    known_previous = service_path.is_file() and not service_path.is_symlink() and service_path.read_bytes() in (previous, current_without_condition)
     install(service_path, service(), 0o644, replace=known_previous)
+    install(Path('/etc/modules-load.d/virtualgamepad-usbip.conf'), MODULES_BOOT, 0o644)
     install(Path('/etc/systemd/system/virtualgamepad-broker.socket'), socket_unit(grp.getgrgid(account.pw_gid).gr_name), 0o644)
     tmpfiles = b'd /run/virtualgamepad-state 0700 root root -\nd /run/virtualgamepad-state/default 0700 root root -\nd /run/virtualgamepad-state/default.audio 0700 root root -\n'
     install(Path('/etc/tmpfiles.d/virtualgamepad-broker.conf'), tmpfiles, 0o644)

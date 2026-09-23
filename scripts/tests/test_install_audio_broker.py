@@ -20,9 +20,15 @@ class AudioInstallerTests(unittest.TestCase):
         self.assertIn(b'NoNewPrivileges=true', unit)
         self.assertIn(b'AmbientCapabilities=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID', unit)
         self.assertIn(b'/sys/devices/platform/vhci_hcd.0/attach', unit)
+        self.assertIn(b'ConditionPathExists=/sys/devices/platform/vhci_hcd.0/attach', unit)
         self.assertNotIn(b'/dev/snd', unit)
         self.assertNotIn(b'ExecStartPre', unit)
         self.assertIn(b'Restart=no', unit)
+
+    def test_stock_vhci_boot_modules_are_fixed_and_service_still_does_not_load_them(self):
+        self.assertEqual(module.MODULES_BOOT, b'usbip_core\nvhci_hcd\n')
+        self.assertNotIn(b'ExecStartPre=', module.service())
+        self.assertNotIn(b'Modprobe', module.service())
 
     def test_socket_group_cannot_inject_unit_settings(self):
         self.assertIn(b'SocketGroup=test-group', module.socket_unit('test-group'))
