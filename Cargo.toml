@@ -66,9 +66,17 @@ default = []
 # Research/SPI only: excluded from the application API stability promise.
 experimental = []
 audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
+audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
 
 [dev-dependencies]
 gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }
 
+[[example]]
+name = "usb_audio_root"
+required-features = ["audio-usbip"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }
+gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1", optional = true }
+gr-privileged-broker = { path = "crates/gr-privileged-broker", version = "0.1", optional = true }
+gr-usbip = { path = "crates/gr-usbip", version = "0.1", optional = true }

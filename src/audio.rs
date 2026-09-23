@@ -1,5 +1,5 @@
 //! Controller-owned audio. Backend factories remain implementation interfaces.
-mod backend;
+pub(crate) mod backend;
 use crate::{
     AudioAccess, AudioError, AudioExposure, AudioOptions, AudioRead, ControllerError, PcmFormat,
     SampleDirection,
@@ -39,6 +39,7 @@ impl AudioEndpointSelector {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioEndpoint {
     group: &'static str,
+    clock_domain: String,
     host: AudioEndpointSelector,
     caller: Option<AudioEndpointSelector>,
     format: PcmFormat,
@@ -49,6 +50,12 @@ impl AudioEndpoint {
     #[must_use]
     pub const fn group(&self) -> &'static str {
         self.group
+    }
+    /// Creation-scoped stream clock identity. Equality describes the declared
+    /// shared timing domain; it does not assert a measured phase relationship.
+    #[must_use]
+    pub fn clock_domain(&self) -> &str {
+        &self.clock_domain
     }
     #[must_use]
     pub const fn host(&self) -> &AudioEndpointSelector {
@@ -203,6 +210,7 @@ pub(crate) fn open(
             .enumerate()
             .map(|(index, e)| AudioEndpoint {
                 group: profile.streams()[index].name(),
+                clock_domain: e.host_node.clone(),
                 host: AudioEndpointSelector::PipeWireNode {
                     name: e.host_node.clone(),
                 },
@@ -230,6 +238,72 @@ pub(crate) fn open(
     }
 }
 
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+pub(crate) fn usb_audio(
+    options: AudioOptions,
+    id: gr_usbip::profile::ProfileId,
+    card_id: &str,
+    bus_id: &str,
+    caller_nodes: &[Option<String>; 2],
+    session: crate::usb_audio::Pcm,
+) -> Result<ControllerAudio, ControllerError> {
+    let profile = match id {
+        gr_usbip::profile::ProfileId::DualSenseEmulated => {
+            gr_curated_controllers::audio::dualsense(options.exposure())
+        }
+        gr_usbip::profile::ProfileId::DualShock4Emulated => {
+            gr_curated_controllers::audio::dualshock4(options.exposure())
+        }
+        gr_usbip::profile::ProfileId::Xbox360HidEmulated => {
+            gr_curated_controllers::audio::xbox360(options.exposure())
+        }
+    }
+    .map_err(|error| ControllerError::Unsupported {
+        reason: error.to_string(),
+    })?;
+    let endpoints = profile
+        .streams()
+        .iter()
+        .enumerate()
+        .map(|(index, stream)| {
+            let selector = AudioEndpointSelector::AlsaPcm {
+                card_id: card_id.to_owned(),
+                device: 0,
+                subdevice: 0,
+            };
+            let access = match stream.direction() {
+                SampleDirection::HostToController => options.playback_access(),
+                SampleDirection::ControllerToHost => options.microphone_access(),
+                _ => {
+                    return Err(ControllerError::Unsupported {
+                        reason: "unknown audio stream direction".into(),
+                    });
+                }
+            };
+            Ok(AudioEndpoint {
+                group: stream.name(),
+                clock_domain: format!("usbip:{bus_id}:audio"),
+                host: selector.clone(),
+                caller: if access == AudioAccess::NativeClient {
+                    caller_nodes[index]
+                        .as_ref()
+                        .map(|name| AudioEndpointSelector::PipeWireNode { name: name.clone() })
+                } else {
+                    None
+                },
+                format: stream.format().clone(),
+                direction: stream.direction(),
+                access,
+            })
+        })
+        .collect::<Result<Vec<_>, ControllerError>>()?;
+    Ok(ControllerAudio {
+        endpoints,
+        limitation: profile.limitation(),
+        session: Box::new(session),
+    })
+}
+
 pub(crate) fn combined_deadline(
     hid: Option<std::time::Duration>,
     audio: Option<std::time::Duration>,
@@ -243,6 +317,46 @@ pub(crate) fn combined_deadline(
 mod tests {
     use super::{AudioEndpointSelector, combined_deadline};
     use std::time::Duration as D;
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    #[test]
+    fn usb_endpoints_share_declared_clock_and_retain_alsa_identity() {
+        use crate::{AudioExposure, AudioOptions};
+        use gr_usbip::profile::ProfileId;
+        use std::{
+            os::unix::net::UnixStream,
+            sync::{Arc, atomic::AtomicU64},
+        };
+        let (worker_playback, client_playback) = UnixStream::pair().unwrap();
+        let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let id = ProfileId::DualSenseEmulated;
+        let streams = gr_audio_worker::client_pcm::SampleStreams::new(
+            id,
+            7,
+            client_playback,
+            client_microphone,
+        )
+        .unwrap();
+        let options = AudioOptions::new(AudioExposure::Emulated);
+        let profile = gr_curated_controllers::audio::dualsense(AudioExposure::Emulated).unwrap();
+        let (backend, nodes) =
+            crate::usb_audio::Pcm::new(streams, options, &profile, 7, Arc::new(AtomicU64::new(0)))
+                .unwrap();
+        let mut audio = super::usb_audio(options, id, "Virtual_7", "4-1", &nodes, backend).unwrap();
+        assert_eq!(audio.endpoints().len(), 2);
+        assert_eq!(
+            audio.endpoints()[0].clock_domain(),
+            audio.endpoints()[1].clock_domain()
+        );
+        assert_eq!(audio.endpoints()[0].host().identity(), "Virtual_7");
+        assert!(
+            audio
+                .endpoints()
+                .iter()
+                .all(|endpoint| endpoint.caller().is_none())
+        );
+        audio.close();
+        drop((worker_playback, worker_microphone));
+    }
     #[test]
     fn audio_failure_checks_do_not_lose_earlier_hid_deadlines() {
         assert_eq!(

@@ -13,6 +13,102 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
+struct WorkerRecord {
+    attempts: Vec<crate::DualSenseState>,
+    fail_once: bool,
+    fail_output: bool,
+    outputs: VecDeque<RawReverseEvent>,
+    closes: usize,
+}
+struct FakeWorker(Arc<Mutex<WorkerRecord>>);
+impl super::WorkerBridge<crate::DualSenseState> for FakeWorker {
+    fn update(&mut self, state: &crate::DualSenseState) -> Result<(), ProviderError> {
+        let mut record = self.0.lock().unwrap();
+        record.attempts.push(state.clone());
+        if std::mem::take(&mut record.fail_once) {
+            Err(ProviderError::WouldBlock)
+        } else {
+            Ok(())
+        }
+    }
+    fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
+        let mut record = self.0.lock().unwrap();
+        if record.fail_output {
+            Err(ProviderError::Read {
+                reason: "synthetic worker death".into(),
+            })
+        } else {
+            Ok(record.outputs.pop_front())
+        }
+    }
+    fn diagnostics(&mut self) -> ProviderDiagnostics {
+        ProviderDiagnostics {
+            state: if self.0.lock().unwrap().closes == 0 {
+                ProviderState::Open
+            } else {
+                ProviderState::Closed
+            },
+            frames_sent: 0,
+            reverse_events_drained: 0,
+            write_failures: 0,
+            lifecycle_events: 0,
+            last_error: None,
+        }
+    }
+    fn close(&mut self) -> Result<(), ProviderError> {
+        self.0.lock().unwrap().closes += 1;
+        Ok(())
+    }
+}
+
+#[test]
+fn usb_worker_service_drains_reverse_output_and_failure_terminates_once() {
+    let record = Arc::new(Mutex::new(WorkerRecord {
+        outputs: VecDeque::from([RawReverseEvent::HidOutput {
+            report_id: Some(5),
+            bytes: vec![1, 2],
+        }]),
+        ..WorkerRecord::default()
+    }));
+    let mut controller = crate::create_dualsense_usb_worker(Box::new(FakeWorker(record.clone())));
+    let mut seen = 0;
+    controller.service(&mut |_| seen += 1).unwrap();
+    assert_eq!(seen, 1);
+    record.lock().unwrap().fail_output = true;
+    assert!(controller.service(&mut |_| {}).is_err());
+    assert!(matches!(
+        controller.set_native(crate::DualSenseControl::Cross, true),
+        Err(ControlError::Closed)
+    ));
+    controller.close();
+    assert_eq!(record.lock().unwrap().closes, 1);
+}
+
+#[test]
+fn usb_worker_retries_one_accepted_snapshot_and_closes_once() {
+    let record = Arc::new(Mutex::new(WorkerRecord {
+        fail_once: true,
+        ..WorkerRecord::default()
+    }));
+    let mut controller = crate::create_dualsense_usb_worker(Box::new(FakeWorker(record.clone())));
+    controller
+        .set_native(crate::DualSenseControl::Cross, true)
+        .unwrap();
+    assert!(controller.is_dirty());
+    assert!(controller.commit().is_err());
+    assert!(controller.is_dirty());
+    controller.commit().unwrap();
+    assert!(!controller.is_dirty());
+    controller.commit().unwrap();
+    controller.close();
+    controller.close();
+    let record = record.lock().unwrap();
+    assert_eq!(record.attempts.len(), 2);
+    assert_eq!(record.attempts[0], record.attempts[1]);
+    assert_eq!(record.closes, 1);
+}
+
+#[derive(Default)]
 struct Record {
     events: VecDeque<RawReverseEvent>,
     sent: Vec<ProviderFrame>,

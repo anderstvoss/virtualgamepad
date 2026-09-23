@@ -48,20 +48,7 @@ impl Session {
         options: AudioOptions,
         creation: u64,
     ) -> Result<Self, AudioError> {
-        if profile.streams().len() != 2
-            || profile
-                .streams()
-                .iter()
-                .filter(|s| s.direction() == SampleDirection::HostToController)
-                .count()
-                != 1
-            || profile
-                .streams()
-                .iter()
-                .filter(|s| s.direction() == SampleDirection::ControllerToHost)
-                .count()
-                != 1
-        {
+        if !valid_profile(profile) {
             return Err(AudioError::IncompatibleTopology);
         }
         let stop = Arc::new(AtomicBool::new(false));
@@ -221,6 +208,22 @@ impl Session {
             rx.close();
         }
     }
+}
+fn valid_profile(profile: &AudioProfile) -> bool {
+    !profile.streams().is_empty()
+        && profile.streams().len() <= 2
+        && profile
+            .streams()
+            .iter()
+            .filter(|s| s.direction() == SampleDirection::HostToController)
+            .count()
+            <= 1
+        && profile
+            .streams()
+            .iter()
+            .filter(|s| s.direction() == SampleDirection::ControllerToHost)
+            .count()
+            <= 1
 }
 impl Drop for Session {
     fn drop(&mut self) {
@@ -743,6 +746,41 @@ fn format_pod(format: &PcmFormat) -> Result<Vec<u8>, AudioError> {
 mod tests {
     use super::*;
     use gr_audio_contract::{AudioChannel as C, AudioStreamDescription};
+    #[test]
+    fn one_direction_profile_prepares_only_its_owned_queue() {
+        let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
+        for direction in [
+            SampleDirection::HostToController,
+            SampleDirection::ControllerToHost,
+        ] {
+            let profile = AudioProfile::new(
+                "one-direction",
+                &[AudioStreamDescription::new(
+                    "only",
+                    direction,
+                    format.clone(),
+                )],
+                "test",
+            );
+            assert!(valid_profile(&profile));
+            let prepared = prepare(
+                &profile,
+                AudioOptions::new(gr_audio_contract::AudioExposure::Emulated),
+                7,
+            )
+            .unwrap();
+            assert_eq!(prepared.endpoints.len(), 1);
+            assert_eq!(prepared.specs.len(), 1);
+            assert_eq!(
+                prepared.playback.is_some(),
+                direction == SampleDirection::HostToController
+            );
+            assert_eq!(
+                prepared.microphone.is_some(),
+                direction == SampleDirection::ControllerToHost
+            );
+        }
+    }
     #[test]
     fn malformed_playback_layout_never_reaches_the_pcm_queue() {
         let bytes = [99, 1, 0, 2, 0, 99];

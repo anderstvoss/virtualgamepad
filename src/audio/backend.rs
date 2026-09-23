@@ -1,7 +1,7 @@
 //! Private session seam; applications never implement or construct a backend.
 use crate::{AudioError, AudioRead};
 
-pub(super) trait Backend: Send + Sync {
+pub(crate) trait Backend: Send + Sync {
     fn timings(&self) -> Vec<super::AudioStreamTiming>;
     fn read_playback(&mut self, dest: &mut [i16]) -> Result<AudioRead, AudioError>;
     fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError>;

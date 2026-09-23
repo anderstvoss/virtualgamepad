@@ -629,6 +629,17 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
+static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
+    common: ControllerSurface {
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &HID_OUTPUTS,
+        restrictions: &RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    },
+};
 
 pub struct DualShock4Definition;
 impl RealizationControllerDefinition for DualShock4Definition {
@@ -636,7 +647,7 @@ impl RealizationControllerDefinition for DualShock4Definition {
         ControllerId::new("virtualgamepad.dualshock4")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 3] = [
+        static ENTRIES: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -653,6 +664,13 @@ impl RealizationControllerDefinition for DualShock4Definition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UHID_USB,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -693,6 +711,7 @@ impl TargetAwareControllerDriver for DualShock4Definition {
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
             Ok(())
         } else {
@@ -1004,6 +1023,7 @@ impl DualShock4Controller {
         match self.0.selection().target {
             RealizationTarget::LINUX_UINPUT => &EVDEV_SURFACE,
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &USB_SURFACE,
         }
     }
@@ -1231,6 +1251,22 @@ pub fn create_dualshock4_with_identity(
 /// Create a controller with the existing fresh-per-creation identity policy.
 pub fn create_dualshock4(options: CreationOptions) -> Result<DualShock4Controller, ProviderError> {
     create_dualshock4_inner(options, None)
+}
+
+/// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
+#[must_use]
+pub fn create_dualshock4_usb_worker(
+    bridge: Box<dyn common::WorkerBridge<DualShock4State>>,
+) -> DualShock4Controller {
+    let selection = RealizationSelection {
+        controller: ControllerId::new("virtualgamepad.dualshock4"),
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+    };
+    DualShock4Controller(common::ControllerSession::worker(
+        DualShock4Definition,
+        selection,
+        bridge,
+    ))
 }
 
 fn create_dualshock4_inner(

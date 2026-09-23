@@ -2766,11 +2766,14 @@ version = "0.1.0"
 dependencies = [
  "gr-audio-contract",
  "gr-audio-linux",
+ "gr-audio-worker",
  "gr-controller-contract",
  "gr-controller-runtime",
  "gr-curated-controllers",
  "gr-hid",
+ "gr-privileged-broker",
  "gr-realization-api",
+ "gr-usbip",
 ]
 
 [[package]]

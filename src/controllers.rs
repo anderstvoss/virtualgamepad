@@ -296,6 +296,10 @@ pub fn create_dualsense_with_identity(
     options: CreationOptions,
     identity: DualSenseIdentity,
 ) -> Result<DualSenseController, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_dualsense_usb(options, identity);
+    }
     let audio_options = options.audio();
     let options = options.internal()?;
     let audio = crate::audio::open(
@@ -323,7 +327,10 @@ pub fn create_dualsense_with_identity(
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ControllerError> {
-    if options.realization() == RealizationId::LINUX_UHID_USB {
+    if matches!(
+        options.realization(),
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
+    ) {
         return create_dualsense_with_identity(options, DualSenseIdentity::generate()?);
     }
     let audio_options = options.audio();
@@ -606,6 +613,10 @@ pub fn create_dualshock4_with_identity(
     options: CreationOptions,
     identity: DualShock4Identity,
 ) -> Result<DualShock4Controller, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_dualshock4_usb(options, identity);
+    }
     let audio_options = options.audio();
     let options = options.internal()?;
     let audio = crate::audio::open(
@@ -635,7 +646,10 @@ pub fn create_dualshock4_with_identity(
 pub fn create_dualshock4(
     options: CreationOptions,
 ) -> Result<DualShock4Controller, ControllerError> {
-    if options.realization() == RealizationId::LINUX_UHID_USB {
+    if matches!(
+        options.realization(),
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
+    ) {
         return create_dualshock4_with_identity(options, DualShock4Identity::generate()?);
     }
     let audio_options = options.audio();
@@ -1046,6 +1060,10 @@ impl Xbox360Controller {
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_xbox360_usb(options);
+    }
     let audio_options = options.audio();
     let options = options.internal()?;
     let audio = crate::audio::open(
@@ -1065,6 +1083,126 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Con
         inner,
         association,
         audio,
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_dualsense_usb(
+    options: CreationOptions,
+    identity: DualSenseIdentity,
+) -> Result<DualSenseController, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::DualSense,
+        ProfileId::DualSenseEmulated,
+        1,
+        identity.to_bytes(),
+        audio_options,
+        options.session.0,
+        crate::usb_audio::dualsense,
+    )?;
+    let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualsense"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(DualSenseController {
+        inner,
+        association,
+        audio: Some(audio),
+        identity: Some(identity),
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_dualshock4_usb(
+    options: CreationOptions,
+    identity: DualShock4Identity,
+) -> Result<DualShock4Controller, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::DualShock4,
+        ProfileId::DualShock4Emulated,
+        2,
+        identity.to_bytes(),
+        audio_options,
+        options.session.0,
+        crate::usb_audio::dualshock4,
+    )?;
+    let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualshock4"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(DualShock4Controller {
+        inner,
+        association,
+        audio: Some(audio),
+        identity: Some(identity),
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let identity = DualSenseIdentity::generate()?.to_bytes();
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::Xbox360,
+        ProfileId::Xbox360HidEmulated,
+        3,
+        identity,
+        audio_options,
+        options.session.0,
+        crate::usb_audio::xbox360,
+    )?;
+    let mut inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.xbox360"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(Xbox360Controller {
+        inner,
+        association,
+        audio: Some(audio),
     })
 }
 

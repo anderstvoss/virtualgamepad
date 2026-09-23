@@ -672,6 +672,10 @@ static USB_RESTRICTIONS: [TargetRestriction; 2] = [
         reason: "the USB composite protocol is research-backed until external PC acceptance testing",
     },
 ];
+static USBIP_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
+    feature: "controller-matching audio",
+    reason: "functional UAC2 emulation is not the reference DualSense UAC1 topology; physical comparison remains pending",
+}];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -683,11 +687,23 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
+static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
+    common: ControllerSurface {
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        restrictions: &USBIP_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    },
+};
 
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        RealizationTarget::LINUX_USBIP_USB_AUDIO,
     ])
 }
 
@@ -701,7 +717,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 3] = [
+        static ENTRIES: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -718,6 +734,13 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -758,6 +781,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
             Ok(())
         } else {
@@ -1148,6 +1172,7 @@ impl DualSenseController {
         match self.0.selection().target {
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &USB_SURFACE,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -1517,6 +1542,21 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
     create_dualsense_inner(options, None)
 }
 
+/// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
+#[must_use]
+pub fn create_dualsense_usb_worker(
+    bridge: Box<dyn common::WorkerBridge<DualSenseState>>,
+) -> DualSenseController {
+    let definition = DualSenseDefinition;
+    let selection = RealizationSelection {
+        controller: ControllerId::new("virtualgamepad.dualsense"),
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+    };
+    DualSenseController(common::ControllerSession::worker(
+        definition, selection, bridge,
+    ))
+}
+
 fn create_dualsense_inner(
     options: CreationOptions,
     identity: Option<DualSenseIdentity>,
@@ -1861,12 +1901,14 @@ mod tests {
     fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
         assert!(supports_motion(RealizationTarget::LINUX_UHID_USB));
         assert!(supports_motion(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
+        assert!(supports_motion(RealizationTarget::LINUX_USBIP_USB_AUDIO));
         assert!(!supports_motion(RealizationTarget::LINUX_UINPUT));
         assert_eq!(
             motion_targets(),
             RealizationTargetSet::new(&[
                 RealizationTarget::LINUX_UHID_USB,
-                RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
             ])
         );
     }

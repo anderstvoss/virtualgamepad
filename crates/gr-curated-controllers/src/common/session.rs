@@ -20,11 +20,27 @@ pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
         identity: [u8; 6],
     ) -> Self::Hid;
 }
+/// Implementation interface for a controller-native worker. The application
+/// crate owns transport setup; curated controllers keep edit validation and
+/// typed output conversion. No socket or protocol type appears here.
+pub trait WorkerBridge<S>: Send {
+    fn update(&mut self, state: &S) -> Result<(), ProviderError>;
+    fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError>;
+    fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics;
+    fn close(&mut self) -> Result<(), ProviderError>;
+}
 enum Backend<D: HidDriver> {
     Native(ControllerRuntime<D, ProviderSessionSink>),
     Hid {
         driver: D,
         runtime: Runtime<D::Hid, HidTransport>,
+    },
+    Worker {
+        driver: D,
+        state: D::State,
+        dirty: bool,
+        closed: bool,
+        bridge: Box<dyn WorkerBridge<D::State>>,
     },
 }
 pub(crate) struct ControllerSession<D: HidDriver> {
@@ -37,6 +53,28 @@ pub(crate) struct ControllerSession<D: HidDriver> {
     feedback: super::feedback::Feedback,
 }
 impl<D: HidDriver> ControllerSession<D> {
+    pub(crate) fn worker(
+        driver: D,
+        selection: gr_realization_api::RealizationSelection,
+        bridge: Box<dyn WorkerBridge<D::State>>,
+    ) -> Self {
+        let state = driver.neutral_state();
+        Self {
+            selection,
+            association: crate::ControllerAssociation::default(),
+            backend: Backend::Worker {
+                driver,
+                state,
+                dirty: true,
+                closed: false,
+                bridge,
+            },
+            started: Instant::now(),
+            observations: VecDeque::new(),
+            dropped: 0,
+            feedback: super::feedback::Feedback::default(),
+        }
+    }
     pub(super) fn native(runtime: ControllerRuntime<D, ProviderSessionSink>) -> Self {
         Self {
             selection: runtime.selection(),
@@ -86,6 +124,7 @@ impl<D: HidDriver> ControllerSession<D> {
         match &self.backend {
             Backend::Native(r) => r.state(),
             Backend::Hid { runtime, .. } => runtime.state(),
+            Backend::Worker { state, .. } => state,
         }
     }
     pub(crate) const fn selection(&self) -> gr_realization_api::RealizationSelection {
@@ -95,6 +134,7 @@ impl<D: HidDriver> ControllerSession<D> {
         match &self.backend {
             Backend::Native(r) => r.is_dirty(),
             Backend::Hid { runtime, .. } => runtime.is_dirty(),
+            Backend::Worker { dirty, .. } => *dirty,
         }
     }
     pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {
@@ -123,6 +163,23 @@ impl<D: HidDriver> ControllerSession<D> {
                     })
                     .map_err(|_| ControlError::Closed)
             }
+            Backend::Worker {
+                driver,
+                state,
+                dirty,
+                closed,
+                ..
+            } => {
+                if *closed {
+                    return Err(ControlError::Closed);
+                }
+                let mut next = state.clone();
+                edit(&mut next)?;
+                driver.validate_state(self.selection, &next)?;
+                *state = next;
+                *dirty = true;
+                Ok(())
+            }
         }
     }
     pub(crate) fn apply_digital(
@@ -144,6 +201,23 @@ impl<D: HidDriver> ControllerSession<D> {
                         Ok(())
                     })
                     .map_err(|_| ControlError::Closed)
+            }
+            Backend::Worker {
+                driver,
+                state,
+                dirty,
+                closed,
+                ..
+            } => {
+                if *closed {
+                    return Err(ControlError::Closed);
+                }
+                let mut next = state.clone();
+                driver.apply_digital(&mut next, update)?;
+                driver.validate_state(self.selection, &next)?;
+                *state = next;
+                *dirty = true;
+                Ok(())
             }
         }
     }
@@ -169,6 +243,33 @@ impl<D: HidDriver> ControllerSession<D> {
         error.map_or(Ok(()), |e| Err(provider_error(e)))
     }
     pub(crate) fn commit(&mut self) -> Result<(), CommitError> {
+        if let Backend::Worker {
+            state,
+            dirty,
+            closed,
+            bridge,
+            ..
+        } = &mut self.backend
+        {
+            if *closed {
+                return Err(CommitError::Backend {
+                    reason: "worker is closed".into(),
+                });
+            }
+            if *dirty {
+                if let Err(error) = bridge.update(state) {
+                    if bridge.diagnostics().state == gr_realization_api::ProviderState::Failed {
+                        *closed = true;
+                        let _ = bridge.close();
+                    }
+                    return Err(CommitError::Backend {
+                        reason: error.to_string(),
+                    });
+                }
+                *dirty = false;
+            }
+            return Ok(());
+        }
         if let Backend::Native(r) = &mut self.backend {
             return r.commit();
         }
@@ -189,6 +290,23 @@ impl<D: HidDriver> ControllerSession<D> {
         &mut self,
         callback: &mut dyn FnMut(RawReverseEvent),
     ) -> Result<(), ProviderError> {
+        if let Backend::Worker { bridge, closed, .. } = &mut self.backend {
+            if *closed {
+                return Err(ProviderError::Closed);
+            }
+            for _ in 0..32 {
+                match bridge.output() {
+                    Ok(Some(event)) => callback(event),
+                    Ok(None) => return Ok(()),
+                    Err(error) => {
+                        *closed = true;
+                        let _ = bridge.close();
+                        return Err(error);
+                    }
+                }
+            }
+            return Ok(());
+        }
         if let Backend::Native(r) = &mut self.backend {
             if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT {
                 let result = r.with_sink(|sink| {
@@ -222,6 +340,9 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Hid { .. } => Err(ProviderError::Unsupported {
                 reason: "HID replies are owned by the protocol session".into(),
             }),
+            Backend::Worker { .. } => Err(ProviderError::Unsupported {
+                reason: "USB worker owns HID replies".into(),
+            }),
         }
     }
     pub(crate) fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics {
@@ -234,12 +355,14 @@ impl<D: HidDriver> ControllerSession<D> {
                 }
                 diagnostics
             }
+            Backend::Worker { bridge, .. } => bridge.diagnostics(),
         }
     }
     pub(crate) fn wants_write(&self) -> bool {
         match &self.backend {
             Backend::Native(r) => !r.is_closed() && self.feedback.pending(),
             Backend::Hid { runtime, .. } => runtime.wants_write(),
+            Backend::Worker { .. } => false,
         }
     }
     pub(crate) fn next_service_in(&self) -> Option<Duration> {
@@ -253,11 +376,12 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Hid { runtime, .. } => runtime
                 .deadline()
                 .map(|at| Duration::from_micros(at.saturating_sub(self.now()))),
+            Backend::Worker { closed, .. } => (!closed).then_some(Duration::from_millis(4)),
         }
     }
     pub(crate) fn protocol(&self) -> Option<&D::Hid> {
         match &self.backend {
-            Backend::Native(_) => None,
+            Backend::Native(_) | Backend::Worker { .. } => None,
             Backend::Hid { runtime, .. } => Some(runtime.protocol()),
         }
     }
@@ -266,12 +390,13 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Native(r) if r.is_closed() => None,
             Backend::Native(_) => Some(gr_hid::Readiness::Poll),
             Backend::Hid { runtime, .. } => runtime.readiness(),
+            Backend::Worker { closed, .. } => (!closed).then_some(gr_hid::Readiness::Poll),
         }
     }
     pub(crate) fn dropped_observations(&self) -> u64 {
         self.dropped
             + match &self.backend {
-                Backend::Native(_) => 0,
+                Backend::Native(_) | Backend::Worker { .. } => 0,
                 Backend::Hid { runtime, .. } => runtime.dropped_observations(),
             }
     }
@@ -284,6 +409,12 @@ impl<D: HidDriver> ControllerSession<D> {
             }
             Backend::Hid { runtime, .. } => {
                 let _ = runtime.close();
+            }
+            Backend::Worker { bridge, closed, .. } => {
+                if !*closed {
+                    *closed = true;
+                    let _ = bridge.close();
+                }
             }
         }
     }

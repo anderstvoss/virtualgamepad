@@ -291,6 +291,16 @@ static DUMMY_HCD_RESTRICTIONS: [TargetRestriction; 3] = [
         reason: "this best-effort USB attachment is curated standard HID, not the proprietary Xbox USB protocol",
     },
 ];
+static USBIP_RESTRICTIONS: [TargetRestriction; 2] = [
+    TargetRestriction {
+        feature: "chatpad",
+        reason: "requires controller-native accessory transport",
+    },
+    TargetRestriction {
+        feature: "XInput/xpad protocol",
+        reason: "this functional USB attachment uses standard HID, not the proprietary Xbox USB protocol",
+    },
+];
 static RESTRICTIONS: [TargetRestriction; 3] = [
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -470,6 +480,17 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         input_topology: &INPUT_TOPOLOGY,
     },
 };
+static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
+    common: ControllerSurface {
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &HID_OUTPUTS,
+        restrictions: &USBIP_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY,
+    },
+};
 
 pub struct Xbox360Definition;
 impl RealizationControllerDefinition for Xbox360Definition {
@@ -477,7 +498,7 @@ impl RealizationControllerDefinition for Xbox360Definition {
         ControllerId::new("virtualgamepad.xbox360")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 3] = [
+        static ENTRIES: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -496,6 +517,13 @@ impl RealizationControllerDefinition for Xbox360Definition {
                 target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: false,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
                 },
                 audio_sidecar: None,
             },
@@ -534,6 +562,7 @@ impl TargetAwareControllerDriver for Xbox360Definition {
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
             Ok(())
         } else {
@@ -686,6 +715,7 @@ impl Xbox360Controller {
         match self.0.selection().target {
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &DUMMY_HCD_SURFACE,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -886,6 +916,22 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
         }
     };
     common::create(Xbox360Definition, realization, options).map(Xbox360Controller)
+}
+
+/// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
+#[must_use]
+pub fn create_xbox360_usb_worker(
+    bridge: Box<dyn common::WorkerBridge<Xbox360State>>,
+) -> Xbox360Controller {
+    let selection = RealizationSelection {
+        controller: ControllerId::new("virtualgamepad.xbox360"),
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+    };
+    Xbox360Controller(common::ControllerSession::worker(
+        Xbox360Definition,
+        selection,
+        bridge,
+    ))
 }
 
 impl common::HidDriver for Xbox360Definition {

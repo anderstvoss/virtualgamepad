@@ -52,6 +52,14 @@
 //! ```
 mod application;
 mod audio;
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+mod usb_audio;
+#[cfg(all(
+    target_os = "linux",
+    feature = "audio-usbip",
+    feature = "audio-pipewire"
+))]
+mod usb_audio_bridge;
 pub use audio::{AudioEndpoint, AudioEndpointSelector, AudioStreamTiming, ControllerAudio};
 pub use gr_audio_contract::queue::PcmRead as AudioRead;
 mod controllers;

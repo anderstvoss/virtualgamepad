@@ -30,6 +30,10 @@
 
 pub mod audio;
 mod common;
+pub use common::WorkerBridge;
+pub use dualsense::create_dualsense_usb_worker;
+pub use dualshock4::create_dualshock4_usb_worker;
+pub use xbox360::create_xbox360_usb_worker;
 pub mod dualsense;
 pub mod dualshock4;
 pub mod switch_pro;

@@ -39,6 +39,23 @@ impl CreationOptions {
     pub(crate) fn internal(
         self,
     ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
+        if self.target == RealizationId::LINUX_USBIP_USB_AUDIO {
+            if self.audio.exposure() != crate::AudioExposure::Emulated
+                || !cfg!(all(target_os = "linux", feature = "audio-usbip"))
+            {
+                return Err(ControllerError::Unsupported { reason: "USB/IP audio requires the audio-usbip feature and an emulated audio profile".into() });
+            }
+            if (self.audio.playback_access() == crate::AudioAccess::NativeClient
+                || self.audio.microphone_access() == crate::AudioAccess::NativeClient)
+                && !cfg!(feature = "audio-pipewire")
+            {
+                return Err(ControllerError::Unsupported { reason: "USB native-client audio requires the audio-pipewire feature for caller-session endpoints".into() });
+            }
+            return Ok(gr_curated_controllers::CreationOptions {
+                target: self.target,
+                session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
+            });
+        }
         if self.audio.exposure() != crate::AudioExposure::Disabled
             && (self.audio.exposure() != crate::AudioExposure::Emulated
                 || self.target != RealizationId::LINUX_UHID_USB
@@ -436,6 +453,39 @@ mod tests {
                 Err(ControllerError::Unsupported { .. })
             ));
         }
+    }
+
+    #[test]
+    fn usb_audio_preflight_requires_exact_exposure_and_native_bridge_feature() {
+        use crate::{AudioAccess, AudioExposure, AudioOptions};
+        let usb = RealizationId::LINUX_USBIP_USB_AUDIO;
+        for exposure in [AudioExposure::Disabled, AudioExposure::ControllerMatching] {
+            assert!(matches!(
+                CreationOptions::new(usb)
+                    .with_audio(AudioOptions::new(exposure))
+                    .internal(),
+                Err(ControllerError::Unsupported { .. })
+            ));
+        }
+        let samples =
+            CreationOptions::new(usb).with_audio(AudioOptions::new(AudioExposure::Emulated));
+        assert_eq!(
+            samples.internal().is_ok(),
+            cfg!(all(target_os = "linux", feature = "audio-usbip"))
+        );
+        let native = samples.with_audio(
+            samples
+                .audio()
+                .with_playback_access(AudioAccess::NativeClient),
+        );
+        assert_eq!(
+            native.internal().is_ok(),
+            cfg!(all(
+                target_os = "linux",
+                feature = "audio-usbip",
+                feature = "audio-pipewire"
+            ))
+        );
     }
 
     #[test]

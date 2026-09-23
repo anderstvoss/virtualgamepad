@@ -14,6 +14,10 @@ pub struct Control {
     retained: [u64; 8],
 }
 impl Control {
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        self.closed
+    }
     pub fn new(socket: UnixStream, generation: u64, family: u8) -> io::Result<Self> {
         if generation == 0 || !(1..=3).contains(&family) {
             return Err(io::ErrorKind::InvalidInput.into());
