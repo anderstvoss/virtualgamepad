@@ -265,4 +265,171 @@ mod tests {
         bridge.as_mut().unwrap().close();
         drop((worker_playback, worker_microphone));
     }
+
+    #[test]
+    #[ignore = "requires an isolated PipeWire graph and pw-cat"]
+    fn virtual_usb_playback_reaches_native_pipewire_source() {
+        use gr_usbip::pcm_ipc::{Direction, Format, Sender};
+        use std::{
+            io::Read,
+            process::{Command, Stdio},
+            time::Instant,
+        };
+        let profile = gr_curated_controllers::audio::dualsense(AudioExposure::Emulated).unwrap();
+        let (worker_playback, client_playback) = UnixStream::pair().unwrap();
+        let (_worker_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let streams = SampleStreams::new(
+            ProfileId::DualSenseEmulated,
+            7,
+            client_playback,
+            client_microphone,
+        )
+        .unwrap();
+        let options = AudioOptions::new(AudioExposure::Emulated)
+            .with_playback_access(AudioAccess::NativeClient);
+        let (mut bridge, nodes) =
+            Bridge::start(Arc::new(Mutex::new(streams)), &profile, options, 71).unwrap();
+        let node = nodes[0].as_ref().unwrap();
+        let mut capture = Command::new("stdbuf")
+            .args([
+                "--output=0",
+                "pw-cat",
+                "--record",
+                "--raw",
+                "--format",
+                "s16",
+                "--rate",
+                "48000",
+                "--channels",
+                "4",
+                "--latency",
+                "128",
+                "--target",
+                node,
+                "-",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let output = capture.stdout.take().unwrap();
+        let reader = thread::spawn(move || {
+            let mut output = output;
+            let mut bytes = Vec::new();
+            output.read_to_end(&mut bytes).unwrap();
+            bytes
+        });
+        let mut sender = Sender::new(
+            worker_playback,
+            Format::new(ProfileId::DualSenseEmulated, Direction::Playback, 7).unwrap(),
+        )
+        .unwrap();
+        let block = [101_i16, -202, 303, -404].repeat(128);
+        let started = Instant::now();
+        let mut position = 0_u64;
+        while started.elapsed() < Duration::from_secs(2) {
+            let now = u64::try_from(started.elapsed().as_micros()).unwrap();
+            sender.pump(now).unwrap();
+            if sender.send(&block, position, false, now).unwrap() == 128 {
+                position += 128;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        capture.kill().unwrap();
+        capture.wait().unwrap();
+        let bytes = reader.join().unwrap();
+        let marker = [101_i16, -202, 303, -404]
+            .into_iter()
+            .flat_map(i16::to_le_bytes)
+            .collect::<Vec<_>>();
+        assert!(
+            bytes.windows(marker.len()).any(|frame| frame == marker),
+            "no synthetic USB audio reached the caller PipeWire source"
+        );
+        bridge.as_mut().unwrap().close();
+    }
+    #[test]
+    #[ignore = "requires an isolated PipeWire graph and pw-cat"]
+    fn native_pipewire_microphone_reaches_virtual_usb_capture() {
+        use gr_usbip::pcm_ipc::{Direction, Format, Receiver};
+        use std::{
+            io::Write,
+            process::{Command, Stdio},
+            time::Instant,
+        };
+        let profile = gr_curated_controllers::audio::dualsense(AudioExposure::Emulated).unwrap();
+        let (_worker_playback, client_playback) = UnixStream::pair().unwrap();
+        let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let streams = SampleStreams::new(
+            ProfileId::DualSenseEmulated,
+            7,
+            client_playback,
+            client_microphone,
+        )
+        .unwrap();
+        let options = AudioOptions::new(AudioExposure::Emulated)
+            .with_microphone_access(AudioAccess::NativeClient);
+        let (mut bridge, nodes) =
+            Bridge::start(Arc::new(Mutex::new(streams)), &profile, options, 72).unwrap();
+        let node = nodes[1].as_ref().unwrap();
+        let mut client = Command::new("pw-cat")
+            .args([
+                "--playback",
+                "--raw",
+                "--format",
+                "s16",
+                "--rate",
+                "48000",
+                "--channels",
+                "2",
+                "--latency",
+                "128",
+                "--target",
+                node,
+                "-",
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut input = client.stdin.take().unwrap();
+        let writer = thread::spawn(move || {
+            let data = [101_i16, -202]
+                .repeat(48_000)
+                .into_iter()
+                .flat_map(i16::to_le_bytes)
+                .collect::<Vec<_>>();
+            let _ = input.write_all(&data);
+        });
+        let mut receiver = Receiver::new(
+            worker_microphone,
+            Format::new(ProfileId::DualSenseEmulated, Direction::Microphone, 7).unwrap(),
+        )
+        .unwrap();
+        let mut samples = [0_i16; 128 * 2];
+        let started = Instant::now();
+        let mut found = false;
+        while started.elapsed() < Duration::from_secs(4) {
+            let now = u64::try_from(started.elapsed().as_micros()).unwrap();
+            if let Some(block) = receiver.receive(&mut samples, now).unwrap() {
+                found |= samples[..block.frames * 2]
+                    .chunks_exact(2)
+                    .any(|frame| frame == [101, -202]);
+                if found {
+                    break;
+                }
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        client.kill().ok();
+        client.wait().unwrap();
+        writer.join().unwrap();
+        assert!(
+            found,
+            "no caller PipeWire microphone samples reached virtual USB capture"
+        );
+        bridge.as_mut().unwrap().close();
+    }
 }
