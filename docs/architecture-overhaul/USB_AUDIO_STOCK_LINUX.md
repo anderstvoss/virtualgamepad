@@ -5,6 +5,21 @@ install a custom kernel/module to satisfy the audio milestone. EXP-0024 supersed
 the original dummy_hcd/FunctionFS transport assumption, not the creation-time audio
 contract or broker security gates.
 
+## Current acceptance ledger (2026-09-23)
+
+The installed, connection-owned broker and dedicated unprivileged worker passed
+the ordinary-user mixed/duplicate-session isolation and worker-death recovery
+probe. The production USB PCM path completed three exact 60-second full-duplex
+DualSense sample-access trials after warm-up. A subsequent DS4 trial failed
+with a correlated approximately 200 ms host scheduling interruption and
+observable silence/gaps. A fresh Xbox360 attempt passed three consecutive
+60-second full-duplex trials with exact synthetic patterns. These findings are detailed below; previous failures
+are retained as historical evidence. Public root USB creation, native-client
+bridging, directional end-to-end latency measurements and the complete sustained
+matrix remain open. Physical DualSense headset/grip channel order was confirmed
+again, while speaker routing and microphone response remain unproven on this
+host. No matching profile is enabled.
+
 ## Candidate: local USB/IP VHCI with an unprivileged device worker
 
 Use the stock `vhci_hcd` virtual host controller and a compiled userspace USB
@@ -407,6 +422,25 @@ are correlated process/host counters, not measured end-to-end latency.
 Prior failed runs below remain part of the evidence; this pass supports
 continuity under the measured conditions without proving all access modes or
 families stable.
+
+The next isolated DS4 attempt failed trial 0. At measured frame 2,215,152
+the host received silence; 20,528/2,880,000 microphone frames were silent.
+Playback had two observed position gaps, though its nonzero frames had the
+exact channel pattern. The worker reported 20,528 microphone-silence frames,
+zero abandoned capture frames, and maximum USB-audio/PCM-pump lateness of
+200.751/198.493 ms. The caller's largest microphone refill interval was
+259.102 ms. This is a correlated scheduling interruption, not evidence that
+the DS4 profile itself has a different stream mapping. It is still an
+acceptance failure; an 8 ms operating fill cannot cover a 200 ms host stall
+while satisfying the sub-20 ms design target.
+
+A fresh installed Xbox360 run then passed three consecutive 60-second
+full-duplex trials. Each trial had 2,880,000/2,880,000 exact measured
+microphone frames and 2,976,000 exact playback frames including warm-up,
+with zero reported microphone silence, playback-invalid frames, playback gaps,
+abandoned capture frames or IPC errors. Maximum USB-audio lateness was 1.815,
+3.926 and 2.684 ms. This is sustained continuity evidence for USB sample
+access, not an end-to-end latency measurement or native-client acceptance.
 
 A second DualSense three-trial attempt ran without concurrent workspace builds.
 Trial 0 passed exactly; trial 1 failed with 96 microphone silence frames at
