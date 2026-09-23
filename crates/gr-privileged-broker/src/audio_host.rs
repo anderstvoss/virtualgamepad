@@ -41,6 +41,9 @@ struct Owned {
     record: Record,
 }
 impl Attachment for Owned {
+    fn check_alive(&mut self) -> io::Result<()> {
+        self.session.check_alive()
+    }
     fn close(&mut self) -> io::Result<()> {
         self.session.close()?;
         self.record.clear()

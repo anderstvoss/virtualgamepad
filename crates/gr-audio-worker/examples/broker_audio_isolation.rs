@@ -65,9 +65,9 @@ fn main() -> io::Result<()> {
         client.close()?;
         gone(client.bus_id())?;
     }
-    // Invalid generation causes worker death. The broker must still clean its
-    // connection-owned resources when this client then closes.
-    let (mut client, mut channels) = Client::open(Profile::Xbox360, [2, 1, 2, 3, 4, 5])?;
+    // Invalid generation causes worker death. Keep the failed client's broker
+    // connection alive: it must not retain admission or an allowlisted port.
+    let (client, mut channels) = Client::open(Profile::Xbox360, [2, 1, 2, 3, 4, 5])?;
     write_message(&mut channels[0], 3, &0_u64.to_le_bytes())?;
     for channel in &mut channels {
         channel.set_read_timeout(Some(Duration::from_secs(3)))?;
@@ -76,9 +76,30 @@ fn main() -> io::Result<()> {
         }
     }
     gone(client.bus_id())?;
-    client.close()?;
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let mut replacements = Vec::new();
+    while replacements.len() != 3 {
+        match Client::open(Profile::DualShock4, [2, 1, 2, 3, 4, 5]) {
+            Ok(session) => replacements.push(session),
+            Err(error)
+                if error
+                    .to_string()
+                    .contains("no free administrator-allowlisted VHCI port")
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    for (mut replacement, mut channels) in replacements {
+        diagnostics(&replacement, &mut channels[0])?;
+        replacement.close()?;
+        gone(replacement.bus_id())?;
+    }
+    drop(client);
     println!(
-        "PASS: duplicate/mixed sessions, port exhaustion, independent middle removal, recreation, client death and malformed-generation worker death"
+        "PASS: duplicate/mixed sessions, port exhaustion, independent middle removal, recreation, client death and idle-client worker-death resource recovery"
     );
     Ok(())
 }

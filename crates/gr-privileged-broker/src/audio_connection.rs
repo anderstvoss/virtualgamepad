@@ -10,6 +10,7 @@ use crate::{
 
 /// Implemented by the production attachment owner; not an application interface.
 pub trait Attachment {
+    fn check_alive(&mut self) -> io::Result<()>;
     fn close(&mut self) -> io::Result<()>;
 }
 /// Returned only after worker readiness and host enumeration have succeeded.
@@ -102,6 +103,14 @@ pub fn serve(
             }
             _ => return Err(io::Error::other("invalid audio broker operation")),
         }
+        loop {
+            if let Some(session) = active.as_mut() {
+                session.opened.attachment.check_alive()?;
+            }
+            if crate::socket_wire::wait_readable(&stream, Duration::from_millis(100))? {
+                break;
+            }
+        }
         let (version, tag, body) =
             crate::socket_wire::read_versioned_frame(&stream, Duration::from_secs(1))?;
         if version != 2 {
@@ -141,16 +150,24 @@ mod tests {
         io::Read,
         sync::{
             Arc,
-            atomic::{AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
         },
         thread,
     };
     struct Fake {
+        alive: Arc<AtomicBool>,
         closes: Arc<AtomicUsize>,
         closed: bool,
         channels: Vec<UnixStream>,
     }
     impl Attachment for Fake {
+        fn check_alive(&mut self) -> io::Result<()> {
+            if self.alive.load(Ordering::SeqCst) {
+                Ok(())
+            } else {
+                Err(io::Error::other("injected worker death"))
+            }
+        }
         fn close(&mut self) -> io::Result<()> {
             if !self.closed {
                 self.closed = true;
@@ -163,6 +180,7 @@ mod tests {
         }
     }
     struct FakeFactory {
+        alive: Arc<AtomicBool>,
         opens: Arc<AtomicUsize>,
         closes: Arc<AtomicUsize>,
         fail: bool,
@@ -181,6 +199,7 @@ mod tests {
                 bus_id: "4-1.2".into(),
                 channels: client.try_into().unwrap(),
                 attachment: Box::new(Fake {
+                    alive: self.alive.clone(),
                     closes: self.closes.clone(),
                     closed: false,
                     channels: worker,
@@ -190,6 +209,7 @@ mod tests {
     }
     fn factory(fail: bool) -> FakeFactory {
         FakeFactory {
+            alive: Arc::new(AtomicBool::new(true)),
             opens: Arc::new(AtomicUsize::new(0)),
             closes: Arc::new(AtomicUsize::new(0)),
             fail,
@@ -197,6 +217,39 @@ mod tests {
     }
     fn request() -> (u8, Vec<u8>) {
         (1, vec![1, 2, 1, 2, 3, 4, 5])
+    }
+    #[test]
+    fn idle_worker_death_closes_channels_and_releases_admission() {
+        let f = factory(false);
+        let alive = f.alive.clone();
+        let closes = f.closes.clone();
+        let limits = Admission::new(1, 1);
+        let other = limits.clone();
+        let (server, mut client) = UnixStream::pair().unwrap();
+        let (finished, result) = std::sync::mpsc::channel();
+        let task = thread::spawn(move || {
+            finished
+                .send(serve_reported(server, 10, &limits, &f, request()))
+                .unwrap();
+        });
+        let mut channels = response(&mut client);
+        assert!(other.reserve(10).is_err());
+        alive.store(false, Ordering::SeqCst);
+        // Retain the idle broker connection and all client channels. Worker
+        // death alone must release quota and resources without a close request.
+        let error = result
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap_err();
+        assert!(error.to_string().contains("injected worker death"));
+        task.join().unwrap();
+        assert_eq!(closes.load(Ordering::SeqCst), 1);
+        assert!(other.reserve(10).is_ok());
+        assert_eq!(crate::read_versioned_message(&mut client).unwrap().1, 0x81);
+        for channel in &mut channels {
+            channel.set_nonblocking(true).unwrap();
+            assert_eq!(channel.read(&mut [0]).unwrap(), 0);
+        }
     }
     fn response(client: &mut UnixStream) -> [UnixStream; 3] {
         client

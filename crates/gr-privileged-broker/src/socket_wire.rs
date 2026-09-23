@@ -9,6 +9,34 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Wait without consuming bytes or ancillary data. The subsequent framed read
+/// still enforces its absolute partial-message deadline and rejects descriptors.
+pub(crate) fn wait_readable(stream: &UnixStream, timeout: Duration) -> io::Result<bool> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let mut fd = libc::pollfd {
+            fd: stream.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let millis = i32::try_from(remaining.as_millis()).unwrap_or(i32::MAX);
+        // SAFETY: one initialized pollfd referencing a borrowed live socket.
+        let ready = unsafe { libc::poll(&raw mut fd, 1, millis) };
+        if ready >= 0 {
+            // HUP/ERR must proceed to the framed read to observe terminal EOF.
+            return Ok(ready != 0);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+    }
+}
+
 /// An idle connection may wait; once a frame begins it must finish within the
 /// deadline, even if the sender keeps trickling bytes before each socket timeout.
 pub fn read_frame(stream: &UnixStream, timeout: Duration) -> io::Result<(u8, Vec<u8>)> {
