@@ -278,3 +278,9 @@ offers explicit per-direction flushing and retains a terminal channel error.
 Deterministic three-family round-trip, slow-reader overflow and worker-death
 tests pass. This is a private sample-access building block. Root USB creation,
 native-client bridging and directional latency acceptance are still open.
+
+The application endpoint descriptor now uses typed `PipeWireNode` and `AlsaPcm`
+selectors and reports its stream-group name. The previous generic node-string
+getters were migrated in the root-only example. `AlsaPcm` describes an endpoint
+kind only; it does not enable USB creation or imply that the current broker has
+passed its remaining security and latency acceptance.

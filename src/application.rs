@@ -320,7 +320,7 @@ impl ControllerAssociation {
                     surface: None,
                     audio_endpoint: Some(endpoint.clone()),
                     requested_physical_path: None,
-                    requested_unique_id: Some(endpoint.host_node().into()),
+                    requested_unique_id: Some(endpoint.host().identity().into()),
                     observed_host_path: None,
                 });
             }

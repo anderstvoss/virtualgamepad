@@ -29,10 +29,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let audio = controller.audio().ok_or("audio was not created")?;
             for endpoint in audio.endpoints() {
                 println!(
-                    "{:?}: host={} caller={:?} format={:?} access={:?}",
+                    "{} {:?}: host={:?} caller={:?} format={:?} access={:?}",
+                    endpoint.group(),
                     endpoint.direction(),
-                    endpoint.host_node(),
-                    endpoint.caller_node(),
+                    endpoint.host(),
+                    endpoint.caller(),
                     endpoint.format(),
                     endpoint.access()
                 );

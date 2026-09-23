@@ -8,21 +8,55 @@ use crate::{
 /// Exact endpoint selectors valid only while their owning controller is open.
 /// Names are not durable identity or evidence of physical USB ancestry.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AudioEndpointSelector {
+    /// `PipeWire` node name in the caller's session graph.
+    PipeWireNode { name: String },
+    /// ALSA PCM selected by a card identity resolved from the current owned USB
+    /// device. Card numbers are deliberately absent from the public contract.
+    AlsaPcm {
+        card_id: String,
+        device: u8,
+        subdevice: u8,
+    },
+}
+impl AudioEndpointSelector {
+    #[must_use]
+    pub fn identity(&self) -> &str {
+        match self {
+            Self::PipeWireNode { name } => name,
+            Self::AlsaPcm { card_id, .. } => card_id,
+        }
+    }
+    #[must_use]
+    pub fn pipewire_node(&self) -> Option<&str> {
+        match self {
+            Self::PipeWireNode { name } => Some(name),
+            _ => None,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioEndpoint {
-    host_node: String,
-    caller_node: Option<String>,
+    group: &'static str,
+    host: AudioEndpointSelector,
+    caller: Option<AudioEndpointSelector>,
     format: PcmFormat,
     direction: SampleDirection,
     access: AudioAccess,
 }
 impl AudioEndpoint {
     #[must_use]
-    pub fn host_node(&self) -> &str {
-        &self.host_node
+    pub const fn group(&self) -> &'static str {
+        self.group
     }
     #[must_use]
-    pub fn caller_node(&self) -> Option<&str> {
-        self.caller_node.as_deref()
+    pub const fn host(&self) -> &AudioEndpointSelector {
+        &self.host
+    }
+    #[must_use]
+    pub const fn caller(&self) -> Option<&AudioEndpointSelector> {
+        self.caller.as_ref()
     }
     #[must_use]
     pub const fn format(&self) -> &PcmFormat {
@@ -166,9 +200,16 @@ pub(crate) fn open(
         let endpoints = session
             .endpoints()
             .iter()
-            .map(|e| AudioEndpoint {
-                host_node: e.host_node.clone(),
-                caller_node: e.caller_node.clone(),
+            .enumerate()
+            .map(|(index, e)| AudioEndpoint {
+                group: profile.streams()[index].name(),
+                host: AudioEndpointSelector::PipeWireNode {
+                    name: e.host_node.clone(),
+                },
+                caller: e
+                    .caller_node
+                    .as_ref()
+                    .map(|name| AudioEndpointSelector::PipeWireNode { name: name.clone() }),
                 format: e.format.clone(),
                 direction: e.direction,
                 access: e.access,
@@ -200,7 +241,7 @@ pub(crate) fn combined_deadline(
 }
 #[cfg(test)]
 mod tests {
-    use super::combined_deadline;
+    use super::{AudioEndpointSelector, combined_deadline};
     use std::time::Duration as D;
     #[test]
     fn audio_failure_checks_do_not_lose_earlier_hid_deadlines() {
@@ -217,5 +258,20 @@ mod tests {
             Some(D::ZERO)
         );
         assert_eq!(combined_deadline(None, None), None);
+    }
+    #[test]
+    fn endpoint_selectors_keep_native_graph_and_alsa_card_id_distinct() {
+        let graph = AudioEndpointSelector::PipeWireNode {
+            name: "virtual.playback.7".into(),
+        };
+        let alsa = AudioEndpointSelector::AlsaPcm {
+            card_id: "virtualgamepad_audio_7".into(),
+            device: 0,
+            subdevice: 0,
+        };
+        assert_eq!(graph.pipewire_node(), Some("virtual.playback.7"));
+        assert_eq!(graph.identity(), "virtual.playback.7");
+        assert_eq!(alsa.pipewire_node(), None);
+        assert_eq!(alsa.identity(), "virtualgamepad_audio_7");
     }
 }

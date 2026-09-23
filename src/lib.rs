@@ -52,7 +52,7 @@
 //! ```
 mod application;
 mod audio;
-pub use audio::{AudioEndpoint, AudioStreamTiming, ControllerAudio};
+pub use audio::{AudioEndpoint, AudioEndpointSelector, AudioStreamTiming, ControllerAudio};
 pub use gr_audio_contract::queue::PcmRead as AudioRead;
 mod controllers;
 mod output;
