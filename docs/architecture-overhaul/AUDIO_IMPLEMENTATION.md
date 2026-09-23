@@ -3,6 +3,18 @@
 Baseline: GUI PR #110, `476056a`. Audio is newly authorized pre-alpha work; final
 API review, quality review and release still follow audio and later GUI feedback.
 
+Current status (2026-09-23): the installed USB broker/worker passed an
+ordinary-user mixed-session, quota, client-death and idle-client worker-death
+isolation probe. The USB sample-access harness passed three consecutive
+60-second full-duplex trials for DualSense and Xbox360 at an 8 ms microphone
+fill, and DS4 at a 12 ms fill. Earlier failed continuity runs are preserved in
+the [USB evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
+This establishes neither directional end-to-end p99 nor native-client/root USB
+integration. Physical DualSense headset L/R and grip L/R routing were confirmed;
+the onboard speaker was silent with the headset removed, and two microphone
+captures had near-zero signal. The maintainer requires confirmation before any
+additional physical DualSense run. Matching remains unavailable.
+
 ## Contract
 
 The accepted closure target is measured p99 below 20 ms in each direction on the
@@ -261,14 +273,13 @@ These results cover parts of steps 1 and 2, not the complete security acceptance
 matrix. Restart recovery remains fail-closed for unverifiable journal records.
 
 The latest lifecycle correction releases reservations on worker death even when
-the client retains an idle broker connection. Its deterministic regression passes;
-the updated installed isolation probe still needs a broker binary update and live
-verification. Steps 3–5 remain open. In particular, consumption-based microphone
-refill did not complete sustained acceptance: DualSense and DS4 each passed two
-60-second duplex trials and failed the third with microphone underruns. See the
-[current evidence ledger](USB_AUDIO_STOCK_LINUX.md#consumption-feedback-and-idle-worker-recovery-follow-up).
-The physical DualSense has been reattached, but interactive physical tests require
-the maintainer's explicit readiness confirmation before they begin.
+the client retains an idle broker connection. Its deterministic regression and
+updated installed isolation probe passed. The earlier consumption-based
+microphone refill attempts failed after two successful trials; later retests
+and their operating-fill conditions are recorded in the
+[current evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
+The physical DualSense has been reattached. Further interactive physical tests
+require a new confirmation from the maintainer before they begin.
 
 An unprivileged `SampleStreams` pump now handles the production worker's two
 anonymous PCM channels independently of application polling. It uses fixed
