@@ -155,10 +155,11 @@ impl ControllerAudio {
     pub fn dropped_playback_frames(&self) -> u64 {
         self.session.dropped_playback_frames()
     }
-    /// USB host microphone frames since creation, including underrun silence,
-    /// for sample-owned
-    /// streams. Use this with a small operating fill; queue capacity is only
-    /// spare room for bounded stalls. Other backends return `None`.
+    /// USB capture frames serviced since creation, including underrun silence.
+    /// This is scheduling credit for sample-owned streams, not proof that a
+    /// canceled USB request reached the host. Use a small operating fill;
+    /// queue capacity is only spare room for bounded stalls. Other backends
+    /// return `None`.
     /// # Errors
     /// Returns a terminal backend error if consumption can no longer be read.
     pub fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {

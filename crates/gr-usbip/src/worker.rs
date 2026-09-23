@@ -46,7 +46,8 @@ pub struct Counters {
     pub capture_frames: AtomicU64,
     /// Actual microphone queue consumption, before USB completion batching.
     pub microphone_consumed_frames: AtomicU64,
-    /// Scheduled host microphone media time, including underrun silence.
+    /// Serviced USB capture media time, including underrun silence. A request
+    /// canceled after packet collection still advances this scheduling credit.
     pub microphone_host_frames: AtomicU64,
     /// Collected microphone frames abandoned before a USB completion.
     pub abandoned_capture_frames: AtomicU64,
