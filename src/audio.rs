@@ -334,10 +334,23 @@ mod tests {
         use std::{
             os::unix::net::UnixStream,
             sync::{Arc, Mutex, atomic::AtomicU64},
+            thread,
         };
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
-        let (worker_control, client_control) = UnixStream::pair().unwrap();
+        let (mut worker_control, client_control) = UnixStream::pair().unwrap();
+        let worker_reply = thread::spawn(move || {
+            let (tag, generation) =
+                gr_privileged_broker::read_message(&mut worker_control).unwrap();
+            assert_eq!((tag, generation.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+            let response = [
+                7_u64.to_le_bytes(),
+                96_u64.to_le_bytes(),
+                48_u64.to_le_bytes(),
+            ]
+            .concat();
+            gr_privileged_broker::write_message(&mut worker_control, 7, &response).unwrap();
+        });
         let id = ProfileId::DualSenseEmulated;
         let streams = gr_audio_worker::client_pcm::SampleStreams::new(
             id,
@@ -373,8 +386,11 @@ mod tests {
                 .iter()
                 .all(|endpoint| endpoint.caller().is_none())
         );
+        assert_eq!(audio.microphone_host_frames().unwrap(), Some(96));
+        assert_eq!(audio.underrun_frames(), 48);
         audio.close();
-        drop((worker_playback, worker_microphone, worker_control));
+        worker_reply.join().unwrap();
+        drop((worker_playback, worker_microphone));
     }
     #[test]
     fn audio_failure_checks_do_not_lose_earlier_hid_deadlines() {
