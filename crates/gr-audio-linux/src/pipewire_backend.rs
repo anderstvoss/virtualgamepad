@@ -17,6 +17,8 @@ use std::{
 
 const QUEUE_FRAMES: usize = 2_048;
 const SCRATCH_SAMPLES: usize = 32 * 4_096;
+// libspa 0.10 exposes CORRUPTED but omits SPA_CHUNK_FLAG_EMPTY (1 << 1).
+const SPA_CHUNK_FLAG_EMPTY: i32 = 1 << 1;
 
 /// Names are exact per-creation `PipeWire` selectors, not persistent identity.
 #[derive(Debug, Clone)]
@@ -569,17 +571,17 @@ fn ingest(
     if flags & spa::buffer::ChunkFlags::CORRUPTED.bits() != 0 {
         return tx.discard(u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?);
     }
-    // SPA_CHUNK_FLAG_EMPTY means media-neutral data; its backing memory need
-    // not contain silence. Preserve timing without reading stale samples.
-    let empty = flags & 2 != 0;
+    // EMPTY means the host supplied no sample content. Account for its media
+    // time as loss, so callers observe a gap instead of fabricated silence that
+    // looks like accepted controller audio.
+    let empty = flags & SPA_CHUNK_FLAG_EMPTY != 0;
+    if empty {
+        return tx.discard(u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?);
+    }
     for packet in bytes.chunks(scratch.len() / channels * channels * 2) {
         let count = packet.len() / 2;
-        if empty {
-            scratch[..count].fill(0);
-        } else {
-            for (sample, pair) in scratch[..count].iter_mut().zip(packet.chunks_exact(2)) {
-                *sample = i16::from_le_bytes([pair[0], pair[1]]);
-            }
+        for (sample, pair) in scratch[..count].iter_mut().zip(packet.chunks_exact(2)) {
+            *sample = i16::from_le_bytes([pair[0], pair[1]]);
         }
         let n = tx.push(&scratch[..count])?;
         tx.discard(u64::try_from(count / channels - n).map_err(backend)?)?;
@@ -885,7 +887,7 @@ mod tests {
         ));
     }
     #[test]
-    fn corrupted_chunks_are_loss_and_empty_chunks_are_silence() {
+    fn corrupted_and_empty_chunks_report_loss_without_fabricating_samples() {
         let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
         let (mut tx, mut rx) = pcm_queue(&format, 4).unwrap();
         let mut scratch = [0; 16];
@@ -897,13 +899,21 @@ mod tests {
             spa::buffer::ChunkFlags::CORRUPTED.bits(),
         )
         .unwrap();
-        ingest(&mut tx, &mut scratch, 2, &[99, 99, 99, 99], 2).unwrap();
+        ingest(
+            &mut tx,
+            &mut scratch,
+            2,
+            &[99, 99, 99, 99],
+            SPA_CHUNK_FLAG_EMPTY,
+        )
+        .unwrap();
+        ingest(&mut tx, &mut scratch, 2, &[3, 0, 4, 0], 0).unwrap();
         let mut samples = [42; 2];
         let read = rx.read(&mut samples).unwrap();
-        assert_eq!(samples, [0, 0]);
-        assert_eq!(read.first_frame, 1);
+        assert_eq!(samples, [3, 4]);
+        assert_eq!(read.first_frame, 2);
         assert!(read.discontinuity);
-        assert_eq!(rx.discarded_frames(), 1);
+        assert_eq!(rx.discarded_frames(), 2);
         assert!(ingest(&mut tx, &mut scratch, 2, &[0; 3], 0).is_err());
     }
     #[test]

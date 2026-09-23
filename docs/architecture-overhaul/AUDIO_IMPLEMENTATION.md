@@ -9,11 +9,14 @@ isolation probe. The USB sample-access harness passed three consecutive
 60-second full-duplex trials for DualSense and Xbox360 at an 8 ms microphone
 fill, and DS4 at a 12 ms fill. Earlier failed continuity runs are preserved in
 the [USB evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
-This establishes neither directional end-to-end p99 nor native-client/root USB
-integration. Physical DualSense headset L/R and grip L/R routing were confirmed;
+This establishes neither directional end-to-end p99 nor sustained native-client
+and root USB acceptance. The root USB API and native-client bridge now compile
+and pass deterministic tests; short isolated PipeWire transfers pass in both
+bridge directions. Physical DualSense headset L/R and grip L/R routing were confirmed;
 the onboard speaker was silent with the headset removed, and two microphone
-captures had near-zero signal. The maintainer requires confirmation before any
-additional physical DualSense run. Matching remains unavailable.
+captures had near-zero signal. The physical DualSense is now disconnected.
+The maintainer requires confirmation before any additional physical DualSense
+run. Matching remains unavailable.
 
 ## Contract
 
@@ -56,9 +59,12 @@ is unaffected. Flush is not spontaneous queue loss.
 The broker accepts administrator VHCI allowlists and requires a non-root worker
 UID/GID, with the UID distinct from every authorized client. Staged port admission
 has bounded inventory parsing, concurrent reservations and pre-attach revalidation.
-These are tested prerequisites, not an installed USB attachment operation. The
-daemon/provider integration, privileged lifecycle and full security matrix remain
-open.
+The installed broker has passed ordinary-client attachment and scoped lifecycle
+probes; the complete security matrix and post-reboot recovery acceptance remain
+open. The installer now provisions stock VHCI module loading at boot. The
+current host's socket is in `service-start-limit-hit` after boot without VHCI;
+the modules are loaded, but an administrator must reset and restart the socket
+before further live creation checks.
 
 Audio exposure and per-group sample ownership are selected in `CreationOptions`.
 Disabled remains default. Emulated and controller-matching are distinct requests;
@@ -79,14 +85,17 @@ Matching profiles fail explicitly until their evidence and acceptance are comple
 | --- | --- |
 | Creation policy, profiles, bounded transport | Implemented; bounded queues and deterministic tests |
 | UHID/PipeWire | Implemented behind `audio-pipewire`; short sample/native and three-family lifecycle checks passed; sustained acceptance pending |
-| Hardened broker / USB prerequisite | Existing connection quotas, framing deadlines and descriptor rejection tested; FunctionFS superseded by the stock-Linux USB/IP design (EXP-0024); VHCI broker acceptance pending |
-| USB composite/UAC2 | Local USB/IP worker and compiled profiles implemented; deterministic and three-family process tests pass; DualSense VHCI/ALSA feasibility passed (EXP-0025); full acceptance and production integration pending |
-| DualSense physical lab/matching | Attached: UAC1 4-out/2-in at 48 kHz S16_LE observed; short ALSA transfers passed; matching still unavailable |
+| Hardened broker / USB prerequisite | Installed fixed-profile broker passed scoped ordinary-client lifecycle checks; boot loading is provisioned; remaining security/restart acceptance pending |
+| USB composite/UAC2 | Local USB/IP worker, root USB realization, sample API and native-client bridge implemented; deterministic and scoped live checks pass; root full-duplex/live latency acceptance pending |
+| DualSense physical lab/matching | UAC1 4-out/2-in at 48 kHz S16_LE and headset/haptic channel mapping observed; speaker and microphone questions unresolved; matching unavailable |
 | Separate GUI integration | Subsequent maintainer-directed branch/PR |
 
 Emulated audio is available for the three scoped families on `LINUX_UHID_USB`
-with the opt-in `audio-pipewire` feature. Unsupported combinations fail before
-controller I/O. Controller-matching and USB composite audio remain unavailable.
+with the opt-in `audio-pipewire` feature. The `audio-usbip` feature exposes
+`LINUX_USBIP_USB_AUDIO` for installed-broker USB audio, with `audio-pipewire`
+also required for native-client ownership. This is pre-alpha and full live
+acceptance remains open. Unsupported combinations fail before controller I/O.
+Controller-matching remains unavailable.
 Supporting workspace profile/queue APIs are SPI, not root application factories.
 
 The optional Linux `pipewire` 0.10.1 binding provides native stream registration
@@ -147,20 +156,39 @@ Actual physical and live findings: [EXP-0023](experiments/EXP-0023-controller-au
 blockers: stock dummy_hcd cannot carry isochronous PCM, and FunctionFS cannot supply
 the assumed separate post-payload SET acknowledgement. Module preparation is not
 USB audio readiness. The maintainer selected stock Linux; local USB/IP replaces
-these assumptions. Production USB audio remains unavailable until live transport
-and broker security acceptance; existing hardening does not override this gate.
+these assumptions. The optional production API is now implemented for explicit
+USB/IP selection, but full live transport and broker security acceptance remain
+release blockers.
 
 ## Current validation boundary
 
 Short sample/native-client checks and root-only three-family lifecycle checks pass.
-One DualSense three-trial playback run passed before the latest buffer-flag fix;
-DS4/Xbox sustained trials failed with unexpected silence and/or queue loss. A DS4
-observation also showed host graph scheduling errors. These are retained failures,
-not waived acceptance. Full-duplex/native sustained acceptance, steady-state latency,
+Earlier DS4/Xbox sustained PipeWire trials failed with unexpected silence and/or
+queue loss, and one DS4 run showed host graph scheduling errors. Later installed
+USB sample-access full-duplex continuity trials passed at the operating fills
+recorded above. The earlier failures remain evidence, not waived acceptance.
+Full-duplex/native sustained acceptance, steady-state latency,
 full clock-domain association and interpreted controller audio-control state remain
 open. `stream_timings()` provides retained stream-local graph ticks, rate, monotonic
 observation time and graph discontinuity counters. Graph delay is an estimate,
 not measured end-to-end latency; graph loss and PCM queue loss are separate.
+
+A fresh isolated 60-second `pw-cat` playback soak on all three families
+observed 512–1,024 all-zero frames around 10 seconds, with no queue loss
+reported under the old handling. An EMPTY PipeWire chunk now advances the
+playback frame position as explicit loss; a deterministic regression prevents
+EMPTY chunks from being presented as valid silent samples. The cause of the
+specific `pw-cat` zero blocks still needs correlation. That
+correction improves diagnostics but does not make the failed soak a pass.
+Graph-driven source trials isolate whether the gap originates in the external
+client or controller endpoint. A 62-second graph-driven DualSense trial at
+512 frames missed 7,168 marker frames; at 256 frames it missed 29,952. The
+256-frame trial reported zero application-queue and position gaps while graph
+clock observations reported missed cycles. Thus merely lowering the graph
+quantum does not establish continuity on this prepared VM; the lost markers
+are upstream of the root sample queue. Both failed runs are retained, and
+neither supports a sub-20 ms accepted path despite low p99 among received
+markers.
 
 The broker now admits authenticated connections and sessions under shared per-UID
 and global quotas, rejects/closes unsolicited descriptors, bounds partial-frame
@@ -169,8 +197,12 @@ These checks are prerequisites only; they do not establish complete USB broker
 security acceptance or permit new composite operations.
 
 The headless root-only `controller_audio` example prints endpoint metadata, drains
-playback, services HID and reports retained teardown diagnostics. It opens no
-physical audio devices and leaves microphone underruns silent.
+playback, services HID and reports retained teardown diagnostics. The
+`usb_audio_root` smoke example exercises root USB creation; the
+`usb_audio_acceptance` example pairs root sample access with an owned-ALSA
+full-duplex checker. Their sustained installed-broker result is pending. A
+separate root-only consumer checked successfully from Git revision `58fb8ae`
+with a fresh initial dependency fetch and then an offline rebuild after caching.
 
 ## Stock Linux revision
 
@@ -180,7 +212,7 @@ transport with a trusted unprivileged device worker, described in
 provides allocation-free, bounded data-phase framing and completion encoding with
 synthetic tests. The worker reuses workspace audio/HID/wire contracts and the lab
 example reuses curated controller personalities; this adds no external packages.
-It is not yet an enabled provider.
+It now backs the opt-in root USB realization.
 
 The worker bounds USB frames, pending requests, packet counts, storage and deadlines.
 Tests cover ordered control requests after slot reuse, exact HID success/stall
@@ -193,17 +225,17 @@ host socket; they are not kernel, ALSA, latency or sustained acceptance.
 The explicit administrator-run VHCI lab harness starts the worker after dropping
 UID/GID/supplementary groups, applies no-new-privileges and resource limits, bounds
 readiness/lifetime/output, and shuts down its owned socket for cleanup. It never
-detaches by a reusable port number. This is a lab prerequisite, not a deployed
-production broker or a persistent privilege grant. The host module preparation
-was previously completed but VHCI was absent at the latest inspection; the next
-live run must reload it.
+detaches by a reusable port number. This helper remains separate from the
+installed production broker. The installer provisions VHCI module loading at
+boot. After the latest reboot, VHCI was loaded manually, but the failed broker
+socket still needs a reset and restart.
 
 
 The subsequent administrator-run DualSense VHCI probe successfully enumerated HID
 and UAC2 audio on stock Linux, passed short plus two 60-second duplex ALSA trials,
 and removed its USB/ALSA resources on timeout. See [EXP-0025](experiments/EXP-0025-local-usbip-audio.md)
-for exact evidence and the remaining limits. It does not enable the public USB API.
-The latest DS4 PipeWire trial still failed: 7,168 queued playback frames lost,
+for exact evidence and the remaining limits. It predates public USB integration.
+An earlier DS4 PipeWire trial failed: 7,168 queued playback frames lost,
 3,072 unexpected frames (2,048 all-zero), and one discontinuity over 60 seconds.
 That failed sustained acceptance remains open alongside the earlier observations.
 
@@ -226,30 +258,28 @@ headless root example prints retained graph timing after closure.
 
 At `9dc68a0`, the longer four-path DualSense check passed exact continuity with
 p99 1.087–11.476 ms (maximum 15.007 ms). See EXP-0023 for distributions and scope.
-Three-trial/full-duplex/mixed-session acceptance and production USB integration
+Three-trial/full-duplex/mixed-session acceptance and root USB live validation
 remain open.
 
 ## Remaining production closure sequence
 
-Continue on the current branch with tested local commits. The worker launch,
-strict descriptor handoff and staged cleanup helpers are implemented; they do not
-constitute an enabled ordinary-caller USB realization.
+Continue on the current branch with tested local commits. The installed worker,
+strict descriptor handoff, staged cleanup and root ordinary-caller realization
+are implemented. The remaining exit is measured live acceptance, including
+recovery after the host reboot.
 
-1. **Daemon attachment and recovery.** Connect the version-two connection handler
-   to a shared VHCI port pool and the staged worker owner. Generate creation
-   identities internally, durably journal ownership before attachment, validate
-   enumeration, and hand off only control/playback/microphone descriptors. Test
-   every setup/death boundary. Recovery must report unverifiable attachments and
-   never detach by a remembered port. Exit: authenticated clients can acquire and
-   release a compiled profile through the installed broker with security tests.
-2. **Installation.** Extend the explicit administrator installer and systemd
-   restrictions for the fixed worker, dedicated UID/GID, VHCI access and ownership
-   directory. Verify credential dropping and broker/worker restart behavior on the
+1. **Daemon attachment and recovery.** The version-two connection handler,
+   journal, staged worker owner and fixed-profile handoff are implemented.
+   Recheck installed restart recovery and remaining setup/death boundaries.
+   Unverifiable attachments must remain untouched and reported.
+2. **Installation.** The explicit administrator installer and fixed worker are
+   implemented, including dedicated UID/GID and boot VHCI module loading. Verify
+   installed restart recovery and remaining privilege/crash boundaries on this
    prepared host. Module loading and permission grants remain outside creation.
-3. **Application integration.** Add the optional explicit USB audio realization,
-   worker state/output client, bounded PCM pumps and native-client bridge. Resolve
-   typed ALSA endpoints from current owned ancestry. Complete flushing, terminal
-   failure diagnostics and root-only consumer/lifecycle tests before enablement.
+3. **Application integration.** The optional explicit USB audio realization,
+   worker state/output client, bounded PCM pumps and native-client bridge are
+   implemented. Run the root-only full-duplex consumer against the installed
+   broker, then resolve any live endpoint or terminal-diagnostic defects.
 4. **Reliability acceptance.** Run the full family/transport/access matrix: three
    consecutive 60-second full-duplex trials after readiness, exact patterns and
    channel isolation, no unexplained loss, and measured p99 below 20 ms separately
@@ -278,7 +308,7 @@ updated installed isolation probe passed. The earlier consumption-based
 microphone refill attempts failed after two successful trials; later retests
 and their operating-fill conditions are recorded in the
 [current evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
-The physical DualSense has been reattached. Further interactive physical tests
+The physical DualSense is disconnected. Further interactive physical tests
 require a new confirmation from the maintainer before they begin.
 
 An unprivileged `SampleStreams` pump now handles the production worker's two
@@ -287,11 +317,12 @@ capacity queues and preallocated packet buffers, preserves frame positions and
 discontinuities, reports slow-reader loss, accepts partial microphone writes,
 offers explicit per-direction flushing and retains a terminal channel error.
 Deterministic three-family round-trip, slow-reader overflow and worker-death
-tests pass. This is a private sample-access building block. Root USB creation,
-native-client bridging and directional latency acceptance are still open.
+tests pass. Root USB creation and native-client bridging now use this building
+block; their sustained live acceptance and directional latency measurements
+remain open.
 
 The application endpoint descriptor now uses typed `PipeWireNode` and `AlsaPcm`
-selectors and reports its stream-group name. The previous generic node-string
-getters were migrated in the root-only example. `AlsaPcm` describes an endpoint
-kind only; it does not enable USB creation or imply that the current broker has
-passed its remaining security and latency acceptance.
+selectors and reports its stream-group and clock-domain identities. The previous
+generic node-string getters were migrated in the root-only example. `AlsaPcm`
+is resolved from current owned VHCI ancestry; it does not imply that the broker
+has passed its remaining security and latency acceptance.

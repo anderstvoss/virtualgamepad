@@ -927,8 +927,18 @@ fn latency_graph_source_to_library_samples() {
     let mut latencies = Vec::new();
     let mut invalid = 0;
     let mut buffer = [0; 4096];
+    let mut queue_gaps = 0_u64;
+    let mut expected_position = None;
+    let mut position_gaps = 0_u64;
     while started.elapsed() < Duration::from_secs(seconds + 5) && counts[blocks - 1] < 128 {
         let read = session.read_playback(&mut buffer).unwrap();
+        if read.frames > 0 {
+            queue_gaps += u64::from(read.discontinuity);
+            if expected_position.is_some_and(|position| position != read.first_frame) {
+                position_gaps += 1;
+            }
+            expected_position = Some(read.first_frame + read.frames as u64);
+        }
         let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
         for frame in buffer[..read.frames * channels].chunks_exact(channels) {
             if frame.iter().all(|v| *v == 0) {
@@ -961,7 +971,7 @@ fn latency_graph_source_to_library_samples() {
         .take(12)
         .collect();
     eprintln!(
-        "first incomplete graph markers: {missing:?}; clocks: {:?}",
+        "first incomplete graph markers: {missing:?}; queue_gaps={queue_gaps} position_gaps={position_gaps}; clocks: {:?}",
         session.timings()
     );
     drop(source);
