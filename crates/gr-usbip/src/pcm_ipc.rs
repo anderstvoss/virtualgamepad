@@ -505,6 +505,27 @@ impl Outbound {
     }
 }
 impl Inbound {
+    /// Wait for incoming PCM without delaying the pump's other deadlines.
+    /// The half-millisecond timeout also services the outbound queue when
+    /// the microphone is idle. No descriptor or unsafe operation escapes.
+    pub fn wait_readable(&self) -> io::Result<bool> {
+        use rustix::event::{PollFd, PollFlags, Timespec, poll};
+        let mut fds = [PollFd::new(&self.receiver.channel.socket, PollFlags::IN)];
+        let timeout = Timespec {
+            tv_sec: 0,
+            tv_nsec: 500_000,
+        };
+        let ready = match poll(&mut fds, Some(&timeout)) {
+            Ok(ready) => ready,
+            Err(rustix::io::Errno::INTR) => return Ok(false),
+            Err(error) => return Err(io::Error::from(error)),
+        };
+        let flags = fds[0].revents();
+        if flags.intersects(PollFlags::ERR | PollFlags::NVAL) {
+            return Err(io::Error::other("PCM input readiness failed"));
+        }
+        Ok(ready > 0 && flags.intersects(PollFlags::IN | PollFlags::HUP))
+    }
     pub fn new(
         destination: gr_audio_contract::queue::PcmProducer,
         socket: UnixStream,
@@ -555,6 +576,25 @@ impl Inbound {
 mod pump_tests {
     use super::*;
     use gr_audio_contract::{AudioChannel, PcmFormat, queue::pcm_queue};
+    #[test]
+    fn inbound_readiness_wakes_for_pcm_and_peer_closure() {
+        let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
+        let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
+        let (a, b) = UnixStream::pair().unwrap();
+        let mut sender = Sender::new(a, format).unwrap();
+        let (destination, mut consumer) = pcm_queue(&pcm, 128).unwrap();
+        let mut inbound = Inbound::new(destination, b, format).unwrap();
+        assert!(!inbound.wait_readable().unwrap());
+        sender.send(&[7], 0, false, 0).unwrap();
+        assert!(inbound.wait_readable().unwrap());
+        inbound.pump(1).unwrap();
+        let mut sample = [0];
+        assert_eq!(consumer.read(&mut sample).unwrap().frames, 1);
+        assert_eq!(sample, [7]);
+        assert!(!inbound.wait_readable().unwrap());
+        sender.close();
+        assert!(inbound.wait_readable().unwrap());
+    }
     #[test]
     fn stalled_consumer_counts_loss_and_recovers_after_host_resumes() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();

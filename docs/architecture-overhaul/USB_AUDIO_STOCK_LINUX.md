@@ -742,3 +742,11 @@ were reverted because they did not establish sustained continuity or a
 sub-20 ms directional latency. The separate client PCM pump now wakes when
 microphone frames arrive, retaining its bounded timeout for socket service;
 this also did not turn the long trial into an acceptance pass.
+
+The next worker increment replaces its 500 µs fixed PCM receive sleep with a
+safe, bounded readiness wait on the anonymous microphone socket. The wait
+still expires after 500 µs to service outbound playback and message deadlines;
+incoming PCM wakes it immediately. A fake-socket regression covers idle,
+incoming PCM and peer closure, and workspace checks pass. The installed worker
+still has the previous binary until an administrator applies the update, so
+no live USB continuity claim is attached to this change yet.

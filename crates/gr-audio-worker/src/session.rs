@@ -336,7 +336,7 @@ fn run_pcm(
         let now = u64::try_from(started.elapsed().as_micros()).map_err(io::Error::other)?;
         outbound.pump(now)?;
         inbound.pump(now)?;
-        thread::sleep(Duration::from_micros(500));
+        let _ = inbound.wait_readable()?;
     }
     outbound.close();
     inbound.close();
