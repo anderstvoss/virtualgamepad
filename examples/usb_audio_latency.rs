@@ -124,6 +124,7 @@ struct Samples {
 fn collect_samples(
     audio: &mut ControllerAudio,
     player: &mut Player,
+    family: &str,
     timestamps: &[AtomicU64],
     channels: usize,
     origin: Instant,
@@ -140,7 +141,17 @@ fn collect_samples(
         if Instant::now() >= deadline {
             return Err("latency probe deadline exceeded".into());
         }
-        let read = audio.read_playback(&mut buffer)?;
+        let read = audio.read_playback(&mut buffer).map_err(|error| {
+            eprintln!(
+                "usb_latency_terminal family={family} error={error} retained={:?} closed={} dropped={} silence={} graph={:?}",
+                audio.last_error(),
+                audio.is_closed(),
+                audio.dropped_playback_frames(),
+                audio.underrun_frames(),
+                audio.stream_timings()
+            );
+            error
+        })?;
         discontinuities += u64::from(read.discontinuity);
         let observed = u64::try_from(origin.elapsed().as_nanos())?;
         for frame in buffer[..read.frames * channels].chunks_exact(channels) {
@@ -160,7 +171,10 @@ fn collect_samples(
                 }
             }
         }
-        if player.0.try_wait()?.is_some() {
+        if let Some(status) = player.0.try_wait()? {
+            if !status.success() {
+                return Err(format!("ALSA playback client failed: {status}").into());
+            }
             let ended = *finished_at.get_or_insert_with(Instant::now);
             if ended.elapsed() >= Duration::from_millis(200) {
                 break;
@@ -233,6 +247,7 @@ fn run_probe(
     let samples = collect_samples(
         audio,
         &mut player,
+        family,
         &timestamps,
         channels,
         origin,

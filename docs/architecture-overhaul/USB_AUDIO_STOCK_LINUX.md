@@ -57,8 +57,26 @@ All three **fail** the below-20-ms p99 target. A 64-frame ALSA period and
 256-frame buffer increased a short DualSense p99 to 92.276 ms, so the 128/512
 probe settings were retained. These are host-to-controller application-boundary
 measurements only; the controller-to-host direction and native-client latency
-remain unmeasured. The new `--prepare-only` harness mode verifies the owned
+had not yet been measured. The new `--prepare-only` harness mode verifies the owned
 virtual card and releases just that card from PipeWire before the marker run.
+
+Later diagnostic trials requested a 96-frame ALSA period and 384-frame
+buffer. Three-second family probes and three consecutive 60-second
+DualSense probes returned exact markers with p99 below 20 ms (DualSense
+11.220–14.437 ms). Two DS4 60-second trials also passed (14.251 and
+11.102 ms), but its third ended with ALSA underruns, an input/output error
+and terminal audio closure. A subsequent lossless DS4 run reported p99
+163.527 ms, with latency rising through the minute; another rose from an
+early 19.724 ms median to a late 143.503 ms median. A 47,900-frame/s
+fixed pacer still lost 48 frames and exceeded 20 ms p99. An unpaced writer
+with a one-page process pipe removed most drift but retained about 26–33 ms
+steady delay. A test-only direct ALSA writer removed that pipe and clock
+assumption, but short runs encountered a trailing 96-frame loss or ALSA
+broken-pipe state, with p99 above target. That experiment was reverted.
+The present process-pipe marker example is diagnostic, **not** a validated
+host-to-controller latency acceptance harness. Writer-clock drift, ALSA
+buffering and intermittent terminal failure need correction before claiming
+the target; no new application contract is justified by these measurements.
 
 This VM's PipeWire settings report a 1,024-frame minimum graph quantum at
 48 kHz (21.333 ms), even though the endpoints request about 2.67 ms. A short
@@ -68,6 +86,18 @@ playback zero frames, 928 dropped frames and graph discontinuities. The
 shared settings were restored to 1,024 immediately after the run. Lowering
 the graph quantum alone does not resolve the native path on this VM; a
 production change must not quietly alter global PipeWire policy.
+
+Additional short native DualSense trials temporarily set the graph minimum
+and default to 256, then 512 frames, restoring 1,024 after each run. Both
+still failed the caller playback audit. At 256 frames, the host microphone
+checker observed one 256-frame graph gap and the caller capture had 624
+interior zero frames. At 512 frames, host microphone samples were exact and
+graph-clock counters had no gaps, but the caller capture still had 320
+interior zero frames and 16,368 source-underrun frames including startup and
+teardown. Smaller graph quantum alone is insufficient: source startup fill,
+cross-clock scheduling and callback ownership need a deterministic fix and
+then measured native-client acceptance. The restored 1,024-frame setting
+was verified after the trials.
 
 The reciprocal `usb_audio_latency_reverse` example stamps root microphone
 writes and reads the corresponding frames from the owned `arecord` stream.
