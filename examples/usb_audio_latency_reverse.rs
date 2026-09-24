@@ -33,6 +33,20 @@ fn percentile(sorted: &[u64], percent: usize) -> u64 {
     sorted[(sorted.len() * percent).div_ceil(100) - 1]
 }
 
+fn marker_coverage(counts: &[usize], measured_blocks: usize) -> Option<(usize, usize)> {
+    let measured = counts.get(WARMUP_BLOCKS..WARMUP_BLOCKS.checked_add(measured_blocks)?)?;
+    Some((
+        measured
+            .iter()
+            .map(|&count| BLOCK_FRAMES.saturating_sub(count))
+            .sum(),
+        measured
+            .iter()
+            .map(|&count| count.saturating_sub(BLOCK_FRAMES))
+            .sum(),
+    ))
+}
+
 fn start_recorder(
     audio: &ControllerAudio,
     family: &str,
@@ -195,30 +209,12 @@ fn report(
     family: &str,
     mut samples: Samples,
     fill_ms: u64,
+    seconds: u64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let first = samples.counts[WARMUP_BLOCKS..]
-        .iter()
-        .position(|&count| count > 0)
-        .map(|index| index + WARMUP_BLOCKS)
-        .ok_or("no measured microphone markers")?;
-    let last = samples
-        .counts
-        .iter()
-        .rposition(|&count| count > 0)
-        .ok_or("no markers")?;
-    let interior = if first < last {
-        &samples.counts[first + 1..last]
-    } else {
-        &[]
-    };
-    let missing: usize = interior
-        .iter()
-        .map(|&count| BLOCK_FRAMES.saturating_sub(count))
-        .sum();
-    let duplicates: usize = interior
-        .iter()
-        .map(|&count| count.saturating_sub(BLOCK_FRAMES))
-        .sum();
+    let measured_blocks = usize::try_from(seconds * RATE / BLOCK_FRAMES as u64)?;
+    let expected_frames = usize::try_from(seconds * RATE)?;
+    let (missing, duplicates) =
+        marker_coverage(&samples.counts, measured_blocks).ok_or("missing measured marker range")?;
     samples.latencies.sort_unstable();
     let p50 = percentile(&samples.latencies, 50) / 1_000;
     let p95 = percentile(&samples.latencies, 95) / 1_000;
@@ -230,7 +226,13 @@ fn report(
         samples.latencies.len(),
         samples.invalid
     );
-    if missing != 0 || duplicates != 0 || samples.invalid != 0 || p99 >= 20_000 {
+    if missing != 0
+        || duplicates != 0
+        || samples.invalid != 0
+        || samples.latencies.len() != expected_frames
+        || silence != 0
+        || p99 >= 20_000
+    {
         return Err("USB controller-to-host latency acceptance failed".into());
     }
     Ok(())
@@ -267,7 +269,7 @@ fn run_probe(
     if !supplied?.success() {
         return Err("ALSA capture client failed".into());
     }
-    report(audio, family, received, fill_ms)
+    report(audio, family, received, fill_ms, seconds)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -350,5 +352,14 @@ mod tests {
         assert_eq!(result.counts[750], 2);
         assert_eq!(result.invalid, 1);
         assert_eq!(result.latencies.len(), 2);
+    }
+    #[test]
+    fn measured_range_counts_short_first_and_last_blocks() {
+        let mut counts = vec![0; WARMUP_BLOCKS + 3];
+        counts[WARMUP_BLOCKS..].fill(BLOCK_FRAMES);
+        assert_eq!(marker_coverage(&counts, 3), Some((0, 0)));
+        counts[WARMUP_BLOCKS] -= 1;
+        counts[WARMUP_BLOCKS + 2] -= 48;
+        assert_eq!(marker_coverage(&counts, 3), Some((49, 0)));
     }
 }

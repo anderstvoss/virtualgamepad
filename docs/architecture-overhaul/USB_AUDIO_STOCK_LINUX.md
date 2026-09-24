@@ -81,6 +81,30 @@ passed 2,880,000 exact measured frames, zero loss, zero microphone silence,
 p50/p95/p99 13.918/15.001/15.152 ms, and a 21.586 ms maximum outlier.
 This is one sustained directional pass, not the required three-trial matrix.
 
+A consecutive three-trial microphone-direction set at 12 ms fill then passed
+for DualSense and DS4: each trial measured 2,880,000 exact frames with no
+silence or duplicate/lost marker, and p99 ranged 15.099–15.177 ms for
+DualSense and 15.104–15.162 ms for DS4. Xbox360's first two trials passed
+with p99 15.027 and 15.237 ms. Its third returned only 2,879,952 measured
+frames and reported 48 microphone-silence frames, while p99 of received
+frames remained 17.251 ms. The first version of the marker audit excluded
+the first and last measured blocks from loss accounting and incorrectly
+returned success. It now checks the entire expected post-warm-up range,
+requires the exact frame count and zero microphone silence; a deterministic
+edge-loss regression covers this failure. The Xbox set is failed and must be
+repeated after correcting or bounding that occasional supply gap.
+
+At an explicit 14 ms microphone fill, Xbox360 subsequently passed three
+consecutive 60-second trials with 2,880,000 exact measured frames per trial,
+zero missing/duplicate/invalid markers and zero microphone silence. Its
+p50/p95/p99 were 15.927/17.053/17.183, 15.922/16.997/17.139, and
+15.923/16.999/17.146 ms. Maximum observations were 17.358, 19.726 and
+22.959 ms; the last is a recorded outlier above 20 ms, while the p99 target
+passed. Together with the prior DualSense and DS4 three-trial sets, this
+closes the microphone-direction **sample-access** matrix on this host under
+these explicit test fills. It does not establish host-to-controller or
+native-client latency/continuity acceptance.
+
 ## Candidate: local USB/IP VHCI with an unprivileged device worker
 
 Use the stock `vhci_hcd` virtual host controller and a compiled userspace USB
