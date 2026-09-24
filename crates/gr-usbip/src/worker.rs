@@ -49,6 +49,8 @@ pub struct Counters {
     /// Serviced USB capture media time, including underrun silence. A request
     /// canceled after packet collection still advances this scheduling credit.
     pub microphone_host_frames: AtomicU64,
+    /// IPC microphone frames discarded when host capture stops consuming.
+    pub microphone_queue_dropped_frames: AtomicU64,
     /// Collected microphone frames abandoned before a USB completion.
     pub abandoned_capture_frames: AtomicU64,
     pub maximum_audio_lateness_us: AtomicU64,
@@ -224,6 +226,9 @@ impl<H: HidHandler> Worker<H> {
                 return Err(error("partial USB/IP frame deadline exceeded"));
             }
             self.outgoing.flush(&mut self.socket, now)?;
+            self.counters
+                .microphone_queue_dropped_frames
+                .store(self.microphone.discarded_frames(), Ordering::Relaxed);
             self.wait_ready(started)?;
         }
         Ok(())

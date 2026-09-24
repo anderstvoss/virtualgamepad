@@ -428,15 +428,14 @@ pub struct Outbound {
     samples: [i16; 512],
     pending: Option<gr_audio_contract::queue::PcmRead>,
 }
-/// Bounded socket-to-queue pump. Never drops a suffix of an accepted IPC packet.
+/// Bounded socket-to-queue pump. Host inactivity is recoverable: accepted IPC
+/// frames that cannot fit are counted as loss rather than holding the socket
+/// until its partial-message deadline terminates the controller.
 pub struct Inbound {
     destination: gr_audio_contract::queue::PcmProducer,
     receiver: Receiver,
     samples: [i16; 512],
-    pending: Option<Block>,
-    accepted: usize,
     next_frame: u64,
-    pending_deadline: Option<u64>,
 }
 fn validate_queue(format: Format, pcm: &gr_audio_contract::PcmFormat) -> io::Result<()> {
     let profile = crate::profile::Profile::new(format.profile);
@@ -516,10 +515,7 @@ impl Inbound {
             destination,
             receiver: Receiver::new(socket, format)?,
             samples: [0; 512],
-            pending: None,
-            accepted: 0,
             next_frame: 0,
-            pending_deadline: None,
         })
     }
     pub fn pump(&mut self, now: u64) -> io::Result<()> {
@@ -530,45 +526,23 @@ impl Inbound {
         result
     }
     fn pump_inner(&mut self, now: u64) -> io::Result<()> {
-        // Validate terminal/time state even while the local queue is full.
-        self.receiver.channel.check(now)?;
-        if self
-            .pending_deadline
-            .is_some_and(|deadline| now >= deadline)
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "PCM consumer stall deadline",
-            ));
-        }
-        if self.pending.is_none() {
-            let Some(block) = self.receiver.receive(&mut self.samples, now)? else {
-                return Ok(());
-            };
-            if block.first_frame > self.next_frame {
-                self.destination
-                    .discard(block.first_frame - self.next_frame)
-                    .map_err(io::Error::other)?;
-            }
-            self.pending = Some(block);
-            self.pending_deadline = Some(
-                now.checked_add(DEADLINE_US)
-                    .ok_or_else(|| invalid("PCM deadline overflow"))?,
-            );
-            self.accepted = 0;
-        }
-        if let Some(block) = self.pending {
-            let channels = self.receiver.channel.format.channels();
-            self.accepted += self
-                .destination
-                .push(&self.samples[self.accepted * channels..block.frames * channels])
+        let Some(block) = self.receiver.receive(&mut self.samples, now)? else {
+            return Ok(());
+        };
+        if block.first_frame > self.next_frame {
+            self.destination
+                .discard(block.first_frame - self.next_frame)
                 .map_err(io::Error::other)?;
-            if self.accepted == block.frames {
-                self.next_frame = block.first_frame + block.frames as u64;
-                self.pending = None;
-                self.pending_deadline = None;
-            }
         }
+        let channels = self.receiver.channel.format.channels();
+        let accepted = self
+            .destination
+            .push(&self.samples[..block.frames * channels])
+            .map_err(io::Error::other)?;
+        self.destination
+            .discard(u64::try_from(block.frames - accepted).map_err(io::Error::other)?)
+            .map_err(io::Error::other)?;
+        self.next_frame = block.first_frame + block.frames as u64;
         Ok(())
     }
     pub fn close(&mut self) {
@@ -582,7 +556,7 @@ mod pump_tests {
     use super::*;
     use gr_audio_contract::{AudioChannel, PcmFormat, queue::pcm_queue};
     #[test]
-    fn stalled_consumer_terminates_channels_and_queue_within_deadline() {
+    fn stalled_consumer_counts_loss_and_recovers_after_host_resumes() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
         let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
         let (a, b) = UnixStream::pair().unwrap();
@@ -591,20 +565,29 @@ mod pump_tests {
         let mut inbound = Inbound::new(destination, b, format).unwrap();
         sender.send(&[1, 2, 3], 0, false, 0).unwrap();
         inbound.pump(1).unwrap();
-        inbound.pump(999_999).unwrap();
+        inbound.pump(1_000_001).unwrap();
+        assert_eq!(consumer.discarded_frames(), 2);
+        assert_eq!(sender.send(&[4], 3, false, 1_000_002).unwrap(), 1);
+        inbound.pump(1_000_003).unwrap();
+        assert_eq!(consumer.discarded_frames(), 3);
+        let mut sample = [0];
+        assert_eq!(consumer.read(&mut sample).unwrap().frames, 1);
+        assert_eq!(sample, [1]);
+        assert_eq!(sender.send(&[5], 4, false, 1_000_004).unwrap(), 1);
+        inbound.pump(1_000_005).unwrap();
+        let read = consumer.read(&mut sample).unwrap();
         assert_eq!(
-            inbound.pump(1_000_001).unwrap_err().kind(),
-            io::ErrorKind::TimedOut
+            (read.frames, read.first_frame, read.discontinuity),
+            (1, 4, true)
         );
-        assert!(consumer.read(&mut [0]).is_err());
-        assert!(sender.send(&[4], 3, false, 1_000_002).is_err());
+        assert_eq!(sample, [5]);
     }
     #[test]
     fn queue_backpressure_preserves_every_suffix_and_gap() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
         let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
         let (mut producer, source) = pcm_queue(&pcm, 256).unwrap();
-        let (destination, mut consumer) = pcm_queue(&pcm, 3).unwrap();
+        let (destination, mut consumer) = pcm_queue(&pcm, 128).unwrap();
         let (a, b) = UnixStream::pair().unwrap();
         let mut outbound = Outbound::new(source, a, format).unwrap();
         let mut inbound = Inbound::new(destination, b, format).unwrap();

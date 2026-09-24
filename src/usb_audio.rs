@@ -289,6 +289,21 @@ impl crate::audio::backend::Backend for Pcm {
         }
         result.map(Some)
     }
+    fn dropped_microphone_frames(&mut self) -> Result<Option<u64>, AudioError> {
+        let result = self
+            .control
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .diagnostics()
+            .map(|counters| counters[8])
+            .map_err(|error| AudioError::Backend {
+                reason: error.to_string(),
+            });
+        if let Err(error) = &result {
+            let _ = self.error.set(error.clone());
+        }
+        result.map(Some)
+    }
     fn error(&self) -> Option<&AudioError> {
         self.inspect_failure();
         self.error.get()

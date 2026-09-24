@@ -164,6 +164,17 @@ administrator-owned worker must be refreshed before a live run can identify
 the observed 60-second exit cause; this is diagnostic work, not a continuity
 pass.
 
+After installing the failure-reporting worker, a 60-second DualSense native
+probe identified the terminal cause as `PCM consumer stall deadline`: ALSA
+capture had finished while the native microphone client continued supplying
+frames, filling the worker's bounded microphone queue. The same run had 112
+zero playback frames in the measured interval, with no USB playback pattern
+gaps. The worker now treats microphone queue overflow as recoverable loss,
+advances frame positions, and reports the dropped count through the root audio
+diagnostics. This fixes the identified terminal failure; it does not explain
+or accept the remaining native playback zeros. A fresh installed-worker live
+run is required after the changed broker/worker pair is installed.
+
 The native probe can now run inside the existing private PipeWire lab without
 waiting for a physical-card monitor that the lab intentionally does not start.
 The checker still verifies that the ALSA device belongs to the owned VHCI

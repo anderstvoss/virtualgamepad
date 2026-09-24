@@ -444,6 +444,7 @@ fn control_loop(
                     &stats.usb.capture_frames,
                     &stats.usb.abandoned_capture_frames,
                     &stats.usb.maximum_audio_lateness_us,
+                    &stats.usb.microphone_queue_dropped_frames,
                 ] {
                     response.extend(counter.load(Ordering::Relaxed).to_le_bytes());
                 }
@@ -591,7 +592,7 @@ mod tests {
             write_message(&mut client, 3, &9_u64.to_le_bytes()).unwrap();
             let (tag, stats) = read_message(&mut client).unwrap();
             assert_eq!(tag, 3);
-            assert_eq!(stats.len(), 72);
+            assert_eq!(stats.len(), 80);
             write_message(&mut client, 5, &9_u64.to_le_bytes()).unwrap();
             assert_eq!(
                 read_message(&mut client).unwrap(),

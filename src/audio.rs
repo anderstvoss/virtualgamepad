@@ -173,6 +173,14 @@ impl ControllerAudio {
     pub fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         self.session.microphone_host_frames()
     }
+    /// USB microphone frames discarded after the host stopped consuming its
+    /// bounded queue. Later frames can resume with an observable discontinuity.
+    /// Other backends return `None`.
+    /// # Errors
+    /// Returns a terminal backend error if diagnostics can no longer be read.
+    pub fn dropped_microphone_frames(&mut self) -> Result<Option<u64>, AudioError> {
+        self.session.dropped_microphone_frames()
+    }
     #[must_use]
     pub fn last_error(&self) -> Option<&AudioError> {
         self.session.error()
@@ -359,6 +367,14 @@ mod tests {
             ]
             .concat();
             gr_privileged_broker::write_message(&mut worker_control, 7, &response).unwrap();
+            let (tag, generation) =
+                gr_privileged_broker::read_message(&mut worker_control).unwrap();
+            assert_eq!((tag, generation.as_slice()), (3, &7_u64.to_le_bytes()[..]));
+            let mut response = generation;
+            for value in [0_u64, 0, 48, 0, 0, 0, 0, 0, 24] {
+                response.extend(value.to_le_bytes());
+            }
+            gr_privileged_broker::write_message(&mut worker_control, 3, &response).unwrap();
         });
         let id = ProfileId::DualSenseEmulated;
         let streams = gr_audio_worker::client_pcm::SampleStreams::new(
@@ -397,6 +413,7 @@ mod tests {
         );
         assert_eq!(audio.microphone_host_frames().unwrap(), Some(96));
         assert_eq!(audio.underrun_frames(), 48);
+        assert_eq!(audio.dropped_microphone_frames().unwrap(), Some(24));
         assert_eq!(audio.native_playback_underrun_frames(), None);
         audio.close();
         worker_reply.join().unwrap();

@@ -11,7 +11,7 @@ pub struct Control {
     family: u8,
     sequence: u64,
     closed: bool,
-    retained: [u64; 8],
+    retained: [u64; 9],
 }
 impl Control {
     #[must_use]
@@ -29,7 +29,7 @@ impl Control {
             family,
             sequence: 0,
             closed: false,
-            retained: [0; 8],
+            retained: [0; 9],
         })
     }
     fn terminal(&mut self) {
@@ -106,12 +106,12 @@ impl Control {
             }
         }
     }
-    pub fn diagnostics(&mut self) -> io::Result<[u64; 8]> {
+    pub fn diagnostics(&mut self) -> io::Result<[u64; 9]> {
         if self.closed {
             return Ok(self.retained);
         }
         let response = self.exchange(3, &[])?;
-        if response.len() != 64 {
+        if response.len() != 72 {
             self.terminal();
             return Err(io::Error::other("invalid worker diagnostics"));
         }
@@ -206,7 +206,7 @@ mod tests {
                 write_message(&mut server, 1, &reply).unwrap();
             }
             let (_, mut body) = read_message(&mut server).unwrap();
-            body.extend([5; 64]);
+            body.extend([5; 72]);
             write_message(&mut server, 3, &body).unwrap();
             let (tag, body) = read_message(&mut server).unwrap();
             assert_eq!(tag, 4);

@@ -16,6 +16,9 @@ pub(crate) trait Backend: Send + Sync {
     fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         Ok(None)
     }
+    fn dropped_microphone_frames(&mut self) -> Result<Option<u64>, AudioError> {
+        Ok(None)
+    }
     fn error(&self) -> Option<&AudioError>;
     fn failed(&self) -> bool;
     fn close(&mut self);
