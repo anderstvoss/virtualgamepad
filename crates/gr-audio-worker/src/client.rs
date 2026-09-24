@@ -43,8 +43,13 @@ impl Control {
         let result = (|| {
             let mut request = self.generation.to_le_bytes().to_vec();
             request.extend(suffix);
-            write_message(&mut self.socket, tag, &request)?;
+            if let Err(write_error) = write_message(&mut self.socket, tag, &request) {
+                return Err(self.pending_worker_failure().unwrap_or(write_error));
+            }
             let (operation, response) = read_startup_frame(&self.socket, Duration::from_secs(2))?;
+            if let Some(error) = worker_failure(self.generation, operation, &response) {
+                return Err(error);
+            }
             if operation != tag
                 || response.len() < 8
                 || response[..8] != self.generation.to_le_bytes()
@@ -57,6 +62,10 @@ impl Control {
             self.terminal();
         }
         result
+    }
+    fn pending_worker_failure(&self) -> Option<io::Error> {
+        let (tag, body) = read_startup_frame(&self.socket, Duration::from_millis(20)).ok()?;
+        worker_failure(self.generation, tag, &body)
     }
     pub fn update(&mut self, state: &NativeState) -> io::Result<()> {
         let bytes = state.encode();
@@ -165,6 +174,14 @@ impl Control {
         result
     }
 }
+fn worker_failure(generation: u64, tag: u8, body: &[u8]) -> Option<io::Error> {
+    (tag == 0x81 && body.len() >= 8 && body[..8] == generation.to_le_bytes()).then(|| {
+        io::Error::other(format!(
+            "audio worker failed: {}",
+            String::from_utf8_lossy(&body[8..])
+        ))
+    })
+}
 impl Drop for Control {
     fn drop(&mut self) {
         self.terminal();
@@ -231,6 +248,37 @@ mod tests {
         assert!(control.diagnostics().is_err());
         assert!(control.output().is_err());
         task.join().unwrap();
+    }
+    #[test]
+    fn worker_terminal_failure_surfaces_exact_cause_and_closes_control() {
+        let (mut server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let (tag, body) = read_message(&mut server).unwrap();
+            assert_eq!((tag, body), (3, 7_u64.to_le_bytes().to_vec()));
+            let mut failure = 7_u64.to_le_bytes().to_vec();
+            failure.extend(b"USB request deadline exceeded");
+            write_message(&mut server, 0x81, &failure).unwrap();
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let problem = control.diagnostics().unwrap_err().to_string();
+        assert!(problem.contains("USB request deadline exceeded"));
+        assert!(control.is_closed());
+        task.join().unwrap();
+    }
+    #[test]
+    fn worker_failure_frame_survives_early_peer_close() {
+        let (mut server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let mut failure = 7_u64.to_le_bytes().to_vec();
+            failure.extend(b"PCM channel deadline exceeded");
+            write_message(&mut server, 0x81, &failure).unwrap();
+            server.shutdown(Shutdown::Both).unwrap();
+        });
+        task.join().unwrap();
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let error = control.output().unwrap_err().to_string();
+        assert!(error.contains("PCM channel deadline exceeded"));
+        assert!(control.is_closed());
     }
     #[test]
     fn microphone_consumption_uses_current_generation_and_rejects_stale_reply() {

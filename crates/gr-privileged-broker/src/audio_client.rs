@@ -86,11 +86,21 @@ impl Client {
         }
         self.closed = true;
         let result = (|| {
-            crate::write_versioned_message(&mut self.broker, 2, 2, &self.generation.to_le_bytes())?;
+            if let Err(write_error) = crate::write_versioned_message(
+                &mut self.broker,
+                2,
+                2,
+                &self.generation.to_le_bytes(),
+            ) {
+                return Err(self.pending_broker_failure().unwrap_or(write_error));
+            }
             let (version, tag, body) = crate::socket_wire::read_versioned_startup_frame(
                 &self.broker,
                 Duration::from_secs(2),
             )?;
+            if (version, tag) == (2, 0x81) {
+                return Err(broker_failure(&body));
+            }
             if (version, tag) != (2, 0x80) || body != self.generation.to_le_bytes() {
                 return Err(io::Error::other(
                     "audio broker cleanup was not acknowledged",
@@ -101,6 +111,20 @@ impl Client {
         let _ = self.broker.shutdown(Shutdown::Both);
         result
     }
+    fn pending_broker_failure(&self) -> Option<io::Error> {
+        let (version, tag, body) = crate::socket_wire::read_versioned_startup_frame(
+            &self.broker,
+            Duration::from_millis(20),
+        )
+        .ok()?;
+        ((version, tag) == (2, 0x81)).then(|| broker_failure(&body))
+    }
+}
+fn broker_failure(body: &[u8]) -> io::Error {
+    io::Error::other(format!(
+        "audio broker terminated session: {}",
+        String::from_utf8_lossy(body)
+    ))
 }
 impl Drop for Client {
     fn drop(&mut self) {
@@ -187,5 +211,66 @@ mod tests {
             assert!(Client::handshake(client, Profile::Xbox360, [0; 6]).is_err());
             task.join().unwrap();
         }
+    }
+    #[test]
+    fn cleanup_retains_broker_worker_failure_instead_of_generic_ack_error() {
+        let (server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let mut server = server;
+            crate::read_versioned_message(&mut server).unwrap();
+            let mut body = 7_u64.to_le_bytes().to_vec();
+            body.extend(1_u32.to_le_bytes());
+            body.extend(b"4-1");
+            crate::write_versioned_message(&mut server, 2, 0x80, &body).unwrap();
+            let pairs: Vec<_> = (0..3)
+                .map(|_| UnixStream::pair())
+                .collect::<Result<_, _>>()
+                .unwrap();
+            let channels = std::array::from_fn(|n| pairs[n].0.try_clone().unwrap());
+            audio_fds::send(&server, &channels).unwrap();
+            crate::write_versioned_message(
+                &mut server,
+                2,
+                0x81,
+                b"audio worker exited: exit status: 1",
+            )
+            .unwrap();
+            // The client may attempt an explicit close after the failure frame.
+            let _ = crate::read_versioned_message(&mut server);
+        });
+        let (mut client, _) = Client::handshake(client, Profile::DualSense, [0; 6]).unwrap();
+        let problem = client.close().unwrap_err().to_string();
+        assert!(problem.contains("audio worker exited: exit status: 1"));
+        assert!(!problem.contains("not acknowledged"));
+        task.join().unwrap();
+    }
+    #[test]
+    fn cleanup_recovers_broker_failure_when_peer_already_closed() {
+        let (server, client) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let mut server = server;
+            crate::read_versioned_message(&mut server).unwrap();
+            let mut body = 7_u64.to_le_bytes().to_vec();
+            body.extend(1_u32.to_le_bytes());
+            body.extend(b"4-1");
+            crate::write_versioned_message(&mut server, 2, 0x80, &body).unwrap();
+            let pairs: Vec<_> = (0..3)
+                .map(|_| UnixStream::pair())
+                .collect::<Result<_, _>>()
+                .unwrap();
+            let channels = std::array::from_fn(|n| pairs[n].0.try_clone().unwrap());
+            audio_fds::send(&server, &channels).unwrap();
+            crate::write_versioned_message(&mut server, 2, 0x81, b"worker died").unwrap();
+            server.shutdown(Shutdown::Both).unwrap();
+        });
+        let (mut client, _) = Client::handshake(client, Profile::DualSense, [0; 6]).unwrap();
+        task.join().unwrap();
+        assert!(
+            client
+                .close()
+                .unwrap_err()
+                .to_string()
+                .contains("worker died")
+        );
     }
 }

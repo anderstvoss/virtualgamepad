@@ -125,7 +125,9 @@ struct CloseOnExit {
 impl Drop for CloseOnExit {
     fn drop(&mut self) {
         if !self.stopping.load(Ordering::Acquire) {
-            let _ = self.socket.shutdown(Shutdown::Both);
+            // Wake the control reader without closing the worker's write half:
+            // `finish` still needs to send the terminal failure reason.
+            let _ = self.socket.shutdown(Shutdown::Read);
         }
     }
 }
@@ -352,20 +354,28 @@ fn finish(
     cleanup: io::Result<()>,
 ) -> io::Result<()> {
     // A close acknowledgement certifies both processing threads have stopped.
-    // Failures close the control channel without claiming successful cleanup.
-    let acknowledgement = if result.is_ok() && cleanup.is_ok() {
-        gr_privileged_broker::write_message(&mut &*control, 4, &generation.to_le_bytes())
+    // Worker failures take precedence over the EOF used to wake this reader.
+    let outcome = match (result, cleanup) {
+        (Err(control), Err(worker)) => Err(io::Error::other(format!(
+            "worker: {worker}; control: {control}"
+        ))),
+        (Err(error), _) | (_, Err(error)) => Err(error),
+        _ => Ok(()),
+    };
+    let acknowledgement = if let Err(problem) = &outcome {
+        let reason = problem.to_string();
+        let mut end = reason.len().min(192);
+        while !reason.is_char_boundary(end) {
+            end -= 1;
+        }
+        let mut payload = generation.to_le_bytes().to_vec();
+        payload.extend_from_slice(&reason.as_bytes()[..end]);
+        gr_privileged_broker::write_message(&mut &*control, 0x81, &payload)
     } else {
-        Ok(())
+        gr_privileged_broker::write_message(&mut &*control, 4, &generation.to_le_bytes())
     };
     let _ = control.shutdown(Shutdown::Both);
-    match (result, cleanup) {
-        (Err(primary), Err(cleanup)) => {
-            Err(io::Error::other(format!("{primary}; cleanup: {cleanup}")))
-        }
-        (Err(error), _) | (_, Err(error)) => Err(error),
-        _ => acknowledgement,
-    }
+    outcome.and(acknowledgement)
 }
 struct ControlStats<'a> {
     lost: &'a AtomicU64,
@@ -503,7 +513,27 @@ mod tests {
     fn cleanup_failure_never_acknowledges_success() {
         let (control, mut client) = pair();
         assert!(finish(&control, 9, Ok(()), Err(io::Error::other("cleanup failed"))).is_err());
+        let (tag, body) = read_message(&mut client).unwrap();
+        assert_eq!(tag, 0x81);
+        assert_eq!(&body[..8], &9_u64.to_le_bytes());
+        assert_eq!(&body[8..], b"cleanup failed");
         assert_eq!(client.read(&mut [0]).unwrap(), 0);
+    }
+    #[test]
+    fn worker_failure_wakes_control_reader_but_keeps_failure_reply_writable() {
+        let (mut worker, mut client) = pair();
+        let notifier = CloseOnExit {
+            socket: worker.try_clone().unwrap(),
+            stopping: Arc::new(AtomicBool::new(false)),
+        };
+        drop(notifier);
+        let mut byte = [0];
+        assert_eq!(worker.read(&mut byte).unwrap(), 0);
+        write_message(&mut &worker, 0x81, b"bounded cause").unwrap();
+        assert_eq!(
+            read_message(&mut client).unwrap(),
+            (0x81, b"bounded cause".to_vec())
+        );
     }
     #[test]
     fn every_family_updates_without_host_polling_and_closes_owned_channels() {

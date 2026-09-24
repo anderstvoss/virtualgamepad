@@ -104,6 +104,41 @@ temporary 512-frame graph. It still produced 480 interior caller zero
 frames while the host microphone pattern remained exact. The staging change
 was removed; increasing startup fill alone is not a verified remedy.
 
+The native-client probe now audits a fixed 60-second (or requested shorter)
+window beginning two seconds after the first exact playback frame, rather than
+rejecting all silence between its early and late edge frames. A regression
+requires exact samples throughout that window and rejects both an interior
+zero frame and a truncated capture. This more precise acceptance check still
+failed three short DualSense runs on the installed 1,024-frame graph: their
+three-second measured windows contained 16, 112 and 128 zero frames, with no
+USB playback loss in the first two. A separate run requesting a 1,024-frame
+`pw-cat` latency still contained 848 interior zeros over the full capture. The larger
+client request therefore did not resolve the cross-clock starvation. The
+shared graph setting was not changed. Native playback continuity and its
+sub-20-ms latency requirement remain open.
+
+One 60-second native DualSense run captured all 2,880,000 expected host
+microphone frames without silence, but its measured caller-playback window had
+1,808 silent frames and the native source counted 54,368 underrun frames over
+its whole lifecycle. The PipeWire graph reported one 1,024-frame discontinuity;
+the USB playback queue reported zero drops. The checker could no longer find
+the owned USB session after the trial. A repeat measured 1,168 silent playback
+frames and likewise lost the USB session, despite exact host microphone frames.
+The root audio handle reported `closed=true` and retained only `Closed`, so the
+specific worker or broker termination cause is still unproven. The native probe
+now prints that retained state for future runs. Both runs fail continuity and
+lifecycle acceptance.
+
+The private worker control protocol now sends a bounded, generation-checked
+terminal error frame after its processing threads stop. A failed worker wakes
+the control reader without disabling the write half, so its actual thread
+error can reach the caller instead of turning into an uninformative broken
+pipe. The client also recovers a queued failure frame if its close write fails.
+These changes have deterministic control-socket regressions. The installed
+administrator-owned worker must be refreshed before a live run can identify
+the observed 60-second exit cause; this is diagnostic work, not a continuity
+pass.
+
 The reciprocal `usb_audio_latency_reverse` example stamps root microphone
 writes and reads the corresponding frames from the owned `arecord` stream.
 This boundary includes the application pipe; each 128-frame receive block
