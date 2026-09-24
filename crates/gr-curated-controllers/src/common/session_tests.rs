@@ -17,6 +17,7 @@ struct WorkerRecord {
     attempts: Vec<crate::DualSenseState>,
     fail_once: bool,
     fail_output: bool,
+    lost_outputs: u64,
     outputs: VecDeque<RawReverseEvent>,
     closes: usize,
 }
@@ -54,6 +55,9 @@ impl super::WorkerBridge<crate::DualSenseState> for FakeWorker {
             lifecycle_events: 0,
             last_error: None,
         }
+    }
+    fn dropped_output_events(&self) -> u64 {
+        self.0.lock().unwrap().lost_outputs
     }
     fn close(&mut self) -> Result<(), ProviderError> {
         self.0.lock().unwrap().closes += 1;
@@ -1332,4 +1336,18 @@ fn sony_held_input_survives_consumer_reopen<D: HidDriver>(driver: &D, hat_offset
 fn sony_first_report_and_consumer_reopen_preserve_held_up() {
     sony_held_input_survives_consumer_reopen(&DualSenseDefinition, 7);
     sony_held_input_survives_consumer_reopen(&DualShock4Definition, 4);
+}
+
+#[test]
+fn worker_output_loss_is_reported_and_retained_after_close() {
+    let record = Arc::new(Mutex::new(WorkerRecord::default()));
+    let mut controller = crate::create_dualsense_usb_worker(Box::new(FakeWorker(record.clone())));
+    assert_eq!(controller.dropped_output_events(), 0);
+    record.lock().unwrap().lost_outputs = 17;
+    controller.service(&mut |_| {}).unwrap();
+    assert_eq!(controller.dropped_output_events(), 17);
+    controller.close();
+    controller.close();
+    assert_eq!(controller.dropped_output_events(), 17);
+    assert_eq!(record.lock().unwrap().closes, 1);
 }

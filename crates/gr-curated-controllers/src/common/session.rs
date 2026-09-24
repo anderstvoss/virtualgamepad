@@ -27,6 +27,8 @@ pub trait WorkerBridge<S>: Send {
     fn update(&mut self, state: &S) -> Result<(), ProviderError>;
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError>;
     fn diagnostics(&mut self) -> gr_realization_api::ProviderDiagnostics;
+    /// Cumulative worker-side output loss, retained after closure.
+    fn dropped_output_events(&self) -> u64;
     fn close(&mut self) -> Result<(), ProviderError>;
 }
 enum Backend<D: HidDriver> {
@@ -394,11 +396,11 @@ impl<D: HidDriver> ControllerSession<D> {
         }
     }
     pub(crate) fn dropped_observations(&self) -> u64 {
-        self.dropped
-            + match &self.backend {
-                Backend::Native(_) | Backend::Worker { .. } => 0,
-                Backend::Hid { runtime, .. } => runtime.dropped_observations(),
-            }
+        self.dropped.saturating_add(match &self.backend {
+            Backend::Native(_) => 0,
+            Backend::Worker { bridge, .. } => bridge.dropped_output_events(),
+            Backend::Hid { runtime, .. } => runtime.dropped_observations(),
+        })
     }
     pub(crate) fn close(&mut self) {
         self.feedback.clear();

@@ -26,6 +26,7 @@ pub(crate) struct Session<S> {
     state: fn(&S) -> NativeState,
     retained: ProviderDiagnostics,
     microphone_silence: Arc<AtomicU64>,
+    dropped_outputs: u64,
     _state: PhantomData<S>,
 }
 
@@ -74,9 +75,11 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .diagnostics()
             {
-                Ok(counters) => self
-                    .microphone_silence
-                    .store(counters[2], Ordering::Release),
+                Ok(counters) => {
+                    self.dropped_outputs = counters[0];
+                    self.microphone_silence
+                        .store(counters[2], Ordering::Release);
+                }
                 Err(error) => {
                     self.retained.state = ProviderState::Failed;
                     self.retained.last_error = Some(error.to_string());
@@ -84,6 +87,9 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
             }
         }
         self.retained.clone()
+    }
+    fn dropped_output_events(&self) -> u64 {
+        self.dropped_outputs
     }
     fn close(&mut self) -> Result<(), ProviderError> {
         if self.retained.state == ProviderState::Closed {
@@ -95,15 +101,30 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .close();
         let broker = self.broker.close();
-        self.retained.state = ProviderState::Closed;
-        if let Err(error) = control.and(broker) {
-            self.retained.last_error = Some(format!("cleanup failed: {error}"));
-            return Err(ProviderError::Read {
-                reason: error.to_string(),
-            });
-        }
-        Ok(())
+        finish_close(&mut self.retained, control, broker)
     }
+}
+
+// Preserve the initiating failure and both independently attempted cleanup results.
+fn finish_close(
+    retained: &mut ProviderDiagnostics,
+    control: io::Result<()>,
+    broker: io::Result<()>,
+) -> Result<(), ProviderError> {
+    retained.state = ProviderState::Closed;
+    let failures: Vec<_> = [("worker", control), ("broker", broker)]
+        .into_iter()
+        .filter_map(|(stage, result)| result.err().map(|error| format!("{stage}: {error}")))
+        .collect();
+    if failures.is_empty() {
+        return Ok(());
+    }
+    let cleanup = format!("cleanup failed: {}", failures.join("; "));
+    retained.last_error = Some(match retained.last_error.take() {
+        Some(original) => format!("{original}; {cleanup}"),
+        None => cleanup.clone(),
+    });
+    Err(ProviderError::Read { reason: cleanup })
 }
 
 fn io_open(error: &io::Error) -> ControllerError {
@@ -424,6 +445,7 @@ pub(crate) fn open<S: Send + 'static>(
             last_error: None,
         },
         microphone_silence,
+        dropped_outputs: 0,
         _state: PhantomData,
     };
     Ok((Box::new(bridge), audio))
@@ -437,4 +459,47 @@ pub(crate) fn dualshock4(state: &DualShock4State) -> NativeState {
 }
 pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
     NativeState::Xbox360(state.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closure_retains_original_and_each_cleanup_failure() {
+        for worker_failed in [false, true] {
+            for broker_failed in [false, true] {
+                let mut retained = ProviderDiagnostics {
+                    state: ProviderState::Failed,
+                    frames_sent: 7,
+                    reverse_events_drained: 3,
+                    write_failures: 1,
+                    lifecycle_events: 0,
+                    last_error: Some("original transport failure".into()),
+                };
+                let outcome = |failed, reason| {
+                    if failed {
+                        Err(io::Error::other(reason))
+                    } else {
+                        Ok(())
+                    }
+                };
+                let result = finish_close(
+                    &mut retained,
+                    outcome(worker_failed, "worker close failure"),
+                    outcome(broker_failed, "broker close failure"),
+                );
+                assert_eq!(result.is_err(), worker_failed || broker_failed);
+                assert_eq!(retained.state, ProviderState::Closed);
+                assert_eq!(retained.frames_sent, 7);
+                let error = retained.last_error.as_ref().unwrap();
+                assert!(error.starts_with("original transport failure"));
+                assert_eq!(error.contains("worker close failure"), worker_failed);
+                assert_eq!(error.contains("broker close failure"), broker_failed);
+                let previous = retained.clone();
+                finish_close(&mut retained, Ok(()), Ok(())).unwrap();
+                assert_eq!(retained, previous);
+            }
+        }
+    }
 }
