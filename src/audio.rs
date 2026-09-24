@@ -163,6 +163,25 @@ impl ControllerAudio {
     pub fn native_playback_underrun_frames(&self) -> Option<u64> {
         self.session.native_playback_underrun_frames()
     }
+    /// Native microphone frames discarded at the caller-session `PipeWire`
+    /// input before the USB worker queue. `None` means no separate graph
+    /// counter is available for this backend.
+    #[must_use]
+    pub fn native_microphone_dropped_frames(&self) -> Option<u64> {
+        self.session.native_microphone_dropped_frames()
+    }
+    /// Current and peak native microphone graph queue fill, in frames. Queue
+    /// capacity is spare room for scheduling stalls, not a desired latency.
+    #[must_use]
+    pub fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
+        self.session.native_microphone_queue_frames()
+    }
+    /// Maximum observed credit-request and bridge-loop intervals in
+    /// microseconds. These scheduling observations are not audio latency.
+    #[must_use]
+    pub fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
+        self.session.native_bridge_scheduling_us()
+    }
     /// USB capture frames serviced since creation, including underrun silence.
     /// This is scheduling credit for sample-owned streams, not proof that a
     /// canceled USB request reached the host. Use a small operating fill;

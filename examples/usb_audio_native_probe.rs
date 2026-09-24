@@ -5,8 +5,9 @@
 use std::{
     io::{Read, Write},
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 use virtualgamepad::{
     AudioAccess, AudioExposure, AudioOptions, ControllerAudio, CreationOptions, RealizationId,
@@ -208,8 +209,74 @@ mod tests {
     }
 }
 
-fn exercise(
+fn sample_window(
     audio: &ControllerAudio,
+    done: &AtomicBool,
+    seconds: u64,
+) -> (u64, u64, (u64, u64, u64)) {
+    let started = Instant::now();
+    let mut before = None;
+    let mut after = 0;
+    let mut drop_before = None;
+    let mut drop_after = 0;
+    let mut queue_start = None;
+    let mut queue_end = 0;
+    let mut queue_peak = 0;
+    while !done.load(Ordering::Acquire) {
+        let elapsed = started.elapsed();
+        let count = audio.native_playback_underrun_frames().unwrap_or(0);
+        let dropped = audio.native_microphone_dropped_frames().unwrap_or(0);
+        let fill = audio
+            .native_microphone_queue_frames()
+            .map_or(0, |(fill, _)| fill);
+        if elapsed >= Duration::from_secs(2) {
+            before.get_or_insert(count);
+            drop_before.get_or_insert(dropped);
+            queue_start.get_or_insert(fill);
+        }
+        if elapsed <= Duration::from_secs(seconds + 2) {
+            after = count;
+            drop_after = dropped;
+            queue_end = fill;
+            queue_peak = queue_peak.max(fill);
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    (
+        after.saturating_sub(before.unwrap_or(after)),
+        drop_after.saturating_sub(drop_before.unwrap_or(drop_after)),
+        (queue_start.unwrap_or(0), queue_end, queue_peak),
+    )
+}
+
+fn write_microphone_pattern(
+    mut stdin: impl Write + Send + 'static,
+    channels: usize,
+    seconds: u64,
+) -> JoinHandle<()> {
+    thread::spawn(move || {
+        let mut frame = 0_u64;
+        let end = (seconds + 6) * 48_000;
+        let mut bytes = vec![0_u8; 128 * channels * 2];
+        while frame < end {
+            for (index, samples) in bytes.chunks_exact_mut(channels * 2).enumerate() {
+                for (channel, sample) in samples.chunks_exact_mut(2).enumerate() {
+                    let value =
+                        i16::try_from(100 + (frame + index as u64) % 97 + 100 * channel as u64)
+                            .expect("bounded synthetic pattern");
+                    sample.copy_from_slice(&value.to_le_bytes());
+                }
+            }
+            if stdin.write_all(&bytes).is_err() {
+                break;
+            }
+            frame += 128;
+        }
+    })
+}
+
+fn exercise(
+    audio: &mut ControllerAudio,
     family: &str,
     seconds: u64,
     port: u32,
@@ -238,7 +305,11 @@ fn exercise(
     let mut capture = client("--record", playback_node, playback_channels)?;
     let stdout = capture.stdout.take().ok_or("missing capture pipe")?;
     let reader = thread::spawn(move || {
-        let mut bytes = Vec::new();
+        // The test reader must not repeatedly reallocate a multi-megabyte
+        // capture while the graph is streaming; that would introduce an
+        // avoidable scheduling stall into the continuity measurement.
+        let capacity = usize::try_from(seconds + 6).unwrap() * 48_000 * playback_channels * 2;
+        let mut bytes = Vec::with_capacity(capacity);
         let _ = std::io::BufReader::new(stdout).read_to_end(&mut bytes);
         bytes
     });
@@ -258,43 +329,43 @@ fn exercise(
         writer: None,
         finished: false,
     };
-    let mut stdin = clients
+    let stdin = clients
         .microphone
         .stdin
         .take()
         .ok_or("missing microphone pipe")?;
-    clients.writer = Some(thread::spawn(move || {
-        let mut frame = 0_u64;
-        let end = (seconds + 6) * 48_000;
-        let mut bytes = vec![0_u8; 128 * microphone_channels * 2];
-        while frame < end {
-            for (index, samples) in bytes.chunks_exact_mut(microphone_channels * 2).enumerate() {
-                for (channel, sample) in samples.chunks_exact_mut(2).enumerate() {
-                    let value =
-                        i16::try_from(100 + (frame + index as u64) % 97 + 100 * channel as u64)
-                            .expect("bounded synthetic pattern");
-                    sample.copy_from_slice(&value.to_le_bytes());
-                }
-            }
-            if stdin.write_all(&bytes).is_err() {
-                break;
-            }
-            frame += 128;
-        }
-    }));
+    clients.writer = Some(write_microphone_pattern(
+        stdin,
+        microphone_channels,
+        seconds,
+    ));
     thread::sleep(Duration::from_millis(300));
-    let status = run_checker(family, seconds, port)?;
+    let done = AtomicBool::new(false);
+    let (status, measured_underrun, measured_graph_drop, queue_window) = thread::scope(|scope| {
+        let sampler = scope.spawn(|| sample_window(audio, &done, seconds));
+        let status = run_checker(family, seconds, port);
+        done.store(true, Ordering::Release);
+        let (underrun, dropped, queue) = sampler.join().unwrap_or((0, 0, (0, 0, 0)));
+        (status, underrun, dropped, queue)
+    });
+    let status = status?;
     let bytes = clients.finish();
     let pattern = &[101_i16, -202, 303, -404][..playback_channels];
     let frame_bytes = playback_channels * 2;
     let capture_result = audit_capture(&bytes, pattern);
     let measured = measured_capture(&bytes, pattern, seconds);
     println!(
-        "usb_native family={family} audit={capture_result:?} measured={measured:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} microphone_silence={} closed={} last_error={:?} graph={:?}",
+        "usb_native family={family} audit={capture_result:?} measured={measured:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} measured_underrun={} microphone_silence={} microphone_dropped={:?} native_microphone_graph_dropped={:?} measured_graph_drop={} native_microphone_queue={:?} queue_window={queue_window:?} bridge_schedule_us={:?} closed={} last_error={:?} graph={:?}",
         bytes.len() / frame_bytes,
         audio.dropped_playback_frames(),
         audio.native_playback_underrun_frames(),
+        measured_underrun,
         audio.underrun_frames(),
+        audio.dropped_microphone_frames(),
+        audio.native_microphone_dropped_frames(),
+        measured_graph_drop,
+        audio.native_microphone_queue_frames(),
+        audio.native_bridge_scheduling_us(),
         audio.is_closed(),
         audio.last_error(),
         audio.stream_timings()

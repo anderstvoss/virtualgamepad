@@ -691,3 +691,28 @@ reports maximum excess over that thread's 500 µs nominal pump interval. The
 installed worker has since been updated and the root sample-access harness
 passed the nine trials recorded above. Those passes do not identify the earlier
 96-frame supply gap's precise cause or establish an end-to-end latency claim.
+
+The installed worker now treats a stopped microphone consumer as bounded,
+counted loss rather than a terminal PCM error. A 60-second DualSense native
+client run kept the controller open after this change; this resolves the
+previous `PCM consumer stall deadline` shutdown, not native continuity.
+The caller bridge now keeps microphone production tied to observed USB host
+media frames, delays graph input activation until host capture starts, and
+polls worker progress on a separate thread so control replies do not block
+sample pumping. Its source preroll and graph input queue are bounded, and
+diagnostics retain graph drops, queue fill and bridge scheduling intervals.
+These are diagnostic and pacing changes, not a passed native acceptance run.
+
+Two subsequent 10-second DualSense native-client trials on the prepared host
+failed at private PipeWire quanta of 256 and 512 frames. At quantum 256, the
+measured host capture had 1,456 silent frames, the PipeWire input queue reached
+its 2,048-frame capacity, and graph input reported 768 dropped frames during
+the measurement; the virtual controller remained open and its worker reported
+zero microphone queue drops. At quantum 512, measured host capture had 704
+silent frames, graph input reported 1,024 dropped frames, and the input queue
+again reached capacity. The graph also reported missed processing periods in
+both runs. These correlated counters implicate graph-to-USB pacing and host
+scheduling; they do not yet distinguish clock drift from individual scheduling
+stalls. Native continuity, directional p99 latency, and the sustained matrix
+remain unaccepted. A larger queue is not a valid sub-20 ms fix because it
+would add steady-state delay.

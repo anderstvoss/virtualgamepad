@@ -175,6 +175,14 @@ impl PcmProducer {
     }
 }
 impl PcmConsumer {
+    /// Published frames awaiting consumption. This is a snapshot; the producer
+    /// can add more frames immediately afterward.
+    #[must_use]
+    pub fn queued_frames(&self) -> usize {
+        let head = self.shared.head.load(Ordering::Acquire);
+        let tail = self.shared.tail.load(Ordering::Relaxed);
+        (head + self.shared.slots - tail) % self.shared.slots
+    }
     #[must_use]
     pub fn format(&self) -> &PcmFormat {
         &self.shared.format
@@ -310,6 +318,7 @@ mod tests {
         tx.flush().unwrap();
         tx.flush().unwrap();
         assert_eq!(tx.queued_frames(), 2);
+        assert_eq!(rx.queued_frames(), 2);
         // New publication can wrap; old slots remain owned until consumer read.
         assert_eq!(tx.push(&[3, 4]).unwrap(), 1);
         let mut dest = [0; 3];
@@ -319,6 +328,7 @@ mod tests {
         assert!(read.discontinuity);
         assert_eq!(dest[0], 3);
         assert_eq!(tx.queued_frames(), 0);
+        assert_eq!(rx.queued_frames(), 0);
         tx.push(&[4, 5, 6]).unwrap();
         tx.flush().unwrap();
         assert_eq!(tx.push(&[7]).unwrap(), 0);

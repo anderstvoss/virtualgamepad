@@ -90,6 +90,7 @@ def inspect_capture(data, channels):
     total = valid = silence = gaps = 0
     previous = None
     first_unexpected = last_unexpected = None
+    first_pattern_gap = last_pattern_gap = None
     for frame in struct.iter_unpack('<'+'h'*channels,data):
         first = frame[0]
         matches = 100 <= first <= 196 and all(value-first == 100*c for c,value in enumerate(frame))
@@ -100,11 +101,15 @@ def inspect_capture(data, channels):
             last_unexpected = total - 1
         valid += matches
         silence += all(value == 0 for value in frame)
-        if previous is not None and matches:
-            gaps += first-100 != (previous-100+1)%97
+        if previous is not None and matches and first-100 != (previous-100+1)%97:
+            gaps += 1
+            if first_pattern_gap is None:
+                first_pattern_gap = total - 1
+            last_pattern_gap = total - 1
         previous = first if matches else None
     return dict(frames=total, exact_pattern=valid, silence=silence, pattern_gaps=gaps,
-                first_unexpected_frame=first_unexpected,last_unexpected_frame=last_unexpected)
+                first_unexpected_frame=first_unexpected,last_unexpected_frame=last_unexpected,
+                first_pattern_gap=first_pattern_gap,last_pattern_gap=last_pattern_gap)
 
 
 def run_trial(card, family, seconds):

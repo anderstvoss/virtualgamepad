@@ -46,8 +46,10 @@ class LiveHarness(unittest.TestCase):
         encode=lambda values: b''.join(struct.pack('<2h',*frame) for frame in values)
         result=lab.inspect_capture(encode(frames),2)
         self.assertEqual(result,dict(frames=150,exact_pattern=150,silence=0,pattern_gaps=0,
-                                    first_unexpected_frame=None,last_unexpected_frame=None))
-        self.assertEqual(lab.inspect_capture(encode(frames[:50]+frames[51:]),2)['pattern_gaps'],1)
+                                    first_unexpected_frame=None,last_unexpected_frame=None,
+                                    first_pattern_gap=None,last_pattern_gap=None))
+        skipped=lab.inspect_capture(encode(frames[:50]+frames[51:]),2)
+        self.assertEqual((skipped['pattern_gaps'],skipped['first_pattern_gap'],skipped['last_pattern_gap']), (1,50,50))
         self.assertEqual(lab.inspect_capture(encode([(100,100)]),2)['exact_pattern'],0)
         self.assertEqual(lab.inspect_capture(bytes(8),2)['silence'],2)
         self.assertEqual(lab.inspect_capture(bytes(8),2)['first_unexpected_frame'],0)

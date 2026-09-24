@@ -13,6 +13,15 @@ pub(crate) trait Backend: Send + Sync {
     fn native_playback_underrun_frames(&self) -> Option<u64> {
         None
     }
+    fn native_microphone_dropped_frames(&self) -> Option<u64> {
+        None
+    }
+    fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
+        None
+    }
+    fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
+        None
+    }
     fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         Ok(None)
     }

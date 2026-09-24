@@ -39,6 +39,7 @@ pub struct Session {
     stop: Arc<AtomicBool>,
     failed: Arc<AtomicBool>,
     underruns: Arc<AtomicU64>,
+    activate_input: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<Result<(), AudioError>>>,
     error: Option<AudioError>,
 }
@@ -50,19 +51,58 @@ impl Session {
         options: AudioOptions,
         creation: u64,
     ) -> Result<Self, AudioError> {
+        Self::open_inner(profile, options, creation, 0, true)
+    }
+    /// Use a bounded operating lead for a USB-to-PipeWire bridge. The source
+    /// waits for one requested graph block plus this many frames before first
+    /// delivery, and rearms after an underrun. The ordinary audio path uses 0.
+    /// # Errors
+    /// Returns an error if endpoint registration fails.
+    pub fn open_with_source_preroll(
+        profile: &AudioProfile,
+        options: AudioOptions,
+        creation: u64,
+        source_preroll: usize,
+    ) -> Result<Self, AudioError> {
+        Self::open_inner(profile, options, creation, source_preroll, true)
+    }
+    /// A USB bridge registers its native microphone input before the host
+    /// begins capture, but activates graph processing only after host media
+    /// time starts. Endpoint identity remains fixed for the session.
+    /// # Errors
+    /// Returns an error if endpoint registration fails.
+    pub fn open_usb_bridge(
+        profile: &AudioProfile,
+        options: AudioOptions,
+        creation: u64,
+        source_preroll: usize,
+    ) -> Result<Self, AudioError> {
+        Self::open_inner(profile, options, creation, source_preroll, false)
+    }
+    fn open_inner(
+        profile: &AudioProfile,
+        options: AudioOptions,
+        creation: u64,
+        source_preroll: usize,
+        input_initially_active: bool,
+    ) -> Result<Self, AudioError> {
+        if source_preroll > 512 {
+            return Err(AudioError::InvalidRequirement);
+        }
         if !valid_profile(profile) {
             return Err(AudioError::IncompatibleTopology);
         }
         let stop = Arc::new(AtomicBool::new(false));
         let failed = Arc::new(AtomicBool::new(false));
         let underruns = Arc::new(AtomicU64::new(0));
+        let activate_input = Arc::new(AtomicBool::new(input_initially_active));
         let Prepared {
             specs,
             endpoints,
             playback,
             playback_observer,
             microphone,
-        } = prepare(profile, options, creation)?;
+        } = prepare(profile, options, creation, source_preroll)?;
         let clocks = specs
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))
@@ -71,6 +111,7 @@ impl Session {
         let worker_stop = stop.clone();
         let worker_failed = failed.clone();
         let worker_underruns = underruns.clone();
+        let worker_activate_input = activate_input.clone();
         let worker = thread::Builder::new()
             .name("controller-audio".into())
             .spawn(move || {
@@ -79,6 +120,7 @@ impl Session {
                     &worker_stop,
                     &worker_failed,
                     &worker_underruns,
+                    &worker_activate_input,
                     &ready_tx,
                 );
                 if result.is_err() {
@@ -96,6 +138,7 @@ impl Session {
             stop,
             failed,
             underruns,
+            activate_input,
             worker: Some(worker),
             error: None,
         };
@@ -190,6 +233,13 @@ impl Session {
             .map_or(0, PcmObserver::discarded_frames)
     }
     #[must_use]
+    pub fn queued_playback_frames(&self) -> Option<usize> {
+        self.playback.as_ref().map(PcmConsumer::queued_frames)
+    }
+    pub fn activate_inputs(&self) {
+        self.activate_input.store(true, Ordering::Release);
+    }
+    #[must_use]
     pub fn error(&self) -> Option<&AudioError> {
         self.error.as_ref()
     }
@@ -250,6 +300,7 @@ struct Spec {
     name: String,
     format: PcmFormat,
     io: Io,
+    source_preroll: usize,
 }
 struct ControlCallback {
     generation: Arc<AtomicU64>,
@@ -267,6 +318,8 @@ struct Callback {
     scratch: Box<[i16]>,
     failed: Arc<AtomicBool>,
     underruns: Arc<AtomicU64>,
+    source_preroll: usize,
+    source_started: bool,
 }
 // Each listener owns separate userdata: the binding creates &mut callback
 // state even before dispatching an event. Only process state crosses onto the
@@ -276,6 +329,7 @@ struct ManagedStream {
     stream: pw::stream::StreamRc,
     control: Option<pw::stream::StreamListener<ControlCallback>>,
     process: Option<pw::stream::StreamListener<Callback>>,
+    input: bool,
 }
 impl ManagedStream {
     fn open(
@@ -283,6 +337,7 @@ impl ManagedStream {
         spec: Spec,
         failed: &Arc<AtomicBool>,
         underruns: &Arc<AtomicU64>,
+        input_initially_active: bool,
     ) -> Result<Self, AudioError> {
         let input = matches!(spec.io, Io::Sink(_));
         let bytes = format_pod(&spec.format)?;
@@ -305,6 +360,8 @@ impl ManagedStream {
             scratch: vec![0; SCRATCH_SAMPLES].into_boxed_slice(),
             failed: failed.clone(),
             underruns: underruns.clone(),
+            source_preroll: spec.source_preroll,
+            source_started: false,
         };
         let control = stream
             .add_local_listener_with_user_data(ControlCallback {
@@ -339,6 +396,7 @@ impl ManagedStream {
             stream,
             control: Some(control),
             process: Some(process),
+            input,
         };
         let connected = managed
             .stream
@@ -355,6 +413,9 @@ impl ManagedStream {
             .map_err(backend);
         if connected.is_err() {
             finish_cleanup(connected, std::iter::once(managed.disconnect()))?;
+        }
+        if input && !input_initially_active {
+            managed.stream.set_active(false).map_err(backend)?;
         }
         Ok(managed)
     }
@@ -384,6 +445,7 @@ fn run(
     stop: &Arc<AtomicBool>,
     failed: &Arc<AtomicBool>,
     underruns: &Arc<AtomicU64>,
+    activate_input: &Arc<AtomicBool>,
     ready: &mpsc::SyncSender<()>,
 ) -> Result<(), AudioError> {
     pw::init();
@@ -400,16 +462,29 @@ fn run(
     let mut streams = Vec::new();
     let result = (|| {
         for spec in specs {
-            streams.push(ManagedStream::open(&core, spec, failed, underruns)?);
+            streams.push(ManagedStream::open(
+                &core,
+                spec,
+                failed,
+                underruns,
+                activate_input.load(Ordering::Acquire),
+            )?);
         }
         let deadline = Instant::now() + Duration::from_secs(3);
         let mut notified = false;
+        let mut input_activated = activate_input.load(Ordering::Acquire);
         while !stop.load(Ordering::Acquire) {
             if failed.load(Ordering::Acquire) {
                 return Err(backend("PipeWire endpoint or server failed"));
             }
             main.loop_()
                 .iterate(pw::loop_::Timeout::Finite(Duration::from_millis(5)));
+            if !input_activated && activate_input.load(Ordering::Acquire) {
+                for stream in streams.iter().filter(|stream| stream.input) {
+                    stream.stream.set_active(true).map_err(backend)?;
+                }
+                input_activated = true;
+            }
             if !notified {
                 if streams.iter().all(|s| {
                     matches!(
@@ -512,14 +587,27 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
             transferred = frames;
             let count = frames * channels;
             data.scratch[..count].fill(0);
-            match rx.read(&mut data.scratch[..count]) {
-                Ok(read) => {
-                    data.underruns
-                        .fetch_add((frames - read.frames) as u64, Ordering::Relaxed);
+            if source_ready(
+                data.source_started,
+                rx.queued_frames(),
+                frames,
+                data.source_preroll,
+            ) {
+                data.source_started = true;
+                match rx.read(&mut data.scratch[..count]) {
+                    Ok(read) => {
+                        if read.frames < frames && data.source_preroll != 0 {
+                            data.source_started = false;
+                        }
+                        data.underruns
+                            .fetch_add((frames - read.frames) as u64, Ordering::Relaxed);
+                    }
+                    Err(_) => {
+                        data.failed.store(true, Ordering::Release);
+                    }
                 }
-                Err(_) => {
-                    data.failed.store(true, Ordering::Release);
-                }
+            } else {
+                data.underruns.fetch_add(frames as u64, Ordering::Relaxed);
             }
             for (pair, sample) in bytes[..count * 2]
                 .chunks_exact_mut(2)
@@ -544,6 +632,10 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
             (time.now(), time.delay()),
         );
     }
+}
+
+fn source_ready(started: bool, queued: usize, requested: usize, preroll: usize) -> bool {
+    started || preroll == 0 || queued >= requested.saturating_add(preroll)
 }
 
 // Only interleaved S16LE is negotiated. Reject a mismatched layout rather than
@@ -604,6 +696,7 @@ fn prepare(
     profile: &AudioProfile,
     options: AudioOptions,
     creation: u64,
+    source_preroll: usize,
 ) -> Result<Prepared, AudioError> {
     let mut specs = Vec::new();
     let mut endpoints = Vec::new();
@@ -635,6 +728,7 @@ fn prepare(
                     name: host_node.clone(),
                     format: format.clone(),
                     io: Io::Sink(tx),
+                    source_preroll: 0,
                 });
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
@@ -642,6 +736,7 @@ fn prepare(
                         name: name.clone(),
                         format: format.clone(),
                         io: Io::Source(rx),
+                        source_preroll,
                     });
                 } else {
                     playback = Some(rx);
@@ -653,6 +748,7 @@ fn prepare(
                     name: host_node.clone(),
                     format: format.clone(),
                     io: Io::Source(rx),
+                    source_preroll,
                 });
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
@@ -660,6 +756,7 @@ fn prepare(
                         name: name.clone(),
                         format: format.clone(),
                         io: Io::Sink(tx),
+                        source_preroll: 0,
                     });
                 } else {
                     microphone = Some(tx);
@@ -753,6 +850,14 @@ mod tests {
     use super::*;
     use gr_audio_contract::{AudioChannel as C, AudioStreamDescription};
     #[test]
+    fn usb_source_preroll_uses_requested_graph_block_and_rearms_after_gap() {
+        assert!(!source_ready(false, 383, 256, 128));
+        assert!(source_ready(false, 384, 256, 128));
+        assert!(source_ready(true, 1, 256, 128));
+        assert!(!source_ready(false, 1, 256, 128));
+        assert!(source_ready(false, 0, 256, 0));
+    }
+    #[test]
     fn one_direction_profile_prepares_only_its_owned_queue() {
         let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
         for direction in [
@@ -773,6 +878,7 @@ mod tests {
                 &profile,
                 AudioOptions::new(gr_audio_contract::AudioExposure::Emulated),
                 7,
+                0,
             )
             .unwrap();
             assert_eq!(prepared.endpoints.len(), 1);

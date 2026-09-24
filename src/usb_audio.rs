@@ -180,8 +180,14 @@ impl Pcm {
     ) -> Result<(Self, [Option<String>; 2]), AudioError> {
         let streams = Arc::new(Mutex::new(streams));
         #[cfg(feature = "audio-pipewire")]
-        let (bridge, nodes) =
-            crate::usb_audio_bridge::Bridge::start(streams.clone(), profile, access, creation)?;
+        let (bridge, nodes) = crate::usb_audio_bridge::Bridge::start(
+            streams.clone(),
+            control.clone(),
+            microphone_silence.clone(),
+            profile,
+            access,
+            creation,
+        )?;
         #[cfg(not(feature = "audio-pipewire"))]
         let nodes = {
             let _ = (profile, creation);
@@ -265,6 +271,27 @@ impl crate::audio::backend::Backend for Pcm {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
             return Some(bridge.source_underrun_frames());
+        }
+        None
+    }
+    fn native_microphone_dropped_frames(&self) -> Option<u64> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.graph_input_dropped_frames());
+        }
+        None
+    }
+    fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.graph_input_queue_frames());
+        }
+        None
+    }
+    fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.scheduling_us());
         }
         None
     }
