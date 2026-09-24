@@ -103,6 +103,36 @@ fn refill_target(host_frames: u64, fill_frames: u64) -> Result<u64, &'static str
         .ok_or("microphone frame position overflow")
 }
 
+fn refill_microphone(
+    audio: &mut ControllerAudio,
+    child: &mut Checker,
+    microphone: &mut [i16; 2 * 128],
+    channels: usize,
+    submitted: &mut u64,
+    target: u64,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let mut accepted_any = false;
+    while *submitted < target {
+        let frames = (target - *submitted).min(128) as usize;
+        for frame in 0..frames {
+            for channel in 0..channels {
+                microphone[frame * channels + channel] =
+                    i16::try_from(100 + (*submitted + frame as u64) % 97 + 100 * channel as u64)?;
+            }
+        }
+        let accepted = match audio.write_microphone(&microphone[..frames * channels]) {
+            Ok(accepted) => accepted,
+            Err(error) => return Err(terminal_audio_error(audio, child, error)),
+        };
+        if accepted == 0 {
+            break;
+        }
+        accepted_any = true;
+        *submitted += accepted as u64;
+    }
+    Ok(accepted_any)
+}
+
 fn exercise(
     audio: &mut ControllerAudio,
     family: &str,
@@ -132,8 +162,17 @@ fn exercise(
     let pattern = &[101, -202, 303, -404][..playback_channels];
     let mut playback = [0_i16; 4 * 128];
     let mut microphone = [0_i16; 2 * 128];
+    let mut previous_loop = Instant::now();
+    let mut previous_host_frames = None;
+    let mut maximum_loop_gap_us = 0_u128;
+    let mut maximum_host_advance = 0_u64;
+    let mut maximum_refill_deficit = 0_u64;
     let deadline = started + Duration::from_secs(trials * (seconds + 2) + 15);
     let child_status = loop {
+        let now = Instant::now();
+        maximum_loop_gap_us =
+            maximum_loop_gap_us.max(now.duration_since(previous_loop).as_micros());
+        previous_loop = now;
         if let Some(status) = child.0.try_wait()? {
             break status;
         }
@@ -152,24 +191,23 @@ fn exercise(
             Ok(None) => return Err("USB backend did not report microphone host frames".into()),
             Err(error) => return Err(terminal_audio_error(audio, &mut child, error)),
         };
-        let target = refill_target(host_frames, microphone_fill_ms * 48)?;
-        if submitted < target {
-            let frames = (target - submitted).min(128) as usize;
-            for frame in 0..frames {
-                for channel in 0..microphone_channels {
-                    microphone[frame * microphone_channels + channel] = i16::try_from(
-                        100 + (submitted + frame as u64) % 97 + 100 * channel as u64,
-                    )?;
-                }
-            }
-            let accepted = match audio.write_microphone(&microphone[..frames * microphone_channels])
-            {
-                Ok(accepted) => accepted,
-                Err(error) => return Err(terminal_audio_error(audio, &mut child, error)),
-            };
-            submitted += accepted as u64;
+        if let Some(previous) = previous_host_frames {
+            maximum_host_advance = maximum_host_advance.max(host_frames.saturating_sub(previous));
         }
-        std::thread::sleep(Duration::from_millis(1));
+        previous_host_frames = Some(host_frames);
+        maximum_refill_deficit = maximum_refill_deficit.max(host_frames.saturating_sub(submitted));
+        let target = refill_target(host_frames, microphone_fill_ms * 48)?;
+        let accepted_any = refill_microphone(
+            audio,
+            &mut child,
+            &mut microphone,
+            microphone_channels,
+            &mut submitted,
+            target,
+        )?;
+        if read.frames == 0 && !accepted_any {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     };
     // The IPC pump can lag process exit by one bounded block.
     let drain_deadline = Instant::now() + Duration::from_millis(100);
@@ -187,7 +225,7 @@ fn exercise(
     let dropped = audio.dropped_playback_frames();
     let silence = audio.underrun_frames();
     println!(
-        "root_pcm family={family} fill_ms={microphone_fill_ms} received={} valid={} submitted={submitted} discontinuities={} interior_bad={} idle_silence={} extra_pattern={} dropped={dropped} microphone_silence={silence}",
+        "root_pcm family={family} fill_ms={microphone_fill_ms} received={} valid={} submitted={submitted} discontinuities={} interior_bad={} idle_silence={} extra_pattern={} dropped={dropped} microphone_silence={silence} max_loop_gap_us={maximum_loop_gap_us} max_host_advance_frames={maximum_host_advance} max_refill_deficit_frames={maximum_refill_deficit}",
         pattern_audit.received,
         pattern_audit.valid,
         pattern_audit.discontinuities,

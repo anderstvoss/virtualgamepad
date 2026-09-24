@@ -747,6 +747,49 @@ The next worker increment replaces its 500 µs fixed PCM receive sleep with a
 safe, bounded readiness wait on the anonymous microphone socket. The wait
 still expires after 500 µs to service outbound playback and message deadlines;
 incoming PCM wakes it immediately. A fake-socket regression covers idle,
-incoming PCM and peer closure, and workspace checks pass. The installed worker
-still has the previous binary until an administrator applies the update, so
-no live USB continuity claim is attached to this change yet.
+incoming PCM and peer closure, and workspace checks pass. The administrator
+installed the rebuilt broker and worker; their installed SHA-256 hashes match
+the locally built binaries. One subsequent 10-second DualSense native-client
+trial at a private 512-frame PipeWire quantum still failed: the measured
+caller capture contained 848 interior zero frames, host capture contained
+352 silent frames, and the bridge observed a 28.491 ms scheduling gap. The
+controller remained open. This is a native continuity failure, not a terminal
+worker failure; the private graph was removed after the run.
+
+The root sample-access harness initially failed a 60-second DualSense trial
+at 12 ms microphone fill with 784 host-silence frames, four playback
+discontinuities and 592 playback queue drops. A second instrumented trial
+had 1,088 host-silence frames, a 19.134 ms maximum caller-loop gap and a
+1,008-frame maximum microphone refill deficit. The 1,024-frame playback
+queue could not absorb these caller pauses. Its capacity is now 4,096 frames
+while the microphone queue remains 1,024 frames; neither capacity is used as
+a steady-state fill. A deterministic 3,072-frame reader-pause regression
+passes without a position gap, and the existing over-capacity regression
+still reports bounded, observable loss.
+
+The example now refills all currently available microphone credit in one
+loop and sleeps only when neither direction made progress. With a test-only
+16 ms microphone target, one subsequent 60-second DualSense duplex trial
+passed 2,880,000 exact measured host-capture frames, zero host silence,
+zero playback discontinuities and zero playback queue drops. Its caller loop
+still had a 22.703 ms maximum scheduling gap, so this single trial is not a
+sustained or latency acceptance result. Short three-second post-warm-up
+duplex trials then passed for DualSense, DS4 and Xbox360 on the installed
+worker with exact patterns and zero measured loss. At 12 and 14 ms fill,
+additional 60-second DualSense trials still failed with 384 and 48 host
+silence frames respectively, despite zero playback drops; the microphone
+reserve was inadequate for the observed pauses.
+
+The reciprocal 10-second DualSense latency probe at 16 ms fill reported
+controller-to-host p50/p95/p99/max of 17.390/20.272/21.766/24.555 ms,
+with exact markers but **failed** the p99 target. A 14 ms run reported
+15.279/18.574/20.176/23.932 ms and 528 missing markers; another reported
+16.750/20.582/22.570/27.079 ms with 48 silent frames. These runs expose
+the present continuity/latency tradeoff on this VM. A forward probe using
+the older process-pipe `aplay` harness reported p99 136.348 ms with exact
+frames; as established above, that harness is diagnostic and its independent
+writer-clock drift prevents treating that number as the direct ALSA
+acceptance boundary. The earlier direct-ALSA directional passes remain
+historical evidence, but the newly installed worker has not passed the full
+simultaneous, native-client, sub-20 ms matrix. Physical DualSense tests were
+not run in this increment.
