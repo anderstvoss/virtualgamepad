@@ -77,6 +77,12 @@ The present process-pipe marker example is diagnostic, **not** a validated
 host-to-controller latency acceptance harness. Writer-clock drift, ALSA
 buffering and intermittent terminal failure need correction before claiming
 the target; no new application contract is justified by these measurements.
+An experimental writer paced by root-consumer progress removed the independent
+nominal clock but did not meet both constraints: an eight-block lead completed
+exact frames with p99 28.037 ms, a six-block lead with p99 22.663 ms, and a
+five-block lead repeatedly underflowed ALSA and timed out. The experiment was
+reverted. It confirms that feedback pacing through the `aplay` process pipe
+is not sufficient evidence for a below-20-ms host-to-controller path.
 
 This VM's PipeWire settings report a 1,024-frame minimum graph quantum at
 48 kHz (21.333 ms), even though the endpoints request about 2.67 ms. A short

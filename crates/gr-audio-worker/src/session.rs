@@ -637,6 +637,10 @@ mod tests {
         read_message(&mut client).unwrap();
         write_message(&mut client, 3, &8_u64.to_le_bytes()).unwrap();
         assert!(worker.join().unwrap().is_err());
+        let (tag, reason) = read_message(&mut client).unwrap();
+        assert_eq!(tag, 0x81);
+        assert_eq!(&reason[..8], &9_u64.to_le_bytes());
+        assert!(String::from_utf8_lossy(&reason[8..]).contains("generation mismatch"));
         assert_eq!(samples.read(&mut [0]).unwrap(), 0);
     }
 }
