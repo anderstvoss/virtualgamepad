@@ -109,6 +109,38 @@ reported off. Capture availability is established; headset microphone routing
 and meaningful signal response are **not** established. The checker retained
 only frame counts and per-channel RMS/peak aggregates, no PCM recording.
 
+### Audio-only speaker route and speech follow-up (2026-09-24)
+
+The reference controller was attached over USB with a 3.5 mm headset. A new
+four-channel, one-at-a-time ALSA test again produced the maintainer-confirmed
+order: left headphone, right headphone, left grip, right grip. This reconfirms
+channel routing, without measuring acoustic crosstalk or latency. No trigger
+controls were used.
+
+With the headset removed, ordinary right-channel ALSA playback completed, but
+the listener could not determine whether the onboard speaker played. A bounded
+follow-up used the audio-only USB HID fields from the upstream
+[DualSense jack-routing patch](https://www.spinics.net/lists/linux-input/msg101514.html):
+speaker-only output path (right source), speaker volume `0x64` and preamp `0x02`.
+It played a quiet one-second right-channel tone and restored the stereo-headphone
+route in a `finally` block. The maintainer **clearly heard the onboard speaker**.
+The probe's deterministic tests assert that all motor, trigger and LED fields
+remain zero. The old kernel provides no readback for the previous speaker volume
+or preamp values; those settings may persist while the restored headphone route
+is active. The headset was requested to be reconnected afterward. This confirms
+five independently addressed physical outputs in the tested USB configuration,
+not automatic jack switching by this kernel or matching-mode acceptance.
+
+Two further three-second microphone captures completed at 48 kHz stereo, one
+with the headset seated and unmuted and one after it was removed. The maintainer
+spoke during both. Each returned exactly 144,000 frames; headset RMS was
+0.50/0.51 with peaks 2/2, and built-in-microphone RMS was 0.50/0.51 with peaks
+1/2, all relative to 32767 full scale. The orange mute light was off during
+the built-in test. These near-zero levels do **not** demonstrate either
+microphone's signal path or gain/mute behavior. No audio recording was retained.
+Physical USB reconnect, quantitative physical/virtual comparison and microphone
+routing remain open; controller-matching support is still unavailable.
+
 ## PipeWire transport evidence
 
 Ignored live tests were explicitly run on a prepared host. Four backend tests

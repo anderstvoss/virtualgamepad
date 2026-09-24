@@ -15,8 +15,14 @@ missed graph frames. Optimization did not turn the graph-only failure into a
 pass. [Issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112)
 tracks repeatable native-Linux qualification and any fix indicated by that
 result. This host limitation does not waive the acceptance target or establish
-that the VM is the only cause. The physical DualSense remains disconnected;
-interactive physical evidence requires maintainer confirmation before testing.
+that the VM is the only cause. The physical DualSense was disconnected for those
+virtual-device trials; interactive physical evidence requires maintainer
+confirmation before testing.
+
+Physical follow-up on 2026-09-24 was explicitly authorized. Five output paths
+were human-confirmed, including the onboard speaker after an audio-only HID
+route. Headset and built-in microphone captures still had near-zero levels
+despite speech. See [EXP-0023](experiments/EXP-0023-controller-audio.md#audio-only-speaker-route-and-speech-follow-up-2026-09-24).
 
 The installed, connection-owned broker and dedicated unprivileged worker passed
 the ordinary-user mixed/duplicate-session isolation and worker-death recovery
@@ -41,8 +47,9 @@ evidence, but 16 ms fill plus transport/host scheduling has not been measured
 against the directional p99 below 20 ms target. Native-client sustained
 streaming, directional end-to-end latency and the complete mixed-session matrix
 remain open. Physical DualSense headset/grip channel order was confirmed
-again, while speaker routing and microphone response remain unproven on this
-host. No matching profile is enabled.
+again. At the time of those trials, speaker routing and microphone response
+remained unproven; the speaker follow-up above has since resolved only the
+output-route question. No matching profile is enabled.
 
 An ordinary-caller native-client USB probe now connects explicit `pw-cat`
 clients to the caller-session PipeWire endpoints while ALSA exercises the owned

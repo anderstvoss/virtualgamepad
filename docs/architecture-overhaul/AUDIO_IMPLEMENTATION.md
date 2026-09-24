@@ -18,6 +18,16 @@ captures had near-zero signal. The physical DualSense is now disconnected.
 The maintainer requires confirmation before any additional physical DualSense
 run. Matching remains unavailable.
 
+Physical update (2026-09-24): the maintainer again confirmed left/right
+headphones and left/right grips, and clearly heard the onboard speaker after a
+bounded audio-only HID route selected it. The probe restored the headphone
+route; the prior speaker volume/preamp values cannot be read back on this
+kernel. Headset and built-in microphone captures both remained near the noise
+floor despite speech, so microphone response and routing are unaccepted.
+The [physical evidence](experiments/EXP-0023-controller-audio.md#audio-only-speaker-route-and-speech-follow-up-2026-09-24)
+records the exact scope. Further interactive physical runs still require
+maintainer readiness; matching remains unavailable.
+
 Update (2026-09-24): the rebuilt installed worker passed short ordinary-caller
 USB duplex checks for all three families, and one 60-second DualSense
 sample-access trial passed exactly after the client playback queue gained
