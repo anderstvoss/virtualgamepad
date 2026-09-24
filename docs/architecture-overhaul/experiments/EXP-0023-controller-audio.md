@@ -141,6 +141,39 @@ microphone's signal path or gain/mute behavior. No audio recording was retained.
 Physical USB reconnect, quantitative physical/virtual comparison and microphone
 routing remain open; controller-matching support is still unavailable.
 
+### Physical versus emulated profile comparison (static)
+
+The compiled `DualSenseEmulated` USB profile and the observed physical device
+share the 054c:0ce6 USB identity and a 48 kHz, S16_LE, four-channel playback /
+two-channel capture stream shape. The emulated playback roles are left/right
+audible and left/right haptic; those roles match the human-observed physical
+output order. These facts establish a useful comparison target, **not** a
+matching USB topology:
+
+| Property | Physical reference | Compiled emulated USB profile |
+| --- | --- | --- |
+| Audio class | UAC1 | UAC2 |
+| Playback/capture channels | 4 / 2 | 4 / 2 |
+| PCM format | S16_LE, 48 kHz | S16_LE, 48 kHz |
+| Playback role order | Headset L/R, grip L/R observed | Audible L/R, haptic L/R declared |
+| Microphone signal path | Near-zero captures; unverified | Functional synthetic microphone return |
+| Internal speaker selection | Explicit audio-only HID route heard | Not physically compared with a host consumer |
+
+The virtual profile's different Audio Class descriptors, clock model and
+terminal topology cannot be described as physical matching. A controlled
+consumer comparison of endpoint association, per-channel routing, HID audio
+controls and teardown is still required. No capture waveform or device serial
+number is retained in this record.
+
+The next physical microphone check, after fresh maintainer readiness, will
+compare speech-level aggregates at the current and maximum ALSA capture gain,
+restoring the exact prior gain afterward. If both remain near the noise floor,
+the result will narrow the failure but will not justify assuming a broken
+microphone: headset compatibility, HID microphone volume/mute state and this
+host's USB/audio routing would still need separate evidence. A later USB
+reconnect and identical-consumer physical/virtual comparison also require
+fresh readiness before execution.
+
 ## PipeWire transport evidence
 
 Ignored live tests were explicitly run on a prepared host. Four backend tests
