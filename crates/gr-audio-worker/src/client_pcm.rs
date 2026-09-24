@@ -103,7 +103,13 @@ impl SampleStreams {
     }
     /// Returns complete frames accepted, never silently consumes an unaccepted suffix.
     pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
-        self.microphone.push(samples)
+        let accepted = self.microphone.push(samples)?;
+        if accepted != 0
+            && let Some(pump) = &self.pump
+        {
+            pump.thread().unpark();
+        }
+        Ok(accepted)
     }
     pub fn flush_playback(&mut self) -> Result<(), AudioError> {
         self.playback.flush()
@@ -128,6 +134,9 @@ impl SampleStreams {
     }
     pub fn close(&mut self) -> io::Result<()> {
         self.stop.store(true, Ordering::Release);
+        if let Some(pump) = &self.pump {
+            pump.thread().unpark();
+        }
         let result = self.pump.take().map_or(Ok(()), |handle| {
             handle
                 .join()
@@ -189,7 +198,7 @@ fn run_pump(
                 pending = None;
             }
         }
-        thread::sleep(Duration::from_micros(500));
+        thread::park_timeout(Duration::from_micros(500));
     }
     Ok(())
 }

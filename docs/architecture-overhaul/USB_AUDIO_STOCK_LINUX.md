@@ -716,3 +716,29 @@ scheduling; they do not yet distinguish clock drift from individual scheduling
 stalls. Native continuity, directional p99 latency, and the sustained matrix
 remain unaccepted. A larger queue is not a valid sub-20 ms fix because it
 would add steady-state delay.
+
+An eight-second PipeWire-only native microphone marker run reproduced missing
+frames without USB, the broker, or the worker. At quantum 256 it missed 6,400
+marked frames and reported more than 27,000 missed graph frames. At quantum
+512 it missed 1,024 marked frames and reported 512–1,024 missed graph frames.
+The latter run measured application-to-application p99 of 19.391 ms, but failed
+continuity and had a 21.874 ms maximum; its p99 alone is not acceptance.
+An isolated graph test confirmed that the USB bridge input accepts no frames
+before explicit activation and begins accepting after activation. This rules
+out pre-host queue accumulation in that path, but does not eliminate the
+observed scheduling failures. The prepared host's private graph needs
+continuity before the full virtual-USB latency matrix can establish the
+sub-20 ms requirement.
+
+A bounded native-bridge buffer-placement experiment primed one graph block and
+reduced the worker's operating lead to 8–12 ms, then tried a 16 ms combined
+lead with counted startup trimming. Its 10-second runs sometimes passed, but
+the 60-second DualSense trials still failed with 64–480 host microphone
+silence frames. One failure had no measured PipeWire missed period or graph
+input drop, so graph xruns are not the only cause. Another had a 20.256 ms
+bridge scheduling gap and two missed 512-frame graph periods. Both showed the
+virtual controller remaining open. The experimental priming and fill changes
+were reverted because they did not establish sustained continuity or a
+sub-20 ms directional latency. The separate client PCM pump now wakes when
+microphone frames arrive, retaining its bounded timeout for socket service;
+this also did not turn the long trial into an acceptance pass.

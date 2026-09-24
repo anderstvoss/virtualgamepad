@@ -135,6 +135,38 @@ fn pipewire_native_mode_has_explicit_caller_endpoints() {
     );
 }
 
+#[test]
+#[ignore = "requires isolated PipeWire and a playback client"]
+fn usb_bridge_input_stays_empty_until_explicit_activation() {
+    let mut session = Session::open_usb_bridge(
+        &profile(),
+        AudioOptions::new(AudioExposure::Emulated),
+        995,
+        128,
+    )
+    .unwrap();
+    let node = session.endpoints()[0].host_node.clone();
+    let channels = session.endpoints()[0].format.channels().len();
+    let mut client = playback_client(&node, channels);
+    let mut input = client.0.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || {
+        let block = vec![1_u8; 128 * channels * 2];
+        while input.write_all(&block).is_ok() {}
+    });
+    std::thread::sleep(Duration::from_millis(250));
+    assert_eq!(session.queued_playback_frames(), Some(0));
+    session.activate_inputs();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while session.queued_playback_frames() == Some(0) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(session.queued_playback_frames().unwrap() > 0);
+    drop(client);
+    writer.join().unwrap();
+    session.close();
+    assert!(session.error().is_none());
+}
+
 fn playback_client(target: &str, channels: usize) -> ChildGuard {
     ChildGuard(
         Command::new("pw-cat")
