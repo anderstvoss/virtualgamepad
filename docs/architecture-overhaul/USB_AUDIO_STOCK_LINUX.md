@@ -69,6 +69,18 @@ shared settings were restored to 1,024 immediately after the run. Lowering
 the graph quantum alone does not resolve the native path on this VM; a
 production change must not quietly alter global PipeWire policy.
 
+The reciprocal `usb_audio_latency_reverse` example stamps root microphone
+writes and reads the corresponding frames from the owned `arecord` stream.
+This boundary includes the application pipe; each 128-frame receive block
+has up to 2.667 ms timestamp uncertainty. Short three-second post-warm-up
+runs at 4 ms fill passed exact frame markers for all three families, with
+p99 7.094 ms for DualSense, 7.173 ms for DS4 and 7.146 ms for Xbox360.
+A 60-second DualSense run at 4 ms fill then **failed** with 48 silence frames,
+despite p99 9.002 ms. At an explicit 12 ms fill, a 60-second DualSense retry
+passed 2,880,000 exact measured frames, zero loss, zero microphone silence,
+p50/p95/p99 13.918/15.001/15.152 ms, and a 21.586 ms maximum outlier.
+This is one sustained directional pass, not the required three-trial matrix.
+
 ## Candidate: local USB/IP VHCI with an unprivileged device worker
 
 Use the stock `vhci_hcd` virtual host controller and a compiled userspace USB
