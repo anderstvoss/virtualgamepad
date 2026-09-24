@@ -3,7 +3,7 @@
 Baseline: GUI PR #110, `476056a`. Audio is newly authorized pre-alpha work; final
 API review, quality review and release still follow audio and later GUI feedback.
 
-Current status (2026-09-23): the installed USB broker/worker passed an
+Historical checkpoint (2026-09-23; later updates below supersede it): the installed USB broker/worker passed an
 ordinary-user mixed-session, quota, client-death and idle-client worker-death
 isolation probe. The USB sample-access harness passed three consecutive
 60-second full-duplex trials for DualSense and Xbox360 at an 8 ms microphone
@@ -133,7 +133,7 @@ Matching profiles fail explicitly until their evidence and acceptance are comple
 | UHID/PipeWire | Implemented behind `audio-pipewire`; short sample/native and three-family lifecycle checks passed; sustained acceptance pending |
 | Hardened broker / USB prerequisite | Installed fixed-profile broker passed scoped ordinary-client lifecycle checks; boot loading is provisioned; remaining security/restart acceptance pending |
 | USB composite/UAC2 | Local USB/IP worker, root USB realization, sample API and native-client bridge implemented; deterministic and scoped live checks pass; root full-duplex/live latency acceptance pending |
-| DualSense physical lab/matching | UAC1 4-out/2-in at 48 kHz S16_LE and headset/haptic channel mapping observed; speaker and microphone questions unresolved; matching unavailable |
+| DualSense physical lab/matching | UAC1 4-out/2-in at 48 kHz S16_LE and headset/haptic channel mapping observed; all five output routes confirmed; microphone fidelity unresolved; matching unavailable |
 | Separate GUI integration | Subsequent maintainer-directed branch/PR |
 
 Emulated audio is available for the three scoped families on `LINUX_UHID_USB`

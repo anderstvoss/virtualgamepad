@@ -62,7 +62,7 @@ impl CreationOptions {
                 || !cfg!(all(target_os = "linux", feature = "audio-pipewire")))
         {
             return Err(ControllerError::Unsupported {
-                reason: "audio requires the audio-pipewire feature, Linux UHID USB, and an implemented emulated profile; matching and USB composite audio are not yet enabled".into(),
+                reason: "audio requires the audio-pipewire feature, Linux UHID USB, and an implemented emulated profile; controller-matching audio is not yet enabled".into(),
             });
         }
         if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID && !cfg!(feature = "experimental")

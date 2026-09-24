@@ -99,7 +99,8 @@ pub struct AudioStreamTiming {
 }
 
 /// Audio is borrowed from a controller, never independently reopened or detached.
-/// Endpoints describe emulated host companions, not a physical USB composite.
+/// Endpoint association distinguishes `PipeWire` companions from USB composite
+/// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
 pub struct ControllerAudio {
     endpoints: Vec<AudioEndpoint>,
     limitation: &'static str,
