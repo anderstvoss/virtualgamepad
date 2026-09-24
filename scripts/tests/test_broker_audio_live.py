@@ -23,7 +23,7 @@ class BrokerLiveTests(unittest.TestCase):
             server,client = socket.socketpair()
             def serve():
                 try:
-                    for tag,body in ((3,struct.pack('<Q8Q',7,*range(8))),
+                    for tag,body in ((3,struct.pack('<Q9Q',7,*range(9))),
                                      (6,struct.pack('<QQ',generation_in_timing,1234))):
                         self.assertEqual(module.reply(server),(1,tag,struct.pack('<Q',7)))
                         module.message(server,1,tag,body)
@@ -38,6 +38,7 @@ class BrokerLiveTests(unittest.TestCase):
                 self.assertFalse(task.is_alive())
         result = exchange(7)
         self.assertEqual(result['maximum_audio_lateness_us'],7)
+        self.assertEqual(result['microphone_queue_dropped_frames'],8)
         self.assertEqual(result['maximum_pcm_pump_lateness_us'],1234)
         with self.assertRaisesRegex(ValueError,'PCM pump timing'):
             exchange(8)

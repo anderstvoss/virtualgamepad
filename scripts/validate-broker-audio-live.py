@@ -68,12 +68,13 @@ def reply(peer):
 def worker_diagnostics(control,generation):
     message(control,1,3,struct.pack('<Q',generation))
     version, operation, data = reply(control)
-    if (version,operation,len(data)) != (1,3,72) or data[:8] != struct.pack('<Q',generation):
+    if (version,operation,len(data)) != (1,3,80) or data[:8] != struct.pack('<Q',generation):
         raise ValueError('invalid worker diagnostics')
     keys = ('lost_outputs','completed_transfers','microphone_silence_frames',
             'stalled_transfers','playback_frames','capture_frames',
-            'abandoned_capture_frames','maximum_audio_lateness_us')
-    result = dict(zip(keys,struct.unpack('<8Q',data[8:])))
+            'abandoned_capture_frames','maximum_audio_lateness_us',
+            'microphone_queue_dropped_frames')
+    result = dict(zip(keys,struct.unpack('<9Q',data[8:])))
     message(control,1,6,struct.pack('<Q',generation))
     version, operation, data = reply(control)
     if (version,operation,len(data)) != (1,6,16) or data[:8] != struct.pack('<Q',generation):

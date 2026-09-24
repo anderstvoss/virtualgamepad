@@ -91,7 +91,8 @@ def trial(worker, family, tag, channels, microphones, slots):
         assert received == pcm
         message(control,3,generation)
         operation, counters = receive(control)
-        assert operation == 3 and len(counters) == 72
+        assert operation == 3 and len(counters) == 80
+        assert struct.unpack('<10Q',counters)[0] == 7
         message(control,4,generation)
         assert receive(control) == (4,generation)
         status = wait(pid,3)
