@@ -141,20 +141,24 @@ fn measured_capture(bytes: &[u8], pattern: &[i16], seconds: u64) -> Option<Captu
     ))
 }
 fn run_checker(family: &str, seconds: u64, port: u32) -> std::io::Result<std::process::ExitStatus> {
-    Command::new("python3")
-        .arg("scripts/validate-usb-audio-live.py")
-        .args([
-            "--reserve-owned-card",
-            "--profile",
-            family,
-            "--port",
-            &port.to_string(),
-            "--seconds",
-            &seconds.to_string(),
-            "--trials",
-            "1",
-        ])
-        .status()
+    let mut checker = Command::new("python3");
+    checker.arg("scripts/validate-usb-audio-live.py").args([
+        "--profile",
+        family,
+        "--port",
+        &port.to_string(),
+        "--seconds",
+        &seconds.to_string(),
+        "--trials",
+        "1",
+    ]);
+    // The private PipeWire lab starts policy only: it does not enumerate ALSA
+    // cards. The checker still verifies exact owned VHCI/ALSA ancestry, while
+    // avoiding a wait for a PipeWire device that cannot exist in that graph.
+    if std::env::var_os("VIRTUALGAMEPAD_AUDIO_LAB_QUANTUM").is_none() {
+        checker.arg("--reserve-owned-card");
+    }
+    checker.status()
 }
 
 #[cfg(test)]

@@ -643,4 +643,35 @@ mod tests {
         assert!(String::from_utf8_lossy(&reason[8..]).contains("generation mismatch"));
         assert_eq!(samples.read(&mut [0]).unwrap(), 0);
     }
+    #[test]
+    fn host_socket_death_reports_worker_cause_before_terminal_cleanup() {
+        let (usb, host) = pair();
+        let (control, mut client) = pair();
+        let (playback, mut samples) = pair();
+        let (microphone, _mic) = pair();
+        let worker = thread::spawn(move || {
+            run(
+                Setup {
+                    profile: ProfileId::DualSenseEmulated,
+                    generation: 17,
+                    device: 1,
+                    identity: [0; 6],
+                },
+                Channels {
+                    usb,
+                    control,
+                    playback,
+                    microphone,
+                },
+            )
+        });
+        assert_eq!(read_message(&mut client).unwrap().0, 0);
+        drop(host);
+        let (tag, reason) = read_message(&mut client).unwrap();
+        assert_eq!(tag, 0x81);
+        assert_eq!(&reason[..8], &17_u64.to_le_bytes());
+        assert!(!reason[8..].is_empty());
+        assert!(worker.join().unwrap().is_err());
+        assert_eq!(samples.read(&mut [0]).unwrap(), 0);
+    }
 }

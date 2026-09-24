@@ -164,6 +164,29 @@ administrator-owned worker must be refreshed before a live run can identify
 the observed 60-second exit cause; this is diagnostic work, not a continuity
 pass.
 
+The native probe can now run inside the existing private PipeWire lab without
+waiting for a physical-card monitor that the lab intentionally does not start.
+The checker still verifies that the ALSA device belongs to the owned VHCI
+session. At a private 128-frame graph, a three-second DualSense run had 7,040
+measured playback zero frames and 34 graph discontinuities. At a private
+512-frame graph, one short run passed an exact 144,000-frame measured window,
+but a 60-second run failed with 30,912 zero frames, 53 playback graph
+discontinuities, 1,600 queue drops and session closure. Neither private graph
+is accepted as a sustained native-client path. The desktop graph remained
+untouched by these trials.
+
+An isolated PipeWire-only comparison narrows the failure boundary. At the
+private 512-frame quantum, a graph-driven source feeding library samples
+delivered every measured marker with no graph discontinuity (p99 1.154 ms).
+An eight-second native-client playback and microphone trial also delivered
+every measured marker (p99 12.454 and 12.440 ms respectively). A later
+60-second native-client playback trial delivered every measured marker,
+with no graph discontinuity or queue drop (p99 12.174 ms, maximum 14.377 ms).
+Earlier isolated native trials lost markers, however, and the USB-backed
+native run still failed. These passes do not establish repeatability or
+identify the USB session's terminal cause; they separate an intermittently
+healthy graph bridge from the additional USB-backed load.
+
 The reciprocal `usb_audio_latency_reverse` example stamps root microphone
 writes and reads the corresponding frames from the owned `arecord` stream.
 This boundary includes the application pipe; each 128-frame receive block
