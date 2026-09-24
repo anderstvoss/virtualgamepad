@@ -91,8 +91,15 @@ required-features = ["audio-usbip"]
 name = "usb_audio_latency_reverse"
 required-features = ["audio-usbip"]
 
+[[example]]
+name = "usb_audio_latency_alsa"
+required-features = ["audio-usbip"]
+
 [target.'cfg(target_os = "linux")'.dependencies]
 gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }
 gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1", optional = true }
 gr-privileged-broker = { path = "crates/gr-privileged-broker", version = "0.1", optional = true }
 gr-usbip = { path = "crates/gr-usbip", version = "0.1", optional = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+alsa = "0.11"

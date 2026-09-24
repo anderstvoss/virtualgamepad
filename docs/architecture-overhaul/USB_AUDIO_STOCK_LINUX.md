@@ -84,6 +84,25 @@ five-block lead repeatedly underflowed ALSA and timed out. The experiment was
 reverted. It confirms that feedback pacing through the `aplay` process pipe
 is not sufficient evidence for a below-20-ms host-to-controller path.
 
+A separate root-only `usb_audio_latency_alsa` probe now writes directly to the
+owned ALSA PCM device with a 48-frame period and 240-frame buffer. It adds a
+development-only `alsa` crate; production code and the public API do not
+depend on it. The marker timestamp is taken before a blocking ALSA write, so
+the measured boundary conservatively includes ALSA write scheduling. Each
+128-frame marker spans 2.667 ms. Ten unscored tail blocks allow the last
+measured marker to drain before playback closes; a regression rejects loss at
+the measured edge. A 192-frame buffer achieved below-20-ms p99 but an ALSA
+broken-pipe underrun in the second 60-second run. At 240 frames, three
+consecutive 60-second trials per family completed with all 2,880,000 measured
+frames exact, zero duplicates, invalid frames, discontinuities and queue drops.
+The p99 values in trial order were DualSense 19.800/19.954/19.472 ms,
+DS4 19.590/19.503/19.286 ms, and Xbox360 19.176/19.544/19.310 ms.
+Maximum outliers ranged from 74.789 to 164.176 ms across those nine runs.
+This closes the **sample-access host-to-controller** directional latency and
+continuity matrix for the direct-ALSA measurement boundary on this prepared
+host. It does not close native-client playback, simultaneous bidirectional
+latency, or the broader mixed-session matrix.
+
 This VM's PipeWire settings report a 1,024-frame minimum graph quantum at
 48 kHz (21.333 ms), even though the endpoints request about 2.67 ms. A short
 native DualSense test with a temporary 128-frame minimum/default quantum
