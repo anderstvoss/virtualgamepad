@@ -100,13 +100,17 @@ def set_capture_gain(device, card, value):
         raise RuntimeError('Headset Capture Volume did not reach requested value')
 
 
-def play_cue(device, card):
+def play_cue(device, card, grip=False):
     if physical_card() != (device, card):
         raise RuntimeError('physical DualSense changed before speech cue')
-    # Quiet, half-second tone in the left headset channel; haptics stay zero.
+    # The grip cue works while the headset is disconnected; triggers stay idle.
+    channel = 2 if grip else 0
+    frequency = 110 if grip else 880
+    amplitude = 1600 if grip else 1000
     pcm = b''.join(struct.pack('<hhhh',
-                               round(1000*math.sin(2*math.pi*880*i/48000)),
-                               0, 0, 0) for i in range(24000))
+                               *(round(amplitude*math.sin(2*math.pi*frequency*i/48000))
+                                 if index == channel else 0 for index in range(4)))
+                   for i in range(24000))
     subprocess.run(['aplay', '-q', '-D', f'hw:{card},0', '-t', 'raw',
                     '-f', 'S16_LE', '-r', '48000', '-c', '4'],
                    input=pcm, timeout=4, check=True)
@@ -132,7 +136,7 @@ def compare_gain(seconds):
                 baseline=baseline, maximum=boosted, restored_gain=capture_gain(card)[0])
 
 
-def compare_signal(seconds):
+def compare_signal(seconds, grip_cue=False):
     device, card = physical_card()
     original, _, maximum = capture_gain(card)
     try:
@@ -141,7 +145,7 @@ def compare_signal(seconds):
                               gain=maximum)), flush=True)
         quiet = capture(seconds)
         print(json.dumps(dict(status='cue', seconds=0.5)), flush=True)
-        play_cue(device, card)
+        play_cue(device, card, grip=grip_cue)
         print(json.dumps(dict(status='speak', seconds=seconds,
                               gain=maximum)), flush=True)
         speech = capture(seconds)
@@ -159,17 +163,22 @@ def main():
                         help='capture at current and maximum gain, restoring the original value')
     parser.add_argument('--compare-signal',action='store_true',
                         help='compare quiet and speech at maximum gain, restoring original value')
+    parser.add_argument('--grip-cue',action='store_true',
+                        help='signal speech window with left-grip audio haptics')
     args = parser.parse_args()
     if not 1 <= args.seconds <= 3: parser.error('seconds must be 1..3')
     if sum([args.capture, args.compare_gain, args.compare_signal]) > 1:
         parser.error('choose one capture mode')
+    if args.grip_cue and not args.compare_signal:
+        parser.error('--grip-cue requires --compare-signal')
     _,card = physical_card()
     if not args.capture:
         if args.compare_gain:
             print(json.dumps(dict(status='complete', **compare_gain(args.seconds))))
             return
         if args.compare_signal:
-            print(json.dumps(dict(status='complete', **compare_signal(args.seconds))))
+            print(json.dumps(dict(status='complete',
+                                  **compare_signal(args.seconds, args.grip_cue))))
             return
         print(json.dumps(dict(status='ready',alsa_card=card,seconds=args.seconds)))
         return

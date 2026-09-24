@@ -29,6 +29,9 @@ headphone playback. At maximum ALSA capture gain, a cue-timed headset speech
 window was indistinguishable in RMS from a quiet window; gain was restored.
 This is an unresolved physical microphone signal-path finding, not a USB/IP
 or virtual microphone failure. Controller matching remains disabled.
+One subsequent built-in-microphone run showed a weak left-channel level change
+during speech after an audio-haptic cue; it did not demonstrate intelligibility
+or headset microphone routing.
 
 The installed, connection-owned broker and dedicated unprivileged worker passed
 the ordinary-user mixed/duplicate-session isolation and worker-death recovery

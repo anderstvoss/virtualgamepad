@@ -206,7 +206,24 @@ configuration. Gain was verified back at 31/101. This narrows the current
 headset-capture failure; it does not prove the headset microphone or controller
 hardware is defective. The signal path, jack compatibility, HID microphone
 controls and this VM's USB/audio presentation remain possible factors. Built-in
-microphone response at maximum gain was not tested.
+microphone response at maximum gain was checked separately below.
+
+With the headset unplugged, the same maximum-gain, three-second quiet/speech
+comparison used a half-second audio-haptic left-grip cue between windows. The
+maintainer felt the cue and confirmed speaking toward the built-in microphone
+only afterward. The helper restored capture gain to 31/101 and retained only
+aggregates:
+
+| Built-in-mic window at 101/101 | Left RMS / peak | Right RMS / peak |
+| --- | --- | --- |
+| Quiet | 7.48 / 40 | 16.61 / 82 |
+| Speech | 10.92 / 48 | 16.57 / 73 |
+
+The left channel changed measurably during speech; the right did not. This is
+a single weak signal-response observation, not an intelligibility, routing,
+gain-linearity or noise-floor acceptance result. The headset-mic response
+remains unobserved under the same test method. No adaptive-trigger command or
+microphone recording was used.
 
 ### Physical USB reconnect (2026-09-24)
 

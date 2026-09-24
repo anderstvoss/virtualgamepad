@@ -38,7 +38,7 @@ class CaptureGainTest(unittest.TestCase):
                 MODULE.compare_gain(3)
         self.assertEqual(writes, [101, 31])
 
-    def test_cue_touches_only_left_headphone_channel(self):
+    def test_cues_touch_only_selected_audio_channel(self):
         import struct
         device = Path('/physical/controller')
         calls = []
@@ -49,12 +49,14 @@ class CaptureGainTest(unittest.TestCase):
         with patch.object(MODULE, 'physical_card', return_value=(device, 1)), \
              patch.object(MODULE.subprocess, 'run', side_effect=run):
             MODULE.play_cue(device, 1)
-        self.assertEqual(len(calls), 1)
-        frames = list(struct.iter_unpack('<hhhh', calls[0][1]['input']))
-        self.assertEqual(len(frames), 24000)
-        self.assertTrue(any(left for left, _, _, _ in frames))
-        self.assertTrue(all(right == grip_l == grip_r == 0
-                            for _, right, grip_l, grip_r in frames))
+            MODULE.play_cue(device, 1, grip=True)
+        self.assertEqual(len(calls), 2)
+        for call, active in zip(calls, [0, 2]):
+            frames = list(struct.iter_unpack('<hhhh', call[1]['input']))
+            self.assertEqual(len(frames), 24000)
+            self.assertTrue(any(frame[active] for frame in frames))
+            self.assertTrue(all(all(sample == 0 for index, sample in enumerate(frame)
+                                if index != active) for frame in frames))
 
     def test_signal_comparison_restores_gain_after_capture_failure(self):
         device = Path('/physical/controller')

@@ -36,6 +36,11 @@ removed and restored its audio/HID interfaces, and a fresh left-headphone
 tone was heard afterward. Microphone response and controller matching remain
 unaccepted; see the same EXP-0023 record for exact aggregates and limits.
 
+A later maximum-gain built-in-microphone comparison, with the headset removed
+and a left-grip timing cue, showed a small left-channel speech-versus-quiet
+RMS increase in one run. The right channel remained flat. This does not close
+microphone fidelity or headset-routing acceptance.
+
 Update (2026-09-24): the rebuilt installed worker passed short ordinary-caller
 USB duplex checks for all three families, and one 60-second DualSense
 sample-access trial passed exactly after the client playback queue gained
