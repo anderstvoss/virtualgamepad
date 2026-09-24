@@ -99,6 +99,11 @@ cross-clock scheduling and callback ownership need a deterministic fix and
 then measured native-client acceptance. The restored 1,024-frame setting
 was verified after the trials.
 
+A test-only 512-frame startup staging attempt was then run against the
+temporary 512-frame graph. It still produced 480 interior caller zero
+frames while the host microphone pattern remained exact. The staging change
+was removed; increasing startup fill alone is not a verified remedy.
+
 The reciprocal `usb_audio_latency_reverse` example stamps root microphone
 writes and reads the corresponding frames from the owned `arecord` stream.
 This boundary includes the application pipe; each 128-frame receive block
