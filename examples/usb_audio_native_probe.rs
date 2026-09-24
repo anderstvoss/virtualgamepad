@@ -122,6 +122,24 @@ fn audit_capture(bytes: &[u8], pattern: &[i16]) -> CaptureAudit {
     });
     audit
 }
+// The native source can be connected before ALSA activates the USB playback
+// alternate setting. Score only the fixed post-warm-up interval; do not let a
+// long clean run elsewhere conceal a gap in the requested measurement window.
+fn measured_capture(bytes: &[u8], pattern: &[i16], seconds: u64) -> Option<CaptureAudit> {
+    let frame_bytes = pattern.len() * 2;
+    let first = bytes.chunks_exact(frame_bytes).position(|frame| {
+        frame
+            .chunks_exact(2)
+            .zip(pattern)
+            .all(|(sample, expected)| i16::from_le_bytes([sample[0], sample[1]]) == *expected)
+    })?;
+    let begin = first.checked_add(96_000)?;
+    let end = begin.checked_add(usize::try_from(seconds).ok()?.checked_mul(48_000)?)?;
+    Some(audit_capture(
+        bytes.get(begin.checked_mul(frame_bytes)?..end.checked_mul(frame_bytes)?)?,
+        pattern,
+    ))
+}
 fn run_checker(family: &str, seconds: u64, port: u32) -> std::io::Result<std::process::ExitStatus> {
     Command::new("python3")
         .arg("scripts/validate-usb-audio-live.py")
@@ -141,7 +159,7 @@ fn run_checker(family: &str, seconds: u64, port: u32) -> std::io::Result<std::pr
 
 #[cfg(test)]
 mod tests {
-    use super::{CaptureAudit, audit_capture};
+    use super::{CaptureAudit, audit_capture, measured_capture};
     #[test]
     fn native_capture_audit_keeps_interior_silence_separate_from_edges() {
         let mut bytes = Vec::new();
@@ -170,6 +188,19 @@ mod tests {
                 runs: 3,
             }
         );
+    }
+    #[test]
+    fn native_acceptance_requires_exact_post_warmup_window() {
+        let mut samples = vec![101_i16; 96_000 + 144_000];
+        samples[500] = 0; // Startup instability is excluded.
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let measured = measured_capture(&bytes, &[101], 3).unwrap();
+        assert_eq!(measured.exact, 144_000);
+        assert_eq!(measured.zero, 0);
+        samples[96_500] = 0;
+        let bytes: Vec<u8> = samples.iter().flat_map(|s| s.to_le_bytes()).collect();
+        assert_eq!(measured_capture(&bytes, &[101], 3).unwrap().zero, 1);
+        assert_eq!(measured_capture(&bytes[..bytes.len() - 2], &[101], 3), None);
     }
 }
 
@@ -253,17 +284,21 @@ fn exercise(
     let pattern = &[101_i16, -202, 303, -404][..playback_channels];
     let frame_bytes = playback_channels * 2;
     let capture_result = audit_capture(&bytes, pattern);
+    let measured = measured_capture(&bytes, pattern, seconds);
     println!(
-        "usb_native family={family} audit={capture_result:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} microphone_silence={} graph={:?}",
+        "usb_native family={family} audit={capture_result:?} measured={measured:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} microphone_silence={} closed={} last_error={:?} graph={:?}",
         bytes.len() / frame_bytes,
         audio.dropped_playback_frames(),
         audio.native_playback_underrun_frames(),
         audio.underrun_frames(),
+        audio.is_closed(),
+        audio.last_error(),
         audio.stream_timings()
     );
     if !status.success()
-        || capture_result.longest < seconds * 48_000
-        || capture_result.interior_zero != 0
+        || measured.as_ref().is_none_or(|result| {
+            result.exact != seconds * 48_000 || result.zero != 0 || result.other != 0
+        })
         || audio.dropped_playback_frames() != 0
     {
         return Err("native USB signal-flow probe failed".into());
@@ -294,6 +329,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 seconds,
                 port,
             );
+            eprintln!(
+                "usb_native_controller family=dualsense diagnostics={:?}",
+                controller.diagnostics()
+            );
             controller.close();
             result?;
         }
@@ -305,6 +344,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 seconds,
                 port,
             );
+            eprintln!(
+                "usb_native_controller family=dualshock4 diagnostics={:?}",
+                controller.diagnostics()
+            );
             controller.close();
             result?;
         }
@@ -315,6 +358,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &args[0],
                 seconds,
                 port,
+            );
+            eprintln!(
+                "usb_native_controller family=xbox360 diagnostics={:?}",
+                controller.diagnostics()
             );
             controller.close();
             result?;
