@@ -8,7 +8,7 @@ ordinary-user mixed-session, quota, client-death and idle-client worker-death
 isolation probe. The USB sample-access harness passed three consecutive
 60-second full-duplex trials for DualSense and Xbox360 at an 8 ms microphone
 fill, and DS4 at a 12 ms fill. Earlier failed continuity runs are preserved in
-the [USB evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
+the [USB evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-24).
 This establishes neither directional end-to-end p99 nor sustained native-client
 and root USB acceptance. The root USB API and native-client bridge now compile
 and pass deterministic tests; short isolated PipeWire transfers pass in both
@@ -17,6 +17,19 @@ the onboard speaker was silent with the headset removed, and two microphone
 captures had near-zero signal. The physical DualSense is now disconnected.
 The maintainer requires confirmation before any additional physical DualSense
 run. Matching remains unavailable.
+
+Update (2026-09-24): the rebuilt installed worker passed short ordinary-caller
+USB duplex checks for all three families, and one 60-second DualSense
+sample-access trial passed exactly after the client playback queue gained
+bounded spare capacity and the example refilled microphone credit promptly.
+The lower-fill trials and a 16 ms-fill p99 21.766 ms trial still failed.
+Native playback in a private PipeWire graph missed marked frames both in
+debug and optimized tests without USB/IP, the broker or worker; the
+native-microphone graph direction passed one short trial. The native-client
+and simultaneous directional latency gates therefore remain open, with
+native-host qualification tracked in
+[issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112).
+No physical DualSense run was performed in this update.
 
 After VHCI reload, ordinary-caller root USB creation passed for all three
 families in sample and native-client mode. Short root full-duplex sample trials
@@ -317,7 +330,7 @@ the client retains an idle broker connection. Its deterministic regression and
 updated installed isolation probe passed. The earlier consumption-based
 microphone refill attempts failed after two successful trials; later retests
 and their operating-fill conditions are recorded in the
-[current evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-23).
+[current evidence ledger](USB_AUDIO_STOCK_LINUX.md#current-acceptance-ledger-2026-09-24).
 The physical DualSense is disconnected. Further interactive physical tests
 require a new confirmation from the maintainer before they begin.
 

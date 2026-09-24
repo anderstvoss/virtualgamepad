@@ -5,7 +5,18 @@ install a custom kernel/module to satisfy the audio milestone. EXP-0024 supersed
 the original dummy_hcd/FunctionFS transport assumption, not the creation-time audio
 contract or broker security gates.
 
-## Current acceptance ledger (2026-09-23)
+## Current acceptance ledger (2026-09-24)
+
+Native-client continuity and the simultaneous below-20-ms directional target
+remain **unaccepted** on the prepared Parallels VM. An optimized isolated
+PipeWire native-playback test also missed 1,024 marker frames and measured
+p99 24.383 ms among delivered frames; its virtual endpoint counted 5,632
+missed graph frames. Optimization did not turn the graph-only failure into a
+pass. [Issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112)
+tracks repeatable native-Linux qualification and any fix indicated by that
+result. This host limitation does not waive the acceptance target or establish
+that the VM is the only cause. The physical DualSense remains disconnected;
+interactive physical evidence requires maintainer confirmation before testing.
 
 The installed, connection-owned broker and dedicated unprivileged worker passed
 the ordinary-user mixed/duplicate-session isolation and worker-death recovery
@@ -793,3 +804,27 @@ acceptance boundary. The earlier direct-ALSA directional passes remain
 historical evidence, but the newly installed worker has not passed the full
 simultaneous, native-client, sub-20 ms matrix. Physical DualSense tests were
 not run in this increment.
+
+### Isolated native graph check after the worker refresh
+
+Two eight-second native-playback marker runs in a private 512-frame PipeWire
+graph failed **without USB, the broker or the controller worker**. The first
+missed 2,560 marked frames, reported 512 application-queue drops and 1,536
+missed graph frames on the virtual playback endpoint. The second missed 512
+marked frames with zero application-queue drops and 2,048 missed graph frames
+on that endpoint. Both returned p99 below 20 ms for the frames they did
+deliver; that latency statistic does not excuse lost frames. A separate
+eight-second native-microphone graph run passed exact marker coverage with
+p99 17.336 ms, although its endpoint timing also counted one missed
+512-frame graph period. A third native-playback run passed exact coverage
+with p99 19.275 ms. The graph failure is intermittent and directional, not
+evidence that every native path fails or that USB is its sole cause.
+
+PipeWire's [graph scheduling documentation](https://docs.pipewire.org/page_scheduling.html)
+describes the driver waking follower nodes each cycle, while its
+[configuration reference](https://docs.pipewire.org/page_man_pipewire_conf_5.html)
+defines graph quantum as the processing buffer size. These runs establish a
+repeatability problem in this host's private graph before USB integration is
+judged. The production bridge must still be tested independently once that
+graph is stable. No desktop graph setting, controller profile or acceptance
+threshold was changed for this check.
