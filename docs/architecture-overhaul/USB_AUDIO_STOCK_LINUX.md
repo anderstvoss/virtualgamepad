@@ -24,6 +24,12 @@ were human-confirmed, including the onboard speaker after an audio-only HID
 route. Headset and built-in microphone captures still had near-zero levels
 despite speech. See [EXP-0023](experiments/EXP-0023-controller-audio.md#audio-only-speaker-route-and-speech-follow-up-2026-09-24).
 
+A later physical reconnect restored all audio/HID interfaces and audible
+headphone playback. At maximum ALSA capture gain, a cue-timed headset speech
+window was indistinguishable in RMS from a quiet window; gain was restored.
+This is an unresolved physical microphone signal-path finding, not a USB/IP
+or virtual microphone failure. Controller matching remains disabled.
+
 The installed, connection-owned broker and dedicated unprivileged worker passed
 the ordinary-user mixed/duplicate-session isolation and worker-death recovery
 probe. The production USB PCM path completed three exact 60-second full-duplex

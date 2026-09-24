@@ -165,14 +165,67 @@ consumer comparison of endpoint association, per-channel routing, HID audio
 controls and teardown is still required. No capture waveform or device serial
 number is retained in this record.
 
-The next physical microphone check, after fresh maintainer readiness, will
-compare speech-level aggregates at the current and maximum ALSA capture gain,
-restoring the exact prior gain afterward. If both remain near the noise floor,
-the result will narrow the failure but will not justify assuming a broken
-microphone: headset compatibility, HID microphone volume/mute state and this
-host's USB/audio routing would still need separate evidence. A later USB
-reconnect and identical-consumer physical/virtual comparison also require
-fresh readiness before execution.
+The gain check below was prepared to narrow the microphone failure without
+retaining audio. Even if it remains quiet, headset compatibility, HID
+microphone volume/mute state and this host's USB/audio routing require
+separate evidence before assuming a broken microphone. USB reconnect and an
+identical-consumer physical/virtual comparison require their own readiness
+confirmation.
+
+### Headset microphone gain check (2026-09-24)
+
+With the 3.5 mm headset reconnected, the maintainer confirmed speech during
+both three-second captures. The physical controller's `Headset Capture Switch`
+was on. The lab helper captured exactly 144,000 stereo frames at the existing
+ALSA capture gain 31/101, then at 101/101, and verified restoration to 31 in
+its `finally` path. It retained aggregate levels only:
+
+| ALSA capture gain | Left RMS / peak | Right RMS / peak |
+| --- | --- | --- |
+| 31/101 | 0.50 / 1 | 0.51 / 2 |
+| 101/101 | 7.16 / 36 | 17.22 / 83 |
+
+Values are relative to 32767 full-scale PCM. The gain change measurably
+amplified the captured signal, but the result does not establish intelligible
+speech, source selection or headset microphone fidelity. No recording was
+saved. A same-gain silence-versus-speech comparison followed.
+
+The first maximum-gain comparison was invalidated when the maintainer missed
+the transition between its quiet and speech windows. The repeat added a quiet
+half-second left-headphone cue between two three-second captures at gain
+101/101. The maintainer heard the cue and confirmed being quiet before it and
+speaking afterward. Each window returned 144,000 stereo frames:
+
+| Maximum-gain window | Left RMS / peak | Right RMS / peak |
+| --- | --- | --- |
+| Quiet | 13.20 / 64 | 17.37 / 81 |
+| Speech | 13.17 / 64 | 17.40 / 85 |
+
+The microphone signal showed no measurable speech-level change in this
+configuration. Gain was verified back at 31/101. This narrows the current
+headset-capture failure; it does not prove the headset microphone or controller
+hardware is defective. The signal path, jack compatibility, HID microphone
+controls and this VM's USB/audio presentation remain possible factors. Built-in
+microphone response at maximum gain was not tested.
+
+### Physical USB reconnect (2026-09-24)
+
+Before the maintainer unplugged the controller, the physical device was on
+USB path `1-6`, ALSA card 1, bcdDevice `0100`, with playback and capture streams
+and capture gain 31. After the maintainer reported unplugging it, physical
+DualSense discovery found no device or associated ALSA card. After the
+maintainer reconnected USB, the device returned on path `1-6`, card 1, with
+the same revision, playback/capture streams and gain 31. Its four interfaces
+again reported audio control, two audio streaming and HID classes. This
+establishes clean host disappearance and fresh endpoint enumeration for this
+one reconnect. After explicit readiness, a quiet half-second 440 Hz
+left-headphone tone transferred through the fresh ALSA device and the
+maintainer heard it. A three-second capture immediately afterward returned
+144,000 stereo frames; the maintainer spoke, but RMS remained 0.50/0.51 and
+peaks 2/2. This verifies the post-reconnect **playback** path and capture
+transfer while leaving meaningful microphone response unverified. It does not
+establish audio stream continuity *during* disconnection; closure and
+recreation are still required.
 
 ## PipeWire transport evidence
 

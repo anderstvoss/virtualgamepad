@@ -28,6 +28,14 @@ The [physical evidence](experiments/EXP-0023-controller-audio.md#audio-only-spea
 records the exact scope. Further interactive physical runs still require
 maintainer readiness; matching remains unavailable.
 
+Further authorized physical checks compared headset capture at ALSA gain 31
+and 101, then compared quiet and speech windows at gain 101 with an audible
+timing cue. Gain returned to 31 after each run; speech did not produce a
+measurable change from quiet at maximum gain. A physical USB unplug/replug
+removed and restored its audio/HID interfaces, and a fresh left-headphone
+tone was heard afterward. Microphone response and controller matching remain
+unaccepted; see the same EXP-0023 record for exact aggregates and limits.
+
 Update (2026-09-24): the rebuilt installed worker passed short ordinary-caller
 USB duplex checks for all three families, and one 60-second DualSense
 sample-access trial passed exactly after the client playback queue gained
