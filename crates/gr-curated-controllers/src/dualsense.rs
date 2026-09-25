@@ -3,6 +3,7 @@
 #[cfg(all(test, target_os = "linux"))]
 mod host_probe;
 mod protocol;
+mod worker_state;
 
 use crate::{BatteryLevel, BatteryState, CreationOptions, common};
 use gr_controller_contract::{
@@ -671,6 +672,10 @@ static USB_RESTRICTIONS: [TargetRestriction; 2] = [
         reason: "the USB composite protocol is research-backed until external PC acceptance testing",
     },
 ];
+static USBIP_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
+    feature: "controller-matching audio",
+    reason: "functional UAC2 emulation is not the reference DualSense UAC1 topology; physical comparison remains pending",
+}];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: ControllerSurface {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -682,11 +687,23 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     },
 };
+static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
+    common: ControllerSurface {
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+        validation_status: RealizationValidationStatus::ResearchBacked,
+        digital_controls: &DIGITAL,
+        axes: &AXES,
+        outputs: &OUTPUTS,
+        restrictions: &USBIP_RESTRICTIONS,
+        input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
+    },
+};
 
 const fn motion_targets() -> RealizationTargetSet {
     RealizationTargetSet::new(&[
         RealizationTarget::LINUX_UHID_USB,
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        RealizationTarget::LINUX_USBIP_USB_AUDIO,
     ])
 }
 
@@ -700,7 +717,7 @@ impl RealizationControllerDefinition for DualSenseDefinition {
         ControllerId::new("virtualgamepad.dualsense")
     }
     fn realization_manifest(&self) -> RealizationManifest {
-        static ENTRIES: [RealizationManifestEntry; 3] = [
+        static ENTRIES: [RealizationManifestEntry; 4] = [
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_UINPUT,
                 provider_requirements: ProviderRequirements {
@@ -717,6 +734,13 @@ impl RealizationControllerDefinition for DualSenseDefinition {
             },
             RealizationManifestEntry {
                 target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                provider_requirements: ProviderRequirements {
+                    requires_reverse_output: true,
+                },
+                audio_sidecar: None,
+            },
+            RealizationManifestEntry {
+                target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
                 provider_requirements: ProviderRequirements {
                     requires_reverse_output: true,
                 },
@@ -757,6 +781,7 @@ impl TargetAwareControllerDriver for DualSenseDefinition {
             RealizationTarget::LINUX_UINPUT
                 | RealizationTarget::LINUX_UHID_USB
                 | RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                | RealizationTarget::LINUX_USBIP_USB_AUDIO
         ) {
             Ok(())
         } else {
@@ -1032,6 +1057,15 @@ pub enum DualSenseOutputEvent {
 /// HID `PlayStation` driver while retaining the complete raw payload for
 /// adaptive-trigger and advanced-haptic effects that SDL does not model with a
 /// portable semantic API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum DualSenseAudioPath {
+    HeadphonesStereo,
+    HeadphonesDualMono,
+    HeadphonesLeftSpeakerRight,
+    SpeakerRightOnly,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum DualSenseHidOutput {
@@ -1048,6 +1082,18 @@ pub enum DualSenseHidOutput {
         left_trigger_effect: [u8; 11],
         /// Present only when the host set the mic-mute LED valid bit.
         mute_button_led: Option<bool>,
+        /// Native microphone mute request, present only when power-save control
+        /// is valid. Independent of the LED; observation does not alter PCM.
+        microphone_muted: Option<bool>,
+        /// USB HID audio route requested by the host. Observation does not
+        /// modify PCM or establish that the physical destination responded.
+        audio_path: Option<DualSenseAudioPath>,
+        /// Controller-native speaker volume, validity-gated and not applied to PCM.
+        speaker_volume: Option<u8>,
+        /// Controller-native microphone volume, validity-gated and not applied to PCM.
+        microphone_volume: Option<u8>,
+        /// Controller-native speaker preamp field, validity-gated and not applied to PCM.
+        speaker_preamp: Option<u8>,
         /// Present only when the host set the player-indicator valid bit.
         player_leds: Option<u8>,
         /// Present only when the host set the lightbar valid bit.
@@ -1076,6 +1122,17 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
             right_trigger_effect,
             left_trigger_effect,
             mute_button_led: (raw[1] & 0x01 != 0).then_some(raw[8] != 0),
+            // Linux hid-playstation: power-save validity bit 1, mic-mute bit 4.
+            microphone_muted: (raw[1] & 0x02 != 0).then_some(raw[9] & 0x10 != 0),
+            audio_path: (raw[0] & 0x80 != 0).then(|| match (raw[7] >> 4) & 0x03 {
+                0 => DualSenseAudioPath::HeadphonesStereo,
+                1 => DualSenseAudioPath::HeadphonesDualMono,
+                2 => DualSenseAudioPath::HeadphonesLeftSpeakerRight,
+                _ => DualSenseAudioPath::SpeakerRightOnly,
+            }),
+            speaker_volume: (raw[0] & 0x20 != 0).then_some(raw[5]),
+            microphone_volume: (raw[0] & 0x40 != 0).then_some(raw[6]),
+            speaker_preamp: (raw[1] & 0x80 != 0).then_some(raw[37] & 0x07),
             player_leds: (raw[1] & 0x10 != 0).then_some(raw[43]),
             lightbar_rgb: (raw[1] & 0x04 != 0).then_some([raw[44], raw[45], raw[46]]),
             raw,
@@ -1115,6 +1172,7 @@ impl DualSenseController {
         match self.0.selection().target {
             RealizationTarget::LINUX_UHID_USB => &HID_SURFACE,
             RealizationTarget::LINUX_DUMMY_HCD_USB_HID => &USB_SURFACE,
+            RealizationTarget::LINUX_USBIP_USB_AUDIO => &USBIP_SURFACE,
             _ => &SURFACE,
         }
     }
@@ -1484,6 +1542,21 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
     create_dualsense_inner(options, None)
 }
 
+/// Bind a pre-opened, unprivileged USB worker to the typed controller contract.
+#[must_use]
+pub fn create_dualsense_usb_worker(
+    bridge: Box<dyn common::WorkerBridge<DualSenseState>>,
+) -> DualSenseController {
+    let definition = DualSenseDefinition;
+    let selection = RealizationSelection {
+        controller: ControllerId::new("virtualgamepad.dualsense"),
+        target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
+    };
+    DualSenseController(common::ControllerSession::worker(
+        definition, selection, bridge,
+    ))
+}
+
 fn create_dualsense_inner(
     options: CreationOptions,
     identity: Option<DualSenseIdentity>,
@@ -1828,12 +1901,14 @@ mod tests {
     fn motion_support_includes_dummy_hcd_and_reports_the_exact_available_targets() {
         assert!(supports_motion(RealizationTarget::LINUX_UHID_USB));
         assert!(supports_motion(RealizationTarget::LINUX_DUMMY_HCD_USB_HID));
+        assert!(supports_motion(RealizationTarget::LINUX_USBIP_USB_AUDIO));
         assert!(!supports_motion(RealizationTarget::LINUX_UINPUT));
         assert_eq!(
             motion_targets(),
             RealizationTargetSet::new(&[
                 RealizationTarget::LINUX_UHID_USB,
-                RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                RealizationTarget::LINUX_USBIP_USB_AUDIO,
             ])
         );
     }
@@ -2014,10 +2089,90 @@ mod tests {
                 right_trigger_effect: [1; 11],
                 left_trigger_effect: [2; 11],
                 mute_button_led: Some(true),
+                microphone_muted: None,
+                audio_path: None,
+                speaker_volume: None,
+                microphone_volume: None,
+                speaker_preamp: None,
                 player_leds: Some(0x1f),
                 lightbar_rgb: Some([0x11, 0x22, 0x33]),
             }
         );
+    }
+
+    #[test]
+    fn microphone_mute_is_validity_gated_and_independent_of_indicator() {
+        for length in [47, 62] {
+            for valid in [false, true] {
+                for muted in [false, true] {
+                    let mut raw = vec![0_u8; length];
+                    raw[1] = 1 | if valid { 2 } else { 0 };
+                    raw[8] = u8::from(!muted); // Deliberately disagree with mute.
+                    raw[9] = 0x80 | if muted { 0x10 } else { 0 };
+                    let DualSenseHidOutput::UsbOutput {
+                        microphone_muted,
+                        mute_button_led,
+                        raw: retained,
+                        ..
+                    } = decode_dualsense_hid_output(Some(2), raw.clone())
+                    else {
+                        panic!()
+                    };
+                    assert_eq!(microphone_muted, valid.then_some(muted));
+                    assert_eq!(mute_button_led, Some(!muted));
+                    assert_eq!(retained, raw);
+                }
+            }
+        }
+        assert!(matches!(
+            decode_dualsense_hid_output(Some(2), vec![0; 46]),
+            DualSenseHidOutput::Unknown { .. }
+        ));
+    }
+
+    #[test]
+    fn native_audio_route_and_levels_are_validity_gated_without_touching_raw() {
+        let routes = [
+            DualSenseAudioPath::HeadphonesStereo,
+            DualSenseAudioPath::HeadphonesDualMono,
+            DualSenseAudioPath::HeadphonesLeftSpeakerRight,
+            DualSenseAudioPath::SpeakerRightOnly,
+        ];
+        for (index, expected) in routes.into_iter().enumerate() {
+            let mut raw = vec![0_u8; 47];
+            raw[5] = 0x64;
+            raw[6] = 0x40;
+            raw[7] = u8::try_from(index).unwrap() << 4;
+            raw[37] = 0xfa;
+            assert!(matches!(
+                decode_dualsense_hid_output(Some(2), raw.clone()),
+                DualSenseHidOutput::UsbOutput {
+                    audio_path: None,
+                    speaker_volume: None,
+                    microphone_volume: None,
+                    speaker_preamp: None,
+                    ..
+                }
+            ));
+            raw[0] = 0xe0;
+            raw[1] = 0x80;
+            let DualSenseHidOutput::UsbOutput {
+                audio_path,
+                speaker_volume,
+                microphone_volume,
+                speaker_preamp,
+                raw: retained,
+                ..
+            } = decode_dualsense_hid_output(Some(2), raw.clone())
+            else {
+                panic!()
+            };
+            assert_eq!(audio_path, Some(expected));
+            assert_eq!(speaker_volume, Some(0x64));
+            assert_eq!(microphone_volume, Some(0x40));
+            assert_eq!(speaker_preamp, Some(2));
+            assert_eq!(retained, raw);
+        }
     }
 
     #[test]

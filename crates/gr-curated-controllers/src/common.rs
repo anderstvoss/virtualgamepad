@@ -19,6 +19,7 @@ use gr_realization_api::{
     NativeProviderSession, ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent,
     RawReverseEvent, RealizationTarget,
 };
+pub use session::WorkerBridge;
 pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
 
 pub(crate) const CONVENTIONAL_RUMBLE: [gr_controller_contract::OutputSurface; 1] =

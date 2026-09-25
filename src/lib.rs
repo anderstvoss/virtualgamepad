@@ -51,6 +51,17 @@
 //! }
 //! ```
 mod application;
+mod audio;
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+mod usb_audio;
+#[cfg(all(
+    target_os = "linux",
+    feature = "audio-usbip",
+    feature = "audio-pipewire"
+))]
+mod usb_audio_bridge;
+pub use audio::{AudioEndpoint, AudioEndpointSelector, AudioStreamTiming, ControllerAudio};
+pub use gr_audio_contract::queue::PcmRead as AudioRead;
 mod controllers;
 mod output;
 pub use application::*;
@@ -69,15 +80,19 @@ pub use gr_controller_contract::{
     TriggerInput, TriggerInputKind, TriggerStack,
 };
 pub use gr_curated_controllers::{
-    BatteryLevel, BatteryState, DualSenseAxis, DualSenseControl, DualSenseFeature,
-    DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact, DualSenseTrigger,
-    DualShock4Axis, DualShock4Control, DualShock4HidOutput, DualShock4MotionSample,
-    DualShock4State, DualShock4Surface, DualShock4TouchContact, DualShock4TouchSlot,
-    DualShock4Trigger, MotionSample, SwitchProAxis, SwitchProControl, SwitchProMotionSample,
-    SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot, Xbox360Axis, Xbox360Control,
-    Xbox360State, Xbox360Surface, Xbox360Trigger,
+    BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
+    DualSenseFeature, DualSenseHidOutput, DualSenseState, DualSenseSurface, DualSenseTouchContact,
+    DualSenseTrigger, DualShock4Axis, DualShock4Control, DualShock4HidOutput,
+    DualShock4MotionSample, DualShock4State, DualShock4Surface, DualShock4TouchContact,
+    DualShock4TouchSlot, DualShock4Trigger, MotionSample, SwitchProAxis, SwitchProControl,
+    SwitchProMotionSample, SwitchProRumble, SwitchProState, SwitchProSurface, TouchSlot,
+    Xbox360Axis, Xbox360Control, Xbox360State, Xbox360Surface, Xbox360Trigger,
 };
 pub use gr_realization_api::{
     ControllerId, ForceFeedbackEffect, ForceFeedbackEvent, RealizationId, RealizationTargetSet,
     RumbleEffect,
+};
+
+pub use gr_audio_contract::{
+    AudioAccess, AudioChannel, AudioError, AudioExposure, AudioOptions, PcmFormat, SampleDirection,
 };

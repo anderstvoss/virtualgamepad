@@ -1,0 +1,23 @@
+[package]
+name = "gr-audio-linux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pipewire = { version = "0.10.1", optional = true, features = ["v0_3_50"] }
+
+[features]
+default = []
+pipewire = ["dep:pipewire"]
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+gr-curated-controllers = { path = "../gr-curated-controllers", version = "0.1" }

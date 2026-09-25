@@ -15,9 +15,32 @@ use crate::{
 pub struct DualSenseController {
     inner: gr_curated_controllers::DualSenseController,
     association: ControllerAssociation,
+    audio: Option<crate::ControllerAudio>,
     identity: Option<DualSenseIdentity>,
 }
 impl DualSenseController {
+    /// Borrow this creation's audio, including retained diagnostics after closure.
+    pub fn audio(&mut self) -> Option<&mut crate::ControllerAudio> {
+        self.reap_audio_failure();
+        self.audio.as_mut()
+    }
+    fn reap_audio_failure(&mut self) {
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            self.close();
+        } else if matches!(
+            self.inner.provider_diagnostics().state,
+            gr_realization_api::ProviderState::Closed | gr_realization_api::ProviderState::Failed
+        ) {
+            if let Some(audio) = &mut self.audio {
+                audio.close();
+            }
+        }
+    }
+
     /// Watch descriptor writability only when this is true.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -26,7 +49,12 @@ impl DualSenseController {
     /// Relative monotonic service deadline. Zero means service now; None does not remove read interest.
     #[must_use]
     pub fn next_service_in(&self) -> Option<std::time::Duration> {
-        self.inner.next_service_in()
+        crate::audio::combined_deadline(
+            self.inner.next_service_in(),
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::next_service_in),
+        )
     }
     /// Number of bounded optional output observations dropped.
     #[must_use]
@@ -53,6 +81,7 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_digital(update)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -64,6 +93,7 @@ impl DualSenseController {
         control: DualSenseControl,
         pressed: bool,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_native(control, pressed)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -75,6 +105,7 @@ impl DualSenseController {
         x: DualSenseAxis,
         y: DualSenseAxis,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_left_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -86,6 +117,7 @@ impl DualSenseController {
         x: DualSenseAxis,
         y: DualSenseAxis,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_right_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -97,6 +129,7 @@ impl DualSenseController {
         left: DualSenseTrigger,
         right: DualSenseTrigger,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_triggers(left, right)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -108,6 +141,7 @@ impl DualSenseController {
         slot: TouchSlot,
         contact: Option<DualSenseTouchContact>,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_touch(slot, contact)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -115,6 +149,7 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_motion(motion)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -122,6 +157,7 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_battery_exposed(exposed)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -129,6 +165,7 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_battery_level(level)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -143,6 +180,7 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.neutralize()
     }
     /// Accept/send edited semantic state. Failed delivery remains dirty and retryable; a commit is not a one-report promise.
@@ -150,10 +188,14 @@ impl DualSenseController {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn commit(&mut self) -> Result<(), CommitError> {
+        self.reap_audio_failure();
         self.inner.commit()
     }
     /// Close terminally and idempotently. Inspect diagnostics afterward for retained cleanup failures.
     pub fn close(&mut self) {
+        if let Some(audio) = &mut self.audio {
+            audio.close();
+        }
         self.inner.close();
     }
     /// Service on this borrowed readiness source and the advertised deadline.
@@ -168,15 +210,21 @@ impl DualSenseController {
     }
     /// Current activity, loss, terminal state and retained cleanup diagnostics.
     pub fn diagnostics(&mut self) -> ControllerDiagnostics {
+        self.reap_audio_failure();
         ControllerDiagnostics::from_provider(
             self.inner.provider_diagnostics(),
             self.inner.dropped_output_events(),
+        )
+        .with_audio_error(
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::last_error),
         )
     }
     /// Perform required protocol work before optional typed output callbacks.
     /// Call on readiness and deadlines, even with unchanged input. Recompute
     /// readiness/deadlines after service or commit. Keep callbacks short; the
-    /// library starts no thread. Optional observations are bounded and may drop.
+    /// HID servicing is caller-driven; enabled audio owns a worker. Optional observations are bounded and may drop.
     ///
     /// # Errors
     /// Returns a controller service error. Required cleanup is owned internally.
@@ -184,6 +232,16 @@ impl DualSenseController {
         &mut self,
         callback: &mut dyn FnMut(DualSenseOutputEvent),
     ) -> Result<(), ControllerError> {
+        self.reap_audio_failure();
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            return Err(ControllerError::Read {
+                reason: "required audio backend failed; controller closed".into(),
+            });
+        }
         let mut ownership_error = None;
         let result = self
             .inner
@@ -197,6 +255,7 @@ impl DualSenseController {
             self.close();
             return Err(error);
         }
+        self.reap_audio_failure();
         result
     }
     /// Persist these controller-owned bytes to restore identity on a new session.
@@ -237,7 +296,17 @@ pub fn create_dualsense_with_identity(
     options: CreationOptions,
     identity: DualSenseIdentity,
 ) -> Result<DualSenseController, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_dualsense_usb(options, identity);
+    }
+    let audio_options = options.audio();
     let options = options.internal()?;
+    let audio = crate::audio::open(
+        audio_options,
+        crate::audio::Family::DualSense,
+        options.session.0,
+    )?;
     let inner = gr_curated_controllers::create_dualsense_with_identity(options, identity.0)
         .map_err(controller_error)?;
     let association = ControllerAssociation::single(
@@ -245,10 +314,12 @@ pub fn create_dualsense_with_identity(
         options,
         inner.association(),
         inner.surface().common(),
-    );
+    )
+    .with_audio(audio.as_ref());
     Ok(DualSenseController {
         inner,
         association,
+        audio,
         identity: Some(identity),
     })
 }
@@ -256,20 +327,32 @@ pub fn create_dualsense_with_identity(
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController, ControllerError> {
-    if options.realization() == RealizationId::LINUX_UHID_USB {
+    if matches!(
+        options.realization(),
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
+    ) {
+        options.validate()?;
         return create_dualsense_with_identity(options, DualSenseIdentity::generate()?);
     }
+    let audio_options = options.audio();
     let options = options.internal()?;
+    let audio = crate::audio::open(
+        audio_options,
+        crate::audio::Family::DualSense,
+        options.session.0,
+    )?;
     let inner = gr_curated_controllers::create_dualsense(options).map_err(controller_error)?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
         inner.association(),
         inner.surface().common(),
-    );
+    )
+    .with_audio(audio.as_ref());
     Ok(DualSenseController {
         inner,
         association,
+        audio,
         identity: None,
     })
 }
@@ -277,9 +360,32 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
 pub struct DualShock4Controller {
     inner: gr_curated_controllers::DualShock4Controller,
     association: ControllerAssociation,
+    audio: Option<crate::ControllerAudio>,
     identity: Option<DualShock4Identity>,
 }
 impl DualShock4Controller {
+    /// Borrow this creation's audio, including retained diagnostics after closure.
+    pub fn audio(&mut self) -> Option<&mut crate::ControllerAudio> {
+        self.reap_audio_failure();
+        self.audio.as_mut()
+    }
+    fn reap_audio_failure(&mut self) {
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            self.close();
+        } else if matches!(
+            self.inner.provider_diagnostics().state,
+            gr_realization_api::ProviderState::Closed | gr_realization_api::ProviderState::Failed
+        ) {
+            if let Some(audio) = &mut self.audio {
+                audio.close();
+            }
+        }
+    }
+
     /// Watch descriptor writability only when this is true.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -288,7 +394,12 @@ impl DualShock4Controller {
     /// Relative monotonic service deadline. Zero means service now; None does not remove read interest.
     #[must_use]
     pub fn next_service_in(&self) -> Option<std::time::Duration> {
-        self.inner.next_service_in()
+        crate::audio::combined_deadline(
+            self.inner.next_service_in(),
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::next_service_in),
+        )
     }
     /// Number of bounded optional output observations dropped.
     #[must_use]
@@ -315,6 +426,7 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_digital(&mut self, u: DigitalControlUpdate) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_digital(u)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -322,6 +434,7 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_native(&mut self, c: DualShock4Control, p: bool) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_native(c, p)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -333,6 +446,7 @@ impl DualShock4Controller {
         x: DualShock4Axis,
         y: DualShock4Axis,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_left_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -344,6 +458,7 @@ impl DualShock4Controller {
         x: DualShock4Axis,
         y: DualShock4Axis,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_right_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -355,6 +470,7 @@ impl DualShock4Controller {
         l: DualShock4Trigger,
         r: DualShock4Trigger,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_triggers(l, r)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -362,6 +478,7 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_motion(&mut self, m: DualShock4MotionSample) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_motion(m)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -373,6 +490,7 @@ impl DualShock4Controller {
         slot: DualShock4TouchSlot,
         contact: Option<DualShock4TouchContact>,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_touch(slot, contact)
     }
     /// Release inputs as one edit; call commit to send. Identity, battery and host outputs survive.
@@ -380,6 +498,7 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.neutralize()
     }
     /// Accept/send edited semantic state. Failed delivery remains dirty and retryable; a commit is not a one-report promise.
@@ -387,10 +506,14 @@ impl DualShock4Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn commit(&mut self) -> Result<(), CommitError> {
+        self.reap_audio_failure();
         self.inner.commit()
     }
     /// Close terminally and idempotently. Inspect diagnostics afterward for retained cleanup failures.
     pub fn close(&mut self) {
+        if let Some(audio) = &mut self.audio {
+            audio.close();
+        }
         self.inner.close();
     }
     /// Service on this borrowed readiness source and the advertised deadline.
@@ -405,15 +528,21 @@ impl DualShock4Controller {
     }
     /// Current activity, loss, terminal state and retained cleanup diagnostics.
     pub fn diagnostics(&mut self) -> ControllerDiagnostics {
+        self.reap_audio_failure();
         ControllerDiagnostics::from_provider(
             self.inner.provider_diagnostics(),
             self.inner.dropped_output_events(),
+        )
+        .with_audio_error(
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::last_error),
         )
     }
     /// Perform required protocol work before optional typed output callbacks.
     /// Call on readiness and deadlines, even with unchanged input. Recompute
     /// readiness/deadlines after service or commit. Keep callbacks short; the
-    /// library starts no thread. Optional observations are bounded and may drop.
+    /// HID servicing is caller-driven; enabled audio owns a worker. Optional observations are bounded and may drop.
     ///
     /// # Errors
     /// Returns a controller service error. Required cleanup is owned internally.
@@ -421,6 +550,16 @@ impl DualShock4Controller {
         &mut self,
         callback: &mut dyn FnMut(DualShock4OutputEvent),
     ) -> Result<(), ControllerError> {
+        self.reap_audio_failure();
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            return Err(ControllerError::Read {
+                reason: "required audio backend failed; controller closed".into(),
+            });
+        }
         let mut ownership_error = None;
         let result = self
             .inner
@@ -434,6 +573,7 @@ impl DualShock4Controller {
             self.close();
             return Err(error);
         }
+        self.reap_audio_failure();
         result
     }
     /// Persist these controller-owned bytes to restore identity on a new session.
@@ -474,7 +614,17 @@ pub fn create_dualshock4_with_identity(
     options: CreationOptions,
     identity: DualShock4Identity,
 ) -> Result<DualShock4Controller, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_dualshock4_usb(options, identity);
+    }
+    let audio_options = options.audio();
     let options = options.internal()?;
+    let audio = crate::audio::open(
+        audio_options,
+        crate::audio::Family::DualShock4,
+        options.session.0,
+    )?;
     let inner = gr_curated_controllers::create_dualshock4_with_identity(options, identity.0)
         .map_err(controller_error)?;
     let association = ControllerAssociation::single(
@@ -482,10 +632,12 @@ pub fn create_dualshock4_with_identity(
         options,
         inner.association(),
         inner.surface().common(),
-    );
+    )
+    .with_audio(audio.as_ref());
     Ok(DualShock4Controller {
         inner,
         association,
+        audio,
         identity: Some(identity),
     })
 }
@@ -495,20 +647,32 @@ pub fn create_dualshock4_with_identity(
 pub fn create_dualshock4(
     options: CreationOptions,
 ) -> Result<DualShock4Controller, ControllerError> {
-    if options.realization() == RealizationId::LINUX_UHID_USB {
+    if matches!(
+        options.realization(),
+        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
+    ) {
+        options.validate()?;
         return create_dualshock4_with_identity(options, DualShock4Identity::generate()?);
     }
+    let audio_options = options.audio();
     let options = options.internal()?;
+    let audio = crate::audio::open(
+        audio_options,
+        crate::audio::Family::DualShock4,
+        options.session.0,
+    )?;
     let inner = gr_curated_controllers::create_dualshock4(options).map_err(controller_error)?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualshock4"),
         options,
         inner.association(),
         inner.surface().common(),
-    );
+    )
+    .with_audio(audio.as_ref());
     Ok(DualShock4Controller {
         inner,
         association,
+        audio,
         identity: None,
     })
 }
@@ -639,7 +803,7 @@ impl SwitchProController {
     /// Perform required protocol work before optional typed output callbacks.
     /// Call on readiness and deadlines, even with unchanged input. Recompute
     /// readiness/deadlines after service or commit. Keep callbacks short; the
-    /// library starts no thread. Optional observations are bounded and may drop.
+    /// HID servicing is caller-driven; enabled audio owns a worker. Optional observations are bounded and may drop.
     ///
     /// # Errors
     /// Returns a controller service error. Required cleanup is owned internally.
@@ -667,6 +831,11 @@ impl SwitchProController {
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_switch_pro(options: CreationOptions) -> Result<SwitchProController, ControllerError> {
+    if options.audio().exposure() != crate::AudioExposure::Disabled {
+        return Err(ControllerError::Unsupported {
+            reason: "Switch Pro has no declared audio profile".into(),
+        });
+    }
     let options = options.internal()?;
     let inner = gr_curated_controllers::create_switch_pro(options).map_err(controller_error)?;
     let association = ControllerAssociation::single(
@@ -681,8 +850,31 @@ pub fn create_switch_pro(options: CreationOptions) -> Result<SwitchProController
 pub struct Xbox360Controller {
     inner: gr_curated_controllers::Xbox360Controller,
     association: ControllerAssociation,
+    audio: Option<crate::ControllerAudio>,
 }
 impl Xbox360Controller {
+    /// Borrow this creation's audio, including retained diagnostics after closure.
+    pub fn audio(&mut self) -> Option<&mut crate::ControllerAudio> {
+        self.reap_audio_failure();
+        self.audio.as_mut()
+    }
+    fn reap_audio_failure(&mut self) {
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            self.close();
+        } else if matches!(
+            self.inner.provider_diagnostics().state,
+            gr_realization_api::ProviderState::Closed | gr_realization_api::ProviderState::Failed
+        ) {
+            if let Some(audio) = &mut self.audio {
+                audio.close();
+            }
+        }
+    }
+
     /// Watch descriptor writability only when this is true.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -691,7 +883,12 @@ impl Xbox360Controller {
     /// Relative monotonic service deadline. Zero means service now; None does not remove read interest.
     #[must_use]
     pub fn next_service_in(&self) -> Option<std::time::Duration> {
-        self.inner.next_service_in()
+        crate::audio::combined_deadline(
+            self.inner.next_service_in(),
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::next_service_in),
+        )
     }
     /// Number of bounded optional output observations dropped.
     #[must_use]
@@ -718,6 +915,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_digital(&mut self, update: DigitalControlUpdate) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_digital(update)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -725,6 +923,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_battery_exposed(exposed)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -732,6 +931,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_battery_level(level)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -743,6 +943,7 @@ impl Xbox360Controller {
         control: Xbox360Control,
         pressed: bool,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_native(control, pressed)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -750,6 +951,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_left_stick(&mut self, x: Xbox360Axis, y: Xbox360Axis) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_left_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -757,6 +959,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn set_right_stick(&mut self, x: Xbox360Axis, y: Xbox360Axis) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_right_stick(x, y)
     }
     /// Apply a controller-native operation; rejected edits preserve accepted state.
@@ -768,6 +971,7 @@ impl Xbox360Controller {
         left: Xbox360Trigger,
         right: Xbox360Trigger,
     ) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.set_triggers(left, right)
     }
     /// Release inputs as one edit; call commit to send. Identity, battery and host outputs survive.
@@ -775,6 +979,7 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn neutralize(&mut self) -> Result<(), ControlError> {
+        self.reap_audio_failure();
         self.inner.neutralize()
     }
     /// Accept/send edited semantic state. Failed delivery remains dirty and retryable; a commit is not a one-report promise.
@@ -782,10 +987,14 @@ impl Xbox360Controller {
     /// # Errors
     /// Returns validation, closed-session, or delivery errors without silently changing realization.
     pub fn commit(&mut self) -> Result<(), CommitError> {
+        self.reap_audio_failure();
         self.inner.commit()
     }
     /// Close terminally and idempotently. Inspect diagnostics afterward for retained cleanup failures.
     pub fn close(&mut self) {
+        if let Some(audio) = &mut self.audio {
+            audio.close();
+        }
         self.inner.close();
     }
     /// Service on this borrowed readiness source and the advertised deadline.
@@ -800,15 +1009,21 @@ impl Xbox360Controller {
     }
     /// Current activity, loss, terminal state and retained cleanup diagnostics.
     pub fn diagnostics(&mut self) -> ControllerDiagnostics {
+        self.reap_audio_failure();
         ControllerDiagnostics::from_provider(
             self.inner.provider_diagnostics(),
             self.inner.dropped_output_events(),
+        )
+        .with_audio_error(
+            self.audio
+                .as_ref()
+                .and_then(crate::ControllerAudio::last_error),
         )
     }
     /// Perform required protocol work before optional typed output callbacks.
     /// Call on readiness and deadlines, even with unchanged input. Recompute
     /// readiness/deadlines after service or commit. Keep callbacks short; the
-    /// library starts no thread. Optional observations are bounded and may drop.
+    /// HID servicing is caller-driven; enabled audio owns a worker. Optional observations are bounded and may drop.
     ///
     /// # Errors
     /// Returns a controller service error. Required cleanup is owned internally.
@@ -816,6 +1031,16 @@ impl Xbox360Controller {
         &mut self,
         callback: &mut dyn FnMut(Xbox360OutputEvent),
     ) -> Result<(), ControllerError> {
+        self.reap_audio_failure();
+        if self
+            .audio
+            .as_ref()
+            .is_some_and(crate::ControllerAudio::failed)
+        {
+            return Err(ControllerError::Read {
+                reason: "required audio backend failed; controller closed".into(),
+            });
+        }
         let mut ownership_error = None;
         let result = self
             .inner
@@ -829,6 +1054,7 @@ impl Xbox360Controller {
             self.close();
             return Err(error);
         }
+        self.reap_audio_failure();
         result
     }
 }
@@ -836,15 +1062,150 @@ impl Xbox360Controller {
 /// # Errors
 /// Returns unsupported-selection, host-prerequisite, or creation errors.
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
+    #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+    if options.realization() == RealizationId::LINUX_USBIP_USB_AUDIO {
+        return create_xbox360_usb(options);
+    }
+    let audio_options = options.audio();
     let options = options.internal()?;
+    let audio = crate::audio::open(
+        audio_options,
+        crate::audio::Family::Xbox360,
+        options.session.0,
+    )?;
     let inner = gr_curated_controllers::create_xbox360(options).map_err(controller_error)?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.xbox360"),
         options,
         inner.association(),
         inner.surface().common(),
-    );
-    Ok(Xbox360Controller { inner, association })
+    )
+    .with_audio(audio.as_ref());
+    Ok(Xbox360Controller {
+        inner,
+        association,
+        audio,
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_dualsense_usb(
+    options: CreationOptions,
+    identity: DualSenseIdentity,
+) -> Result<DualSenseController, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::DualSense,
+        ProfileId::DualSenseEmulated,
+        1,
+        identity.to_bytes(),
+        audio_options,
+        options.session.0,
+        crate::usb_audio::dualsense,
+    )?;
+    let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualsense"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(DualSenseController {
+        inner,
+        association,
+        audio: Some(audio),
+        identity: Some(identity),
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_dualshock4_usb(
+    options: CreationOptions,
+    identity: DualShock4Identity,
+) -> Result<DualShock4Controller, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::DualShock4,
+        ProfileId::DualShock4Emulated,
+        2,
+        identity.to_bytes(),
+        audio_options,
+        options.session.0,
+        crate::usb_audio::dualshock4,
+    )?;
+    let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.dualshock4"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(DualShock4Controller {
+        inner,
+        association,
+        audio: Some(audio),
+        identity: Some(identity),
+    })
+}
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
+    use gr_privileged_broker::audio_launch::Profile;
+    use gr_usbip::profile::ProfileId;
+    let audio_options = options.audio();
+    let options = options.internal()?;
+    let identity = DualSenseIdentity::generate()?.to_bytes();
+    let (bridge, mut audio) = crate::usb_audio::open(
+        Profile::Xbox360,
+        ProfileId::Xbox360HidEmulated,
+        3,
+        identity,
+        audio_options,
+        options.session.0,
+        crate::usb_audio::xbox360,
+    )?;
+    let mut inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
+    if let Err(error) = inner.commit() {
+        audio.close();
+        inner.close();
+        return Err(ControllerError::Open {
+            reason: error.to_string(),
+        });
+    }
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.xbox360"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    )
+    .with_audio(Some(&audio));
+    Ok(Xbox360Controller {
+        inner,
+        association,
+        audio: Some(audio),
+    })
 }
 
 #[cfg(test)]
