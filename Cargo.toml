@@ -16,6 +16,9 @@ members = [
     "crates/gr-dualsense-wire",
     "crates/gr-controller-wire",
     "crates/gr-audio-contract",
+    "crates/gr-audio-linux",
+    "crates/gr-usbip",
+    "crates/gr-audio-worker",
     "crates/gr-controller-contract",
     "crates/gr-controller-runtime",
     "crates/gr-curated-controllers",
@@ -62,6 +65,41 @@ workspace = true
 default = []
 # Research/SPI only: excluded from the application API stability promise.
 experimental = []
+audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
+audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
 
 [dev-dependencies]
 gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }
+
+[[example]]
+name = "usb_audio_root"
+required-features = ["audio-usbip"]
+
+[[example]]
+name = "usb_audio_acceptance"
+required-features = ["audio-usbip"]
+
+[[example]]
+name = "usb_audio_native_probe"
+required-features = ["audio-usbip", "audio-pipewire"]
+
+[[example]]
+name = "usb_audio_latency"
+required-features = ["audio-usbip"]
+
+[[example]]
+name = "usb_audio_latency_reverse"
+required-features = ["audio-usbip"]
+
+[[example]]
+name = "usb_audio_latency_alsa"
+required-features = ["audio-usbip"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }
+gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1", optional = true }
+gr-privileged-broker = { path = "crates/gr-privileged-broker", version = "0.1", optional = true }
+gr-usbip = { path = "crates/gr-usbip", version = "0.1", optional = true }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+alsa = "0.11"

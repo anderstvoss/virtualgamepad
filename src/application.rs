@@ -12,27 +12,69 @@ use std::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CreationOptions {
     target: RealizationId,
+    audio: crate::AudioOptions,
 }
 impl CreationOptions {
     #[must_use]
     pub const fn new(target: RealizationId) -> Self {
-        Self { target }
+        Self {
+            target,
+            audio: crate::AudioOptions::new(crate::AudioExposure::Disabled),
+        }
     }
     #[must_use]
     pub const fn realization(self) -> RealizationId {
         self.target
     }
+    /// Select immutable audio exposure and stream ownership. Requires recreation to change.
+    #[must_use]
+    pub const fn with_audio(mut self, audio: crate::AudioOptions) -> Self {
+        self.audio = audio;
+        self
+    }
+    #[must_use]
+    pub const fn audio(self) -> crate::AudioOptions {
+        self.audio
+    }
     pub(crate) fn internal(
         self,
     ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
-        if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID && !cfg!(feature = "experimental")
-        {
-            return Err(ControllerError::Unsupported { reason: "dummy_hcd requires experimental protocol ownership (Gate G); use the experimental research API".into() });
-        }
+        self.validate()?;
         Ok(gr_curated_controllers::CreationOptions {
             target: self.target,
             session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
         })
+    }
+    /// Validate topology before identity entropy or provider I/O.
+    pub(crate) fn validate(self) -> Result<(), ControllerError> {
+        if self.target == RealizationId::LINUX_USBIP_USB_AUDIO {
+            if self.audio.exposure() != crate::AudioExposure::Emulated
+                || !cfg!(all(target_os = "linux", feature = "audio-usbip"))
+            {
+                return Err(ControllerError::Unsupported { reason: "USB/IP audio requires the audio-usbip feature and an emulated audio profile".into() });
+            }
+            if (self.audio.playback_access() == crate::AudioAccess::NativeClient
+                || self.audio.microphone_access() == crate::AudioAccess::NativeClient)
+                && !cfg!(feature = "audio-pipewire")
+            {
+                return Err(ControllerError::Unsupported { reason: "USB native-client audio requires the audio-pipewire feature for caller-session endpoints".into() });
+            }
+            return Ok(());
+        }
+        if self.audio.exposure() != crate::AudioExposure::Disabled
+            && (self.audio.exposure() != crate::AudioExposure::Emulated
+                || self.target != RealizationId::LINUX_UHID_USB
+                || !cfg!(all(target_os = "linux", feature = "audio-pipewire")))
+        {
+            return Err(ControllerError::Unsupported {
+                reason: "audio requires the audio-pipewire feature, Linux UHID USB, and an implemented emulated profile; controller-matching audio is not yet enabled".into(),
+            });
+        }
+        if self.target == RealizationId::LINUX_DUMMY_HCD_USB_HID && !cfg!(feature = "experimental")
+        {
+            return Err(ControllerError::Unsupported { reason: "dummy_hcd requires experimental protocol ownership (Gate G); use the experimental research API".into() });
+        }
+        Ok(())
     }
 }
 static NEXT_CREATION: AtomicU64 = AtomicU64::new(1);
@@ -188,6 +230,17 @@ impl ControllerDiagnostics {
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
     }
+    pub(crate) fn with_audio_error(mut self, error: Option<&crate::AudioError>) -> Self {
+        if let Some(error) = error {
+            self.status = ControllerStatus::Failed;
+            let audio = format!("required audio backend: {error}");
+            self.last_error = Some(match self.last_error {
+                Some(hid) => format!("{hid}; {audio}"),
+                None => audio,
+            });
+        }
+        self
+    }
     pub(crate) fn from_provider(
         value: gr_realization_api::ProviderDiagnostics,
         dropped: u64,
@@ -215,7 +268,8 @@ impl ControllerDiagnostics {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentAssociation {
     role: &'static str,
-    surface: &'static crate::ControllerSurface,
+    surface: Option<&'static crate::ControllerSurface>,
+    audio_endpoint: Option<crate::AudioEndpoint>,
     requested_physical_path: Option<String>,
     requested_unique_id: Option<String>,
     observed_host_path: Option<String>,
@@ -227,8 +281,13 @@ impl ComponentAssociation {
     }
     /// Selected exposure and restrictions for this host component.
     #[must_use]
-    pub const fn surface(&self) -> &'static crate::ControllerSurface {
+    pub const fn surface(&self) -> Option<&'static crate::ControllerSurface> {
         self.surface
+    }
+    /// Audio group metadata; input components return None.
+    #[must_use]
+    pub fn audio_endpoint(&self) -> Option<&crate::AudioEndpoint> {
+        self.audio_endpoint.as_ref()
     }
     #[must_use]
     pub fn requested_physical_path(&self) -> Option<&str> {
@@ -269,6 +328,24 @@ impl ControllerAssociation {
     pub fn components(&self) -> &[ComponentAssociation] {
         &self.components
     }
+    pub(crate) fn with_audio(mut self, audio: Option<&crate::ControllerAudio>) -> Self {
+        if let Some(audio) = audio {
+            for endpoint in audio.endpoints() {
+                self.components.push(ComponentAssociation {
+                    role: match endpoint.direction() {
+                        crate::SampleDirection::HostToController => "audio-playback",
+                        _ => "audio-microphone",
+                    },
+                    surface: None,
+                    audio_endpoint: Some(endpoint.clone()),
+                    requested_physical_path: None,
+                    requested_unique_id: Some(endpoint.host().identity().into()),
+                    observed_host_path: None,
+                });
+            }
+        }
+        self
+    }
     pub(crate) fn single(
         controller: crate::ControllerId,
         options: gr_curated_controllers::CreationOptions,
@@ -281,7 +358,8 @@ impl ControllerAssociation {
             creation: options.session.0,
             components: vec![ComponentAssociation {
                 role: "primary",
-                surface,
+                surface: Some(surface),
+                audio_endpoint: None,
                 requested_physical_path: old.requested_physical_path.clone(),
                 requested_unique_id: old.requested_unique_id.clone(),
                 observed_host_path: old.observed_host_path.clone(),
@@ -293,6 +371,27 @@ impl ControllerAssociation {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn audio_terminal_diagnostics_preserve_hid_cleanup_failure() {
+        let diagnostics = ControllerDiagnostics {
+            status: ControllerStatus::Closed,
+            frames_sent: 5,
+            reverse_events_drained: 2,
+            write_failures: 1,
+            lifecycle_events: 3,
+            dropped_output_events: 4,
+            last_error: Some("HID cleanup failed".into()),
+        };
+        assert_eq!(diagnostics.clone().with_audio_error(None), diagnostics);
+        let combined = diagnostics.with_audio_error(Some(&crate::AudioError::Backend {
+            reason: "server disconnected".into(),
+        }));
+        assert_eq!(combined.status(), ControllerStatus::Failed);
+        assert_eq!(combined.frames_sent(), 5);
+        let message = combined.last_error().unwrap();
+        assert!(message.contains("HID cleanup failed"));
+        assert!(message.contains("server disconnected"));
+    }
     #[test]
     fn creation_tokens_never_wrap_and_options_can_be_reused() {
         let counter = AtomicU64::new(u64::MAX - 1);
@@ -316,6 +415,82 @@ mod tests {
     }
 
     #[test]
+    fn audio_policy_is_immutable_and_rejects_before_controller_io() {
+        use crate::{AudioAccess, AudioExposure, AudioOptions};
+        let plain = CreationOptions::new(RealizationId::LINUX_UHID_USB);
+        assert_eq!(plain.audio().exposure(), AudioExposure::Disabled);
+        for (exposure, target) in [
+            (
+                AudioExposure::ControllerMatching,
+                RealizationId::LINUX_UHID_USB,
+            ),
+            (AudioExposure::Emulated, RealizationId::LINUX_UINPUT),
+        ] {
+            let options = CreationOptions::new(target).with_audio(
+                AudioOptions::new(exposure)
+                    .with_playback_access(AudioAccess::NativeClient)
+                    .with_microphone_access(AudioAccess::Samples),
+            );
+            assert_eq!(options.audio().playback_access(), AudioAccess::NativeClient);
+            assert_eq!(options.audio().microphone_access(), AudioAccess::Samples);
+            assert_eq!(plain.audio().exposure(), AudioExposure::Disabled);
+            assert!(matches!(
+                options.internal(),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_dualsense(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_dualshock4(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_xbox360(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+            assert!(matches!(
+                crate::create_switch_pro(options),
+                Err(ControllerError::Unsupported { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn usb_audio_preflight_requires_exact_exposure_and_native_bridge_feature() {
+        use crate::{AudioAccess, AudioExposure, AudioOptions};
+        let usb = RealizationId::LINUX_USBIP_USB_AUDIO;
+        for exposure in [AudioExposure::Disabled, AudioExposure::ControllerMatching] {
+            assert!(matches!(
+                CreationOptions::new(usb)
+                    .with_audio(AudioOptions::new(exposure))
+                    .internal(),
+                Err(ControllerError::Unsupported { .. })
+            ));
+        }
+        let samples =
+            CreationOptions::new(usb).with_audio(AudioOptions::new(AudioExposure::Emulated));
+        assert_eq!(
+            samples.internal().is_ok(),
+            cfg!(all(target_os = "linux", feature = "audio-usbip"))
+        );
+        let native = samples.with_audio(
+            samples
+                .audio()
+                .with_playback_access(AudioAccess::NativeClient),
+        );
+        assert_eq!(
+            native.internal().is_ok(),
+            cfg!(all(
+                target_os = "linux",
+                feature = "audio-usbip",
+                feature = "audio-pipewire"
+            ))
+        );
+    }
+
+    #[test]
     fn component_metadata_preserves_arbitrary_roles_and_exposure() {
         static SURFACE: crate::ControllerSurface = crate::ControllerSurface {
             target: RealizationId::LINUX_UINPUT,
@@ -335,7 +510,8 @@ mod tests {
                 .into_iter()
                 .map(|role| ComponentAssociation {
                     role,
-                    surface: &SURFACE,
+                    surface: Some(&SURFACE),
+                    audio_endpoint: None,
                     requested_physical_path: Some(format!("synthetic/{role}")),
                     requested_unique_id: Some("synthetic-logical-identity".into()),
                     observed_host_path: None,
@@ -345,7 +521,10 @@ mod tests {
         assert_eq!(association.components().len(), roles.len());
         for (index, component) in association.components().iter().enumerate() {
             assert_eq!(component.role(), roles[index]);
-            assert_eq!(component.surface().target, association.realization());
+            assert_eq!(
+                component.surface().unwrap().target,
+                association.realization()
+            );
             assert!(component.observed_host_path().is_none());
         }
     }

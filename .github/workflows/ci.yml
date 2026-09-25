@@ -34,6 +34,8 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
             api.github.com:443
             github.com:443
             codeload.github.com:443
@@ -51,6 +53,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo bash scripts/install-ci-audio-deps.sh
 
       - name: Install Rust
         # The SHA-pinned dtolnay/rust-toolchain at this revision
@@ -89,6 +95,8 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
             api.github.com:443
             github.com:443
             codeload.github.com:443
@@ -127,6 +135,10 @@ jobs:
           echo "msrv=$MSRV" >> "$GITHUB_OUTPUT"
           echo "MSRV: $MSRV"
 
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo bash scripts/install-ci-audio-deps.sh
+
       - name: Install Rust at MSRV
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
@@ -157,6 +169,8 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
             api.github.com:443
             github.com:443
             codeload.github.com:443
@@ -174,6 +188,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo bash scripts/install-ci-audio-deps.sh
 
       - name: Install Rust
         # See rust-lint job's Install Rust step for rationale.
@@ -357,6 +375,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Require explicit corpus access
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           CORPUS_KEY: ${{ secrets.PROTOCOL_CORPUS_SSH_KEY }}
         run: |
@@ -368,10 +387,19 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Verify Dependabot leaves the private corpus pin unchanged
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --exit-code "$BASE_SHA" "$HEAD_SHA" -- protocol-corpus
       - name: Read adopted corpus revision
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: corpus-revision
         run: echo "revision=$(git rev-parse HEAD:protocol-corpus)" >> "$GITHUB_OUTPUT"
       - name: Checkout pinned corpus with repository-only read access
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: anderstvoss/controller-protocol-corpus
@@ -382,6 +410,7 @@ jobs:
           # Needed for the publication check's fetch; checkout removes it post-job.
           persist-credentials: true
       - name: Validate evidence and adopted revision
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           python3 -m venv .corpus-venv
           .corpus-venv/bin/pip install -r protocol-corpus/requirements-dev.txt

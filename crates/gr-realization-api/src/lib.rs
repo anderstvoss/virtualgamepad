@@ -41,6 +41,8 @@ impl RealizationId {
     pub const LINUX_UHID_BLUETOOTH: Self = Self("linux.uhid.bluetooth");
     pub const LINUX_UHID_USB: Self = Self("linux.uhid.usb");
     pub const LINUX_DUMMY_HCD_USB_HID: Self = Self("linux.dummy_hcd.usb-hid");
+    /// Stock-Linux USB/IP/VHCI composite HID and functional USB Audio.
+    pub const LINUX_USBIP_USB_AUDIO: Self = Self("linux.usbip.usb-audio");
     /// Declare a compiled realization ID.
     ///
     /// # Panics

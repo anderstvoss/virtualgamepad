@@ -18,6 +18,9 @@ pub struct HostConfig {
     pub allowed_uids: Vec<u32>,
     pub instance: String,
     pub allowed_udcs: BTreeSet<String>,
+    pub allowed_vhci_ports: BTreeSet<u16>,
+    pub worker_uid: Option<u32>,
+    pub worker_gid: Option<u32>,
 }
 impl HostConfig {
     pub fn load(path: &Path) -> io::Result<Self> {
@@ -35,6 +38,9 @@ impl HostConfig {
             allowed_uids: Vec::new(),
             instance: String::new(),
             allowed_udcs: BTreeSet::new(),
+            allowed_vhci_ports: BTreeSet::new(),
+            worker_uid: None,
+            worker_gid: None,
         };
         for line in contents
             .lines()
@@ -49,6 +55,24 @@ impl HostConfig {
                 if !valid_udc(udc) || !result.allowed_udcs.insert(udc.into()) {
                     return Err(invalid("invalid or duplicate allow_udc"));
                 }
+            } else if let Some(port) = line.strip_prefix("allow_vhci_port=") {
+                if port.is_empty() || !port.bytes().all(|c| c.is_ascii_digit()) {
+                    return Err(invalid("invalid allow_vhci_port"));
+                }
+                let port = port
+                    .parse()
+                    .map_err(|_| invalid("invalid allow_vhci_port"))?;
+                if !result.allowed_vhci_ports.insert(port) {
+                    return Err(invalid("duplicate allow_vhci_port"));
+                }
+            } else if let Some(uid) = line.strip_prefix("worker_uid=") {
+                if result.worker_uid.replace(parse_worker_id(uid)?).is_some() {
+                    return Err(invalid("duplicate worker_uid"));
+                }
+            } else if let Some(gid) = line.strip_prefix("worker_gid=") {
+                if result.worker_gid.replace(parse_worker_id(gid)?).is_some() {
+                    return Err(invalid("duplicate worker_gid"));
+                }
             } else if let Some(instance) = line.strip_prefix("instance=") {
                 if !result.instance.is_empty() || !valid_instance(instance) {
                     return Err(invalid("invalid or duplicate instance"));
@@ -60,13 +84,36 @@ impl HostConfig {
         }
         if result.allowed_uids.is_empty()
             || result.instance.is_empty()
-            || result.allowed_udcs.is_empty()
+            || (result.allowed_udcs.is_empty() && result.allowed_vhci_ports.is_empty())
         {
             return Err(invalid(
-                "broker requires allow_uid, instance, and allow_udc administrator settings",
+                "broker requires allow_uid, instance, and an administrator transport allowlist",
+            ));
+        }
+        let vhci = !result.allowed_vhci_ports.is_empty();
+        if vhci != result.worker_uid.is_some() || vhci != result.worker_gid.is_some() {
+            return Err(invalid(
+                "VHCI requires both worker_uid and worker_gid; worker settings require a VHCI allowlist",
+            ));
+        }
+        if result
+            .worker_uid
+            .is_some_and(|uid| result.allowed_uids.contains(&uid))
+        {
+            return Err(invalid(
+                "worker identity must be distinct from every authorized client",
             ));
         }
         Ok(result)
+    }
+}
+fn parse_worker_id(value: &str) -> io::Result<u32> {
+    if value.is_empty() || !value.bytes().all(|c| c.is_ascii_digit()) {
+        return Err(invalid("worker identity must be a nonzero numeric UID/GID"));
+    }
+    match value.parse() {
+        Ok(id) if id != 0 && id != u32::MAX => Ok(id),
+        _ => Err(invalid("worker identity must be a nonzero numeric UID/GID")),
     }
 }
 fn valid_instance(s: &str) -> bool {
@@ -268,6 +315,36 @@ mod tests {
             assert!(HostConfig::parse(s).is_err());
         }
         assert_eq!(config().allowed_uids, [42]);
+    }
+    #[test]
+    fn vhci_requires_allowlisted_ports_and_separate_unprivileged_identity() {
+        let base = "allow_uid=42\ninstance=test\nallow_vhci_port=0\nworker_uid=43\nworker_gid=44";
+        let c = HostConfig::parse(base).unwrap();
+        assert!(c.allowed_udcs.is_empty());
+        assert_eq!(c.allowed_vhci_ports, BTreeSet::from([0]));
+        assert_eq!(c.worker_uid, Some(43));
+        assert_eq!(c.worker_gid, Some(44));
+        for invalid_config in [
+            base.replace("worker_uid=43", "worker_uid=42"),
+            base.replace("worker_uid=43", "worker_uid=0"),
+            base.replace("worker_gid=44", "worker_gid=0"),
+            base.replace("worker_uid=43", "worker_uid=4294967295"),
+            base.replace("worker_uid=43", "worker_uid=+43"),
+            base.replace("worker_gid=44", ""),
+            base.replace("allow_vhci_port=0", "allow_vhci_port=../0"),
+            base.replace("allow_vhci_port=0", "allow_vhci_port=65536"),
+            base.replace("allow_vhci_port=0", "allow_udc=dummy_udc.0"),
+            format!("{base}\nallow_vhci_port=0"),
+            format!("{base}\nworker_uid=45"),
+            format!("{base}\nworker_gid=45"),
+            format!("{base}\nallow_uid=43"),
+        ] {
+            assert!(
+                HostConfig::parse(&invalid_config).is_err(),
+                "{invalid_config}"
+            );
+        }
+        assert!(HostConfig::parse(&format!("{base}\nallow_udc=dummy_udc.0")).is_ok());
     }
     #[test]
     fn recovery_requires_record_identity_and_authorized_binding() {

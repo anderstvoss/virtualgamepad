@@ -28,10 +28,16 @@
 //! Optional observations may be dropped; consult `dropped_output_events`.
 //! The legacy compiled gadget path retains its separately documented Gate G limits.
 
+pub mod audio;
 mod common;
+pub use common::WorkerBridge;
+pub use dualsense::create_dualsense_usb_worker;
+pub use dualshock4::create_dualshock4_usb_worker;
+pub use xbox360::create_xbox360_usb_worker;
 pub mod dualsense;
 pub mod dualshock4;
 pub mod switch_pro;
+pub mod usb_personality;
 pub mod xbox360;
 
 use gr_controller_contract::ControlError;
@@ -139,8 +145,8 @@ impl BatteryState {
 }
 
 pub use dualsense::{
-    DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature, DualSenseHidOutput,
-    DualSenseIdentity, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
+    DualSenseAudioPath, DualSenseAxis, DualSenseControl, DualSenseController, DualSenseFeature,
+    DualSenseHidOutput, DualSenseIdentity, DualSenseOutputEvent, DualSenseState, DualSenseSurface,
     DualSenseTouchContact, DualSenseTrigger, MotionSample, TouchSlot, create_dualsense,
     create_dualsense_with_identity,
 };

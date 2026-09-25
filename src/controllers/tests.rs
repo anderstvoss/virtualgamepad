@@ -226,8 +226,8 @@ macro_rules! consumer_case {
         }
     };
 }
-consumer_case!(dualsense_consumer_lifecycle, dualsense, DualSenseController, DualSenseControl, Cross, DualSenseOutputEvent, "virtualgamepad.dualsense", identity: None);
-consumer_case!(ds4_consumer_lifecycle, dualshock4, DualShock4Controller, DualShock4Control, Cross, DualShock4OutputEvent, "virtualgamepad.dualshock4", identity: None);
+consumer_case!(dualsense_consumer_lifecycle, dualsense, DualSenseController, DualSenseControl, Cross, DualSenseOutputEvent, "virtualgamepad.dualsense", identity: None, audio: None);
+consumer_case!(ds4_consumer_lifecycle, dualshock4, DualShock4Controller, DualShock4Control, Cross, DualShock4OutputEvent, "virtualgamepad.dualshock4", identity: None, audio: None);
 consumer_case!(
     switch_consumer_lifecycle,
     switch_pro,
@@ -244,5 +244,5 @@ consumer_case!(
     Xbox360Control,
     A,
     Xbox360OutputEvent,
-    "virtualgamepad.xbox360"
+    "virtualgamepad.xbox360", audio: None
 );

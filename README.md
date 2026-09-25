@@ -4,6 +4,7 @@
 
 - `linux.uinput`: controller-owned Linux evdev controls through uinput.
 - `linux.uhid.usb`: local HID presentation with controller-owned stateful USB protocols.
+- `linux.usbip.usb-audio`: opt-in, initial emulated HID/UAC2 audio via the administrator-installed local broker.
 - `linux.dummy_hcd.usb-hid`: experimental research SPI only; excluded from normal application constructors (Gate G).
 
 The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro.
@@ -15,6 +16,15 @@ descriptors, modules, command lines, identities, or report formats. Bluetooth
 realizations remain gated research and are not currently available.
 
 See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the privilege boundary, and [architecture](docs/CORE_ARCHITECTURE.md) for the target model.
+
+## Initial controller audio
+
+DS4, DualSense and standard-HID Xbox360 have creation-time emulated audio via
+UHID/PipeWire (`audio-pipewire`) or local USB/IP/VHCI (`audio-usbip`). Both features
+are off by default. See the [audio guide](docs/CONTROLLER_AUDIO.md) for setup,
+exclusive sample/native access, examples and limitations. Controller-matching
+profiles remain unavailable; sustained native-client continuity and the complete
+sub-20 ms latency matrix are not accepted yet.
 
 ## Servicing controllers
 
