@@ -45,6 +45,8 @@ impl Fixture {
     fn new() -> Self {
         let (host, socket) = UnixStream::pair().unwrap();
         host.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+        host.set_write_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
         let playback_format = PcmFormat::new(
             48_000,
             &[
@@ -84,11 +86,16 @@ impl Fixture {
         }
     }
     fn enqueue(&mut self, bytes: &[u8], now: u64) {
-        self.host.write_all(bytes).unwrap();
-        assert!(self.worker.receive_one(now, &mut self.reply).unwrap());
-        while self.worker.received != 0 {
-            assert!(self.worker.receive_one(now, &mut self.reply).unwrap());
+        // Exercise fragmented delivery without assuming the host socket can
+        // buffer an entire isochronous transfer (macOS defaults are smaller).
+        for chunk in bytes.chunks(256) {
+            self.host.write_all(chunk).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while self.worker.receive_one(now, &mut self.reply).unwrap() {
+                assert!(Instant::now() < deadline, "fixture failed to drain socket");
+            }
         }
+        assert_eq!(self.worker.received, 0, "fixture sent an incomplete frame");
     }
     fn complete(&mut self, now: u64) -> Vec<u8> {
         let index = self.worker.next_ready(now).unwrap();
