@@ -639,7 +639,20 @@ mod tests {
             client.request(3, &[]),
             Err(BrokerClientError::Unavailable(_))
         ));
-        assert!(write_message(&mut server, 0x80, &[1]).is_err());
+        // Drain the original request, then require EOF: a second request must
+        // never reach the transport. Peer writes after shutdown may still be
+        // buffered successfully on macOS, so their immediate error is not the
+        // portable closure contract.
+        server
+            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
+            .unwrap();
+        assert_eq!(read_message(&mut server).unwrap(), (3, Vec::new()));
+        let _ = write_message(&mut server, 0x80, &[1]);
+        assert!(matches!(
+            client.request(3, &[]),
+            Err(BrokerClientError::Unavailable(_))
+        ));
+        assert_eq!(std::io::Read::read(&mut server, &mut [0]).unwrap(), 0);
     }
 
     #[test]

@@ -39,6 +39,14 @@ impl CreationOptions {
     pub(crate) fn internal(
         self,
     ) -> Result<gr_curated_controllers::CreationOptions, ControllerError> {
+        self.validate()?;
+        Ok(gr_curated_controllers::CreationOptions {
+            target: self.target,
+            session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
+        })
+    }
+    /// Validate topology before identity entropy or provider I/O.
+    pub(crate) fn validate(self) -> Result<(), ControllerError> {
         if self.target == RealizationId::LINUX_USBIP_USB_AUDIO {
             if self.audio.exposure() != crate::AudioExposure::Emulated
                 || !cfg!(all(target_os = "linux", feature = "audio-usbip"))
@@ -51,10 +59,7 @@ impl CreationOptions {
             {
                 return Err(ControllerError::Unsupported { reason: "USB native-client audio requires the audio-pipewire feature for caller-session endpoints".into() });
             }
-            return Ok(gr_curated_controllers::CreationOptions {
-                target: self.target,
-                session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
-            });
+            return Ok(());
         }
         if self.audio.exposure() != crate::AudioExposure::Disabled
             && (self.audio.exposure() != crate::AudioExposure::Emulated
@@ -69,10 +74,7 @@ impl CreationOptions {
         {
             return Err(ControllerError::Unsupported { reason: "dummy_hcd requires experimental protocol ownership (Gate G); use the experimental research API".into() });
         }
-        Ok(gr_curated_controllers::CreationOptions {
-            target: self.target,
-            session: gr_realization_api::RealizationSessionId(next_creation(&NEXT_CREATION)?),
-        })
+        Ok(())
     }
 }
 static NEXT_CREATION: AtomicU64 = AtomicU64::new(1);

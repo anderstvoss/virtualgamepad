@@ -46,6 +46,8 @@ jobs:
           # this allowlist is slightly broader than ci.yml's.
           egress-policy: block
           allowed-endpoints: >
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
             api.github.com:443
             github.com:443
             codeload.github.com:443
@@ -64,6 +66,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: sudo bash scripts/install-ci-audio-deps.sh
 
       - name: Install Rust
         # The SHA-pinned dtolnay/rust-toolchain at this revision

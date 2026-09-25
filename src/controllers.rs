@@ -331,6 +331,7 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
         options.realization(),
         RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
     ) {
+        options.validate()?;
         return create_dualsense_with_identity(options, DualSenseIdentity::generate()?);
     }
     let audio_options = options.audio();
@@ -650,6 +651,7 @@ pub fn create_dualshock4(
         options.realization(),
         RealizationId::LINUX_UHID_USB | RealizationId::LINUX_USBIP_USB_AUDIO
     ) {
+        options.validate()?;
         return create_dualshock4_with_identity(options, DualShock4Identity::generate()?);
     }
     let audio_options = options.audio();
