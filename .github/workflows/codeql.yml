@@ -97,7 +97,7 @@ jobs:
         # Rust needs an explicit build for CodeQL to observe the
         # compilation. cargo build (debug) is enough; the dev profile
         # keeps the run fast.
-        run: cargo build --all-targets --all-features
+        run: cargo build --locked --all-targets --all-features
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
