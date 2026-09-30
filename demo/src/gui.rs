@@ -63,7 +63,6 @@ const CREATE_BUTTON_TEXT: Color32 = Color32::from_rgb(245, 250, 255);
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
-const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
 
@@ -1744,9 +1743,8 @@ impl eframe::App for App {
                                         ui.set_width(SIDEBAR_WIDTH);
                                         egui::ScrollArea::vertical()
                                             .id_salt("advanced_options")
-                                            .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                            .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                            .auto_shrink([false, false])
+                                            .max_height(ui.available_height().max(0.0))
+                                            .auto_shrink([false, true])
                                             .show(ui, |ui| {
                                                 ui.set_width(SIDEBAR_WIDTH - 8.0);
                                                 ui.strong("Controller ID preview");

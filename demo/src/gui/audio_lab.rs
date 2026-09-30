@@ -79,10 +79,11 @@ pub(super) fn draw_creation(
     config: &mut CreationAudio,
     target: RealizationId,
     has_audio: bool,
-) {
+) -> egui::Rect {
     let validation = config.options(target, has_audio);
     ui.group(|ui| {
-        ui.horizontal(|ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut config.enabled, "Emulated audio");
             let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
             if info.hovered() {
@@ -99,22 +100,32 @@ pub(super) fn draw_creation(
                     }
                 });
             }
-            if !has_audio {
-                ui.colored_label(egui::Color32::YELLOW, "Unsupported for this family");
-            } else if !backend_available(target) {
-                ui.colored_label(egui::Color32::YELLOW, "Backend unavailable");
-            } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
-                ui.colored_label(egui::Color32::YELLOW, "USB/IP requires audio");
-            }
         });
+        if !has_audio {
+            ui.colored_label(egui::Color32::YELLOW, "Unsupported for this family");
+        } else if !backend_available(target) {
+            ui.colored_label(egui::Color32::YELLOW, "Backend unavailable");
+        } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
+            ui.colored_label(egui::Color32::YELLOW, "USB/IP requires audio");
+        }
         ui.add_enabled_ui(config.enabled && has_audio && backend_available(target), |ui| {
-            ui.horizontal(|ui| {
-                for (label, access) in [
-                    ("Playback", &mut config.playback),
-                    ("Microphone", &mut config.microphone),
+            ui.vertical(|ui| {
+                for (label, id, access) in [
+                    ("Playback ownership", "playback_ownership", &mut config.playback),
+                    (
+                        "Microphone ownership",
+                        "microphone_ownership",
+                        &mut config.microphone,
+                    ),
                 ] {
-                    egui::ComboBox::from_id_salt(label)
-                        .selected_text(format!("{label}: {access:?}"))
+                    ui.label(label);
+                    egui::ComboBox::from_id_salt(id)
+                        .selected_text(match *access {
+                            AudioAccess::Samples => "Samples",
+                            AudioAccess::NativeClient => "Native client",
+                            _ => "Unavailable",
+                        })
+                        .width(ui.available_width())
                         .show_ui(ui, |ui| {
                             ui.selectable_value(access, AudioAccess::Samples, "Samples");
                             ui.selectable_value(access, AudioAccess::NativeClient, "Native client");
@@ -122,7 +133,9 @@ pub(super) fn draw_creation(
                 }
             });
         });
-    });
+    })
+    .response
+    .rect
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -371,6 +384,34 @@ pub(super) fn draw(ui: &mut egui::Ui, view: Option<&View>) -> Option<Action> {
 mod tests {
     use super::*;
     use virtualgamepad::AudioChannel;
+
+    #[test]
+    fn creation_controls_fit_narrow_sidebar_without_horizontal_overflow() {
+        let context = egui::Context::default();
+        let mut config = CreationAudio {
+            enabled: true,
+            ..CreationAudio::default()
+        };
+        let mut rect = egui::Rect::NOTHING;
+        let available_width = 192.0;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(available_width, 480.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    ui.set_width(available_width);
+                    rect = draw_creation(ui, &mut config, RealizationId::LINUX_UHID_USB, true);
+                });
+            },
+        );
+        assert!(rect.width() <= available_width + 1.0, "{rect:?}");
+    }
+
     #[derive(Default)]
     struct Fake {
         reads: usize,
