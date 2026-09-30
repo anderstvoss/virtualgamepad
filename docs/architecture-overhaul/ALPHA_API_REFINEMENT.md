@@ -67,7 +67,8 @@ remain open. USB/IP is explicitly opt-in WIP; accepted support requires #115.
 Preserve all historical failed runs and confirmed physical output/reconnect evidence.
 Ignored hardware tests are not passes. No new physical-reference actuation occurs.
 
-Next: demo audio integration and actual maintainer feedback; incorporate findings;
+Demo audio integration is now implemented in a separate review block. See
+[the demo checkpoint](ALPHA_DEMO_REFINEMENT.md). Next: actual maintainer feedback; incorporate findings;
 fresh independent whole-root review; exact hard-freeze commit and API drift
 protection; separate quality/security review; exact-revision Git consumer and
 cached offline validation; separately authorized release/tag. `.github/` changes

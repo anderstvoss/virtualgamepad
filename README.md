@@ -101,3 +101,6 @@ acceptance.
 
 The [current API refinement record](docs/architecture-overhaul/ALPHA_API_REFINEMENT.md)
 and [migration notes](docs/ALPHA_API_MIGRATION.md) describe the pre-freeze changes.
+
+Audio demo opt-ins and the pending maintainer checkpoint are described in
+[the demo refinement record](docs/architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).

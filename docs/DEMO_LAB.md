@@ -65,8 +65,9 @@ and observe continuing service on the others. Keep each consumer selection exact
    interface before generic broker replacement. The current read-only inventory
    still lacks ConfigFS gadget availability, UDC authorization and broker socket.
    Keep compiled profiles; permissions cannot add missing GET/SET metadata.
-5. Gate F/H emulated audio implementations exist. Audio GUI integration follows
-   this API refinement package; the demo currently leaves both audio features off.
+5. Gate F/H emulated audio implementations exist. Audio GUI integration is implemented with explicit demo feature opt-ins;
+   defaults still leave audio features off. See the
+   [demo refinement checkpoint](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
    Native continuity/latency (#112), installed broker recovery/security (#115), and
    microphone/matching fidelity (#116) remain separate acceptance gates. Confirmed
    physical output/reconnect observations stay credited. L/M Bluetooth work remains
@@ -130,3 +131,15 @@ identity and ancestry after re-enumeration. A worker that returns no controller
 is reported as requiring host verification. This is not proof that every kernel
 node was removed; verify that independently. Nothing is automatically saved
 unless you request a state dump.
+
+## Controller audio in the demo
+
+Run `cargo run --locked -p virtualgamepad-demo --features audio-pipewire` on a
+prepared Linux UHID/PipeWire host. Creation choices select emulated exposure and
+Samples/NativeClient ownership. The selected session shows components, endpoints,
+retained health, sample playback monitoring, an optional microphone test tone and
+separate flush actions. Recreate to change immutable choices. Native clients use
+exact creation-scoped selectors; no automatic physical audio routing occurs.
+
+Actual maintainer feedback remains required before the independent whole-root API
+review. Follow the [hands-on checklist](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
