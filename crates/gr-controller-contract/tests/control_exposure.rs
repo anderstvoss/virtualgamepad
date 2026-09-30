@@ -20,7 +20,7 @@ struct EdgeSurface {
 }
 fn restricted_target() -> EdgeSurface {
     EdgeSurface {
-        common: ControllerSurface {
+        common: gr_controller_contract::construction::ControllerSurfaceSpec {
             target: RealizationId::LINUX_UINPUT,
             validation_status: RealizationValidationStatus::ResearchBacked,
             digital_controls: &[],
@@ -31,7 +31,7 @@ fn restricted_target() -> EdgeSurface {
                 reason: "Synthetic target has no event mapping for these controls; real Linux mapping requires separate evidence.",
             }],
             input_topology: &InputTopology::EMPTY,
-        },
+        }.build(),
         raw_independent: &["left_paddle", "right_paddle", "left_fn", "right_fn"],
     }
 }
@@ -46,8 +46,8 @@ fn native_state_is_not_erased_by_target_or_consumer_mapping_limits() {
     let surface = restricted_target();
     assert!(state.left_paddle && state.right_paddle && state.left_fn && state.right_fn);
     assert_eq!(surface.raw_independent.len(), 4);
-    assert!(surface.common.digital_controls.is_empty());
-    assert!(!surface.common.restrictions[0].reason.is_empty());
+    assert!(surface.common.digital_controls().is_empty());
+    assert!(!surface.common.restrictions()[0].reason.is_empty());
     // Event visibility is presentation, independently of a consumer mapping.
     let synthetic_event = DigitalControlSurface {
         control: "left_paddle",

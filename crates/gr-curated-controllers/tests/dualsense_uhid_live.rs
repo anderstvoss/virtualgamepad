@@ -213,7 +213,7 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
             DualSenseTrigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
+    if controller.surface().common_surface().target() != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(MotionSample {
                 accelerometer: [i16::from(value), 0, 8192],
@@ -780,7 +780,7 @@ fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controlle
             gr_curated_controllers::DualShock4Trigger::new(if neutral { 0 } else { 255 - value }),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
+    if controller.surface().common_surface().target() != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(gr_curated_controllers::DualShock4MotionSample {
                 accelerometer: [i16::from(value), 0, 8192],
@@ -898,7 +898,7 @@ fn apply_switch_script(controller: &mut gr_curated_controllers::SwitchProControl
             SwitchProAxis::new(value),
         )
         .unwrap();
-    if controller.surface().common_surface().target != RealizationTarget::LINUX_UINPUT {
+    if controller.surface().common_surface().target() != RealizationTarget::LINUX_UINPUT {
         controller
             .set_motion(SwitchProMotionSample {
                 accelerometer: [i16::try_from(step % 256).unwrap(), 0, 8192],

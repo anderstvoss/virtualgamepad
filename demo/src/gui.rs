@@ -969,7 +969,7 @@ impl Controller {
     fn refresh_motion(&mut self) -> Result<(), String> {
         match self {
             Self::DualSense(controller)
-                if dualsense_motion_target(controller.surface().common().target) =>
+                if dualsense_motion_target(controller.surface().common().target()) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -977,7 +977,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
-                if motion_refresh_target(controller.surface().common().target) =>
+                if motion_refresh_target(controller.surface().common().target()) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -985,7 +985,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
-                if motion_refresh_target(controller.surface().common().target) =>
+                if motion_refresh_target(controller.surface().common().target()) =>
             {
                 controller.commit().map_err(|error| error.to_string())
             }
@@ -2356,21 +2356,21 @@ fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfac
             .show(|ui| {
                 let surface = surface.common_surface();
                 ui.strong("Selected target surface");
-                ui.label(format!("Target: {}", surface.target));
-                ui.label(format!("Evidence: {:?}", surface.validation_status));
+                ui.label(format!("Target: {}", surface.target()));
+                ui.label(format!("Evidence: {:?}", surface.validation_status()));
                 ui.label(format!(
                     "{} axes, {} digital controls, {} output channels",
-                    surface.axes.len(),
-                    surface.digital_controls.len(),
-                    surface.outputs.len()
+                    surface.axes().len(),
+                    surface.digital_controls().len(),
+                    surface.outputs().len()
                 ));
-                for axis in surface.axes {
+                for axis in surface.axes() {
                     ui.monospace(format!(
                         "{}: code {} {}..={} (neutral {})",
                         axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
                     ));
                 }
-                for restriction in surface.restrictions {
+                for restriction in surface.restrictions() {
                     ui.small(format!(
                         "Unavailable: {} — {}",
                         restriction.feature, restriction.reason
@@ -2387,13 +2387,13 @@ fn draw_xbox(
     controller: &mut Xbox360Editor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2408,10 +2408,10 @@ fn draw_xbox(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2443,7 +2443,7 @@ fn draw_xbox(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
@@ -2513,13 +2513,13 @@ fn draw_dualsense(
     controller: &mut DualSenseEditor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2534,10 +2534,10 @@ fn draw_dualsense(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2561,12 +2561,12 @@ fn draw_dualsense(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-        for touchpad in topology.touchpads {
+        for touchpad in topology.touchpads() {
             let current = [
                 controller
                     .state()
@@ -2581,7 +2581,7 @@ fn draw_dualsense(
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,
@@ -2692,13 +2692,13 @@ fn draw_dualshock4(
     controller: &mut DualShock4Editor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2713,10 +2713,10 @@ fn draw_dualshock4(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2740,12 +2740,12 @@ fn draw_dualshock4(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-        for touchpad in topology.touchpads {
+        for touchpad in topology.touchpads() {
             let current = [
                 controller
                     .state()
@@ -2760,7 +2760,7 @@ fn draw_dualshock4(
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,
@@ -2871,13 +2871,13 @@ fn draw_switch_pro(
     controller: &mut SwitchProEditor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2892,10 +2892,10 @@ fn draw_switch_pro(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2918,12 +2918,12 @@ fn draw_switch_pro(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,

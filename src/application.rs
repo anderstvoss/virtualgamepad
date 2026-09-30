@@ -492,15 +492,17 @@ mod tests {
 
     #[test]
     fn component_metadata_preserves_arbitrary_roles_and_exposure() {
-        static SURFACE: crate::ControllerSurface = crate::ControllerSurface {
-            target: RealizationId::LINUX_UINPUT,
-            validation_status: crate::RealizationValidationStatus::ResearchBacked,
-            digital_controls: &[],
-            axes: &[],
-            outputs: &[],
-            restrictions: &[],
-            input_topology: &crate::InputTopology::EMPTY,
-        };
+        static SURFACE: crate::ControllerSurface =
+            gr_controller_contract::construction::ControllerSurfaceSpec {
+                target: RealizationId::LINUX_UINPUT,
+                validation_status: crate::RealizationValidationStatus::ResearchBacked,
+                digital_controls: &[],
+                axes: &[],
+                outputs: &[],
+                restrictions: &[],
+                input_topology: &crate::InputTopology::EMPTY,
+            }
+            .build();
         let roles = ["gamepad", "touch", "motion", "display"];
         let association = ControllerAssociation {
             controller: crate::ControllerId::new("synthetic.compound"),
@@ -522,7 +524,7 @@ mod tests {
         for (index, component) in association.components().iter().enumerate() {
             assert_eq!(component.role(), roles[index]);
             assert_eq!(
-                component.surface().unwrap().target,
+                component.surface().unwrap().target(),
                 association.realization()
             );
             assert!(component.observed_host_path().is_none());
