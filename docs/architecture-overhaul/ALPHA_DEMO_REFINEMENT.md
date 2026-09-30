@@ -46,7 +46,9 @@ state dump. Optional display contention never blocks worker service or shutdown.
 - PR #122: baseline and locked completion guidance.
 - PR #123: read-only topology and renderer sizing, stacked on #122.
 - PR #124: realization/audio contracts and migration, stacked on #123.
-- Demo integration follows #124 as its own review block.
+- PR #125: demo integration, stacked on #124.
+- Issue [#126](https://github.com/anderstvoss/virtualgamepad/issues/126): dedicated
+  audio GUI refinement and actual maintainer acceptance; required for alpha closure.
 
 Branches contain incremental commits; local work remains on `main`. PRs are open
 for review, not automatically merged. No final API freeze or release is declared.
@@ -85,7 +87,9 @@ UI ergonomics or support evidence. A successful unattended run is not feedback.
 
 ## Acceptance status
 
-**Maintainer hands-on observations: pending.** No observations are fabricated and no
+**Maintainer hands-on observations: pending in dedicated breakout issue [#126](https://github.com/anderstvoss/virtualgamepad/issues/126).**
+The maintainer requested a separate audio GUI refinement session. This issue gates
+complete alpha closure under #117; implementation PR #125 does not satisfy it. No observations are fabricated and no
 physical fidelity, sustained native continuity or installed USB/IP security/recovery
 claim is promoted. Issues #112/#115/#116/#117 remain open. Incorporate actual findings
 before the fresh independent whole-root API review. The final inventory/freeze,
@@ -102,7 +106,8 @@ steps; API drift workflow changes require explicit authorization.
   secret scans passed. No external dependency was added.
 - Deterministic additions cover partial microphone writes, accepted-frame accounting,
   typed errors/selectors, unsupported creation and feature/ownership combinations,
-  native sample-I/O exclusion, PCM-failure sibling independence, lifecycle action
+  native sample-I/O exclusion, PCM-failure sibling independence, USB/IP target
+  labels/help and motion refresh parity, lifecycle action
   priority at arbitrary list positions and retained cleanup-error presentation.
 - Existing queue/protocol/controller-parity, GUI input, worker/display contention,
   repeated close and multi-controller regressions remain intact.

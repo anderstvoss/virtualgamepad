@@ -92,7 +92,9 @@ const fn backend_status_is_healthy(status: ControllerStatus) -> bool {
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -100,6 +102,8 @@ fn dualsense_motion_target(target: RealizationId) -> bool {
 fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
     if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
+    } else if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+        "USB/IP HID motion report"
     } else {
         "DummyHcd USB motion report"
     }
@@ -108,7 +112,9 @@ fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
 fn motion_refresh_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -318,6 +324,7 @@ fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
         RealizationId::LINUX_UINPUT => "UIN",
         RealizationId::LINUX_UHID_USB => "HID",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "UIP",
         _ => "UNK",
     }
 }
@@ -329,6 +336,10 @@ struct TargetHelp {
 
 fn target_help(target: RealizationId) -> Option<TargetHelp> {
     match target {
+        RealizationId::LINUX_USBIP_USB_AUDIO => Some(TargetHelp {
+            title: "USB/IP HID/UAC2 (WIP)",
+            body: "Requires explicitly prepared installed broker/worker and USB/IP resources, an enabled emulated audio profile and the audio-usbip demo feature. Native clients also require audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
+        }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
             title: "Experimental USB gadget",
             body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
@@ -3290,12 +3301,19 @@ mod tests {
     }
 
     #[test]
-    fn target_help_is_available_only_for_the_experimental_gadget_target() {
+    fn target_help_explains_both_unaccepted_usb_targets() {
         assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
         assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
         let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
             .expect("dummy_hcd has experimental-target help");
         assert_eq!(help.title, "Experimental USB gadget");
+        let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
+        assert!(audio.title.contains("WIP"));
+        assert!(audio.body.contains("#115"));
+        assert_eq!(
+            controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
+            "009-UIP-DUALSENSE"
+        );
     }
 
     #[test]
@@ -3760,6 +3778,14 @@ mod tests {
             RealizationId::LINUX_DUMMY_HCD_USB_HID
         ));
         assert!(!dualsense_motion_target(RealizationId::LINUX_UINPUT));
+        assert!(dualsense_motion_target(
+            RealizationId::LINUX_USBIP_USB_AUDIO
+        ));
+        assert!(motion_refresh_target(RealizationId::LINUX_USBIP_USB_AUDIO));
+        assert_eq!(
+            dualsense_motion_target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
+            "USB/IP HID motion report"
+        );
         assert_eq!(
             dualsense_motion_target_label(RealizationId::LINUX_UHID_USB),
             "UHID motion report"

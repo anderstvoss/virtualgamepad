@@ -403,3 +403,7 @@ Demo audio creation, endpoint/health inspection, bounded sample probes, flush an
 recreation are implemented in the [interactive refinement block](ALPHA_DEMO_REFINEMENT.md).
 Maintainer hands-on acceptance remains pending; this does not advance the final
 API freeze, physical audio or installed USB/IP security/recovery gates.
+
+The maintainer requested a dedicated audio GUI refinement breakout.
+[#126](https://github.com/anderstvoss/virtualgamepad/issues/126) is an explicit
+complete-alpha closure gate under #117; actual hands-on acceptance remains pending.
