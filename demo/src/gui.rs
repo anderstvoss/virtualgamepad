@@ -43,6 +43,7 @@ struct ControllerOptions {
 
 const OUTPUT_LOG_LIMIT: usize = 200;
 const SERVICE_GAP_HISTORY_LIMIT: usize = 4_096;
+const SERVICE_GAP_PERCENTILE_REFRESH: Duration = Duration::from_millis(250);
 const CONTROLLER_ID_WIDTH: usize = 3;
 const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
@@ -688,6 +689,37 @@ fn service_gap_percentiles(metrics: &ServiceMetrics, period_seconds: u32) -> Opt
 }
 
 #[derive(Default)]
+struct ServiceGapPercentileCache {
+    controller_id: Option<u64>,
+    period_seconds: u32,
+    updated_at: Option<Instant>,
+    values: Option<[Duration; 3]>,
+}
+
+impl ServiceGapPercentileCache {
+    fn get(
+        &mut self,
+        controller_id: u64,
+        metrics: &ServiceMetrics,
+        period_seconds: u32,
+        now: Instant,
+    ) -> Option<[Duration; 3]> {
+        let cache_is_fresh = self.controller_id == Some(controller_id)
+            && self.period_seconds == period_seconds
+            && self.updated_at.is_some_and(|updated_at| {
+                now.duration_since(updated_at) < SERVICE_GAP_PERCENTILE_REFRESH
+            });
+        if !cache_is_fresh {
+            self.controller_id = Some(controller_id);
+            self.period_seconds = period_seconds;
+            self.updated_at = Some(now);
+            self.values = service_gap_percentiles(metrics, period_seconds);
+        }
+        self.values
+    }
+}
+
+#[derive(Default)]
 struct WorkerDisplay {
     snapshot: Option<ControllerView>,
     applied: u64,
@@ -1222,6 +1254,7 @@ pub struct App {
     advanced_options_open: bool,
     next_controller_id: u64,
     polling_period_seconds: u32,
+    service_gap_percentiles: ServiceGapPercentileCache,
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
@@ -1241,6 +1274,7 @@ impl Default for App {
             advanced_options_open: false,
             next_controller_id: 0,
             polling_period_seconds: 0,
+            service_gap_percentiles: ServiceGapPercentileCache::default(),
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
@@ -2021,6 +2055,7 @@ impl eframe::App for App {
                                             ui,
                                             named,
                                             &mut polling_period_seconds,
+                                            &mut self.service_gap_percentiles,
                                         );
                                         let input_width = ui.available_width();
                                         let section_frame = egui::Frame::group(ui.style());
@@ -2183,10 +2218,12 @@ fn target_label(target: RealizationId) -> &'static str {
     }
 }
 
+#[allow(clippy::too_many_lines)] // Keeps the compact diagnostics grid together.
 fn draw_controller_state(
     ui: &mut egui::Ui,
     controller: &mut NamedController,
     polling_period_seconds: &mut u32,
+    gap_percentiles: &mut ServiceGapPercentileCache,
 ) {
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
@@ -2256,8 +2293,12 @@ fn draw_controller_state(
                         boxed_metric_output(ui, display.metrics.omitted_logs.to_string());
                         ui.end_row();
                         ui.label("Max gap");
-                        let gaps =
-                            service_gap_percentiles(&display.metrics, *polling_period_seconds);
+                        let gaps = gap_percentiles.get(
+                            controller.options.id,
+                            &display.metrics,
+                            *polling_period_seconds,
+                            Instant::now(),
+                        );
                         ui.horizontal(|ui| {
                             ui.label("Polling period:");
                             ui.add_sized(
@@ -3647,18 +3688,41 @@ mod tests {
         let mut metrics = ServiceMetrics::default();
         let start = Instant::now();
         for sample in 0..(SERVICE_GAP_HISTORY_LIMIT + 100) {
-            metrics.record(start + Duration::from_micros(sample as u64 * 4_000));
+            metrics.record(start + Duration::from_millis(sample as u64 * 4));
         }
         let history = metrics.gap_history.lock().unwrap();
         assert_eq!(history.len(), SERVICE_GAP_HISTORY_LIMIT);
         assert_eq!(
             history.front().unwrap().0,
-            start + Duration::from_micros(100 * 4_000)
+            start + Duration::from_millis(400)
         );
         assert_eq!(
             history.back().unwrap().0,
-            start + Duration::from_micros((SERVICE_GAP_HISTORY_LIMIT + 99) as u64 * 4_000)
+            start + Duration::from_millis((SERVICE_GAP_HISTORY_LIMIT + 99) as u64 * 4)
         );
+    }
+
+    #[test]
+    fn service_gap_percentiles_refresh_on_a_bounded_ui_cadence() {
+        let mut metrics = ServiceMetrics::default();
+        let start = Instant::now();
+        for sample in 0..10 {
+            metrics.record(start + Duration::from_millis(sample * 4));
+        }
+        let mut cache = ServiceGapPercentileCache::default();
+        cache.get(7, &metrics, 0, start);
+        assert_eq!(cache.updated_at, Some(start));
+        cache.get(7, &metrics, 0, start + Duration::from_millis(100));
+        assert_eq!(cache.updated_at, Some(start));
+        cache.get(7, &metrics, 0, start + SERVICE_GAP_PERCENTILE_REFRESH);
+        assert_eq!(
+            cache.updated_at,
+            Some(start + SERVICE_GAP_PERCENTILE_REFRESH)
+        );
+        cache.get(8, &metrics, 0, start + Duration::from_millis(300));
+        assert_eq!(cache.controller_id, Some(8));
+        cache.get(8, &metrics, 10, start + Duration::from_millis(301));
+        assert_eq!(cache.period_seconds, 10);
     }
 
     #[test]
