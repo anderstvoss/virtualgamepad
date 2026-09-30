@@ -7,5 +7,7 @@ license.workspace = true
 repository.workspace = true
 description = "Deterministic controller-neutral HID sessions and delivery contracts."
 
+publish = false
+
 [lints]
 workspace = true
