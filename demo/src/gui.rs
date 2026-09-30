@@ -1267,7 +1267,7 @@ impl Default for App {
     fn default() -> Self {
         Self {
             kind: Kind::Xbox360,
-            target: RealizationId::LINUX_UINPUT,
+            target: audio_lab::default_creation_target(),
             audio_creation: audio_lab::CreationAudio::default(),
             name_draft: String::new(),
             create_count: 1,
@@ -1573,6 +1573,8 @@ impl eframe::App for App {
                             ui.set_max_width(SIDEBAR_WIDTH);
                             ui.heading("Add Controller");
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            let previous_kind = self.kind;
+                            let previous_target = self.target;
                             egui::Grid::new("controller_creation_grid")
                                 .num_columns(2)
                                 .spacing([6.0, 4.0])
@@ -1633,7 +1635,12 @@ impl eframe::App for App {
                                     });
                                     ui.end_row();
                                 });
-                            audio_lab::draw_creation(ui, &mut self.audio_creation, self.target, self.kind != Kind::SwitchPro);
+                            if self.kind != previous_kind || self.target != previous_target {
+                                self.audio_creation.enabled = audio_lab::default_audio_enabled(
+                                    self.target,
+                                    self.kind != Kind::SwitchPro,
+                                );
+                            }
                             let default_name = self.next_default_name();
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -1761,6 +1768,12 @@ impl eframe::App for App {
                                                             top: 2,
                                                             bottom: 2,
                                                         }),
+                                                );
+                                                audio_lab::draw_creation(
+                                                    ui,
+                                                    &mut self.audio_creation,
+                                                    self.target,
+                                                    self.kind != Kind::SwitchPro,
                                                 );
                                             });
                                     });

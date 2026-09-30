@@ -14,11 +14,23 @@ pub(super) struct CreationAudio {
 impl Default for CreationAudio {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: default_creation_target() == RealizationId::LINUX_UHID_USB,
             playback: AudioAccess::Samples,
             microphone: AudioAccess::Samples,
         }
     }
+}
+
+pub(super) fn default_creation_target() -> RealizationId {
+    if cfg!(all(target_os = "linux", feature = "audio-pipewire")) {
+        RealizationId::LINUX_UHID_USB
+    } else {
+        RealizationId::LINUX_UINPUT
+    }
+}
+
+pub(super) fn default_audio_enabled(target: RealizationId, has_audio: bool) -> bool {
+    has_audio && backend_available(target)
 }
 impl CreationAudio {
     pub fn options(
@@ -56,8 +68,10 @@ impl CreationAudio {
     }
 }
 fn backend_available(target: RealizationId) -> bool {
-    (target == RealizationId::LINUX_UHID_USB && cfg!(feature = "audio-pipewire"))
-        || (target == RealizationId::LINUX_USBIP_USB_AUDIO && cfg!(feature = "audio-usbip"))
+    (target == RealizationId::LINUX_UHID_USB
+        && cfg!(all(target_os = "linux", feature = "audio-pipewire")))
+        || (target == RealizationId::LINUX_USBIP_USB_AUDIO
+            && cfg!(all(target_os = "linux", feature = "audio-usbip")))
 }
 
 pub(super) fn draw_creation(
@@ -66,22 +80,48 @@ pub(super) fn draw_creation(
     target: RealizationId,
     has_audio: bool,
 ) {
-    ui.collapsing("Audio creation", |ui| {
-        ui.checkbox(&mut config.enabled, "Enable emulated audio");
-        ui.weak("Creation choices apply to new controllers. Recreate to change them. Matching is unavailable.");
-        if !has_audio { ui.label("This controller family has no implemented audio profile."); }
-        if !backend_available(target) { ui.label("Audio requires UHID + audio-pipewire, or USB/IP + audio-usbip (WIP)."); }
-        if target == RealizationId::LINUX_USBIP_USB_AUDIO { ui.label("USB/IP is opt-in WIP; installed security/recovery acceptance remains open."); }
-        ui.add_enabled_ui(config.enabled, |ui| {
-            for (label, access) in [("Playback owner", &mut config.playback), ("Microphone owner", &mut config.microphone)] {
-                egui::ComboBox::from_id_salt(label).selected_text(format!("{label}: {access:?}"))
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(access, AudioAccess::Samples, "Samples");
-                        ui.selectable_value(access, AudioAccess::NativeClient, "Native client");
-                    });
+    let validation = config.options(target, has_audio);
+    ui.group(|ui| {
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut config.enabled, "Emulated audio");
+            let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
+            if info.hovered() {
+                egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+                    ui.strong("Audio creation details");
+                    ui.label("Audio endpoints are created with the controller. Creation choices are immutable; recreate to change them.");
+                    ui.label("PipeWire nodes do not auto-connect. ALSA endpoints require an application to open them.");
+                    ui.label("The default Samples owners create no caller-side audio clients and route no physical devices.");
+                    if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+                        ui.label("USB/IP is opt-in WIP; installed security and recovery acceptance remains open.");
+                    }
+                    if let Err(error) = &validation {
+                        ui.colored_label(egui::Color32::YELLOW, error.to_string());
+                    }
+                });
+            }
+            if !has_audio {
+                ui.colored_label(egui::Color32::YELLOW, "Unsupported for this family");
+            } else if !backend_available(target) {
+                ui.colored_label(egui::Color32::YELLOW, "Backend unavailable");
+            } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
+                ui.colored_label(egui::Color32::YELLOW, "USB/IP requires audio");
             }
         });
-        if let Err(error) = config.options(target, has_audio) { ui.colored_label(egui::Color32::YELLOW, error.to_string()); }
+        ui.add_enabled_ui(config.enabled && has_audio && backend_available(target), |ui| {
+            ui.horizontal(|ui| {
+                for (label, access) in [
+                    ("Playback", &mut config.playback),
+                    ("Microphone", &mut config.microphone),
+                ] {
+                    egui::ComboBox::from_id_salt(label)
+                        .selected_text(format!("{label}: {access:?}"))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(access, AudioAccess::Samples, "Samples");
+                            ui.selectable_value(access, AudioAccess::NativeClient, "Native client");
+                        });
+                }
+            });
+        });
     });
 }
 
@@ -498,15 +538,21 @@ mod tests {
                 .is_err()
             );
         }
-        assert!(
-            CreationAudio::default()
-                .options(RealizationId::LINUX_UHID_USB, false)
-                .is_ok()
-        );
-        assert!(
-            CreationAudio::default()
+        let target = default_creation_target();
+        let defaults = CreationAudio::default();
+        assert_eq!(defaults.enabled, default_audio_enabled(target, true));
+        assert_eq!(defaults.playback, AudioAccess::Samples);
+        assert_eq!(defaults.microphone, AudioAccess::Samples);
+        assert!(defaults.options(target, true).is_ok());
+        let usbip_audio = CreationAudio {
+            enabled: default_audio_enabled(RealizationId::LINUX_USBIP_USB_AUDIO, true),
+            ..defaults
+        };
+        assert_eq!(
+            usbip_audio
                 .options(RealizationId::LINUX_USBIP_USB_AUDIO, true)
-                .is_err()
+                .is_ok(),
+            cfg!(all(target_os = "linux", feature = "audio-usbip"))
         );
     }
 }
