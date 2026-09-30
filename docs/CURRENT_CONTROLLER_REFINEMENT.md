@@ -1,5 +1,13 @@
 # Current-controller refinement checkpoint
 
+Current pre-alpha API refinement is tracked in
+[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
+security/recovery acceptance. Native-client continuity and matching fidelity remain
+open. The demo does not yet enable audio; its audio integration and actual
+maintainer feedback follow this package. Historical evidence below retains its
+original scope.
+
 These are implemented functions and explicit restrictions, not support promotions.
 Every controller/realization support cell remains WIP. Read selected component
 surfaces for precise limitations and native types for semantic ranges/units.

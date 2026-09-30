@@ -1,11 +1,15 @@
-# Pre-alpha stabilization: active execution ledger
+# Pre-alpha stabilization: historical implementation and acceptance ledger
+
+**Current execution:** [Alpha API refinement](ALPHA_API_REFINEMENT.md), baseline PR #121.
+The older baseline and batches below are retained historical records. Final API
+freeze, interactive audio feedback and release are pending.
 
 This replaces the earlier 72-step execution checklist. Imported guidance and
 conversation proposals are background; current maintainer decisions govern.
 
 ## Baseline and release contract
 
-Implementation starts from merged PR108, `6f7b084ac8f1d4c8cad0c108c7228574fd60469c`.
+The historical preliminary implementation started from merged PR108, `6f7b084ac8f1d4c8cad0c108c7228574fd60469c`.
 The preceding local tip `3b12004` and merged PR108 have identical Git trees
 (`c15a3c3a74aa9a93da79f80eda9ba4cc864c2301`). Local main was fast-forwarded and
 implementation moved to `codex/pre-alpha-stabilization` at the maintainer's request.

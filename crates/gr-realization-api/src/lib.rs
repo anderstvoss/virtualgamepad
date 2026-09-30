@@ -32,7 +32,9 @@ impl fmt::Display for ControllerId {
     }
 }
 
-/// One complete host-facing path. IDs are declared by compiled controller packages;
+/// One exact primary controller realization. Explicit creation options may add
+/// controller-owned associated components; composite USB has its own ID.
+/// IDs are declared by compiled controller packages;
 /// preparation rejects an ID absent from that controller's manifest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RealizationId(&'static str);

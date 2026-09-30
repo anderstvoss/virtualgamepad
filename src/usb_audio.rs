@@ -184,6 +184,8 @@ fn sound_card_id(bus_id: &str, profile: Profile) -> io::Result<String> {
 pub(crate) struct Pcm {
     streams: Arc<Mutex<SampleStreams>>,
     error: OnceLock<AudioError>,
+    cleanup_error: Option<AudioError>,
+    closed: bool,
     access: AudioOptions,
     microphone_silence: Arc<AtomicU64>,
     control: Arc<Mutex<Control>>,
@@ -201,14 +203,30 @@ impl Pcm {
     ) -> Result<(Self, [Option<String>; 2]), AudioError> {
         let streams = Arc::new(Mutex::new(streams));
         #[cfg(feature = "audio-pipewire")]
-        let (bridge, nodes) = crate::usb_audio_bridge::Bridge::start(
+        let bridge_result = crate::usb_audio_bridge::Bridge::start(
             streams.clone(),
             control.clone(),
             microphone_silence.clone(),
             profile,
             access,
             creation,
-        )?;
+        );
+        #[cfg(feature = "audio-pipewire")]
+        let (bridge, nodes) = match bridge_result {
+            Ok(prepared) => prepared,
+            Err(primary) => {
+                let cleanup = streams
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .close()
+                    .err()
+                    .map(|error| AudioError::Backend {
+                        reason: error.to_string(),
+                    });
+                return Err(crate::audio::merge_errors(Some(primary), cleanup)
+                    .expect("initiating bridge failure retained"));
+            }
+        };
         #[cfg(not(feature = "audio-pipewire"))]
         let nodes = {
             let _ = (profile, creation);
@@ -218,6 +236,8 @@ impl Pcm {
             Self {
                 streams,
                 error: OnceLock::new(),
+                cleanup_error: None,
+                closed: false,
                 access,
                 microphone_silence,
                 control,
@@ -248,7 +268,7 @@ impl Pcm {
     }
 }
 impl crate::audio::backend::Backend for Pcm {
-    fn timings(&self) -> Vec<crate::AudioStreamTiming> {
+    fn timings(&self) -> Vec<crate::audio::AudioStreamTiming> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
             return bridge.timings();
@@ -257,30 +277,32 @@ impl crate::audio::backend::Backend for Pcm {
     }
     fn read_playback(&mut self, dest: &mut [i16]) -> Result<crate::AudioRead, AudioError> {
         if self.access.playback_access() != AudioAccess::Samples {
-            return Err(AudioError::AccessDenied);
+            return Err(AudioError::OwnershipMismatch);
         }
-        self.lock().read_playback(dest)
+        self.lock()
+            .read_playback(dest)
+            .map(crate::AudioRead::from_backend)
     }
     fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
         if self.access.microphone_access() != AudioAccess::Samples {
-            return Err(AudioError::AccessDenied);
+            return Err(AudioError::OwnershipMismatch);
         }
         self.lock().write_microphone(samples)
     }
     fn flush_playback(&mut self) -> Result<(), AudioError> {
         if self.access.playback_access() != AudioAccess::Samples {
-            return Err(AudioError::AccessDenied);
+            return Err(AudioError::OwnershipMismatch);
         }
         self.lock().flush_playback()
     }
     fn flush_microphone(&mut self) -> Result<(), AudioError> {
         if self.access.microphone_access() != AudioAccess::Samples {
-            return Err(AudioError::AccessDenied);
+            return Err(AudioError::OwnershipMismatch);
         }
         self.lock().flush_microphone()
     }
     fn is_closed(&self) -> bool {
-        self.lock().is_closed()
+        self.closed || self.lock().is_closed()
     }
     fn underrun_frames(&self) -> u64 {
         self.microphone_silence.load(Ordering::Acquire)
@@ -318,7 +340,7 @@ impl crate::audio::backend::Backend for Pcm {
     }
     fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
         if self.access.microphone_access() != AudioAccess::Samples {
-            return Err(AudioError::AccessDenied);
+            return Err(AudioError::OwnershipMismatch);
         }
         let result = (|| -> io::Result<u64> {
             let mut control = self
@@ -354,21 +376,29 @@ impl crate::audio::backend::Backend for Pcm {
     }
     fn error(&self) -> Option<&AudioError> {
         self.inspect_failure();
-        self.error.get()
+        self.cleanup_error.as_ref().or_else(|| self.error.get())
     }
     fn failed(&self) -> bool {
-        self.inspect_failure()
+        self.cleanup_error.is_some() || self.inspect_failure()
     }
     fn close(&mut self) {
+        if self.closed {
+            return;
+        }
+        self.inspect_failure();
+        let mut cleanup = Vec::new();
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &mut self.bridge {
             bridge.close();
+            cleanup.extend(bridge.error());
         }
         if let Err(error) = self.lock().close() {
-            let _ = self.error.set(AudioError::Backend {
+            cleanup.push(AudioError::Backend {
                 reason: error.to_string(),
             });
         }
+        self.cleanup_error = crate::audio::merge_errors(self.error.get().cloned(), cleanup);
+        self.closed = true;
     }
 }
 impl Drop for Pcm {
@@ -386,52 +416,67 @@ pub(crate) fn open<S: Send + 'static>(
     creation: u64,
     to_native: fn(&S) -> NativeState,
 ) -> Result<(Box<dyn WorkerBridge<S>>, crate::ControllerAudio), ControllerError> {
-    let (broker, [control, playback, microphone]) =
+    let (mut broker, [control, playback, microphone]) =
         Client::open(profile, identity).map_err(|error| io_open(&error))?;
-    let deadline = Instant::now() + Duration::from_secs(2);
-    let card_id = loop {
-        match sound_card_id(broker.bus_id(), profile) {
-            Ok(id) => break id,
-            Err(error) if error.kind() == io::ErrorKind::NotFound && Instant::now() < deadline => {
-                std::thread::sleep(Duration::from_millis(10));
+    let prepared = (|| {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        let card_id = loop {
+            match sound_card_id(broker.bus_id(), profile) {
+                Ok(id) => break id,
+                Err(error)
+                    if error.kind() == io::ErrorKind::NotFound && Instant::now() < deadline =>
+                {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => return Err(io_open(&error)),
             }
-            Err(error) => return Err(io_open(&error)),
-        }
-    };
-    let mut control =
-        Control::new(control, broker.generation(), family).map_err(|error| io_open(&error))?;
-    control.microphone_host_frames().map_err(|error| ControllerError::Open {
+        };
+        let mut control =
+            Control::new(control, broker.generation(), family).map_err(|error| io_open(&error))?;
+        control.microphone_host_frames().map_err(|error| ControllerError::Open {
         reason: format!("installed audio worker lacks host-frame progress: {error}; reinstall the matching broker and worker"),
     })?;
-    let control = Arc::new(Mutex::new(control));
-    let microphone_silence = Arc::new(AtomicU64::new(0));
-    let streams = SampleStreams::new(id, broker.generation(), playback, microphone)
-        .map_err(|error| io_open(&error))?;
-    let definition = match id {
-        ProfileId::DualSenseEmulated => {
-            gr_curated_controllers::audio::dualsense(options.exposure())
+        let control = Arc::new(Mutex::new(control));
+        let microphone_silence = Arc::new(AtomicU64::new(0));
+        let streams = SampleStreams::new(id, broker.generation(), playback, microphone)
+            .map_err(|error| io_open(&error))?;
+        let definition = match id {
+            ProfileId::DualSenseEmulated => {
+                gr_curated_controllers::audio::dualsense(options.exposure())
+            }
+            ProfileId::DualShock4Emulated => {
+                gr_curated_controllers::audio::dualshock4(options.exposure())
+            }
+            ProfileId::Xbox360HidEmulated => {
+                gr_curated_controllers::audio::xbox360(options.exposure())
+            }
         }
-        ProfileId::DualShock4Emulated => {
-            gr_curated_controllers::audio::dualshock4(options.exposure())
-        }
-        ProfileId::Xbox360HidEmulated => gr_curated_controllers::audio::xbox360(options.exposure()),
-    }
-    .map_err(|error| ControllerError::Unsupported {
-        reason: error.to_string(),
+        .map_err(|error| ControllerError::Unsupported {
+            reason: error.to_string(),
+        })?;
+        let (pcm, caller_nodes) = Pcm::new(
+            streams,
+            options,
+            &definition,
+            creation,
+            microphone_silence.clone(),
+            control.clone(),
+        )
+        .map_err(|error| ControllerError::Open {
+            reason: error.to_string(),
+        })?;
+        let audio =
+            crate::audio::usb_audio(options, id, &card_id, broker.bus_id(), &caller_nodes, pcm)?;
+        Ok((control, microphone_silence, audio))
+    })();
+    let (control, microphone_silence, audio) = crate::creation::finish(prepared, || {
+        broker
+            .close()
+            .err()
+            .map(|error| error.to_string())
+            .into_iter()
+            .collect()
     })?;
-    let (pcm, caller_nodes) = Pcm::new(
-        streams,
-        options,
-        &definition,
-        creation,
-        microphone_silence.clone(),
-        control.clone(),
-    )
-    .map_err(|error| ControllerError::Open {
-        reason: error.to_string(),
-    })?;
-    let audio =
-        crate::audio::usb_audio(options, id, &card_id, broker.bus_id(), &caller_nodes, pcm)?;
     let bridge = Session {
         control,
         broker,

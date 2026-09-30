@@ -9,11 +9,9 @@ pub enum AudioExposure {
     Disabled,
     /// Functional host endpoints, with explicitly documented topology differences.
     Emulated,
-    /// Only available for profiles with accepted controller-specific evidence.
-    ControllerMatching,
 }
 
-/// Exactly one sample owner for each synchronized stream group.
+/// Exactly one owner for every exposed group in the selected direction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AudioAccess {
@@ -23,6 +21,7 @@ pub enum AudioAccess {
 }
 
 /// Immutable creation policy; changing it requires a new controller.
+/// Playback/microphone access each applies to all exposed groups in that direction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AudioOptions {
     exposure: AudioExposure,

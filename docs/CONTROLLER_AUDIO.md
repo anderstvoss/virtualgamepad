@@ -110,3 +110,24 @@ The [execution ledger](architecture-overhaul/AUDIO_IMPLEMENTATION.md),
 [physical evidence](architecture-overhaul/experiments/EXP-0023-controller-audio.md)
 retain successful and failed runs. GUI integration, user feedback, final API
 review, the separate quality review and alpha release remain subsequent gates.
+
+
+## Current candidate API
+
+Component kinds distinguish input/audio without role-string parsing. Use
+`pipewire_node()` or `alsa_pcm()` for creation-scoped endpoint selection.
+`AudioRead` belongs to the root contract; incomplete interleaved buffers return
+`InvalidSampleBuffer`, native-client-owned sample calls return `OwnershipMismatch`,
+and closed sessions return `Closed`. Matching has no public exposure variant.
+`diagnostics()` snapshots retained health/loss. Graph timing and scheduling require
+`experimental::audio_instrumentation(audio)` and are outside the alpha contract.
+`microphone_consumed_frames()` remains optional sample-pacing progress, including
+silence; it is not proof that canceled USB transfers reached a host consumer.
+
+Direction ownership applies to every exposed group in that direction. Keep audio
+borrows and PCM batches short when sharing a controller owner between threads.
+HID readiness/deadlines still require caller service; PCM is worker-backed, and
+service detects required audio failure without promising a fixed polling cadence.
+USB/IP is opt-in WIP until installed security/recovery acceptance (#115) closes.
+See [migration](ALPHA_API_MIGRATION.md) and the
+[current execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).

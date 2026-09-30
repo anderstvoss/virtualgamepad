@@ -1,6 +1,6 @@
 # virtualgamepad
 
-`virtualgamepad` provides reviewed, compiled virtual controllers. There are no runtime profiles, descriptors, plugins, or generic controller constructors. Each controller selects one exact peer realization target; selection never falls back.
+`virtualgamepad` provides reviewed, compiled virtual controllers. There are no runtime profiles, descriptors, plugins, or generic controller constructors. Each controller selects one exact primary realization target; selection never falls back.
 
 - `linux.uinput`: controller-owned Linux evdev controls through uinput.
 - `linux.uhid.usb`: local HID presentation with controller-owned stateful USB protocols.
@@ -57,15 +57,15 @@ entries WIP. The [active pre-alpha plan](docs/architecture-overhaul/PRE_ALPHA_ST
 requires controller/demo refinement and hands-on feedback before the final API
 review, separate quality pass and Git-based alpha release.
 
-The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. The broker's dynamic protocol migration, composite/audio behavior, and Bluetooth extensions are not complete.
+The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. Composite/audio implementation exists with explicitly bounded acceptance; installed audio security/recovery, native continuity, matching fidelity and Bluetooth remain gated.
 
 ## Development
 
 ```bash
 cargo fmt --all -- --check
-cargo check --workspace --all-targets --all-features
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
+cargo check --locked --workspace --all-targets --all-features
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
 gitleaks detect
 ```
 
@@ -98,3 +98,6 @@ The GUI assigns each controller a session-local controller ID, exposes service t
 counters, writes state dumps on demand, and supports stop-all cleanup. “Release all
 inputs” uses the acknowledged edit queue; measurements remain separate from physical
 acceptance.
+
+The [current API refinement record](docs/architecture-overhaul/ALPHA_API_REFINEMENT.md)
+and [migration notes](docs/ALPHA_API_MIGRATION.md) describe the pre-freeze changes.

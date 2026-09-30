@@ -1,5 +1,13 @@
 # Manual lab work with the demo
 
+Current pre-alpha API refinement is tracked in
+[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
+security/recovery acceptance. Native-client continuity and matching fidelity remain
+open. The demo does not yet enable audio; its audio integration and actual
+maintainer feedback follow this package. Historical evidence below retains its
+original scope.
+
 Run `cargo run -p virtualgamepad-demo` as the ordinary user. First run
 `python3 scripts/host-preflight.py all` for a read-only prerequisite inventory;
 its unvalidated consumer checks are not failures that broader permissions fix.
@@ -57,11 +65,12 @@ and observe continuing service on the others. Keep each consumer selection exact
    interface before generic broker replacement. The current read-only inventory
    still lacks ConfigFS gadget availability, UDC authorization and broker socket.
    Keep compiled profiles; permissions cannot add missing GET/SET metadata.
-5. Gate F can start with a normal-user audio lifecycle prototype after compound
-   ownership is scoped; it does not require a physical controller. Gate H needs
-   physical DualSense audio topology facts, L needs physical BT fixtures, and M
-   follows L with isolated radio setup. Do not create dependent production IDs
-   before those gates pass.
+5. Gate F/H emulated audio implementations exist. Audio GUI integration follows
+   this API refinement package; the demo currently leaves both audio features off.
+   Native continuity/latency (#112), installed broker recovery/security (#115), and
+   microphone/matching fidelity (#116) remain separate acceptance gates. Confirmed
+   physical output/reconnect observations stay credited. L/M Bluetooth work remains
+   separately gated; no support is promoted by endpoint enumeration.
 
 Other families remain best-effort. See the [physical validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md)
 and [gate ledger](architecture-overhaul/GATE_STATUS.md). Deterministic worker tests

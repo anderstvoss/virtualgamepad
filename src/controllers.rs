@@ -302,13 +302,16 @@ pub fn create_dualsense_with_identity(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
+    let mut audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualSense,
         options.session.0,
     )?;
-    let inner = gr_curated_controllers::create_dualsense_with_identity(options, identity.0)
-        .map_err(controller_error)?;
+    let inner = crate::creation::finish(
+        gr_curated_controllers::create_dualsense_with_identity(options, identity.0)
+            .map_err(controller_error),
+        || crate::creation::close_audio(&mut audio),
+    )?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
@@ -336,12 +339,15 @@ pub fn create_dualsense(options: CreationOptions) -> Result<DualSenseController,
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
+    let mut audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualSense,
         options.session.0,
     )?;
-    let inner = gr_curated_controllers::create_dualsense(options).map_err(controller_error)?;
+    let inner = crate::creation::finish(
+        gr_curated_controllers::create_dualsense(options).map_err(controller_error),
+        || crate::creation::close_audio(&mut audio),
+    )?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualsense"),
         options,
@@ -620,13 +626,16 @@ pub fn create_dualshock4_with_identity(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
+    let mut audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualShock4,
         options.session.0,
     )?;
-    let inner = gr_curated_controllers::create_dualshock4_with_identity(options, identity.0)
-        .map_err(controller_error)?;
+    let inner = crate::creation::finish(
+        gr_curated_controllers::create_dualshock4_with_identity(options, identity.0)
+            .map_err(controller_error),
+        || crate::creation::close_audio(&mut audio),
+    )?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualshock4"),
         options,
@@ -656,12 +665,15 @@ pub fn create_dualshock4(
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
+    let mut audio = crate::audio::open(
         audio_options,
         crate::audio::Family::DualShock4,
         options.session.0,
     )?;
-    let inner = gr_curated_controllers::create_dualshock4(options).map_err(controller_error)?;
+    let inner = crate::creation::finish(
+        gr_curated_controllers::create_dualshock4(options).map_err(controller_error),
+        || crate::creation::close_audio(&mut audio),
+    )?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualshock4"),
         options,
@@ -1068,12 +1080,15 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Con
     }
     let audio_options = options.audio();
     let options = options.internal()?;
-    let audio = crate::audio::open(
+    let mut audio = crate::audio::open(
         audio_options,
         crate::audio::Family::Xbox360,
         options.session.0,
     )?;
-    let inner = gr_curated_controllers::create_xbox360(options).map_err(controller_error)?;
+    let inner = crate::creation::finish(
+        gr_curated_controllers::create_xbox360(options).map_err(controller_error),
+        || crate::creation::close_audio(&mut audio),
+    )?;
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.xbox360"),
         options,
@@ -1110,9 +1125,18 @@ fn create_dualsense_usb(
     if let Err(error) = inner.commit() {
         audio.close();
         inner.close();
-        return Err(ControllerError::Open {
-            reason: error.to_string(),
-        });
+        let mut cleanup: Vec<String> = audio
+            .last_error()
+            .map(ToString::to_string)
+            .into_iter()
+            .collect();
+        cleanup.extend(inner.provider_diagnostics().last_error);
+        return Err(crate::creation::failure(
+            ControllerError::Open {
+                reason: error.to_string(),
+            },
+            cleanup,
+        ));
     }
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualsense"),
@@ -1151,9 +1175,18 @@ fn create_dualshock4_usb(
     if let Err(error) = inner.commit() {
         audio.close();
         inner.close();
-        return Err(ControllerError::Open {
-            reason: error.to_string(),
-        });
+        let mut cleanup: Vec<String> = audio
+            .last_error()
+            .map(ToString::to_string)
+            .into_iter()
+            .collect();
+        cleanup.extend(inner.provider_diagnostics().last_error);
+        return Err(crate::creation::failure(
+            ControllerError::Open {
+                reason: error.to_string(),
+            },
+            cleanup,
+        ));
     }
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.dualshock4"),
@@ -1190,9 +1223,18 @@ fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, Con
     if let Err(error) = inner.commit() {
         audio.close();
         inner.close();
-        return Err(ControllerError::Open {
-            reason: error.to_string(),
-        });
+        let mut cleanup: Vec<String> = audio
+            .last_error()
+            .map(ToString::to_string)
+            .into_iter()
+            .collect();
+        cleanup.extend(inner.provider_diagnostics().last_error);
+        return Err(crate::creation::failure(
+            ControllerError::Open {
+                reason: error.to_string(),
+            },
+            cleanup,
+        ));
     }
     let association = ControllerAssociation::single(
         ControllerId::new("virtualgamepad.xbox360"),

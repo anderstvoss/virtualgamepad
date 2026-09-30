@@ -187,7 +187,7 @@ impl Session {
         self.check()?;
         self.playback
             .as_mut()
-            .ok_or(AudioError::IncompatibleTopology)?
+            .ok_or(AudioError::OwnershipMismatch)?
             .read(dest)
     }
     /// # Errors
@@ -196,7 +196,7 @@ impl Session {
         self.check()?;
         self.microphone
             .as_mut()
-            .ok_or(AudioError::IncompatibleTopology)?
+            .ok_or(AudioError::OwnershipMismatch)?
             .push(samples)
     }
     #[must_use]
@@ -210,7 +210,7 @@ impl Session {
         self.check()?;
         self.microphone
             .as_mut()
-            .ok_or(AudioError::IncompatibleTopology)?
+            .ok_or(AudioError::OwnershipMismatch)?
             .flush()
     }
     /// # Errors
@@ -219,7 +219,7 @@ impl Session {
         self.check()?;
         self.playback
             .as_mut()
-            .ok_or(AudioError::IncompatibleTopology)?
+            .ok_or(AudioError::OwnershipMismatch)?
             .flush()
     }
     #[must_use]

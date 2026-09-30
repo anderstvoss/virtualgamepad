@@ -81,11 +81,11 @@ required-features = ["audio-usbip"]
 
 [[example]]
 name = "usb_audio_native_probe"
-required-features = ["audio-usbip", "audio-pipewire"]
+required-features = ["experimental", "audio-usbip", "audio-pipewire"]
 
 [[example]]
 name = "usb_audio_latency"
-required-features = ["audio-usbip"]
+required-features = ["experimental", "audio-usbip"]
 
 [[example]]
 name = "usb_audio_latency_reverse"
