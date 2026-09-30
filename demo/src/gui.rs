@@ -42,6 +42,7 @@ struct ControllerOptions {
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
+const SERVICE_GAP_HISTORY_LIMIT: usize = 4_096;
 const CONTROLLER_ID_WIDTH: usize = 3;
 const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
@@ -644,6 +645,9 @@ impl ServiceMetrics {
             self.max_gap = self.max_gap.max(gap);
             if let Ok(mut history) = self.gap_history.lock() {
                 history.push_back((now, gap));
+                if history.len() > SERVICE_GAP_HISTORY_LIMIT {
+                    history.pop_front();
+                }
             }
         }
         self.last_service = Some(now);
@@ -2262,7 +2266,9 @@ fn draw_controller_state(
                                     .speed(1.0)
                                     .suffix("s"),
                             )
-                            .on_hover_text("0 includes the controller's entire observed lifetime");
+                            .on_hover_text(format!(
+                                "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
+                            ));
                             for (label, gap) in [
                                 ("10%:", gaps.map(|gaps| gaps[0])),
                                 ("1%:", gaps.map(|gaps| gaps[1])),
@@ -3634,6 +3640,25 @@ mod tests {
         assert_eq!(display.logs.first().unwrap(), "800");
         assert_eq!(display.logs.last().unwrap(), "999");
         assert_eq!(display.indicators.led, Some([1, 2, 3]));
+    }
+
+    #[test]
+    fn service_gap_history_retains_only_the_latest_bounded_window() {
+        let mut metrics = ServiceMetrics::default();
+        let start = Instant::now();
+        for sample in 0..(SERVICE_GAP_HISTORY_LIMIT + 100) {
+            metrics.record(start + Duration::from_micros(sample as u64 * 4_000));
+        }
+        let history = metrics.gap_history.lock().unwrap();
+        assert_eq!(history.len(), SERVICE_GAP_HISTORY_LIMIT);
+        assert_eq!(
+            history.front().unwrap().0,
+            start + Duration::from_micros(100 * 4_000)
+        );
+        assert_eq!(
+            history.back().unwrap().0,
+            start + Duration::from_micros((SERVICE_GAP_HISTORY_LIMIT + 99) as u64 * 4_000)
+        );
     }
 
     #[test]
