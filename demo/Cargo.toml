@@ -17,6 +17,7 @@ virtualgamepad = { path = "..", version = "0.1", features = ["experimental"] }
 [features]
 # Demo opt-ins; root default features remain minimal. USB/IP remains WIP.
 audio-pipewire = ["virtualgamepad/audio-pipewire"]
+audio-alsa = ["virtualgamepad/audio-alsa"]
 audio-usbip = ["virtualgamepad/audio-usbip"]
 
 [lints]

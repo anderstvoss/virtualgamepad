@@ -1,5 +1,7 @@
 mod audio_lab;
+mod audio_topology;
 mod editor;
+mod host_audio;
 mod input_clusters;
 use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
@@ -558,6 +560,15 @@ impl Kind {
             Self::SwitchPro => "SWITCHPRO",
         }
     }
+
+    const fn audio_family(self) -> audio_topology::ControllerFamily {
+        match self {
+            Self::Xbox360 => audio_topology::ControllerFamily::Xbox360,
+            Self::DualSense => audio_topology::ControllerFamily::DualSense,
+            Self::DualShock4 => audio_topology::ControllerFamily::DualShock4,
+            Self::SwitchPro => audio_topology::ControllerFamily::SwitchPro,
+        }
+    }
 }
 enum Controller {
     Xbox(Xbox360Controller),
@@ -762,10 +773,11 @@ trait ServicedController: Send + Sized {
     fn audio_cycle(
         &mut self,
         activity: &mut audio_lab::Activity,
+        router: &mut audio_lab::AudioRouter,
         action: Option<audio_lab::Action>,
     ) -> Result<(), String> {
         if let Some(audio) = self.audio() {
-            audio_lab::cycle(audio, activity, action)
+            audio_lab::cycle(audio, activity, router, action)
                 .map_err(|error| audio_lab::error_message(&error))?;
         }
         Ok(())
@@ -885,12 +897,19 @@ fn label_output_logs(label: &str, logs: &mut [String]) {
 
 #[cfg(test)]
 fn spawn_service_worker<C: ServicedController + 'static>(controller: C) -> ServiceWorker<C> {
-    spawn_service_worker_with_label(controller, "Controller".into())
+    spawn_service_worker_with_label(
+        controller,
+        "Controller".into(),
+        audio_topology::ControllerFamily::DualSense,
+        audio_lab::HostBackend::default(),
+    )
 }
 
 fn spawn_service_worker_with_label<C: ServicedController + 'static>(
     mut controller: C,
     log_label: String,
+    audio_family: audio_topology::ControllerFamily,
+    audio_backend: audio_lab::HostBackend,
 ) -> ServiceWorker<C> {
     let (stop_sender, stop_receiver) = mpsc::channel();
     let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
@@ -907,6 +926,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
         let mut metrics = ServiceMetrics::default();
         let mut applied = 0;
         let mut audio_activity = audio_lab::Activity::default();
+        let mut audio_router = audio_lab::AudioRouter::default();
         loop {
             match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -928,7 +948,10 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                     &mut indicators,
                 )?;
                 let action = audio_receiver.try_recv().ok();
-                controller.audio_cycle(&mut audio_activity, action)?;
+                if controller.audio().is_some() {
+                    audio_activity.initialize_for_family(audio_family, audio_backend);
+                }
+                controller.audio_cycle(&mut audio_activity, &mut audio_router, action)?;
                 Ok(delay.min(controller.deadline().unwrap_or(delay)))
             })();
             label_output_logs(&log_label, &mut logs);
@@ -1431,6 +1454,8 @@ impl App {
                         name,
                         controller_id(options.id, options.target, self.kind)
                     ),
+                    self.kind.audio_family(),
+                    options.audio.host_backend,
                 ));
                 self.controllers.push(NamedController {
                     kind: self.kind,
@@ -2049,13 +2074,23 @@ impl eframe::App for App {
                                         if ui.button("Recreate with current creation choices").on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.").clicked() {
                                             recreate_controller = Some(index);
                                         }
-                                        if let Some(worker) = &named.service_worker {
-                                            if let Ok(display) = worker.display.try_lock() {
-                                                if let Some(action) = audio_lab::draw(ui, display.audio.as_ref()) {
-                                                    if worker.audio_actions.try_send(action).is_err() {
-                                                        self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
-                                                    }
-                                                }
+                                        let audio_view = named
+                                            .service_worker
+                                            .as_ref()
+                                            .and_then(|worker| worker.display.try_lock().ok())
+                                            .and_then(|display| display.audio.clone());
+                                        let mut audio_routing =
+                                            audio_view.as_ref().map(|view| view.routing.clone());
+                                        let mut audio_routing_changed = false;
+                                        if let Some(action) = audio_lab::draw(ui, audio_view.as_ref()) {
+                                            if !named
+                                                .service_worker
+                                                .as_ref()
+                                                .is_some_and(|worker| {
+                                                    worker.audio_actions.try_send(action).is_ok()
+                                                })
+                                            {
+                                                self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
                                             }
                                         }
                                         ui.add_sized(
@@ -2078,9 +2113,20 @@ impl eframe::App for App {
                                         section_frame.show(ui, |ui| {
                                             ui.set_min_width(section_content_width);
                                             ui.horizontal(|ui| {
-                                                ui.heading("Reverse Output");
+                                                ui.heading("Output");
                                             });
                                             ui.separator();
+                                            if let (Some(view), Some(routing)) =
+                                                (audio_view.as_ref(), audio_routing.as_mut())
+                                            {
+                                                audio_routing_changed |=
+                                                    audio_lab::draw_output_routes(
+                                                        ui,
+                                                        routing,
+                                                        &view.playback_devices,
+                                                        &view.playback_channel_labels,
+                                                    );
+                                            }
                                             draw_feedback_rows(ui, &named.indicators);
                                             ui.collapsing("Reverse output log", |ui| {
                                                 draw_reverse_output_log(ui, &mut named.output_log);
@@ -2109,6 +2155,16 @@ impl eframe::App for App {
                                                     .clicked();
                                             });
                                             ui.separator();
+                                            if let (Some(view), Some(routing)) =
+                                                (audio_view.as_ref(), audio_routing.as_mut())
+                                            {
+                                                audio_routing_changed |= audio_lab::draw_input_routes(
+                                                    ui,
+                                                    routing,
+                                                    &view.capture_devices,
+                                                    &view.capture_channel_labels,
+                                                );
+                                            }
                                             if release_all {
                                                 named.input_ui.release_all();
                                                 if let Err(error) = named.view.release_inputs() {
@@ -2143,6 +2199,19 @@ impl eframe::App for App {
                                                 }
                                             }
                                         });
+                                        if audio_routing_changed {
+                                            if let (Some(worker), Some(routing)) =
+                                                (named.service_worker.as_ref(), audio_routing)
+                                            {
+                                                if worker
+                                                    .audio_actions
+                                                    .try_send(audio_lab::Action::Routing(routing))
+                                                    .is_err()
+                                                {
+                                                    self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio routing update queue busy; retry after the next service cycle.".into(), success: false });
+                                                }
+                                            }
+                                        }
                                     }
                                     self.polling_period_seconds = polling_period_seconds;
                                 });
@@ -3400,6 +3469,7 @@ mod tests {
         fn audio_cycle(
             &mut self,
             _: &mut audio_lab::Activity,
+            _: &mut audio_lab::AudioRouter,
             _: Option<audio_lab::Action>,
         ) -> Result<(), String> {
             self.audio_cycles += 1;
@@ -3869,6 +3939,41 @@ mod tests {
         ] {
             assert!(advanced_options_available(target));
         }
+    }
+
+    #[test]
+    fn advanced_options_scroll_long_labels_within_the_sidebar_viewport() {
+        let context = egui::Context::default();
+        let mut viewport_height = 0.0;
+        let mut content_height = 0.0;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(220.0, 150.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    let output = egui::ScrollArea::vertical()
+                        .id_salt("advanced_options_scroll_test")
+                        .max_height(64.0)
+                        .show(ui, |ui| {
+                            ui.set_width(192.0);
+                            for _ in 0..8 {
+                                ui.label(
+                                    "A long explanatory audio backend detail that must wrap in the sidebar.",
+                                );
+                            }
+                        });
+                    viewport_height = output.inner_rect.height();
+                    content_height = output.content_size.y;
+                });
+            },
+        );
+        assert!(viewport_height <= 64.0, "{viewport_height}");
+        assert!(content_height > viewport_height, "{content_height}");
     }
 
     #[test]

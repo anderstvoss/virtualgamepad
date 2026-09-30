@@ -66,6 +66,7 @@ default = []
 # Research/SPI only: excluded from the application API stability promise.
 experimental = []
 audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
+audio-alsa = []
 audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
 
 [dev-dependencies]
