@@ -762,7 +762,7 @@ struct NamedController {
 
 fn update_cached_snapshot<T: Clone>(cached: &mut Option<T>, observed: Option<&Option<T>>) {
     if let Some(observed) = observed {
-        *cached = observed.clone();
+        cached.clone_from(observed);
     }
 }
 
@@ -2160,31 +2160,23 @@ impl eframe::App for App {
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
                                         let mut audio_routing_changed = false;
-                                        if audio_lab::controller_audio_enabled(named.options.audio) {
-                                            if let Some(action) =
-                                                audio_lab::draw(ui, audio_view.as_ref())
-                                            {
-                                                if !named
-                                                    .service_worker
-                                                    .as_ref()
-                                                    .is_some_and(|worker| {
-                                                        worker.audio_actions.try_send(action).is_ok()
-                                                    })
-                                                {
-                                                    self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
-                                                }
-                                            }
-                                        }
-                                        ui.add_sized(
-                                            [ui.available_width(), 1.0],
-                                            egui::Separator::default(),
-                                        );
-                                        draw_controller_state(
+                                        if let Some(action) = draw_controller_state(
                                             ui,
                                             named,
                                             &mut polling_period_seconds,
                                             &mut self.service_gap_percentiles,
-                                        );
+                                            audio_view.as_ref(),
+                                        ) {
+                                            if !named
+                                                .service_worker
+                                                .as_ref()
+                                                .is_some_and(|worker| {
+                                                    worker.audio_actions.try_send(action).is_ok()
+                                                })
+                                            {
+                                                self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
+                                            }
+                                        }
                                         let input_width = ui.available_width();
                                         let section_frame = egui::Frame::group(ui.style());
                                         let section_margin = section_frame.total_margin();
@@ -2201,13 +2193,19 @@ impl eframe::App for App {
                                             if let (Some(view), Some(routing)) =
                                                 (audio_view.as_ref(), audio_routing.as_mut())
                                             {
-                                                audio_routing_changed |=
-                                                    audio_lab::draw_output_routes(
-                                                        ui,
-                                                        routing,
-                                                        &view.playback_devices,
-                                                        &view.playback_channel_labels,
-                                                    );
+                                                if routing.jack_connector.is_some()
+                                                    || !routing.outputs.is_empty()
+                                                {
+                                                    card(ui, "Audio", |ui| {
+                                                        audio_routing_changed |=
+                                                            audio_lab::draw_output_routes(
+                                                                ui,
+                                                                routing,
+                                                                &view.playback_devices,
+                                                                &view.playback_channel_labels,
+                                                            );
+                                                    });
+                                                }
                                             }
                                             draw_feedback_rows(ui, &named.indicators);
                                             ui.collapsing("Reverse output log", |ui| {
@@ -2237,16 +2235,6 @@ impl eframe::App for App {
                                                     .clicked();
                                             });
                                             ui.separator();
-                                            if let (Some(view), Some(routing)) =
-                                                (audio_view.as_ref(), audio_routing.as_mut())
-                                            {
-                                                audio_routing_changed |= audio_lab::draw_input_routes(
-                                                    ui,
-                                                    routing,
-                                                    &view.capture_devices,
-                                                    &view.capture_channel_labels,
-                                                );
-                                            }
                                             if release_all {
                                                 named.input_ui.release_all();
                                                 if let Err(error) = named.view.release_inputs() {
@@ -2258,6 +2246,20 @@ impl eframe::App for App {
                                                 &mut named.view,
                                                 inputs_ready,
                                             );
+                                            if let (Some(view), Some(routing)) =
+                                                (audio_view.as_ref(), audio_routing.as_mut())
+                                            {
+                                                if !routing.inputs.is_empty() {
+                                                    card(ui, "Microphone", |ui| {
+                                                        audio_routing_changed |= audio_lab::draw_input_routes(
+                                                            ui,
+                                                            routing,
+                                                            &view.capture_devices,
+                                                            &view.capture_channel_labels,
+                                                        );
+                                                    });
+                                                }
+                                            }
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 // Keep the input surface allocated on the action frame. Skipping it
                                                 // shrinks the parent scroll area and causes its offset to be clamped.
@@ -2386,7 +2388,8 @@ fn draw_controller_state(
     controller: &mut NamedController,
     polling_period_seconds: &mut u32,
     gap_percentiles: &mut ServiceGapPercentileCache,
-) {
+    audio_view: Option<&audio_lab::View>,
+) -> Option<audio_lab::Action> {
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
     ui.group(|ui| {
@@ -2449,7 +2452,14 @@ fn draw_controller_state(
             polling_period_seconds,
             gap_percentiles,
         );
-    });
+        if audio_lab::controller_audio_enabled(controller.options.audio) {
+            ui.separator();
+            audio_lab::draw_diagnostics(ui, audio_view)
+        } else {
+            None
+        }
+    })
+    .inner
 }
 
 fn draw_controller_metrics(
@@ -4406,13 +4416,21 @@ mod tests {
     #[test]
     fn cached_audio_snapshot_survives_a_busy_worker_frame() {
         let mut cached = Some("live audio".to_owned());
-        update_cached_snapshot(&mut cached, None);
+        let worker_audio = Mutex::new(Some("new audio".to_owned()));
+        let held = worker_audio.lock().unwrap();
+        let busy = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, busy.as_ref().ok().map(|audio| &**audio));
         assert_eq!(cached.as_deref(), Some("live audio"));
+        drop(held);
 
-        update_cached_snapshot(&mut cached, Some(&Some("new audio".to_owned())));
+        let available = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, available.as_ref().ok().map(|audio| &**audio));
         assert_eq!(cached.as_deref(), Some("new audio"));
 
-        update_cached_snapshot(&mut cached, Some(&None));
+        drop(available);
+        *worker_audio.lock().unwrap() = None;
+        let no_audio = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, no_audio.as_ref().ok().map(|audio| &**audio));
         assert!(cached.is_none());
     }
 

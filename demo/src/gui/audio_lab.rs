@@ -937,54 +937,182 @@ fn selector_text(selector: &virtualgamepad::AudioEndpointSelector) -> String {
     }
 }
 
-pub(super) fn draw(ui: &mut egui::Ui, view: Option<&View>) -> Option<Action> {
+pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option<Action> {
     let mut action = None;
-    ui.group(|ui| {
-        ui.heading("Controller audio");
-        let Some(view) = view else { ui.label("Audio disabled for this creation."); return; };
-        ui.label(view.limitation);
+    draw_audio_info_header(ui, view);
+    let Some(view) = view else {
+        ui.weak("Waiting for controller audio status…");
+        return None;
+    };
+
+    let status = if view.health.failed() {
+        "Failed"
+    } else if view.health.is_closed() {
+        "Closed"
+    } else {
+        "Open"
+    };
+    draw_diagnostic_metric_rows(
+        ui,
+        &[
+            ("Status", status.to_owned()),
+            ("Underrun frames", view.health.underrun_frames().to_string()),
+            (
+                "Dropped playback",
+                view.health.dropped_playback_frames().to_string(),
+            ),
+            ("Playback frames", view.activity.playback_frames.to_string()),
+            ("Discontinuities", view.activity.discontinuities.to_string()),
+            ("Playback peak", view.activity.peak.to_string()),
+            (
+                "Latest segment",
+                view.activity
+                    .first_playback_frame
+                    .map_or_else(|| "—".to_owned(), |frame| frame.to_string()),
+            ),
+            (
+                "Microphone test",
+                format!("{} accepted frames", view.activity.microphone_frames),
+            ),
+        ],
+    );
+    ui.horizontal(|ui| {
         if let Some(error) = &view.routing_error {
-            ui.colored_label(egui::Color32::YELLOW, format!("Host audio routing: {error}"));
-            if ui.button("Retry host audio routing").clicked() {
-                action = Some(Action::RetryRouting);
-            }
+            ui.colored_label(egui::Color32::YELLOW, "Host routing: error")
+                .on_hover_text(error);
+        } else {
+            ui.label("Host routing: ready");
         }
-        ui.label(format!("Closed: {} · Failed: {} · Underrun frames: {} · Dropped playback: {}",
-            view.health.is_closed(), view.health.failed(), view.health.underrun_frames(), view.health.dropped_playback_frames()));
-        if let Some(error) = view.health.last_error() { ui.colored_label(egui::Color32::YELLOW, error_message(error)); }
-        ui.label(format!("Playback monitor: {} frames, {} discontinuities, peak {} · Latest segment at {:?} · Microphone test: {} accepted frames",
-            view.activity.playback_frames, view.activity.discontinuities, view.activity.peak, view.activity.first_playback_frame, view.activity.microphone_frames));
-        ui.weak("Samples playback is monitored here. The meters and selectors below belong to the physical audio devices on this controller.");
-        for endpoint in &view.endpoints {
-            ui.collapsing(format!("{} · {:?} · {:?}", endpoint.group(), endpoint.direction(), endpoint.access()), |ui| {
-                ui.label(format!("{} Hz · {:?}", endpoint.format().sample_rate_hz(), endpoint.format().channels()));
-                ui.label(format!("Clock domain: {}", endpoint.clock_domain()));
-                ui.horizontal_wrapped(|ui| {
-                    let host = selector_text(endpoint.host());
-                    ui.monospace(format!("Host: {host}"));
-                    if ui.button("Copy host selector").clicked() { ui.ctx().copy_text(host); }
-                });
-                if let Some(caller) = endpoint.caller() {
-                    ui.horizontal_wrapped(|ui| {
-                        let caller = selector_text(caller);
-                        ui.monospace(format!("Caller: {caller}"));
-                        if ui.button("Copy caller selector").clicked() { ui.ctx().copy_text(caller); }
-                    });
+        if ui
+            .add_enabled(
+                view.routing_error.is_some(),
+                egui::Button::new("Retry routing"),
+            )
+            .clicked()
+        {
+            action = Some(Action::RetryRouting);
+        }
+    });
+    if let Some(error) = view.health.last_error() {
+        ui.colored_label(egui::Color32::YELLOW, error_message(error));
+    }
+
+    draw_endpoint_details(ui, &view.endpoints);
+    draw_audio_actions(ui, view).or(action)
+}
+
+fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
+    ui.horizontal(|ui| {
+        ui.strong("Audio");
+        let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
+        if info.hovered() {
+            egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+                ui.set_max_width(360.0);
+                ui.strong("Controller audio details");
+                if let Some(view) = view {
+                    ui.label(view.limitation);
                 }
-                ui.weak("Selectors belong to this open creation; resolve anew after recreation.");
+                ui.label("Playback samples are monitored here. The meters and device selectors in Output and Input belong to this controller's physical audio endpoints.");
+                ui.label("Endpoint selectors belong to this open creation; resolve them again after recreating the controller.");
             });
         }
-        let sample_owner = |direction| view.endpoints.iter().any(|e| e.direction() == direction && e.access() == AudioAccess::Samples);
-        ui.add_enabled_ui(!view.health.is_closed() && !view.health.failed(), |ui| {
-            ui.horizontal_wrapped(|ui| {
-                if ui.add_enabled(sample_owner(SampleDirection::HostToController), egui::Button::new("Flush playback")).clicked() { action = Some(Action::FlushPlayback); }
-                if ui.add_enabled(sample_owner(SampleDirection::ControllerToHost), egui::Button::new("Flush microphone")).clicked() { action = Some(Action::FlushMicrophone); }
-                let mut tone = view.activity.tone;
-                if ui.add_enabled(sample_owner(SampleDirection::ControllerToHost), egui::Checkbox::new(&mut tone, "440 Hz microphone test tone")).changed() { action = Some(Action::Tone(tone)); }
-            });
+    });
+}
+
+fn draw_endpoint_details(ui: &mut egui::Ui, endpoints: &[AudioEndpoint]) {
+    ui.collapsing(format!("Endpoints ({})", endpoints.len()), |ui| {
+        for endpoint in endpoints {
+            ui.collapsing(
+                format!(
+                    "{} · {:?} · {:?}",
+                    endpoint.group(),
+                    endpoint.direction(),
+                    endpoint.access()
+                ),
+                |ui| {
+                    ui.label(format!(
+                        "{} Hz · {:?}",
+                        endpoint.format().sample_rate_hz(),
+                        endpoint.format().channels()
+                    ));
+                    ui.label(format!("Clock domain: {}", endpoint.clock_domain()));
+                    ui.horizontal_wrapped(|ui| {
+                        let host = selector_text(endpoint.host());
+                        ui.monospace(format!("Host: {host}"));
+                        if ui.button("Copy host selector").clicked() {
+                            ui.ctx().copy_text(host);
+                        }
+                    });
+                    if let Some(caller) = endpoint.caller() {
+                        ui.horizontal_wrapped(|ui| {
+                            let caller = selector_text(caller);
+                            ui.monospace(format!("Caller: {caller}"));
+                            if ui.button("Copy caller selector").clicked() {
+                                ui.ctx().copy_text(caller);
+                            }
+                        });
+                    }
+                },
+            );
+        }
+    });
+}
+
+fn draw_audio_actions(ui: &mut egui::Ui, view: &View) -> Option<Action> {
+    let mut action = None;
+    let sample_owner = |direction| {
+        view.endpoints.iter().any(|endpoint| {
+            endpoint.direction() == direction && endpoint.access() == AudioAccess::Samples
+        })
+    };
+    ui.add_enabled_ui(!view.health.is_closed() && !view.health.failed(), |ui| {
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(
+                    sample_owner(SampleDirection::HostToController),
+                    egui::Button::new("Flush playback"),
+                )
+                .clicked()
+            {
+                action = Some(Action::FlushPlayback);
+            }
+            if ui
+                .add_enabled(
+                    sample_owner(SampleDirection::ControllerToHost),
+                    egui::Button::new("Flush microphone"),
+                )
+                .clicked()
+            {
+                action = Some(Action::FlushMicrophone);
+            }
+            let mut tone = view.activity.tone;
+            if ui
+                .add_enabled(
+                    sample_owner(SampleDirection::ControllerToHost),
+                    egui::Checkbox::new(&mut tone, "440 Hz microphone test tone"),
+                )
+                .changed()
+            {
+                action = Some(Action::Tone(tone));
+            }
         });
     });
     action
+}
+
+fn draw_diagnostic_metric_rows(ui: &mut egui::Ui, rows: &[(&str, String)]) -> egui::Rect {
+    egui::Grid::new("controller_audio_metrics")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            for (label, value) in rows {
+                ui.label(*label);
+                super::boxed_metric_output(ui, value);
+                ui.end_row();
+            }
+        })
+        .response
+        .rect
 }
 
 fn draw_device_selector(
@@ -1100,8 +1228,12 @@ pub(super) fn draw_output_routes(
             }
         }
     }
+    let mut previous_entry = routing.jack_connector.is_some();
     for route in &mut routing.outputs {
-        ui.separator();
+        if previous_entry {
+            ui.separator();
+        }
+        previous_entry = true;
         changed |= ui.checkbox(&mut route.enabled, &route.label).changed();
         ui.label("Play through");
         changed |= draw_device_selector(ui, &route.id, &mut route.device_id, devices);
@@ -1155,8 +1287,10 @@ pub(super) fn draw_input_routes(
     capture_channel_labels: &[String],
 ) -> bool {
     let mut changed = false;
-    for route in &mut routing.inputs {
-        ui.separator();
+    for (index, route) in routing.inputs.iter_mut().enumerate() {
+        if index > 0 {
+            ui.separator();
+        }
         changed |= ui
             .checkbox(
                 &mut route.enabled,
@@ -1225,6 +1359,87 @@ mod tests {
         assert!(activity.capture_devices.is_empty());
         assert!(activity.routing.outputs.is_empty());
         assert!(activity.routing.inputs.is_empty());
+    }
+
+    #[test]
+    fn audio_diagnostic_rows_keep_their_height_as_live_counts_change() {
+        let context = egui::Context::default();
+        let mut previous_height: Option<f32> = None;
+        for frame in 0..6_u64 {
+            let mut rect = egui::Rect::NOTHING;
+            let rows = [
+                ("Status", "Open".to_owned()),
+                ("Underrun frames", (frame * 100_000).to_string()),
+                ("Playback frames", (frame * 1_000_000).to_string()),
+            ];
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(620.0, 240.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        rect = draw_diagnostic_metric_rows(ui, &rows);
+                    });
+                },
+            );
+            assert!(rect.height() > 0.0);
+            if frame > 1
+                && let Some(previous_height) = previous_height
+            {
+                assert!((rect.height() - previous_height).abs() < f32::EPSILON);
+            }
+            previous_height = Some(rect.height());
+        }
+    }
+
+    #[test]
+    fn speaker_and_microphone_cards_fit_with_onboard_and_jack_routes() {
+        let context = egui::Context::default();
+        let topology = AudioTopology::for_family(ControllerFamily::DualSense);
+        let mut routing = RoutingState::for_topology(topology, HostBackend::Alsa);
+        routing.set_jack_connected(true, topology);
+        assert_eq!(routing.outputs.len(), 2);
+        assert_eq!(routing.inputs.len(), 2);
+        let devices = host_devices(HostBackend::Alsa);
+        let playback_labels =
+            ["Front left", "Front right", "Rear left", "Rear right"].map(str::to_owned);
+        let capture_labels = ["Microphone left", "Microphone right"].map(str::to_owned);
+        let mut output_rect = egui::Rect::NOTHING;
+        let mut battery_rect = egui::Rect::NOTHING;
+        let mut microphone_rect = egui::Rect::NOTHING;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(260.0, 900.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    output_rect = super::super::input_clusters::card(ui, "Audio", |ui| {
+                        draw_output_routes(ui, &mut routing, &devices, &playback_labels);
+                    })
+                    .response
+                    .rect;
+                    battery_rect = super::super::input_clusters::card(ui, "Battery", |_| {})
+                        .response
+                        .rect;
+                    microphone_rect = super::super::input_clusters::card(ui, "Microphone", |ui| {
+                        draw_input_routes(ui, &mut routing, &devices, &capture_labels);
+                    })
+                    .response
+                    .rect;
+                });
+            },
+        );
+        assert!(output_rect.width() <= 260.0);
+        assert!(microphone_rect.width() <= 260.0);
+        assert!(microphone_rect.top() >= battery_rect.bottom());
     }
 
     #[test]
