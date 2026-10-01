@@ -2190,25 +2190,25 @@ impl eframe::App for App {
                                                 ui.heading("Output");
                                             });
                                             ui.separator();
+                                            wide_card(ui, "Controller output", |ui| {
+                                                draw_feedback_rows(ui, &named.indicators);
+                                            });
                                             if let (Some(view), Some(routing)) =
                                                 (audio_view.as_ref(), audio_routing.as_mut())
+                                                && (routing.jack_connector.is_some()
+                                                    || !routing.outputs.is_empty())
                                             {
-                                                if routing.jack_connector.is_some()
-                                                    || !routing.outputs.is_empty()
-                                                {
-                                                    card(ui, "Audio", |ui| {
-                                                        audio_routing_changed |=
-                                                            audio_lab::draw_output_routes(
-                                                                ui,
-                                                                routing,
-                                                                &view.playback_devices,
-                                                                &view.playback_channel_labels,
-                                                            );
-                                                    });
-                                                }
+                                                audio_routing_changed |= wide_card(ui, "Audio", |ui| {
+                                                    audio_lab::draw_output_routes(
+                                                        ui,
+                                                        routing,
+                                                        &view.playback_devices,
+                                                        &view.playback_channel_labels,
+                                                    )
+                                                })
+                                                .inner;
                                             }
-                                            draw_feedback_rows(ui, &named.indicators);
-                                            ui.collapsing("Reverse output log", |ui| {
+                                            wide_card(ui, "Reverse output log", |ui| {
                                                 draw_reverse_output_log(ui, &mut named.output_log);
                                             });
                                         });
@@ -2610,6 +2610,22 @@ fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
             draw_rumble_contents(ui, indicators);
             ui.end_row();
         });
+}
+
+fn wide_card<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let frame = egui::Frame::group(ui.style()).inner_margin(8.0);
+    let margin = frame.total_margin();
+    let content_width = (ui.available_width() - margin.left - margin.right).max(0.0);
+    frame.show(ui, |ui| {
+        ui.set_min_width(content_width);
+        ui.strong(title);
+        ui.separator();
+        add(ui)
+    })
 }
 
 fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {

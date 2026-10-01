@@ -14,6 +14,15 @@ pub(super) enum JackConnector {
     Mm35,
 }
 
+impl JackConnector {
+    pub const fn millimeters(self) -> &'static str {
+        match self {
+            Self::Mm25 => "2.5",
+            Self::Mm35 => "3.5",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum JackDevice {
     MonoSpeaker,
@@ -116,6 +125,44 @@ pub(super) fn default_channel_routes(
             destination,
         })
         .collect()
+}
+
+/// Find usable stereo pairs, matching semantic left/right names before using
+/// adjacent channels as a fallback. Haptic endpoints never become speaker sources.
+pub(super) fn stereo_channel_pairs(labels: &[String]) -> Vec<(usize, usize)> {
+    let usable = labels
+        .iter()
+        .enumerate()
+        .filter(|(_, label)| !label.to_ascii_lowercase().contains("haptic"))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let mut pairs = Vec::new();
+    let mut used = std::collections::HashSet::new();
+
+    for &left in &usable {
+        let lower = labels[left].to_ascii_lowercase();
+        let Some(position) = lower.find("left") else {
+            continue;
+        };
+        let right_label = format!("{}right{}", &lower[..position], &lower[position + 4..]);
+        if let Some(right) = usable.iter().copied().find(|&right| {
+            !used.contains(&right) && labels[right].eq_ignore_ascii_case(&right_label)
+        }) {
+            pairs.push((left, right));
+            used.insert(left);
+            used.insert(right);
+        }
+    }
+
+    for pair in usable
+        .into_iter()
+        .filter(|index| !used.contains(index))
+        .collect::<Vec<_>>()
+        .chunks_exact(2)
+    {
+        pairs.push((pair[0], pair[1]));
+    }
+    pairs
 }
 
 pub(super) fn apply_channel_routes(
@@ -249,6 +296,16 @@ mod tests {
         );
         assert_eq!(default_channel_routes(8, 12).len(), 12);
         assert_eq!(default_channel_routes(12, 8).len(), 8);
+    }
+
+    #[test]
+    fn stereo_pairs_match_left_right_semantics_and_ignore_haptics() {
+        let labels =
+            ["AudibleLeft", "AudibleRight", "HapticLeft", "HapticRight"].map(str::to_owned);
+        assert_eq!(stereo_channel_pairs(&labels), [(0, 1)]);
+
+        let labels = ["Channel 1", "Channel 2", "Channel 3"].map(str::to_owned);
+        assert_eq!(stereo_channel_pairs(&labels), [(0, 1)]);
     }
 
     #[test]
