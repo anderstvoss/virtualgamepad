@@ -244,6 +244,7 @@ fn draw_advanced_options(
                                 bottom: 2,
                             }),
                     );
+                    ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind != Kind::SwitchPro);
                 })
         });
