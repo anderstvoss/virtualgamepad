@@ -2,11 +2,11 @@
 
 Current pre-alpha API refinement is tracked in
 [the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
-Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
-security/recovery acceptance. Native-client continuity and matching fidelity remain
-open. The demo does not yet enable audio; its audio integration and actual
-maintainer feedback follow this package. Historical evidence below retains its
-original scope.
+Emulated audio is implemented; USB/IP remains WIP pending installed
+security/recovery acceptance. The demo enables USB/IP audio and ALSA host routing
+by default; UHID/PipeWire audio remains available with `--features audio-pipewire`.
+Native-client continuity and matching fidelity remain open. Historical evidence
+below retains its original scope.
 
 The [application API](APPLICATION_API.md) exposes uinput and USB/UHID for the
 current controllers. Gadget sections below describe experimental research SPI,

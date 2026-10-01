@@ -1,7 +1,7 @@
 //! Controller-owned audio. Backend factories remain implementation interfaces.
 pub(crate) mod backend;
 use crate::{
-    AudioAccess, AudioError, AudioExposure, AudioOptions, ControllerError, PcmFormat,
+    AudioAccess, AudioChannel, AudioError, AudioExposure, AudioOptions, ControllerError, PcmFormat,
     SampleDirection,
 };
 
@@ -164,6 +164,7 @@ pub struct AudioStreamTiming {
 /// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
 pub struct ControllerAudio {
     endpoints: Vec<AudioEndpoint>,
+    onboard_speaker_source: Option<AudioChannel>,
     limitation: &'static str,
     session: Box<dyn backend::Backend>,
 }
@@ -183,6 +184,12 @@ impl ControllerAudio {
     #[must_use]
     pub fn endpoints(&self) -> &[AudioEndpoint] {
         &self.endpoints
+    }
+    /// Semantic playback channel the provider maps to the controller's
+    /// built-in speaker, when documented by the selected profile.
+    #[must_use]
+    pub const fn onboard_speaker_source(&self) -> Option<AudioChannel> {
+        self.onboard_speaker_source
     }
     #[must_use]
     pub const fn limitation(&self) -> &'static str {
@@ -299,6 +306,7 @@ pub(crate) fn open(
         .map_err(|e| ControllerError::Unsupported {
             reason: e.to_string(),
         })?;
+        let onboard_speaker_source = profile.onboard_speaker_source();
         let session = gr_audio_linux::Session::open(&profile, options, creation).map_err(|e| {
             ControllerError::Open {
                 reason: e.to_string(),
@@ -325,6 +333,7 @@ pub(crate) fn open(
             .collect();
         Ok(Some(ControllerAudio {
             endpoints,
+            onboard_speaker_source,
             limitation: profile.limitation(),
             session: Box::new(session),
         }))
@@ -361,6 +370,7 @@ pub(crate) fn usb_audio(
     .map_err(|error| ControllerError::Unsupported {
         reason: error.to_string(),
     })?;
+    let onboard_speaker_source = profile.onboard_speaker_source();
     let endpoints = profile
         .streams()
         .iter()
@@ -399,6 +409,7 @@ pub(crate) fn usb_audio(
         .collect::<Result<Vec<_>, ControllerError>>()?;
     Ok(ControllerAudio {
         endpoints,
+        onboard_speaker_source,
         limitation: profile.limitation(),
         session: Box::new(session),
     })

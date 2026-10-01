@@ -2,11 +2,11 @@
 
 Current pre-alpha API refinement is tracked in
 [the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
-Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
-security/recovery acceptance. Native-client continuity and matching fidelity remain
-open. The demo does not yet enable audio; its audio integration and actual
-maintainer feedback follow this package. Historical evidence below retains its
-original scope.
+Emulated audio is implemented; USB/IP remains WIP pending installed
+security/recovery acceptance. Plain `cargo run -p virtualgamepad-demo` enables
+USB/IP audio and ALSA host routing. Add `--features audio-pipewire` to enable
+UHID/PipeWire audio as well. Native-client continuity and matching fidelity remain
+open. Historical evidence below retains its original scope.
 
 Run `cargo run -p virtualgamepad-demo` as the ordinary user. First run
 `python3 scripts/host-preflight.py all` for a read-only prerequisite inventory;
