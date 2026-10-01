@@ -182,6 +182,39 @@ const fn advanced_options_available(_target: RealizationId) -> bool {
     true
 }
 
+fn draw_advanced_options(
+    ui: &mut egui::Ui,
+    next_controller_id: u64,
+    target: RealizationId,
+    kind: Kind,
+    audio_creation: &mut audio_lab::CreationAudio,
+) -> egui::Rect {
+    egui::Frame::NONE
+        .fill(sidebar_list_fill(ui))
+        .show(ui, |ui| {
+            ui.set_width(SIDEBAR_WIDTH - 8.0);
+            ui.strong("Controller ID preview");
+            let mut preview = controller_id(next_controller_id, target, kind);
+            let preview_width = ui.available_width();
+            ui.add_sized(
+                [preview_width, NAME_INPUT_HEIGHT],
+                egui::TextEdit::singleline(&mut preview)
+                    .interactive(false)
+                    .desired_width(preview_width)
+                    .vertical_align(egui::Align::Center)
+                    .margin(egui::Margin {
+                        left: 4,
+                        right: 4,
+                        top: 2,
+                        bottom: 2,
+                    }),
+            );
+            audio_lab::draw_creation(ui, audio_creation, target, kind != Kind::SwitchPro);
+        })
+        .response
+        .rect
+}
+
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
     let fallback = repaint_interval(controller_count);
     next_service.map_or(fallback, |deadline| deadline.min(fallback))
@@ -1762,44 +1795,13 @@ impl eframe::App for App {
                                 self.advanced_options_open = !self.advanced_options_open;
                             }
                             if self.advanced_options_open && advanced_available {
-                                egui::Frame::NONE
-                                    .fill(sidebar_list_fill(ui))
-                                    .show(ui, |ui| {
-                                        ui.set_width(SIDEBAR_WIDTH);
-                                        egui::ScrollArea::vertical()
-                                            .id_salt("advanced_options")
-                                            .max_height(ui.available_height().max(0.0))
-                                            .auto_shrink([false, true])
-                                            .show(ui, |ui| {
-                                                ui.set_width(SIDEBAR_WIDTH - 8.0);
-                                                ui.strong("Controller ID preview");
-                                                let mut preview = controller_id(
-                                                    self.next_controller_id,
-                                                    self.target,
-                                                    self.kind,
-                                                );
-                                                let preview_width = ui.available_width();
-                                                ui.add_sized(
-                                                    [preview_width, NAME_INPUT_HEIGHT],
-                                                    egui::TextEdit::singleline(&mut preview)
-                                                        .interactive(false)
-                                                        .desired_width(preview_width)
-                                                        .vertical_align(egui::Align::Center)
-                                                        .margin(egui::Margin {
-                                                            left: 4,
-                                                            right: 4,
-                                                            top: 2,
-                                                            bottom: 2,
-                                                        }),
-                                                );
-                                                audio_lab::draw_creation(
-                                                    ui,
-                                                    &mut self.audio_creation,
-                                                    self.target,
-                                                    self.kind != Kind::SwitchPro,
-                                                );
-                                            });
-                                    });
+                                draw_advanced_options(
+                                    ui,
+                                    self.next_controller_id,
+                                    self.target,
+                                    self.kind,
+                                    &mut self.audio_creation,
+                                );
                             }
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                             let controller_surface_width = SIDEBAR_WIDTH - 8.0;
@@ -3942,38 +3944,55 @@ mod tests {
     }
 
     #[test]
-    fn advanced_options_scroll_long_labels_within_the_sidebar_viewport() {
+    fn advanced_options_extend_the_existing_sidebar_scroll_region() {
         let context = egui::Context::default();
         let mut viewport_height = 0.0;
         let mut content_height = 0.0;
+        let mut advanced_rect = egui::Rect::NOTHING;
+        let mut audio_creation = audio_lab::CreationAudio::default();
         let _ = context.run(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
-                    egui::vec2(220.0, 150.0),
+                    egui::vec2(600.0, 180.0),
                 )),
                 ..Default::default()
             },
             |context| {
                 egui::CentralPanel::default().show(context, |ui| {
-                    let output = egui::ScrollArea::vertical()
-                        .id_salt("advanced_options_scroll_test")
-                        .max_height(64.0)
-                        .show(ui, |ui| {
-                            ui.set_width(192.0);
-                            for _ in 0..8 {
-                                ui.label(
-                                    "A long explanatory audio backend detail that must wrap in the sidebar.",
-                                );
-                            }
-                        });
+                    let output =
+                        egui::ScrollArea::both()
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| {
+                                ui.horizontal_top(|ui| {
+                                    ui.vertical(|ui| {
+                                        ui.set_width(SIDEBAR_WIDTH);
+                                        draw_advanced_options(
+                                            ui,
+                                            1,
+                                            audio_lab::default_creation_target(),
+                                            Kind::DualSense,
+                                            &mut audio_creation,
+                                        );
+                                        advanced_rect = ui.min_rect();
+                                    });
+                                    ui.vertical(|ui| {
+                                        ui.set_min_width(360.0);
+                                        ui.label("Controller panel");
+                                    });
+                                });
+                            });
                     viewport_height = output.inner_rect.height();
                     content_height = output.content_size.y;
                 });
             },
         );
-        assert!(viewport_height <= 64.0, "{viewport_height}");
+        assert!(viewport_height < 180.0, "{viewport_height}");
         assert!(content_height > viewport_height, "{content_height}");
+        assert!(
+            advanced_rect.width() <= SIDEBAR_WIDTH + 1.0,
+            "{advanced_rect:?}"
+        );
     }
 
     #[test]
