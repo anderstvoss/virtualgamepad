@@ -429,43 +429,50 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
 fn draw_target_selector(
     ui: &mut egui::Ui,
     target: &mut RealizationId,
+    row_width: f32,
 ) -> (egui::Rect, Option<egui::Rect>) {
-    let row_width = ui.available_width();
-    let row_height = ui.spacing().interact_size.y.max(18.0);
     let mut help_rect = None;
     let row = ui
-        .allocate_ui_with_layout(
-            egui::vec2(row_width, row_height),
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| {
-                let help = target_help(*target);
-                if let Some(help) = help {
-                    let response = ui.add_sized([18.0, 18.0], Button::new("!"));
-                    help_rect = Some(response.rect);
-                    if response.hovered() {
-                        egui::Tooltip::for_widget(&response)
-                            .at_pointer()
-                            .show(|ui| {
-                                ui.strong(help.title);
-                                ui.label(help.body);
-                            });
-                    }
+        .horizontal(|ui| {
+            let help = target_help(*target);
+            let help_width = help
+                .as_ref()
+                .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
+            let combo_width = (row_width - help_width).max(0.0);
+            let combo_height = ui.spacing().interact_size.y;
+            ui.allocate_ui_with_layout(
+                egui::vec2(combo_width, combo_height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    egui::ComboBox::from_id_salt("controller_target")
+                        .selected_text(target_label(*target))
+                        .truncate()
+                        .width(combo_width)
+                        .show_ui(ui, |ui| {
+                            for option in [
+                                RealizationId::LINUX_UINPUT,
+                                RealizationId::LINUX_UHID_USB,
+                                RealizationId::LINUX_USBIP_USB_AUDIO,
+                                RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                            ] {
+                                ui.selectable_value(target, option, target_label(option));
+                            }
+                        });
+                },
+            );
+            if let Some(help) = help {
+                let response = ui.add_sized([18.0, 18.0], Button::new("!"));
+                help_rect = Some(response.rect);
+                if response.hovered() {
+                    egui::Tooltip::for_widget(&response)
+                        .at_pointer()
+                        .show(|ui| {
+                            ui.strong(help.title);
+                            ui.label(help.body);
+                        });
                 }
-                egui::ComboBox::from_id_salt("controller_target")
-                    .selected_text(target_label(*target))
-                    .width(ui.available_width())
-                    .show_ui(ui, |ui| {
-                        for option in [
-                            RealizationId::LINUX_UINPUT,
-                            RealizationId::LINUX_UHID_USB,
-                            RealizationId::LINUX_USBIP_USB_AUDIO,
-                            RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                        ] {
-                            ui.selectable_value(target, option, target_label(option));
-                        }
-                    });
-            },
-        )
+            }
+        })
         .response
         .rect;
     (row, help_rect)
@@ -1724,7 +1731,7 @@ impl eframe::App for App {
                                 .spacing([6.0, 4.0])
                                 .show(ui, |ui| {
                                     ui.label("Type");
-                                    egui::ComboBox::from_id_salt("controller_type")
+                                    let type_selector = egui::ComboBox::from_id_salt("controller_type")
                                         .selected_text(self.kind.label())
                                         .width(ui.available_width())
                                         .show_ui(ui, |ui| {
@@ -1735,10 +1742,15 @@ impl eframe::App for App {
                                                     kind.label(),
                                                 );
                                             }
-                                    });
+                                        });
+                                    let target_row_width = type_selector.response.rect.width();
                                     ui.end_row();
                                     ui.label("Target");
-                                    let _ = draw_target_selector(ui, &mut self.target);
+                                    let _ = draw_target_selector(
+                                        ui,
+                                        &mut self.target,
+                                        target_row_width,
+                                    );
                                     ui.end_row();
                                 });
                             if self.kind != previous_kind || self.target != previous_target {
@@ -3522,26 +3534,57 @@ mod tests {
             let context = egui::Context::default();
             let mut rect = egui::Rect::NOTHING;
             let mut help_rect = None;
+            let mut type_selector_rect = egui::Rect::NOTHING;
             let mut sidebar_right = 0.0;
             let _ = context.run(
                 egui::RawInput {
                     screen_rect: Some(egui::Rect::from_min_size(
                         egui::Pos2::ZERO,
-                        egui::vec2(240.0, 120.0),
+                        egui::vec2(260.0, 120.0),
                     )),
                     ..Default::default()
                 },
                 |context| {
                     egui::CentralPanel::default().show(context, |ui| {
-                        ui.set_width(200.0);
-                        sidebar_right = ui.max_rect().right();
-                        let layout = draw_target_selector(ui, &mut target);
-                        rect = layout.0;
-                        help_rect = layout.1;
+                        ui.horizontal_top(|ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(SIDEBAR_WIDTH);
+                                ui.set_min_width(SIDEBAR_WIDTH);
+                                ui.set_max_width(SIDEBAR_WIDTH);
+                                sidebar_right = ui.max_rect().right();
+                                egui::Grid::new("target_selector_alignment_test")
+                                    .num_columns(2)
+                                    .show(ui, |ui| {
+                                        ui.label("Type");
+                                        type_selector_rect =
+                                            egui::ComboBox::from_id_salt("target_alignment_type")
+                                                .selected_text("Xbox 360")
+                                                .width(ui.available_width())
+                                                .show_ui(ui, |_| {})
+                                                .response
+                                                .rect;
+                                        ui.end_row();
+                                        ui.label("Target");
+                                        (rect, help_rect) = draw_target_selector(
+                                            ui,
+                                            &mut target,
+                                            type_selector_rect.width(),
+                                        );
+                                        ui.end_row();
+                                    });
+                            });
+                        });
                     });
                 },
             );
-            assert!(rect.right() <= sidebar_right + 1.0, "{target}: {rect:?}");
+            assert!(
+                rect.right() <= sidebar_right + 1.0,
+                "{target}: row={rect:?}, sidebar_right={sidebar_right}, type={type_selector_rect:?}"
+            );
+            assert!(
+                (rect.left() - type_selector_rect.left()).abs() <= 1.0,
+                "selector columns diverged: {rect:?}, {type_selector_rect:?}"
+            );
             if target_help(target).is_some() {
                 let help = help_rect.expect("USB targets show a help indicator");
                 assert!(
