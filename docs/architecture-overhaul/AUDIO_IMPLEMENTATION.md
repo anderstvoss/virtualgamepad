@@ -1,5 +1,10 @@
 # Controller audio execution ledger
 
+**Current continuation:** [Alpha API refinement](ALPHA_API_REFINEMENT.md).
+Implementation chronology below is preserved; old next-step directives do not
+override the current package or the open #112/#115/#116/#117 acceptance gates.
+USB/IP remains opt-in WIP. Current root API instrumentation is experimental.
+
 Baseline: GUI PR #110, `476056a`. Audio is newly authorized pre-alpha work; final
 API review, quality review and release still follow audio and later GUI feedback.
 

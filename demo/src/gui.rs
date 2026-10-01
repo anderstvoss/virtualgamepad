@@ -1,4 +1,7 @@
+mod audio_lab;
+mod audio_topology;
 mod editor;
+mod host_audio;
 mod input_clusters;
 use editor::{
     Command, ControllerView, DualSenseEditor, DualShock4Editor, SwitchProEditor, Xbox360Editor,
@@ -37,9 +40,12 @@ use virtualgamepad::{
 struct ControllerOptions {
     target: RealizationId,
     id: u64,
+    audio: audio_lab::CreationAudio,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
+const SERVICE_GAP_HISTORY_LIMIT: usize = 4_096;
+const SERVICE_GAP_PERCENTILE_REFRESH: Duration = Duration::from_millis(250);
 const CONTROLLER_ID_WIDTH: usize = 3;
 const CONTROLLER_NAME_MAX_CHARS: usize = 64;
 const DUALSENSE_MOTION_INTERVAL: Duration = Duration::from_millis(4);
@@ -90,7 +96,9 @@ const fn backend_status_is_healthy(status: ControllerStatus) -> bool {
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -98,6 +106,8 @@ fn dualsense_motion_target(target: RealizationId) -> bool {
 fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
     if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
+    } else if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+        "USB/IP HID motion report"
     } else {
         "DummyHcd USB motion report"
     }
@@ -106,7 +116,9 @@ fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
 fn motion_refresh_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -169,6 +181,80 @@ fn sidebar_layout_budget(
 
 const fn advanced_options_available(_target: RealizationId) -> bool {
     true
+}
+
+fn advanced_options_max_height(available_height: f32, body_line_height: f32, spacing: f32) -> f32 {
+    let footer_controls_height = (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
+    let diagnostic_height = diagnostic_log_height(body_line_height);
+    let reserved_after_options = 1.0
+        + CONTROLLER_ROW_HEIGHT
+        + CONTROLLER_LIST_MIN_HEIGHT
+        + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN
+        + footer_controls_height
+        + diagnostic_height
+        + (spacing * 7.0);
+    (available_height - reserved_after_options).max(ADVANCED_OPTIONS_BODY_HEIGHT)
+}
+
+#[derive(Debug)]
+struct AdvancedOptionsLayout {
+    panel_rect: egui::Rect,
+    #[cfg(test)]
+    viewport_rect: egui::Rect,
+    #[cfg(test)]
+    content_height: f32,
+}
+
+fn draw_advanced_options(
+    ui: &mut egui::Ui,
+    next_controller_id: u64,
+    target: RealizationId,
+    kind: Kind,
+    audio_creation: &mut audio_lab::CreationAudio,
+) -> AdvancedOptionsLayout {
+    let max_height = advanced_options_max_height(
+        ui.available_height(),
+        ui.text_style_height(&egui::TextStyle::Body),
+        ui.spacing().item_spacing.y,
+    );
+    let output = egui::Frame::NONE
+        .fill(sidebar_list_fill(ui))
+        .show(ui, |ui| {
+            ui.set_width(SIDEBAR_WIDTH);
+            egui::ScrollArea::vertical()
+                .id_salt("advanced_options")
+                .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                .max_height(max_height)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.set_width(SIDEBAR_WIDTH - 8.0);
+                    ui.strong("Controller ID preview");
+                    let mut preview = controller_id(next_controller_id, target, kind);
+                    let preview_width = ui.available_width();
+                    ui.add_sized(
+                        [preview_width, NAME_INPUT_HEIGHT],
+                        egui::TextEdit::singleline(&mut preview)
+                            .interactive(false)
+                            .desired_width(preview_width)
+                            .vertical_align(egui::Align::Center)
+                            .margin(egui::Margin {
+                                left: 4,
+                                right: 4,
+                                top: 2,
+                                bottom: 2,
+                            }),
+                    );
+                    ui.strong("Audio configuration");
+                    audio_lab::draw_creation(ui, audio_creation, target, kind != Kind::SwitchPro);
+                })
+        });
+    AdvancedOptionsLayout {
+        panel_rect: output.response.rect,
+        #[cfg(test)]
+        viewport_rect: output.inner.inner_rect,
+        #[cfg(test)]
+        content_height: output.inner.content_size.y,
+    }
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -316,6 +402,7 @@ fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
         RealizationId::LINUX_UINPUT => "UIN",
         RealizationId::LINUX_UHID_USB => "HID",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "UIP",
         _ => "UNK",
     }
 }
@@ -327,12 +414,68 @@ struct TargetHelp {
 
 fn target_help(target: RealizationId) -> Option<TargetHelp> {
     match target {
+        RealizationId::LINUX_USBIP_USB_AUDIO => Some(TargetHelp {
+            title: "Remote USB device (USB/IP; work in progress)",
+            body: "Exports a virtual USB controller over USB/IP so a second computer can attach it as a USB device. Unlike UHID, which registers a local HID device on this machine, USB/IP transports the USB device to a remote host. This profile includes UAC2 audio and needs the prepared broker/worker, USB/IP resources, enabled emulated audio, and the audio-usbip feature. Native clients also need audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
+        }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
-            title: "Experimental USB gadget",
-            body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
+            title: "Experimental USB gadget (dummy_hcd)",
+            body: "Exercises USB device enumeration through Linux's dummy_hcd virtual USB host-controller path. Unlike UHID, this is a USB gadget test path, but it does not connect a physical USB device or a remote host. Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation; research and test use only.",
         }),
         _ => None,
     }
+}
+
+fn draw_target_selector(
+    ui: &mut egui::Ui,
+    target: &mut RealizationId,
+    row_width: f32,
+) -> (egui::Rect, Option<egui::Rect>) {
+    let mut help_rect = None;
+    let row = ui
+        .horizontal(|ui| {
+            let help = target_help(*target);
+            let help_width = help
+                .as_ref()
+                .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
+            let combo_width = (row_width - help_width).max(0.0);
+            let combo_height = ui.spacing().interact_size.y;
+            ui.allocate_ui_with_layout(
+                egui::vec2(combo_width, combo_height),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    egui::ComboBox::from_id_salt("controller_target")
+                        .selected_text(target_label(*target))
+                        .truncate()
+                        .width(combo_width)
+                        .show_ui(ui, |ui| {
+                            for option in [
+                                RealizationId::LINUX_UINPUT,
+                                RealizationId::LINUX_UHID_USB,
+                                RealizationId::LINUX_USBIP_USB_AUDIO,
+                                RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                            ] {
+                                ui.selectable_value(target, option, target_label(option));
+                            }
+                        });
+                },
+            );
+            if let Some(help) = help {
+                let response = ui.add_sized([18.0, 18.0], Button::new("!"));
+                help_rect = Some(response.rect);
+                if response.hovered() {
+                    egui::Tooltip::for_widget(&response)
+                        .at_pointer()
+                        .show(|ui| {
+                            ui.strong(help.title);
+                            ui.label(help.body);
+                        });
+                }
+            }
+        })
+        .response
+        .rect;
+    (row, help_rect)
 }
 
 fn state_dump_directory() -> PathBuf {
@@ -493,6 +636,19 @@ fn creation_error_message(
     format!("{message}. {guidance}")
 }
 
+fn close_log(name: &str, error: Option<&str>) -> DiagnosticLogEntry {
+    match error {
+        Some(error) => DiagnosticLogEntry {
+            message: format!("Closed {name} with retained terminal/cleanup errors: {error}"),
+            success: false,
+        },
+        None => DiagnosticLogEntry {
+            message: successful_controller_close_message(name),
+            success: true,
+        },
+    }
+}
+
 fn status_after_runtime_failure(name: &str, error: String) -> ControllerLifecycleStatus {
     ControllerLifecycleStatus::ClosedAfterFailure {
         name: name.into(),
@@ -529,6 +685,15 @@ impl Kind {
             Self::DualSense => "DUALSENSE",
             Self::DualShock4 => "DS4",
             Self::SwitchPro => "SWITCHPRO",
+        }
+    }
+
+    const fn audio_family(self) -> audio_topology::ControllerFamily {
+        match self {
+            Self::Xbox360 => audio_topology::ControllerFamily::Xbox360,
+            Self::DualSense => audio_topology::ControllerFamily::DualSense,
+            Self::DualShock4 => audio_topology::ControllerFamily::DualShock4,
+            Self::SwitchPro => audio_topology::ControllerFamily::SwitchPro,
         }
     }
 }
@@ -589,7 +754,16 @@ struct NamedController {
     indicators: ReverseIndicators,
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
+    // Keep the status block allocated when the worker is briefly holding its display lock.
+    service_metrics: ServiceMetrics,
+    audio_view: Option<audio_lab::View>,
     input_ui: InputUiState,
+}
+
+fn update_cached_snapshot<T: Clone>(cached: &mut Option<T>, observed: Option<&Option<T>>) {
+    if let Some(observed) = observed {
+        cached.clone_from(observed);
+    }
 }
 
 #[derive(Clone)]
@@ -600,6 +774,7 @@ struct ServiceMetrics {
     last_service: Option<Instant>,
     gap_history: Arc<Mutex<VecDeque<(Instant, Duration)>>>,
 }
+
 impl Default for ServiceMetrics {
     fn default() -> Self {
         Self {
@@ -618,6 +793,9 @@ impl ServiceMetrics {
             self.max_gap = self.max_gap.max(gap);
             if let Ok(mut history) = self.gap_history.lock() {
                 history.push_back((now, gap));
+                if history.len() > SERVICE_GAP_HISTORY_LIMIT {
+                    history.pop_front();
+                }
             }
         }
         self.last_service = Some(now);
@@ -658,6 +836,37 @@ fn service_gap_percentiles(metrics: &ServiceMetrics, period_seconds: u32) -> Opt
 }
 
 #[derive(Default)]
+struct ServiceGapPercentileCache {
+    controller_id: Option<u64>,
+    period_seconds: u32,
+    updated_at: Option<Instant>,
+    values: Option<[Duration; 3]>,
+}
+
+impl ServiceGapPercentileCache {
+    fn get(
+        &mut self,
+        controller_id: u64,
+        metrics: &ServiceMetrics,
+        period_seconds: u32,
+        now: Instant,
+    ) -> Option<[Duration; 3]> {
+        let cache_is_fresh = self.controller_id == Some(controller_id)
+            && self.period_seconds == period_seconds
+            && self.updated_at.is_some_and(|updated_at| {
+                now.duration_since(updated_at) < SERVICE_GAP_PERCENTILE_REFRESH
+            });
+        if !cache_is_fresh {
+            self.controller_id = Some(controller_id);
+            self.period_seconds = period_seconds;
+            self.updated_at = Some(now);
+            self.values = service_gap_percentiles(metrics, period_seconds);
+        }
+        self.values
+    }
+}
+
+#[derive(Default)]
 struct WorkerDisplay {
     snapshot: Option<ControllerView>,
     applied: u64,
@@ -665,10 +874,12 @@ struct WorkerDisplay {
     metrics: ServiceMetrics,
     indicators: ReverseIndicators,
     backend_healthy: Option<bool>,
+    audio: Option<audio_lab::View>,
 }
 
 struct ServiceWorker<C> {
     edits: mpsc::SyncSender<(u64, Vec<Command<C>>)>,
+    audio_actions: mpsc::SyncSender<audio_lab::Action>,
     stop: mpsc::Sender<()>,
     failure: mpsc::Receiver<String>,
     display: Arc<Mutex<WorkerDisplay>>,
@@ -693,6 +904,21 @@ impl<C> ServiceWorker<C> {
 }
 
 trait ServicedController: Send + Sized {
+    fn audio(&mut self) -> Option<&mut virtualgamepad::ControllerAudio> {
+        None
+    }
+    fn audio_cycle(
+        &mut self,
+        activity: &mut audio_lab::Activity,
+        router: &mut audio_lab::AudioRouter,
+        action: Option<audio_lab::Action>,
+    ) -> Result<(), String> {
+        if let Some(audio) = self.audio() {
+            audio_lab::cycle(audio, activity, router, action)
+                .map_err(|error| audio_lab::error_message(&error))?;
+        }
+        Ok(())
+    }
     fn backend_healthy(&mut self) -> bool {
         true
     }
@@ -727,6 +953,14 @@ fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
 }
 
 impl ServicedController for Controller {
+    fn audio(&mut self) -> Option<&mut virtualgamepad::ControllerAudio> {
+        match self {
+            Self::Xbox(c) => c.audio(),
+            Self::DualSense(c) => c.audio(),
+            Self::DualShock4(c) => c.audio(),
+            Self::SwitchPro(_) => None,
+        }
+    }
     fn backend_healthy(&mut self) -> bool {
         Controller::backend_healthy(self)
     }
@@ -800,16 +1034,24 @@ fn label_output_logs(label: &str, logs: &mut [String]) {
 
 #[cfg(test)]
 fn spawn_service_worker<C: ServicedController + 'static>(controller: C) -> ServiceWorker<C> {
-    spawn_service_worker_with_label(controller, "Controller".into())
+    spawn_service_worker_with_label(
+        controller,
+        "Controller".into(),
+        audio_topology::ControllerFamily::DualSense,
+        audio_lab::HostBackend::default(),
+    )
 }
 
 fn spawn_service_worker_with_label<C: ServicedController + 'static>(
     mut controller: C,
     log_label: String,
+    audio_family: audio_topology::ControllerFamily,
+    audio_backend: audio_lab::HostBackend,
 ) -> ServiceWorker<C> {
     let (stop_sender, stop_receiver) = mpsc::channel();
     let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
     let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
+    let (audio_sender, audio_receiver) = mpsc::sync_channel(1);
     let display = Arc::new(Mutex::new(WorkerDisplay::default()));
     let worker_display = Arc::clone(&display);
 
@@ -820,6 +1062,8 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
         let mut indicators = ReverseIndicators::default();
         let mut metrics = ServiceMetrics::default();
         let mut applied = 0;
+        let mut audio_activity = audio_lab::Activity::default();
+        let mut audio_router = audio_lab::AudioRouter::default();
         loop {
             match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -833,13 +1077,19 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                     controller.apply(edits)?;
                     applied = sequence;
                 }
-                service_cycle(
+                let delay = service_cycle(
                     &mut controller,
                     start.elapsed(),
                     &mut next_motion,
                     &mut logs,
                     &mut indicators,
-                )
+                )?;
+                let action = audio_receiver.try_recv().ok();
+                if controller.audio().is_some() {
+                    audio_activity.initialize_for_family(audio_family, audio_backend);
+                }
+                controller.audio_cycle(&mut audio_activity, &mut audio_router, action)?;
+                Ok(delay.min(controller.deadline().unwrap_or(delay)))
             })();
             label_output_logs(&log_label, &mut logs);
             let backend_healthy = controller.backend_healthy();
@@ -858,6 +1108,9 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                 display.snapshot = controller.snapshot();
                 display.applied = applied;
                 display.backend_healthy = Some(backend_healthy);
+                display.audio = controller
+                    .audio()
+                    .map(|audio| audio_lab::snapshot(audio, &audio_activity));
             } else {
                 metrics.omit(logs.len());
             }
@@ -871,10 +1124,16 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
         }
         // Stop or failure closes immediately, even when the UI never repaints.
         controller.close();
+        if let Ok(mut display) = worker_display.try_lock() {
+            display.audio = controller
+                .audio()
+                .map(|audio| audio_lab::snapshot(audio, &audio_activity));
+        }
         controller
     });
     ServiceWorker {
         edits: edit_sender,
+        audio_actions: audio_sender,
         stop: stop_sender,
         failure: failure_receiver,
         display,
@@ -947,6 +1206,15 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
+    fn retained_error(&mut self) -> Option<String> {
+        let diagnostics = match self {
+            Self::Xbox(c) => c.diagnostics(),
+            Self::DualSense(c) => c.diagnostics(),
+            Self::DualShock4(c) => c.diagnostics(),
+            Self::SwitchPro(c) => c.diagnostics(),
+        };
+        diagnostics.last_error().map(str::to_owned)
+    }
     fn backend_healthy(&mut self) -> bool {
         let status = match self {
             Self::Xbox(controller) => controller.diagnostics().status(),
@@ -969,7 +1237,7 @@ impl Controller {
     fn refresh_motion(&mut self) -> Result<(), String> {
         match self {
             Self::DualSense(controller)
-                if dualsense_motion_target(controller.surface().common().target) =>
+                if dualsense_motion_target(controller.surface().common().target()) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -977,7 +1245,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::DualShock4(controller)
-                if motion_refresh_target(controller.surface().common().target) =>
+                if motion_refresh_target(controller.surface().common().target()) =>
             {
                 controller
                     .set_motion(controller.state().motion())
@@ -985,7 +1253,7 @@ impl Controller {
                 controller.commit().map_err(|error| error.to_string())
             }
             Self::SwitchPro(controller)
-                if motion_refresh_target(controller.surface().common().target) =>
+                if motion_refresh_target(controller.surface().common().target()) =>
             {
                 controller.commit().map_err(|error| error.to_string())
             }
@@ -1139,11 +1407,13 @@ impl ControllerView {
 pub struct App {
     kind: Kind,
     target: RealizationId,
+    audio_creation: audio_lab::CreationAudio,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
     next_controller_id: u64,
     polling_period_seconds: u32,
+    service_gap_percentiles: ServiceGapPercentileCache,
     last_cleanup: Option<String>,
     controllers: Vec<NamedController>,
     selected_controller: Option<usize>,
@@ -1156,12 +1426,14 @@ impl Default for App {
     fn default() -> Self {
         Self {
             kind: Kind::Xbox360,
-            target: RealizationId::LINUX_UINPUT,
+            target: audio_lab::default_creation_target(),
+            audio_creation: audio_lab::CreationAudio::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
             next_controller_id: 0,
             polling_period_seconds: 0,
+            service_gap_percentiles: ServiceGapPercentileCache::default(),
             last_cleanup: None,
             controllers: vec![],
             selected_controller: None,
@@ -1216,6 +1488,14 @@ impl App {
                         display.metrics.max_gap.as_micros(),
                         display.metrics.omitted_logs,
                         display.backend_healthy.unwrap_or(false),
+                    );
+                    let _ = writeln!(
+                        dump,
+                        "  Creation audio enabled: {} · Playback: {:?} · Microphone: {:?}\n  Audio snapshot: {:?}",
+                        controller.options.audio.enabled,
+                        controller.options.audio.playback,
+                        controller.options.audio.microphone,
+                        display.audio
                     );
                 } else {
                     dump.push_str("  Worker display: busy\n");
@@ -1285,23 +1565,17 @@ impl App {
         let options = ControllerOptions {
             target: self.target,
             id: self.next_controller_id,
+            audio: self.audio_creation,
         };
-        let result = match self.kind {
-            Kind::Xbox360 => create_xbox360(virtualgamepad::CreationOptions::new(options.target))
-                .map(Controller::Xbox),
-            Kind::DualSense => {
-                create_dualsense(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::DualSense)
-            }
-            Kind::DualShock4 => {
-                create_dualshock4(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::DualShock4)
-            }
-            Kind::SwitchPro => {
-                create_switch_pro(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::SwitchPro)
-            }
-        };
+        let result = options
+            .audio
+            .options(options.target, self.kind != Kind::SwitchPro)
+            .and_then(|creation| match self.kind {
+                Kind::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
+                Kind::DualSense => create_dualsense(creation).map(Controller::DualSense),
+                Kind::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
+                Kind::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
+            });
         match result {
             Ok(mut controller) => {
                 let name = if self.name_draft.trim().is_empty() {
@@ -1317,6 +1591,8 @@ impl App {
                         name,
                         controller_id(options.id, options.target, self.kind)
                     ),
+                    self.kind.audio_family(),
+                    options.audio.host_backend,
                 ));
                 self.controllers.push(NamedController {
                     kind: self.kind,
@@ -1329,6 +1605,8 @@ impl App {
                     indicators: ReverseIndicators::default(),
                     output_log: Vec::new(),
                     service_worker,
+                    service_metrics: ServiceMetrics::default(),
+                    audio_view: None,
                     input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
@@ -1365,11 +1643,15 @@ impl App {
         let name = removed.name.clone();
         if let Some(worker) = removed.service_worker.take() {
             if let Some(mut controller) = worker.stop() {
-                self.last_cleanup = Some(controller.snapshot().lab_details());
-                self.diagnostic_log.push(DiagnosticLogEntry {
-                    message: successful_controller_close_message(&name),
-                    success: true,
-                });
+                controller.close(); // Repeat is deliberately idempotent at the UI boundary.
+                let retained_error = controller.retained_error();
+                let audio = controller
+                    .audio()
+                    .map(|audio| format!("\nAudio terminal diagnostics: {:?}", audio.diagnostics()))
+                    .unwrap_or_default();
+                self.last_cleanup = Some(format!("{}{audio}", controller.snapshot().lab_details()));
+                self.diagnostic_log
+                    .push(close_log(&name, retained_error.as_deref()));
             } else {
                 self.last_cleanup = Some(
                     "Worker exited without a returned controller; host cleanup requires verification"
@@ -1411,6 +1693,7 @@ impl eframe::App for App {
         let mut stop_all = false;
         let mut dump_state = false;
         let mut failed_controller = None;
+        let mut recreate_controller = None;
         let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
@@ -1421,11 +1704,17 @@ impl eframe::App for App {
                 }
             }
             if let Some(worker) = &named.service_worker {
-                if let Ok(mut display) = worker.display.try_lock() {
+                let display = worker.display.try_lock();
+                update_cached_snapshot(
+                    &mut named.audio_view,
+                    display.as_ref().ok().map(|display| &display.audio),
+                );
+                if let Ok(mut display) = display {
                     named.output_log.append(&mut display.logs);
                     let excess = named.output_log.len().saturating_sub(OUTPUT_LOG_LIMIT);
                     named.output_log.drain(..excess);
                     named.indicators = display.indicators.clone();
+                    named.service_metrics = display.metrics.clone();
                     if let Some(healthy) = display.backend_healthy {
                         backend_healthy &= healthy;
                     }
@@ -1453,12 +1742,14 @@ impl eframe::App for App {
                             ui.set_max_width(SIDEBAR_WIDTH);
                             ui.heading("Add Controller");
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
+                            let previous_kind = self.kind;
+                            let previous_target = self.target;
                             egui::Grid::new("controller_creation_grid")
                                 .num_columns(2)
                                 .spacing([6.0, 4.0])
                                 .show(ui, |ui| {
                                     ui.label("Type");
-                                    egui::ComboBox::from_id_salt("controller_type")
+                                    let type_selector = egui::ComboBox::from_id_salt("controller_type")
                                         .selected_text(self.kind.label())
                                         .width(ui.available_width())
                                         .show_ui(ui, |ui| {
@@ -1470,48 +1761,22 @@ impl eframe::App for App {
                                                 );
                                             }
                                         });
+                                    let target_row_width = type_selector.response.rect.width();
                                     ui.end_row();
                                     ui.label("Target");
-                                    ui.horizontal(|ui| {
-                                        let help = target_help(self.target);
-                                        let help_width = if help.is_some() { 26.0 } else { 0.0 };
-                                        egui::ComboBox::from_id_salt("controller_target")
-                                            .selected_text(target_label(self.target))
-                                            .width((ui.available_width() - help_width).max(60.0))
-                                            .show_ui(ui, |ui| {
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_UINPUT,
-                                                    target_label(RealizationId::LINUX_UINPUT),
-                                                );
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_UHID_USB,
-                                                    target_label(RealizationId::LINUX_UHID_USB),
-                                                );
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                                    target_label(
-                                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                                    ),
-                                                );
-                                            });
-                                        if let Some(help) = help {
-                                            let help_response =
-                                                ui.add_sized([18.0, 18.0], Button::new("!"));
-                                            if help_response.hovered() {
-                                                egui::Tooltip::for_widget(&help_response)
-                                                    .at_pointer()
-                                                    .show(|ui| {
-                                                        ui.strong(help.title);
-                                                        ui.label(help.body);
-                                                    });
-                                            }
-                                        }
-                                    });
+                                    let _ = draw_target_selector(
+                                        ui,
+                                        &mut self.target,
+                                        target_row_width,
+                                    );
                                     ui.end_row();
                                 });
+                            if self.kind != previous_kind || self.target != previous_target {
+                                self.audio_creation.enabled = audio_lab::default_audio_enabled(
+                                    self.target,
+                                    self.kind != Kind::SwitchPro,
+                                );
+                            }
                             let default_name = self.next_default_name();
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -1609,39 +1874,14 @@ impl eframe::App for App {
                                 self.advanced_options_open = !self.advanced_options_open;
                             }
                             if self.advanced_options_open && advanced_available {
-                                egui::Frame::NONE
-                                    .fill(sidebar_list_fill(ui))
-                                    .show(ui, |ui| {
-                                        ui.set_width(SIDEBAR_WIDTH);
-                                        egui::ScrollArea::vertical()
-                                            .id_salt("advanced_options")
-                                            .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                            .max_height(ADVANCED_OPTIONS_BODY_HEIGHT)
-                                            .auto_shrink([false, false])
-                                            .show(ui, |ui| {
-                                                ui.set_width(SIDEBAR_WIDTH - 8.0);
-                                                ui.strong("Controller ID preview");
-                                                let mut preview = controller_id(
-                                                    self.next_controller_id,
-                                                    self.target,
-                                                    self.kind,
-                                                );
-                                                let preview_width = ui.available_width();
-                                                ui.add_sized(
-                                                    [preview_width, NAME_INPUT_HEIGHT],
-                                                    egui::TextEdit::singleline(&mut preview)
-                                                        .interactive(false)
-                                                        .desired_width(preview_width)
-                                                        .vertical_align(egui::Align::Center)
-                                                        .margin(egui::Margin {
-                                                            left: 4,
-                                                            right: 4,
-                                                            top: 2,
-                                                            bottom: 2,
-                                                        }),
-                                                );
-                                            });
-                                    });
+                                let _ = draw_advanced_options(
+                                    ui,
+                                    self.next_controller_id,
+                                    self.target,
+                                    self.kind,
+                                    &mut self.audio_creation,
+                                )
+                                .panel_rect;
                             }
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                             let controller_surface_width = SIDEBAR_WIDTH - 8.0;
@@ -1910,15 +2150,33 @@ impl eframe::App for App {
                                     {
                                         let named = &mut self.controllers[index];
                                         ui.heading(&named.name);
-                                        ui.add_sized(
-                                            [ui.available_width(), 1.0],
-                                            egui::Separator::default(),
-                                        );
-                                        draw_controller_state(
+                                        let audio_view = named.audio_view.clone();
+                                        let mut audio_routing =
+                                            audio_view.as_ref().map(|view| view.routing.clone());
+                                        let mut audio_routing_changed = false;
+                                        let mut recreation_clicked = false;
+                                        if let Some(action) = draw_controller_state(
                                             ui,
                                             named,
                                             &mut polling_period_seconds,
-                                        );
+                                            &mut self.service_gap_percentiles,
+                                            audio_view.as_ref(),
+                                            self.last_cleanup.as_deref(),
+                                            &mut recreation_clicked,
+                                        ) {
+                                            if !named
+                                                .service_worker
+                                                .as_ref()
+                                                .is_some_and(|worker| {
+                                                    worker.audio_actions.try_send(action).is_ok()
+                                                })
+                                            {
+                                                self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
+                                            }
+                                        }
+                                        if recreation_clicked {
+                                            recreate_controller = Some(index);
+                                        }
                                         let input_width = ui.available_width();
                                         let section_frame = egui::Frame::group(ui.style());
                                         let section_margin = section_frame.total_margin();
@@ -1929,11 +2187,28 @@ impl eframe::App for App {
                                         section_frame.show(ui, |ui| {
                                             ui.set_min_width(section_content_width);
                                             ui.horizontal(|ui| {
-                                                ui.heading("Reverse Output");
+                                                ui.heading("Output");
                                             });
                                             ui.separator();
-                                            draw_feedback_rows(ui, &named.indicators);
-                                            ui.collapsing("Reverse output log", |ui| {
+                                            wide_card(ui, "Controller output", |ui| {
+                                                draw_feedback_rows(ui, &named.indicators);
+                                            });
+                                            if let (Some(view), Some(routing)) =
+                                                (audio_view.as_ref(), audio_routing.as_mut())
+                                                && (routing.jack_connector.is_some()
+                                                    || !routing.outputs.is_empty())
+                                            {
+                                                audio_routing_changed |= wide_card(ui, "Audio", |ui| {
+                                                    audio_lab::draw_output_routes(
+                                                        ui,
+                                                        routing,
+                                                        &view.playback_devices,
+                                                        &view.playback_channel_labels,
+                                                    )
+                                                })
+                                                .inner;
+                                            }
+                                            wide_card(ui, "Reverse output log", |ui| {
                                                 draw_reverse_output_log(ui, &mut named.output_log);
                                             });
                                         });
@@ -1971,7 +2246,30 @@ impl eframe::App for App {
                                                 &mut named.view,
                                                 inputs_ready,
                                             );
-                                            draw_dummy_audio_input(ui);
+                                            if let (Some(view), Some(routing)) =
+                                                (audio_view.as_ref(), audio_routing.as_mut())
+                                            {
+                                                if !routing.inputs.is_empty() {
+                                                    wide_card_with_heading(
+                                                        ui,
+                                                        |ui| {
+                                                            ui.horizontal(|ui| {
+                                                                ui.strong("Microphone");
+                                                                ui.small_button("!").on_hover_text(
+                                                                    "Microphones are present on the emulated controller at all times. Host audio is sent to an emulated microphone only while that device's Enabled checkbox is selected.",
+                                                                );
+                                                            });
+                                                        },
+                                                        |ui| {
+                                                        audio_routing_changed |= audio_lab::draw_input_routes(
+                                                            ui,
+                                                            routing,
+                                                            &view.capture_devices,
+                                                            &view.capture_channel_labels,
+                                                        );
+                                                    });
+                                                }
+                                            }
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 // Keep the input surface allocated on the action frame. Skipping it
                                                 // shrinks the parent scroll area and causes its offset to be clamped.
@@ -1995,6 +2293,19 @@ impl eframe::App for App {
                                                 }
                                             }
                                         });
+                                        if audio_routing_changed {
+                                            if let (Some(worker), Some(routing)) =
+                                                (named.service_worker.as_ref(), audio_routing)
+                                            {
+                                                if worker
+                                                    .audio_actions
+                                                    .try_send(audio_lab::Action::Routing(routing))
+                                                    .is_err()
+                                                {
+                                                    self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio routing update queue busy; retry after the next service cycle.".into(), success: false });
+                                                }
+                                            }
+                                        }
                                     }
                                     self.polling_period_seconds = polling_period_seconds;
                                 });
@@ -2005,32 +2316,92 @@ impl eframe::App for App {
         if dump_state {
             self.write_state_dump();
         }
-        if stop_all {
-            while !self.controllers.is_empty() {
-                self.remove_controller(self.controllers.len() - 1);
+        match lifecycle_action(
+            self.controllers.len(),
+            stop_all,
+            failed_controller,
+            remove,
+            recreate_controller,
+        ) {
+            Some(LifecycleAction::StopAll) => {
+                while !self.controllers.is_empty() {
+                    self.remove_controller(self.controllers.len() - 1);
+                }
             }
-        } else if let Some((index, error)) = failed_controller {
-            self.close_failed_controller(index, error);
-        } else if let Some(index) = remove {
-            self.remove_controller(index);
+            Some(LifecycleAction::Failed(index, error)) => {
+                self.close_failed_controller(index, error);
+            }
+            Some(LifecycleAction::Remove(index)) => self.remove_controller(index),
+            Some(LifecycleAction::Recreate(index)) => {
+                let named = &self.controllers[index];
+                if let Err(error) = self
+                    .audio_creation
+                    .options(self.target, named.kind != Kind::SwitchPro)
+                {
+                    self.diagnostic_log.push(DiagnosticLogEntry {
+                        message: format!("Recreation rejected; original stays open: {error}"),
+                        success: false,
+                    });
+                } else {
+                    self.kind = named.kind;
+                    self.name_draft = named.name.clone();
+                    self.remove_controller(index);
+                    self.create_one();
+                }
+            }
+            None => {}
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LifecycleAction {
+    StopAll,
+    Failed(usize, String),
+    Remove(usize),
+    Recreate(usize),
+}
+fn lifecycle_action(
+    count: usize,
+    stop_all: bool,
+    failed: Option<(usize, String)>,
+    remove: Option<usize>,
+    recreate: Option<usize>,
+) -> Option<LifecycleAction> {
+    if stop_all {
+        return Some(LifecycleAction::StopAll);
+    }
+    if let Some((index, error)) = failed.filter(|(index, _)| *index < count) {
+        return Some(LifecycleAction::Failed(index, error));
+    }
+    if let Some(index) = remove.filter(|index| *index < count) {
+        return Some(LifecycleAction::Remove(index));
+    }
+    recreate
+        .filter(|index| *index < count)
+        .map(LifecycleAction::Recreate)
 }
 
 fn target_label(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "Evdev / uinput",
         RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP / HID + Audio (WIP)",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
     }
 }
 
+#[allow(clippy::too_many_lines)] // Keeps the compact diagnostics grid together.
 fn draw_controller_state(
     ui: &mut egui::Ui,
     controller: &mut NamedController,
     polling_period_seconds: &mut u32,
-) {
+    gap_percentiles: &mut ServiceGapPercentileCache,
+    audio_view: Option<&audio_lab::View>,
+    last_cleanup: Option<&str>,
+    recreation_clicked: &mut bool,
+) -> Option<audio_lab::Action> {
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
     ui.group(|ui| {
@@ -2065,49 +2436,138 @@ fn draw_controller_state(
                 ui.label(controller.kind.label());
                 ui.end_row();
             });
-        ui.separator();
-        if let Some(worker) = &controller.service_worker {
-            if let Ok(display) = worker.display.try_lock() {
-                egui::Grid::new("controller_metrics")
-                    .num_columns(2)
-                    .spacing([8.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.label("Service cycles");
-                        boxed_metric_output(ui, display.metrics.cycles.to_string());
-                        ui.end_row();
-                        ui.label("Omitted logs");
-                        boxed_metric_output(ui, display.metrics.omitted_logs.to_string());
-                        ui.end_row();
-                        ui.label("Max gap");
-                        let gaps =
-                            service_gap_percentiles(&display.metrics, *polling_period_seconds);
-                        ui.horizontal(|ui| {
-                            ui.label("Polling period:");
-                            ui.add_sized(
-                                [38.0, NAME_INPUT_HEIGHT],
-                                egui::DragValue::new(polling_period_seconds)
-                                    .speed(1.0)
-                                    .suffix("s"),
-                            )
-                            .on_hover_text("0 includes the controller's entire observed lifetime");
-                            for (label, gap) in [
-                                ("10%:", gaps.map(|gaps| gaps[0])),
-                                ("1%:", gaps.map(|gaps| gaps[1])),
-                                ("0.1%:", gaps.map(|gaps| gaps[2])),
-                            ] {
-                                ui.label(label);
-                                if let Some(gap) = gap {
-                                    boxed_metric_output(ui, format_gap(gap));
-                                } else {
-                                    boxed_metric_output(ui, "—");
-                                }
-                            }
-                        });
-                        ui.end_row();
-                    });
+        ui.collapsing("Component association", |ui| {
+            if let Some(association) = controller.view.association() {
+                ui.label(format!(
+                    "Creation: {} · Primary: {}",
+                    association.creation(),
+                    association.realization()
+                ));
+                for component in association.components() {
+                    ui.label(format!("{:?} · {}", component.kind(), component.role()));
+                    if let Some(endpoint) = component.audio_endpoint() {
+                        ui.label(format!(
+                            "{} · {:?} · {:?}",
+                            endpoint.group(),
+                            endpoint.direction(),
+                            endpoint.host()
+                        ));
+                    }
+                }
             }
-        }
-    });
+        });
+        let mut audio_action = None;
+        draw_controller_subsections(
+            ui,
+            audio_lab::controller_audio_enabled(controller.options.audio),
+            |ui| {
+                draw_controller_metrics(
+                    ui,
+                    controller.options.id,
+                    &controller.service_metrics,
+                    polling_period_seconds,
+                    gap_percentiles,
+                );
+            },
+            |ui| {
+                audio_action = audio_lab::draw_diagnostics(ui, audio_view);
+            },
+            |ui| {
+                if ui
+                    .button("Recreate with current creation choices")
+                    .on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.")
+                    .clicked()
+                {
+                    *recreation_clicked = true;
+                }
+                if let Some(cleanup) = last_cleanup {
+                    ui.collapsing("Last closed controller diagnostics", |ui| {
+                        ui.label(cleanup);
+                    });
+                }
+            },
+        );
+        audio_action
+    })
+    .inner
+}
+
+fn draw_controller_subsections(
+    ui: &mut egui::Ui,
+    audio_enabled: bool,
+    statistics_content: impl FnOnce(&mut egui::Ui),
+    audio_content: impl FnOnce(&mut egui::Ui),
+    recreation_content: impl FnOnce(&mut egui::Ui),
+) -> bool {
+    let statistics = ui
+        .collapsing("Statistics", statistics_content)
+        .header_response
+        .rect;
+    let audio = audio_enabled.then(|| ui.collapsing("Audio", audio_content).header_response.rect);
+    let recreation = ui
+        .collapsing("Recreation", recreation_content)
+        .header_response
+        .rect;
+    let ordered = statistics.bottom() <= recreation.top()
+        && audio.is_none_or(|audio| {
+            statistics.bottom() <= audio.top() && audio.bottom() <= recreation.top()
+        });
+    debug_assert!(ordered);
+    ordered
+}
+
+fn draw_controller_metrics(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    metrics: &ServiceMetrics,
+    polling_period_seconds: &mut u32,
+    gap_percentiles: &mut ServiceGapPercentileCache,
+) -> egui::Rect {
+    egui::Grid::new("controller_metrics")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Service cycles");
+            boxed_metric_output(ui, metrics.cycles.to_string());
+            ui.end_row();
+            ui.label("Omitted logs");
+            boxed_metric_output(ui, metrics.omitted_logs.to_string());
+            ui.end_row();
+            ui.label("Max gap");
+            let gaps = gap_percentiles.get(
+                controller_id,
+                metrics,
+                *polling_period_seconds,
+                Instant::now(),
+            );
+            ui.horizontal(|ui| {
+                ui.label("Polling period:");
+                ui.add_sized(
+                    [38.0, NAME_INPUT_HEIGHT],
+                    egui::DragValue::new(polling_period_seconds)
+                        .speed(1.0)
+                        .suffix("s"),
+                )
+                .on_hover_text(format!(
+                    "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
+                ));
+                for (label, gap) in [
+                    ("10%:", gaps.map(|gaps| gaps[0])),
+                    ("1%:", gaps.map(|gaps| gaps[1])),
+                    ("0.1%:", gaps.map(|gaps| gaps[2])),
+                ] {
+                    ui.label(label);
+                    if let Some(gap) = gap {
+                        boxed_metric_output(ui, format_gap(gap));
+                    } else {
+                        boxed_metric_output(ui, "—");
+                    }
+                }
+            });
+            ui.end_row();
+        })
+        .response
+        .rect
 }
 
 fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
@@ -2160,6 +2620,36 @@ fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
             draw_rumble_contents(ui, indicators);
             ui.end_row();
         });
+}
+
+fn wide_card<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    wide_card_with_heading(
+        ui,
+        |ui| {
+            ui.strong(title);
+        },
+        add,
+    )
+}
+
+fn wide_card_with_heading<R>(
+    ui: &mut egui::Ui,
+    heading: impl FnOnce(&mut egui::Ui),
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let frame = egui::Frame::group(ui.style()).inner_margin(8.0);
+    let margin = frame.total_margin();
+    let content_width = (ui.available_width() - margin.left - margin.right).max(0.0);
+    frame.show(ui, |ui| {
+        ui.set_min_width(content_width);
+        heading(ui);
+        ui.separator();
+        add(ui)
+    })
 }
 
 fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
@@ -2269,16 +2759,6 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
     });
 }
 
-fn draw_dummy_audio_input(ui: &mut egui::Ui) {
-    card(ui, "Audio input", |ui| {
-        ui.add_enabled(
-            false,
-            Button::new("No input configured").min_size(Vec2::new(144.0, NAME_INPUT_HEIGHT)),
-        );
-        ui.weak("Demo placeholder");
-    });
-}
-
 const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
     supported && exposed
 }
@@ -2356,21 +2836,21 @@ fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfac
             .show(|ui| {
                 let surface = surface.common_surface();
                 ui.strong("Selected target surface");
-                ui.label(format!("Target: {}", surface.target));
-                ui.label(format!("Evidence: {:?}", surface.validation_status));
+                ui.label(format!("Target: {}", surface.target()));
+                ui.label(format!("Evidence: {:?}", surface.validation_status()));
                 ui.label(format!(
                     "{} axes, {} digital controls, {} output channels",
-                    surface.axes.len(),
-                    surface.digital_controls.len(),
-                    surface.outputs.len()
+                    surface.axes().len(),
+                    surface.digital_controls().len(),
+                    surface.outputs().len()
                 ));
-                for axis in surface.axes {
+                for axis in surface.axes() {
                     ui.monospace(format!(
                         "{}: code {} {}..={} (neutral {})",
                         axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
                     ));
                 }
-                for restriction in surface.restrictions {
+                for restriction in surface.restrictions() {
                     ui.small(format!(
                         "Unavailable: {} — {}",
                         restriction.feature, restriction.reason
@@ -2387,13 +2867,13 @@ fn draw_xbox(
     controller: &mut Xbox360Editor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2408,10 +2888,10 @@ fn draw_xbox(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2443,7 +2923,7 @@ fn draw_xbox(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
@@ -2513,13 +2993,13 @@ fn draw_dualsense(
     controller: &mut DualSenseEditor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2534,10 +3014,10 @@ fn draw_dualsense(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2561,12 +3041,12 @@ fn draw_dualsense(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-        for touchpad in topology.touchpads {
+        for touchpad in topology.touchpads() {
             let current = [
                 controller
                     .state()
@@ -2581,7 +3061,7 @@ fn draw_dualsense(
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,
@@ -2692,13 +3172,13 @@ fn draw_dualshock4(
     controller: &mut DualShock4Editor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2713,10 +3193,10 @@ fn draw_dualshock4(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2740,12 +3220,12 @@ fn draw_dualshock4(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-        for touchpad in topology.touchpads {
+        for touchpad in topology.touchpads() {
             let current = [
                 controller
                     .state()
@@ -2760,7 +3240,7 @@ fn draw_dualshock4(
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,
@@ -2871,13 +3351,13 @@ fn draw_switch_pro(
     controller: &mut SwitchProEditor,
     input_ui: &mut InputUiState,
 ) {
-    let topology = controller.surface().common().input_topology;
+    let topology = controller.surface().common().input_topology();
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons, input_ui, &mut events);
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), input_ui, &mut events);
 
     horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-        for stick in topology.sticks {
-            let value = match stick.id.as_str() {
+        for stick in topology.sticks() {
+            let value = match stick.id().as_str() {
                 "left-stick" => controller.state().left_stick(),
                 "right-stick" => controller.state().right_stick(),
                 _ => continue,
@@ -2892,10 +3372,10 @@ fn draw_switch_pro(
         }
     });
     horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
-        for dpad in topology.dpads {
+        for dpad in topology.dpads() {
             draw_dpad_cluster(ui, dpad, input_ui, &mut events);
         }
-        for cluster in topology.face_button_clusters {
+        for cluster in topology.face_button_clusters() {
             draw_face_cluster(ui, cluster, input_ui, &mut events);
         }
     });
@@ -2918,12 +3398,12 @@ fn draw_switch_pro(
         ),
     ];
     horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
-        for stack in topology.trigger_stacks {
+        for stack in topology.trigger_stacks() {
             draw_trigger_stack(ui, stack, &trigger_values, input_ui, &mut events);
         }
     });
     horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-        for motion in topology.motion {
+        for motion in topology.motion() {
             let current = controller.state().motion();
             draw_motion(
                 ui,
@@ -3138,12 +3618,109 @@ mod tests {
     }
 
     #[test]
-    fn target_help_is_available_only_for_the_experimental_gadget_target() {
+    fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
+        assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
+        assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
+        assert_eq!(
+            target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
+            "USB/IP / HID + Audio (WIP)"
+        );
+        assert_eq!(
+            target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+            "USB / dummy_hcd"
+        );
+
         assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
         assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
-        let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
-            .expect("dummy_hcd has experimental-target help");
-        assert_eq!(help.title, "Experimental USB gadget");
+
+        let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
+        assert!(audio.title.contains("USB/IP"));
+        assert!(audio.body.contains("second computer"));
+        assert!(audio.body.contains("Unlike UHID"));
+        assert!(audio.body.contains("#115"));
+
+        let dummy = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID).unwrap();
+        assert!(dummy.title.contains("dummy_hcd"));
+        assert!(dummy.body.contains("USB gadget test path"));
+
+        assert_eq!(
+            controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
+            "009-UIP-DUALSENSE"
+        );
+    }
+
+    #[test]
+    fn target_help_button_stays_inside_narrow_selector_row() {
+        for mut target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_USBIP_USB_AUDIO,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let context = egui::Context::default();
+            let mut rect = egui::Rect::NOTHING;
+            let mut help_rect = None;
+            let mut type_selector_rect = egui::Rect::NOTHING;
+            let mut sidebar_right = 0.0;
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(260.0, 120.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal_top(|ui| {
+                            ui.vertical(|ui| {
+                                ui.set_width(SIDEBAR_WIDTH);
+                                ui.set_min_width(SIDEBAR_WIDTH);
+                                ui.set_max_width(SIDEBAR_WIDTH);
+                                sidebar_right = ui.max_rect().right();
+                                egui::Grid::new("target_selector_alignment_test")
+                                    .num_columns(2)
+                                    .show(ui, |ui| {
+                                        ui.label("Type");
+                                        type_selector_rect =
+                                            egui::ComboBox::from_id_salt("target_alignment_type")
+                                                .selected_text("Xbox 360")
+                                                .width(ui.available_width())
+                                                .show_ui(ui, |_| {})
+                                                .response
+                                                .rect;
+                                        ui.end_row();
+                                        ui.label("Target");
+                                        (rect, help_rect) = draw_target_selector(
+                                            ui,
+                                            &mut target,
+                                            type_selector_rect.width(),
+                                        );
+                                        ui.end_row();
+                                    });
+                            });
+                        });
+                    });
+                },
+            );
+            assert!(
+                rect.right() <= sidebar_right + 1.0,
+                "{target}: row={rect:?}, sidebar_right={sidebar_right}, type={type_selector_rect:?}"
+            );
+            assert!(
+                (rect.left() - type_selector_rect.left()).abs() <= 1.0,
+                "selector columns diverged: {rect:?}, {type_selector_rect:?}"
+            );
+            if target_help(target).is_some() {
+                let help = help_rect.expect("USB targets show a help indicator");
+                assert!(
+                    (help.right() - rect.right()).abs() <= 1.0,
+                    "{help:?} {rect:?}"
+                );
+            } else {
+                assert!(help_rect.is_none(), "basic provider unexpectedly has help");
+            }
+        }
     }
 
     #[test]
@@ -3161,12 +3738,27 @@ mod tests {
         serviced: usize,
         closed: usize,
         fail: bool,
+        audio_fail: bool,
+        audio_cycles: usize,
         deadline: Option<Duration>,
         progress: Option<mpsc::Sender<usize>>,
         desired: Vec<bool>,
         committed: Vec<Vec<bool>>,
     }
     impl ServicedController for FakeService {
+        fn audio_cycle(
+            &mut self,
+            _: &mut audio_lab::Activity,
+            _: &mut audio_lab::AudioRouter,
+            _: Option<audio_lab::Action>,
+        ) -> Result<(), String> {
+            self.audio_cycles += 1;
+            if self.audio_fail {
+                Err("Audio backend/worker: injected PCM failure".into())
+            } else {
+                Ok(())
+            }
+        }
         fn neutralize(&mut self) -> Result<(), String> {
             if self.closed != 0 {
                 return Err("closed".into());
@@ -3205,6 +3797,70 @@ mod tests {
         fn close(&mut self) {
             self.closed += 1;
         }
+    }
+
+    #[test]
+    fn close_log_does_not_report_success_when_cleanup_errors_are_retained() {
+        let clean = close_log("synthetic", None);
+        assert!(clean.success);
+        let failed = close_log(
+            "synthetic",
+            Some("initiating failure; audio cleanup failure"),
+        );
+        assert!(!failed.success);
+        assert!(
+            failed
+                .message
+                .contains("initiating failure; audio cleanup failure")
+        );
+    }
+
+    #[test]
+    fn lifecycle_actions_preserve_failure_and_stop_priority_at_arbitrary_positions() {
+        for count in [1, 8, 64] {
+            for index in 0..count {
+                let failed = || Some((index, "initiating failure".into()));
+                assert_eq!(
+                    lifecycle_action(count, true, failed(), Some(index), Some(index)),
+                    Some(LifecycleAction::StopAll)
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, failed(), Some(index), Some(index)),
+                    Some(LifecycleAction::Failed(index, "initiating failure".into()))
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, None, Some(index), Some(index)),
+                    Some(LifecycleAction::Remove(index))
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, None, None, Some(index)),
+                    Some(LifecycleAction::Recreate(index))
+                );
+            }
+            assert_eq!(
+                lifecycle_action(count, false, None, None, Some(count)),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn pcm_failure_closes_only_its_worker_and_keeps_terminal_category() {
+        let sibling = spawn_service_worker(FakeService::default());
+        let failed = spawn_service_worker(FakeService {
+            audio_fail: true,
+            ..FakeService::default()
+        });
+        let error = failed.failure.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(error.starts_with("Audio backend/worker:"));
+        let state = failed.stop().unwrap();
+        assert_eq!(
+            (state.serviced, state.audio_cycles, state.closed),
+            (1, 1, 1)
+        );
+        assert_eq!(sibling.failure.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let sibling = sibling.stop().unwrap();
+        assert_eq!(sibling.closed, 1);
     }
 
     fn fake_edit(pressed: bool) -> Command<FakeService> {
@@ -3389,6 +4045,48 @@ mod tests {
     }
 
     #[test]
+    fn service_gap_history_retains_only_the_latest_bounded_window() {
+        let mut metrics = ServiceMetrics::default();
+        let start = Instant::now();
+        for sample in 0..(SERVICE_GAP_HISTORY_LIMIT + 100) {
+            metrics.record(start + Duration::from_millis(sample as u64 * 4));
+        }
+        let history = metrics.gap_history.lock().unwrap();
+        assert_eq!(history.len(), SERVICE_GAP_HISTORY_LIMIT);
+        assert_eq!(
+            history.front().unwrap().0,
+            start + Duration::from_millis(400)
+        );
+        assert_eq!(
+            history.back().unwrap().0,
+            start + Duration::from_millis((SERVICE_GAP_HISTORY_LIMIT + 99) as u64 * 4)
+        );
+    }
+
+    #[test]
+    fn service_gap_percentiles_refresh_on_a_bounded_ui_cadence() {
+        let mut metrics = ServiceMetrics::default();
+        let start = Instant::now();
+        for sample in 0..10 {
+            metrics.record(start + Duration::from_millis(sample * 4));
+        }
+        let mut cache = ServiceGapPercentileCache::default();
+        cache.get(7, &metrics, 0, start);
+        assert_eq!(cache.updated_at, Some(start));
+        cache.get(7, &metrics, 0, start + Duration::from_millis(100));
+        assert_eq!(cache.updated_at, Some(start));
+        cache.get(7, &metrics, 0, start + SERVICE_GAP_PERCENTILE_REFRESH);
+        assert_eq!(
+            cache.updated_at,
+            Some(start + SERVICE_GAP_PERCENTILE_REFRESH)
+        );
+        cache.get(8, &metrics, 0, start + Duration::from_millis(300));
+        assert_eq!(cache.controller_id, Some(8));
+        cache.get(8, &metrics, 10, start + Duration::from_millis(301));
+        assert_eq!(cache.period_seconds, 10);
+    }
+
+    #[test]
     fn worker_services_without_ui_and_stops_while_display_is_locked() {
         let (sender, receiver) = mpsc::channel();
         let controller = FakeService {
@@ -3524,12 +4222,118 @@ mod tests {
     }
 
     #[test]
+    fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
+        for (screen_height, should_scroll_inside_advanced) in [(600.0, true), (900.0, false)] {
+            let context = egui::Context::default();
+            let mut sidebar_viewport_height = 0.0;
+            let mut sidebar_content_height = 0.0;
+            let mut advanced_layout = None;
+            let mut audio_creation = audio_lab::CreationAudio::default();
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, screen_height),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let output =
+                            egui::ScrollArea::both()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.horizontal_top(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.set_width(SIDEBAR_WIDTH);
+                                            ui.heading("Add Controller");
+                                            ui.separator();
+                                            for _ in 0..4 {
+                                                ui.add_sized(
+                                                    [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                    egui::Label::new("Creation option"),
+                                                );
+                                            }
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Button::new("Create"),
+                                            );
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Button::new("Advanced options"),
+                                            );
+                                            advanced_layout = Some(draw_advanced_options(
+                                                ui,
+                                                1,
+                                                audio_lab::default_creation_target(),
+                                                Kind::DualSense,
+                                                &mut audio_creation,
+                                            ));
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, 1.0],
+                                                egui::Separator::default(),
+                                            );
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Label::new("Controller labels"),
+                                            );
+                                            ui.allocate_space(Vec2::new(
+                                                SIDEBAR_WIDTH,
+                                                CONTROLLER_LIST_MIN_HEIGHT
+                                                    + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
+                                            ));
+                                            let footer_height = (CONTROLLER_ROW_HEIGHT * 2.0)
+                                                + 1.0
+                                                + HEALTH_BOTTOM_PADDING
+                                                + diagnostic_log_height(
+                                                    ui.text_style_height(&egui::TextStyle::Body),
+                                                );
+                                            ui.allocate_space(Vec2::new(
+                                                SIDEBAR_WIDTH,
+                                                footer_height,
+                                            ));
+                                        });
+                                        ui.vertical(|ui| {
+                                            ui.set_min_width(360.0);
+                                            ui.label("Controller panel");
+                                        });
+                                    });
+                                });
+                        sidebar_viewport_height = output.inner_rect.height();
+                        sidebar_content_height = output.content_size.y;
+                    });
+                },
+            );
+            let advanced_layout = advanced_layout.expect("advanced menu was drawn");
+            assert!(
+                sidebar_content_height <= sidebar_viewport_height + 1.0,
+                "screen height: {screen_height}; sidebar content: {sidebar_content_height}; viewport: {sidebar_viewport_height}; advanced: {advanced_layout:?}"
+            );
+            assert!(advanced_layout.panel_rect.width() <= SIDEBAR_WIDTH + 1.0);
+            assert!(advanced_layout.viewport_rect.height() >= ADVANCED_OPTIONS_BODY_HEIGHT);
+            assert_eq!(
+                advanced_layout.content_height > advanced_layout.viewport_rect.height(),
+                should_scroll_inside_advanced,
+                "screen height: {screen_height}; layout: {advanced_layout:?}"
+            );
+        }
+    }
+
+    #[test]
     fn dualsense_motion_refresh_is_available_for_uhid_and_dummy_hcd() {
         assert!(dualsense_motion_target(RealizationId::LINUX_UHID_USB));
         assert!(dualsense_motion_target(
             RealizationId::LINUX_DUMMY_HCD_USB_HID
         ));
         assert!(!dualsense_motion_target(RealizationId::LINUX_UINPUT));
+        assert!(dualsense_motion_target(
+            RealizationId::LINUX_USBIP_USB_AUDIO
+        ));
+        assert!(motion_refresh_target(RealizationId::LINUX_USBIP_USB_AUDIO));
+        assert_eq!(
+            dualsense_motion_target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
+            "USB/IP HID motion report"
+        );
         assert_eq!(
             dualsense_motion_target_label(RealizationId::LINUX_UHID_USB),
             "UHID motion report"
@@ -3640,6 +4444,106 @@ mod tests {
             ])
         );
         assert_eq!(format_gap(Duration::from_micros(1_250)), "1.25 ms");
+    }
+
+    #[test]
+    fn controller_metrics_keep_rendering_while_worker_display_is_locked() {
+        let context = egui::Context::default();
+        let worker_display = Mutex::new(WorkerDisplay::default());
+        let _worker_lock = worker_display.lock().unwrap();
+        let cached = ServiceMetrics {
+            cycles: 42,
+            ..ServiceMetrics::default()
+        };
+        let mut polling_period_seconds = 0;
+        let mut gap_percentiles = ServiceGapPercentileCache::default();
+        let mut previous_height: Option<f32> = None;
+
+        for frame in 0..5 {
+            let mut metrics_rect = egui::Rect::NOTHING;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(720.0, 240.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        metrics_rect = draw_controller_metrics(
+                            ui,
+                            1,
+                            &cached,
+                            &mut polling_period_seconds,
+                            &mut gap_percentiles,
+                        );
+                    });
+                },
+            );
+
+            assert!(metrics_rect.height() > 0.0);
+            assert!(!output.shapes.is_empty());
+            if frame > 1
+                && let Some(previous_height) = previous_height
+            {
+                assert!(
+                    (metrics_rect.height() - previous_height).abs() < f32::EPSILON,
+                    "metrics panel changed height: {previous_height} -> {}",
+                    metrics_rect.height()
+                );
+            }
+            previous_height = Some(metrics_rect.height());
+        }
+    }
+
+    #[test]
+    fn controller_subsections_keep_audio_and_recreation_after_statistics() {
+        let context = egui::Context::default();
+        let mut sections = None;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(500.0, 240.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    sections = Some(draw_controller_subsections(
+                        ui,
+                        true,
+                        |_| {},
+                        |_| {},
+                        |_| {},
+                    ));
+                });
+            },
+        );
+
+        assert!(sections.expect("controller subsections should render"));
+    }
+
+    #[test]
+    fn cached_audio_snapshot_survives_a_busy_worker_frame() {
+        let mut cached = Some("live audio".to_owned());
+        let worker_audio = Mutex::new(Some("new audio".to_owned()));
+        let held = worker_audio.lock().unwrap();
+        let busy = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, busy.as_ref().ok().map(|audio| &**audio));
+        assert_eq!(cached.as_deref(), Some("live audio"));
+        drop(held);
+
+        let available = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, available.as_ref().ok().map(|audio| &**audio));
+        assert_eq!(cached.as_deref(), Some("new audio"));
+
+        drop(available);
+        *worker_audio.lock().unwrap() = None;
+        let no_audio = worker_audio.try_lock();
+        update_cached_snapshot(&mut cached, no_audio.as_ref().ok().map(|audio| &**audio));
+        assert!(cached.is_none());
     }
 
     #[test]

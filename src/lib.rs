@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 #![doc = include_str!("../docs/APPLICATION_API.md")]
+#![doc = include_str!("../tests/ui/alpha_api_boundaries.md")]
 #![doc = concat!("\nController-family boundaries:\n\n```compile_fail,E0308\n", include_str!("../tests/ui/dualsense_rejects_xbox_native_control.rs"), "\n```\n\n```compile_fail,E0599\n", include_str!("../tests/ui/xbox_has_no_touch_surface.rs"), "\n```\n")]
 
 //! Standalone, controller-native virtual controllers.
@@ -52,6 +53,7 @@
 //! ```
 mod application;
 mod audio;
+mod creation;
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 mod usb_audio;
 #[cfg(all(
@@ -60,8 +62,9 @@ mod usb_audio;
     feature = "audio-pipewire"
 ))]
 mod usb_audio_bridge;
-pub use audio::{AudioEndpoint, AudioEndpointSelector, AudioStreamTiming, ControllerAudio};
-pub use gr_audio_contract::queue::PcmRead as AudioRead;
+pub use audio::{
+    AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
+};
 mod controllers;
 mod output;
 pub use application::*;

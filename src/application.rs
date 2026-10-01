@@ -90,14 +90,37 @@ fn next_creation(counter: &AtomicU64) -> Result<u64, ControllerError> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ControllerError {
-    MissingDeviceNode { target: RealizationId, path: String },
-    AccessDenied { target: RealizationId, path: String },
-    UnsupportedPlatform { target: RealizationId },
-    InvalidRequest { reason: String },
-    Open { reason: String },
-    Write { reason: String },
-    Read { reason: String },
-    Unsupported { reason: String },
+    MissingDeviceNode {
+        target: RealizationId,
+        path: String,
+    },
+    AccessDenied {
+        target: RealizationId,
+        path: String,
+    },
+    UnsupportedPlatform {
+        target: RealizationId,
+    },
+    InvalidRequest {
+        reason: String,
+    },
+    Open {
+        reason: String,
+    },
+    Write {
+        reason: String,
+    },
+    Read {
+        reason: String,
+    },
+    Unsupported {
+        reason: String,
+    },
+    /// Creation failed and one or more owned resources also failed cleanup.
+    Cleanup {
+        cause: Box<ControllerError>,
+        cleanup: Vec<String>,
+    },
     Closed,
     WouldBlock,
 }
@@ -118,12 +141,22 @@ impl fmt::Display for ControllerError {
             Self::Write { reason } => write!(f, "controller write failed: {reason}"),
             Self::Read { reason } => write!(f, "controller service failed: {reason}"),
             Self::Unsupported { reason } => write!(f, "unsupported controller operation: {reason}"),
+            Self::Cleanup { cause, cleanup } => {
+                write!(f, "{cause}; cleanup: {}", cleanup.join("; "))
+            }
             Self::Closed => f.write_str("controller is closed"),
             Self::WouldBlock => f.write_str("controller would block"),
         }
     }
 }
-impl std::error::Error for ControllerError {}
+impl std::error::Error for ControllerError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Cleanup { cause, .. } => Some(cause.as_ref()),
+            _ => None,
+        }
+    }
+}
 pub(crate) fn controller_error(error: ProviderError) -> ControllerError {
     match error {
         ProviderError::Preflight(error) => match error {
@@ -263,10 +296,19 @@ impl ControllerDiagnostics {
     }
 }
 
+/// Kind of a required component in one logical controller creation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ComponentKind {
+    Input,
+    Audio,
+}
+
 /// A host component owned by the controller. Cached paths are observations, not
 /// proof of continuing ownership; verify ancestry before opening any node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ComponentAssociation {
+    kind: ComponentKind,
     role: &'static str,
     surface: Option<&'static crate::ControllerSurface>,
     audio_endpoint: Option<crate::AudioEndpoint>,
@@ -275,6 +317,11 @@ pub struct ComponentAssociation {
     observed_host_path: Option<String>,
 }
 impl ComponentAssociation {
+    /// Typed component classification; role labels are for display only.
+    #[must_use]
+    pub const fn kind(&self) -> ComponentKind {
+        self.kind
+    }
     #[must_use]
     pub const fn role(&self) -> &'static str {
         self.role
@@ -332,6 +379,7 @@ impl ControllerAssociation {
         if let Some(audio) = audio {
             for endpoint in audio.endpoints() {
                 self.components.push(ComponentAssociation {
+                    kind: ComponentKind::Audio,
                     role: match endpoint.direction() {
                         crate::SampleDirection::HostToController => "audio-playback",
                         _ => "audio-microphone",
@@ -339,7 +387,7 @@ impl ControllerAssociation {
                     surface: None,
                     audio_endpoint: Some(endpoint.clone()),
                     requested_physical_path: None,
-                    requested_unique_id: Some(endpoint.host().identity().into()),
+                    requested_unique_id: None,
                     observed_host_path: None,
                 });
             }
@@ -357,6 +405,7 @@ impl ControllerAssociation {
             realization: options.target,
             creation: options.session.0,
             components: vec![ComponentAssociation {
+                kind: ComponentKind::Input,
                 role: "primary",
                 surface: Some(surface),
                 audio_endpoint: None,
@@ -421,8 +470,8 @@ mod tests {
         assert_eq!(plain.audio().exposure(), AudioExposure::Disabled);
         for (exposure, target) in [
             (
-                AudioExposure::ControllerMatching,
-                RealizationId::LINUX_UHID_USB,
+                AudioExposure::Emulated,
+                RealizationId::LINUX_DUMMY_HCD_USB_HID,
             ),
             (AudioExposure::Emulated, RealizationId::LINUX_UINPUT),
         ] {
@@ -461,7 +510,8 @@ mod tests {
     fn usb_audio_preflight_requires_exact_exposure_and_native_bridge_feature() {
         use crate::{AudioAccess, AudioExposure, AudioOptions};
         let usb = RealizationId::LINUX_USBIP_USB_AUDIO;
-        for exposure in [AudioExposure::Disabled, AudioExposure::ControllerMatching] {
+        {
+            let exposure = AudioExposure::Disabled;
             assert!(matches!(
                 CreationOptions::new(usb)
                     .with_audio(AudioOptions::new(exposure))
@@ -492,15 +542,17 @@ mod tests {
 
     #[test]
     fn component_metadata_preserves_arbitrary_roles_and_exposure() {
-        static SURFACE: crate::ControllerSurface = crate::ControllerSurface {
-            target: RealizationId::LINUX_UINPUT,
-            validation_status: crate::RealizationValidationStatus::ResearchBacked,
-            digital_controls: &[],
-            axes: &[],
-            outputs: &[],
-            restrictions: &[],
-            input_topology: &crate::InputTopology::EMPTY,
-        };
+        static SURFACE: crate::ControllerSurface =
+            gr_controller_contract::construction::ControllerSurfaceSpec {
+                target: RealizationId::LINUX_UINPUT,
+                validation_status: crate::RealizationValidationStatus::ResearchBacked,
+                digital_controls: &[],
+                axes: &[],
+                outputs: &[],
+                restrictions: &[],
+                input_topology: &crate::InputTopology::EMPTY,
+            }
+            .build();
         let roles = ["gamepad", "touch", "motion", "display"];
         let association = ControllerAssociation {
             controller: crate::ControllerId::new("synthetic.compound"),
@@ -509,6 +561,7 @@ mod tests {
             components: roles
                 .into_iter()
                 .map(|role| ComponentAssociation {
+                    kind: ComponentKind::Input,
                     role,
                     surface: Some(&SURFACE),
                     audio_endpoint: None,
@@ -522,7 +575,7 @@ mod tests {
         for (index, component) in association.components().iter().enumerate() {
             assert_eq!(component.role(), roles[index]);
             assert_eq!(
-                component.surface().unwrap().target,
+                component.surface().unwrap().target(),
                 association.realization()
             );
             assert!(component.observed_host_path().is_none());

@@ -1,5 +1,13 @@
 # Controller support matrix
 
+Current pre-alpha API refinement is tracked in
+[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
+security/recovery acceptance. Native-client continuity and matching fidelity remain
+open. The demo does not yet enable audio; its audio integration and actual
+maintainer feedback follow this package. Historical evidence below retains its
+original scope.
+
 All entries are **WIP** during pre-alpha API/controller refinement. WIP
 includes implemented work under assessment and work not yet started. It does not
 promise that every combination will ship. The later-controller rows are planned
@@ -56,3 +64,14 @@ See the [current function review](CURRENT_CONTROLLER_REFINEMENT.md).
 Production Wii Remote remains positively gated on later maintainer authorization.
 The test-only Wii-like topology experiment does not enable a controller package,
 demo entry, Bluetooth personality, or any support cell.
+
+
+## Audio evidence axes
+
+| Path | Implemented | Deterministic | Host/live | Consumer | Physical matching |
+| --- | --- | --- | --- | --- | --- |
+| UHID + emulated PipeWire | Yes, opt-in | Queue/profile/policy/lifecycle | Selected short and recorded longer probes; mixed historical failures retained | Native continuity/duplex qualification open (#112) | Unavailable (#116) |
+| USB/IP HID/UAC2 | Yes, opt-in WIP | Framing/personality/IPC/ownership/rollback | Selected installed sample/lifecycle trials | Native continuity and full latency matrix open (#112); security/recovery open (#115) | Unavailable; UAC2 differs from reference UAC1 |
+
+No support cell is promoted by this API refinement. Demo audio and maintainer
+feedback, final whole-root review, freeze and separate quality/release gates remain.

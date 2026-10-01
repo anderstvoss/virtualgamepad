@@ -9,11 +9,9 @@ pub enum AudioExposure {
     Disabled,
     /// Functional host endpoints, with explicitly documented topology differences.
     Emulated,
-    /// Only available for profiles with accepted controller-specific evidence.
-    ControllerMatching,
 }
 
-/// Exactly one sample owner for each synchronized stream group.
+/// Exactly one owner for every exposed group in the selected direction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum AudioAccess {
@@ -23,6 +21,7 @@ pub enum AudioAccess {
 }
 
 /// Immutable creation policy; changing it requires a new controller.
+/// Playback/microphone access each applies to all exposed groups in that direction.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AudioOptions {
     exposure: AudioExposure,
@@ -153,6 +152,7 @@ impl AudioStreamDescription {
 pub struct AudioProfile {
     id: &'static str,
     streams: Box<[AudioStreamDescription]>,
+    onboard_speaker_source: Option<AudioChannel>,
     limitation: &'static str,
 }
 impl AudioProfile {
@@ -165,8 +165,16 @@ impl AudioProfile {
         Self {
             id,
             streams: streams.into(),
+            onboard_speaker_source: None,
             limitation,
         }
+    }
+    /// Semantic playback channel routed to the controller's built-in speaker,
+    /// when the provider has a documented mapping for that controller profile.
+    #[must_use]
+    pub const fn with_onboard_speaker_source(mut self, source: AudioChannel) -> Self {
+        self.onboard_speaker_source = Some(source);
+        self
     }
     #[must_use]
     pub const fn id(&self) -> &'static str {
@@ -175,6 +183,10 @@ impl AudioProfile {
     #[must_use]
     pub fn streams(&self) -> &[AudioStreamDescription] {
         &self.streams
+    }
+    #[must_use]
+    pub const fn onboard_speaker_source(&self) -> Option<AudioChannel> {
+        self.onboard_speaker_source
     }
     #[must_use]
     pub const fn limitation(&self) -> &'static str {

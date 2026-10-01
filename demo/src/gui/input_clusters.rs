@@ -1,5 +1,6 @@
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 use virtualgamepad::{
     AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
     ExtraAxisInput, FaceButton, FaceButtonCluster, InputAxisRange, InputControlId, InputScale,
@@ -71,17 +72,39 @@ pub(super) struct TouchContactState {
     release_pending: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
+#[allow(clippy::struct_excessive_bools)] // Timer configuration and stale-contact suppression states.
 struct TouchpadState {
     selected: usize,
     contacts: Vec<TouchContactState>,
     relative_input: bool,
+    lockout_timer_enabled: bool,
+    lockout_timer_seconds: u32,
+    lockout_started: Option<Instant>,
+    suppress_until_neutral: bool,
+    suppress_until_pointer_release: bool,
+}
+
+impl Default for TouchpadState {
+    fn default() -> Self {
+        Self {
+            selected: 0,
+            contacts: Vec::new(),
+            relative_input: false,
+            lockout_timer_enabled: true,
+            lockout_timer_seconds: 30,
+            lockout_started: None,
+            suppress_until_neutral: false,
+            suppress_until_pointer_release: false,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 pub(super) struct InputUiState {
     holds: HashMap<InputControlId, bool>,
     latched_buttons: HashSet<HoldKey>,
+    momentary_buttons: HashSet<HoldKey>,
     snapping_dpads: HashMap<InputControlId, SnappingDpadState>,
     touchpads: HashMap<InputControlId, TouchpadState>,
 }
@@ -110,6 +133,7 @@ impl InputUiState {
     pub(super) fn release_all(&mut self) {
         self.holds.clear();
         self.latched_buttons.clear();
+        self.momentary_buttons.clear();
         self.snapping_dpads.clear();
         for touchpad in self.touchpads.values_mut() {
             for contact in &mut touchpad.contacts {
@@ -117,14 +141,17 @@ impl InputUiState {
                 contact.held = false;
                 contact.relative = false;
             }
+            touchpad.lockout_started = None;
+            touchpad.suppress_until_neutral = false;
+            touchpad.suppress_until_pointer_release = false;
         }
     }
 
     fn touchpad(&mut self, input: &TouchpadInput) -> &mut TouchpadState {
-        let state = self.touchpads.entry(input.id).or_default();
+        let state = self.touchpads.entry(input.id()).or_default();
         state
             .contacts
-            .resize(usize::from(input.contacts), TouchContactState::default());
+            .resize(usize::from(input.contacts()), TouchContactState::default());
         state.selected = state.selected.min(state.contacts.len().saturating_sub(1));
         state
     }
@@ -246,6 +273,7 @@ fn title_separator(ui: &mut egui::Ui, width: f32) {
 }
 
 fn release_latched_button(state: &mut InputUiState, key: HoldKey, mut release: impl FnMut()) {
+    state.momentary_buttons.remove(&key);
     if state.latched_buttons.remove(&key) {
         release();
     }
@@ -304,12 +332,12 @@ pub(super) fn draw_face_cluster(
 ) {
     hold_card(
         ui,
-        cluster.title,
-        cluster.id,
+        cluster.title(),
+        cluster.id(),
         state,
         |ui, state, released| {
             if released {
-                for input in cluster.buttons {
+                for input in cluster.buttons() {
                     release_latched_button(state, HoldKey::Face(input.button), || {
                         events.push(InputEvent::Face {
                             button: input.button,
@@ -320,26 +348,43 @@ pub(super) fn draw_face_cluster(
             }
             let origin = ui.cursor().min;
             let columns = cluster
-                .buttons
+                .buttons()
                 .iter()
                 .map(|button| button.placement.column)
                 .max()
                 .map_or(1_i8, |column| column.saturating_add(1));
             let rows = cluster
-                .buttons
+                .buttons()
                 .iter()
                 .map(|button| button.placement.row)
                 .max()
                 .map_or(1_i8, |row| row.saturating_add(1));
             let cell = Vec2::new(
-                f32::from(cluster.button_width),
+                face_cell_width(
+                    cluster
+                        .buttons()
+                        .iter()
+                        .map(|button| {
+                            ui.painter()
+                                .layout_no_wrap(
+                                    button.label.into(),
+                                    egui::TextStyle::Button.resolve(ui.style()),
+                                    ui.visuals().text_color(),
+                                )
+                                .size()
+                                .x
+                        })
+                        .fold(0.0, f32::max),
+                    ui.available_width(),
+                    columns,
+                ),
                 AXIS_PAD_SIZE / f32::from(rows),
             );
             let (rect, _) = ui.allocate_exact_size(
                 Vec2::new(cell.x * f32::from(columns), AXIS_PAD_SIZE),
                 Sense::hover(),
             );
-            for input in cluster.buttons {
+            for input in cluster.buttons() {
                 let center = origin
                     + egui::vec2(
                         (f32::from(input.placement.column) + 0.5) * cell.x,
@@ -352,9 +397,9 @@ pub(super) fn draw_face_cluster(
                 let key = HoldKey::Face(input.button);
                 let response = ui.put(
                     button_rect,
-                    Button::new(input.label).selected(state.latched_buttons.contains(&key)),
+                    Button::new(input.label).selected(button_is_selected(state, key)),
                 );
-                emit_holdable(ui, &response, cluster.id, key, state, |pressed| {
+                emit_holdable(ui, &response, cluster.id(), key, state, |pressed| {
                     events.push(InputEvent::Face {
                         button: input.button,
                         pressed,
@@ -374,10 +419,10 @@ pub(super) fn draw_dpad_cluster(
 ) {
     hold_card(
         ui,
-        cluster.title,
-        cluster.id,
+        cluster.title(),
+        cluster.id(),
         state,
-        |ui, state, released| match cluster.presentation {
+        |ui, state, released| match cluster.presentation() {
             DpadPresentation::IndependentButtons => {
                 if released {
                     for direction in ALL_DPAD_DIRECTIONS {
@@ -412,14 +457,14 @@ pub(super) fn draw_dpad_cluster(
                             center,
                             Vec2::new((cell.x - 4.0).max(1.0), CONTROL_HEIGHT),
                         ),
-                        Button::new(label).selected(state.latched_buttons.contains(&key)),
+                        Button::new(label).selected(button_is_selected(state, key)),
                     );
                     emit_dpad_holdable(ui, &response, cluster, key, state, events);
                 }
             }
             DpadPresentation::SnappingAxis => {
-                let held = state.held(cluster.id);
-                let dpad = state.snapping_dpads.entry(cluster.id).or_default();
+                let held = state.held(cluster.id());
+                let dpad = state.snapping_dpads.entry(cluster.id()).or_default();
                 if released && dpad.direction != (0, 0) {
                     emit_dpad_transition(dpad.direction, (0, 0), events);
                     dpad.direction = (0, 0);
@@ -446,46 +491,52 @@ pub(super) fn draw_stick(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(ui, stick.title, stick.id, state, |ui, state, released| {
-        if released {
-            events.push(InputEvent::Axis2 {
-                id: stick.id,
-                x: stick.x.neutral,
-                y: stick.y.neutral,
-            });
-            for control in [stick.press, stick.capacitive].into_iter().flatten() {
-                release_latched_button(state, HoldKey::Control(control.id), || {
-                    events.push(InputEvent::Button {
-                        id: control.id,
-                        pressed: false,
+    hold_card(
+        ui,
+        stick.title(),
+        stick.id(),
+        state,
+        |ui, state, released| {
+            if released {
+                events.push(InputEvent::Axis2 {
+                    id: stick.id(),
+                    x: stick.x().neutral,
+                    y: stick.y().neutral,
+                });
+                for control in [stick.press(), stick.capacitive()].into_iter().flatten() {
+                    release_latched_button(state, HoldKey::Control(control.id), || {
+                        events.push(InputEvent::Button {
+                            id: control.id,
+                            pressed: false,
+                        });
                     });
+                }
+            }
+            let (next, changed) = axis_pad(ui, value, stick.x(), stick.y(), state.held(stick.id()));
+            if changed {
+                events.push(InputEvent::Axis2 {
+                    id: stick.id(),
+                    x: next.0,
+                    y: next.1,
                 });
             }
-        }
-        let (next, changed) = axis_pad(ui, value, stick.x, stick.y, state.held(stick.id));
-        if changed {
-            events.push(InputEvent::Axis2 {
-                id: stick.id,
-                x: next.0,
-                y: next.1,
-            });
-        }
-        for control in [stick.press, stick.capacitive].into_iter().flatten() {
-            holdable_button(
-                ui,
-                stick.id,
-                HoldKey::Control(control.id),
-                control.label,
-                state,
-                |pressed| {
-                    events.push(InputEvent::Button {
-                        id: control.id,
-                        pressed,
-                    });
-                },
-            );
-        }
-    });
+            for control in [stick.press(), stick.capacitive()].into_iter().flatten() {
+                holdable_button(
+                    ui,
+                    stick.id(),
+                    HoldKey::Control(control.id),
+                    control.label,
+                    state,
+                    |pressed| {
+                        events.push(InputEvent::Button {
+                            id: control.id,
+                            pressed,
+                        });
+                    },
+                );
+            }
+        },
+    );
 }
 
 pub(super) fn draw_trigger_stack(
@@ -495,52 +546,59 @@ pub(super) fn draw_trigger_stack(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(ui, stack.title, stack.id, state, |ui, state, released| {
-        if released {
-            events.extend(trigger_release_events(stack));
-            for control in stack.controls {
-                if let TriggerInputKind::Button { id } = control.kind {
-                    state.latched_buttons.remove(&HoldKey::Control(id));
+    hold_card(
+        ui,
+        stack.title(),
+        stack.id(),
+        state,
+        |ui, state, released| {
+            if released {
+                events.extend(trigger_release_events(stack));
+                for control in stack.controls() {
+                    if let TriggerInputKind::Button { id } = control.kind {
+                        state.latched_buttons.remove(&HoldKey::Control(id));
+                    }
                 }
             }
-        }
-        for control in stack.controls {
-            ui.horizontal(|ui| {
-                ui.label(control.label);
-                match control.kind {
-                    TriggerInputKind::Button { id } => {
-                        let current = value_button(values, id);
-                        let key = HoldKey::Control(id);
-                        let response = ui.add(
-                            Button::new("Press")
-                                .selected(current || state.latched_buttons.contains(&key))
-                                .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
-                        );
-                        emit_holdable(ui, &response, stack.id, key, state, |pressed| {
-                            events.push(InputEvent::Button { id, pressed });
-                        });
-                    }
-                    TriggerInputKind::Axis { id, range } => {
-                        let mut value = value_axis(values, id, range.neutral);
-                        let response = ui.add(
-                            egui::Slider::new(&mut value, range.minimum..=range.maximum)
-                                .show_value(true),
-                        );
-                        if response.changed() {
-                            events.push(InputEvent::Axis1 { id, value });
-                        }
-                        if !state.held(stack.id) && (response.drag_stopped() || response.clicked())
-                        {
-                            events.push(InputEvent::Axis1 {
-                                id,
-                                value: range.neutral,
+            for control in stack.controls() {
+                ui.horizontal(|ui| {
+                    ui.label(control.label);
+                    match control.kind {
+                        TriggerInputKind::Button { id } => {
+                            let current = value_button(values, id);
+                            let key = HoldKey::Control(id);
+                            let response = ui.add(
+                                Button::new("Press")
+                                    .selected(current || button_is_selected(state, key))
+                                    .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
+                            );
+                            emit_holdable(ui, &response, stack.id(), key, state, |pressed| {
+                                events.push(InputEvent::Button { id, pressed });
                             });
                         }
+                        TriggerInputKind::Axis { id, range } => {
+                            let mut value = value_axis(values, id, range.neutral);
+                            let response = ui.add(
+                                egui::Slider::new(&mut value, range.minimum..=range.maximum)
+                                    .show_value(true),
+                            );
+                            if response.changed() {
+                                events.push(InputEvent::Axis1 { id, value });
+                            }
+                            if !state.held(stack.id())
+                                && (response.drag_stopped() || response.clicked())
+                            {
+                                events.push(InputEvent::Axis1 {
+                                    id,
+                                    value: range.neutral,
+                                });
+                            }
+                        }
                     }
-                }
-            });
-        }
-    });
+                });
+            }
+        },
+    );
 }
 
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
@@ -553,48 +611,90 @@ pub(super) fn draw_touchpad(
     events: &mut Vec<InputEvent>,
 ) {
     {
-        let multitouch = state.held(input.id);
+        let multitouch = state.held(input.id());
         let touch_state = state.touchpad(input);
-        for (index, point) in current.iter().copied().enumerate() {
-            if let Some(contact) = touch_state.contacts.get_mut(index) {
-                if contact.release_pending {
-                    contact.active = false;
-                    contact.release_pending = false;
-                    events.push(InputEvent::Touch {
-                        id: input.id,
-                        contact: u8::try_from(index).expect("contact count is u8"),
-                        point: None,
-                    });
-                    continue;
-                }
-                if let Some((x, y)) = point {
-                    contact.active = true;
-                    contact.x = x;
-                    contact.y = y;
-                } else if !contact.held || !multitouch {
-                    contact.active = false;
+        if touch_state.suppress_until_neutral && current.iter().all(Option::is_none) {
+            touch_state.suppress_until_neutral = false;
+        }
+        if !touch_state.suppress_until_neutral {
+            for (index, point) in current.iter().copied().enumerate() {
+                if let Some(contact) = touch_state.contacts.get_mut(index) {
+                    if contact.release_pending {
+                        contact.active = false;
+                        contact.release_pending = false;
+                        events.push(InputEvent::Touch {
+                            id: input.id(),
+                            contact: u8::try_from(index).expect("contact count is u8"),
+                            point: None,
+                        });
+                        continue;
+                    }
+                    if let Some((x, y)) = point {
+                        contact.active = true;
+                        contact.x = x;
+                        contact.y = y;
+                    } else if !contact.held || !multitouch {
+                        contact.active = false;
+                    }
                 }
             }
+        }
+        if !touch_state.lockout_timer_enabled
+            || !touch_state.contacts.iter().any(|contact| contact.active)
+        {
+            touch_state.lockout_started = None;
+        } else if touch_state.lockout_started.is_none() {
+            touch_state.lockout_started = Some(Instant::now());
         }
     }
     labeled_hold_card(
         ui,
-        input.title,
+        input.title(),
         "Multitouch",
-        input.id,
+        input.id(),
         state,
         |ui, state, released| {
+            let mut reset_this_frame = false;
             if released {
-                reset_touchpad(input, state, events);
+                clear_touchpad_input(input, state, events);
+                reset_this_frame = true;
             }
+            let (was_enabled, previous_seconds) = {
+                let touchpad = state.touchpad(input);
+                (
+                    touchpad.lockout_timer_enabled,
+                    touchpad.lockout_timer_seconds,
+                )
+            };
+            let mut timer_enabled = was_enabled;
+            let mut timer_seconds = previous_seconds;
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut timer_enabled, "");
+                ui.colored_label(
+                    if timer_enabled {
+                        ui.visuals().text_color()
+                    } else {
+                        Color32::RED
+                    },
+                    "Lockout timer",
+                );
+                ui.add_enabled(
+                    timer_enabled,
+                    egui::DragValue::new(&mut timer_seconds)
+                        .range(1..=3600)
+                        .suffix(" seconds"),
+                );
+            });
+            reset_this_frame |=
+                configure_touchpad_lockout(input, state, timer_enabled, timer_seconds, events);
             let mut reset_requested = false;
             ui.horizontal(|ui| {
-                match input.actuation {
+                match input.actuation() {
                     TouchpadActuation::None => {}
                     TouchpadActuation::Button(button) => {
                         holdable_button_sized(
                             ui,
-                            input.id,
+                            input.id(),
                             HoldKey::Control(button.id),
                             button.label,
                             TOUCHPAD_ACTION_WIDTH,
@@ -616,7 +716,8 @@ pub(super) fn draw_touchpad(
                         if response.changed() {
                             events.push(InputEvent::Axis1 { id, value });
                         }
-                        if !state.held(input.id) && (response.drag_stopped() || response.clicked())
+                        if !state.held(input.id())
+                            && (response.drag_stopped() || response.clicked())
                         {
                             events.push(InputEvent::Axis1 {
                                 id,
@@ -634,30 +735,13 @@ pub(super) fn draw_touchpad(
                     .clicked();
             });
             if reset_requested {
-                state.set_hold(input.id, false);
-                reset_touchpad(input, state, events);
-                match input.actuation {
-                    TouchpadActuation::Button(button) => {
-                        release_latched_button(state, HoldKey::Control(button.id), || {
-                            events.push(InputEvent::Button {
-                                id: button.id,
-                                pressed: false,
-                            });
-                        });
-                    }
-                    TouchpadActuation::Deflection { id, range } => {
-                        events.push(InputEvent::Axis1 {
-                            id,
-                            value: range.neutral,
-                        });
-                    }
-                    TouchpadActuation::None => {}
-                }
+                clear_touchpad_input(input, state, events);
+                reset_this_frame = true;
             }
 
-            let multitouch = state.held(input.id);
+            let multitouch = state.held(input.id());
             let touch_state = state.touchpad(input);
-            let height = touchpad_display_height(input.width, input.height);
+            let height = touchpad_display_height(input.width(), input.height());
             let (rect, response) =
                 ui.allocate_exact_size(Vec2::new(TOUCHPAD_WIDTH, height), Sense::click_and_drag());
             ui.painter().rect_stroke(
@@ -666,9 +750,17 @@ pub(super) fn draw_touchpad(
                 Stroke::new(1.0, Color32::GRAY),
                 egui::StrokeKind::Inside,
             );
-            if response.is_pointer_button_down_on() || response.clicked() {
+            let pointer_down = response.is_pointer_button_down_on();
+            let mut touch_input_suppressed = reset_this_frame;
+            if reset_this_frame {
+                touch_state.suppress_until_neutral |= current.iter().any(Option::is_some);
+                touch_state.suppress_until_pointer_release = pointer_down;
+            }
+            touch_input_suppressed |=
+                touch_state.suppress_until_neutral || touch_state.suppress_until_pointer_release;
+            if !touch_input_suppressed && (pointer_down || response.clicked()) {
                 if let Some(position) = response.interact_pointer_pos() {
-                    let (x, y) = touch_point(rect, position, input.width, input.height);
+                    let (x, y) = touch_point(rect, position, input.width(), input.height());
                     let selected = touch_state.selected;
                     let contact = &mut touch_state.contacts[selected];
                     contact.active = true;
@@ -676,14 +768,14 @@ pub(super) fn draw_touchpad(
                         && !touch_contact_persists(selected, multitouch, contact.held);
                     emit_touch_move(input, touch_state, selected, (x, y), events);
                 }
-            } else if response.drag_stopped() {
+            } else if !touch_input_suppressed && response.drag_stopped() {
                 let selected = touch_state.selected;
                 let contact = &mut touch_state.contacts[selected];
                 if !touch_contact_persists(selected, multitouch, contact.held) {
                     contact.active = false;
                     contact.release_pending = false;
                     events.push(InputEvent::Touch {
-                        id: input.id,
+                        id: input.id(),
                         contact: u8::try_from(selected).expect("contact count is u8"),
                         point: None,
                     });
@@ -692,8 +784,8 @@ pub(super) fn draw_touchpad(
             for (index, contact) in touch_state.contacts.iter().enumerate() {
                 if contact.active {
                     let point = Pos2::new(
-                        rect.left() + contact.x as f32 / input.width as f32 * rect.width(),
-                        rect.top() + contact.y as f32 / input.height as f32 * rect.height(),
+                        rect.left() + contact.x as f32 / input.width() as f32 * rect.width(),
+                        rect.top() + contact.y as f32 / input.height() as f32 * rect.height(),
                     );
                     ui.painter()
                         .circle_filled(point, 5.0, touch_contact_color(index, true));
@@ -706,7 +798,7 @@ pub(super) fn draw_touchpad(
 
             let mut holds_changed = false;
             egui::ScrollArea::horizontal()
-                .id_salt((controller_id, input.id.as_str(), "contacts"))
+                .id_salt((controller_id, input.id().as_str(), "contacts"))
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -787,6 +879,39 @@ pub(super) fn draw_touchpad(
                     }
                 }
             }
+            let now = Instant::now();
+            let timer_expired = {
+                let touchpad = state.touchpad(input);
+                touchpad_lockout_expired(
+                    touchpad.lockout_timer_enabled,
+                    touchpad.lockout_started,
+                    touchpad.lockout_timer_seconds,
+                    now,
+                )
+            };
+            if timer_expired {
+                clear_touchpad_input(input, state, events);
+                let touchpad = state.touchpad(input);
+                touchpad.suppress_until_neutral |= current.iter().any(Option::is_some);
+                touchpad.suppress_until_pointer_release = pointer_down;
+            } else {
+                let touchpad = state.touchpad(input);
+                if !touchpad.suppress_until_pointer_release && !touchpad.suppress_until_neutral {
+                    if touchpad.lockout_timer_enabled
+                        && touchpad.contacts.iter().any(|contact| contact.active)
+                    {
+                        touchpad.lockout_started.get_or_insert(now);
+                    } else {
+                        touchpad.lockout_started = None;
+                    }
+                }
+                if touchpad.suppress_until_pointer_release && !pointer_down {
+                    touchpad.suppress_until_pointer_release = false;
+                }
+                if touchpad.suppress_until_neutral && current.iter().all(Option::is_none) {
+                    touchpad.suppress_until_neutral = false;
+                }
+            }
         },
     );
 }
@@ -796,7 +921,7 @@ fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut 
     for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
         if contact.active {
             events.push(InputEvent::Touch {
-                id: input.id,
+                id: input.id(),
                 contact: u8::try_from(index).expect("contact count is u8"),
                 point: None,
             });
@@ -805,6 +930,78 @@ fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut 
     }
     touch_state.selected = 0;
     touch_state.relative_input = false;
+    touch_state.lockout_started = None;
+}
+
+fn clear_touchpad_input(
+    input: &TouchpadInput,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    state.set_hold(input.id(), false);
+    reset_touchpad(input, state, events);
+    match input.actuation() {
+        TouchpadActuation::Button(button) => {
+            let key = HoldKey::Control(button.id);
+            let was_pressed =
+                state.latched_buttons.remove(&key) | state.momentary_buttons.remove(&key);
+            if was_pressed {
+                events.push(InputEvent::Button {
+                    id: button.id,
+                    pressed: false,
+                });
+            }
+        }
+        TouchpadActuation::Deflection { id, range } => {
+            events.push(InputEvent::Axis1 {
+                id,
+                value: range.neutral,
+            });
+        }
+        TouchpadActuation::None => {}
+    }
+}
+
+fn touchpad_lockout_expired(
+    enabled: bool,
+    started: Option<Instant>,
+    seconds: u32,
+    now: Instant,
+) -> bool {
+    enabled
+        && started.is_some_and(|started| {
+            now.saturating_duration_since(started) >= Duration::from_secs(u64::from(seconds))
+        })
+}
+
+fn configure_touchpad_lockout(
+    input: &TouchpadInput,
+    state: &mut InputUiState,
+    enabled: bool,
+    seconds: u32,
+    events: &mut Vec<InputEvent>,
+) -> bool {
+    let (was_enabled, previous_seconds) = {
+        let touchpad = state.touchpad(input);
+        (
+            touchpad.lockout_timer_enabled,
+            touchpad.lockout_timer_seconds,
+        )
+    };
+    let changed = was_enabled != enabled || previous_seconds != seconds;
+    let disabled = was_enabled && !enabled;
+    if disabled {
+        clear_touchpad_input(input, state, events);
+    }
+    let touchpad = state.touchpad(input);
+    touchpad.lockout_timer_enabled = enabled;
+    touchpad.lockout_timer_seconds = seconds.clamp(1, 3600);
+    if !enabled {
+        touchpad.lockout_started = None;
+    } else if changed && touchpad.contacts.iter().any(|contact| contact.active) {
+        touchpad.lockout_started = Some(Instant::now());
+    }
+    disabled
 }
 
 fn normalize_touch_contacts(
@@ -823,7 +1020,7 @@ fn normalize_touch_contacts(
         if !valid {
             if contact.active {
                 events.push(InputEvent::Touch {
-                    id: input.id,
+                    id: input.id(),
                     contact: u8::try_from(index).expect("contact count is u8"),
                     point: None,
                 });
@@ -892,15 +1089,15 @@ fn emit_touch_move(
             point
         } else {
             (
-                clamp_touch_coordinate(i64::from(contact.x) + delta_x, input.width),
-                clamp_touch_coordinate(i64::from(contact.y) + delta_y, input.height),
+                clamp_touch_coordinate(i64::from(contact.x) + delta_x, input.width()),
+                clamp_touch_coordinate(i64::from(contact.y) + delta_y, input.height()),
             )
         };
         contact.active = true;
         contact.x = next.0;
         contact.y = next.1;
         events.push(InputEvent::Touch {
-            id: input.id,
+            id: input.id(),
             contact: u8::try_from(index).expect("contact count is u8"),
             point: Some(next),
         });
@@ -920,42 +1117,50 @@ pub(super) fn draw_motion(
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(ui, input.title, input.id, state, |ui, state, released| {
-        let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale);
-        let mut accel = unscale_vector(accelerometer, input.accelerometer_scale);
-        let mut changed = false;
-        let hold = state.held(input.id);
-        let mut interaction_finished = false;
-        for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-            let response = ui.add(
-                egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
-            );
-            changed |= response.changed();
-            interaction_finished |= response.drag_stopped() || response.clicked();
-        }
-        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-            .into_iter()
-            .zip(&mut accel)
-        {
-            let response = ui.add(
-                egui::Slider::new(value, input.range.minimum..=input.range.maximum).text(label),
-            );
-            changed |= response.changed();
-            interaction_finished |= response.drag_stopped() || response.clicked();
-        }
-        if motion_should_neutralize(released, hold, interaction_finished) {
-            gyro = [input.range.neutral; 3];
-            accel = [input.range.neutral; 3];
-            changed = true;
-        }
-        if changed {
-            events.push(InputEvent::Motion {
-                id: input.id,
-                gyroscope: scale_vector(gyro, input.gyroscope_scale, input.range),
-                accelerometer: scale_vector(accel, input.accelerometer_scale, input.range),
-            });
-        }
-    });
+    hold_card(
+        ui,
+        input.title(),
+        input.id(),
+        state,
+        |ui, state, released| {
+            let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale());
+            let mut accel = unscale_vector(accelerometer, input.accelerometer_scale());
+            let mut changed = false;
+            let hold = state.held(input.id());
+            let mut interaction_finished = false;
+            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
+                let response = ui.add(
+                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
+                        .text(label),
+                );
+                changed |= response.changed();
+                interaction_finished |= response.drag_stopped() || response.clicked();
+            }
+            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
+                .into_iter()
+                .zip(&mut accel)
+            {
+                let response = ui.add(
+                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
+                        .text(label),
+                );
+                changed |= response.changed();
+                interaction_finished |= response.drag_stopped() || response.clicked();
+            }
+            if motion_should_neutralize(released, hold, interaction_finished) {
+                gyro = [input.range().neutral; 3];
+                accel = [input.range().neutral; 3];
+                changed = true;
+            }
+            if changed {
+                events.push(InputEvent::Motion {
+                    id: input.id(),
+                    gyroscope: scale_vector(gyro, input.gyroscope_scale(), input.range()),
+                    accelerometer: scale_vector(accel, input.accelerometer_scale(), input.range()),
+                });
+            }
+        },
+    );
 }
 
 fn motion_should_neutralize(released: bool, hold: bool, interaction_finished: bool) -> bool {
@@ -1024,7 +1229,7 @@ fn holdable_button_sized(
 ) {
     let response = ui.add(
         Button::new(label)
-            .selected(state.latched_buttons.contains(&key))
+            .selected(button_is_selected(state, key))
             .min_size(Vec2::new(width, CONTROL_HEIGHT)),
     );
     emit_holdable(ui, &response, category, key, state, set);
@@ -1035,7 +1240,7 @@ fn touchpad_reset_fill(ui: &egui::Ui) -> Color32 {
 }
 
 fn emit_holdable(
-    ui: &mut egui::Ui,
+    _ui: &mut egui::Ui,
     response: &egui::Response,
     category: InputControlId,
     key: HoldKey,
@@ -1044,9 +1249,7 @@ fn emit_holdable(
 ) {
     let hold = state.held(category);
     let latched = state.latched_buttons.contains(&key);
-    let previous = ui
-        .data(|data| data.get_temp::<bool>(response.id))
-        .unwrap_or(false);
+    let previous = state.momentary_buttons.contains(&key);
     if let Some(pressed) = next_button_state(ButtonInteraction {
         hold,
         latched,
@@ -1054,17 +1257,28 @@ fn emit_holdable(
         pointer_down: response.is_pointer_button_down_on(),
         clicked: response.clicked(),
     }) {
-        if hold {
-            if pressed {
-                state.latched_buttons.insert(key);
-            } else {
-                state.latched_buttons.remove(&key);
-            }
-        } else {
-            ui.data_mut(|data| data.insert_temp(response.id, pressed));
-        }
+        apply_button_press_state(state, key, hold, pressed);
         set(pressed);
     }
+}
+
+fn apply_button_press_state(state: &mut InputUiState, key: HoldKey, hold: bool, pressed: bool) {
+    if hold {
+        state.momentary_buttons.remove(&key);
+        if pressed {
+            state.latched_buttons.insert(key);
+        } else {
+            state.latched_buttons.remove(&key);
+        }
+    } else if pressed {
+        state.momentary_buttons.insert(key);
+    } else {
+        state.momentary_buttons.remove(&key);
+    }
+}
+
+fn button_is_selected(state: &InputUiState, key: HoldKey) -> bool {
+    state.latched_buttons.contains(&key) || state.momentary_buttons.contains(&key)
 }
 
 fn emit_dpad_holdable(
@@ -1078,9 +1292,12 @@ fn emit_dpad_holdable(
     let HoldKey::Dpad(direction) = key else {
         unreachable!("D-pad controls always use a D-pad hold key");
     };
-    if state.held(cluster.id) && response.clicked() {
+    if state.held(cluster.id()) {
+        state.momentary_buttons.remove(&key);
+    }
+    if state.held(cluster.id()) && response.clicked() {
         let pressed = !state.latched_buttons.contains(&key);
-        if let Some(opposite) = held_dpad_opposite(cluster.hold_behavior, pressed, direction) {
+        if let Some(opposite) = held_dpad_opposite(cluster.hold_behavior(), pressed, direction) {
             release_dpad_latch(opposite, state, events);
         }
         if pressed {
@@ -1089,8 +1306,8 @@ fn emit_dpad_holdable(
             state.latched_buttons.remove(&key);
         }
         events.push(InputEvent::Dpad { direction, pressed });
-    } else if !state.held(cluster.id) {
-        emit_holdable(ui, response, cluster.id, key, state, |pressed| {
+    } else if !state.held(cluster.id()) {
+        emit_holdable(ui, response, cluster.id(), key, state, |pressed| {
             events.push(InputEvent::Dpad { direction, pressed });
         });
     }
@@ -1151,7 +1368,7 @@ fn next_momentary_state(previous: bool, pointer_down: bool, clicked: bool) -> Op
 
 fn trigger_release_events(stack: &TriggerStack) -> Vec<InputEvent> {
     stack
-        .controls
+        .controls()
         .iter()
         .map(|control| match control.kind {
             TriggerInputKind::Button { id } => InputEvent::Button { id, pressed: false },
@@ -1409,6 +1626,141 @@ mod tests {
     }
 
     #[test]
+    fn touchpad_lockout_defaults_to_thirty_seconds_and_expires_at_deadline() {
+        let state = TouchpadState::default();
+        assert!(state.lockout_timer_enabled);
+        assert_eq!(state.lockout_timer_seconds, 30);
+
+        let started = Instant::now();
+        assert!(!touchpad_lockout_expired(
+            true,
+            Some(started),
+            30,
+            started + Duration::from_secs(29)
+        ));
+        assert!(touchpad_lockout_expired(
+            true,
+            Some(started),
+            30,
+            started + Duration::from_secs(30)
+        ));
+        assert!(!touchpad_lockout_expired(
+            false,
+            Some(started),
+            30,
+            started + Duration::from_secs(60)
+        ));
+        assert!(!touchpad_lockout_expired(true, None, 30, started));
+    }
+
+    #[test]
+    fn clearing_touchpad_input_releases_active_contacts_and_click_button() {
+        let click_id = InputControlId::new("touch-click");
+        let input = gr_controller_contract::construction::TouchpadInputSpec {
+            id: InputControlId::new("touch"),
+            title: "Touch",
+            width: 100,
+            height: 50,
+            contacts: 1,
+            actuation: TouchpadActuation::Button(virtualgamepad::AuxiliaryButtonInput {
+                id: click_id,
+                label: "Click",
+            }),
+        }
+        .build();
+        let mut state = InputUiState::default();
+        let contact = &mut state.touchpad(&input).contacts[0];
+        contact.active = true;
+        contact.held = true;
+        state.set_hold(input.id(), true);
+        state.latched_buttons.insert(HoldKey::Control(click_id));
+        let mut events = Vec::new();
+
+        clear_touchpad_input(&input, &mut state, &mut events);
+
+        assert!(!state.held(input.id()));
+        assert!(!state.touchpad(&input).contacts[0].active);
+        assert_eq!(
+            events,
+            [
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: None,
+                },
+                InputEvent::Button {
+                    id: click_id,
+                    pressed: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn disabling_lockout_timer_clears_active_touch_contacts() {
+        let input = gr_controller_contract::construction::TouchpadInputSpec {
+            id: InputControlId::new("touch"),
+            title: "Touch",
+            width: 100,
+            height: 50,
+            contacts: 1,
+            actuation: TouchpadActuation::None,
+        }
+        .build();
+        let mut state = InputUiState::default();
+        state.touchpad(&input).contacts[0].active = true;
+        state.touchpad(&input).lockout_started = Some(Instant::now());
+        let mut events = Vec::new();
+
+        assert!(configure_touchpad_lockout(
+            &input,
+            &mut state,
+            false,
+            30,
+            &mut events,
+        ));
+        assert!(!state.touchpad(&input).lockout_timer_enabled);
+        assert!(!state.touchpad(&input).contacts[0].active);
+        assert!(state.touchpad(&input).lockout_started.is_none());
+        assert_eq!(
+            events,
+            [InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn momentary_button_feedback_is_visible_for_one_frame_and_hold_stays_latched() {
+        let key = HoldKey::Control(InputControlId::new("touchpad-click"));
+        let mut state = InputUiState::default();
+
+        apply_button_press_state(&mut state, key, false, true);
+        assert!(button_is_selected(&state, key));
+        assert_eq!(
+            next_button_state(ButtonInteraction {
+                hold: false,
+                latched: false,
+                previous_momentary: true,
+                pointer_down: false,
+                clicked: false,
+            }),
+            Some(false)
+        );
+        // The selected style is consumed by this frame before the release transition.
+        assert!(button_is_selected(&state, key));
+        apply_button_press_state(&mut state, key, false, false);
+        assert!(!button_is_selected(&state, key));
+
+        apply_button_press_state(&mut state, key, true, true);
+        assert!(button_is_selected(&state, key));
+        assert!(state.latched_buttons.contains(&key));
+        assert!(!state.momentary_buttons.contains(&key));
+    }
+
+    #[test]
     fn held_stick_axis_keeps_its_last_position() {
         let range = InputAxisRange {
             minimum: -10,
@@ -1470,11 +1822,12 @@ mod tests {
             }),
             Some(true)
         );
-        let stack = TriggerStack {
+        let stack = gr_controller_contract::construction::TriggerStackSpec {
             id: InputControlId::new("stack"),
             title: "Stack",
             controls: &CONTROLS,
-        };
+        }
+        .build();
         assert_eq!(
             trigger_release_events(&stack),
             vec![
@@ -1496,6 +1849,7 @@ mod tests {
             selected: 0,
             contacts: vec![TouchContactState::default(); 12],
             relative_input: false,
+            ..TouchpadState::default()
         };
         assert!(select_touch_contact(&mut state, 11));
         assert_eq!(state.selected, 11);
@@ -1530,6 +1884,7 @@ mod tests {
             selected: 0,
             contacts: vec![first, TouchContactState::default()],
             relative_input: false,
+            ..TouchpadState::default()
         };
         assert!(select_touch_contact(&mut state, 1));
         assert_eq!(state.selected, 1);
@@ -1549,14 +1904,15 @@ mod tests {
 
     #[test]
     fn relative_touch_translation_moves_enabled_contacts_and_clamps_at_the_edge() {
-        let input = TouchpadInput {
+        let input = gr_controller_contract::construction::TouchpadInputSpec {
             id: InputControlId::new("touch"),
             title: "Touch",
             width: 10,
             height: 10,
             contacts: 3,
             actuation: TouchpadActuation::None,
-        };
+        }
+        .build();
         let mut state = TouchpadState {
             selected: 1,
             contacts: vec![
@@ -1586,6 +1942,7 @@ mod tests {
                 },
             ],
             relative_input: true,
+            ..TouchpadState::default()
         };
         let mut events = Vec::new();
         emit_touch_move(&input, &mut state, 1, (8, 8), &mut events);
@@ -1723,14 +2080,15 @@ mod tests {
 
     #[test]
     fn release_all_clears_holds_dpad_and_touch_latches() {
-        let touchpad = TouchpadInput {
+        let touchpad = gr_controller_contract::construction::TouchpadInputSpec {
             id: InputControlId::new("touch"),
             title: "Touch",
             width: 10,
             height: 10,
             contacts: 2,
             actuation: TouchpadActuation::None,
-        };
+        }
+        .build();
         let mut state = InputUiState::default();
         state
             .holds
@@ -1738,6 +2096,9 @@ mod tests {
         state
             .latched_buttons
             .insert(HoldKey::Control(InputControlId::new("button")));
+        state
+            .momentary_buttons
+            .insert(HoldKey::Control(InputControlId::new("momentary-button")));
         state.snapping_dpads.insert(
             InputControlId::new("dpad"),
             SnappingDpadState {
@@ -1757,10 +2118,11 @@ mod tests {
         state.release_all();
         assert!(state.holds.is_empty());
         assert!(state.latched_buttons.is_empty());
+        assert!(state.momentary_buttons.is_empty());
         assert!(state.snapping_dpads.is_empty());
-        assert!(!state.touchpads[&touchpad.id].contacts[1].active);
-        assert!(!state.touchpads[&touchpad.id].contacts[1].held);
-        assert!(!state.touchpads[&touchpad.id].contacts[1].relative);
+        assert!(!state.touchpads[&touchpad.id()].contacts[1].active);
+        assert!(!state.touchpads[&touchpad.id()].contacts[1].held);
+        assert!(!state.touchpads[&touchpad.id()].contacts[1].relative);
     }
 
     #[test]
@@ -1773,7 +2135,7 @@ mod tests {
 
     #[test]
     fn synthetic_capabilities_have_actionable_descriptors() {
-        let capacitive = StickInput {
+        let capacitive = gr_controller_contract::construction::StickInputSpec {
             id: InputControlId::new("stick"),
             title: "Stick",
             x: InputAxisRange {
@@ -1791,7 +2153,8 @@ mod tests {
                 id: InputControlId::new("stick-touch"),
                 label: "Capacitive",
             }),
-        };
+        }
+        .build();
         let deflection = TouchpadActuation::Deflection {
             id: InputControlId::new("pad-deflection"),
             range: InputAxisRange {
@@ -1804,18 +2167,38 @@ mod tests {
             ExtraAxisInput::OneDimensional {
                 id: InputControlId::new("one"),
                 title: "One",
-                range: capacitive.x,
+                range: capacitive.x(),
             },
             ExtraAxisInput::TwoDimensional {
                 id: InputControlId::new("two"),
                 title: "Two",
-                x: capacitive.x,
-                y: capacitive.y,
+                x: capacitive.x(),
+                y: capacitive.y(),
             },
         ];
-        assert!(capacitive.capacitive.is_some());
+        assert!(capacitive.capacitive().is_some());
         assert!(matches!(deflection, TouchpadActuation::Deflection { .. }));
         assert!(matches!(axes[0], ExtraAxisInput::OneDimensional { .. }));
         assert!(matches!(axes[1], ExtraAxisInput::TwoDimensional { .. }));
+    }
+}
+
+/// Pixel sizing belongs to the renderer, independent of controller semantics.
+fn face_cell_width(label_width: f32, available_width: f32, columns: i8) -> f32 {
+    (label_width + 16.0)
+        .max(40.0)
+        .min((available_width / f32::from(columns.max(1))).max(24.0))
+}
+
+#[cfg(test)]
+mod face_width_tests {
+    use super::face_cell_width;
+    #[test]
+    #[allow(clippy::float_cmp)] // Exact integer-valued renderer examples.
+    fn labels_and_viewport_determine_face_button_width() {
+        assert_eq!(face_cell_width(56.0, 300.0, 3), 72.0);
+        assert_eq!(face_cell_width(10.0, 300.0, 3), 40.0);
+        assert_eq!(face_cell_width(200.0, 90.0, 3), 30.0);
+        assert_eq!(face_cell_width(10.0, 0.0, 0), 24.0);
     }
 }

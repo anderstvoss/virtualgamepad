@@ -95,6 +95,14 @@ impl Controller {
     }
 }
 impl ControllerView {
+    pub(super) fn association(&self) -> Option<&virtualgamepad::ControllerAssociation> {
+        match self {
+            Self::Xbox(c) => c.association.as_ref(),
+            Self::DualSense(c) => c.association.as_ref(),
+            Self::DualShock4(c) => c.association.as_ref(),
+            Self::SwitchPro(c) => c.association.as_ref(),
+        }
+    }
     pub(super) fn lab_details(&self) -> String {
         match self {
             Self::Xbox(c) => format!("{:?}; {:?}", c.association, c.diagnostics),

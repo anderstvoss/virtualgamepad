@@ -3,8 +3,8 @@
 //! Curated virtual-controller API and provider-neutral core contracts.
 
 pub use gr_audio_contract::{
-    AudioBackendFactory, AudioDirection, AudioError, AudioFormat, AudioSession,
-    AudioSidecarRequirement, AudioStreamRequirement, ChannelLayout, ClockRequirement, RouteIntent,
+    AudioDirection, AudioError, AudioFormat, AudioSidecarRequirement, AudioStreamRequirement,
+    ChannelLayout, ClockRequirement, RouteIntent,
 };
 pub use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
@@ -40,3 +40,10 @@ pub use gr_realization_api::{
     RawReverseEvent, RealizationError, RealizationId, RealizationSelection, RealizationSessionId,
     RealizationTarget, RealizationTargetSet, RumbleEffect, validate_provider,
 };
+
+// Root-handle instrumentation is explicitly outside the alpha application contract.
+pub use crate::audio::{AudioInstrumentation, AudioStreamTiming};
+#[must_use]
+pub fn audio_instrumentation(audio: &crate::ControllerAudio) -> AudioInstrumentation<'_> {
+    AudioInstrumentation::new(audio)
+}

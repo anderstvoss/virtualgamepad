@@ -59,7 +59,11 @@ fn start_recorder(
         .find(|endpoint| endpoint.direction() == SampleDirection::ControllerToHost)
         .ok_or("missing microphone endpoint")?;
     let channels = microphone.format().channels().len();
-    let card_id = microphone.host().identity();
+    let card_id = microphone
+        .host()
+        .alsa_pcm()
+        .ok_or("endpoint is not ALSA PCM")?
+        .0;
     let preparation = Command::new("python3")
         .arg("scripts/validate-usb-audio-live.py")
         .args([
@@ -177,7 +181,7 @@ fn supply(
             return Err("microphone latency probe deadline exceeded".into());
         }
         let host = audio
-            .microphone_host_frames()?
+            .microphone_consumed_frames()?
             .ok_or("USB microphone credit unavailable")?;
         let target = host.saturating_add(fill_ms * RATE / 1_000);
         let count = usize::try_from(target.saturating_sub(submitted).min(BLOCK_FRAMES as u64))?;

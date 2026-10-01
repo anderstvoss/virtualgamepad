@@ -66,6 +66,7 @@ default = []
 # Research/SPI only: excluded from the application API stability promise.
 experimental = []
 audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
+audio-alsa = []
 audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
 
 [dev-dependencies]
@@ -81,11 +82,11 @@ required-features = ["audio-usbip"]
 
 [[example]]
 name = "usb_audio_native_probe"
-required-features = ["audio-usbip", "audio-pipewire"]
+required-features = ["experimental", "audio-usbip", "audio-pipewire"]
 
 [[example]]
 name = "usb_audio_latency"
-required-features = ["audio-usbip"]
+required-features = ["experimental", "audio-usbip"]
 
 [[example]]
 name = "usb_audio_latency_reverse"

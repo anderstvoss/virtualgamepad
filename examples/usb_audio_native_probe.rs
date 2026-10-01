@@ -224,9 +224,13 @@ fn sample_window(
     let mut queue_peak = 0;
     while !done.load(Ordering::Acquire) {
         let elapsed = started.elapsed();
-        let count = audio.native_playback_underrun_frames().unwrap_or(0);
-        let dropped = audio.native_microphone_dropped_frames().unwrap_or(0);
-        let fill = audio
+        let count = virtualgamepad::experimental::audio_instrumentation(audio)
+            .native_playback_underrun_frames()
+            .unwrap_or(0);
+        let dropped = virtualgamepad::experimental::audio_instrumentation(audio)
+            .native_microphone_dropped_frames()
+            .unwrap_or(0);
+        let fill = virtualgamepad::experimental::audio_instrumentation(audio)
             .native_microphone_queue_frames()
             .map_or(0, |(fill, _)| fill);
         if elapsed >= Duration::from_secs(2) {
@@ -358,17 +362,19 @@ fn exercise(
         "usb_native family={family} audit={capture_result:?} measured={measured:?} captured_pipe_frames={} dropped={} native_playback_underrun={:?} measured_underrun={} microphone_silence={} microphone_dropped={:?} native_microphone_graph_dropped={:?} measured_graph_drop={} native_microphone_queue={:?} queue_window={queue_window:?} bridge_schedule_us={:?} closed={} last_error={:?} graph={:?}",
         bytes.len() / frame_bytes,
         audio.dropped_playback_frames(),
-        audio.native_playback_underrun_frames(),
+        virtualgamepad::experimental::audio_instrumentation(audio)
+            .native_playback_underrun_frames(),
         measured_underrun,
         audio.underrun_frames(),
         audio.dropped_microphone_frames(),
-        audio.native_microphone_dropped_frames(),
+        virtualgamepad::experimental::audio_instrumentation(audio)
+            .native_microphone_dropped_frames(),
         measured_graph_drop,
-        audio.native_microphone_queue_frames(),
-        audio.native_bridge_scheduling_us(),
+        virtualgamepad::experimental::audio_instrumentation(audio).native_microphone_queue_frames(),
+        virtualgamepad::experimental::audio_instrumentation(audio).native_bridge_scheduling_us(),
         audio.is_closed(),
         audio.last_error(),
-        audio.stream_timings()
+        virtualgamepad::experimental::audio_instrumentation(audio).stream_timings()
     );
     if !status.success()
         || measured.as_ref().is_none_or(|result| {

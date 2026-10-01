@@ -1,4 +1,4 @@
-# Application API: preliminary alpha candidate
+# Application API: current pre-alpha candidate
 
 `virtualgamepad` is a standalone curated-controller appliance. The root API owns
 virtual controllers, not physical discovery, normalization, routing, player slots,
@@ -39,11 +39,12 @@ can be read from USB/UHID handles, and can be restored through the explicit
 `create_*_with_identity` constructors. No files are read/written for persistence.
 Concurrent controllers should use distinct persistent identities.
 
-Association exposes `components()`, each with a role, selected surface, requested
-identity and optional observed host path. Current root realizations have one
-primary component; consumers must not assume a fixed count. A path cached at
-creation does not establish continuing ownership. Future internal Wii expansions
-would remain protocol state unless independently represented as host components.
+Association exposes `components()`, each with typed `kind()`, a display role,
+optional input surface or audio endpoint metadata, and transport-specific requested
+identity. Audio components do not populate requested HID identity fields. Consumers
+must not assume a fixed count. Cached paths and selectors do not establish
+continuing ownership. Internal Wii expansions remain package protocol state unless
+independently represented as host components.
 
 ## State, exposure and servicing
 
@@ -107,3 +108,33 @@ The root contract is a **preliminary** candidate. Hands-on refinement precedes
 the final API review and separate quality review. The intended alpha is Git-based;
 registry publication remains disabled. Changes after alpha require rationale and
 migration notes, not a promise of 1.0 compatibility.
+
+
+## Audio and read-only metadata
+
+Topology descriptors are read-only semantic metadata, not external controller
+construction or GUI sizing policy. Inspect their accessor slices and native ranges;
+controller-native state remains authoritative.
+
+Audio is disabled by default. `AudioOptions::new(AudioExposure::Emulated)` explicitly
+requests functional audio. Playback/microphone ownership each applies to all groups
+in that direction. UHID may own associated caller-session `PipeWire` endpoints;
+USB/IP is a distinct opt-in WIP composite realization. Both reject unsupported
+feature/platform/topology combinations without fallback.
+
+Borrow audio briefly with `controller.audio()`. PCM processing runs on owned workers;
+`service()` handles controller protocol/output work and discovers propagated audio
+failure. Readiness and write interest describe the controller provider, not PCM
+queue availability. Audio health participates in deadlines without promising a
+fixed polling cadence. Recompute readiness/write interest/deadlines after service
+or commit; callbacks and PCM batches should remain bounded.
+
+A requested audio component is required. Audio or HID failure closes the logical
+creation when discovered; close is terminal and idempotent. Neutralization does
+not flush audio. Endpoint selectors invalidate on close/recreation; retained
+association/diagnostic snapshots neither keep endpoints alive nor prove ownership.
+
+Use `AudioDiagnostics` for retained health and loss, typed errors for sample
+alignment/ownership/closure, and optional `microphone_consumed_frames()` for pacing.
+Graph timing is experimental instrumentation, not measured end-to-end latency.
+See [audio](CONTROLLER_AUDIO.md) and [migration](ALPHA_API_MIGRATION.md).

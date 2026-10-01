@@ -1,6 +1,7 @@
 //! Private session seam; applications never implement or construct a backend.
 use crate::{AudioError, AudioRead};
 
+#[allow(dead_code)] // Lab-only telemetry is used with the experimental feature.
 pub(crate) trait Backend: Send + Sync {
     fn timings(&self) -> Vec<super::AudioStreamTiming>;
     fn read_playback(&mut self, dest: &mut [i16]) -> Result<AudioRead, AudioError>;
@@ -51,7 +52,7 @@ impl Backend for gr_audio_linux::Session {
     }
 
     fn read_playback(&mut self, dest: &mut [i16]) -> Result<AudioRead, AudioError> {
-        Self::read_playback(self, dest)
+        Self::read_playback(self, dest).map(AudioRead::from_backend)
     }
     fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
         Self::write_microphone(self, samples)

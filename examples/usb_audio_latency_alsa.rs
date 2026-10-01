@@ -65,7 +65,17 @@ mod linux {
         if !status.success() {
             return Err("owned ALSA card preparation failed".into());
         }
-        Ok((format!("hw:{},0", endpoint.host().identity()), channels))
+        Ok((
+            format!(
+                "hw:{},0",
+                endpoint
+                    .host()
+                    .alsa_pcm()
+                    .ok_or("endpoint is not ALSA PCM")?
+                    .0
+            ),
+            channels,
+        ))
     }
 
     fn write_blocks(

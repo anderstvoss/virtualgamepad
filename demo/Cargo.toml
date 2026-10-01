@@ -14,5 +14,17 @@ path = "src/main.rs"
 eframe = { version = "0.32", default-features = false, features = ["default_fonts", "glow", "x11"] }
 virtualgamepad = { path = "..", version = "0.1", features = ["experimental"] }
 
+[features]
+# Keep USB/IP audio and ALSA host routing available with plain `cargo run`.
+# The root library's default feature set remains minimal. USB/IP is still WIP.
+default = ["audio-usbip", "audio-alsa"]
+audio-pipewire = ["virtualgamepad/audio-pipewire"]
+audio-alsa = ["virtualgamepad/audio-alsa"]
+audio-usbip = ["virtualgamepad/audio-usbip"]
+
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Synthetic topology fixtures use the supporting-crate construction SPI only.
+gr-controller-contract = { path = "../crates/gr-controller-contract", version = "0.1" }

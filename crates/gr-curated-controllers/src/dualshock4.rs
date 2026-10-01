@@ -485,20 +485,24 @@ static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
         placement: ClusterPlacement::NORTH,
     },
 ];
-static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
-    id: InputControlId::new("face"),
-    title: "Face buttons",
-    button_width: 72,
-    buttons: &INPUT_FACE_BUTTONS,
-}];
-static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
+static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [
+    gr_controller_contract::construction::FaceButtonClusterSpec {
+        id: InputControlId::new("face"),
+        title: "Face buttons",
+
+        buttons: &INPUT_FACE_BUTTONS,
+    }
+    .build(),
+];
+static INPUT_DPADS: [DpadCluster; 1] = [gr_controller_contract::construction::DpadClusterSpec {
     id: InputControlId::new("dpad"),
     title: "D-pad",
     presentation: DpadPresentation::IndependentButtons,
     hold_behavior: DpadHoldBehavior::AdjacentPair,
-}];
+}
+.build()];
 static INPUT_STICKS: [StickInput; 2] = [
-    StickInput {
+    gr_controller_contract::construction::StickInputSpec {
         id: InputControlId::new("left-stick"),
         title: "Left stick",
         x: BYTE_AXIS,
@@ -508,8 +512,9 @@ static INPUT_STICKS: [StickInput; 2] = [
             label: "Stick press",
         }),
         capacitive: None,
-    },
-    StickInput {
+    }
+    .build(),
+    gr_controller_contract::construction::StickInputSpec {
         id: InputControlId::new("right-stick"),
         title: "Right stick",
         x: BYTE_AXIS,
@@ -519,7 +524,8 @@ static INPUT_STICKS: [StickInput; 2] = [
             label: "Stick press",
         }),
         capacitive: None,
-    },
+    }
+    .build(),
 ];
 static LEFT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
     TriggerInput {
@@ -552,36 +558,41 @@ static RIGHT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
     },
 ];
 static INPUT_TRIGGER_STACKS: [TriggerStack; 2] = [
-    TriggerStack {
+    gr_controller_contract::construction::TriggerStackSpec {
         id: InputControlId::new("left-trigger-stack"),
         title: "Left trigger stack",
         controls: &LEFT_TRIGGER_CONTROLS,
-    },
-    TriggerStack {
+    }
+    .build(),
+    gr_controller_contract::construction::TriggerStackSpec {
         id: InputControlId::new("right-trigger-stack"),
         title: "Right trigger stack",
         controls: &RIGHT_TRIGGER_CONTROLS,
-    },
+    }
+    .build(),
 ];
-static INPUT_TOUCHPADS: [TouchpadInput; 1] = [TouchpadInput {
-    id: InputControlId::new("touchpad"),
-    title: "Touchpad",
-    width: 1920,
-    height: 942,
-    contacts: 2,
-    actuation: TouchpadActuation::Button(AuxiliaryButtonInput {
-        id: InputControlId::new("touchpad-click"),
-        label: "Touchpad click",
-    }),
-}];
-static INPUT_MOTION: [MotionInput; 1] = [MotionInput {
+static INPUT_TOUCHPADS: [TouchpadInput; 1] =
+    [gr_controller_contract::construction::TouchpadInputSpec {
+        id: InputControlId::new("touchpad"),
+        title: "Touchpad",
+        width: 1920,
+        height: 942,
+        contacts: 2,
+        actuation: TouchpadActuation::Button(AuxiliaryButtonInput {
+            id: InputControlId::new("touchpad-click"),
+            label: "Touchpad click",
+        }),
+    }
+    .build()];
+static INPUT_MOTION: [MotionInput; 1] = [gr_controller_contract::construction::MotionInputSpec {
     id: InputControlId::new("motion"),
     title: "Motion",
     range: MOTION_AXIS,
     gyroscope_scale: [InputScale::IDENTITY; 3],
     accelerometer_scale: [InputScale::IDENTITY; 3],
-}];
-static INPUT_TOPOLOGY: InputTopology = InputTopology {
+}
+.build()];
+static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::InputTopologySpec {
     auxiliary_buttons: &INPUT_AUXILIARY,
     face_button_clusters: &INPUT_FACE_CLUSTERS,
     dpads: &INPUT_DPADS,
@@ -591,13 +602,16 @@ static INPUT_TOPOLOGY: InputTopology = InputTopology {
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
-};
-static INPUT_TOPOLOGY_WITH_MOTION: InputTopology = InputTopology {
-    motion: &INPUT_MOTION,
-    ..INPUT_TOPOLOGY
-};
+}
+.build();
+static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
+    gr_controller_contract::construction::InputTopologySpec {
+        motion: &INPUT_MOTION,
+        ..gr_controller_contract::construction::InputTopologySpec::from_descriptor(INPUT_TOPOLOGY)
+    }
+    .build();
 static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
@@ -605,10 +619,11 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         outputs: &common::CONVENTIONAL_RUMBLE,
         restrictions: &EVDEV_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
-    },
+    }
+    .build(),
 };
 static HID_SURFACE: DualShock4Surface = DualShock4Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -616,10 +631,11 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
-    },
+    }
+    .build(),
 };
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -627,10 +643,11 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
-    },
+    }
+    .build(),
 };
 static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -638,7 +655,8 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
-    },
+    }
+    .build(),
 };
 
 pub struct DualShock4Definition;
@@ -1370,11 +1388,11 @@ mod tests {
     fn dualshock4_topology_tracks_target_motion_support() {
         for topology in [&INPUT_TOPOLOGY, &INPUT_TOPOLOGY_WITH_MOTION] {
             assert_eq!(topology.validate(), Ok(()));
-            assert_eq!(topology.touchpads[0].contacts, 2);
+            assert_eq!(topology.touchpads()[0].contacts(), 2);
         }
-        assert!(EVDEV_SURFACE.common.input_topology.motion.is_empty());
-        assert_eq!(HID_SURFACE.common.input_topology.motion.len(), 1);
-        assert_eq!(USB_SURFACE.common.input_topology.motion.len(), 1);
+        assert!(EVDEV_SURFACE.common.input_topology().motion().is_empty());
+        assert_eq!(HID_SURFACE.common.input_topology().motion().len(), 1);
+        assert_eq!(USB_SURFACE.common.input_topology().motion().len(), 1);
     }
 
     #[test]
@@ -1545,18 +1563,18 @@ mod tests {
         };
         assert!(spec.event_codes.contains(&common::EV_FF));
         assert_eq!(spec.force_feedback_codes, [0x50]);
-        assert_eq!(EVDEV_SURFACE.common.outputs.len(), 1);
+        assert_eq!(EVDEV_SURFACE.common.outputs().len(), 1);
         assert_eq!(
             (
-                EVDEV_SURFACE.common.outputs[0].event_type,
-                EVDEV_SURFACE.common.outputs[0].event_code
+                EVDEV_SURFACE.common.outputs()[0].event_type,
+                EVDEV_SURFACE.common.outputs()[0].event_code
             ),
             (21, 0x50)
         );
         assert!(
             EVDEV_SURFACE
                 .common
-                .restrictions
+                .restrictions()
                 .iter()
                 .any(|restriction| restriction.feature == "automatic force-feedback trigger")
         );
@@ -1882,7 +1900,7 @@ mod tests {
             assert!(
                 surface
                     .common
-                    .outputs
+                    .outputs()
                     .iter()
                     .any(|output| output.name == "RGB lightbar")
             );
@@ -1890,14 +1908,14 @@ mod tests {
         assert!(
             !EVDEV_SURFACE
                 .common
-                .outputs
+                .outputs()
                 .iter()
                 .any(|output| output.name == "RGB lightbar")
         );
         assert!(
             EVDEV_SURFACE
                 .common
-                .restrictions
+                .restrictions()
                 .iter()
                 .any(|restriction| restriction.feature == "RGB lightbar"
                     && restriction.reason.contains("evdev"))

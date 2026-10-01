@@ -358,20 +358,24 @@ static INPUT_FACE_BUTTONS: [FaceButtonInput; 4] = [
         placement: ClusterPlacement::NORTH,
     },
 ];
-static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
-    id: InputControlId::new("face"),
-    title: "Face buttons",
-    button_width: 56,
-    buttons: &INPUT_FACE_BUTTONS,
-}];
-static INPUT_DPADS: [DpadCluster; 1] = [DpadCluster {
+static INPUT_FACE_CLUSTERS: [FaceButtonCluster; 1] = [
+    gr_controller_contract::construction::FaceButtonClusterSpec {
+        id: InputControlId::new("face"),
+        title: "Face buttons",
+
+        buttons: &INPUT_FACE_BUTTONS,
+    }
+    .build(),
+];
+static INPUT_DPADS: [DpadCluster; 1] = [gr_controller_contract::construction::DpadClusterSpec {
     id: InputControlId::new("dpad"),
     title: "D-pad",
     presentation: DpadPresentation::IndependentButtons,
     hold_behavior: DpadHoldBehavior::AdjacentPair,
-}];
+}
+.build()];
 static INPUT_STICKS: [StickInput; 2] = [
-    StickInput {
+    gr_controller_contract::construction::StickInputSpec {
         id: InputControlId::new("left-stick"),
         title: "Left stick",
         x: STICK_AXIS,
@@ -381,8 +385,9 @@ static INPUT_STICKS: [StickInput; 2] = [
             label: "Stick press",
         }),
         capacitive: None,
-    },
-    StickInput {
+    }
+    .build(),
+    gr_controller_contract::construction::StickInputSpec {
         id: InputControlId::new("right-stick"),
         title: "Right stick",
         x: STICK_AXIS,
@@ -392,7 +397,8 @@ static INPUT_STICKS: [StickInput; 2] = [
             label: "Stick press",
         }),
         capacitive: None,
-    },
+    }
+    .build(),
 ];
 static LEFT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
     TriggerInput {
@@ -425,18 +431,20 @@ static RIGHT_TRIGGER_CONTROLS: [TriggerInput; 2] = [
     },
 ];
 static INPUT_TRIGGER_STACKS: [TriggerStack; 2] = [
-    TriggerStack {
+    gr_controller_contract::construction::TriggerStackSpec {
         id: InputControlId::new("left-trigger-stack"),
         title: "Left trigger stack",
         controls: &LEFT_TRIGGER_CONTROLS,
-    },
-    TriggerStack {
+    }
+    .build(),
+    gr_controller_contract::construction::TriggerStackSpec {
         id: InputControlId::new("right-trigger-stack"),
         title: "Right trigger stack",
         controls: &RIGHT_TRIGGER_CONTROLS,
-    },
+    }
+    .build(),
 ];
-static INPUT_TOPOLOGY: InputTopology = InputTopology {
+static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::InputTopologySpec {
     auxiliary_buttons: &INPUT_AUXILIARY,
     face_button_clusters: &INPUT_FACE_CLUSTERS,
     dpads: &INPUT_DPADS,
@@ -446,9 +454,10 @@ static INPUT_TOPOLOGY: InputTopology = InputTopology {
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
-};
+}
+.build();
 static SURFACE: Xbox360Surface = Xbox360Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_UINPUT,
         validation_status: RealizationValidationStatus::HostValidated,
         digital_controls: &DIGITAL,
@@ -456,10 +465,11 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
         outputs: &OUTPUTS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
-    },
+    }
+    .build(),
 };
 static HID_SURFACE: Xbox360Surface = Xbox360Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_UHID_USB,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -467,10 +477,11 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
-    },
+    }
+    .build(),
 };
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -478,10 +489,11 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &DUMMY_HCD_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
-    },
+    }
+    .build(),
 };
 static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
-    common: ControllerSurface {
+    common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &DIGITAL,
@@ -489,7 +501,8 @@ static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
         outputs: &HID_OUTPUTS,
         restrictions: &USBIP_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
-    },
+    }
+    .build(),
 };
 
 pub struct Xbox360Definition;
@@ -992,10 +1005,10 @@ mod tests {
     #[test]
     fn every_xbox_target_has_the_valid_complete_input_topology() {
         for surface in [&SURFACE, &HID_SURFACE, &DUMMY_HCD_SURFACE] {
-            assert_eq!(surface.common.input_topology.validate(), Ok(()));
-            assert_eq!(surface.common.input_topology.sticks.len(), 2);
-            assert_eq!(surface.common.input_topology.trigger_stacks.len(), 2);
-            assert!(surface.common.input_topology.motion.is_empty());
+            assert_eq!(surface.common.input_topology().validate(), Ok(()));
+            assert_eq!(surface.common.input_topology().sticks().len(), 2);
+            assert_eq!(surface.common.input_topology().trigger_stacks().len(), 2);
+            assert!(surface.common.input_topology().motion().is_empty());
         }
     }
 
@@ -1026,18 +1039,18 @@ mod tests {
         };
         assert!(spec.event_codes.contains(&common::EV_FF));
         assert_eq!(spec.force_feedback_codes, [0x50]);
-        assert_eq!(SURFACE.common.outputs.len(), 1);
+        assert_eq!(SURFACE.common.outputs().len(), 1);
         assert_eq!(
             (
-                SURFACE.common.outputs[0].event_type,
-                SURFACE.common.outputs[0].event_code
+                SURFACE.common.outputs()[0].event_type,
+                SURFACE.common.outputs()[0].event_code
             ),
             (21, 0x50)
         );
         assert!(
             SURFACE
                 .common
-                .restrictions
+                .restrictions()
                 .iter()
                 .any(|restriction| restriction.feature == "automatic force-feedback trigger")
         );
@@ -1197,18 +1210,21 @@ mod tests {
 
     #[test]
     fn surface_keeps_xbox_dead_zones_visible_to_callers() {
-        assert_eq!(SURFACE.common.axes[0].flat, 7849);
-        assert_eq!(SURFACE.common.axes[3].flat, 8689);
+        assert_eq!(SURFACE.common.axes()[0].flat, 7849);
+        assert_eq!(SURFACE.common.axes()[3].flat, 8689);
     }
 
     #[test]
     fn hid_surface_is_explicitly_research_backed() {
         assert_eq!(
-            HID_SURFACE.common.validation_status,
+            HID_SURFACE.common.validation_status(),
             RealizationValidationStatus::ResearchBacked
         );
-        assert_eq!(HID_SURFACE.common.target, RealizationTarget::LINUX_UHID_USB);
-        assert!(HID_SURFACE.common.outputs.is_empty());
+        assert_eq!(
+            HID_SURFACE.common.target(),
+            RealizationTarget::LINUX_UHID_USB
+        );
+        assert!(HID_SURFACE.common.outputs().is_empty());
         assert!(
             !Xbox360Definition.realization_manifest().entries()[1]
                 .provider_requirements
@@ -1231,7 +1247,7 @@ mod tests {
         assert!(
             DUMMY_HCD_SURFACE
                 .common
-                .restrictions
+                .restrictions()
                 .iter()
                 .any(|restriction| restriction.feature == "XInput/xpad protocol")
         );

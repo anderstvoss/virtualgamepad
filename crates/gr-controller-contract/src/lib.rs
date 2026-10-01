@@ -2,6 +2,8 @@
 
 //! Controller-semantic contracts with no controller-family or provider logic.
 
+pub mod construction;
+
 use gr_audio_contract::AudioSidecarRequirement;
 use gr_realization_api::{
     ControllerId, ProviderRequirements, RealizationSelection, RealizationTarget,
@@ -90,11 +92,23 @@ pub struct FaceButtonInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FaceButtonCluster {
-    pub id: InputControlId,
-    pub title: &'static str,
-    /// Width in logical pixels requested for each face-button cell by a GUI.
-    pub button_width: u16,
-    pub buttons: &'static [FaceButtonInput],
+    id: InputControlId,
+    title: &'static str,
+    buttons: &'static [FaceButtonInput],
+}
+impl FaceButtonCluster {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn buttons(&self) -> &'static [FaceButtonInput] {
+        self.buttons
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,10 +128,28 @@ pub enum DpadHoldBehavior {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DpadCluster {
-    pub id: InputControlId,
-    pub title: &'static str,
-    pub presentation: DpadPresentation,
-    pub hold_behavior: DpadHoldBehavior,
+    id: InputControlId,
+    title: &'static str,
+    presentation: DpadPresentation,
+    hold_behavior: DpadHoldBehavior,
+}
+impl DpadCluster {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn presentation(&self) -> DpadPresentation {
+        self.presentation
+    }
+    #[must_use]
+    pub const fn hold_behavior(&self) -> DpadHoldBehavior {
+        self.hold_behavior
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,12 +160,38 @@ pub struct AuxiliaryButtonInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StickInput {
-    pub id: InputControlId,
-    pub title: &'static str,
-    pub x: InputAxisRange,
-    pub y: InputAxisRange,
-    pub press: Option<AuxiliaryButtonInput>,
-    pub capacitive: Option<AuxiliaryButtonInput>,
+    id: InputControlId,
+    title: &'static str,
+    x: InputAxisRange,
+    y: InputAxisRange,
+    press: Option<AuxiliaryButtonInput>,
+    capacitive: Option<AuxiliaryButtonInput>,
+}
+impl StickInput {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn x(&self) -> InputAxisRange {
+        self.x
+    }
+    #[must_use]
+    pub const fn y(&self) -> InputAxisRange {
+        self.y
+    }
+    #[must_use]
+    pub const fn press(&self) -> Option<AuxiliaryButtonInput> {
+        self.press
+    }
+    #[must_use]
+    pub const fn capacitive(&self) -> Option<AuxiliaryButtonInput> {
+        self.capacitive
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,9 +213,23 @@ pub struct TriggerInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TriggerStack {
-    pub id: InputControlId,
-    pub title: &'static str,
-    pub controls: &'static [TriggerInput],
+    id: InputControlId,
+    title: &'static str,
+    controls: &'static [TriggerInput],
+}
+impl TriggerStack {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn controls(&self) -> &'static [TriggerInput] {
+        self.controls
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -172,12 +244,38 @@ pub enum TouchpadActuation {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TouchpadInput {
-    pub id: InputControlId,
-    pub title: &'static str,
-    pub width: u32,
-    pub height: u32,
-    pub contacts: u8,
-    pub actuation: TouchpadActuation,
+    id: InputControlId,
+    title: &'static str,
+    width: u32,
+    height: u32,
+    contacts: u8,
+    actuation: TouchpadActuation,
+}
+impl TouchpadInput {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn width(&self) -> u32 {
+        self.width
+    }
+    #[must_use]
+    pub const fn height(&self) -> u32 {
+        self.height
+    }
+    #[must_use]
+    pub const fn contacts(&self) -> u8 {
+        self.contacts
+    }
+    #[must_use]
+    pub const fn actuation(&self) -> TouchpadActuation {
+        self.actuation
+    }
 }
 
 /// Exact, deterministic scaling applied by an input adapter. A denominator of
@@ -197,11 +295,33 @@ impl InputScale {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MotionInput {
-    pub id: InputControlId,
-    pub title: &'static str,
-    pub range: InputAxisRange,
-    pub gyroscope_scale: [InputScale; 3],
-    pub accelerometer_scale: [InputScale; 3],
+    id: InputControlId,
+    title: &'static str,
+    range: InputAxisRange,
+    gyroscope_scale: [InputScale; 3],
+    accelerometer_scale: [InputScale; 3],
+}
+impl MotionInput {
+    #[must_use]
+    pub const fn id(&self) -> InputControlId {
+        self.id
+    }
+    #[must_use]
+    pub const fn title(&self) -> &'static str {
+        self.title
+    }
+    #[must_use]
+    pub const fn range(&self) -> InputAxisRange {
+        self.range
+    }
+    #[must_use]
+    pub const fn gyroscope_scale(&self) -> [InputScale; 3] {
+        self.gyroscope_scale
+    }
+    #[must_use]
+    pub const fn accelerometer_scale(&self) -> [InputScale; 3] {
+        self.accelerometer_scale
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -228,15 +348,53 @@ pub struct CustomInputModule {
 /// GUI-agnostic semantic input topology for one target surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputTopology {
-    pub auxiliary_buttons: &'static [AuxiliaryButtonInput],
-    pub face_button_clusters: &'static [FaceButtonCluster],
-    pub dpads: &'static [DpadCluster],
-    pub sticks: &'static [StickInput],
-    pub trigger_stacks: &'static [TriggerStack],
-    pub touchpads: &'static [TouchpadInput],
-    pub motion: &'static [MotionInput],
-    pub extra_axes: &'static [ExtraAxisInput],
-    pub custom_modules: &'static [CustomInputModule],
+    auxiliary_buttons: &'static [AuxiliaryButtonInput],
+    face_button_clusters: &'static [FaceButtonCluster],
+    dpads: &'static [DpadCluster],
+    sticks: &'static [StickInput],
+    trigger_stacks: &'static [TriggerStack],
+    touchpads: &'static [TouchpadInput],
+    motion: &'static [MotionInput],
+    extra_axes: &'static [ExtraAxisInput],
+    custom_modules: &'static [CustomInputModule],
+}
+impl InputTopology {
+    #[must_use]
+    pub const fn auxiliary_buttons(&self) -> &'static [AuxiliaryButtonInput] {
+        self.auxiliary_buttons
+    }
+    #[must_use]
+    pub const fn face_button_clusters(&self) -> &'static [FaceButtonCluster] {
+        self.face_button_clusters
+    }
+    #[must_use]
+    pub const fn dpads(&self) -> &'static [DpadCluster] {
+        self.dpads
+    }
+    #[must_use]
+    pub const fn sticks(&self) -> &'static [StickInput] {
+        self.sticks
+    }
+    #[must_use]
+    pub const fn trigger_stacks(&self) -> &'static [TriggerStack] {
+        self.trigger_stacks
+    }
+    #[must_use]
+    pub const fn touchpads(&self) -> &'static [TouchpadInput] {
+        self.touchpads
+    }
+    #[must_use]
+    pub const fn motion(&self) -> &'static [MotionInput] {
+        self.motion
+    }
+    #[must_use]
+    pub const fn extra_axes(&self) -> &'static [ExtraAxisInput] {
+        self.extra_axes
+    }
+    #[must_use]
+    pub const fn custom_modules(&self) -> &'static [CustomInputModule] {
+        self.custom_modules
+    }
 }
 
 impl InputTopology {
@@ -271,9 +429,6 @@ impl InputTopology {
         }
         for cluster in self.face_button_clusters {
             add_id(cluster.id)?;
-            if cluster.button_width == 0 {
-                return Err(InputTopologyError::InvalidFaceButtonWidth(cluster.id));
-            }
             for (index, button) in cluster.buttons.iter().enumerate() {
                 if button.placement.column < 0 || button.placement.row < 0 {
                     return Err(InputTopologyError::InvalidPlacement(cluster.id));
@@ -375,8 +530,6 @@ pub enum InputTopologyError {
     DuplicatePlacement(InputControlId),
     #[error("face-button cluster `{0:?}` contains a negative placement")]
     InvalidPlacement(InputControlId),
-    #[error("face-button cluster `{0:?}` has an invalid button width")]
-    InvalidFaceButtonWidth(InputControlId),
     #[error("input `{0:?}` has an invalid axis range")]
     InvalidAxisRange(InputControlId),
     #[error("touchpad `{0:?}` has invalid dimensions or contact count")]
@@ -427,7 +580,7 @@ mod input_topology_tests {
         static DUPLICATE_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
             id: InputControlId::new("face"),
             title: "Face",
-            button_width: 48,
+
             buttons: &DUPLICATE_FACE_BUTTONS,
         }];
         static NEGATIVE_FACE_BUTTONS: [FaceButtonInput; 1] = [FaceButtonInput {
@@ -438,13 +591,7 @@ mod input_topology_tests {
         static NEGATIVE_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
             id: InputControlId::new("negative-face"),
             title: "Face",
-            button_width: 48,
-            buttons: &NEGATIVE_FACE_BUTTONS,
-        }];
-        static ZERO_WIDTH_FACE_CLUSTERS: [FaceButtonCluster; 1] = [FaceButtonCluster {
-            id: InputControlId::new("zero-width-face"),
-            title: "Face",
-            button_width: 0,
+
             buttons: &NEGATIVE_FACE_BUTTONS,
         }];
         let duplicate_ids = InputTopology {
@@ -476,16 +623,6 @@ mod input_topology_tests {
             Err(InputTopologyError::InvalidPlacement(InputControlId::new(
                 "negative-face"
             )))
-        );
-        let zero_width = InputTopology {
-            face_button_clusters: &ZERO_WIDTH_FACE_CLUSTERS,
-            ..InputTopology::EMPTY
-        };
-        assert_eq!(
-            zero_width.validate(),
-            Err(InputTopologyError::InvalidFaceButtonWidth(
-                InputControlId::new("zero-width-face")
-            ))
         );
     }
 
@@ -598,13 +735,43 @@ pub enum RealizationValidationStatus {
 /// Common immutable portion of a concrete controller's target presentation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ControllerSurface {
-    pub target: RealizationTarget,
-    pub validation_status: RealizationValidationStatus,
-    pub digital_controls: &'static [DigitalControlSurface],
-    pub axes: &'static [AbsoluteAxisSurface],
-    pub outputs: &'static [OutputSurface],
-    pub restrictions: &'static [TargetRestriction],
-    pub input_topology: &'static InputTopology,
+    target: RealizationTarget,
+    validation_status: RealizationValidationStatus,
+    digital_controls: &'static [DigitalControlSurface],
+    axes: &'static [AbsoluteAxisSurface],
+    outputs: &'static [OutputSurface],
+    restrictions: &'static [TargetRestriction],
+    input_topology: &'static InputTopology,
+}
+impl ControllerSurface {
+    #[must_use]
+    pub const fn target(&self) -> RealizationTarget {
+        self.target
+    }
+    #[must_use]
+    pub const fn validation_status(&self) -> RealizationValidationStatus {
+        self.validation_status
+    }
+    #[must_use]
+    pub const fn digital_controls(&self) -> &'static [DigitalControlSurface] {
+        self.digital_controls
+    }
+    #[must_use]
+    pub const fn axes(&self) -> &'static [AbsoluteAxisSurface] {
+        self.axes
+    }
+    #[must_use]
+    pub const fn outputs(&self) -> &'static [OutputSurface] {
+        self.outputs
+    }
+    #[must_use]
+    pub const fn restrictions(&self) -> &'static [TargetRestriction] {
+        self.restrictions
+    }
+    #[must_use]
+    pub const fn input_topology(&self) -> &'static InputTopology {
+        self.input_topology
+    }
 }
 
 /// Implemented by concrete typed controller-surface descriptors.
