@@ -414,14 +414,6 @@ struct TargetHelp {
 
 fn target_help(target: RealizationId) -> Option<TargetHelp> {
     match target {
-        RealizationId::LINUX_UINPUT => Some(TargetHelp {
-            title: "Linux input device (uinput)",
-            body: "Creates a virtual Linux input/evdev device through /dev/uinput. Games see controller controls as Linux input events. It is local to this machine and is not exposed as a HID or USB device.",
-        }),
-        RealizationId::LINUX_UHID_USB => Some(TargetHelp {
-            title: "Local HID device (UHID)",
-            body: "Creates a virtual HID device in this Linux machine through /dev/uhid. The kernel exposes HID reports to local apps; there is no USB cable, USB gadget, or remote host. Choose this when local software expects a HID controller or its controller-specific HID protocol.",
-        }),
         RealizationId::LINUX_USBIP_USB_AUDIO => Some(TargetHelp {
             title: "Remote USB device (USB/IP; work in progress)",
             body: "Exports a virtual USB controller over USB/IP so a second computer can attach it as a USB device. Unlike UHID, which registers a local HID device on this machine, USB/IP transports the USB device to a remote host. This profile includes UAC2 audio and needs the prepared broker/worker, USB/IP resources, enabled emulated audio, and the audio-usbip feature. Native clients also need audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
@@ -434,45 +426,49 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
     }
 }
 
-fn draw_target_selector(ui: &mut egui::Ui, target: &mut RealizationId) -> egui::Rect {
+fn draw_target_selector(
+    ui: &mut egui::Ui,
+    target: &mut RealizationId,
+) -> (egui::Rect, Option<egui::Rect>) {
     let row_width = ui.available_width();
     let row_height = ui.spacing().interact_size.y.max(18.0);
-    ui.allocate_ui_with_layout(
-        egui::vec2(row_width, row_height),
-        egui::Layout::left_to_right(egui::Align::Center),
-        |ui| {
-            let help = target_help(*target);
-            let help_width = help
-                .as_ref()
-                .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
-            egui::ComboBox::from_id_salt("controller_target")
-                .selected_text(target_label(*target))
-                .width((ui.available_width() - help_width).max(0.0))
-                .show_ui(ui, |ui| {
-                    for option in [
-                        RealizationId::LINUX_UINPUT,
-                        RealizationId::LINUX_UHID_USB,
-                        RealizationId::LINUX_USBIP_USB_AUDIO,
-                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                    ] {
-                        ui.selectable_value(target, option, target_label(option));
+    let mut help_rect = None;
+    let row = ui
+        .allocate_ui_with_layout(
+            egui::vec2(row_width, row_height),
+            egui::Layout::right_to_left(egui::Align::Center),
+            |ui| {
+                let help = target_help(*target);
+                if let Some(help) = help {
+                    let response = ui.add_sized([18.0, 18.0], Button::new("!"));
+                    help_rect = Some(response.rect);
+                    if response.hovered() {
+                        egui::Tooltip::for_widget(&response)
+                            .at_pointer()
+                            .show(|ui| {
+                                ui.strong(help.title);
+                                ui.label(help.body);
+                            });
                     }
-                });
-            if let Some(help) = help {
-                let response = ui.add_sized([18.0, 18.0], Button::new("!"));
-                if response.hovered() {
-                    egui::Tooltip::for_widget(&response)
-                        .at_pointer()
-                        .show(|ui| {
-                            ui.strong(help.title);
-                            ui.label(help.body);
-                        });
                 }
-            }
-        },
-    )
-    .response
-    .rect
+                egui::ComboBox::from_id_salt("controller_target")
+                    .selected_text(target_label(*target))
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        for option in [
+                            RealizationId::LINUX_UINPUT,
+                            RealizationId::LINUX_UHID_USB,
+                            RealizationId::LINUX_USBIP_USB_AUDIO,
+                            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                        ] {
+                            ui.selectable_value(target, option, target_label(option));
+                        }
+                    });
+            },
+        )
+        .response
+        .rect;
+    (row, help_rect)
 }
 
 fn state_dump_directory() -> PathBuf {
@@ -1742,7 +1738,7 @@ impl eframe::App for App {
                                     });
                                     ui.end_row();
                                     ui.label("Target");
-                                    draw_target_selector(ui, &mut self.target);
+                                    let _ = draw_target_selector(ui, &mut self.target);
                                     ui.end_row();
                                 });
                             if self.kind != previous_kind || self.target != previous_target {
@@ -3496,14 +3492,8 @@ mod tests {
             "USB / dummy_hcd"
         );
 
-        let uinput = target_help(RealizationId::LINUX_UINPUT).unwrap();
-        assert!(uinput.title.contains("uinput"));
-        assert!(uinput.body.contains("evdev"));
-        assert!(uinput.body.contains("not exposed as a HID or USB device"));
-
-        let uhid = target_help(RealizationId::LINUX_UHID_USB).unwrap();
-        assert!(uhid.title.contains("UHID"));
-        assert!(uhid.body.contains("local apps"));
+        assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
+        assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
 
         let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
         assert!(audio.title.contains("USB/IP"));
@@ -3531,6 +3521,7 @@ mod tests {
         ] {
             let context = egui::Context::default();
             let mut rect = egui::Rect::NOTHING;
+            let mut help_rect = None;
             let mut sidebar_right = 0.0;
             let _ = context.run(
                 egui::RawInput {
@@ -3544,11 +3535,22 @@ mod tests {
                     egui::CentralPanel::default().show(context, |ui| {
                         ui.set_width(200.0);
                         sidebar_right = ui.max_rect().right();
-                        rect = draw_target_selector(ui, &mut target);
+                        let layout = draw_target_selector(ui, &mut target);
+                        rect = layout.0;
+                        help_rect = layout.1;
                     });
                 },
             );
             assert!(rect.right() <= sidebar_right + 1.0, "{target}: {rect:?}");
+            if target_help(target).is_some() {
+                let help = help_rect.expect("USB targets show a help indicator");
+                assert!(
+                    (help.right() - rect.right()).abs() <= 1.0,
+                    "{help:?} {rect:?}"
+                );
+            } else {
+                assert!(help_rect.is_none(), "basic provider unexpectedly has help");
+            }
         }
     }
 
