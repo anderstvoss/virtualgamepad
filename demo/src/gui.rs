@@ -2340,10 +2340,10 @@ fn lifecycle_action(
 
 fn target_label(target: RealizationId) -> &'static str {
     match target {
-        RealizationId::LINUX_UINPUT => "uinput (Linux input)",
-        RealizationId::LINUX_UHID_USB => "UHID (local HID)",
-        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP (remote, WIP)",
-        RealizationId::LINUX_DUMMY_HCD_USB_HID => "dummy_hcd (USB test)",
+        RealizationId::LINUX_UINPUT => "Evdev / uinput",
+        RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP / HID + Audio (WIP)",
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
     }
 }
@@ -3479,6 +3479,17 @@ mod tests {
 
     #[test]
     fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
+        assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
+        assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
+        assert_eq!(
+            target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
+            "USB/IP / HID + Audio (WIP)"
+        );
+        assert_eq!(
+            target_label(RealizationId::LINUX_DUMMY_HCD_USB_HID),
+            "USB / dummy_hcd"
+        );
+
         let uinput = target_help(RealizationId::LINUX_UINPUT).unwrap();
         assert!(uinput.title.contains("uinput"));
         assert!(uinput.body.contains("evdev"));
