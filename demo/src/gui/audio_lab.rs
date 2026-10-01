@@ -341,6 +341,29 @@ fn default_host_backend() -> HostBackend {
 pub(super) fn default_audio_enabled(target: RealizationId, has_audio: bool) -> bool {
     has_audio && backend_available(target)
 }
+
+pub(super) const fn controller_audio_enabled(config: CreationAudio) -> bool {
+    config.enabled
+}
+
+fn backend_status(target: RealizationId, has_audio: bool) -> Option<&'static str> {
+    if !has_audio {
+        Some("Unsupported for this family")
+    } else if target == RealizationId::LINUX_UHID_USB
+        && !cfg!(all(target_os = "linux", feature = "audio-pipewire"))
+    {
+        Some("Build with --features audio-pipewire")
+    } else if target == RealizationId::LINUX_USBIP_USB_AUDIO
+        && !cfg!(all(target_os = "linux", feature = "audio-usbip"))
+    {
+        Some("Build with --features audio-usbip")
+    } else if !backend_available(target) {
+        Some("Audio requires UHID or USB/IP")
+    } else {
+        None
+    }
+}
+
 impl CreationAudio {
     pub fn options(
         self,
@@ -348,7 +371,11 @@ impl CreationAudio {
         has_audio: bool,
     ) -> Result<CreationOptions, ControllerError> {
         if self.enabled && (!has_audio || !backend_available(target)) {
-            return Err(ControllerError::Unsupported { reason: "Emulated audio needs an audio-capable family, a compiled audio feature and UHID or USB/IP. Select another creation choice or disable audio.".into() });
+            let reason = backend_status(target, has_audio)
+                .unwrap_or("Emulated audio is unavailable for this creation choice");
+            return Err(ControllerError::Unsupported {
+                reason: format!("{reason}. Select another creation choice or disable audio."),
+            });
         }
         if self.enabled && !self.host_backend.compiled() {
             return Err(ControllerError::Unsupported {
@@ -436,10 +463,8 @@ pub(super) fn draw_creation(
             }
         });
 
-        let status = if !has_audio {
-            Some("Unsupported for this family")
-        } else if !backend_available(target) {
-            Some("Backend unavailable")
+        let status = if let Some(status) = backend_status(target, has_audio) {
+            Some(status)
         } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
             Some("USB/IP requires audio")
         } else {
@@ -1200,6 +1225,46 @@ mod tests {
         assert!(activity.capture_devices.is_empty());
         assert!(activity.routing.outputs.is_empty());
         assert!(activity.routing.inputs.is_empty());
+    }
+
+    #[test]
+    fn active_audio_surface_follows_the_creation_audio_setting() {
+        assert!(!controller_audio_enabled(CreationAudio {
+            enabled: false,
+            ..CreationAudio::default()
+        }));
+        assert!(controller_audio_enabled(CreationAudio {
+            enabled: true,
+            ..CreationAudio::default()
+        }));
+    }
+
+    #[test]
+    fn backend_status_explains_the_missing_build_feature_or_target() {
+        assert_eq!(
+            backend_status(RealizationId::LINUX_UHID_USB, true),
+            if cfg!(all(target_os = "linux", feature = "audio-pipewire")) {
+                None
+            } else {
+                Some("Build with --features audio-pipewire")
+            }
+        );
+        assert_eq!(
+            backend_status(RealizationId::LINUX_USBIP_USB_AUDIO, true),
+            if cfg!(all(target_os = "linux", feature = "audio-usbip")) {
+                None
+            } else {
+                Some("Build with --features audio-usbip")
+            }
+        );
+        assert_eq!(
+            backend_status(RealizationId::LINUX_UINPUT, true),
+            Some("Audio requires UHID or USB/IP")
+        );
+        assert_eq!(
+            backend_status(RealizationId::LINUX_UHID_USB, false),
+            Some("Unsupported for this family")
+        );
     }
 
     #[test]

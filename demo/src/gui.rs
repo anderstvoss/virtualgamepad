@@ -2138,23 +2138,35 @@ impl eframe::App for App {
                                         if ui.button("Recreate with current creation choices").on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.").clicked() {
                                             recreate_controller = Some(index);
                                         }
-                                        let audio_view = named
-                                            .service_worker
-                                            .as_ref()
-                                            .and_then(|worker| worker.display.try_lock().ok())
-                                            .and_then(|display| display.audio.clone());
+                                        let audio_view = audio_lab::controller_audio_enabled(
+                                            named.options.audio,
+                                        )
+                                        .then(|| {
+                                            named
+                                                .service_worker
+                                                .as_ref()
+                                                .and_then(|worker| {
+                                                    worker.display.try_lock().ok()
+                                                })
+                                                .and_then(|display| display.audio.clone())
+                                        })
+                                        .flatten();
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
                                         let mut audio_routing_changed = false;
-                                        if let Some(action) = audio_lab::draw(ui, audio_view.as_ref()) {
-                                            if !named
-                                                .service_worker
-                                                .as_ref()
-                                                .is_some_and(|worker| {
-                                                    worker.audio_actions.try_send(action).is_ok()
-                                                })
+                                        if audio_lab::controller_audio_enabled(named.options.audio) {
+                                            if let Some(action) =
+                                                audio_lab::draw(ui, audio_view.as_ref())
                                             {
-                                                self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
+                                                if !named
+                                                    .service_worker
+                                                    .as_ref()
+                                                    .is_some_and(|worker| {
+                                                        worker.audio_actions.try_send(action).is_ok()
+                                                    })
+                                                {
+                                                    self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
+                                                }
                                             }
                                         }
                                         ui.add_sized(
