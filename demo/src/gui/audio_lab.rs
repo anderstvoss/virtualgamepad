@@ -403,6 +403,7 @@ fn draw_labeled_combo_box(
         .selected_text(selected_text)
         .width(ui.available_width())
         .show_ui(ui, add_options);
+    ui.end_row();
 }
 
 pub(super) fn draw_creation(
@@ -414,62 +415,73 @@ pub(super) fn draw_creation(
     let validation = config.options(target, has_audio);
     ui.group(|ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut config.enabled, "Emulated audio");
-            let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
-            if info.hovered() {
-                egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
-                    ui.strong("Audio creation details");
-                    ui.label("Audio endpoints and the selected host backend are created with the controller. Recreate it to change those choices.");
-                    ui.label("Samples ownership routes speaker output to the system default device. Microphone piping starts disabled.");
-                    ui.label("PipeWire routing needs wpctl/pw-cat. ALSA routing needs aplay/arecord from alsa-utils.");
-                    if target == RealizationId::LINUX_USBIP_USB_AUDIO {
-                        ui.label("USB/IP is opt-in WIP; installed security and recovery acceptance remains open.");
-                    }
-                    if let Err(error) = &validation {
-                        ui.colored_label(egui::Color32::YELLOW, error.to_string());
+        egui::Grid::new("audio_creation_grid")
+            .num_columns(2)
+            .spacing([6.0, 4.0])
+            .show(ui, |ui| {
+                ui.label("Audio");
+                ui.horizontal_wrapped(|ui| {
+                    ui.checkbox(&mut config.enabled, "Emulated audio");
+                    let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
+                    if info.hovered() {
+                        egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+                            ui.strong("Audio creation details");
+                            ui.label("Audio endpoints and the selected host backend are created with the controller. Recreate it to change those choices.");
+                            ui.label("Samples ownership routes speaker output to the system default device. Microphone piping starts disabled.");
+                            ui.label("PipeWire routing needs wpctl/pw-cat. ALSA routing needs aplay/arecord from alsa-utils.");
+                            if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+                                ui.label("USB/IP is opt-in WIP; installed security and recovery acceptance remains open.");
+                            }
+                            if let Err(error) = &validation {
+                                ui.colored_label(egui::Color32::YELLOW, error.to_string());
+                            }
+                        });
                     }
                 });
-            }
-        });
-        if !has_audio {
-            ui.colored_label(egui::Color32::YELLOW, "Unsupported for this family");
-        } else if !backend_available(target) {
-            ui.colored_label(egui::Color32::YELLOW, "Backend unavailable");
-        } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
-            ui.colored_label(egui::Color32::YELLOW, "USB/IP requires audio");
-        }
-        ui.add_enabled_ui(config.enabled && has_audio && backend_available(target), |ui| {
-            ui.vertical(|ui| {
-                draw_labeled_combo_box(
-                    ui,
-                    "Host audio backend",
-                    "host_audio_backend",
-                    config.host_backend.label(),
-                    |ui| {
-                        for backend in HostBackend::ALL {
-                            let label = if backend.compiled() {
-                                backend.label().to_owned()
-                            } else {
-                                format!("{} (not built)", backend.label())
-                            };
-                            ui.add_enabled_ui(backend.compiled(), |ui| {
-                                if ui
-                                    .add(egui::Button::new(label).selected(
-                                        config.host_backend == backend,
-                                    ))
-                                    .clicked()
-                                {
-                                    config.host_backend = backend;
-                                }
-                            });
-                        }
-                    },
-                );
+                ui.end_row();
+
+                let status = if !has_audio {
+                    Some("Unsupported for this family")
+                } else if !backend_available(target) {
+                    Some("Backend unavailable")
+                } else if target == RealizationId::LINUX_USBIP_USB_AUDIO && !config.enabled {
+                    Some("USB/IP requires audio")
+                } else {
+                    None
+                };
+                if let Some(status) = status {
+                    ui.label("Status");
+                    ui.colored_label(egui::Color32::YELLOW, status);
+                    ui.end_row();
+                }
+
+                if config.enabled && has_audio && backend_available(target) {
+                    draw_labeled_combo_box(
+                        ui,
+                        "Host audio",
+                        "host_audio_backend",
+                        config.host_backend.label(),
+                        |ui| {
+                            for backend in HostBackend::ALL {
+                                let label = if backend.compiled() {
+                                    backend.label().to_owned()
+                                } else {
+                                    format!("{} (not built)", backend.label())
+                                };
+                                ui.add_enabled_ui(backend.compiled(), |ui| {
+                                    ui.selectable_value(
+                                        &mut config.host_backend,
+                                        backend,
+                                        label,
+                                    );
+                                });
+                            }
+                        },
+                    );
                 for (label, id, access) in [
-                    ("Playback ownership", "playback_ownership", &mut config.playback),
+                    ("Playback", "playback_ownership", &mut config.playback),
                     (
-                        "Microphone ownership",
+                        "Microphone",
                         "microphone_ownership",
                         &mut config.microphone,
                     ),
@@ -489,7 +501,7 @@ pub(super) fn draw_creation(
                         },
                     );
                 }
-            });
+            }
         });
     })
     .response

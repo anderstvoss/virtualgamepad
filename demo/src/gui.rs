@@ -3987,7 +3987,7 @@ mod tests {
 
     #[test]
     fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
-        for (screen_height, should_scroll_inside_advanced) in [(640.0, true), (900.0, false)] {
+        for (screen_height, should_scroll_inside_advanced) in [(600.0, true), (900.0, false)] {
             let context = egui::Context::default();
             let mut sidebar_viewport_height = 0.0;
             let mut sidebar_content_height = 0.0;
