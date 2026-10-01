@@ -396,13 +396,16 @@ fn draw_labeled_combo_box(
     label: &str,
     id: impl std::hash::Hash,
     selected_text: &str,
+    enabled: bool,
     add_options: impl FnOnce(&mut egui::Ui),
 ) {
     ui.label(label);
-    egui::ComboBox::from_id_salt(id)
-        .selected_text(selected_text)
-        .width(ui.available_width())
-        .show_ui(ui, add_options);
+    ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt(id)
+            .selected_text(selected_text)
+            .width((ui.available_width() / 2.0 - 4.0).max(80.0))
+            .show_ui(ui, add_options);
+    });
     ui.end_row();
 }
 
@@ -417,6 +420,7 @@ pub(super) fn draw_creation(
         ui.set_width(ui.available_width());
         egui::Grid::new("audio_creation_grid")
             .num_columns(2)
+            .max_col_width(80.0)
             .spacing([6.0, 4.0])
             .show(ui, |ui| {
                 ui.label("Audio");
@@ -455,12 +459,14 @@ pub(super) fn draw_creation(
                     ui.end_row();
                 }
 
-                if config.enabled && has_audio && backend_available(target) {
+                if config.enabled && has_audio {
+                    let available = backend_available(target);
                     draw_labeled_combo_box(
                         ui,
                         "Host audio",
                         "host_audio_backend",
                         config.host_backend.label(),
+                        available,
                         |ui| {
                             for backend in HostBackend::ALL {
                                 let label = if backend.compiled() {
@@ -478,31 +484,36 @@ pub(super) fn draw_creation(
                             }
                         },
                     );
-                for (label, id, access) in [
-                    ("Playback", "playback_ownership", &mut config.playback),
-                    (
-                        "Microphone",
-                        "microphone_ownership",
-                        &mut config.microphone,
-                    ),
-                ] {
-                    draw_labeled_combo_box(
-                        ui,
-                        label,
-                        id,
-                        match *access {
-                            AudioAccess::Samples => "Samples",
-                            AudioAccess::NativeClient => "Native client",
-                            _ => "Unavailable",
-                        },
-                        |ui| {
-                            ui.selectable_value(access, AudioAccess::Samples, "Samples");
-                            ui.selectable_value(access, AudioAccess::NativeClient, "Native client");
-                        },
-                    );
+                    for (label, id, access) in [
+                        ("Playback", "playback_ownership", &mut config.playback),
+                        (
+                            "Microphone",
+                            "microphone_ownership",
+                            &mut config.microphone,
+                        ),
+                    ] {
+                        draw_labeled_combo_box(
+                            ui,
+                            label,
+                            id,
+                            match *access {
+                                AudioAccess::Samples => "Samples",
+                                AudioAccess::NativeClient => "Native client",
+                                _ => "Unavailable",
+                            },
+                            available,
+                            |ui| {
+                                ui.selectable_value(access, AudioAccess::Samples, "Samples");
+                                ui.selectable_value(
+                                    access,
+                                    AudioAccess::NativeClient,
+                                    "Native client",
+                                );
+                            },
+                        );
+                    }
                 }
-            }
-        });
+            });
     })
     .response
     .rect
@@ -1286,6 +1297,32 @@ mod tests {
             },
         );
         assert!(rect.width() <= available_width + 1.0, "{rect:?}");
+    }
+
+    #[test]
+    fn audio_creation_choices_remain_visible_when_backend_is_unavailable() {
+        let context = egui::Context::default();
+        let mut config = CreationAudio {
+            enabled: true,
+            ..CreationAudio::default()
+        };
+        let mut rect = egui::Rect::NOTHING;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(240.0, 480.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    rect = draw_creation(ui, &mut config, RealizationId::LINUX_UINPUT, true);
+                });
+            },
+        );
+
+        assert!(rect.height() > 80.0, "audio choices were hidden: {rect:?}");
     }
 
     #[derive(Default)]
