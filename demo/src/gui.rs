@@ -414,16 +414,59 @@ struct TargetHelp {
 
 fn target_help(target: RealizationId) -> Option<TargetHelp> {
     match target {
+        RealizationId::LINUX_UINPUT => Some(TargetHelp {
+            title: "Linux input device (uinput)",
+            body: "Creates a virtual Linux input/evdev device through /dev/uinput. Games see controller controls as Linux input events. It is local to this machine and is not exposed as a HID or USB device.",
+        }),
+        RealizationId::LINUX_UHID_USB => Some(TargetHelp {
+            title: "Local HID device (UHID)",
+            body: "Creates a virtual HID device in this Linux machine through /dev/uhid. The kernel exposes HID reports to local apps; there is no USB cable, USB gadget, or remote host. Choose this when local software expects a HID controller or its controller-specific HID protocol.",
+        }),
         RealizationId::LINUX_USBIP_USB_AUDIO => Some(TargetHelp {
-            title: "USB/IP HID/UAC2 (WIP)",
-            body: "Requires explicitly prepared installed broker/worker and USB/IP resources, an enabled emulated audio profile and the audio-usbip demo feature. Native clients also require audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
+            title: "Remote USB device (USB/IP; work in progress)",
+            body: "Exports a virtual USB controller over USB/IP so a second computer can attach it as a USB device. Unlike UHID, which registers a local HID device on this machine, USB/IP transports the USB device to a remote host. This profile includes UAC2 audio and needs the prepared broker/worker, USB/IP resources, enabled emulated audio, and the audio-usbip feature. Native clients also need audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
         }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
-            title: "Experimental USB gadget",
-            body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
+            title: "Experimental USB gadget (dummy_hcd)",
+            body: "Exercises USB device enumeration through Linux's dummy_hcd virtual USB host-controller path. Unlike UHID, this is a USB gadget test path, but it does not connect a physical USB device or a remote host. Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation; research and test use only.",
         }),
         _ => None,
     }
+}
+
+fn draw_target_selector(ui: &mut egui::Ui, target: &mut RealizationId) -> egui::Rect {
+    ui.horizontal(|ui| {
+        let help = target_help(*target);
+        let help_width = help
+            .as_ref()
+            .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
+        egui::ComboBox::from_id_salt("controller_target")
+            .selected_text(target_label(*target))
+            .width((ui.available_width() - help_width).max(60.0))
+            .show_ui(ui, |ui| {
+                for option in [
+                    RealizationId::LINUX_UINPUT,
+                    RealizationId::LINUX_UHID_USB,
+                    RealizationId::LINUX_USBIP_USB_AUDIO,
+                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                ] {
+                    ui.selectable_value(target, option, target_label(option));
+                }
+            });
+        if let Some(help) = help {
+            let response = ui.add_sized([18.0, 18.0], Button::new("!"));
+            if response.hovered() {
+                egui::Tooltip::for_widget(&response)
+                    .at_pointer()
+                    .show(|ui| {
+                        ui.strong(help.title);
+                        ui.label(help.body);
+                    });
+            }
+        }
+    })
+    .response
+    .rect
 }
 
 fn state_dump_directory() -> PathBuf {
@@ -1690,48 +1733,10 @@ impl eframe::App for App {
                                                     kind.label(),
                                                 );
                                             }
-                                        });
+                                    });
                                     ui.end_row();
                                     ui.label("Target");
-                                    ui.horizontal(|ui| {
-                                        let help = target_help(self.target);
-                                        let help_width = if help.is_some() { 26.0 } else { 0.0 };
-                                        egui::ComboBox::from_id_salt("controller_target")
-                                            .selected_text(target_label(self.target))
-                                            .width((ui.available_width() - help_width).max(60.0))
-                                            .show_ui(ui, |ui| {
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_UINPUT,
-                                                    target_label(RealizationId::LINUX_UINPUT),
-                                                );
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_UHID_USB,
-                                                    target_label(RealizationId::LINUX_UHID_USB),
-                                                );
-                                                ui.selectable_value(&mut self.target, RealizationId::LINUX_USBIP_USB_AUDIO, target_label(RealizationId::LINUX_USBIP_USB_AUDIO));
-                                                ui.selectable_value(
-                                                    &mut self.target,
-                                                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                                    target_label(
-                                                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                                                    ),
-                                                );
-                                            });
-                                        if let Some(help) = help {
-                                            let help_response =
-                                                ui.add_sized([18.0, 18.0], Button::new("!"));
-                                            if help_response.hovered() {
-                                                egui::Tooltip::for_widget(&help_response)
-                                                    .at_pointer()
-                                                    .show(|ui| {
-                                                        ui.strong(help.title);
-                                                        ui.label(help.body);
-                                                    });
-                                            }
-                                        }
-                                    });
+                                    draw_target_selector(ui, &mut self.target);
                                     ui.end_row();
                                 });
                             if self.kind != previous_kind || self.target != previous_target {
@@ -2335,10 +2340,10 @@ fn lifecycle_action(
 
 fn target_label(target: RealizationId) -> &'static str {
     match target {
-        RealizationId::LINUX_UINPUT => "Evdev / uinput",
-        RealizationId::LINUX_UHID_USB => "HID / UHID",
-        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP HID/UAC2 (WIP)",
-        RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
+        RealizationId::LINUX_UINPUT => "uinput (Linux input)",
+        RealizationId::LINUX_UHID_USB => "UHID (local HID)",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP (remote, WIP)",
+        RealizationId::LINUX_DUMMY_HCD_USB_HID => "dummy_hcd (USB test)",
         _ => "Unknown target",
     }
 }
@@ -3473,19 +3478,61 @@ mod tests {
     }
 
     #[test]
-    fn target_help_explains_both_unaccepted_usb_targets() {
-        assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
-        assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
-        let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
-            .expect("dummy_hcd has experimental-target help");
-        assert_eq!(help.title, "Experimental USB gadget");
+    fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
+        let uinput = target_help(RealizationId::LINUX_UINPUT).unwrap();
+        assert!(uinput.title.contains("uinput"));
+        assert!(uinput.body.contains("evdev"));
+        assert!(uinput.body.contains("not exposed as a HID or USB device"));
+
+        let uhid = target_help(RealizationId::LINUX_UHID_USB).unwrap();
+        assert!(uhid.title.contains("UHID"));
+        assert!(uhid.body.contains("local apps"));
+
         let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
-        assert!(audio.title.contains("WIP"));
+        assert!(audio.title.contains("USB/IP"));
+        assert!(audio.body.contains("second computer"));
+        assert!(audio.body.contains("Unlike UHID"));
         assert!(audio.body.contains("#115"));
+
+        let dummy = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID).unwrap();
+        assert!(dummy.title.contains("dummy_hcd"));
+        assert!(dummy.body.contains("USB gadget test path"));
+
         assert_eq!(
             controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
             "009-UIP-DUALSENSE"
         );
+    }
+
+    #[test]
+    fn target_help_button_stays_inside_narrow_selector_row() {
+        for mut target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_USBIP_USB_AUDIO,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let context = egui::Context::default();
+            let mut rect = egui::Rect::NOTHING;
+            let mut sidebar_right = 0.0;
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(240.0, 120.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.set_width(200.0);
+                        sidebar_right = ui.max_rect().right();
+                        rect = draw_target_selector(ui, &mut target);
+                    });
+                },
+            );
+            assert!(rect.right() <= sidebar_right + 1.0, "{target}: {rect:?}");
+        }
     }
 
     #[test]
