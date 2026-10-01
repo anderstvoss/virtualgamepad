@@ -398,3 +398,12 @@ and scoped live DualSense HID/UAC2 duplex evidence in [EXP-0025](experiments/EXP
 Gate G remains blocked on production broker isolation/ownership and live completion
 fault tests; Gate H is not promoted by enumeration or the scoped streaming result.
 Current work is tracked in the [audio ledger](AUDIO_IMPLEMENTATION.md).
+
+Demo audio creation, endpoint/health inspection, bounded sample probes, flush and
+recreation are implemented in the [interactive refinement block](ALPHA_DEMO_REFINEMENT.md).
+Maintainer hands-on acceptance remains pending; this does not advance the final
+API freeze, physical audio or installed USB/IP security/recovery gates.
+
+The maintainer requested a dedicated audio GUI refinement breakout.
+[#126](https://github.com/anderstvoss/virtualgamepad/issues/126) is an explicit
+complete-alpha closure gate under #117; actual hands-on acceptance remains pending.

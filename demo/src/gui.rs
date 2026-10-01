@@ -1,3 +1,4 @@
+mod audio_lab;
 mod editor;
 mod input_clusters;
 use editor::{
@@ -37,6 +38,7 @@ use virtualgamepad::{
 struct ControllerOptions {
     target: RealizationId,
     id: u64,
+    audio: audio_lab::CreationAudio,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -90,7 +92,9 @@ const fn backend_status_is_healthy(status: ControllerStatus) -> bool {
 fn dualsense_motion_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -98,6 +102,8 @@ fn dualsense_motion_target(target: RealizationId) -> bool {
 fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
     if target == RealizationId::LINUX_UHID_USB {
         "UHID motion report"
+    } else if target == RealizationId::LINUX_USBIP_USB_AUDIO {
+        "USB/IP HID motion report"
     } else {
         "DummyHcd USB motion report"
     }
@@ -106,7 +112,9 @@ fn dualsense_motion_target_label(target: RealizationId) -> &'static str {
 fn motion_refresh_target(target: RealizationId) -> bool {
     matches!(
         target,
-        RealizationId::LINUX_UHID_USB | RealizationId::LINUX_DUMMY_HCD_USB_HID
+        RealizationId::LINUX_UHID_USB
+            | RealizationId::LINUX_DUMMY_HCD_USB_HID
+            | RealizationId::LINUX_USBIP_USB_AUDIO
     )
 }
 
@@ -316,6 +324,7 @@ fn target_identifier_abbreviation(target: RealizationId) -> &'static str {
         RealizationId::LINUX_UINPUT => "UIN",
         RealizationId::LINUX_UHID_USB => "HID",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "UIP",
         _ => "UNK",
     }
 }
@@ -327,6 +336,10 @@ struct TargetHelp {
 
 fn target_help(target: RealizationId) -> Option<TargetHelp> {
     match target {
+        RealizationId::LINUX_USBIP_USB_AUDIO => Some(TargetHelp {
+            title: "USB/IP HID/UAC2 (WIP)",
+            body: "Requires explicitly prepared installed broker/worker and USB/IP resources, an enabled emulated audio profile and the audio-usbip demo feature. Native clients also require audio-pipewire. Installed security/recovery acceptance (#115) remains open.",
+        }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
             title: "Experimental USB gadget",
             body: "Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation. This demo surface is for research and test use only.",
@@ -491,6 +504,19 @@ fn creation_error_message(
         "Check UHID device access for this login. Temporary helper access lasts only for this boot; persistent access requires administrator-configured host policy."
     };
     format!("{message}. {guidance}")
+}
+
+fn close_log(name: &str, error: Option<&str>) -> DiagnosticLogEntry {
+    match error {
+        Some(error) => DiagnosticLogEntry {
+            message: format!("Closed {name} with retained terminal/cleanup errors: {error}"),
+            success: false,
+        },
+        None => DiagnosticLogEntry {
+            message: successful_controller_close_message(name),
+            success: true,
+        },
+    }
 }
 
 fn status_after_runtime_failure(name: &str, error: String) -> ControllerLifecycleStatus {
@@ -665,10 +691,12 @@ struct WorkerDisplay {
     metrics: ServiceMetrics,
     indicators: ReverseIndicators,
     backend_healthy: Option<bool>,
+    audio: Option<audio_lab::View>,
 }
 
 struct ServiceWorker<C> {
     edits: mpsc::SyncSender<(u64, Vec<Command<C>>)>,
+    audio_actions: mpsc::SyncSender<audio_lab::Action>,
     stop: mpsc::Sender<()>,
     failure: mpsc::Receiver<String>,
     display: Arc<Mutex<WorkerDisplay>>,
@@ -693,6 +721,20 @@ impl<C> ServiceWorker<C> {
 }
 
 trait ServicedController: Send + Sized {
+    fn audio(&mut self) -> Option<&mut virtualgamepad::ControllerAudio> {
+        None
+    }
+    fn audio_cycle(
+        &mut self,
+        activity: &mut audio_lab::Activity,
+        action: Option<audio_lab::Action>,
+    ) -> Result<(), String> {
+        if let Some(audio) = self.audio() {
+            audio_lab::cycle(audio, activity, action)
+                .map_err(|error| audio_lab::error_message(&error))?;
+        }
+        Ok(())
+    }
     fn backend_healthy(&mut self) -> bool {
         true
     }
@@ -727,6 +769,14 @@ fn release_inputs<C: ServicedController + 'static>() -> Command<C> {
 }
 
 impl ServicedController for Controller {
+    fn audio(&mut self) -> Option<&mut virtualgamepad::ControllerAudio> {
+        match self {
+            Self::Xbox(c) => c.audio(),
+            Self::DualSense(c) => c.audio(),
+            Self::DualShock4(c) => c.audio(),
+            Self::SwitchPro(_) => None,
+        }
+    }
     fn backend_healthy(&mut self) -> bool {
         Controller::backend_healthy(self)
     }
@@ -810,6 +860,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
     let (stop_sender, stop_receiver) = mpsc::channel();
     let (edit_sender, edit_receiver) = mpsc::sync_channel::<(u64, Vec<Command<C>>)>(1);
     let (failure_sender, failure_receiver) = mpsc::sync_channel(1);
+    let (audio_sender, audio_receiver) = mpsc::sync_channel(1);
     let display = Arc::new(Mutex::new(WorkerDisplay::default()));
     let worker_display = Arc::clone(&display);
 
@@ -820,6 +871,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
         let mut indicators = ReverseIndicators::default();
         let mut metrics = ServiceMetrics::default();
         let mut applied = 0;
+        let mut audio_activity = audio_lab::Activity::default();
         loop {
             match stop_receiver.recv_timeout(delay) {
                 Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -833,13 +885,16 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                     controller.apply(edits)?;
                     applied = sequence;
                 }
-                service_cycle(
+                let delay = service_cycle(
                     &mut controller,
                     start.elapsed(),
                     &mut next_motion,
                     &mut logs,
                     &mut indicators,
-                )
+                )?;
+                let action = audio_receiver.try_recv().ok();
+                controller.audio_cycle(&mut audio_activity, action)?;
+                Ok(delay.min(controller.deadline().unwrap_or(delay)))
             })();
             label_output_logs(&log_label, &mut logs);
             let backend_healthy = controller.backend_healthy();
@@ -858,6 +913,9 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
                 display.snapshot = controller.snapshot();
                 display.applied = applied;
                 display.backend_healthy = Some(backend_healthy);
+                display.audio = controller
+                    .audio()
+                    .map(|audio| audio_lab::snapshot(audio, &audio_activity));
             } else {
                 metrics.omit(logs.len());
             }
@@ -871,10 +929,16 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
         }
         // Stop or failure closes immediately, even when the UI never repaints.
         controller.close();
+        if let Ok(mut display) = worker_display.try_lock() {
+            display.audio = controller
+                .audio()
+                .map(|audio| audio_lab::snapshot(audio, &audio_activity));
+        }
         controller
     });
     ServiceWorker {
         edits: edit_sender,
+        audio_actions: audio_sender,
         stop: stop_sender,
         failure: failure_receiver,
         display,
@@ -947,6 +1011,15 @@ impl ReverseIndicators {
     }
 }
 impl Controller {
+    fn retained_error(&mut self) -> Option<String> {
+        let diagnostics = match self {
+            Self::Xbox(c) => c.diagnostics(),
+            Self::DualSense(c) => c.diagnostics(),
+            Self::DualShock4(c) => c.diagnostics(),
+            Self::SwitchPro(c) => c.diagnostics(),
+        };
+        diagnostics.last_error().map(str::to_owned)
+    }
     fn backend_healthy(&mut self) -> bool {
         let status = match self {
             Self::Xbox(controller) => controller.diagnostics().status(),
@@ -1139,6 +1212,7 @@ impl ControllerView {
 pub struct App {
     kind: Kind,
     target: RealizationId,
+    audio_creation: audio_lab::CreationAudio,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1157,6 +1231,7 @@ impl Default for App {
         Self {
             kind: Kind::Xbox360,
             target: RealizationId::LINUX_UINPUT,
+            audio_creation: audio_lab::CreationAudio::default(),
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1216,6 +1291,14 @@ impl App {
                         display.metrics.max_gap.as_micros(),
                         display.metrics.omitted_logs,
                         display.backend_healthy.unwrap_or(false),
+                    );
+                    let _ = writeln!(
+                        dump,
+                        "  Creation audio enabled: {} · Playback: {:?} · Microphone: {:?}\n  Audio snapshot: {:?}",
+                        controller.options.audio.enabled,
+                        controller.options.audio.playback,
+                        controller.options.audio.microphone,
+                        display.audio
                     );
                 } else {
                     dump.push_str("  Worker display: busy\n");
@@ -1285,23 +1368,17 @@ impl App {
         let options = ControllerOptions {
             target: self.target,
             id: self.next_controller_id,
+            audio: self.audio_creation,
         };
-        let result = match self.kind {
-            Kind::Xbox360 => create_xbox360(virtualgamepad::CreationOptions::new(options.target))
-                .map(Controller::Xbox),
-            Kind::DualSense => {
-                create_dualsense(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::DualSense)
-            }
-            Kind::DualShock4 => {
-                create_dualshock4(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::DualShock4)
-            }
-            Kind::SwitchPro => {
-                create_switch_pro(virtualgamepad::CreationOptions::new(options.target))
-                    .map(Controller::SwitchPro)
-            }
-        };
+        let result = options
+            .audio
+            .options(options.target, self.kind != Kind::SwitchPro)
+            .and_then(|creation| match self.kind {
+                Kind::Xbox360 => create_xbox360(creation).map(Controller::Xbox),
+                Kind::DualSense => create_dualsense(creation).map(Controller::DualSense),
+                Kind::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
+                Kind::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
+            });
         match result {
             Ok(mut controller) => {
                 let name = if self.name_draft.trim().is_empty() {
@@ -1365,11 +1442,15 @@ impl App {
         let name = removed.name.clone();
         if let Some(worker) = removed.service_worker.take() {
             if let Some(mut controller) = worker.stop() {
-                self.last_cleanup = Some(controller.snapshot().lab_details());
-                self.diagnostic_log.push(DiagnosticLogEntry {
-                    message: successful_controller_close_message(&name),
-                    success: true,
-                });
+                controller.close(); // Repeat is deliberately idempotent at the UI boundary.
+                let retained_error = controller.retained_error();
+                let audio = controller
+                    .audio()
+                    .map(|audio| format!("\nAudio terminal diagnostics: {:?}", audio.diagnostics()))
+                    .unwrap_or_default();
+                self.last_cleanup = Some(format!("{}{audio}", controller.snapshot().lab_details()));
+                self.diagnostic_log
+                    .push(close_log(&name, retained_error.as_deref()));
             } else {
                 self.last_cleanup = Some(
                     "Worker exited without a returned controller; host cleanup requires verification"
@@ -1411,6 +1492,7 @@ impl eframe::App for App {
         let mut stop_all = false;
         let mut dump_state = false;
         let mut failed_controller = None;
+        let mut recreate_controller = None;
         let mut backend_healthy = true;
         for (index, named) in self.controllers.iter_mut().enumerate() {
             if let Some(worker) = &named.service_worker {
@@ -1489,6 +1571,7 @@ impl eframe::App for App {
                                                     RealizationId::LINUX_UHID_USB,
                                                     target_label(RealizationId::LINUX_UHID_USB),
                                                 );
+                                                ui.selectable_value(&mut self.target, RealizationId::LINUX_USBIP_USB_AUDIO, target_label(RealizationId::LINUX_USBIP_USB_AUDIO));
                                                 ui.selectable_value(
                                                     &mut self.target,
                                                     RealizationId::LINUX_DUMMY_HCD_USB_HID,
@@ -1512,6 +1595,7 @@ impl eframe::App for App {
                                     });
                                     ui.end_row();
                                 });
+                            audio_lab::draw_creation(ui, &mut self.audio_creation, self.target, self.kind != Kind::SwitchPro);
                             let default_name = self.next_default_name();
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 4.0;
@@ -1903,6 +1987,9 @@ impl eframe::App for App {
                                     mouse_wheel: true,
                                 })
                                 .show(ui, |ui| {
+                                    if let Some(cleanup) = &self.last_cleanup {
+                                        ui.collapsing("Last closed controller diagnostics", |ui| { ui.label(cleanup); });
+                                    }
                                     let mut polling_period_seconds = self.polling_period_seconds;
                                     if let Some(index) = self
                                         .selected_controller
@@ -1910,6 +1997,18 @@ impl eframe::App for App {
                                     {
                                         let named = &mut self.controllers[index];
                                         ui.heading(&named.name);
+                                        if ui.button("Recreate with current creation choices").on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.").clicked() {
+                                            recreate_controller = Some(index);
+                                        }
+                                        if let Some(worker) = &named.service_worker {
+                                            if let Ok(display) = worker.display.try_lock() {
+                                                if let Some(action) = audio_lab::draw(ui, display.audio.as_ref()) {
+                                                    if worker.audio_actions.try_send(action).is_err() {
+                                                        self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
+                                                    }
+                                                }
+                                            }
+                                        }
                                         ui.add_sized(
                                             [ui.available_width(), 1.0],
                                             egui::Separator::default(),
@@ -1971,7 +2070,6 @@ impl eframe::App for App {
                                                 &mut named.view,
                                                 inputs_ready,
                                             );
-                                            draw_dummy_audio_input(ui);
                                             ui.add_enabled_ui(inputs_ready, |ui| {
                                                 // Keep the input surface allocated on the action frame. Skipping it
                                                 // shrinks the parent scroll area and causes its offset to be clamped.
@@ -2005,22 +2103,77 @@ impl eframe::App for App {
         if dump_state {
             self.write_state_dump();
         }
-        if stop_all {
-            while !self.controllers.is_empty() {
-                self.remove_controller(self.controllers.len() - 1);
+        match lifecycle_action(
+            self.controllers.len(),
+            stop_all,
+            failed_controller,
+            remove,
+            recreate_controller,
+        ) {
+            Some(LifecycleAction::StopAll) => {
+                while !self.controllers.is_empty() {
+                    self.remove_controller(self.controllers.len() - 1);
+                }
             }
-        } else if let Some((index, error)) = failed_controller {
-            self.close_failed_controller(index, error);
-        } else if let Some(index) = remove {
-            self.remove_controller(index);
+            Some(LifecycleAction::Failed(index, error)) => {
+                self.close_failed_controller(index, error);
+            }
+            Some(LifecycleAction::Remove(index)) => self.remove_controller(index),
+            Some(LifecycleAction::Recreate(index)) => {
+                let named = &self.controllers[index];
+                if let Err(error) = self
+                    .audio_creation
+                    .options(self.target, named.kind != Kind::SwitchPro)
+                {
+                    self.diagnostic_log.push(DiagnosticLogEntry {
+                        message: format!("Recreation rejected; original stays open: {error}"),
+                        success: false,
+                    });
+                } else {
+                    self.kind = named.kind;
+                    self.name_draft = named.name.clone();
+                    self.remove_controller(index);
+                    self.create_one();
+                }
+            }
+            None => {}
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LifecycleAction {
+    StopAll,
+    Failed(usize, String),
+    Remove(usize),
+    Recreate(usize),
+}
+fn lifecycle_action(
+    count: usize,
+    stop_all: bool,
+    failed: Option<(usize, String)>,
+    remove: Option<usize>,
+    recreate: Option<usize>,
+) -> Option<LifecycleAction> {
+    if stop_all {
+        return Some(LifecycleAction::StopAll);
+    }
+    if let Some((index, error)) = failed.filter(|(index, _)| *index < count) {
+        return Some(LifecycleAction::Failed(index, error));
+    }
+    if let Some(index) = remove.filter(|index| *index < count) {
+        return Some(LifecycleAction::Remove(index));
+    }
+    recreate
+        .filter(|index| *index < count)
+        .map(LifecycleAction::Recreate)
 }
 
 fn target_label(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "Evdev / uinput",
         RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP HID/UAC2 (WIP)",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
     }
@@ -2065,6 +2218,26 @@ fn draw_controller_state(
                 ui.label(controller.kind.label());
                 ui.end_row();
             });
+        ui.collapsing("Component association", |ui| {
+            if let Some(association) = controller.view.association() {
+                ui.label(format!(
+                    "Creation: {} · Primary: {}",
+                    association.creation(),
+                    association.realization()
+                ));
+                for component in association.components() {
+                    ui.label(format!("{:?} · {}", component.kind(), component.role()));
+                    if let Some(endpoint) = component.audio_endpoint() {
+                        ui.label(format!(
+                            "{} · {:?} · {:?}",
+                            endpoint.group(),
+                            endpoint.direction(),
+                            endpoint.host()
+                        ));
+                    }
+                }
+            }
+        });
         ui.separator();
         if let Some(worker) = &controller.service_worker {
             if let Ok(display) = worker.display.try_lock() {
@@ -2266,16 +2439,6 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                 }
             }
         });
-    });
-}
-
-fn draw_dummy_audio_input(ui: &mut egui::Ui) {
-    card(ui, "Audio input", |ui| {
-        ui.add_enabled(
-            false,
-            Button::new("No input configured").min_size(Vec2::new(144.0, NAME_INPUT_HEIGHT)),
-        );
-        ui.weak("Demo placeholder");
     });
 }
 
@@ -3138,12 +3301,19 @@ mod tests {
     }
 
     #[test]
-    fn target_help_is_available_only_for_the_experimental_gadget_target() {
+    fn target_help_explains_both_unaccepted_usb_targets() {
         assert!(target_help(RealizationId::LINUX_UINPUT).is_none());
         assert!(target_help(RealizationId::LINUX_UHID_USB).is_none());
         let help = target_help(RealizationId::LINUX_DUMMY_HCD_USB_HID)
             .expect("dummy_hcd has experimental-target help");
         assert_eq!(help.title, "Experimental USB gadget");
+        let audio = target_help(RealizationId::LINUX_USBIP_USB_AUDIO).unwrap();
+        assert!(audio.title.contains("WIP"));
+        assert!(audio.body.contains("#115"));
+        assert_eq!(
+            controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
+            "009-UIP-DUALSENSE"
+        );
     }
 
     #[test]
@@ -3161,12 +3331,26 @@ mod tests {
         serviced: usize,
         closed: usize,
         fail: bool,
+        audio_fail: bool,
+        audio_cycles: usize,
         deadline: Option<Duration>,
         progress: Option<mpsc::Sender<usize>>,
         desired: Vec<bool>,
         committed: Vec<Vec<bool>>,
     }
     impl ServicedController for FakeService {
+        fn audio_cycle(
+            &mut self,
+            _: &mut audio_lab::Activity,
+            _: Option<audio_lab::Action>,
+        ) -> Result<(), String> {
+            self.audio_cycles += 1;
+            if self.audio_fail {
+                Err("Audio backend/worker: injected PCM failure".into())
+            } else {
+                Ok(())
+            }
+        }
         fn neutralize(&mut self) -> Result<(), String> {
             if self.closed != 0 {
                 return Err("closed".into());
@@ -3205,6 +3389,70 @@ mod tests {
         fn close(&mut self) {
             self.closed += 1;
         }
+    }
+
+    #[test]
+    fn close_log_does_not_report_success_when_cleanup_errors_are_retained() {
+        let clean = close_log("synthetic", None);
+        assert!(clean.success);
+        let failed = close_log(
+            "synthetic",
+            Some("initiating failure; audio cleanup failure"),
+        );
+        assert!(!failed.success);
+        assert!(
+            failed
+                .message
+                .contains("initiating failure; audio cleanup failure")
+        );
+    }
+
+    #[test]
+    fn lifecycle_actions_preserve_failure_and_stop_priority_at_arbitrary_positions() {
+        for count in [1, 8, 64] {
+            for index in 0..count {
+                let failed = || Some((index, "initiating failure".into()));
+                assert_eq!(
+                    lifecycle_action(count, true, failed(), Some(index), Some(index)),
+                    Some(LifecycleAction::StopAll)
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, failed(), Some(index), Some(index)),
+                    Some(LifecycleAction::Failed(index, "initiating failure".into()))
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, None, Some(index), Some(index)),
+                    Some(LifecycleAction::Remove(index))
+                );
+                assert_eq!(
+                    lifecycle_action(count, false, None, None, Some(index)),
+                    Some(LifecycleAction::Recreate(index))
+                );
+            }
+            assert_eq!(
+                lifecycle_action(count, false, None, None, Some(count)),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn pcm_failure_closes_only_its_worker_and_keeps_terminal_category() {
+        let sibling = spawn_service_worker(FakeService::default());
+        let failed = spawn_service_worker(FakeService {
+            audio_fail: true,
+            ..FakeService::default()
+        });
+        let error = failed.failure.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(error.starts_with("Audio backend/worker:"));
+        let state = failed.stop().unwrap();
+        assert_eq!(
+            (state.serviced, state.audio_cycles, state.closed),
+            (1, 1, 1)
+        );
+        assert_eq!(sibling.failure.try_recv(), Err(mpsc::TryRecvError::Empty));
+        let sibling = sibling.stop().unwrap();
+        assert_eq!(sibling.closed, 1);
     }
 
     fn fake_edit(pressed: bool) -> Command<FakeService> {
@@ -3530,6 +3778,14 @@ mod tests {
             RealizationId::LINUX_DUMMY_HCD_USB_HID
         ));
         assert!(!dualsense_motion_target(RealizationId::LINUX_UINPUT));
+        assert!(dualsense_motion_target(
+            RealizationId::LINUX_USBIP_USB_AUDIO
+        ));
+        assert!(motion_refresh_target(RealizationId::LINUX_USBIP_USB_AUDIO));
+        assert_eq!(
+            dualsense_motion_target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
+            "USB/IP HID motion report"
+        );
         assert_eq!(
             dualsense_motion_target_label(RealizationId::LINUX_UHID_USB),
             "UHID motion report"
