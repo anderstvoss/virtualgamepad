@@ -115,6 +115,7 @@ pub(super) struct ChannelRoute {
 
 /// Match left and right channels by their conventional positions, then match
 /// remaining channels by index. Unmatched destination channels stay silent.
+#[cfg(test)]
 pub(super) fn default_channel_routes(
     source_count: usize,
     destination_count: usize,

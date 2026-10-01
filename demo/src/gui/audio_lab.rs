@@ -377,6 +377,16 @@ impl RoutingState {
         self.jack_device = device;
         self.set_jack_connected(self.jack_connected, topology);
     }
+
+    fn select_jack_device(&mut self, device: Option<JackDevice>, topology: AudioTopology) {
+        match device {
+            Some(device) => {
+                self.set_jack_device(device, topology);
+                self.set_jack_connected(true, topology);
+            }
+            None => self.set_jack_connected(false, topology),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -693,7 +703,6 @@ impl Activity {
 const FRAMES: usize = 512;
 const AUDIO_DEVICE_SELECTOR_WIDTH: f32 = 135.0;
 const JACK_DEVICE_SELECTOR_WIDTH: f32 = 210.0;
-const AUDIO_CHANNEL_SELECTOR_WIDTH: f32 = 170.0;
 const AUDIO_VU_WIDTH: f32 = 120.0;
 struct ReadObservation {
     first_frame: u64,
@@ -1241,41 +1250,77 @@ pub(super) fn draw_output_routes(
         .filter(|route| route.id == "onboard-speaker")
     {
         route.enabled = true;
-        ui.strong("Onboard speaker");
         changed |= draw_output_route_channels(ui, route, devices, playback_channel_labels);
     }
 
     if let Some(connector) = routing.jack_connector {
-        let mut next_device = routing.jack_device;
-        let mut next_connected = routing.jack_connected;
+        if routing
+            .outputs
+            .iter()
+            .any(|route| route.id == "onboard-speaker")
+        {
+            ui.separator();
+        }
+        let selected_device = routing.jack_connected.then_some(routing.jack_device);
+        let mut next_device = selected_device;
+        let mut next_manual_control = routing
+            .outputs
+            .iter()
+            .find(|route| route.id == "jack-output")
+            .is_some_and(|route| route.manual_channel_control);
         ui.horizontal(|ui| {
             ui.label(format!("{} mm jack", connector.millimeters()));
             let width = JACK_DEVICE_SELECTOR_WIDTH.min(ui.available_width());
             ui.allocate_ui(egui::vec2(width, ui.spacing().interact_size.y), |ui| {
                 egui::ComboBox::from_id_salt("jack_device_type")
-                    .selected_text(next_device.label_for_connector(connector))
+                    .selected_text(next_device.map_or("Not plugged in", |device| {
+                        device.label_for_connector(connector)
+                    }))
                     .wrap_mode(egui::TextWrapMode::Truncate)
                     .width(width)
                     .show_ui(ui, |ui| {
+                        changed |= ui
+                            .selectable_value(&mut next_device, None, "Not plugged in")
+                            .changed();
                         for device in JackDevice::ALL {
                             changed |= ui
                                 .selectable_value(
                                     &mut next_device,
-                                    device,
+                                    Some(device),
                                     device.label_for_connector(connector),
                                 )
                                 .changed();
                         }
                     });
             });
-            changed |= ui.checkbox(&mut next_connected, "Plugged in").changed();
+            if next_device.is_some_and(|device| device.output_channels() > 1) {
+                changed |= ui
+                    .checkbox(&mut next_manual_control, "Override")
+                    .on_hover_text(
+                        "Allow the paired left and right output channels to use separate devices",
+                    )
+                    .changed();
+            } else {
+                next_manual_control = false;
+            }
         });
-        if next_device != routing.jack_device {
-            routing.set_jack_device(next_device, topology);
+        if next_device != selected_device {
+            routing.select_jack_device(next_device, topology);
             changed = true;
         }
-        if next_connected != routing.jack_connected {
-            routing.set_jack_connected(next_connected, topology);
+        if let Some(route) = routing
+            .outputs
+            .iter_mut()
+            .find(|route| route.id == "jack-output")
+            && route.manual_channel_control != next_manual_control
+        {
+            route.manual_channel_control = next_manual_control;
+            if !next_manual_control {
+                for (left, right) in output_stereo_channel_pairs(route, playback_channel_labels) {
+                    let selected = route.channel_device_ids[left].clone();
+                    route.channel_device_ids[right].clone_from(&selected);
+                }
+            }
             changed = true;
         }
 
@@ -1370,7 +1415,6 @@ fn draw_output_route_channels(
         .channel_device_ids
         .resize(route.channels, "default".into());
     let pairs = output_stereo_channel_pairs(route, labels);
-    let manual_control_channel = pairs.first().map(|(left, _)| *left);
     let mut changed = false;
 
     if !route.manual_channel_control {
@@ -1395,14 +1439,16 @@ fn draw_output_route_channels(
         });
         let is_leader = paired_with.is_some_and(|(_, leader)| leader);
         let is_secondary = paired_with.is_some_and(|(_, leader)| !leader);
-        let is_manual_control_row = manual_control_channel == Some(channel);
         let source = output_channel_label(route, channel, labels);
         let mut device_changed = false;
-        let mut manual_changed = false;
         ui.horizontal(|ui| {
-            let label = format!("Channel {} ({source}):", channel + 1);
+            let label = if route.id == "onboard-speaker" {
+                format!("Onboard speaker ({source}):")
+            } else {
+                format!("Channel {} ({source}):", channel + 1)
+            };
             ui.add_sized(
-                [140.0, ui.spacing().interact_size.y],
+                [170.0, ui.spacing().interact_size.y],
                 egui::Label::new(label).truncate(),
             );
             ui.add_enabled_ui(route.manual_channel_control || !is_secondary, |ui| {
@@ -1414,11 +1460,6 @@ fn draw_output_route_channels(
                     AUDIO_DEVICE_SELECTOR_WIDTH,
                 );
             });
-            if is_manual_control_row {
-                manual_changed = ui
-                    .checkbox(&mut route.manual_channel_control, "Override")
-                    .changed();
-            }
             let meter_width = ui.available_width().clamp(0.0, AUDIO_VU_WIDTH);
             ui.add_sized(
                 [meter_width, ui.spacing().interact_size.y],
@@ -1434,19 +1475,6 @@ fn draw_output_route_channels(
                 if let Some((partner, _)) = paired_with {
                     let selected = route.channel_device_ids[channel].clone();
                     route.channel_device_ids[partner].clone_from(&selected);
-                }
-            }
-        }
-        if manual_changed {
-            changed = true;
-            if !route.manual_channel_control && is_leader {
-                if let Some((partner, _)) = paired_with {
-                    let selected = route.channel_device_ids[channel].clone();
-                    route.channel_device_ids[partner].clone_from(&selected);
-                }
-                for &(left, right) in &pairs {
-                    let selected = route.channel_device_ids[left].clone();
-                    route.channel_device_ids[right].clone_from(&selected);
                 }
             }
         }
@@ -1468,7 +1496,10 @@ pub(super) fn draw_input_routes(
         ui.horizontal(|ui| {
             ui.strong(&route.label);
             changed |= ui
-                .checkbox(&mut route.enabled, "Pipe to controller")
+                .checkbox(&mut route.enabled, "Forward host input")
+                .on_hover_text(
+                    "Send samples from the selected host input to this emulated controller microphone. Disabled by default to prevent unintended microphone forwarding.",
+                )
                 .changed();
         });
         ui.horizontal(|ui| {
@@ -1480,55 +1511,24 @@ pub(super) fn draw_input_routes(
                 devices,
                 AUDIO_DEVICE_SELECTOR_WIDTH,
             );
-            ui.label("Channels");
-            changed |= ui
-                .add(egui::DragValue::new(&mut route.source_channels).range(1..=32))
-                .changed();
         });
-        if route.target_channels.len() != route.source_channels {
-            route
-                .target_channels
-                .resize_with(route.source_channels, || None);
-            for (destination, default) in
-                route
-                    .target_channels
-                    .iter_mut()
-                    .zip(super::audio_topology::default_channel_routes(
-                        route.source_channels,
-                        capture_channel_labels.len(),
-                    ))
-            {
-                if destination.is_none() {
-                    *destination = (default.source.is_some()).then_some(default.destination);
-                }
-            }
-            route.peak.resize(route.source_channels, 0);
-            changed = true;
-        }
-        for (channel, destination) in route.target_channels.iter_mut().enumerate() {
-            let selected = destination
-                .and_then(|index| capture_channel_labels.get(index))
-                .map_or("Silence", String::as_str);
+        for channel in 0..route.source_channels {
             ui.horizontal(|ui| {
                 ui.add_sized(
-                    [140.0, ui.spacing().interact_size.y],
-                    egui::Label::new(format!("Input channel {}:", channel + 1)).truncate(),
+                    [170.0, ui.spacing().interact_size.y],
+                    egui::Label::new(format!(
+                        "Channel {} ({}):",
+                        channel + 1,
+                        route
+                            .target_channels
+                            .get(channel)
+                            .copied()
+                            .flatten()
+                            .and_then(|index| capture_channel_labels.get(index))
+                            .map_or("unmapped", String::as_str)
+                    ))
+                    .truncate(),
                 );
-                let width = AUDIO_CHANNEL_SELECTOR_WIDTH.min(ui.available_width());
-                ui.allocate_ui(egui::vec2(width, ui.spacing().interact_size.y), |ui| {
-                    egui::ComboBox::from_id_salt(("input_channel", &route.id, channel))
-                        .selected_text(selected)
-                        .wrap_mode(egui::TextWrapMode::Truncate)
-                        .width(width)
-                        .show_ui(ui, |ui| {
-                            changed |= ui.selectable_value(destination, None, "Silence").changed();
-                            for (index, label) in capture_channel_labels.iter().enumerate() {
-                                changed |= ui
-                                    .selectable_value(destination, Some(index), label)
-                                    .changed();
-                            }
-                        });
-                });
                 let peak = route.peak.get(channel).copied().unwrap_or_default();
                 let width = ui.available_width().clamp(0.0, AUDIO_VU_WIDTH);
                 ui.add_sized(
@@ -1599,6 +1599,10 @@ mod tests {
         routing.set_jack_connected(true, topology);
         assert_eq!(routing.outputs.len(), 2);
         assert_eq!(routing.inputs.len(), 2);
+        assert_eq!(routing.inputs[0].source_channels, 2);
+        assert_eq!(routing.inputs[0].target_channels, [Some(0), Some(1)]);
+        assert_eq!(routing.inputs[1].source_channels, 1);
+        assert_eq!(routing.inputs[1].target_channels, [Some(0)]);
         let mut devices = host_devices(HostBackend::Alsa);
         devices[0].label = "System default · USB Audio DAC · Front Left / Right Outputs".into();
         let playback_labels =
@@ -1640,6 +1644,10 @@ mod tests {
         );
         assert!(microphone_rect.width() <= 500.0);
         assert!(microphone_rect.top() >= battery_rect.bottom());
+        assert_eq!(routing.inputs[0].source_channels, 2);
+        assert_eq!(routing.inputs[0].target_channels, [Some(0), Some(1)]);
+        assert_eq!(routing.inputs[1].source_channels, 1);
+        assert_eq!(routing.inputs[1].target_channels, [Some(0)]);
     }
 
     #[test]
@@ -1765,19 +1773,18 @@ mod tests {
     }
 
     #[test]
-    fn jack_device_type_and_plug_state_are_independent() {
+    fn selecting_a_jack_device_controls_its_plug_state_and_none_unplugs_it() {
         let topology = AudioTopology::for_family(ControllerFamily::DualSense);
         let mut state = RoutingState::for_topology(topology, HostBackend::Alsa);
 
-        state.set_jack_device(JackDevice::Headset, topology);
         assert!(!state.jack_connected);
         assert_eq!(state.outputs.len(), 1);
-        state.set_jack_connected(true, topology);
+        state.select_jack_device(Some(JackDevice::Headset), topology);
         assert!(state.jack_connected);
         assert_eq!(state.outputs.len(), 2);
         assert_eq!(state.inputs.len(), 2);
 
-        state.set_jack_connected(false, topology);
+        state.select_jack_device(None, topology);
         assert!(!state.jack_connected);
         assert_eq!(state.outputs.len(), 1);
         assert_eq!(state.inputs.len(), 1);
