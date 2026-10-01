@@ -2250,7 +2250,7 @@ impl eframe::App for App {
                                                 (audio_view.as_ref(), audio_routing.as_mut())
                                             {
                                                 if !routing.inputs.is_empty() {
-                                                    card(ui, "Microphone", |ui| {
+                                                    wide_card(ui, "Microphone", |ui| {
                                                         audio_routing_changed |= audio_lab::draw_input_routes(
                                                             ui,
                                                             routing,
