@@ -435,36 +435,42 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
 }
 
 fn draw_target_selector(ui: &mut egui::Ui, target: &mut RealizationId) -> egui::Rect {
-    ui.horizontal(|ui| {
-        let help = target_help(*target);
-        let help_width = help
-            .as_ref()
-            .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
-        egui::ComboBox::from_id_salt("controller_target")
-            .selected_text(target_label(*target))
-            .width((ui.available_width() - help_width).max(60.0))
-            .show_ui(ui, |ui| {
-                for option in [
-                    RealizationId::LINUX_UINPUT,
-                    RealizationId::LINUX_UHID_USB,
-                    RealizationId::LINUX_USBIP_USB_AUDIO,
-                    RealizationId::LINUX_DUMMY_HCD_USB_HID,
-                ] {
-                    ui.selectable_value(target, option, target_label(option));
+    let row_width = ui.available_width();
+    let row_height = ui.spacing().interact_size.y.max(18.0);
+    ui.allocate_ui_with_layout(
+        egui::vec2(row_width, row_height),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            let help = target_help(*target);
+            let help_width = help
+                .as_ref()
+                .map_or(0.0, |_| 18.0 + ui.spacing().item_spacing.x);
+            egui::ComboBox::from_id_salt("controller_target")
+                .selected_text(target_label(*target))
+                .width((ui.available_width() - help_width).max(0.0))
+                .show_ui(ui, |ui| {
+                    for option in [
+                        RealizationId::LINUX_UINPUT,
+                        RealizationId::LINUX_UHID_USB,
+                        RealizationId::LINUX_USBIP_USB_AUDIO,
+                        RealizationId::LINUX_DUMMY_HCD_USB_HID,
+                    ] {
+                        ui.selectable_value(target, option, target_label(option));
+                    }
+                });
+            if let Some(help) = help {
+                let response = ui.add_sized([18.0, 18.0], Button::new("!"));
+                if response.hovered() {
+                    egui::Tooltip::for_widget(&response)
+                        .at_pointer()
+                        .show(|ui| {
+                            ui.strong(help.title);
+                            ui.label(help.body);
+                        });
                 }
-            });
-        if let Some(help) = help {
-            let response = ui.add_sized([18.0, 18.0], Button::new("!"));
-            if response.hovered() {
-                egui::Tooltip::for_widget(&response)
-                    .at_pointer()
-                    .show(|ui| {
-                        ui.strong(help.title);
-                        ui.label(help.body);
-                    });
             }
-        }
-    })
+        },
+    )
     .response
     .rect
 }
