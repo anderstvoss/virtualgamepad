@@ -8,11 +8,14 @@ use gr_audio_contract::{
 /// Functional `DualSense` channel grouping: audible and haptic pairs share a clock.
 /// The capture pair is retained instead of silently collapsing it to mono.
 /// ALSA's Sony/DualSense-PS5-HiFi configuration independently models four hardware
-/// playback and two hardware capture channels. This is not physical acceptance.
+/// playback and two hardware capture channels. It maps built-in speaker playback
+/// to channel 1 and headset stereo to channels 0/1; in this semantic profile,
+/// channel 1 is `AudibleRight`. The mapping is provider metadata, not physical
+/// matching acceptance.
 /// # Errors
 /// Only Emulated is implemented. Disabled means there is no audio profile.
 pub fn dualsense(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
-    functional(
+    Ok(functional(
         "dualsense.audio.emulated.v1",
         exposure,
         &[
@@ -22,8 +25,9 @@ pub fn dualsense(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
             C::HapticRight,
         ],
         &[C::MicrophoneLeft, C::MicrophoneRight],
-        "Functional 48 kHz signed-16 headphone/haptic profile; onboard-speaker routing is unavailable. Headset microphone response, USB topology and haptic fidelity require physical comparison.",
-    )
+        "Functional 48 kHz signed-16 headphone/haptic profile; onboard-speaker routing is available through the documented AudibleRight channel. Headset microphone response, USB topology and haptic fidelity require physical comparison.",
+    )?
+    .with_onboard_speaker_source(C::AudibleRight))
 }
 /// # Errors
 /// Disabled exposure has no endpoints; matching is unavailable.
@@ -106,9 +110,7 @@ mod tests {
             p.streams()[0].format().channels()[2..],
             [C::HapticLeft, C::HapticRight]
         );
-        assert!(
-            p.limitation()
-                .contains("onboard-speaker routing is unavailable")
-        );
+        assert_eq!(p.onboard_speaker_source(), Some(C::AudibleRight));
+        assert!(p.limitation().contains("AudibleRight channel"));
     }
 }

@@ -3,8 +3,9 @@ use super::audio_topology::{AudioTopology, ControllerFamily, JackConnector, Jack
 use eframe::egui;
 use std::collections::HashMap;
 use virtualgamepad::{
-    AudioAccess, AudioDiagnostics, AudioEndpoint, AudioError, AudioExposure, AudioOptions,
-    ControllerAudio, ControllerError, CreationOptions, PcmFormat, RealizationId, SampleDirection,
+    AudioAccess, AudioChannel, AudioDiagnostics, AudioEndpoint, AudioError, AudioExposure,
+    AudioOptions, ControllerAudio, ControllerError, CreationOptions, PcmFormat, RealizationId,
+    SampleDirection,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -40,9 +41,59 @@ pub(super) struct HostDevice {
 #[derive(Default)]
 pub(super) struct AudioRouter {
     config: Option<(RoutingState, bool, bool)>,
-    outputs: HashMap<String, super::host_audio::OutputPort>,
+    outputs: HashMap<String, Vec<RoutedOutputPort>>,
     inputs: HashMap<String, super::host_audio::InputPort>,
     last_error: Option<String>,
+}
+
+struct RoutedOutputPort {
+    device_channels: Vec<usize>,
+    port: super::host_audio::OutputPort,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OutputDeviceGroup {
+    device_id: String,
+    channels: Vec<usize>,
+}
+
+fn output_device_groups(route: &OutputRoute) -> Vec<OutputDeviceGroup> {
+    let mut groups: Vec<OutputDeviceGroup> = Vec::new();
+    for channel in 0..route.channels {
+        let device_id = route
+            .channel_device_ids
+            .get(channel)
+            .cloned()
+            .unwrap_or_else(|| "default".into());
+        if let Some(group) = groups.iter_mut().find(|group| group.device_id == device_id) {
+            group.channels.push(channel);
+        } else {
+            groups.push(OutputDeviceGroup {
+                device_id,
+                channels: vec![channel],
+            });
+        }
+    }
+    groups
+}
+
+fn select_output_channels(samples: &[i16], source_channels: usize, channels: &[usize]) -> Vec<i16> {
+    if source_channels == 0 || channels.is_empty() {
+        return Vec::new();
+    }
+    let frames = samples.len() / source_channels;
+    let mut selected = Vec::with_capacity(frames * channels.len());
+    for frame in 0..frames {
+        for &channel in channels {
+            selected.push(
+                samples
+                    .get(frame * source_channels + channel)
+                    .copied()
+                    .unwrap_or_default(),
+            );
+        }
+    }
+    selected
 }
 
 impl AudioRouter {
@@ -72,15 +123,25 @@ impl AudioRouter {
             .iter()
             .filter(|route| route.enabled && allow_playback)
         {
-            match super::host_audio::OutputPort::open(
-                routing.backend,
-                &output.device_id,
-                output.channels,
-            ) {
-                Ok(port) => {
-                    self.outputs.insert(output.id.clone(), port);
+            let mut ports = Vec::new();
+            for group in output_device_groups(output) {
+                match super::host_audio::OutputPort::open(
+                    routing.backend,
+                    &group.device_id,
+                    group.channels.len(),
+                ) {
+                    Ok(port) => ports.push(RoutedOutputPort {
+                        device_channels: group.channels,
+                        port,
+                    }),
+                    Err(error) => errors.push(format!(
+                        "{} channels {:?}: {error}",
+                        output.label, group.channels
+                    )),
                 }
-                Err(error) => errors.push(format!("{}: {error}", output.label)),
+            }
+            if !ports.is_empty() {
+                self.outputs.insert(output.id.clone(), ports);
             }
         }
         for input in routing
@@ -100,8 +161,13 @@ impl AudioRouter {
         self.last_error.clone()
     }
 
-    fn output(&self, id: &str, samples: &[i16]) -> bool {
-        self.outputs.get(id).is_some_and(|port| port.write(samples))
+    fn output(&self, id: &str, samples: &[i16], channels: usize) -> bool {
+        self.outputs.get(id).is_some_and(|ports| {
+            ports.iter().fold(true, |written, route| {
+                let selected = select_output_channels(samples, channels, &route.device_channels);
+                route.port.write(&selected) && written
+            })
+        })
     }
 
     fn input(&self, id: &str) -> Option<Vec<i16>> {
@@ -114,20 +180,28 @@ impl AudioRouter {
     }
 
     fn error(&self) -> Option<String> {
-        let mut errors: Vec<_> = self
-            .outputs
-            .iter()
-            .filter_map(|(id, port)| port.error().map(|error| format!("{id}: {error}")))
-            .chain(
-                self.inputs
-                    .iter()
-                    .filter_map(|(id, port)| port.error().map(|error| format!("{id}: {error}"))),
-            )
-            .collect();
+        let mut errors: Vec<_> =
+            self.outputs
+                .iter()
+                .flat_map(|(id, ports)| {
+                    let id = id.clone();
+                    ports.iter().filter_map(move |route| {
+                        route.port.error().map(|error| {
+                            format!("{id} channels {:?}: {error}", route.device_channels)
+                        })
+                    })
+                })
+                .chain(
+                    self.inputs.iter().filter_map(|(id, port)| {
+                        port.error().map(|error| format!("{id}: {error}"))
+                    }),
+                )
+                .collect();
         let dropped: u64 = self
             .outputs
             .values()
-            .map(super::host_audio::OutputPort::dropped_packets)
+            .flat_map(|ports| ports.iter())
+            .map(|route| route.port.dropped_packets())
             .sum();
         if dropped > 0 {
             errors.push(format!("host playback dropped {dropped} audio blocks"));
@@ -201,7 +275,7 @@ pub(super) struct OutputRoute {
     pub label: String,
     pub channels: usize,
     pub enabled: bool,
-    pub device_id: String,
+    pub channel_device_ids: Vec<String>,
     pub manual_channel_control: bool,
     pub source_channels: Vec<Option<usize>>,
     pub peak: Vec<u16>,
@@ -233,9 +307,9 @@ impl RoutingState {
                 label: "Built-in speaker".into(),
                 channels: topology.onboard_speaker_channels,
                 enabled: true,
-                device_id: "default".into(),
+                channel_device_ids: vec!["default".into(); topology.onboard_speaker_channels],
                 manual_channel_control: false,
-                source_channels: (0..topology.onboard_speaker_channels).map(Some).collect(),
+                source_channels: vec![None; topology.onboard_speaker_channels],
                 peak: vec![0; topology.onboard_speaker_channels],
             });
         }
@@ -270,7 +344,7 @@ impl RoutingState {
                 label: format!("{} output", self.jack_device.label_for_connector(connector)),
                 channels,
                 enabled: true,
-                device_id: "default".into(),
+                channel_device_ids: vec!["default".into(); channels],
                 manual_channel_control: false,
                 source_channels: (0..channels).map(Some).collect(),
                 peak: vec![0; channels],
@@ -744,7 +818,7 @@ impl Activity {
                     })
                     .collect();
                 if !samples.is_empty() {
-                    let _ = router.output(&route.id, &samples);
+                    let _ = router.output(&route.id, &samples, route.channels);
                 }
             }
         }
@@ -890,6 +964,7 @@ pub(super) fn cycle(
     router: &mut AudioRouter,
     action: Option<Action>,
 ) -> Result<(), AudioError> {
+    update_provider_speaker_mapping(activity, audio);
     if let Some(action) = action {
         if matches!(&action, Action::RetryRouting) {
             router.reset();
@@ -1138,7 +1213,7 @@ fn draw_device_selector(
 
 fn draw_device_selector_sized(
     ui: &mut egui::Ui,
-    id: &str,
+    id: impl std::hash::Hash,
     selected: &mut String,
     devices: &[HostDevice],
     width: f32,
@@ -1187,13 +1262,7 @@ pub(super) fn draw_output_routes(
         .filter(|route| route.id == "onboard-speaker")
     {
         route.enabled = true;
-        ui.horizontal(|ui| {
-            ui.label("Onboard speaker");
-            changed |=
-                draw_device_selector_sized(ui, &route.id, &mut route.device_id, devices, 150.0);
-            let peak = route.peak.first().copied().unwrap_or_default();
-            draw_inline_meter(ui, peak);
-        });
+        changed |= draw_output_route_channels(ui, route, devices, playback_channel_labels);
     }
 
     if let Some(connector) = routing.jack_connector {
@@ -1234,46 +1303,8 @@ pub(super) fn draw_output_routes(
                 .filter(|route| route.id == "jack-output")
             {
                 ui.indent("jack_output_channels", |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Play through");
-                        changed |= draw_device_selector_sized(
-                            ui,
-                            &route.id,
-                            &mut route.device_id,
-                            devices,
-                            150.0,
-                        );
-                    });
-                    if route.channels > 1 {
-                        changed |= ui
-                            .checkbox(&mut route.manual_channel_control, "Manual channel control")
-                            .changed();
-                    }
-                    if route.manual_channel_control {
-                        for (channel, source) in route.source_channels.iter_mut().enumerate() {
-                            changed |= draw_source_channel_selector(
-                                ui,
-                                (&route.id, channel),
-                                source,
-                                playback_channel_labels,
-                            );
-                        }
-                    } else if route.channels == 2 {
-                        changed |= draw_linked_stereo_selector(
-                            ui,
-                            &route.id,
-                            &mut route.source_channels,
-                            playback_channel_labels,
-                        );
-                    } else if let Some(source) = route.source_channels.first_mut() {
-                        changed |= draw_source_channel_selector(
-                            ui,
-                            (&route.id, 0),
-                            source,
-                            playback_channel_labels,
-                        );
-                    }
-                    draw_meters(ui, "Channel", &route.peak);
+                    changed |=
+                        draw_output_route_channels(ui, route, devices, playback_channel_labels);
                 });
             }
         }
@@ -1297,93 +1328,148 @@ fn routing_topology(routing: &RoutingState) -> AudioTopology {
     }
 }
 
-fn draw_inline_meter(ui: &mut egui::Ui, peak: u16) {
-    let value = f32::from(peak) / f32::from(u16::MAX);
-    ui.add(egui::ProgressBar::new(value).desired_width(ui.available_width()));
+fn semantic_channel_index(channels: &[AudioChannel], source: AudioChannel) -> Option<usize> {
+    channels.iter().position(|channel| *channel == source)
 }
 
-fn available_playback_sources(labels: &[String]) -> impl Iterator<Item = (usize, &str)> {
-    labels
-        .iter()
-        .enumerate()
-        .filter(|(_, label)| !label.to_ascii_lowercase().contains("haptic"))
-        .map(|(index, label)| (index, label.as_str()))
-}
-
-fn draw_source_channel_selector(
-    ui: &mut egui::Ui,
-    id: (&str, usize),
-    source: &mut Option<usize>,
-    labels: &[String],
-) -> bool {
-    let selected = source
-        .and_then(|index| labels.get(index))
-        .map_or("Silence", String::as_str);
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label(format!("Channel {} source", id.1 + 1));
-        egui::ComboBox::from_id_salt(("output_channel", id))
-            .selected_text(selected)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                changed |= ui.selectable_value(source, None, "Silence").changed();
-                for (index, label) in available_playback_sources(labels) {
-                    changed |= ui.selectable_value(source, Some(index), label).changed();
-                }
-            });
+fn update_provider_speaker_mapping(activity: &mut Activity, audio: &ControllerAudio) {
+    let source = audio.onboard_speaker_source().and_then(|source| {
+        audio
+            .endpoints()
+            .iter()
+            .find(|endpoint| endpoint.direction() == SampleDirection::HostToController)
+            .and_then(|endpoint| semantic_channel_index(endpoint.format().channels(), source))
     });
-    changed
+    for route in activity
+        .routing
+        .outputs
+        .iter_mut()
+        .filter(|route| route.id == "onboard-speaker")
+    {
+        route.source_channels.fill(source);
+    }
 }
 
-fn draw_linked_stereo_selector(
-    ui: &mut egui::Ui,
-    route_id: &str,
-    source_channels: &mut [Option<usize>],
-    labels: &[String],
-) -> bool {
-    let pairs = super::audio_topology::stereo_channel_pairs(labels);
-    let selected_pair = source_channels
-        .first()
+fn output_channel_label(route: &OutputRoute, channel: usize, labels: &[String]) -> String {
+    route
+        .source_channels
+        .get(channel)
         .copied()
         .flatten()
-        .zip(source_channels.get(1).copied().flatten());
-    let selected_text = pairs
-        .iter()
-        .find(|(left, right)| Some((*left, *right)) == selected_pair)
-        .map_or("Select stereo channels".to_owned(), |(left, right)| {
-            format!("{} + {}", labels[*left], labels[*right])
-        });
-    let mut selected = selected_pair;
+        .and_then(|index| labels.get(index))
+        .map_or_else(|| "unmapped".to_owned(), Clone::clone)
+}
+
+fn output_stereo_channel_pairs(route: &OutputRoute, labels: &[String]) -> Vec<(usize, usize)> {
+    super::audio_topology::stereo_channel_pairs(labels)
+        .into_iter()
+        .filter_map(|(left_source, right_source)| {
+            let left = route
+                .source_channels
+                .iter()
+                .position(|source| *source == Some(left_source))?;
+            let right = route
+                .source_channels
+                .iter()
+                .position(|source| *source == Some(right_source))?;
+            Some((left, right))
+        })
+        .collect()
+}
+
+fn draw_output_route_channels(
+    ui: &mut egui::Ui,
+    route: &mut OutputRoute,
+    devices: &[HostDevice],
+    labels: &[String],
+) -> bool {
+    route
+        .channel_device_ids
+        .resize(route.channels, "default".into());
+    let pairs = output_stereo_channel_pairs(route, labels);
+    let manual_control_channel = pairs.first().map(|(left, _)| *left);
     let mut changed = false;
-    ui.horizontal(|ui| {
-        ui.label("Stereo channels");
-        egui::ComboBox::from_id_salt(("output_stereo", route_id))
-            .selected_text(selected_text)
-            .width(ui.available_width())
-            .show_ui(ui, |ui| {
-                for (left, right) in pairs {
-                    changed |= ui
-                        .selectable_value(
-                            &mut selected,
-                            Some((left, right)),
-                            format!("{} + {}", labels[left], labels[right]),
-                        )
-                        .changed();
-                }
-                changed |= ui
-                    .selectable_value(&mut selected, None, "Silence")
-                    .changed();
-            });
-    });
-    if changed {
-        if let Some((left, right)) = selected {
-            if source_channels.len() >= 2 {
-                source_channels[0] = Some(left);
-                source_channels[1] = Some(right);
+
+    if !route.manual_channel_control {
+        for &(left, right) in &pairs {
+            if route.channel_device_ids[left] != route.channel_device_ids[right] {
+                let selected = route.channel_device_ids[left].clone();
+                route.channel_device_ids[right].clone_from(&selected);
+                changed = true;
             }
-        } else {
-            source_channels[0] = None;
-            source_channels[1] = None;
+        }
+    }
+
+    for channel in 0..route.channels {
+        let paired_with = pairs.iter().find_map(|&(left, right)| {
+            if channel == left {
+                Some((right, true))
+            } else if channel == right {
+                Some((left, false))
+            } else {
+                None
+            }
+        });
+        let is_leader = paired_with.is_some_and(|(_, leader)| leader);
+        let is_secondary = paired_with.is_some_and(|(_, leader)| !leader);
+        let is_manual_control_row = manual_control_channel == Some(channel);
+        let source = output_channel_label(route, channel, labels);
+        let mut device_changed = false;
+        let mut manual_changed = false;
+        ui.horizontal(|ui| {
+            let label = if route.id == "onboard-speaker" {
+                format!("Onboard · Channel {} ({source}):", channel + 1)
+            } else {
+                format!("Channel {} ({source}):", channel + 1)
+            };
+            ui.add_sized(
+                [140.0, ui.spacing().interact_size.y],
+                egui::Label::new(label).truncate(),
+            );
+            ui.add_enabled_ui(route.manual_channel_control || !is_secondary, |ui| {
+                device_changed = draw_device_selector_sized(
+                    ui,
+                    (route.id.as_str(), channel),
+                    &mut route.channel_device_ids[channel],
+                    devices,
+                    115.0,
+                );
+            });
+            if is_manual_control_row {
+                manual_changed = ui
+                    .checkbox(&mut route.manual_channel_control, "Override")
+                    .changed();
+            }
+            let meter_width = ui.available_width().max(0.0);
+            ui.add_sized(
+                [meter_width, ui.spacing().interact_size.y],
+                egui::ProgressBar::new(
+                    f32::from(route.peak.get(channel).copied().unwrap_or_default())
+                        / f32::from(u16::MAX),
+                ),
+            );
+        });
+        if device_changed {
+            changed = true;
+            if !route.manual_channel_control && is_leader {
+                if let Some((partner, _)) = paired_with {
+                    let selected = route.channel_device_ids[channel].clone();
+                    route.channel_device_ids[partner].clone_from(&selected);
+                }
+            }
+        }
+        if manual_changed {
+            changed = true;
+            if !route.manual_channel_control && is_leader {
+                if let Some((partner, _)) = paired_with {
+                    let selected = route.channel_device_ids[channel].clone();
+                    route.channel_device_ids[partner].clone_from(&selected);
+                }
+                for &(left, right) in &pairs {
+                    let selected = route.channel_device_ids[left].clone();
+                    route.channel_device_ids[right].clone_from(&selected);
+                }
+            }
         }
     }
     changed
@@ -1546,7 +1632,11 @@ mod tests {
                 });
             },
         );
-        assert!(output_rect.width() <= 500.0);
+        assert!(
+            output_rect.width() <= 500.0,
+            "audio card width: {}",
+            output_rect.width()
+        );
         assert!(microphone_rect.width() <= 260.0);
         assert!(microphone_rect.top() >= battery_rect.bottom());
     }
@@ -1630,8 +1720,12 @@ mod tests {
             ["onboard-microphone"]
         );
         assert!(!state.inputs[0].enabled);
+        assert_eq!(state.outputs[0].source_channels, [None]);
+        assert_eq!(state.outputs[0].channel_device_ids, ["default"]);
         state.set_jack_connected(true, topology);
         assert_eq!(state.outputs.len(), 2);
+        assert_eq!(state.outputs[1].source_channels, [Some(0), Some(1)]);
+        assert_eq!(state.outputs[1].channel_device_ids, ["default", "default"]);
         assert_eq!(state.inputs.len(), 2);
         assert!(state.inputs[1].label.contains("TRRS"));
         state.set_jack_device(JackDevice::Microphone, topology);
@@ -1640,6 +1734,28 @@ mod tests {
         state.set_jack_connected(false, topology);
         assert_eq!(state.outputs.len(), 1);
         assert_eq!(state.inputs.len(), 1);
+    }
+
+    #[test]
+    fn provider_semantic_channel_mapping_follows_backend_order() {
+        let playback = [
+            AudioChannel::HapticLeft,
+            AudioChannel::AudibleRight,
+            AudioChannel::AudibleLeft,
+            AudioChannel::HapticRight,
+        ];
+        assert_eq!(
+            semantic_channel_index(&playback, AudioChannel::AudibleRight),
+            Some(1)
+        );
+        assert_eq!(
+            semantic_channel_index(&playback, AudioChannel::AudibleLeft),
+            Some(2)
+        );
+        assert_eq!(
+            semantic_channel_index(&playback, AudioChannel::Speaker),
+            None
+        );
     }
 
     #[test]
@@ -1656,6 +1772,45 @@ mod tests {
         assert!(!state.jack_connected);
         assert_eq!(state.outputs.len(), 1);
         assert_eq!(state.inputs.len(), 1);
+    }
+
+    #[test]
+    fn linked_stereo_shares_a_host_sink_and_manual_channels_can_split_sinks() {
+        let topology = AudioTopology::for_family(ControllerFamily::DualSense);
+        let mut state = RoutingState::for_topology(topology, HostBackend::Alsa);
+        state.select_jack_device(Some(JackDevice::Headset), topology);
+        let route = &mut state.outputs[1];
+        assert_eq!(
+            output_device_groups(route),
+            [OutputDeviceGroup {
+                device_id: "default".into(),
+                channels: vec![0, 1],
+            }]
+        );
+
+        route.manual_channel_control = true;
+        route.channel_device_ids = vec!["left-sink".into(), "right-sink".into()];
+        assert_eq!(
+            output_device_groups(route),
+            [
+                OutputDeviceGroup {
+                    device_id: "left-sink".into(),
+                    channels: vec![0],
+                },
+                OutputDeviceGroup {
+                    device_id: "right-sink".into(),
+                    channels: vec![1],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn host_sink_channel_selection_preserves_interleaved_frame_order() {
+        let samples = [10, 11, 20, 21, 30, 31];
+        assert_eq!(select_output_channels(&samples, 2, &[0]), [10, 20, 30]);
+        assert_eq!(select_output_channels(&samples, 2, &[1]), [11, 21, 31]);
+        assert_eq!(select_output_channels(&samples, 2, &[0, 1]), samples);
     }
 
     #[test]

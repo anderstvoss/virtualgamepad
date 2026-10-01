@@ -151,6 +151,7 @@ pub(crate) fn open(creation: u64, access: AudioAccess) -> (ControllerAudio, Arc<
     (
         ControllerAudio {
             endpoints,
+            onboard_speaker_source: None,
             limitation: "Synthetic I/O only",
             session: Box::new(Fake {
                 record: record.clone(),

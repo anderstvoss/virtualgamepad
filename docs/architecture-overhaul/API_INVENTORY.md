@@ -522,6 +522,7 @@ Owner/source: `../src/virtualgamepad/audio.rs.html`
 pub struct ControllerAudio { /* private fields */ }
 pub fn diagnostics(&self) -> AudioDiagnostics
 pub fn endpoints(&self) -> &[AudioEndpoint]
+pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>
 pub const fn limitation(&self) -> &'static str
 pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>
 pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError>
