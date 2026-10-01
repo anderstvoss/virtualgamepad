@@ -391,6 +391,20 @@ fn backend_available(target: RealizationId) -> bool {
             && cfg!(all(target_os = "linux", feature = "audio-usbip")))
 }
 
+fn draw_labeled_combo_box(
+    ui: &mut egui::Ui,
+    label: &str,
+    id: impl std::hash::Hash,
+    selected_text: &str,
+    add_options: impl FnOnce(&mut egui::Ui),
+) {
+    ui.label(label);
+    egui::ComboBox::from_id_salt(id)
+        .selected_text(selected_text)
+        .width(ui.available_width())
+        .show_ui(ui, add_options);
+}
+
 pub(super) fn draw_creation(
     ui: &mut egui::Ui,
     config: &mut CreationAudio,
@@ -427,11 +441,12 @@ pub(super) fn draw_creation(
         }
         ui.add_enabled_ui(config.enabled && has_audio && backend_available(target), |ui| {
             ui.vertical(|ui| {
-                ui.label("Host audio backend");
-                egui::ComboBox::from_id_salt("host_audio_backend")
-                    .selected_text(config.host_backend.label())
-                    .width(ui.available_width())
-                    .show_ui(ui, |ui| {
+                draw_labeled_combo_box(
+                    ui,
+                    "Host audio backend",
+                    "host_audio_backend",
+                    config.host_backend.label(),
+                    |ui| {
                         for backend in HostBackend::ALL {
                             let label = if backend.compiled() {
                                 backend.label().to_owned()
@@ -449,7 +464,8 @@ pub(super) fn draw_creation(
                                 }
                             });
                         }
-                    });
+                    },
+                );
                 for (label, id, access) in [
                     ("Playback ownership", "playback_ownership", &mut config.playback),
                     (
@@ -458,18 +474,20 @@ pub(super) fn draw_creation(
                         &mut config.microphone,
                     ),
                 ] {
-                    ui.label(label);
-                    egui::ComboBox::from_id_salt(id)
-                        .selected_text(match *access {
+                    draw_labeled_combo_box(
+                        ui,
+                        label,
+                        id,
+                        match *access {
                             AudioAccess::Samples => "Samples",
                             AudioAccess::NativeClient => "Native client",
                             _ => "Unavailable",
-                        })
-                        .width(ui.available_width())
-                        .show_ui(ui, |ui| {
+                        },
+                        |ui| {
                             ui.selectable_value(access, AudioAccess::Samples, "Samples");
                             ui.selectable_value(access, AudioAccess::NativeClient, "Native client");
-                        });
+                        },
+                    );
                 }
             });
         });

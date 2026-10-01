@@ -65,6 +65,7 @@ const CREATE_BUTTON_TEXT: Color32 = Color32::from_rgb(245, 250, 255);
 const CONTROLLER_ROW_HEIGHT: f32 = NAME_INPUT_HEIGHT;
 const CONTROLLER_NUMBER_WIDTH: f32 = 16.0;
 const CONTROLLER_DELETE_WIDTH: f32 = CONTROLLER_ROW_HEIGHT;
+const ADVANCED_OPTIONS_BODY_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 6.0;
 const CONTROLLER_LIST_MIN_HEIGHT: f32 = CONTROLLER_ROW_HEIGHT * 4.0;
 const CONTROLLER_LIST_FRAME_VERTICAL_MARGIN: f32 = 8.0;
 
@@ -182,37 +183,77 @@ const fn advanced_options_available(_target: RealizationId) -> bool {
     true
 }
 
+fn advanced_options_max_height(available_height: f32, body_line_height: f32, spacing: f32) -> f32 {
+    let footer_controls_height = (CONTROLLER_ROW_HEIGHT * 2.0) + 1.0 + HEALTH_BOTTOM_PADDING;
+    let diagnostic_height = diagnostic_log_height(body_line_height);
+    let reserved_after_options = 1.0
+        + CONTROLLER_ROW_HEIGHT
+        + CONTROLLER_LIST_MIN_HEIGHT
+        + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN
+        + footer_controls_height
+        + diagnostic_height
+        + (spacing * 7.0);
+    (available_height - reserved_after_options).max(ADVANCED_OPTIONS_BODY_HEIGHT)
+}
+
+#[derive(Debug)]
+struct AdvancedOptionsLayout {
+    panel_rect: egui::Rect,
+    #[cfg(test)]
+    viewport_rect: egui::Rect,
+    #[cfg(test)]
+    content_height: f32,
+}
+
 fn draw_advanced_options(
     ui: &mut egui::Ui,
     next_controller_id: u64,
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
-) -> egui::Rect {
-    egui::Frame::NONE
+) -> AdvancedOptionsLayout {
+    let max_height = advanced_options_max_height(
+        ui.available_height(),
+        ui.text_style_height(&egui::TextStyle::Body),
+        ui.spacing().item_spacing.y,
+    );
+    let output = egui::Frame::NONE
         .fill(sidebar_list_fill(ui))
         .show(ui, |ui| {
-            ui.set_width(SIDEBAR_WIDTH - 8.0);
-            ui.strong("Controller ID preview");
-            let mut preview = controller_id(next_controller_id, target, kind);
-            let preview_width = ui.available_width();
-            ui.add_sized(
-                [preview_width, NAME_INPUT_HEIGHT],
-                egui::TextEdit::singleline(&mut preview)
-                    .interactive(false)
-                    .desired_width(preview_width)
-                    .vertical_align(egui::Align::Center)
-                    .margin(egui::Margin {
-                        left: 4,
-                        right: 4,
-                        top: 2,
-                        bottom: 2,
-                    }),
-            );
-            audio_lab::draw_creation(ui, audio_creation, target, kind != Kind::SwitchPro);
-        })
-        .response
-        .rect
+            ui.set_width(SIDEBAR_WIDTH);
+            egui::ScrollArea::vertical()
+                .id_salt("advanced_options")
+                .min_scrolled_height(ADVANCED_OPTIONS_BODY_HEIGHT)
+                .max_height(max_height)
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    ui.set_width(SIDEBAR_WIDTH - 8.0);
+                    ui.strong("Controller ID preview");
+                    let mut preview = controller_id(next_controller_id, target, kind);
+                    let preview_width = ui.available_width();
+                    ui.add_sized(
+                        [preview_width, NAME_INPUT_HEIGHT],
+                        egui::TextEdit::singleline(&mut preview)
+                            .interactive(false)
+                            .desired_width(preview_width)
+                            .vertical_align(egui::Align::Center)
+                            .margin(egui::Margin {
+                                left: 4,
+                                right: 4,
+                                top: 2,
+                                bottom: 2,
+                            }),
+                    );
+                    audio_lab::draw_creation(ui, audio_creation, target, kind != Kind::SwitchPro);
+                })
+        });
+    AdvancedOptionsLayout {
+        panel_rect: output.response.rect,
+        #[cfg(test)]
+        viewport_rect: output.inner.inner_rect,
+        #[cfg(test)]
+        content_height: output.inner.content_size.y,
+    }
 }
 
 fn service_repaint_interval(controller_count: usize, next_service: Option<Duration>) -> Duration {
@@ -1795,13 +1836,14 @@ impl eframe::App for App {
                                 self.advanced_options_open = !self.advanced_options_open;
                             }
                             if self.advanced_options_open && advanced_available {
-                                draw_advanced_options(
+                                let _ = draw_advanced_options(
                                     ui,
                                     self.next_controller_id,
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
-                                );
+                                )
+                                .panel_rect;
                             }
                             ui.add_sized([SIDEBAR_WIDTH, 1.0], egui::Separator::default());
                             let controller_surface_width = SIDEBAR_WIDTH - 8.0;
@@ -3944,55 +3986,101 @@ mod tests {
     }
 
     #[test]
-    fn advanced_options_extend_the_existing_sidebar_scroll_region() {
-        let context = egui::Context::default();
-        let mut viewport_height = 0.0;
-        let mut content_height = 0.0;
-        let mut advanced_rect = egui::Rect::NOTHING;
-        let mut audio_creation = audio_lab::CreationAudio::default();
-        let _ = context.run(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(600.0, 180.0),
-                )),
-                ..Default::default()
-            },
-            |context| {
-                egui::CentralPanel::default().show(context, |ui| {
-                    let output =
-                        egui::ScrollArea::both()
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| {
-                                ui.horizontal_top(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.set_width(SIDEBAR_WIDTH);
-                                        draw_advanced_options(
-                                            ui,
-                                            1,
-                                            audio_lab::default_creation_target(),
-                                            Kind::DualSense,
-                                            &mut audio_creation,
-                                        );
-                                        advanced_rect = ui.min_rect();
-                                    });
-                                    ui.vertical(|ui| {
-                                        ui.set_min_width(360.0);
-                                        ui.label("Controller panel");
+    fn advanced_options_use_their_own_scroll_area_and_expand_with_space() {
+        for (screen_height, should_scroll_inside_advanced) in [(640.0, true), (900.0, false)] {
+            let context = egui::Context::default();
+            let mut sidebar_viewport_height = 0.0;
+            let mut sidebar_content_height = 0.0;
+            let mut advanced_layout = None;
+            let mut audio_creation = audio_lab::CreationAudio::default();
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(600.0, screen_height),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let output =
+                            egui::ScrollArea::both()
+                                .auto_shrink([false, false])
+                                .show(ui, |ui| {
+                                    ui.horizontal_top(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.set_width(SIDEBAR_WIDTH);
+                                            ui.heading("Add Controller");
+                                            ui.separator();
+                                            for _ in 0..4 {
+                                                ui.add_sized(
+                                                    [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                    egui::Label::new("Creation option"),
+                                                );
+                                            }
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Button::new("Create"),
+                                            );
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Button::new("Advanced options"),
+                                            );
+                                            advanced_layout = Some(draw_advanced_options(
+                                                ui,
+                                                1,
+                                                audio_lab::default_creation_target(),
+                                                Kind::DualSense,
+                                                &mut audio_creation,
+                                            ));
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, 1.0],
+                                                egui::Separator::default(),
+                                            );
+                                            ui.add_sized(
+                                                [SIDEBAR_WIDTH, CONTROLLER_ROW_HEIGHT],
+                                                egui::Label::new("Controller labels"),
+                                            );
+                                            ui.allocate_space(Vec2::new(
+                                                SIDEBAR_WIDTH,
+                                                CONTROLLER_LIST_MIN_HEIGHT
+                                                    + CONTROLLER_LIST_FRAME_VERTICAL_MARGIN,
+                                            ));
+                                            let footer_height = (CONTROLLER_ROW_HEIGHT * 2.0)
+                                                + 1.0
+                                                + HEALTH_BOTTOM_PADDING
+                                                + diagnostic_log_height(
+                                                    ui.text_style_height(&egui::TextStyle::Body),
+                                                );
+                                            ui.allocate_space(Vec2::new(
+                                                SIDEBAR_WIDTH,
+                                                footer_height,
+                                            ));
+                                        });
+                                        ui.vertical(|ui| {
+                                            ui.set_min_width(360.0);
+                                            ui.label("Controller panel");
+                                        });
                                     });
                                 });
-                            });
-                    viewport_height = output.inner_rect.height();
-                    content_height = output.content_size.y;
-                });
-            },
-        );
-        assert!(viewport_height < 180.0, "{viewport_height}");
-        assert!(content_height > viewport_height, "{content_height}");
-        assert!(
-            advanced_rect.width() <= SIDEBAR_WIDTH + 1.0,
-            "{advanced_rect:?}"
-        );
+                        sidebar_viewport_height = output.inner_rect.height();
+                        sidebar_content_height = output.content_size.y;
+                    });
+                },
+            );
+            let advanced_layout = advanced_layout.expect("advanced menu was drawn");
+            assert!(
+                sidebar_content_height <= sidebar_viewport_height + 1.0,
+                "screen height: {screen_height}; sidebar content: {sidebar_content_height}; viewport: {sidebar_viewport_height}; advanced: {advanced_layout:?}"
+            );
+            assert!(advanced_layout.panel_rect.width() <= SIDEBAR_WIDTH + 1.0);
+            assert!(advanced_layout.viewport_rect.height() >= ADVANCED_OPTIONS_BODY_HEIGHT);
+            assert_eq!(
+                advanced_layout.content_height > advanced_layout.viewport_rect.height(),
+                should_scroll_inside_advanced,
+                "screen height: {screen_height}; layout: {advanced_layout:?}"
+            );
+        }
     }
 
     #[test]
