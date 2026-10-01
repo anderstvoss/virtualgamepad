@@ -756,7 +756,14 @@ struct NamedController {
     service_worker: Option<ServiceWorker<Controller>>,
     // Keep the status block allocated when the worker is briefly holding its display lock.
     service_metrics: ServiceMetrics,
+    audio_view: Option<audio_lab::View>,
     input_ui: InputUiState,
+}
+
+fn update_cached_snapshot<T: Clone>(cached: &mut Option<T>, observed: Option<&Option<T>>) {
+    if let Some(observed) = observed {
+        *cached = observed.clone();
+    }
 }
 
 #[derive(Clone)]
@@ -1599,6 +1606,7 @@ impl App {
                     output_log: Vec::new(),
                     service_worker,
                     service_metrics: ServiceMetrics::default(),
+                    audio_view: None,
                     input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
@@ -1696,7 +1704,12 @@ impl eframe::App for App {
                 }
             }
             if let Some(worker) = &named.service_worker {
-                if let Ok(mut display) = worker.display.try_lock() {
+                let display = worker.display.try_lock();
+                update_cached_snapshot(
+                    &mut named.audio_view,
+                    display.as_ref().ok().map(|display| &display.audio),
+                );
+                if let Ok(mut display) = display {
                     named.output_log.append(&mut display.logs);
                     let excess = named.output_log.len().saturating_sub(OUTPUT_LOG_LIMIT);
                     named.output_log.drain(..excess);
@@ -2143,19 +2156,7 @@ impl eframe::App for App {
                                         if ui.button("Recreate with current creation choices").on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.").clicked() {
                                             recreate_controller = Some(index);
                                         }
-                                        let audio_view = audio_lab::controller_audio_enabled(
-                                            named.options.audio,
-                                        )
-                                        .then(|| {
-                                            named
-                                                .service_worker
-                                                .as_ref()
-                                                .and_then(|worker| {
-                                                    worker.display.try_lock().ok()
-                                                })
-                                                .and_then(|display| display.audio.clone())
-                                        })
-                                        .flatten();
+                                        let audio_view = named.audio_view.clone();
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
                                         let mut audio_routing_changed = false;
@@ -4400,6 +4401,19 @@ mod tests {
             }
             previous_height = Some(metrics_rect.height());
         }
+    }
+
+    #[test]
+    fn cached_audio_snapshot_survives_a_busy_worker_frame() {
+        let mut cached = Some("live audio".to_owned());
+        update_cached_snapshot(&mut cached, None);
+        assert_eq!(cached.as_deref(), Some("live audio"));
+
+        update_cached_snapshot(&mut cached, Some(&Some("new audio".to_owned())));
+        assert_eq!(cached.as_deref(), Some("new audio"));
+
+        update_cached_snapshot(&mut cached, Some(&None));
+        assert!(cached.is_none());
     }
 
     #[test]
