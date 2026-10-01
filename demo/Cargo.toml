@@ -16,3 +16,7 @@ virtualgamepad = { path = "..", version = "0.1", features = ["experimental"] }
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+# Synthetic topology fixtures use the supporting-crate construction SPI only.
+gr-controller-contract = { path = "../crates/gr-controller-contract", version = "0.1" }
