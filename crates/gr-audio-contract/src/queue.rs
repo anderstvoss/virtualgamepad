@@ -89,7 +89,7 @@ impl Shared {
             return Err(AudioError::Closed);
         }
         if len % self.channels != 0 {
-            return Err(AudioError::InvalidRequirement);
+            return Err(AudioError::InvalidSampleBuffer);
         }
         Ok(())
     }
@@ -131,7 +131,7 @@ impl PcmProducer {
 
     /// Accept a prefix of complete frames. The caller owns the unsent suffix.
     /// # Errors
-    /// Returns `Closed` or `InvalidRequirement` for incomplete frames/clock exhaustion.
+    /// Returns `Closed` or `InvalidSampleBuffer` for incomplete frames, or `InvalidRequirement` for clock exhaustion.
     pub fn push(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
         let q = &self.shared;
         q.validate(samples.len())?;
@@ -190,7 +190,7 @@ impl PcmConsumer {
 
     /// Read complete frames without crossing a gap. Empty queues return zero.
     /// # Errors
-    /// Returns `Closed` or `InvalidRequirement` for an incomplete destination frame.
+    /// Returns `Closed` or `InvalidSampleBuffer` for an incomplete destination frame.
     pub fn read(&mut self, dest: &mut [i16]) -> Result<PcmRead, AudioError> {
         let q = &self.shared;
         q.validate(dest.len())?;
@@ -380,8 +380,8 @@ mod tests {
     #[test]
     fn invalid_frames_and_terminal_close_preserve_boundaries() {
         let (mut tx, mut rx) = pcm_queue(&format(), 2).unwrap();
-        assert_eq!(tx.push(&[1; 3]), Err(AudioError::InvalidRequirement));
-        assert_eq!(rx.read(&mut [0; 3]), Err(AudioError::InvalidRequirement));
+        assert_eq!(tx.push(&[1; 3]), Err(AudioError::InvalidSampleBuffer));
+        assert_eq!(rx.read(&mut [0; 3]), Err(AudioError::InvalidSampleBuffer));
         tx.push(&[1; 4]).unwrap();
         rx.close();
         rx.close();

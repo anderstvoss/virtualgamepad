@@ -2,17 +2,20 @@
 
 `virtualgamepad` is a standalone library for compiled, curated controllers. It does not own slot assignment, routing policy, runtime profiles, arbitrary identity selection, or automatic provider fallback.
 
-## Complete realization IDs
+## Exact primary realization IDs
 
-Applications select one complete host-facing path declared by the controller manifest:
+Applications select an exact primary controller realization. Typed creation options
+explicitly request associated required components; association metadata describes
+the resulting component set. See [ADR-0017](architecture-overhaul/decisions/ADR-0017-primary-realization-and-audio-components.md).
 
 | ID | Mechanism | Implemented meaning |
 | --- | --- | --- |
 | `linux.uinput` | Linux uinput | Controller-owned evdev controls and supported outputs. |
 | `linux.uhid.usb` | Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
-| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Selectable broker-backed USB HID attachment. |
+| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Experimental broker-backed USB HID research only. |
+| `linux.usbip.usb-audio` | stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2; installed security/recovery acceptance remains open. |
 
-`RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain source aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
+`RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 
 ## Ownership and data flow
 
@@ -50,7 +53,7 @@ Each controller owns typed controls, numeric units, evdev presentation, outputs,
 
 Existing compound helpers preserve preflight, reverse-order rollback, per-component identity, and cleanup regressions. Every selected component is required: terminal provider errors close the group, while `WouldBlock` permits explicit bounded retry. Cleanup errors remain diagnostic; host removal is not inferred from a failed close. Their older full-frame retry interface is not the new HID delivery contract; compound migration and advertised multi-UHID usefulness remain separately gated. Multiple UHID devices are not a composite USB device.
 
-HID audio controls do not create PCM endpoints. Future controller-owned audio can use a coherent host-audio realization or actual USB audio functions through a suitable gadget realization. Neither route is implemented or validated merely by having audio contract types. Gates F/H/I control audio behavior and naming; Bluetooth personalities and actual Bluetooth bus realizations have separate L/M gates.
+HID audio controls alone do not create PCM endpoints. Opt-in emulated audio is implemented as associated caller-session PipeWire endpoints or explicit composite USB/IP HID/UAC2. Requested audio is a required component; terminal failure closes the logical controller when discovered. Servicing HID does not pump PCM. Gate I defines naming; F/H retain live/consumer qualification limits. Matching and Bluetooth remain unavailable. See the [audio guide](CONTROLLER_AUDIO.md).
 
 ## Evidence and development
 

@@ -2,8 +2,8 @@
 //! Backend-neutral audio contracts for controller realization sidecars.
 //!
 //! This crate intentionally supplies no ALSA, `PipeWire`, or controller-specific
-//! implementation. A future backend crate implements [`AudioBackendFactory`]
-//! without requiring changes to controller, realization, or runtime crates.
+//! implementation. Manifest requirements describe optional topology; the PCM
+//! model describes compiled profiles and sample transport. Backend factories are private.
 
 mod pcm;
 pub use pcm::*;
@@ -100,6 +100,12 @@ pub enum AudioError {
     Unavailable,
     #[error("audio stream requirement is invalid")]
     InvalidRequirement,
+    #[error("sample buffer does not contain complete interleaved frames")]
+    InvalidSampleBuffer,
+    #[error("the stream is owned by a native client, not application samples")]
+    OwnershipMismatch,
+    #[error("the controller has no supported profile for this audio exposure")]
+    Unsupported,
     #[error("host audio backend cannot realize the requested stream topology")]
     IncompatibleTopology,
     #[error("host audio backend access is denied")]
@@ -108,20 +114,6 @@ pub enum AudioError {
     Closed,
     #[error("audio backend failed: {reason}")]
     Backend { reason: String },
-}
-
-#[allow(clippy::missing_errors_doc)]
-pub trait AudioSession: Send {
-    fn close(&mut self) -> Result<(), AudioError>;
-    fn is_closed(&self) -> bool;
-}
-
-#[allow(clippy::missing_errors_doc)]
-pub trait AudioBackendFactory: Send + Sync {
-    fn open(
-        &self,
-        requirement: AudioSidecarRequirement,
-    ) -> Result<Box<dyn AudioSession>, AudioError>;
 }
 
 #[cfg(test)]

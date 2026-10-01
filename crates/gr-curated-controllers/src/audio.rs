@@ -26,7 +26,7 @@ pub fn dualsense(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
     )
 }
 /// # Errors
-/// Controller-matching and disabled profiles have no endpoints.
+/// Disabled exposure has no endpoints; matching is unavailable.
 pub fn dualshock4(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
     functional(
         "dualshock4.audio.emulated.v1",
@@ -37,7 +37,7 @@ pub fn dualshock4(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
     )
 }
 /// # Errors
-/// Controller-matching and disabled profiles have no endpoints.
+/// Disabled exposure has no endpoints; matching is unavailable.
 pub fn xbox360(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
     functional(
         "xbox360.audio.emulated.v1",
@@ -55,7 +55,7 @@ fn functional(
     limitation: &'static str,
 ) -> Result<AudioProfile, AudioError> {
     if exposure != AudioExposure::Emulated {
-        return Err(AudioError::IncompatibleTopology);
+        return Err(AudioError::Unsupported);
     }
     Ok(AudioProfile::new(
         id,
@@ -97,12 +97,8 @@ mod tests {
             assert_eq!(p.streams()[1].format().channels().len(), mic);
             assert!(!p.limitation().is_empty());
             assert_eq!(
-                builder(AudioExposure::ControllerMatching),
-                Err(AudioError::IncompatibleTopology)
-            );
-            assert_eq!(
                 builder(AudioExposure::Disabled),
-                Err(AudioError::IncompatibleTopology)
+                Err(AudioError::Unsupported)
             );
         }
         let p = dualsense(AudioExposure::Emulated).unwrap();

@@ -41,7 +41,11 @@ fn start_player(
         .find(|endpoint| endpoint.direction() == SampleDirection::HostToController)
         .ok_or("missing playback endpoint")?;
     let channels = playback.format().channels().len();
-    let card_id = playback.host().identity();
+    let card_id = playback
+        .host()
+        .alsa_pcm()
+        .ok_or("endpoint is not ALSA PCM")?
+        .0;
     let preparation = Command::new("python3")
         .arg("scripts/validate-usb-audio-live.py")
         .args([
@@ -148,7 +152,7 @@ fn collect_samples(
                 audio.is_closed(),
                 audio.dropped_playback_frames(),
                 audio.underrun_frames(),
-                audio.stream_timings()
+                virtualgamepad::experimental::audio_instrumentation(audio).stream_timings()
             );
             error
         })?;

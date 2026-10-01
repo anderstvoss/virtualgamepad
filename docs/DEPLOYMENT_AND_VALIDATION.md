@@ -1,5 +1,13 @@
 # Deployment and validation
 
+Current pre-alpha API refinement is tracked in
+[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
+security/recovery acceptance. Native-client continuity and matching fidelity remain
+open. The demo does not yet enable audio; its audio integration and actual
+maintainer feedback follow this package. Historical evidence below retains its
+original scope.
+
 The [application API](APPLICATION_API.md) exposes uinput and USB/UHID for the
 current controllers. Gadget sections below describe experimental research SPI,
 not normal root creation or a supported alpha target. No automatic fallback or
@@ -158,3 +166,20 @@ Run it as the ordinary user after selected uinput installation and consumer
 access preparation. It needs neither SDL nor a privileged test suite. Full SDL
 input parity remains separate. The demo observes typed playback activity; it no
 longer acknowledges effect uploads or treats storing an effect as playback.
+
+
+## Optional audio deployment boundary
+
+For UHID/PipeWire, use the caller-session backend without privileged audio routing.
+For USB/IP, follow the explicit administrator installer in the
+[audio guide](CONTROLLER_AUDIO.md) and retain dedicated worker/allowlisted-port
+ownership. Normal creation neither provisions modules nor changes permissions.
+The implementation remains opt-in WIP pending #115 installed security/recovery
+acceptance. Never recover by detaching a remembered port without verified ownership.
+
+The source-path root consumer check is `python3 scripts/check-root-consumers.py`.
+It compiles the feature matrix with cached dependencies and then rebuilds offline;
+it creates no controller. Exact-revision Git consumption remains a release gate.
+Generate the current working inventory with strict all-feature root rustdoc and
+`python3 scripts/generate-api-inventory.py`. Linux audio builds require their
+existing PipeWire/SPA/ALSA headers and libclang; local build paths stay out of the repo.

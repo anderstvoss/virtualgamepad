@@ -186,7 +186,7 @@ fn exercise(
         pattern_audit.observe_block(read, &playback, pattern);
         // Refill against the USB host's consumed position, not wall time.
         // Capacity is spare room, never a target operating fill.
-        let host_frames = match audio.microphone_host_frames() {
+        let host_frames = match audio.microphone_consumed_frames() {
             Ok(Some(host_frames)) => host_frames,
             Ok(None) => return Err("USB backend did not report microphone host frames".into()),
             Err(error) => return Err(terminal_audio_error(audio, &mut child, error)),

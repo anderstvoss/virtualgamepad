@@ -246,3 +246,164 @@ consumer_case!(
     Xbox360OutputEvent,
     "virtualgamepad.xbox360", audio: None
 );
+
+macro_rules! audio_consumer_case {
+    ($create:ident, $test:ident, $threaded:ident, $module:ident, $controller:ident, $id:literal $(, $field:ident : $value:expr)*) => {
+        fn $create(access: crate::AudioAccess) -> ($controller, Arc<Mutex<Record>>, Arc<Mutex<crate::audio::fake::Record>>) {
+            let record = Arc::new(Mutex::new(Record::default()));
+            let options = CreationOptions::new(RealizationId::LINUX_UINPUT).internal().unwrap();
+            let inner = gr_curated_controllers::$module::test_controller(Box::new(Fake(record.clone()))).unwrap();
+            let (audio, audio_record) = crate::audio::fake::open(options.session.0, access);
+            let association = ControllerAssociation::single(ControllerId::new($id), options, inner.association(), inner.surface().common()).with_audio(Some(&audio));
+            ($controller { inner, association, audio: Some(audio), $($field: $value,)* }, record, audio_record)
+        }
+        #[test]
+        fn $test() {
+            for access in [crate::AudioAccess::Samples, crate::AudioAccess::NativeClient] {
+                for audio_failed in [false, true] {
+                    let (mut controller, hid, audio) = $create(access);
+                    let (mut sibling, sibling_hid, sibling_audio) = $create(access);
+                    let creation = controller.association().creation();
+                    let association = controller.association().clone();
+                    assert_eq!(association.components().len(), 3);
+                    assert_eq!(association.components()[0].kind(), crate::ComponentKind::Input);
+                    for component in &association.components()[1..] {
+                        assert_eq!(component.kind(), crate::ComponentKind::Audio);
+                        assert!(component.surface().is_none());
+                        assert!(component.requested_unique_id().is_none());
+                        assert!(component.requested_physical_path().is_none());
+                        assert!(component.audio_endpoint().unwrap().host().pipewire_node().unwrap().contains(&creation.to_string()));
+                    }
+                    controller.neutralize().unwrap(); controller.commit().unwrap();
+                    { let record = audio.lock().unwrap(); assert_eq!((record.playback_flushes,record.microphone_flushes),(0,0)); }
+                    for _ in 0..8 { controller.service(&mut |_| {}).unwrap(); }
+                    if access == crate::AudioAccess::Samples {
+                        controller.audio().unwrap().flush_playback().unwrap();
+                        controller.audio().unwrap().flush_microphone().unwrap();
+                        assert_eq!(hid.lock().unwrap().closes,0);
+                    }
+                    hid.lock().unwrap().fail_close = true;
+                    audio.lock().unwrap().cleanup_failure = true;
+                    if audio_failed {
+                        audio.lock().unwrap().failed = true;
+                    } else {
+                        // A required HID request escaping the personality fails
+                        // closed in the same service cycle, including its audio.
+                        hid.lock().unwrap().events.push_back(RawReverseEvent::HidGetReportRequest { request_id: 77, report_id: 1, report_type: 0 });
+                    }
+                    assert!(controller.service(&mut |_| {}).is_err());
+                    controller.close(); controller.close();
+                    let diagnostics = controller.diagnostics();
+                    assert_eq!(diagnostics.status(),ControllerStatus::Failed);
+                    let error = diagnostics.last_error().unwrap();
+                    assert!(error.contains("synthetic cleanup failure"));
+                    assert!(error.contains("synthetic audio cleanup failure"));
+                    if audio_failed { assert!(error.contains("synthetic audio failure")); }
+                    assert!(controller.readiness().is_none());
+                    assert!(controller.next_service_in().is_none());
+                    assert!(controller.audio().unwrap().diagnostics().is_closed());
+                    assert_eq!(controller.audio().unwrap().read_playback(&mut [0;2]),Err(crate::AudioError::Closed));
+                    assert_eq!(controller.diagnostics(), diagnostics);
+                    drop(controller);
+                    assert_eq!(hid.lock().unwrap().closes,1);
+                    assert_eq!(audio.lock().unwrap().closes,1);
+                    sibling.service(&mut |_| {}).unwrap();
+                    assert_eq!(sibling_hid.lock().unwrap().closes,0);
+                    assert_eq!(sibling_audio.lock().unwrap().closes,0);
+                    let (replacement, _, replacement_audio) = $create(access);
+                    assert_ne!(replacement.association().creation(),creation);
+                    assert_ne!(replacement.association().components()[1].audio_endpoint().unwrap().host(),association.components()[1].audio_endpoint().unwrap().host());
+                    drop(replacement);
+                    assert_eq!(replacement_audio.lock().unwrap().closes,1);
+                }
+            }
+        }
+        #[test]
+        fn $threaded() {
+            use std::sync::Barrier;
+            let (controller,hid,audio) = $create(crate::AudioAccess::Samples);
+            let controller = Arc::new(Mutex::new(controller));
+            let barrier = Arc::new(Barrier::new(2));
+            std::thread::scope(|scope| {
+                let pcm_controller = controller.clone();
+                let pcm_barrier = barrier.clone();
+                scope.spawn(move || {
+                    for _ in 0..64 {
+                        pcm_barrier.wait();
+                        {
+                            let mut controller = pcm_controller.lock().unwrap();
+                            let audio = controller.audio().unwrap();
+                            audio.read_playback(&mut [0;8]).unwrap();
+                            audio.write_microphone(&[101,-202]).unwrap();
+                        }
+                        pcm_barrier.wait();
+                    }
+                });
+                for _ in 0..64 {
+                    barrier.wait();
+                    {
+                        let mut controller = controller.lock().unwrap();
+                        controller.service(&mut |_| {}).unwrap();
+                        assert!(controller.next_service_in().is_some());
+                    }
+                    barrier.wait();
+                }
+            });
+            { let record = audio.lock().unwrap(); assert_eq!((record.reads,record.writes),(64,64)); }
+            controller.lock().unwrap().close();
+            assert_eq!(hid.lock().unwrap().closes,1);
+            assert_eq!(audio.lock().unwrap().closes,1);
+        }
+    };
+}
+audio_consumer_case!(audio_dualsense, dualsense_required_audio_lifecycle, dualsense_borrowed_audio_threads, dualsense, DualSenseController, "virtualgamepad.dualsense", identity: None);
+audio_consumer_case!(audio_ds4, ds4_required_audio_lifecycle, ds4_borrowed_audio_threads, dualshock4, DualShock4Controller, "virtualgamepad.dualshock4", identity: None);
+audio_consumer_case!(
+    audio_xbox,
+    xbox_required_audio_lifecycle,
+    xbox_borrowed_audio_threads,
+    xbox360,
+    Xbox360Controller,
+    "virtualgamepad.xbox360"
+);
+
+#[test]
+fn mixed_audio_and_no_audio_root_consumers_service_independently() {
+    let (mut sony, _, sony_audio) = audio_dualsense(crate::AudioAccess::Samples);
+    let (mut ds4, _, ds4_audio) = audio_ds4(crate::AudioAccess::NativeClient);
+    let (mut xbox, _, xbox_audio) = audio_xbox(crate::AudioAccess::Samples);
+    let record = Arc::new(Mutex::new(Record::default()));
+    let inner = gr_curated_controllers::switch_pro::test_controller(Box::new(Fake(record.clone())))
+        .unwrap();
+    let options = CreationOptions::new(RealizationId::LINUX_UINPUT)
+        .internal()
+        .unwrap();
+    let association = ControllerAssociation::single(
+        ControllerId::new("virtualgamepad.switch-pro"),
+        options,
+        inner.association(),
+        inner.surface().common(),
+    );
+    let mut switch = SwitchProController { inner, association };
+    for _ in 0..64 {
+        sony.service(&mut |_| {}).unwrap();
+        ds4.service(&mut |_| {}).unwrap();
+        xbox.service(&mut |_| {}).unwrap();
+        switch.service(&mut |_| {}).unwrap();
+        sony.audio().unwrap().read_playback(&mut [0; 8]).unwrap();
+        xbox.audio()
+            .unwrap()
+            .write_microphone(&[101, -202])
+            .unwrap();
+    }
+    ds4.close();
+    sony.service(&mut |_| {}).unwrap();
+    xbox.service(&mut |_| {}).unwrap();
+    switch.service(&mut |_| {}).unwrap();
+    assert_eq!(ds4_audio.lock().unwrap().closes, 1);
+    assert_eq!(sony_audio.lock().unwrap().closes, 0);
+    assert_eq!(xbox_audio.lock().unwrap().closes, 0);
+    sony.close();
+    xbox.close();
+    switch.close();
+}

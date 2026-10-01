@@ -21,7 +21,7 @@ pub(crate) struct Bridge {
 }
 #[derive(Default)]
 struct Metrics {
-    timings: Mutex<Vec<crate::AudioStreamTiming>>,
+    timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
     source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
     graph_input_fill: AtomicU64,
@@ -46,7 +46,7 @@ impl Metrics {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = session
             .timings()
             .into_iter()
-            .map(|timing| crate::AudioStreamTiming {
+            .map(|timing| crate::audio::AudioStreamTiming {
                 endpoint: timing.endpoint,
                 graph_ticks: timing.graph_ticks,
                 tick_rate: (timing.rate_num, timing.rate_denom),
@@ -229,7 +229,10 @@ impl Bridge {
                     );
                     thread_metrics.capture(&session);
                     session.close();
-                    result
+                    match crate::audio::merge_errors(result.err(), session.error().cloned()) {
+                        Some(error) => Err(error),
+                        None => Ok(()),
+                    }
                 })();
                 if let Err(problem) = result {
                     let _ = startup.send(Err(problem.clone()));
@@ -271,7 +274,7 @@ impl Bridge {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
     }
-    pub(crate) fn timings(&self) -> Vec<crate::AudioStreamTiming> {
+    pub(crate) fn timings(&self) -> Vec<crate::audio::AudioStreamTiming> {
         self.metrics
             .timings
             .lock()
@@ -497,7 +500,7 @@ mod tests {
     }
     #[test]
     fn graph_diagnostics_remain_readable_after_bridge_closure() {
-        let timing = crate::AudioStreamTiming {
+        let timing = crate::audio::AudioStreamTiming {
             endpoint: "synthetic.native".into(),
             graph_ticks: 42,
             tick_rate: (1, 48_000),

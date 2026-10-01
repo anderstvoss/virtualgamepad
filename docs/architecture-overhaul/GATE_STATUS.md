@@ -1,10 +1,21 @@
 # Architecture gate status
 
-**Current execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
+**Current execution:** [Alpha API refinement](ALPHA_API_REFINEMENT.md), baseline PR #121.
+The older baseline and batches below are retained historical records. Final API
+freeze, interactive audio feedback and release are pending.
+
+**Prior execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
 on merged PR108. It supersedes the execution order below; historical experiment
 results remain unchanged. Gate T representation is required for alpha, while its
 unavailable physical evidence remains explicitly deferred. Final API review and
 release require the maintainer's controller/demo refinement checkpoint.
+
+## Current evidence axes
+
+F/H implementations and deterministic tests exist; selected live sample/lifecycle
+results pass in their recorded scope. Native continuity, installed recovery/security
+and physical matching remain unaccepted (#112/#115/#116). These are independent
+axes, not an implementation absence or a broad gate pass. USB/IP is opt-in WIP.
 
 ## Historical planning and evidence
 
@@ -24,8 +35,8 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
 | F | Host audio coherence | E6 host audio | blocked | Codex | [EXP-0023](experiments/EXP-0023-controller-audio.md): short PipeWire checks pass; sustained failures and routing/fidelity work remain |
 | G | Broker capability/startup/latency | Early probe; E5 replacement | blocked | Codex | [EXP-0004](experiments/EXP-0004-gadget-capability.md); source API lacks full control metadata/completion, live profile unprovisioned |
-| H | USB Audio implementation depth | E6 USB audio | blocked | Codex | [EXP-0025](experiments/EXP-0025-local-usbip-audio.md): scoped DualSense stock-VHCI duplex feasibility; production and full acceptance remain |
-| I | Realization variant granularity | Affected E6 variants | not_run | unassigned | None |
+| H | USB Audio implementation depth | E6 USB audio | blocked | Codex | [EXP-0025](experiments/EXP-0025-local-usbip-audio.md): scoped DualSense stock-VHCI duplex feasibility; production implemented; full acceptance remains |
+| I | Realization variant granularity | Primary + explicit components | passed | Codex | [ADR-0017](decisions/ADR-0017-primary-realization-and-audio-components.md): architecture/deterministic scope only |
 | J | Required replies and deadlines | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | K | Corpus generation boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | L | BT personality over UHID | E6 BT protocol | not_run | unassigned | None |

@@ -1,7 +1,7 @@
 //! Controller-owned audio. Backend factories remain implementation interfaces.
 pub(crate) mod backend;
 use crate::{
-    AudioAccess, AudioError, AudioExposure, AudioOptions, AudioRead, ControllerError, PcmFormat,
+    AudioAccess, AudioError, AudioExposure, AudioOptions, ControllerError, PcmFormat,
     SampleDirection,
 };
 
@@ -21,11 +21,16 @@ pub enum AudioEndpointSelector {
     },
 }
 impl AudioEndpointSelector {
+    /// ALSA card identity and PCM indices, scoped to this open creation.
     #[must_use]
-    pub fn identity(&self) -> &str {
+    pub fn alsa_pcm(&self) -> Option<(&str, u8, u8)> {
         match self {
-            Self::PipeWireNode { name } => name,
-            Self::AlsaPcm { card_id, .. } => card_id,
+            Self::AlsaPcm {
+                card_id,
+                device,
+                subdevice,
+            } => Some((card_id, *device, *subdevice)),
+            _ => None,
         }
     }
     #[must_use]
@@ -78,6 +83,62 @@ impl AudioEndpoint {
         self.access
     }
 }
+/// One contiguous application playback segment. Reads stop before a discontinuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioRead {
+    pub frames: usize,
+    pub first_frame: u64,
+    pub discontinuity: bool,
+}
+impl AudioRead {
+    #[cfg(any(
+        test,
+        all(
+            target_os = "linux",
+            any(feature = "audio-pipewire", feature = "audio-usbip")
+        )
+    ))]
+    pub(crate) fn from_backend(read: gr_audio_contract::queue::PcmRead) -> Self {
+        Self {
+            frames: read.frames,
+            first_frame: read.first_frame,
+            discontinuity: read.discontinuity,
+        }
+    }
+}
+/// Retained application health, independent of backend graph instrumentation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioDiagnostics {
+    closed: bool,
+    failed: bool,
+    underrun_frames: u64,
+    dropped_playback_frames: u64,
+    last_error: Option<AudioError>,
+}
+impl AudioDiagnostics {
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        self.closed
+    }
+    #[must_use]
+    pub const fn failed(&self) -> bool {
+        self.failed
+    }
+    #[must_use]
+    pub const fn underrun_frames(&self) -> u64 {
+        self.underrun_frames
+    }
+    #[must_use]
+    pub const fn dropped_playback_frames(&self) -> u64 {
+        self.dropped_playback_frames
+    }
+    #[must_use]
+    pub const fn last_error(&self) -> Option<&AudioError> {
+        self.last_error.as_ref()
+    }
+}
+
 /// Observed backend-stream clock. Positions are stream-local graph ticks, not
 /// application queue frame positions or a shared hardware clock. Retained after
 /// closure; absent until the endpoint has processed audio. Delay is a graph
@@ -107,9 +168,17 @@ pub struct ControllerAudio {
     session: Box<dyn backend::Backend>,
 }
 impl ControllerAudio {
+    /// Snapshot retained health and application-relevant loss counters.
     #[must_use]
-    pub fn stream_timings(&self) -> Vec<AudioStreamTiming> {
-        self.session.timings()
+    pub fn diagnostics(&self) -> AudioDiagnostics {
+        let failed = self.session.failed();
+        AudioDiagnostics {
+            closed: self.session.is_closed(),
+            failed,
+            underrun_frames: self.session.underrun_frames(),
+            dropped_playback_frames: self.session.dropped_playback_frames(),
+            last_error: self.session.error().cloned(),
+        }
     }
     #[must_use]
     pub fn endpoints(&self) -> &[AudioEndpoint] {
@@ -123,18 +192,21 @@ impl ControllerAudio {
     /// # Errors
     /// Returns closed, native-client ownership or frame-alignment errors.
     pub fn read_playback(&mut self, dest: &mut [i16]) -> Result<AudioRead, AudioError> {
+        self.ensure_open()?;
         self.session.read_playback(dest)
     }
     /// Write a prefix of microphone frames; retry the unaccepted suffix.
     /// # Errors
     /// Returns closed, native-client ownership or frame-alignment errors.
     pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
+        self.ensure_open()?;
         self.session.write_microphone(samples)
     }
     /// Explicitly discard queued playback; input neutralization never does this.
     /// # Errors
     /// Returns closed or native-client ownership errors.
     pub fn flush_playback(&mut self) -> Result<(), AudioError> {
+        self.ensure_open()?;
         self.session.flush_playback()
     }
     /// Discard queued microphone frames at the next backend read. Audio already
@@ -142,6 +214,7 @@ impl ControllerAudio {
     /// # Errors
     /// Returns closed or native-client ownership errors.
     pub fn flush_microphone(&mut self) -> Result<(), AudioError> {
+        self.ensure_open()?;
         self.session.flush_microphone()
     }
     #[must_use]
@@ -156,41 +229,15 @@ impl ControllerAudio {
     pub fn dropped_playback_frames(&self) -> u64 {
         self.session.dropped_playback_frames()
     }
-    /// Frames emitted as silence by a native caller playback endpoint because
-    /// its associated source queue was empty. This is distinct from USB host
-    /// microphone silence and from discarded playback queue frames. `None`
-    /// means this backend does not report the separate native-source counter.
-    #[must_use]
-    pub fn native_playback_underrun_frames(&self) -> Option<u64> {
-        self.session.native_playback_underrun_frames()
-    }
-    /// Native microphone frames discarded at the caller-session `PipeWire`
-    /// input before the USB worker queue. `None` means no separate graph
-    /// counter is available for this backend.
-    #[must_use]
-    pub fn native_microphone_dropped_frames(&self) -> Option<u64> {
-        self.session.native_microphone_dropped_frames()
-    }
-    /// Current and peak native microphone graph queue fill, in frames. Queue
-    /// capacity is spare room for scheduling stalls, not a desired latency.
-    #[must_use]
-    pub fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
-        self.session.native_microphone_queue_frames()
-    }
-    /// Maximum observed credit-request and bridge-loop intervals in
-    /// microseconds. These scheduling observations are not audio latency.
-    #[must_use]
-    pub fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
-        self.session.native_bridge_scheduling_us()
-    }
-    /// USB capture frames serviced since creation, including underrun silence.
+    /// Microphone frames consumed since creation, including underrun silence.
+    /// Available only when this backend reports sample-pacing progress.
     /// This is scheduling credit for sample-owned streams, not proof that a
     /// canceled USB request reached the host. Use a small operating fill;
     /// queue capacity is only spare room for bounded stalls. Other backends
     /// return `None`.
     /// # Errors
     /// Returns a terminal backend error if consumption can no longer be read.
-    pub fn microphone_host_frames(&mut self) -> Result<Option<u64>, AudioError> {
+    pub fn microphone_consumed_frames(&mut self) -> Result<Option<u64>, AudioError> {
         self.session.microphone_host_frames()
     }
     /// USB microphone frames discarded after the host stopped consuming its
@@ -204,6 +251,13 @@ impl ControllerAudio {
     #[must_use]
     pub fn last_error(&self) -> Option<&AudioError> {
         self.session.error()
+    }
+    fn ensure_open(&self) -> Result<(), AudioError> {
+        if self.session.is_closed() || self.session.failed() {
+            Err(AudioError::Closed)
+        } else {
+            Ok(())
+        }
     }
     pub(crate) fn failed(&self) -> bool {
         self.session.failed()
@@ -424,17 +478,20 @@ mod tests {
             audio.endpoints()[0].clock_domain(),
             audio.endpoints()[1].clock_domain()
         );
-        assert_eq!(audio.endpoints()[0].host().identity(), "Virtual_7");
+        assert_eq!(
+            audio.endpoints()[0].host().alsa_pcm(),
+            Some(("Virtual_7", 0, 0))
+        );
         assert!(
             audio
                 .endpoints()
                 .iter()
                 .all(|endpoint| endpoint.caller().is_none())
         );
-        assert_eq!(audio.microphone_host_frames().unwrap(), Some(96));
+        assert_eq!(audio.microphone_consumed_frames().unwrap(), Some(96));
         assert_eq!(audio.underrun_frames(), 48);
         assert_eq!(audio.dropped_microphone_frames().unwrap(), Some(24));
-        assert_eq!(audio.native_playback_underrun_frames(), None);
+        assert_eq!(audio.session.native_playback_underrun_frames(), None);
         audio.close();
         worker_reply.join().unwrap();
         drop((worker_playback, worker_microphone));
@@ -466,8 +523,76 @@ mod tests {
             subdevice: 0,
         };
         assert_eq!(graph.pipewire_node(), Some("virtual.playback.7"));
-        assert_eq!(graph.identity(), "virtual.playback.7");
+        assert_eq!(graph.alsa_pcm(), None);
         assert_eq!(alsa.pipewire_node(), None);
-        assert_eq!(alsa.identity(), "virtualgamepad_audio_7");
+        assert_eq!(alsa.alsa_pcm(), Some(("virtualgamepad_audio_7", 0, 0)));
     }
+}
+
+/// Unstable backend acceptance instrumentation, borrowed for bounded inspection.
+#[cfg(feature = "experimental")]
+pub struct AudioInstrumentation<'a> {
+    audio: &'a ControllerAudio,
+}
+#[cfg(feature = "experimental")]
+impl<'a> AudioInstrumentation<'a> {
+    pub(crate) fn new(audio: &'a ControllerAudio) -> Self {
+        Self { audio }
+    }
+    #[must_use]
+    pub fn stream_timings(&self) -> Vec<AudioStreamTiming> {
+        self.audio.session.timings()
+    }
+    /// Frames emitted as silence by a native caller playback endpoint because
+    /// its associated source queue was empty. This is distinct from USB host
+    /// microphone silence and from discarded playback queue frames. `None`
+    /// means this backend does not report the separate native-source counter.
+    #[must_use]
+    pub fn native_playback_underrun_frames(&self) -> Option<u64> {
+        self.audio.session.native_playback_underrun_frames()
+    }
+    /// Native microphone frames discarded at the caller-session `PipeWire`
+    /// input before the USB worker queue. `None` means no separate graph
+    /// counter is available for this backend.
+    #[must_use]
+    pub fn native_microphone_dropped_frames(&self) -> Option<u64> {
+        self.audio.session.native_microphone_dropped_frames()
+    }
+    /// Current and peak native microphone graph queue fill, in frames. Queue
+    /// capacity is spare room for scheduling stalls, not a desired latency.
+    #[must_use]
+    pub fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
+        self.audio.session.native_microphone_queue_frames()
+    }
+    /// Maximum observed credit-request and bridge-loop intervals in
+    /// microseconds. These scheduling observations are not audio latency.
+    #[must_use]
+    pub fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
+        self.audio.session.native_bridge_scheduling_us()
+    }
+}
+
+impl Drop for ControllerAudio {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod fake;
+
+/// Preserve the first failure and all later cleanup failures on an owned backend.
+#[cfg(any(test, all(target_os = "linux", feature = "audio-usbip")))]
+pub(crate) fn merge_errors(
+    primary: Option<AudioError>,
+    cleanup: impl IntoIterator<Item = AudioError>,
+) -> Option<AudioError> {
+    cleanup.into_iter().fold(primary, |primary, next| {
+        Some(match primary {
+            None => next,
+            Some(primary) => AudioError::Backend {
+                reason: format!("{primary}; cleanup: {next}"),
+            },
+        })
+    })
 }

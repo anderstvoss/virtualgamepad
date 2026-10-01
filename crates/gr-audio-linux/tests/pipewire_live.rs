@@ -124,9 +124,18 @@ fn pipewire_native_mode_has_explicit_caller_endpoints() {
     )
     .unwrap();
     assert!(s.endpoints().iter().all(|e| e.caller_node.is_some()));
-    assert!(s.read_playback(&mut [0; 4]).is_err());
-    assert!(s.write_microphone(&[0; 2]).is_err());
-    assert!(s.flush_microphone().is_err());
+    assert_eq!(
+        s.read_playback(&mut [0; 4]),
+        Err(gr_audio_contract::AudioError::OwnershipMismatch)
+    );
+    assert_eq!(
+        s.write_microphone(&[0; 2]),
+        Err(gr_audio_contract::AudioError::OwnershipMismatch)
+    );
+    assert_eq!(
+        s.flush_microphone(),
+        Err(gr_audio_contract::AudioError::OwnershipMismatch)
+    );
     s.close();
     assert!(s.error().is_none());
     assert_eq!(
