@@ -82,6 +82,7 @@ struct TouchpadState {
 pub(super) struct InputUiState {
     holds: HashMap<InputControlId, bool>,
     latched_buttons: HashSet<HoldKey>,
+    momentary_buttons: HashSet<HoldKey>,
     snapping_dpads: HashMap<InputControlId, SnappingDpadState>,
     touchpads: HashMap<InputControlId, TouchpadState>,
 }
@@ -110,6 +111,7 @@ impl InputUiState {
     pub(super) fn release_all(&mut self) {
         self.holds.clear();
         self.latched_buttons.clear();
+        self.momentary_buttons.clear();
         self.snapping_dpads.clear();
         for touchpad in self.touchpads.values_mut() {
             for contact in &mut touchpad.contacts {
@@ -246,6 +248,7 @@ fn title_separator(ui: &mut egui::Ui, width: f32) {
 }
 
 fn release_latched_button(state: &mut InputUiState, key: HoldKey, mut release: impl FnMut()) {
+    state.momentary_buttons.remove(&key);
     if state.latched_buttons.remove(&key) {
         release();
     }
@@ -369,7 +372,7 @@ pub(super) fn draw_face_cluster(
                 let key = HoldKey::Face(input.button);
                 let response = ui.put(
                     button_rect,
-                    Button::new(input.label).selected(state.latched_buttons.contains(&key)),
+                    Button::new(input.label).selected(button_is_selected(state, key)),
                 );
                 emit_holdable(ui, &response, cluster.id(), key, state, |pressed| {
                     events.push(InputEvent::Face {
@@ -429,7 +432,7 @@ pub(super) fn draw_dpad_cluster(
                             center,
                             Vec2::new((cell.x - 4.0).max(1.0), CONTROL_HEIGHT),
                         ),
-                        Button::new(label).selected(state.latched_buttons.contains(&key)),
+                        Button::new(label).selected(button_is_selected(state, key)),
                     );
                     emit_dpad_holdable(ui, &response, cluster, key, state, events);
                 }
@@ -541,7 +544,7 @@ pub(super) fn draw_trigger_stack(
                             let key = HoldKey::Control(id);
                             let response = ui.add(
                                 Button::new("Press")
-                                    .selected(current || state.latched_buttons.contains(&key))
+                                    .selected(current || button_is_selected(state, key))
                                     .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
                             );
                             emit_holdable(ui, &response, stack.id(), key, state, |pressed| {
@@ -1063,7 +1066,7 @@ fn holdable_button_sized(
 ) {
     let response = ui.add(
         Button::new(label)
-            .selected(state.latched_buttons.contains(&key))
+            .selected(button_is_selected(state, key))
             .min_size(Vec2::new(width, CONTROL_HEIGHT)),
     );
     emit_holdable(ui, &response, category, key, state, set);
@@ -1074,7 +1077,7 @@ fn touchpad_reset_fill(ui: &egui::Ui) -> Color32 {
 }
 
 fn emit_holdable(
-    ui: &mut egui::Ui,
+    _ui: &mut egui::Ui,
     response: &egui::Response,
     category: InputControlId,
     key: HoldKey,
@@ -1083,9 +1086,7 @@ fn emit_holdable(
 ) {
     let hold = state.held(category);
     let latched = state.latched_buttons.contains(&key);
-    let previous = ui
-        .data(|data| data.get_temp::<bool>(response.id))
-        .unwrap_or(false);
+    let previous = state.momentary_buttons.contains(&key);
     if let Some(pressed) = next_button_state(ButtonInteraction {
         hold,
         latched,
@@ -1093,17 +1094,28 @@ fn emit_holdable(
         pointer_down: response.is_pointer_button_down_on(),
         clicked: response.clicked(),
     }) {
-        if hold {
-            if pressed {
-                state.latched_buttons.insert(key);
-            } else {
-                state.latched_buttons.remove(&key);
-            }
-        } else {
-            ui.data_mut(|data| data.insert_temp(response.id, pressed));
-        }
+        apply_button_press_state(state, key, hold, pressed);
         set(pressed);
     }
+}
+
+fn apply_button_press_state(state: &mut InputUiState, key: HoldKey, hold: bool, pressed: bool) {
+    if hold {
+        state.momentary_buttons.remove(&key);
+        if pressed {
+            state.latched_buttons.insert(key);
+        } else {
+            state.latched_buttons.remove(&key);
+        }
+    } else if pressed {
+        state.momentary_buttons.insert(key);
+    } else {
+        state.momentary_buttons.remove(&key);
+    }
+}
+
+fn button_is_selected(state: &InputUiState, key: HoldKey) -> bool {
+    state.latched_buttons.contains(&key) || state.momentary_buttons.contains(&key)
 }
 
 fn emit_dpad_holdable(
@@ -1117,6 +1129,9 @@ fn emit_dpad_holdable(
     let HoldKey::Dpad(direction) = key else {
         unreachable!("D-pad controls always use a D-pad hold key");
     };
+    if state.held(cluster.id()) {
+        state.momentary_buttons.remove(&key);
+    }
     if state.held(cluster.id()) && response.clicked() {
         let pressed = !state.latched_buttons.contains(&key);
         if let Some(opposite) = held_dpad_opposite(cluster.hold_behavior(), pressed, direction) {
@@ -1445,6 +1460,34 @@ mod tests {
         assert_eq!(next_momentary_state(true, false, false), Some(false));
         assert_eq!(next_momentary_state(false, false, false), None);
         assert_eq!(next_momentary_state(true, true, false), None);
+    }
+
+    #[test]
+    fn momentary_button_feedback_is_visible_for_one_frame_and_hold_stays_latched() {
+        let key = HoldKey::Control(InputControlId::new("touchpad-click"));
+        let mut state = InputUiState::default();
+
+        apply_button_press_state(&mut state, key, false, true);
+        assert!(button_is_selected(&state, key));
+        assert_eq!(
+            next_button_state(ButtonInteraction {
+                hold: false,
+                latched: false,
+                previous_momentary: true,
+                pointer_down: false,
+                clicked: false,
+            }),
+            Some(false)
+        );
+        // The selected style is consumed by this frame before the release transition.
+        assert!(button_is_selected(&state, key));
+        apply_button_press_state(&mut state, key, false, false);
+        assert!(!button_is_selected(&state, key));
+
+        apply_button_press_state(&mut state, key, true, true);
+        assert!(button_is_selected(&state, key));
+        assert!(state.latched_buttons.contains(&key));
+        assert!(!state.momentary_buttons.contains(&key));
     }
 
     #[test]
@@ -1780,6 +1823,9 @@ mod tests {
         state
             .latched_buttons
             .insert(HoldKey::Control(InputControlId::new("button")));
+        state
+            .momentary_buttons
+            .insert(HoldKey::Control(InputControlId::new("momentary-button")));
         state.snapping_dpads.insert(
             InputControlId::new("dpad"),
             SnappingDpadState {
@@ -1799,6 +1845,7 @@ mod tests {
         state.release_all();
         assert!(state.holds.is_empty());
         assert!(state.latched_buttons.is_empty());
+        assert!(state.momentary_buttons.is_empty());
         assert!(state.snapping_dpads.is_empty());
         assert!(!state.touchpads[&touchpad.id()].contacts[1].active);
         assert!(!state.touchpads[&touchpad.id()].contacts[1].held);
