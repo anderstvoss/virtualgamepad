@@ -2250,7 +2250,17 @@ impl eframe::App for App {
                                                 (audio_view.as_ref(), audio_routing.as_mut())
                                             {
                                                 if !routing.inputs.is_empty() {
-                                                    wide_card(ui, "Microphone", |ui| {
+                                                    wide_card_with_heading(
+                                                        ui,
+                                                        |ui| {
+                                                            ui.horizontal(|ui| {
+                                                                ui.strong("Microphone");
+                                                                ui.small_button("!").on_hover_text(
+                                                                    "Microphones are present on the emulated controller at all times. Host audio is sent to an emulated microphone only while that device's Enabled checkbox is selected.",
+                                                                );
+                                                            });
+                                                        },
+                                                        |ui| {
                                                         audio_routing_changed |= audio_lab::draw_input_routes(
                                                             ui,
                                                             routing,
@@ -2617,12 +2627,26 @@ fn wide_card<R>(
     title: &str,
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
+    wide_card_with_heading(
+        ui,
+        |ui| {
+            ui.strong(title);
+        },
+        add,
+    )
+}
+
+fn wide_card_with_heading<R>(
+    ui: &mut egui::Ui,
+    heading: impl FnOnce(&mut egui::Ui),
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
     let frame = egui::Frame::group(ui.style()).inner_margin(8.0);
     let margin = frame.total_margin();
     let content_width = (ui.available_width() - margin.left - margin.right).max(0.0);
     frame.show(ui, |ui| {
         ui.set_min_width(content_width);
-        ui.strong(title);
+        heading(ui);
         ui.separator();
         add(ui)
     })
