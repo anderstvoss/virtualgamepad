@@ -1003,7 +1003,6 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
 
 fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
     ui.horizontal(|ui| {
-        ui.strong("Audio");
         let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
         if info.hovered() {
             egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {

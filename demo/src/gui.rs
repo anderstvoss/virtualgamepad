@@ -2143,9 +2143,6 @@ impl eframe::App for App {
                                     mouse_wheel: true,
                                 })
                                 .show(ui, |ui| {
-                                    if let Some(cleanup) = &self.last_cleanup {
-                                        ui.collapsing("Last closed controller diagnostics", |ui| { ui.label(cleanup); });
-                                    }
                                     let mut polling_period_seconds = self.polling_period_seconds;
                                     if let Some(index) = self
                                         .selected_controller
@@ -2153,19 +2150,19 @@ impl eframe::App for App {
                                     {
                                         let named = &mut self.controllers[index];
                                         ui.heading(&named.name);
-                                        if ui.button("Recreate with current creation choices").on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.").clicked() {
-                                            recreate_controller = Some(index);
-                                        }
                                         let audio_view = named.audio_view.clone();
                                         let mut audio_routing =
                                             audio_view.as_ref().map(|view| view.routing.clone());
                                         let mut audio_routing_changed = false;
+                                        let mut recreation_clicked = false;
                                         if let Some(action) = draw_controller_state(
                                             ui,
                                             named,
                                             &mut polling_period_seconds,
                                             &mut self.service_gap_percentiles,
                                             audio_view.as_ref(),
+                                            self.last_cleanup.as_deref(),
+                                            &mut recreation_clicked,
                                         ) {
                                             if !named
                                                 .service_worker
@@ -2176,6 +2173,9 @@ impl eframe::App for App {
                                             {
                                                 self.diagnostic_log.push(DiagnosticLogEntry { message: "Audio action queue busy; retry after the next service cycle.".into(), success: false });
                                             }
+                                        }
+                                        if recreation_clicked {
+                                            recreate_controller = Some(index);
                                         }
                                         let input_width = ui.available_width();
                                         let section_frame = egui::Frame::group(ui.style());
@@ -2389,6 +2389,8 @@ fn draw_controller_state(
     polling_period_seconds: &mut u32,
     gap_percentiles: &mut ServiceGapPercentileCache,
     audio_view: Option<&audio_lab::View>,
+    last_cleanup: Option<&str>,
+    recreation_clicked: &mut bool,
 ) -> Option<audio_lab::Action> {
     let identifier = controller_identifier(controller);
     let target = target_label(controller.options.target);
@@ -2444,22 +2446,64 @@ fn draw_controller_state(
                 }
             }
         });
-        ui.separator();
-        draw_controller_metrics(
+        let mut audio_action = None;
+        draw_controller_subsections(
             ui,
-            controller.options.id,
-            &controller.service_metrics,
-            polling_period_seconds,
-            gap_percentiles,
+            audio_lab::controller_audio_enabled(controller.options.audio),
+            |ui| {
+                draw_controller_metrics(
+                    ui,
+                    controller.options.id,
+                    &controller.service_metrics,
+                    polling_period_seconds,
+                    gap_percentiles,
+                );
+            },
+            |ui| {
+                audio_action = audio_lab::draw_diagnostics(ui, audio_view);
+            },
+            |ui| {
+                if ui
+                    .button("Recreate with current creation choices")
+                    .on_hover_text("Closes this creation first, then creates the same family with the sidebar realization/audio choices. Siblings stay open.")
+                    .clicked()
+                {
+                    *recreation_clicked = true;
+                }
+                if let Some(cleanup) = last_cleanup {
+                    ui.collapsing("Last closed controller diagnostics", |ui| {
+                        ui.label(cleanup);
+                    });
+                }
+            },
         );
-        if audio_lab::controller_audio_enabled(controller.options.audio) {
-            ui.separator();
-            audio_lab::draw_diagnostics(ui, audio_view)
-        } else {
-            None
-        }
+        audio_action
     })
     .inner
+}
+
+fn draw_controller_subsections(
+    ui: &mut egui::Ui,
+    audio_enabled: bool,
+    statistics_content: impl FnOnce(&mut egui::Ui),
+    audio_content: impl FnOnce(&mut egui::Ui),
+    recreation_content: impl FnOnce(&mut egui::Ui),
+) -> bool {
+    let statistics = ui
+        .collapsing("Statistics", statistics_content)
+        .header_response
+        .rect;
+    let audio = audio_enabled.then(|| ui.collapsing("Audio", audio_content).header_response.rect);
+    let recreation = ui
+        .collapsing("Recreation", recreation_content)
+        .header_response
+        .rect;
+    let ordered = statistics.bottom() <= recreation.top()
+        && audio.is_none_or(|audio| {
+            statistics.bottom() <= audio.top() && audio.bottom() <= recreation.top()
+        });
+    debug_assert!(ordered);
+    ordered
 }
 
 fn draw_controller_metrics(
@@ -4411,6 +4455,34 @@ mod tests {
             }
             previous_height = Some(metrics_rect.height());
         }
+    }
+
+    #[test]
+    fn controller_subsections_keep_audio_and_recreation_after_statistics() {
+        let context = egui::Context::default();
+        let mut sections = None;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(500.0, 240.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    sections = Some(draw_controller_subsections(
+                        ui,
+                        true,
+                        |_| {},
+                        |_| {},
+                        |_| {},
+                    ));
+                });
+            },
+        );
+
+        assert!(sections.expect("controller subsections should render"));
     }
 
     #[test]
