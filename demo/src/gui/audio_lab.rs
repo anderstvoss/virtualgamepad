@@ -200,7 +200,7 @@ impl AudioRouter {
         for input in routing
             .inputs
             .iter()
-            .filter(|route| route.enabled && allow_capture)
+            .filter(|route| route.connected && route.enabled && allow_capture)
         {
             let mut ports = Vec::new();
             for group in input_device_groups(input) {
@@ -337,6 +337,7 @@ fn discovered_devices(
 pub(super) struct InputRoute {
     pub id: String,
     pub label: String,
+    pub connected: bool,
     pub enabled: bool,
     pub channel_device_ids: Vec<String>,
     pub manual_channel_control: bool,
@@ -393,6 +394,7 @@ impl RoutingState {
             state.inputs.push(InputRoute {
                 id: "onboard-microphone".into(),
                 label: "Built-in microphone".into(),
+                connected: true,
                 enabled: false,
                 channel_device_ids: vec!["default".into(); topology.onboard_microphone_channels],
                 manual_channel_control: false,
@@ -427,17 +429,30 @@ impl RoutingState {
                 peak: vec![0; channels],
             });
         }
-        if let Some(connector) = topology
-            .jack
-            .filter(|_| connected && self.jack_device.input_channels() > 0)
-        {
-            let channels = self.jack_device.input_channels();
-            self.inputs.push(InputRoute {
-                id: "jack-microphone".into(),
-                label: format!(
+        if let Some(connector) = topology.jack {
+            let microphone_connected = connected && self.jack_device.input_channels() > 0;
+            let channels = if microphone_connected {
+                self.jack_device.input_channels()
+            } else {
+                JackDevice::Headset.input_channels()
+            };
+            let label = if microphone_connected && self.jack_device == JackDevice::Microphone {
+                "Jack microphone".to_owned()
+            } else if microphone_connected {
+                format!(
                     "{} microphone",
                     self.jack_device.label_for_connector(connector)
-                ),
+                )
+            } else {
+                format!(
+                    "{} microphone",
+                    JackDevice::Headset.label_for_connector(connector)
+                )
+            };
+            self.inputs.push(InputRoute {
+                id: "jack-microphone".into(),
+                label,
+                connected: microphone_connected,
                 enabled: false,
                 channel_device_ids: vec!["default".into(); channels],
                 manual_channel_control: false,
@@ -1571,6 +1586,13 @@ pub(super) fn draw_input_routes(
         if index > 0 {
             ui.separator();
         }
+        if !route.connected {
+            ui.horizontal(|ui| {
+                ui.label(&route.label);
+                ui.weak("Disconnected");
+            });
+            continue;
+        }
         if route.source_channels == 1 {
             changed |= draw_compact_input_route(ui, route, devices, capture_channel_labels);
         } else {
@@ -1904,6 +1926,38 @@ mod tests {
     }
 
     #[test]
+    fn disconnected_headset_microphone_keeps_a_visible_status_row() {
+        let context = egui::Context::default();
+        let mut routing = RoutingState::for_topology(
+            AudioTopology::for_family(ControllerFamily::Xbox360),
+            HostBackend::Alsa,
+        );
+        assert_eq!(routing.inputs.len(), 1);
+        assert_eq!(routing.inputs[0].label, "Wired headset microphone");
+        assert!(!routing.inputs[0].connected);
+        let devices = host_devices(HostBackend::Alsa);
+        let mut row_height = 0.0;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 200.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    let top = ui.cursor().top();
+                    draw_input_routes(ui, &mut routing, &devices, &[]);
+                    row_height = ui.cursor().top() - top;
+                });
+            },
+        );
+        assert!(row_height > 0.0);
+        assert!(!routing.inputs[0].connected);
+    }
+
+    #[test]
     fn active_audio_surface_follows_the_creation_audio_setting() {
         assert!(!controller_audio_enabled(CreationAudio {
             enabled: false,
@@ -1979,9 +2033,11 @@ mod tests {
                 .iter()
                 .map(|route| route.id.as_str())
                 .collect::<Vec<_>>(),
-            ["onboard-microphone"]
+            ["onboard-microphone", "jack-microphone"]
         );
         assert!(!state.inputs[0].enabled);
+        assert!(!state.inputs[1].connected);
+        assert!(state.inputs[1].label.contains("TRRS"));
         assert_eq!(state.outputs[0].source_channels, [None]);
         assert_eq!(state.outputs[0].channel_device_ids, ["default"]);
         state.set_jack_connected(true, topology);
@@ -1990,6 +2046,7 @@ mod tests {
         assert_eq!(state.outputs[1].channel_device_ids, ["default", "default"]);
         assert_eq!(state.inputs.len(), 2);
         assert!(state.inputs[1].label.contains("TRRS"));
+        assert!(state.inputs[1].connected);
         assert_eq!(state.inputs[0].id, "onboard-microphone");
         assert_eq!(state.inputs[1].id, "jack-microphone");
         state.inputs[0].channel_device_ids = vec!["built-in-capture".into(); 2];
@@ -2003,7 +2060,9 @@ mod tests {
         assert_eq!(state.inputs.len(), 2);
         state.set_jack_connected(false, topology);
         assert_eq!(state.outputs.len(), 1);
-        assert_eq!(state.inputs.len(), 1);
+        assert_eq!(state.inputs.len(), 2);
+        assert!(!state.inputs[1].connected);
+        assert!(state.inputs[1].label.contains("TRRS"));
     }
 
     #[test]
@@ -2039,11 +2098,14 @@ mod tests {
         assert!(state.jack_connected);
         assert_eq!(state.outputs.len(), 2);
         assert_eq!(state.inputs.len(), 2);
+        assert!(state.inputs[1].connected);
 
         state.select_jack_device(None, topology);
         assert!(!state.jack_connected);
         assert_eq!(state.outputs.len(), 1);
-        assert_eq!(state.inputs.len(), 1);
+        assert_eq!(state.inputs.len(), 2);
+        assert!(!state.inputs[1].connected);
+        assert_eq!(state.inputs[1].label, "TRRS headset microphone");
     }
 
     #[test]
