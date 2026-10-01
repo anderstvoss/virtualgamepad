@@ -754,6 +754,8 @@ struct NamedController {
     indicators: ReverseIndicators,
     output_log: Vec<String>,
     service_worker: Option<ServiceWorker<Controller>>,
+    // Keep the status block allocated when the worker is briefly holding its display lock.
+    service_metrics: ServiceMetrics,
     input_ui: InputUiState,
 }
 
@@ -765,6 +767,7 @@ struct ServiceMetrics {
     last_service: Option<Instant>,
     gap_history: Arc<Mutex<VecDeque<(Instant, Duration)>>>,
 }
+
 impl Default for ServiceMetrics {
     fn default() -> Self {
         Self {
@@ -1595,6 +1598,7 @@ impl App {
                     indicators: ReverseIndicators::default(),
                     output_log: Vec::new(),
                     service_worker,
+                    service_metrics: ServiceMetrics::default(),
                     input_ui: InputUiState::default(),
                 });
                 self.selected_controller = Some(self.controllers.len() - 1);
@@ -1697,6 +1701,7 @@ impl eframe::App for App {
                     let excess = named.output_log.len().saturating_sub(OUTPUT_LOG_LIMIT);
                     named.output_log.drain(..excess);
                     named.indicators = display.indicators.clone();
+                    named.service_metrics = display.metrics.clone();
                     if let Some(healthy) = display.backend_healthy {
                         backend_healthy &= healthy;
                     }
@@ -2436,54 +2441,68 @@ fn draw_controller_state(
             }
         });
         ui.separator();
-        if let Some(worker) = &controller.service_worker {
-            if let Ok(display) = worker.display.try_lock() {
-                egui::Grid::new("controller_metrics")
-                    .num_columns(2)
-                    .spacing([8.0, 4.0])
-                    .show(ui, |ui| {
-                        ui.label("Service cycles");
-                        boxed_metric_output(ui, display.metrics.cycles.to_string());
-                        ui.end_row();
-                        ui.label("Omitted logs");
-                        boxed_metric_output(ui, display.metrics.omitted_logs.to_string());
-                        ui.end_row();
-                        ui.label("Max gap");
-                        let gaps = gap_percentiles.get(
-                            controller.options.id,
-                            &display.metrics,
-                            *polling_period_seconds,
-                            Instant::now(),
-                        );
-                        ui.horizontal(|ui| {
-                            ui.label("Polling period:");
-                            ui.add_sized(
-                                [38.0, NAME_INPUT_HEIGHT],
-                                egui::DragValue::new(polling_period_seconds)
-                                    .speed(1.0)
-                                    .suffix("s"),
-                            )
-                            .on_hover_text(format!(
-                                "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
-                            ));
-                            for (label, gap) in [
-                                ("10%:", gaps.map(|gaps| gaps[0])),
-                                ("1%:", gaps.map(|gaps| gaps[1])),
-                                ("0.1%:", gaps.map(|gaps| gaps[2])),
-                            ] {
-                                ui.label(label);
-                                if let Some(gap) = gap {
-                                    boxed_metric_output(ui, format_gap(gap));
-                                } else {
-                                    boxed_metric_output(ui, "—");
-                                }
-                            }
-                        });
-                        ui.end_row();
-                    });
-            }
-        }
+        draw_controller_metrics(
+            ui,
+            controller.options.id,
+            &controller.service_metrics,
+            polling_period_seconds,
+            gap_percentiles,
+        );
     });
+}
+
+fn draw_controller_metrics(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    metrics: &ServiceMetrics,
+    polling_period_seconds: &mut u32,
+    gap_percentiles: &mut ServiceGapPercentileCache,
+) -> egui::Rect {
+    egui::Grid::new("controller_metrics")
+        .num_columns(2)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            ui.label("Service cycles");
+            boxed_metric_output(ui, metrics.cycles.to_string());
+            ui.end_row();
+            ui.label("Omitted logs");
+            boxed_metric_output(ui, metrics.omitted_logs.to_string());
+            ui.end_row();
+            ui.label("Max gap");
+            let gaps = gap_percentiles.get(
+                controller_id,
+                metrics,
+                *polling_period_seconds,
+                Instant::now(),
+            );
+            ui.horizontal(|ui| {
+                ui.label("Polling period:");
+                ui.add_sized(
+                    [38.0, NAME_INPUT_HEIGHT],
+                    egui::DragValue::new(polling_period_seconds)
+                        .speed(1.0)
+                        .suffix("s"),
+                )
+                .on_hover_text(format!(
+                    "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
+                ));
+                for (label, gap) in [
+                    ("10%:", gaps.map(|gaps| gaps[0])),
+                    ("1%:", gaps.map(|gaps| gaps[1])),
+                    ("0.1%:", gaps.map(|gaps| gaps[2])),
+                ] {
+                    ui.label(label);
+                    if let Some(gap) = gap {
+                        boxed_metric_output(ui, format_gap(gap));
+                    } else {
+                        boxed_metric_output(ui, "—");
+                    }
+                }
+            });
+            ui.end_row();
+        })
+        .response
+        .rect
 }
 
 fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
@@ -4330,6 +4349,57 @@ mod tests {
             ])
         );
         assert_eq!(format_gap(Duration::from_micros(1_250)), "1.25 ms");
+    }
+
+    #[test]
+    fn controller_metrics_keep_rendering_while_worker_display_is_locked() {
+        let context = egui::Context::default();
+        let worker_display = Mutex::new(WorkerDisplay::default());
+        let _worker_lock = worker_display.lock().unwrap();
+        let cached = ServiceMetrics {
+            cycles: 42,
+            ..ServiceMetrics::default()
+        };
+        let mut polling_period_seconds = 0;
+        let mut gap_percentiles = ServiceGapPercentileCache::default();
+        let mut previous_height: Option<f32> = None;
+
+        for frame in 0..5 {
+            let mut metrics_rect = egui::Rect::NOTHING;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(720.0, 240.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        metrics_rect = draw_controller_metrics(
+                            ui,
+                            1,
+                            &cached,
+                            &mut polling_period_seconds,
+                            &mut gap_percentiles,
+                        );
+                    });
+                },
+            );
+
+            assert!(metrics_rect.height() > 0.0);
+            assert!(!output.shapes.is_empty());
+            if frame > 1
+                && let Some(previous_height) = previous_height
+            {
+                assert!(
+                    (metrics_rect.height() - previous_height).abs() < f32::EPSILON,
+                    "metrics panel changed height: {previous_height} -> {}",
+                    metrics_rect.height()
+                );
+            }
+            previous_height = Some(metrics_rect.height());
+        }
     }
 
     #[test]
