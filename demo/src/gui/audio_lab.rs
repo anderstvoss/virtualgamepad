@@ -56,6 +56,21 @@ struct RoutedInputPort {
     port: super::host_audio::InputPort,
 }
 
+trait HostSampleRouter {
+    fn output(&self, id: &str, samples: &[i16], channels: usize) -> bool;
+    fn input(&self, id: &str, channels: usize) -> Option<Vec<i16>>;
+}
+
+impl HostSampleRouter for AudioRouter {
+    fn output(&self, id: &str, samples: &[i16], channels: usize) -> bool {
+        self.output(id, samples, channels)
+    }
+
+    fn input(&self, id: &str, channels: usize) -> Option<Vec<i16>> {
+        self.input(id, channels)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct OutputDeviceGroup {
     device_id: String,
@@ -156,12 +171,13 @@ impl AudioRouter {
         sample_playback: bool,
         sample_capture: bool,
     ) -> Option<String> {
-        if self.config.as_ref() == Some(&(routing.clone(), sample_playback, sample_capture)) {
+        let config = (routing.configuration(), sample_playback, sample_capture);
+        if self.config.as_ref() == Some(&config) {
             return self.last_error.clone();
         }
         self.outputs.clear();
         self.inputs.clear();
-        self.config = Some((routing.clone(), sample_playback, sample_capture));
+        self.config = Some(config);
         if !routing.backend.compiled() {
             self.last_error = Some(format!(
                 "{} host routing is not built",
@@ -369,6 +385,18 @@ pub(super) struct RoutingState {
 }
 
 impl RoutingState {
+    fn configuration(&self) -> Self {
+        let mut config = self.clone();
+        // Meter observations change each cycle without changing host streams.
+        for route in &mut config.outputs {
+            route.peak.clear();
+        }
+        for route in &mut config.inputs {
+            route.peak.clear();
+        }
+        config
+    }
+
     fn for_topology(topology: AudioTopology, backend: HostBackend) -> Self {
         let mut state = Self {
             backend,
@@ -854,10 +882,10 @@ impl Activity {
         }
     }
     #[allow(clippy::too_many_lines)]
-    fn tick<I: SampleIo>(
+    fn tick<I: SampleIo, R: HostSampleRouter>(
         &mut self,
         io: &mut I,
-        router: &AudioRouter,
+        router: &R,
         playback: Option<&PcmFormat>,
         microphone: Option<&PcmFormat>,
     ) -> Result<(), AudioError> {
@@ -920,7 +948,7 @@ impl Activity {
         }
         if let Some(format) = microphone {
             let channels = format.channels().len();
-            let mut microphone_samples = vec![0_i16; FRAMES * channels];
+            let mut microphone_samples = Vec::<i16>::new();
             let mut has_input = false;
             for route in &mut self.routing.inputs {
                 if !route.enabled {
@@ -931,6 +959,8 @@ impl Activity {
                     continue;
                 };
                 let source_channels = route.source_channels.clamp(1, 32);
+                let samples = (source.len() / source_channels).min(FRAMES) * channels;
+                microphone_samples.resize(microphone_samples.len().max(samples), 0);
                 let mappings: Vec<_> = route
                     .target_channels
                     .iter()
@@ -957,6 +987,7 @@ impl Activity {
                     .any(|destination| *destination < channels);
             }
             if self.tone {
+                microphone_samples.resize(FRAMES * channels, 0);
                 for frame in 0..FRAMES {
                     let position = self.microphone_frames.saturating_add(frame as u64);
                     let sample =
@@ -1773,7 +1804,208 @@ fn input_channel_label<'a>(route: &InputRoute, channel: usize, labels: &'a [Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::collections::VecDeque;
     use virtualgamepad::AudioChannel;
+
+    #[derive(Default)]
+    struct FakeRouter {
+        input_blocks: RefCell<VecDeque<Vec<i16>>>,
+        output_blocks: RefCell<Vec<Vec<i16>>>,
+    }
+
+    impl HostSampleRouter for FakeRouter {
+        fn output(&self, _id: &str, samples: &[i16], _channels: usize) -> bool {
+            self.output_blocks.borrow_mut().push(samples.to_vec());
+            true
+        }
+
+        fn input(&self, _id: &str, _channels: usize) -> Option<Vec<i16>> {
+            self.input_blocks.borrow_mut().pop_front()
+        }
+    }
+
+    #[test]
+    fn changing_audio_peaks_preserves_the_configured_host_streams() {
+        let playback = PcmFormat::new(
+            48_000,
+            &[AudioChannel::AudibleLeft, AudioChannel::AudibleRight],
+        )
+        .unwrap();
+        let microphone = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
+        for backend in HostBackend::ALL {
+            let mut activity = Activity {
+                routing: RoutingState::for_topology(
+                    AudioTopology::for_family(ControllerFamily::DualSense),
+                    backend,
+                ),
+                ..Activity::default()
+            };
+            activity.routing.outputs[0].source_channels = vec![Some(0)];
+            activity.routing.inputs[0].enabled = true;
+            let config = (activity.routing.configuration(), true, true);
+            // A cached sentinel proves configure takes the reuse path without
+            // needing a hardware stream or launching a host subprocess.
+            let sentinel = Some("synthetic cached stream status".to_owned());
+            let mut router = AudioRouter {
+                config: Some(config.clone()),
+                last_error: sentinel.clone(),
+                ..AudioRouter::default()
+            };
+            let fake_router = FakeRouter::default();
+            let mut io = Fake::default();
+            for level in [5_i16, 20, 100, 0] {
+                assert_eq!(router.configure(&activity.routing, true, true), sentinel);
+                fake_router
+                    .input_blocks
+                    .borrow_mut()
+                    .push_back(vec![level; 512]);
+                activity
+                    .tick(&mut io, &fake_router, Some(&playback), Some(&microphone))
+                    .unwrap();
+                assert_eq!(activity.routing.outputs[0].peak, [7]);
+                assert_eq!(activity.routing.inputs[0].peak, [level.unsigned_abs()]);
+                assert_eq!(router.configure(&activity.routing, true, true), sentinel);
+                assert_eq!(router.config, Some(config.clone()));
+            }
+            router.reset();
+            router.reset();
+            assert!(router.config.is_none());
+        }
+    }
+
+    #[test]
+    fn routing_configuration_retains_device_mapping_and_lifecycle_changes() {
+        let topology = AudioTopology::for_family(ControllerFamily::DualSense);
+        let routing = RoutingState::for_topology(topology, HostBackend::Alsa);
+        let original = routing.configuration();
+        let mut changed = routing.clone();
+        changed.outputs[0].channel_device_ids[0] = "synthetic-output".into();
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.inputs[0].channel_device_ids[0] = "synthetic-input".into();
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.inputs[0].enabled = true;
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.outputs[0].source_channels[0] = Some(0);
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.inputs[0].target_channels[0] = None;
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.backend = HostBackend::PipeWire;
+        assert_ne!(changed.configuration(), original);
+        changed = routing.clone();
+        changed.set_jack_connected(true, topology);
+        assert_ne!(changed.configuration(), original);
+        changed.set_jack_connected(false, topology);
+        assert_eq!(changed.configuration(), original);
+
+        let mut disabled = routing;
+        disabled.outputs[0].enabled = false;
+        let mut router = AudioRouter::default();
+        router.configure(&disabled, true, true);
+        assert_eq!(router.config, Some((disabled.configuration(), true, true)));
+        router.configure(&disabled, false, false);
+        assert_eq!(
+            router.config,
+            Some((disabled.configuration(), false, false))
+        );
+    }
+
+    #[test]
+    fn captured_microphone_blocks_keep_their_length_and_partial_write_suffix() {
+        for channels in 1..=2 {
+            let channel_labels = [AudioChannel::MicrophoneLeft, AudioChannel::MicrophoneRight];
+            let format = PcmFormat::new(48_000, &channel_labels[..channels]).unwrap();
+            let mut activity = Activity {
+                routing: RoutingState::for_topology(
+                    AudioTopology::for_family(ControllerFamily::DualSense),
+                    HostBackend::Alsa,
+                ),
+                ..Activity::default()
+            };
+            let route = &mut activity.routing.inputs[0];
+            route.enabled = true;
+            route.source_channels = channels;
+            route.target_channels = (0..channels).map(Some).collect();
+            let router = FakeRouter::default();
+            let mut io = Fake {
+                accepted: 13,
+                write_channels: channels,
+                ..Fake::default()
+            };
+            for frames in [256, 73, 1] {
+                let block = vec![42; frames * channels];
+                router.input_blocks.borrow_mut().push_back(block.clone());
+                activity
+                    .tick(&mut io, &router, None, Some(&format))
+                    .unwrap();
+                assert_eq!(io.writes.last().unwrap(), &block);
+                while !activity.pending.is_empty() {
+                    let suffix = activity.pending[activity.accepted_samples..].to_vec();
+                    activity
+                        .tick(&mut io, &router, None, Some(&format))
+                        .unwrap();
+                    assert_eq!(io.writes.last().unwrap(), &suffix);
+                }
+                let writes = io.writes.len();
+                activity
+                    .tick(&mut io, &router, None, Some(&format))
+                    .unwrap();
+                assert_eq!(io.writes.len(), writes);
+            }
+            assert_eq!(activity.microphone_frames, 330);
+            assert_eq!(activity.accepted_samples, 0);
+
+            router
+                .input_blocks
+                .borrow_mut()
+                .push_back(vec![42; 256 * channels]);
+            activity
+                .tick(&mut io, &router, None, Some(&format))
+                .unwrap();
+            activity.apply(&mut io, Action::FlushMicrophone).unwrap();
+            activity.apply(&mut io, Action::FlushMicrophone).unwrap();
+            assert!(activity.pending.is_empty());
+            assert_eq!(activity.accepted_samples, 0);
+        }
+    }
+
+    #[test]
+    fn test_tone_still_fills_a_complete_block_when_capture_is_shorter() {
+        let format = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
+        let mut activity = Activity {
+            routing: RoutingState::for_topology(
+                AudioTopology::for_family(ControllerFamily::DualSense),
+                HostBackend::Alsa,
+            ),
+            ..Activity::default()
+        };
+        activity.routing.inputs[0].enabled = true;
+        let router = FakeRouter::default();
+        router.input_blocks.borrow_mut().push_back(vec![42; 512]);
+        let mut io = Fake {
+            accepted: FRAMES,
+            ..Fake::default()
+        };
+        activity.apply(&mut io, Action::Tone(true)).unwrap();
+        activity
+            .tick(&mut io, &router, None, Some(&format))
+            .unwrap();
+        assert_eq!(io.writes[0].len(), FRAMES);
+        for (frame, sample) in io.writes[0].iter().copied().enumerate() {
+            let tone = if (frame * 880 / 48_000) % 2 == 0 {
+                1024
+            } else {
+                -1024
+            };
+            assert_eq!(sample, tone + if frame < 256 { 42 } else { 0 });
+        }
+        assert!(activity.pending.is_empty());
+    }
 
     #[test]
     fn audio_disabled_controller_skips_host_device_discovery() {
@@ -2260,6 +2492,7 @@ mod tests {
         writes: Vec<Vec<i16>>,
         flushes: Vec<SampleDirection>,
         accepted: usize,
+        write_channels: usize,
         fail: bool,
     }
     impl SampleIo for Fake {
@@ -2284,7 +2517,9 @@ mod tests {
                 });
             }
             self.writes.push(samples.to_vec());
-            Ok(self.accepted.min(samples.len()))
+            Ok(self
+                .accepted
+                .min(samples.len() / self.write_channels.max(1)))
         }
         fn flush(&mut self, direction: SampleDirection) -> Result<(), AudioError> {
             self.flushes.push(direction);
