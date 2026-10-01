@@ -1493,52 +1493,121 @@ pub(super) fn draw_input_routes(
         if index > 0 {
             ui.separator();
         }
-        ui.horizontal(|ui| {
-            ui.strong(&route.label);
-            changed |= ui
-                .checkbox(&mut route.enabled, "Forward host input")
-                .on_hover_text(
-                    "Send samples from the selected host input to this emulated controller microphone. Disabled by default to prevent unintended microphone forwarding.",
-                )
-                .changed();
-        });
-        ui.horizontal(|ui| {
-            ui.label("Host input");
-            changed |= draw_device_selector_sized(
-                ui,
-                (&route.id, "host-input"),
-                &mut route.device_id,
-                devices,
-                AUDIO_DEVICE_SELECTOR_WIDTH,
-            );
-        });
-        for channel in 0..route.source_channels {
-            ui.horizontal(|ui| {
-                ui.add_sized(
-                    [170.0, ui.spacing().interact_size.y],
-                    egui::Label::new(format!(
-                        "Channel {} ({}):",
-                        channel + 1,
-                        route
-                            .target_channels
-                            .get(channel)
-                            .copied()
-                            .flatten()
-                            .and_then(|index| capture_channel_labels.get(index))
-                            .map_or("unmapped", String::as_str)
-                    ))
-                    .truncate(),
-                );
-                let peak = route.peak.get(channel).copied().unwrap_or_default();
-                let width = ui.available_width().clamp(0.0, AUDIO_VU_WIDTH);
-                ui.add_sized(
-                    [width, ui.spacing().interact_size.y],
-                    egui::ProgressBar::new(f32::from(peak) / f32::from(u16::MAX)),
-                );
-            });
+        if route.source_channels == 1 {
+            changed |= draw_compact_input_route(ui, route, devices, capture_channel_labels);
+        } else {
+            changed |= draw_multichannel_input_route(ui, route, devices, capture_channel_labels);
         }
     }
     changed
+}
+
+fn draw_input_route_enabled(ui: &mut egui::Ui, route: &mut InputRoute) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.strong(&route.label);
+        changed |= ui
+            .checkbox(&mut route.enabled, "Enabled")
+            .on_hover_text(
+                "The emulated microphone is always present. Enable this to forward samples from the selected host input to it.",
+            )
+            .changed();
+        ui.small_button("!").on_hover_text(
+            "This microphone is present on the emulated controller at all times. Host audio is sent to it only while Enabled is checked.",
+        );
+    });
+    changed
+}
+
+fn draw_compact_input_route(
+    ui: &mut egui::Ui,
+    route: &mut InputRoute,
+    devices: &[HostDevice],
+    capture_channel_labels: &[String],
+) -> bool {
+    let mut changed = false;
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [120.0, ui.spacing().interact_size.y],
+            egui::Label::new(format!("{} ({}):", route.label, input_channel_label(route, 0, capture_channel_labels)))
+                .truncate(),
+        );
+        changed |= ui
+            .checkbox(&mut route.enabled, "Enabled")
+            .on_hover_text(
+                "The emulated microphone is always present. Enable this to forward samples from the selected host input to it.",
+            )
+            .changed();
+        ui.small_button("!").on_hover_text(
+            "This microphone is present on the emulated controller at all times. Host audio is sent to it only while Enabled is checked.",
+        );
+        changed |= draw_device_selector_sized(
+            ui,
+            (&route.id, "host-input"),
+            &mut route.device_id,
+            devices,
+            105.0,
+        );
+        let peak = route.peak.first().copied().unwrap_or_default();
+        let width = ui.available_width().clamp(0.0, 100.0);
+        ui.add_sized(
+            [width, ui.spacing().interact_size.y],
+            egui::ProgressBar::new(f32::from(peak) / f32::from(u16::MAX)),
+        );
+    });
+    changed
+}
+
+fn draw_multichannel_input_route(
+    ui: &mut egui::Ui,
+    route: &mut InputRoute,
+    devices: &[HostDevice],
+    capture_channel_labels: &[String],
+) -> bool {
+    let mut changed = draw_input_route_enabled(ui, route);
+    ui.horizontal(|ui| {
+        ui.add_sized(
+            [170.0, ui.spacing().interact_size.y],
+            egui::Label::new("Host input"),
+        );
+        changed |= draw_device_selector_sized(
+            ui,
+            (&route.id, "host-input"),
+            &mut route.device_id,
+            devices,
+            AUDIO_DEVICE_SELECTOR_WIDTH,
+        );
+    });
+    for channel in 0..route.source_channels {
+        ui.horizontal(|ui| {
+            ui.add_sized(
+                [170.0, ui.spacing().interact_size.y],
+                egui::Label::new(format!(
+                    "Channel {} ({}):",
+                    channel + 1,
+                    input_channel_label(route, channel, capture_channel_labels)
+                ))
+                .truncate(),
+            );
+            let peak = route.peak.get(channel).copied().unwrap_or_default();
+            let width = ui.available_width().clamp(0.0, AUDIO_VU_WIDTH);
+            ui.add_sized(
+                [width, ui.spacing().interact_size.y],
+                egui::ProgressBar::new(f32::from(peak) / f32::from(u16::MAX)),
+            );
+        });
+    }
+    changed
+}
+
+fn input_channel_label<'a>(route: &InputRoute, channel: usize, labels: &'a [String]) -> &'a str {
+    route
+        .target_channels
+        .get(channel)
+        .copied()
+        .flatten()
+        .and_then(|index| labels.get(index))
+        .map_or("unmapped", String::as_str)
 }
 
 #[cfg(test)]
@@ -1648,6 +1717,43 @@ mod tests {
         assert_eq!(routing.inputs[0].target_channels, [Some(0), Some(1)]);
         assert_eq!(routing.inputs[1].source_channels, 1);
         assert_eq!(routing.inputs[1].target_channels, [Some(0)]);
+    }
+
+    #[test]
+    fn single_channel_microphone_uses_one_compact_device_row() {
+        let context = egui::Context::default();
+        let mut routing = RoutingState::for_topology(
+            AudioTopology::for_family(ControllerFamily::Xbox360),
+            HostBackend::Alsa,
+        );
+        routing.select_jack_device(
+            Some(JackDevice::Headset),
+            AudioTopology::for_family(ControllerFamily::Xbox360),
+        );
+        let devices = host_devices(HostBackend::Alsa);
+        let mut row_height = 0.0;
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(700.0, 200.0),
+                )),
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    let top = ui.cursor().top();
+                    draw_input_routes(ui, &mut routing, &devices, &[]);
+                    row_height = ui.cursor().top() - top;
+                });
+            },
+        );
+        assert_eq!(routing.inputs.len(), 1);
+        assert_eq!(routing.inputs[0].source_channels, 1);
+        assert!(
+            row_height <= 30.0,
+            "single-channel layout used {row_height}px"
+        );
     }
 
     #[test]
