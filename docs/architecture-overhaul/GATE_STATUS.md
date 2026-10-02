@@ -1,8 +1,10 @@
 # Architecture gate status
 
-**Current execution:** [Alpha API refinement](ALPHA_API_REFINEMENT.md), baseline PR #121.
-The older baseline and batches below are retained historical records. Final API
-freeze, interactive audio feedback and release are pending.
+**Current execution:** [Post-GUI root API audit](ALPHA_ROOT_API_AUDIT.md), merged
+baseline `ec4c2ff` (PRs #122–125, #127 and #128). Maintainer GUI findings and
+approval are recorded in [the checkpoint](ALPHA_DEMO_REFINEMENT.md); #126 retains
+checklist reconciliation. Final freeze, separate quality review and release remain
+pending. Older baselines and batches below are historical records.
 
 **Prior execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
 on merged PR108. It supersedes the execution order below; historical experiment
@@ -14,7 +16,8 @@ release require the maintainer's controller/demo refinement checkpoint.
 
 F/H implementations and deterministic tests exist; selected live sample/lifecycle
 results pass in their recorded scope. Native continuity, installed recovery/security
-and physical matching remain unaccepted (#112/#115/#116). These are independent
+and physical matching remain unaccepted (#115/#116 and the unchecked matrix
+retained in closed #112). These are independent
 axes, not an implementation absence or a broad gate pass. USB/IP is opt-in WIP.
 
 ## Historical planning and evidence
@@ -401,9 +404,11 @@ Current work is tracked in the [audio ledger](AUDIO_IMPLEMENTATION.md).
 
 Demo audio creation, endpoint/health inspection, bounded sample probes, flush and
 recreation are implemented in the [interactive refinement block](ALPHA_DEMO_REFINEMENT.md).
-Maintainer hands-on acceptance remains pending; this does not advance the final
-API freeze, physical audio or installed USB/IP security/recovery gates.
+PR #127 incorporates maintainer findings and reviewed GUI approval. This permits
+the fresh root audit; physical audio and installed USB/IP security/recovery gates
+remain unchanged.
 
 The maintainer requested a dedicated audio GUI refinement breakout.
 [#126](https://github.com/anderstvoss/virtualgamepad/issues/126) is an explicit
-complete-alpha closure gate under #117; actual hands-on acceptance remains pending.
+complete-alpha closure gate under #117. Its broad exercise checklist remains to
+be reconciled with the bounded reviewed GUI scope; observations now exist.

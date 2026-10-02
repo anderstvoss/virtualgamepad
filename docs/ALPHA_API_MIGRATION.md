@@ -32,3 +32,8 @@ This is a deliberate breaking candidate update before the final alpha freeze.
 
 The unused old audio session/factory traits are removed from internal SPI. Manifest
 sidecar requirements remain distinct descriptive contracts, not another live backend.
+
+Post-GUI audit: the empty root `audio-alsa` feature is removed. ALSA host-device
+routing belongs to the demo's `audio-alsa` feature, whose defaults are unchanged.
+Library users enable `audio-pipewire` for local UHID audio or `audio-usbip` for the
+WIP composite; ALSA routing does not add a library realization.

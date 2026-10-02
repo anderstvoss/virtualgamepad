@@ -1,5 +1,7 @@
 import importlib.util
 import tempfile
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -38,3 +40,44 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(len(page.declarations), 2)
         self.assertIn('pub enum Access', page.declarations[0])
         self.assertEqual(page.declarations[1], 'pub fn endpoint<T>(&self) -> T')
+
+    def test_concrete_and_auto_traits_are_retained_without_blanket_impls(self):
+        page = inventory.parse('<h3 class="code-header">impl Clone for TouchSlot</h3>'
+                               '<h3 class="code-header">impl !Sync for ControllerAudio</h3>'
+                               '<h3 class="code-header">impl&lt;T&gt; From&lt;T&gt; for T</h3>'
+                               '<h3 class="code-header">impl&lt;T&gt; Any for Twhere T: Static</h3>')
+        self.assertEqual(page.traits, ['impl Clone for TouchSlot', 'impl !Sync for ControllerAudio'])
+
+    def test_check_mode_detects_drift_without_modifying_saved_inventory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root/'index.html').write_text('<a href="struct.Read.html">Read</a>')
+            (root/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read;</pre>')
+            output = root/'inventory.md'
+            output.write_text(inventory.render(root))
+            command = [sys.executable, str(MODULE), '--doc-root', str(root), '--output', str(output), '--check']
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            (root/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read { pub frames: usize }</pre>')
+            before = output.read_bytes()
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            self.assertEqual(output.read_bytes(), before)
+
+    def test_owner_does_not_fall_back_to_an_unrelated_std_trait_source(self):
+        page = inventory.parse('<a class="src" href="https://doc.rust-lang.org/src/core/clone.rs">Source</a>'
+                               '<a class="src" href="../src/controllers/state.rs.html">Source</a>')
+        self.assertEqual(page.source, '../src/controllers/state.rs.html')
+
+    def test_platform_comparison_ignores_owner_urls_but_detects_field_or_trait_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            other = root/'other'
+            other.mkdir()
+            for path in (root, other):
+                (path/'index.html').write_text('<a href="struct.Read.html">Read</a>')
+                (path/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read;</pre>')
+            (other/'struct.Read.html').write_text('<a class="src" href="../src/read.rs.html">Source</a>'
+                                                '<pre class="rust item-decl">pub struct Read;</pre>')
+            self.assertEqual(inventory.public_surface(root), inventory.public_surface(other))
+            (other/'struct.Read.html').write_text('<pre class="rust item-decl">pub struct Read;</pre>'
+                                                '<h3 class="code-header">impl Send for Read</h3>')
+            self.assertNotEqual(inventory.public_surface(root), inventory.public_surface(other))

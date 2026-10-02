@@ -88,3 +88,16 @@ pub fn creation_options() -> CreationOptions {
         AudioOptions::new(AudioExposure::Emulated).with_playback_access(AudioAccess::Samples),
     )
 }
+
+// Moving an owned controller to a worker and protecting shared service/PCM access
+// with a mutex remain supported in every ordinary feature configuration.
+pub fn thread_boundaries() {
+    fn assert_send<T: Send>() {}
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send::<DualSenseController>();
+    assert_send::<DualShock4Controller>();
+    assert_send::<Xbox360Controller>();
+    assert_send::<SwitchProController>();
+    assert_send_sync::<Arc<Mutex<Controller>>>();
+    assert_send_sync::<virtualgamepad::ControllerAudio>();
+}

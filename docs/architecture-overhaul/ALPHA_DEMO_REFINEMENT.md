@@ -4,7 +4,9 @@
 
 The demo consumes the ordinary root audio API. It adds optional feature forwarding
 for `audio-pipewire` and `audio-usbip`; no external dependency is added. The root
-and demo defaults still leave audio features off. USB/IP remains opt-in WIP.
+default features remain empty. The demo defaults enable USB/IP audio and ALSA
+host routing; UHID/PipeWire requires `audio-pipewire`. Session audio still requires
+explicit creation choices. USB/IP remains WIP.
 
 The sidebar offers audio disabled/emulated and direction-wide Samples/NativeClient
 ownership. Choices apply to new controllers. Unsupported family, feature and target
@@ -21,7 +23,9 @@ metrics. Graph/bridge instrumentation does not drive application behavior.
 
 For Samples playback the worker drains at most 512 complete frames per service
 cycle, displaying received frame count, discontinuities and recent peak amplitude.
-It does not play audio through a physical device. For Samples microphone a 440 Hz
+Optional Output routing now sends mapped samples to an explicitly selected host
+device. Input routing can capture an explicitly selected host microphone; neither
+routing direction is enabled automatically. For Samples microphone a 440 Hz
 square-wave test signal at about 3% amplitude is off initially and starts only on
 request. Each cycle attempts at most 512 microphone frames, retrying an unaccepted
 suffix. Counts describe accepted queue frames, not delivered host audio. These
@@ -50,8 +54,10 @@ state dump. Optional display contention never blocks worker service or shutdown.
 - Issue [#126](https://github.com/anderstvoss/virtualgamepad/issues/126): dedicated
   audio GUI refinement and actual maintainer acceptance; required for alpha closure.
 
-Branches contain incremental commits; local work remains on `main`. PRs are open
-for review, not automatically merged. No final API freeze or release is declared.
+PRs #122–125 and GUI refinement PR #127 are merged. PR #128 updates the
+pre-commit tooling dependency pins. The post-merge baseline is `ec4c2ff`; its CI,
+CodeQL, SBOM, Scorecard and history secret scan passed. No API freeze or release
+is declared.
 
 ## Hands-on run
 
@@ -87,14 +93,24 @@ UI ergonomics or support evidence. A successful unattended run is not feedback.
 
 ## Acceptance status
 
-**Maintainer hands-on observations: pending in dedicated breakout issue [#126](https://github.com/anderstvoss/virtualgamepad/issues/126).**
-The maintainer requested a separate audio GUI refinement session. This issue gates
-complete alpha closure under #117; implementation PR #125 does not satisfy it. No observations are fabricated and no
-physical fidelity, sustained native continuity or installed USB/IP security/recovery
-claim is promoted. Issues #112/#115/#116/#117 remain open. Incorporate actual findings
-before the fresh independent whole-root API review. The final inventory/freeze,
-separate quality/security pass and exact-revision release validation remain later
-steps; API drift workflow changes require explicit authorization.
+The dedicated breakout produced concrete maintainer findings: lag after a session
+lasting more than three hours, audio routing and layout refinements, universal
+momentary button feedback, and a default 30-second touchpad lockout timer. The
+maintainer approved the resulting GUI for PR creation and subsequently requested
+its reviewed merge. PR #127 contains the fixes and deterministic regressions.
+
+This records acceptance of the reviewed GUI refinement scope. It does not assert
+that every family × transport × ownership exercise in [#126](https://github.com/anderstvoss/virtualgamepad/issues/126)
+was performed. That issue remains open for checklist reconciliation; its earlier
+claim that no observations exist is obsolete. The settled GUI permits the fresh
+whole-root API review to proceed; no broad hardware acceptance is inferred.
+
+Issue #112 is closed following the maintainer’s local UHID/audio completion
+clarification. Its unchecked native continuity/latency matrix and recorded failed
+runs do not establish a timing guarantee. Issues #115/#116/#117 remain open.
+USB/IP stays WIP; matching stays unavailable. The final freeze, separate quality
+review and exact-revision release validation remain later steps. Workflow changes
+for drift enforcement require explicit authorization.
 
 ## Validation
 
@@ -112,5 +128,10 @@ steps; API drift workflow changes require explicit authorization.
 - Existing queue/protocol/controller-parity, GUI input, worker/display contention,
   repeated close and multi-controller regressions remain intact.
 
-These are implementation/consumer results. No maintainer hands-on session or new
-physical-reference test has been recorded. Existing audio acceptance limits remain.
+The original validation above belongs to PR #125. After PR #127/#128, locked
+workspace validation passed with 529 tests passed and 56 ignored, plus strict
+rustdoc, 89 Python tooling tests and the root consumer/offline matrix. GUI
+regressions cover bounded service history, stable layout, stream configuration
+without meter-driven recreation, partial captured microphone writes, button
+feedback and touchpad timeout/reset. The reported host 5.1/7.1 capture limitation
+remains; no physical-reference or sustained timing acceptance is added.

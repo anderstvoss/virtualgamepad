@@ -1,5 +1,12 @@
 # Alpha API refinement: current execution record
 
+## Current continuation
+
+PRs #122–125, #127 and #128 are merged at baseline `ec4c2ff`. The GUI refinement
+scope is reviewed and accepted; see [the updated checkpoint](ALPHA_DEMO_REFINEMENT.md).
+Current work is the [post-GUI root audit](ALPHA_ROOT_API_AUDIT.md). Earlier
+implementation and validation statements below retain their historical scope.
+
 ## Baseline and scope
 
 The current branch was fast-forwarded from PR #110 (`476056a`) to PR #121,
@@ -61,15 +68,15 @@ release workflow, host permission or physical-device change is made. The unpubli
 
 ## Support and remaining sequence
 
-Issues #112 (native continuity/duplex latency), #115 (installed broker security and
-recovery), #116 (microphone/matching fidelity), and #117 (GUI/API/alpha sequence)
-remain open. USB/IP is explicitly opt-in WIP; accepted support requires #115.
+Issue #112 is now closed; its unchecked continuity/latency matrix remains
+unqualified evidence. Issues #115 (installed broker security and recovery),
+#116 (microphone/matching fidelity), and #117 (GUI/API/alpha sequence) remain open. USB/IP is explicitly opt-in WIP; accepted support requires #115.
 Preserve all historical failed runs and confirmed physical output/reconnect evidence.
 Ignored hardware tests are not passes. No new physical-reference actuation occurs.
 
 Demo audio integration is now implemented in a separate review block. See
-[the demo checkpoint](ALPHA_DEMO_REFINEMENT.md). Next: actual maintainer feedback; incorporate findings;
-fresh independent whole-root review; exact hard-freeze commit and API drift
+[the demo checkpoint](ALPHA_DEMO_REFINEMENT.md). PR #127 incorporated actual maintainer feedback and has merged. Next:
+reconcile the bounded GUI acceptance record; fresh whole-root review; exact hard-freeze commit and API drift
 protection; separate quality/security review; exact-revision Git consumer and
 cached offline validation; separately authorized release/tag. `.github/` changes
 for future drift enforcement require explicit authorization.
