@@ -19,7 +19,7 @@ virtualgamepad = { path = "..", version = "0.1", features = ["experimental"] }
 # The root library's default feature set remains minimal. USB/IP is still WIP.
 default = ["audio-usbip", "audio-alsa"]
 audio-pipewire = ["virtualgamepad/audio-pipewire"]
-audio-alsa = ["virtualgamepad/audio-alsa"]
+audio-alsa = []
 audio-usbip = ["virtualgamepad/audio-usbip"]
 
 [lints]
