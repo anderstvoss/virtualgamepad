@@ -13,6 +13,7 @@ class PublicPage(HTMLParser):
     def __init__(self):
         super().__init__()
         self.links = set()
+        self.modules = set()
         self.declarations = []
         self.traits = []
         self.source = None
@@ -27,8 +28,12 @@ class PublicPage(HTMLParser):
                 and href.startswith('../src/')):
             self.source = href
         if tag == 'a' and href.endswith('.html') and '/' not in href:
-            if href.startswith(('struct.', 'enum.', 'trait.', 'type.', 'fn.', 'constant.', 'mod.')):
+            if href.startswith(('struct.', 'enum.', 'trait.', 'type.', 'fn.', 'constant.', 'static.', 'macro.', 'union.', 'mod.')):
                 self.links.add(href)
+        # Rustdoc renders root modules as name/index.html, unlike item pages.
+        if (tag == 'a' and href.endswith('/index.html') and href.count('/') == 1
+                and href.split('/', 1)[0] not in ('', '.', '..')):
+            self.modules.add(href)
         if self.capture and tag not in ('br', 'wbr', 'img', 'hr', 'input', 'meta', 'link'):
             self.depth += 1
         elif (tag == 'pre' and attributes.get('class') == 'rust item-decl') or (

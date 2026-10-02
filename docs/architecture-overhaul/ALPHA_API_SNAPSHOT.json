@@ -1,0 +1,4157 @@
+{
+  "schema": 2,
+  "views": {
+    "all": {
+      "default_features": [],
+      "features": [
+        "audio-pipewire",
+        "audio-usbip",
+        "default",
+        "experimental"
+      ],
+      "items": {
+        "enum.AudioAccess.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioAccess { Samples, NativeClient, }"
+          ],
+          "traits": [
+            "impl Clone for AudioAccess",
+            "impl Copy for AudioAccess",
+            "impl Debug for AudioAccess",
+            "impl Default for AudioAccess",
+            "impl Eq for AudioAccess",
+            "impl PartialEq for AudioAccess",
+            "impl RefUnwindSafe for AudioAccess",
+            "impl Send for AudioAccess",
+            "impl Sync for AudioAccess",
+            "impl Unpin for AudioAccess",
+            "impl UnwindSafe for AudioAccess"
+          ]
+        },
+        "enum.AudioChannel.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioChannel { AudibleLeft, AudibleRight, Speaker, Microphone, MicrophoneLeft, MicrophoneRight, HapticLeft, HapticRight, }"
+          ],
+          "traits": [
+            "impl Clone for AudioChannel",
+            "impl Copy for AudioChannel",
+            "impl Debug for AudioChannel",
+            "impl Eq for AudioChannel",
+            "impl PartialEq for AudioChannel",
+            "impl RefUnwindSafe for AudioChannel",
+            "impl Send for AudioChannel",
+            "impl Sync for AudioChannel",
+            "impl Unpin for AudioChannel",
+            "impl UnwindSafe for AudioChannel"
+          ]
+        },
+        "enum.AudioEndpointSelector.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioEndpointSelector { PipeWireNode { name: String, }, AlsaPcm { card_id: String, device: u8, subdevice: u8, }, }",
+            "pub fn alsa_pcm(&self) -> Option<(&str, u8, u8)>",
+            "pub fn pipewire_node(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for AudioEndpointSelector",
+            "impl Debug for AudioEndpointSelector",
+            "impl Eq for AudioEndpointSelector",
+            "impl PartialEq for AudioEndpointSelector",
+            "impl RefUnwindSafe for AudioEndpointSelector",
+            "impl Send for AudioEndpointSelector",
+            "impl Sync for AudioEndpointSelector",
+            "impl Unpin for AudioEndpointSelector",
+            "impl UnwindSafe for AudioEndpointSelector"
+          ]
+        },
+        "enum.AudioError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioError { Unavailable, InvalidRequirement, InvalidSampleBuffer, OwnershipMismatch, Unsupported, IncompatibleTopology, AccessDenied, Closed, Backend { reason: String, }, }"
+          ],
+          "traits": [
+            "impl Clone for AudioError",
+            "impl Debug for AudioError",
+            "impl Display for AudioError",
+            "impl Eq for AudioError",
+            "impl Error for AudioError",
+            "impl PartialEq for AudioError",
+            "impl RefUnwindSafe for AudioError",
+            "impl Send for AudioError",
+            "impl Sync for AudioError",
+            "impl Unpin for AudioError",
+            "impl UnwindSafe for AudioError"
+          ]
+        },
+        "enum.AudioExposure.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioExposure { Disabled, Emulated, }"
+          ],
+          "traits": [
+            "impl Clone for AudioExposure",
+            "impl Copy for AudioExposure",
+            "impl Debug for AudioExposure",
+            "impl Default for AudioExposure",
+            "impl Eq for AudioExposure",
+            "impl PartialEq for AudioExposure",
+            "impl RefUnwindSafe for AudioExposure",
+            "impl Send for AudioExposure",
+            "impl Sync for AudioExposure",
+            "impl Unpin for AudioExposure",
+            "impl UnwindSafe for AudioExposure"
+          ]
+        },
+        "enum.CommitError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum CommitError { Closed, Backend { reason: String, }, }"
+          ],
+          "traits": [
+            "impl Clone for CommitError",
+            "impl Debug for CommitError",
+            "impl Display for CommitError",
+            "impl Eq for CommitError",
+            "impl Error for CommitError",
+            "impl PartialEq for CommitError",
+            "impl RefUnwindSafe for CommitError",
+            "impl Send for CommitError",
+            "impl Sync for CommitError",
+            "impl Unpin for CommitError",
+            "impl UnwindSafe for CommitError"
+          ]
+        },
+        "enum.ComponentKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ComponentKind { Input, Audio, }"
+          ],
+          "traits": [
+            "impl Clone for ComponentKind",
+            "impl Copy for ComponentKind",
+            "impl Debug for ComponentKind",
+            "impl Eq for ComponentKind",
+            "impl PartialEq for ComponentKind",
+            "impl RefUnwindSafe for ComponentKind",
+            "impl Send for ComponentKind",
+            "impl Sync for ComponentKind",
+            "impl Unpin for ComponentKind",
+            "impl UnwindSafe for ComponentKind"
+          ]
+        },
+        "enum.ControlError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControlError { UnsupportedControl { control: &'static str, }, ValueOutOfRange { control: &'static str, value: u32, maximum: u32, }, UnavailableInRealization { selected_target: RealizationId, available_in: RealizationTargetSet, }, Closed, }"
+          ],
+          "traits": [
+            "impl Clone for ControlError",
+            "impl Debug for ControlError",
+            "impl Display for ControlError",
+            "impl Eq for ControlError",
+            "impl Error for ControlError",
+            "impl PartialEq for ControlError",
+            "impl RefUnwindSafe for ControlError",
+            "impl Send for ControlError",
+            "impl Sync for ControlError",
+            "impl Unpin for ControlError",
+            "impl UnwindSafe for ControlError"
+          ]
+        },
+        "enum.ControllerError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControllerError { MissingDeviceNode { target: RealizationId, path: String, }, AccessDenied { target: RealizationId, path: String, }, UnsupportedPlatform { target: RealizationId, }, InvalidRequest { reason: String, }, Open { reason: String, }, Write { reason: String, }, Read { reason: String, }, Unsupported { reason: String, }, Cleanup { cause: Box<ControllerError>, cleanup: Vec<String>, }, Closed, WouldBlock, }"
+          ],
+          "traits": [
+            "impl Clone for ControllerError",
+            "impl Debug for ControllerError",
+            "impl Display for ControllerError",
+            "impl Eq for ControllerError",
+            "impl Error for ControllerError",
+            "impl PartialEq for ControllerError",
+            "impl RefUnwindSafe for ControllerError",
+            "impl Send for ControllerError",
+            "impl Sync for ControllerError",
+            "impl Unpin for ControllerError",
+            "impl UnwindSafe for ControllerError"
+          ]
+        },
+        "enum.ControllerStatus.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControllerStatus { NotOpen, Open, Closed, Failed, }"
+          ],
+          "traits": [
+            "impl Clone for ControllerStatus",
+            "impl Copy for ControllerStatus",
+            "impl Debug for ControllerStatus",
+            "impl Eq for ControllerStatus",
+            "impl PartialEq for ControllerStatus",
+            "impl RefUnwindSafe for ControllerStatus",
+            "impl Send for ControllerStatus",
+            "impl Sync for ControllerStatus",
+            "impl Unpin for ControllerStatus",
+            "impl UnwindSafe for ControllerStatus"
+          ]
+        },
+        "enum.DigitalControlUpdate.html": {
+          "declarations": [
+            "pub enum DigitalControlUpdate { FaceButton { button: FaceButton, pressed: bool, }, Dpad { direction: DpadDirection, pressed: bool, }, }"
+          ],
+          "traits": [
+            "impl Clone for DigitalControlUpdate",
+            "impl Copy for DigitalControlUpdate",
+            "impl Debug for DigitalControlUpdate",
+            "impl Eq for DigitalControlUpdate",
+            "impl PartialEq for DigitalControlUpdate",
+            "impl RefUnwindSafe for DigitalControlUpdate",
+            "impl Send for DigitalControlUpdate",
+            "impl Sync for DigitalControlUpdate",
+            "impl Unpin for DigitalControlUpdate",
+            "impl UnwindSafe for DigitalControlUpdate"
+          ]
+        },
+        "enum.DpadDirection.html": {
+          "declarations": [
+            "pub enum DpadDirection { Up, Down, Left, Right, }"
+          ],
+          "traits": [
+            "impl Clone for DpadDirection",
+            "impl Copy for DpadDirection",
+            "impl Debug for DpadDirection",
+            "impl Eq for DpadDirection",
+            "impl Hash for DpadDirection",
+            "impl PartialEq for DpadDirection",
+            "impl RefUnwindSafe for DpadDirection",
+            "impl Send for DpadDirection",
+            "impl Sync for DpadDirection",
+            "impl Unpin for DpadDirection",
+            "impl UnwindSafe for DpadDirection"
+          ]
+        },
+        "enum.DpadHoldBehavior.html": {
+          "declarations": [
+            "pub enum DpadHoldBehavior { AdjacentPair, IndependentButtons, }"
+          ],
+          "traits": [
+            "impl Clone for DpadHoldBehavior",
+            "impl Copy for DpadHoldBehavior",
+            "impl Debug for DpadHoldBehavior",
+            "impl Eq for DpadHoldBehavior",
+            "impl PartialEq for DpadHoldBehavior",
+            "impl RefUnwindSafe for DpadHoldBehavior",
+            "impl Send for DpadHoldBehavior",
+            "impl Sync for DpadHoldBehavior",
+            "impl Unpin for DpadHoldBehavior",
+            "impl UnwindSafe for DpadHoldBehavior"
+          ]
+        },
+        "enum.DpadPresentation.html": {
+          "declarations": [
+            "pub enum DpadPresentation { IndependentButtons, SnappingAxis, }"
+          ],
+          "traits": [
+            "impl Clone for DpadPresentation",
+            "impl Copy for DpadPresentation",
+            "impl Debug for DpadPresentation",
+            "impl Eq for DpadPresentation",
+            "impl PartialEq for DpadPresentation",
+            "impl RefUnwindSafe for DpadPresentation",
+            "impl Send for DpadPresentation",
+            "impl Sync for DpadPresentation",
+            "impl Unpin for DpadPresentation",
+            "impl UnwindSafe for DpadPresentation"
+          ]
+        },
+        "enum.DualSenseAudioPath.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseAudioPath { HeadphonesStereo, HeadphonesDualMono, HeadphonesLeftSpeakerRight, SpeakerRightOnly, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseAudioPath",
+            "impl Copy for DualSenseAudioPath",
+            "impl Debug for DualSenseAudioPath",
+            "impl Eq for DualSenseAudioPath",
+            "impl PartialEq for DualSenseAudioPath",
+            "impl RefUnwindSafe for DualSenseAudioPath",
+            "impl Send for DualSenseAudioPath",
+            "impl Sync for DualSenseAudioPath",
+            "impl Unpin for DualSenseAudioPath",
+            "impl UnwindSafe for DualSenseAudioPath"
+          ]
+        },
+        "enum.DualSenseControl.html": {
+          "declarations": [
+            "pub enum DualSenseControl { Show 13 variants Cross, Circle, Square, Triangle, L1, R1, Create, Options, PlayStation, TouchpadClick, MicrophoneMute, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseControl",
+            "impl Copy for DualSenseControl",
+            "impl Debug for DualSenseControl",
+            "impl Eq for DualSenseControl",
+            "impl PartialEq for DualSenseControl",
+            "impl RefUnwindSafe for DualSenseControl",
+            "impl Send for DualSenseControl",
+            "impl Sync for DualSenseControl",
+            "impl Unpin for DualSenseControl",
+            "impl UnwindSafe for DualSenseControl"
+          ]
+        },
+        "enum.DualSenseFeature.html": {
+          "declarations": [
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseFeature",
+            "impl Copy for DualSenseFeature",
+            "impl Debug for DualSenseFeature",
+            "impl Eq for DualSenseFeature",
+            "impl PartialEq for DualSenseFeature",
+            "impl RefUnwindSafe for DualSenseFeature",
+            "impl Send for DualSenseFeature",
+            "impl Sync for DualSenseFeature",
+            "impl Unpin for DualSenseFeature",
+            "impl UnwindSafe for DualSenseFeature"
+          ]
+        },
+        "enum.DualSenseHidOutput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseHidOutput",
+            "impl Debug for DualSenseHidOutput",
+            "impl Eq for DualSenseHidOutput",
+            "impl PartialEq for DualSenseHidOutput",
+            "impl RefUnwindSafe for DualSenseHidOutput",
+            "impl Send for DualSenseHidOutput",
+            "impl Sync for DualSenseHidOutput",
+            "impl Unpin for DualSenseHidOutput",
+            "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualSenseHidOutput), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOutputEvent",
+            "impl Debug for DualSenseOutputEvent",
+            "impl Eq for DualSenseOutputEvent",
+            "impl PartialEq for DualSenseOutputEvent",
+            "impl RefUnwindSafe for DualSenseOutputEvent",
+            "impl Send for DualSenseOutputEvent",
+            "impl Sync for DualSenseOutputEvent",
+            "impl Unpin for DualSenseOutputEvent",
+            "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualShock4Control.html": {
+          "declarations": [
+            "pub enum DualShock4Control { Cross, Circle, Square, Triangle, L1, R1, Share, Options, PlayStation, TouchpadClick, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Control",
+            "impl Copy for DualShock4Control",
+            "impl Debug for DualShock4Control",
+            "impl Eq for DualShock4Control",
+            "impl PartialEq for DualShock4Control",
+            "impl RefUnwindSafe for DualShock4Control",
+            "impl Send for DualShock4Control",
+            "impl Sync for DualShock4Control",
+            "impl Unpin for DualShock4Control",
+            "impl UnwindSafe for DualShock4Control"
+          ]
+        },
+        "enum.DualShock4HidOutput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4HidOutput",
+            "impl Debug for DualShock4HidOutput",
+            "impl Eq for DualShock4HidOutput",
+            "impl PartialEq for DualShock4HidOutput",
+            "impl RefUnwindSafe for DualShock4HidOutput",
+            "impl Send for DualShock4HidOutput",
+            "impl Sync for DualShock4HidOutput",
+            "impl Unpin for DualShock4HidOutput",
+            "impl UnwindSafe for DualShock4HidOutput"
+          ]
+        },
+        "enum.DualShock4OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4OutputEvent",
+            "impl Debug for DualShock4OutputEvent",
+            "impl Eq for DualShock4OutputEvent",
+            "impl PartialEq for DualShock4OutputEvent",
+            "impl RefUnwindSafe for DualShock4OutputEvent",
+            "impl Send for DualShock4OutputEvent",
+            "impl Sync for DualShock4OutputEvent",
+            "impl Unpin for DualShock4OutputEvent",
+            "impl UnwindSafe for DualShock4OutputEvent"
+          ]
+        },
+        "enum.DualShock4TouchSlot.html": {
+          "declarations": [
+            "pub enum DualShock4TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4TouchSlot",
+            "impl Copy for DualShock4TouchSlot",
+            "impl Debug for DualShock4TouchSlot",
+            "impl Eq for DualShock4TouchSlot",
+            "impl PartialEq for DualShock4TouchSlot",
+            "impl RefUnwindSafe for DualShock4TouchSlot",
+            "impl Send for DualShock4TouchSlot",
+            "impl Sync for DualShock4TouchSlot",
+            "impl Unpin for DualShock4TouchSlot",
+            "impl UnwindSafe for DualShock4TouchSlot"
+          ]
+        },
+        "enum.ExtraAxisInput.html": {
+          "declarations": [
+            "pub enum ExtraAxisInput { OneDimensional { id: InputControlId, title: &'static str, range: InputAxisRange, }, TwoDimensional { id: InputControlId, title: &'static str, x: InputAxisRange, y: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for ExtraAxisInput",
+            "impl Copy for ExtraAxisInput",
+            "impl Debug for ExtraAxisInput",
+            "impl Eq for ExtraAxisInput",
+            "impl PartialEq for ExtraAxisInput",
+            "impl RefUnwindSafe for ExtraAxisInput",
+            "impl Send for ExtraAxisInput",
+            "impl Sync for ExtraAxisInput",
+            "impl Unpin for ExtraAxisInput",
+            "impl UnwindSafe for ExtraAxisInput"
+          ]
+        },
+        "enum.FaceButton.html": {
+          "declarations": [
+            "pub enum FaceButton { North, South, East, West, }"
+          ],
+          "traits": [
+            "impl Clone for FaceButton",
+            "impl Copy for FaceButton",
+            "impl Debug for FaceButton",
+            "impl Eq for FaceButton",
+            "impl Hash for FaceButton",
+            "impl PartialEq for FaceButton",
+            "impl RefUnwindSafe for FaceButton",
+            "impl Send for FaceButton",
+            "impl Sync for FaceButton",
+            "impl Unpin for FaceButton",
+            "impl UnwindSafe for FaceButton"
+          ]
+        },
+        "enum.ForceFeedbackEffect.html": {
+          "declarations": [
+            "pub enum ForceFeedbackEffect { Rumble(RumbleEffect), Unsupported { id: i16, kind: u16, }, }"
+          ],
+          "traits": [
+            "impl Clone for ForceFeedbackEffect",
+            "impl Copy for ForceFeedbackEffect",
+            "impl Debug for ForceFeedbackEffect",
+            "impl Eq for ForceFeedbackEffect",
+            "impl PartialEq for ForceFeedbackEffect",
+            "impl RefUnwindSafe for ForceFeedbackEffect",
+            "impl Send for ForceFeedbackEffect",
+            "impl Sync for ForceFeedbackEffect",
+            "impl Unpin for ForceFeedbackEffect",
+            "impl UnwindSafe for ForceFeedbackEffect"
+          ]
+        },
+        "enum.ForceFeedbackEvent.html": {
+          "declarations": [
+            "pub enum ForceFeedbackEvent { Uploaded { request_id: u32, effect: ForceFeedbackEffect, status: i32, }, Erased { request_id: u32, effect_id: u32, status: i32, }, Playback { effect: RumbleEffect, repetitions: u32, }, }"
+          ],
+          "traits": [
+            "impl Clone for ForceFeedbackEvent",
+            "impl Copy for ForceFeedbackEvent",
+            "impl Debug for ForceFeedbackEvent",
+            "impl Eq for ForceFeedbackEvent",
+            "impl PartialEq for ForceFeedbackEvent",
+            "impl RefUnwindSafe for ForceFeedbackEvent",
+            "impl Send for ForceFeedbackEvent",
+            "impl Sync for ForceFeedbackEvent",
+            "impl Unpin for ForceFeedbackEvent",
+            "impl UnwindSafe for ForceFeedbackEvent"
+          ]
+        },
+        "enum.HostLifecycle.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum HostLifecycle { Started, Stopped, Opened, Closed, }"
+          ],
+          "traits": [
+            "impl Clone for HostLifecycle",
+            "impl Copy for HostLifecycle",
+            "impl Debug for HostLifecycle",
+            "impl Eq for HostLifecycle",
+            "impl PartialEq for HostLifecycle",
+            "impl RefUnwindSafe for HostLifecycle",
+            "impl Send for HostLifecycle",
+            "impl Sync for HostLifecycle",
+            "impl Unpin for HostLifecycle",
+            "impl UnwindSafe for HostLifecycle"
+          ]
+        },
+        "enum.InputTopologyError.html": {
+          "declarations": [
+            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidScale(InputControlId), }"
+          ],
+          "traits": [
+            "impl Clone for InputTopologyError",
+            "impl Copy for InputTopologyError",
+            "impl Debug for InputTopologyError",
+            "impl Display for InputTopologyError",
+            "impl Eq for InputTopologyError",
+            "impl Error for InputTopologyError",
+            "impl PartialEq for InputTopologyError",
+            "impl RefUnwindSafe for InputTopologyError",
+            "impl Send for InputTopologyError",
+            "impl Sync for InputTopologyError",
+            "impl Unpin for InputTopologyError",
+            "impl UnwindSafe for InputTopologyError"
+          ]
+        },
+        "enum.RealizationValidationStatus.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum RealizationValidationStatus { ResearchBacked, HostValidated, PhysicallyValidated, }"
+          ],
+          "traits": [
+            "impl Clone for RealizationValidationStatus",
+            "impl Copy for RealizationValidationStatus",
+            "impl Debug for RealizationValidationStatus",
+            "impl Eq for RealizationValidationStatus",
+            "impl PartialEq for RealizationValidationStatus",
+            "impl RefUnwindSafe for RealizationValidationStatus",
+            "impl Send for RealizationValidationStatus",
+            "impl Sync for RealizationValidationStatus",
+            "impl Unpin for RealizationValidationStatus",
+            "impl UnwindSafe for RealizationValidationStatus"
+          ]
+        },
+        "enum.SampleDirection.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SampleDirection { HostToController, ControllerToHost, }"
+          ],
+          "traits": [
+            "impl Clone for SampleDirection",
+            "impl Copy for SampleDirection",
+            "impl Debug for SampleDirection",
+            "impl Eq for SampleDirection",
+            "impl PartialEq for SampleDirection",
+            "impl RefUnwindSafe for SampleDirection",
+            "impl Send for SampleDirection",
+            "impl Sync for SampleDirection",
+            "impl Unpin for SampleDirection",
+            "impl UnwindSafe for SampleDirection"
+          ]
+        },
+        "enum.ServiceReadiness.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ServiceReadiness<'a> { Poll, Descriptor(ReadinessDescriptor<'a>), }"
+          ],
+          "traits": [
+            "impl<'a> Debug for ServiceReadiness<'a>",
+            "impl<'a> RefUnwindSafe for ServiceReadiness<'a>",
+            "impl<'a> Send for ServiceReadiness<'a>",
+            "impl<'a> Sync for ServiceReadiness<'a>",
+            "impl<'a> Unpin for ServiceReadiness<'a>",
+            "impl<'a> UnwindSafe for ServiceReadiness<'a>"
+          ]
+        },
+        "enum.SwitchProControl.html": {
+          "declarations": [
+            "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProControl",
+            "impl Copy for SwitchProControl",
+            "impl Debug for SwitchProControl",
+            "impl Eq for SwitchProControl",
+            "impl PartialEq for SwitchProControl",
+            "impl RefUnwindSafe for SwitchProControl",
+            "impl Send for SwitchProControl",
+            "impl Sync for SwitchProControl",
+            "impl Unpin for SwitchProControl",
+            "impl UnwindSafe for SwitchProControl"
+          ]
+        },
+        "enum.SwitchProOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<SwitchProRumble>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOutputEvent",
+            "impl Debug for SwitchProOutputEvent",
+            "impl Eq for SwitchProOutputEvent",
+            "impl PartialEq for SwitchProOutputEvent",
+            "impl RefUnwindSafe for SwitchProOutputEvent",
+            "impl Send for SwitchProOutputEvent",
+            "impl Sync for SwitchProOutputEvent",
+            "impl Unpin for SwitchProOutputEvent",
+            "impl UnwindSafe for SwitchProOutputEvent"
+          ]
+        },
+        "enum.TouchSlot.html": {
+          "declarations": [
+            "pub enum TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for TouchSlot",
+            "impl Copy for TouchSlot",
+            "impl Debug for TouchSlot",
+            "impl Eq for TouchSlot",
+            "impl PartialEq for TouchSlot",
+            "impl RefUnwindSafe for TouchSlot",
+            "impl Send for TouchSlot",
+            "impl Sync for TouchSlot",
+            "impl Unpin for TouchSlot",
+            "impl UnwindSafe for TouchSlot"
+          ]
+        },
+        "enum.TouchpadActuation.html": {
+          "declarations": [
+            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TouchpadActuation",
+            "impl Copy for TouchpadActuation",
+            "impl Debug for TouchpadActuation",
+            "impl Eq for TouchpadActuation",
+            "impl PartialEq for TouchpadActuation",
+            "impl RefUnwindSafe for TouchpadActuation",
+            "impl Send for TouchpadActuation",
+            "impl Sync for TouchpadActuation",
+            "impl Unpin for TouchpadActuation",
+            "impl UnwindSafe for TouchpadActuation"
+          ]
+        },
+        "enum.TriggerInputKind.html": {
+          "declarations": [
+            "pub enum TriggerInputKind { Button { id: InputControlId, }, Axis { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TriggerInputKind",
+            "impl Copy for TriggerInputKind",
+            "impl Debug for TriggerInputKind",
+            "impl Eq for TriggerInputKind",
+            "impl PartialEq for TriggerInputKind",
+            "impl RefUnwindSafe for TriggerInputKind",
+            "impl Send for TriggerInputKind",
+            "impl Sync for TriggerInputKind",
+            "impl Unpin for TriggerInputKind",
+            "impl UnwindSafe for TriggerInputKind"
+          ]
+        },
+        "enum.Xbox360Control.html": {
+          "declarations": [
+            "pub enum Xbox360Control { A, B, X, Y, LeftShoulder, RightShoulder, Back, Start, Guide, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Control",
+            "impl Copy for Xbox360Control",
+            "impl Debug for Xbox360Control",
+            "impl Eq for Xbox360Control",
+            "impl PartialEq for Xbox360Control",
+            "impl RefUnwindSafe for Xbox360Control",
+            "impl Send for Xbox360Control",
+            "impl Sync for Xbox360Control",
+            "impl Unpin for Xbox360Control",
+            "impl UnwindSafe for Xbox360Control"
+          ]
+        },
+        "enum.Xbox360OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360OutputEvent",
+            "impl Debug for Xbox360OutputEvent",
+            "impl Eq for Xbox360OutputEvent",
+            "impl PartialEq for Xbox360OutputEvent",
+            "impl RefUnwindSafe for Xbox360OutputEvent",
+            "impl Send for Xbox360OutputEvent",
+            "impl Sync for Xbox360OutputEvent",
+            "impl Unpin for Xbox360OutputEvent",
+            "impl UnwindSafe for Xbox360OutputEvent"
+          ]
+        },
+        "fn.create_dualsense.html": {
+          "declarations": [
+            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualsense_with_identity.html": {
+          "declarations": [
+            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualshock4.html": {
+          "declarations": [
+            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualshock4_with_identity.html": {
+          "declarations": [
+            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_switch_pro.html": {
+          "declarations": [
+            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_xbox360.html": {
+          "declarations": [
+            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "struct.AbsoluteAxisSurface.html": {
+          "declarations": [
+            "pub struct AbsoluteAxisSurface { pub control: &'static str, pub event_code: u16, pub minimum: i32, pub maximum: i32, pub neutral: i32, pub flat: i32, }"
+          ],
+          "traits": [
+            "impl Clone for AbsoluteAxisSurface",
+            "impl Copy for AbsoluteAxisSurface",
+            "impl Debug for AbsoluteAxisSurface",
+            "impl Eq for AbsoluteAxisSurface",
+            "impl PartialEq for AbsoluteAxisSurface",
+            "impl RefUnwindSafe for AbsoluteAxisSurface",
+            "impl Send for AbsoluteAxisSurface",
+            "impl Sync for AbsoluteAxisSurface",
+            "impl Unpin for AbsoluteAxisSurface",
+            "impl UnwindSafe for AbsoluteAxisSurface"
+          ]
+        },
+        "struct.AudioDiagnostics.html": {
+          "declarations": [
+            "pub struct AudioDiagnostics { /* private fields */ }",
+            "pub const fn is_closed(&self) -> bool",
+            "pub const fn failed(&self) -> bool",
+            "pub const fn underrun_frames(&self) -> u64",
+            "pub const fn dropped_playback_frames(&self) -> u64",
+            "pub const fn last_error(&self) -> Option<&AudioError>"
+          ],
+          "traits": [
+            "impl Clone for AudioDiagnostics",
+            "impl Debug for AudioDiagnostics",
+            "impl Eq for AudioDiagnostics",
+            "impl PartialEq for AudioDiagnostics",
+            "impl RefUnwindSafe for AudioDiagnostics",
+            "impl Send for AudioDiagnostics",
+            "impl Sync for AudioDiagnostics",
+            "impl Unpin for AudioDiagnostics",
+            "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioEndpoint.html": {
+          "declarations": [
+            "pub struct AudioEndpoint { /* private fields */ }",
+            "pub const fn group(&self) -> &'static str",
+            "pub fn clock_domain(&self) -> &str",
+            "pub const fn host(&self) -> &AudioEndpointSelector",
+            "pub const fn caller(&self) -> Option<&AudioEndpointSelector>",
+            "pub const fn format(&self) -> &PcmFormat",
+            "pub const fn direction(&self) -> SampleDirection",
+            "pub const fn access(&self) -> AudioAccess"
+          ],
+          "traits": [
+            "impl Clone for AudioEndpoint",
+            "impl Debug for AudioEndpoint",
+            "impl Eq for AudioEndpoint",
+            "impl PartialEq for AudioEndpoint",
+            "impl RefUnwindSafe for AudioEndpoint",
+            "impl Send for AudioEndpoint",
+            "impl Sync for AudioEndpoint",
+            "impl Unpin for AudioEndpoint",
+            "impl UnwindSafe for AudioEndpoint"
+          ]
+        },
+        "struct.AudioOptions.html": {
+          "declarations": [
+            "pub struct AudioOptions { /* private fields */ }",
+            "pub const fn new(exposure: AudioExposure) -> AudioOptions",
+            "pub const fn with_playback_access(self, access: AudioAccess) -> AudioOptions",
+            "pub const fn with_microphone_access(self, access: AudioAccess) -> AudioOptions",
+            "pub const fn exposure(self) -> AudioExposure",
+            "pub const fn playback_access(self) -> AudioAccess",
+            "pub const fn microphone_access(self) -> AudioAccess"
+          ],
+          "traits": [
+            "impl Clone for AudioOptions",
+            "impl Copy for AudioOptions",
+            "impl Debug for AudioOptions",
+            "impl Default for AudioOptions",
+            "impl Eq for AudioOptions",
+            "impl PartialEq for AudioOptions",
+            "impl RefUnwindSafe for AudioOptions",
+            "impl Send for AudioOptions",
+            "impl Sync for AudioOptions",
+            "impl Unpin for AudioOptions",
+            "impl UnwindSafe for AudioOptions"
+          ]
+        },
+        "struct.AudioRead.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioRead { pub frames: usize, pub first_frame: u64, pub discontinuity: bool, }"
+          ],
+          "traits": [
+            "impl Clone for AudioRead",
+            "impl Copy for AudioRead",
+            "impl Debug for AudioRead",
+            "impl Eq for AudioRead",
+            "impl PartialEq for AudioRead",
+            "impl RefUnwindSafe for AudioRead",
+            "impl Send for AudioRead",
+            "impl Sync for AudioRead",
+            "impl Unpin for AudioRead",
+            "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AuxiliaryButtonInput.html": {
+          "declarations": [
+            "pub struct AuxiliaryButtonInput { pub id: InputControlId, pub label: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for AuxiliaryButtonInput",
+            "impl Copy for AuxiliaryButtonInput",
+            "impl Debug for AuxiliaryButtonInput",
+            "impl Eq for AuxiliaryButtonInput",
+            "impl PartialEq for AuxiliaryButtonInput",
+            "impl RefUnwindSafe for AuxiliaryButtonInput",
+            "impl Send for AuxiliaryButtonInput",
+            "impl Sync for AuxiliaryButtonInput",
+            "impl Unpin for AuxiliaryButtonInput",
+            "impl UnwindSafe for AuxiliaryButtonInput"
+          ]
+        },
+        "struct.BatteryLevel.html": {
+          "declarations": [
+            "pub struct BatteryLevel(/* private fields */);",
+            "pub const fn percent(self) -> u8",
+            "pub fn new(percent: u8) -> Result<BatteryLevel, ControlError>"
+          ],
+          "traits": [
+            "impl Clone for BatteryLevel",
+            "impl Copy for BatteryLevel",
+            "impl Debug for BatteryLevel",
+            "impl Eq for BatteryLevel",
+            "impl PartialEq for BatteryLevel",
+            "impl RefUnwindSafe for BatteryLevel",
+            "impl Send for BatteryLevel",
+            "impl Sync for BatteryLevel",
+            "impl Unpin for BatteryLevel",
+            "impl UnwindSafe for BatteryLevel"
+          ]
+        },
+        "struct.BatteryState.html": {
+          "declarations": [
+            "pub struct BatteryState { /* private fields */ }",
+            "pub const fn is_exposed(self) -> bool",
+            "pub const fn level(self) -> BatteryLevel"
+          ],
+          "traits": [
+            "impl Clone for BatteryState",
+            "impl Copy for BatteryState",
+            "impl Debug for BatteryState",
+            "impl Default for BatteryState",
+            "impl Eq for BatteryState",
+            "impl PartialEq for BatteryState",
+            "impl RefUnwindSafe for BatteryState",
+            "impl Send for BatteryState",
+            "impl Sync for BatteryState",
+            "impl Unpin for BatteryState",
+            "impl UnwindSafe for BatteryState"
+          ]
+        },
+        "struct.ClusterPlacement.html": {
+          "declarations": [
+            "pub struct ClusterPlacement { pub column: i8, pub row: i8, }",
+            "pub const NORTH: ClusterPlacement",
+            "pub const SOUTH: ClusterPlacement",
+            "pub const EAST: ClusterPlacement",
+            "pub const WEST: ClusterPlacement"
+          ],
+          "traits": [
+            "impl Clone for ClusterPlacement",
+            "impl Copy for ClusterPlacement",
+            "impl Debug for ClusterPlacement",
+            "impl Eq for ClusterPlacement",
+            "impl Hash for ClusterPlacement",
+            "impl PartialEq for ClusterPlacement",
+            "impl RefUnwindSafe for ClusterPlacement",
+            "impl Send for ClusterPlacement",
+            "impl Sync for ClusterPlacement",
+            "impl Unpin for ClusterPlacement",
+            "impl UnwindSafe for ClusterPlacement"
+          ]
+        },
+        "struct.ComponentAssociation.html": {
+          "declarations": [
+            "pub struct ComponentAssociation { /* private fields */ }",
+            "pub const fn kind(&self) -> ComponentKind",
+            "pub const fn role(&self) -> &'static str",
+            "pub const fn surface(&self) -> Option<&'static ControllerSurface>",
+            "pub fn audio_endpoint(&self) -> Option<&AudioEndpoint>",
+            "pub fn requested_physical_path(&self) -> Option<&str>",
+            "pub fn requested_unique_id(&self) -> Option<&str>",
+            "pub fn observed_host_path(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for ComponentAssociation",
+            "impl Debug for ComponentAssociation",
+            "impl Eq for ComponentAssociation",
+            "impl PartialEq for ComponentAssociation",
+            "impl RefUnwindSafe for ComponentAssociation",
+            "impl Send for ComponentAssociation",
+            "impl Sync for ComponentAssociation",
+            "impl Unpin for ComponentAssociation",
+            "impl UnwindSafe for ComponentAssociation"
+          ]
+        },
+        "struct.ControllerAssociation.html": {
+          "declarations": [
+            "pub struct ControllerAssociation { /* private fields */ }",
+            "pub const fn controller(&self) -> ControllerId",
+            "pub const fn realization(&self) -> RealizationId",
+            "pub const fn creation(&self) -> u64",
+            "pub fn components(&self) -> &[ComponentAssociation]"
+          ],
+          "traits": [
+            "impl Clone for ControllerAssociation",
+            "impl Debug for ControllerAssociation",
+            "impl Eq for ControllerAssociation",
+            "impl PartialEq for ControllerAssociation",
+            "impl RefUnwindSafe for ControllerAssociation",
+            "impl Send for ControllerAssociation",
+            "impl Sync for ControllerAssociation",
+            "impl Unpin for ControllerAssociation",
+            "impl UnwindSafe for ControllerAssociation"
+          ]
+        },
+        "struct.ControllerAudio.html": {
+          "declarations": [
+            "pub struct ControllerAudio { /* private fields */ }",
+            "pub fn diagnostics(&self) -> AudioDiagnostics",
+            "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
+            "pub const fn limitation(&self) -> &'static str",
+            "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
+            "pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError>",
+            "pub fn flush_playback(&mut self) -> Result<(), AudioError>",
+            "pub fn flush_microphone(&mut self) -> Result<(), AudioError>",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn underrun_frames(&self) -> u64",
+            "pub fn dropped_playback_frames(&self) -> u64",
+            "pub fn microphone_consumed_frames(&mut self) -> Result<Option<u64>, AudioError>",
+            "pub fn dropped_microphone_frames(&mut self) -> Result<Option<u64>, AudioError>",
+            "pub fn last_error(&self) -> Option<&AudioError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for ControllerAudio",
+            "impl !UnwindSafe for ControllerAudio",
+            "impl Drop for ControllerAudio",
+            "impl Send for ControllerAudio",
+            "impl Sync for ControllerAudio",
+            "impl Unpin for ControllerAudio"
+          ]
+        },
+        "struct.ControllerDiagnostics.html": {
+          "declarations": [
+            "pub struct ControllerDiagnostics { /* private fields */ }",
+            "pub const fn status(&self) -> ControllerStatus",
+            "pub const fn frames_sent(&self) -> u64",
+            "pub const fn reverse_events_drained(&self) -> u64",
+            "pub const fn write_failures(&self) -> u64",
+            "pub const fn lifecycle_events(&self) -> u64",
+            "pub const fn dropped_output_events(&self) -> u64",
+            "pub fn last_error(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for ControllerDiagnostics",
+            "impl Debug for ControllerDiagnostics",
+            "impl Eq for ControllerDiagnostics",
+            "impl PartialEq for ControllerDiagnostics",
+            "impl RefUnwindSafe for ControllerDiagnostics",
+            "impl Send for ControllerDiagnostics",
+            "impl Sync for ControllerDiagnostics",
+            "impl Unpin for ControllerDiagnostics",
+            "impl UnwindSafe for ControllerDiagnostics"
+          ]
+        },
+        "struct.ControllerId.html": {
+          "declarations": [
+            "pub struct ControllerId(/* private fields */);",
+            "pub const fn new(value: &'static str) -> ControllerId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for ControllerId",
+            "impl Copy for ControllerId",
+            "impl Debug for ControllerId",
+            "impl Display for ControllerId",
+            "impl Eq for ControllerId",
+            "impl Hash for ControllerId",
+            "impl PartialEq for ControllerId",
+            "impl RefUnwindSafe for ControllerId",
+            "impl Send for ControllerId",
+            "impl Sync for ControllerId",
+            "impl Unpin for ControllerId",
+            "impl UnwindSafe for ControllerId"
+          ]
+        },
+        "struct.ControllerSurface.html": {
+          "declarations": [
+            "pub struct ControllerSurface { /* private fields */ }",
+            "pub const fn target(&self) -> RealizationId",
+            "pub const fn validation_status(&self) -> RealizationValidationStatus",
+            "pub const fn digital_controls(&self) -> &'static [DigitalControlSurface]",
+            "pub const fn axes(&self) -> &'static [AbsoluteAxisSurface]",
+            "pub const fn outputs(&self) -> &'static [OutputSurface]",
+            "pub const fn restrictions(&self) -> &'static [TargetRestriction]",
+            "pub const fn input_topology(&self) -> &'static InputTopology"
+          ],
+          "traits": [
+            "impl Clone for ControllerSurface",
+            "impl Copy for ControllerSurface",
+            "impl Debug for ControllerSurface",
+            "impl Eq for ControllerSurface",
+            "impl PartialEq for ControllerSurface",
+            "impl RefUnwindSafe for ControllerSurface",
+            "impl Send for ControllerSurface",
+            "impl Sync for ControllerSurface",
+            "impl Unpin for ControllerSurface",
+            "impl UnwindSafe for ControllerSurface"
+          ]
+        },
+        "struct.CreationOptions.html": {
+          "declarations": [
+            "pub struct CreationOptions { /* private fields */ }",
+            "pub const fn new(target: RealizationId) -> Self",
+            "pub const fn realization(self) -> RealizationId",
+            "pub const fn with_audio(self, audio: AudioOptions) -> Self",
+            "pub const fn audio(self) -> AudioOptions"
+          ],
+          "traits": [
+            "impl Clone for CreationOptions",
+            "impl Copy for CreationOptions",
+            "impl Debug for CreationOptions",
+            "impl Eq for CreationOptions",
+            "impl PartialEq for CreationOptions",
+            "impl RefUnwindSafe for CreationOptions",
+            "impl Send for CreationOptions",
+            "impl Sync for CreationOptions",
+            "impl Unpin for CreationOptions",
+            "impl UnwindSafe for CreationOptions"
+          ]
+        },
+        "struct.CustomInputModule.html": {
+          "declarations": [
+            "pub struct CustomInputModule { pub id: InputControlId, pub title: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for CustomInputModule",
+            "impl Copy for CustomInputModule",
+            "impl Debug for CustomInputModule",
+            "impl Eq for CustomInputModule",
+            "impl PartialEq for CustomInputModule",
+            "impl RefUnwindSafe for CustomInputModule",
+            "impl Send for CustomInputModule",
+            "impl Sync for CustomInputModule",
+            "impl Unpin for CustomInputModule",
+            "impl UnwindSafe for CustomInputModule"
+          ]
+        },
+        "struct.DigitalControlSurface.html": {
+          "declarations": [
+            "pub struct DigitalControlSurface { pub control: &'static str, pub event_code: u16, }"
+          ],
+          "traits": [
+            "impl Clone for DigitalControlSurface",
+            "impl Copy for DigitalControlSurface",
+            "impl Debug for DigitalControlSurface",
+            "impl Eq for DigitalControlSurface",
+            "impl PartialEq for DigitalControlSurface",
+            "impl RefUnwindSafe for DigitalControlSurface",
+            "impl Send for DigitalControlSurface",
+            "impl Sync for DigitalControlSurface",
+            "impl Unpin for DigitalControlSurface",
+            "impl UnwindSafe for DigitalControlSurface"
+          ]
+        },
+        "struct.DpadCluster.html": {
+          "declarations": [
+            "pub struct DpadCluster { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn presentation(&self) -> DpadPresentation",
+            "pub const fn hold_behavior(&self) -> DpadHoldBehavior"
+          ],
+          "traits": [
+            "impl Clone for DpadCluster",
+            "impl Copy for DpadCluster",
+            "impl Debug for DpadCluster",
+            "impl Eq for DpadCluster",
+            "impl PartialEq for DpadCluster",
+            "impl RefUnwindSafe for DpadCluster",
+            "impl Send for DpadCluster",
+            "impl Sync for DpadCluster",
+            "impl Unpin for DpadCluster",
+            "impl UnwindSafe for DpadCluster"
+          ]
+        },
+        "struct.DualSenseAxis.html": {
+          "declarations": [
+            "pub struct DualSenseAxis(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> DualSenseAxis",
+            "pub const fn neutral() -> DualSenseAxis"
+          ],
+          "traits": [
+            "impl Clone for DualSenseAxis",
+            "impl Copy for DualSenseAxis",
+            "impl Debug for DualSenseAxis",
+            "impl Eq for DualSenseAxis",
+            "impl PartialEq for DualSenseAxis",
+            "impl RefUnwindSafe for DualSenseAxis",
+            "impl Send for DualSenseAxis",
+            "impl Sync for DualSenseAxis",
+            "impl Unpin for DualSenseAxis",
+            "impl UnwindSafe for DualSenseAxis"
+          ]
+        },
+        "struct.DualSenseController.html": {
+          "declarations": [
+            "pub struct DualSenseController { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &DualSenseState",
+            "pub fn surface(&self) -> &'static DualSenseSurface",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, control: DualSenseControl, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: DualSenseAxis, y: DualSenseAxis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: DualSenseAxis, y: DualSenseAxis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, left: DualSenseTrigger, right: DualSenseTrigger, ) -> Result<(), ControlError>",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, ) -> Result<(), ControlError>",
+            "pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError>",
+            "pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError>",
+            "pub fn set_battery_level( &mut self, level: BatteryLevel, ) -> Result<(), ControlError>",
+            "pub fn feature_available( &self, feature: DualSenseFeature, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for DualSenseController",
+            "impl !Sync for DualSenseController",
+            "impl !UnwindSafe for DualSenseController",
+            "impl Send for DualSenseController",
+            "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseIdentity.html": {
+          "declarations": [
+            "pub struct DualSenseIdentity(/* private fields */);",
+            "pub fn generate() -> Result<Self, ControllerError>",
+            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
+            "pub const fn to_bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for DualSenseIdentity",
+            "impl Copy for DualSenseIdentity",
+            "impl Debug for DualSenseIdentity",
+            "impl Eq for DualSenseIdentity",
+            "impl Hash for DualSenseIdentity",
+            "impl PartialEq for DualSenseIdentity",
+            "impl RefUnwindSafe for DualSenseIdentity",
+            "impl Send for DualSenseIdentity",
+            "impl Sync for DualSenseIdentity",
+            "impl Unpin for DualSenseIdentity",
+            "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseState.html": {
+          "declarations": [
+            "pub struct DualSenseState { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
+            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
+            "pub const fn motion(&self) -> MotionSample",
+            "pub const fn battery(&self) -> BatteryState",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+          ],
+          "traits": [
+            "impl Clone for DualSenseState",
+            "impl Debug for DualSenseState",
+            "impl Default for DualSenseState",
+            "impl Eq for DualSenseState",
+            "impl PartialEq for DualSenseState",
+            "impl RefUnwindSafe for DualSenseState",
+            "impl Send for DualSenseState",
+            "impl Sync for DualSenseState",
+            "impl Unpin for DualSenseState",
+            "impl UnwindSafe for DualSenseState"
+          ]
+        },
+        "struct.DualSenseSurface.html": {
+          "declarations": [
+            "pub struct DualSenseSurface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for DualSenseSurface",
+            "impl ControllerSurfaceInfo for DualSenseSurface",
+            "impl Copy for DualSenseSurface",
+            "impl Debug for DualSenseSurface",
+            "impl Eq for DualSenseSurface",
+            "impl PartialEq for DualSenseSurface",
+            "impl RefUnwindSafe for DualSenseSurface",
+            "impl Send for DualSenseSurface",
+            "impl Sync for DualSenseSurface",
+            "impl Unpin for DualSenseSurface",
+            "impl UnwindSafe for DualSenseSurface"
+          ]
+        },
+        "struct.DualSenseTouchContact.html": {
+          "declarations": [
+            "pub struct DualSenseTouchContact { /* private fields */ }",
+            "pub fn new( id: u8, x: u16, y: u16, ) -> Result<DualSenseTouchContact, ControlError>",
+            "pub const fn id(self) -> u8",
+            "pub const fn x(self) -> u16",
+            "pub const fn y(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTouchContact",
+            "impl Copy for DualSenseTouchContact",
+            "impl Debug for DualSenseTouchContact",
+            "impl Eq for DualSenseTouchContact",
+            "impl PartialEq for DualSenseTouchContact",
+            "impl RefUnwindSafe for DualSenseTouchContact",
+            "impl Send for DualSenseTouchContact",
+            "impl Sync for DualSenseTouchContact",
+            "impl Unpin for DualSenseTouchContact",
+            "impl UnwindSafe for DualSenseTouchContact"
+          ]
+        },
+        "struct.DualSenseTrigger.html": {
+          "declarations": [
+            "pub struct DualSenseTrigger(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> DualSenseTrigger"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTrigger",
+            "impl Copy for DualSenseTrigger",
+            "impl Debug for DualSenseTrigger",
+            "impl Eq for DualSenseTrigger",
+            "impl PartialEq for DualSenseTrigger",
+            "impl RefUnwindSafe for DualSenseTrigger",
+            "impl Send for DualSenseTrigger",
+            "impl Sync for DualSenseTrigger",
+            "impl Unpin for DualSenseTrigger",
+            "impl UnwindSafe for DualSenseTrigger"
+          ]
+        },
+        "struct.DualShock4Axis.html": {
+          "declarations": [
+            "pub struct DualShock4Axis(/* private fields */);",
+            "pub const fn new(raw: u8) -> DualShock4Axis",
+            "pub const fn raw(self) -> u8"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Axis",
+            "impl Copy for DualShock4Axis",
+            "impl Debug for DualShock4Axis",
+            "impl Eq for DualShock4Axis",
+            "impl PartialEq for DualShock4Axis",
+            "impl RefUnwindSafe for DualShock4Axis",
+            "impl Send for DualShock4Axis",
+            "impl Sync for DualShock4Axis",
+            "impl Unpin for DualShock4Axis",
+            "impl UnwindSafe for DualShock4Axis"
+          ]
+        },
+        "struct.DualShock4Controller.html": {
+          "declarations": [
+            "pub struct DualShock4Controller { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &DualShock4State",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn surface(&self) -> &'static DualShock4Surface",
+            "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, c: DualShock4Control, p: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: DualShock4Axis, y: DualShock4Axis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: DualShock4Axis, y: DualShock4Axis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, l: DualShock4Trigger, r: DualShock4Trigger, ) -> Result<(), ControlError>",
+            "pub fn set_motion( &mut self, m: DualShock4MotionSample, ) -> Result<(), ControlError>",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
+            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for DualShock4Controller",
+            "impl !Sync for DualShock4Controller",
+            "impl !UnwindSafe for DualShock4Controller",
+            "impl Send for DualShock4Controller",
+            "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4Identity.html": {
+          "declarations": [
+            "pub struct DualShock4Identity(/* private fields */);",
+            "pub fn generate() -> Result<Self, ControllerError>",
+            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
+            "pub const fn to_bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Identity",
+            "impl Copy for DualShock4Identity",
+            "impl Debug for DualShock4Identity",
+            "impl Eq for DualShock4Identity",
+            "impl Hash for DualShock4Identity",
+            "impl PartialEq for DualShock4Identity",
+            "impl RefUnwindSafe for DualShock4Identity",
+            "impl Send for DualShock4Identity",
+            "impl Sync for DualShock4Identity",
+            "impl Unpin for DualShock4Identity",
+            "impl UnwindSafe for DualShock4Identity"
+          ]
+        },
+        "struct.DualShock4MotionSample.html": {
+          "declarations": [
+            "pub struct DualShock4MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4MotionSample",
+            "impl Copy for DualShock4MotionSample",
+            "impl Debug for DualShock4MotionSample",
+            "impl Eq for DualShock4MotionSample",
+            "impl PartialEq for DualShock4MotionSample",
+            "impl RefUnwindSafe for DualShock4MotionSample",
+            "impl Send for DualShock4MotionSample",
+            "impl Sync for DualShock4MotionSample",
+            "impl Unpin for DualShock4MotionSample",
+            "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4State.html": {
+          "declarations": [
+            "pub struct DualShock4State { /* private fields */ }",
+            "pub const fn motion(&self) -> DualShock4MotionSample",
+            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
+            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
+            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+          ],
+          "traits": [
+            "impl Clone for DualShock4State",
+            "impl Debug for DualShock4State",
+            "impl Default for DualShock4State",
+            "impl Eq for DualShock4State",
+            "impl PartialEq for DualShock4State",
+            "impl RefUnwindSafe for DualShock4State",
+            "impl Send for DualShock4State",
+            "impl Sync for DualShock4State",
+            "impl Unpin for DualShock4State",
+            "impl UnwindSafe for DualShock4State"
+          ]
+        },
+        "struct.DualShock4Surface.html": {
+          "declarations": [
+            "pub struct DualShock4Surface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Surface",
+            "impl ControllerSurfaceInfo for DualShock4Surface",
+            "impl Copy for DualShock4Surface",
+            "impl Debug for DualShock4Surface",
+            "impl Eq for DualShock4Surface",
+            "impl PartialEq for DualShock4Surface",
+            "impl RefUnwindSafe for DualShock4Surface",
+            "impl Send for DualShock4Surface",
+            "impl Sync for DualShock4Surface",
+            "impl Unpin for DualShock4Surface",
+            "impl UnwindSafe for DualShock4Surface"
+          ]
+        },
+        "struct.DualShock4TouchContact.html": {
+          "declarations": [
+            "pub struct DualShock4TouchContact { /* private fields */ }",
+            "pub fn new( id: u8, x: u16, y: u16, ) -> Result<DualShock4TouchContact, ControlError>",
+            "pub const fn id(self) -> u8",
+            "pub const fn x(self) -> u16",
+            "pub const fn y(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for DualShock4TouchContact",
+            "impl Copy for DualShock4TouchContact",
+            "impl Debug for DualShock4TouchContact",
+            "impl Eq for DualShock4TouchContact",
+            "impl PartialEq for DualShock4TouchContact",
+            "impl RefUnwindSafe for DualShock4TouchContact",
+            "impl Send for DualShock4TouchContact",
+            "impl Sync for DualShock4TouchContact",
+            "impl Unpin for DualShock4TouchContact",
+            "impl UnwindSafe for DualShock4TouchContact"
+          ]
+        },
+        "struct.DualShock4Trigger.html": {
+          "declarations": [
+            "pub struct DualShock4Trigger(/* private fields */);",
+            "pub const fn new(raw: u8) -> DualShock4Trigger",
+            "pub const fn raw(self) -> u8"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Trigger",
+            "impl Copy for DualShock4Trigger",
+            "impl Debug for DualShock4Trigger",
+            "impl Eq for DualShock4Trigger",
+            "impl PartialEq for DualShock4Trigger",
+            "impl RefUnwindSafe for DualShock4Trigger",
+            "impl Send for DualShock4Trigger",
+            "impl Sync for DualShock4Trigger",
+            "impl Unpin for DualShock4Trigger",
+            "impl UnwindSafe for DualShock4Trigger"
+          ]
+        },
+        "struct.FaceButtonCluster.html": {
+          "declarations": [
+            "pub struct FaceButtonCluster { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn buttons(&self) -> &'static [FaceButtonInput]"
+          ],
+          "traits": [
+            "impl Clone for FaceButtonCluster",
+            "impl Copy for FaceButtonCluster",
+            "impl Debug for FaceButtonCluster",
+            "impl Eq for FaceButtonCluster",
+            "impl PartialEq for FaceButtonCluster",
+            "impl RefUnwindSafe for FaceButtonCluster",
+            "impl Send for FaceButtonCluster",
+            "impl Sync for FaceButtonCluster",
+            "impl Unpin for FaceButtonCluster",
+            "impl UnwindSafe for FaceButtonCluster"
+          ]
+        },
+        "struct.FaceButtonInput.html": {
+          "declarations": [
+            "pub struct FaceButtonInput { pub button: FaceButton, pub label: &'static str, pub placement: ClusterPlacement, }"
+          ],
+          "traits": [
+            "impl Clone for FaceButtonInput",
+            "impl Copy for FaceButtonInput",
+            "impl Debug for FaceButtonInput",
+            "impl Eq for FaceButtonInput",
+            "impl PartialEq for FaceButtonInput",
+            "impl RefUnwindSafe for FaceButtonInput",
+            "impl Send for FaceButtonInput",
+            "impl Sync for FaceButtonInput",
+            "impl Unpin for FaceButtonInput",
+            "impl UnwindSafe for FaceButtonInput"
+          ]
+        },
+        "struct.InputAxisRange.html": {
+          "declarations": [
+            "pub struct InputAxisRange { pub minimum: i32, pub maximum: i32, pub neutral: i32, }",
+            "pub const fn is_valid(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for InputAxisRange",
+            "impl Copy for InputAxisRange",
+            "impl Debug for InputAxisRange",
+            "impl Eq for InputAxisRange",
+            "impl PartialEq for InputAxisRange",
+            "impl RefUnwindSafe for InputAxisRange",
+            "impl Send for InputAxisRange",
+            "impl Sync for InputAxisRange",
+            "impl Unpin for InputAxisRange",
+            "impl UnwindSafe for InputAxisRange"
+          ]
+        },
+        "struct.InputControlId.html": {
+          "declarations": [
+            "pub struct InputControlId(/* private fields */);",
+            "pub const fn new(value: &'static str) -> InputControlId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for InputControlId",
+            "impl Copy for InputControlId",
+            "impl Debug for InputControlId",
+            "impl Eq for InputControlId",
+            "impl Hash for InputControlId",
+            "impl PartialEq for InputControlId",
+            "impl RefUnwindSafe for InputControlId",
+            "impl Send for InputControlId",
+            "impl Sync for InputControlId",
+            "impl Unpin for InputControlId",
+            "impl UnwindSafe for InputControlId"
+          ]
+        },
+        "struct.InputScale.html": {
+          "declarations": [
+            "pub struct InputScale { pub numerator: i32, pub denominator: u32, }",
+            "pub const IDENTITY: InputScale"
+          ],
+          "traits": [
+            "impl Clone for InputScale",
+            "impl Copy for InputScale",
+            "impl Debug for InputScale",
+            "impl Eq for InputScale",
+            "impl PartialEq for InputScale",
+            "impl RefUnwindSafe for InputScale",
+            "impl Send for InputScale",
+            "impl Sync for InputScale",
+            "impl Unpin for InputScale",
+            "impl UnwindSafe for InputScale"
+          ]
+        },
+        "struct.InputTopology.html": {
+          "declarations": [
+            "pub struct InputTopology { /* private fields */ }",
+            "pub const fn auxiliary_buttons(&self) -> &'static [AuxiliaryButtonInput]",
+            "pub const fn face_button_clusters(&self) -> &'static [FaceButtonCluster]",
+            "pub const fn dpads(&self) -> &'static [DpadCluster]",
+            "pub const fn sticks(&self) -> &'static [StickInput]",
+            "pub const fn trigger_stacks(&self) -> &'static [TriggerStack]",
+            "pub const fn touchpads(&self) -> &'static [TouchpadInput]",
+            "pub const fn motion(&self) -> &'static [MotionInput]",
+            "pub const fn extra_axes(&self) -> &'static [ExtraAxisInput]",
+            "pub const fn custom_modules(&self) -> &'static [CustomInputModule]",
+            "pub const EMPTY: InputTopology",
+            "pub fn validate(&self) -> Result<(), InputTopologyError>"
+          ],
+          "traits": [
+            "impl Clone for InputTopology",
+            "impl Copy for InputTopology",
+            "impl Debug for InputTopology",
+            "impl Eq for InputTopology",
+            "impl PartialEq for InputTopology",
+            "impl RefUnwindSafe for InputTopology",
+            "impl Send for InputTopology",
+            "impl Sync for InputTopology",
+            "impl Unpin for InputTopology",
+            "impl UnwindSafe for InputTopology"
+          ]
+        },
+        "struct.MotionInput.html": {
+          "declarations": [
+            "pub struct MotionInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn range(&self) -> InputAxisRange",
+            "pub const fn gyroscope_scale(&self) -> [InputScale; 3]",
+            "pub const fn accelerometer_scale(&self) -> [InputScale; 3]"
+          ],
+          "traits": [
+            "impl Clone for MotionInput",
+            "impl Copy for MotionInput",
+            "impl Debug for MotionInput",
+            "impl Eq for MotionInput",
+            "impl PartialEq for MotionInput",
+            "impl RefUnwindSafe for MotionInput",
+            "impl Send for MotionInput",
+            "impl Sync for MotionInput",
+            "impl Unpin for MotionInput",
+            "impl UnwindSafe for MotionInput"
+          ]
+        },
+        "struct.MotionSample.html": {
+          "declarations": [
+            "pub struct MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for MotionSample",
+            "impl Copy for MotionSample",
+            "impl Debug for MotionSample",
+            "impl Eq for MotionSample",
+            "impl PartialEq for MotionSample",
+            "impl RefUnwindSafe for MotionSample",
+            "impl Send for MotionSample",
+            "impl Sync for MotionSample",
+            "impl Unpin for MotionSample",
+            "impl UnwindSafe for MotionSample"
+          ]
+        },
+        "struct.OutputSurface.html": {
+          "declarations": [
+            "pub struct OutputSurface { pub name: &'static str, pub event_type: u16, pub event_code: u16, }"
+          ],
+          "traits": [
+            "impl Clone for OutputSurface",
+            "impl Copy for OutputSurface",
+            "impl Debug for OutputSurface",
+            "impl Eq for OutputSurface",
+            "impl PartialEq for OutputSurface",
+            "impl RefUnwindSafe for OutputSurface",
+            "impl Send for OutputSurface",
+            "impl Sync for OutputSurface",
+            "impl Unpin for OutputSurface",
+            "impl UnwindSafe for OutputSurface"
+          ]
+        },
+        "struct.PcmFormat.html": {
+          "declarations": [
+            "pub struct PcmFormat { /* private fields */ }",
+            "pub fn new( rate: u32, channels: &[AudioChannel], ) -> Result<PcmFormat, AudioError>",
+            "pub const fn sample_rate_hz(&self) -> u32",
+            "pub fn channels(&self) -> &[AudioChannel]"
+          ],
+          "traits": [
+            "impl Clone for PcmFormat",
+            "impl Debug for PcmFormat",
+            "impl Eq for PcmFormat",
+            "impl PartialEq for PcmFormat",
+            "impl RefUnwindSafe for PcmFormat",
+            "impl Send for PcmFormat",
+            "impl Sync for PcmFormat",
+            "impl Unpin for PcmFormat",
+            "impl UnwindSafe for PcmFormat"
+          ]
+        },
+        "struct.ReadinessDescriptor.html": {
+          "declarations": [
+            "pub struct ReadinessDescriptor<'a> { /* private fields */ }",
+            "pub const fn raw_fd(&self) -> i32"
+          ],
+          "traits": [
+            "impl<'a> Debug for ReadinessDescriptor<'a>",
+            "impl<'a> RefUnwindSafe for ReadinessDescriptor<'a>",
+            "impl<'a> Send for ReadinessDescriptor<'a>",
+            "impl<'a> Sync for ReadinessDescriptor<'a>",
+            "impl<'a> Unpin for ReadinessDescriptor<'a>",
+            "impl<'a> UnwindSafe for ReadinessDescriptor<'a>"
+          ]
+        },
+        "struct.RealizationId.html": {
+          "declarations": [
+            "pub struct RealizationId(/* private fields */);",
+            "pub const LINUX_UINPUT: RealizationId",
+            "pub const LINUX_UHID_BLUETOOTH: RealizationId",
+            "pub const LINUX_UHID_USB: RealizationId",
+            "pub const LINUX_DUMMY_HCD_USB_HID: RealizationId",
+            "pub const LINUX_USBIP_USB_AUDIO: RealizationId",
+            "pub const fn new(value: &'static str) -> RealizationId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for RealizationId",
+            "impl Copy for RealizationId",
+            "impl Debug for RealizationId",
+            "impl Display for RealizationId",
+            "impl Eq for RealizationId",
+            "impl Hash for RealizationId",
+            "impl Ord for RealizationId",
+            "impl PartialEq for RealizationId",
+            "impl PartialOrd for RealizationId",
+            "impl RefUnwindSafe for RealizationId",
+            "impl Send for RealizationId",
+            "impl Sync for RealizationId",
+            "impl Unpin for RealizationId",
+            "impl UnwindSafe for RealizationId"
+          ]
+        },
+        "struct.RealizationTargetSet.html": {
+          "declarations": [
+            "pub struct RealizationTargetSet(/* private fields */);",
+            "pub const EMPTY: RealizationTargetSet",
+            "pub const fn new(ids: &'static [RealizationId]) -> RealizationTargetSet",
+            "pub const fn contains(self, target: RealizationId) -> bool",
+            "pub const fn is_empty(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for RealizationTargetSet",
+            "impl Copy for RealizationTargetSet",
+            "impl Debug for RealizationTargetSet",
+            "impl Default for RealizationTargetSet",
+            "impl Eq for RealizationTargetSet",
+            "impl Hash for RealizationTargetSet",
+            "impl PartialEq for RealizationTargetSet",
+            "impl RefUnwindSafe for RealizationTargetSet",
+            "impl Send for RealizationTargetSet",
+            "impl Sync for RealizationTargetSet",
+            "impl Unpin for RealizationTargetSet",
+            "impl UnwindSafe for RealizationTargetSet"
+          ]
+        },
+        "struct.RumbleEffect.html": {
+          "declarations": [
+            "pub struct RumbleEffect { pub id: i16, pub strong: u16, pub weak: u16, pub length_ms: u16, pub delay_ms: u16, pub trigger_button: u16, pub trigger_interval_ms: u16, }"
+          ],
+          "traits": [
+            "impl Clone for RumbleEffect",
+            "impl Copy for RumbleEffect",
+            "impl Debug for RumbleEffect",
+            "impl Eq for RumbleEffect",
+            "impl PartialEq for RumbleEffect",
+            "impl RefUnwindSafe for RumbleEffect",
+            "impl Send for RumbleEffect",
+            "impl Sync for RumbleEffect",
+            "impl Unpin for RumbleEffect",
+            "impl UnwindSafe for RumbleEffect"
+          ]
+        },
+        "struct.StickInput.html": {
+          "declarations": [
+            "pub struct StickInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn x(&self) -> InputAxisRange",
+            "pub const fn y(&self) -> InputAxisRange",
+            "pub const fn press(&self) -> Option<AuxiliaryButtonInput>",
+            "pub const fn capacitive(&self) -> Option<AuxiliaryButtonInput>"
+          ],
+          "traits": [
+            "impl Clone for StickInput",
+            "impl Copy for StickInput",
+            "impl Debug for StickInput",
+            "impl Eq for StickInput",
+            "impl PartialEq for StickInput",
+            "impl RefUnwindSafe for StickInput",
+            "impl Send for StickInput",
+            "impl Sync for StickInput",
+            "impl Unpin for StickInput",
+            "impl UnwindSafe for StickInput"
+          ]
+        },
+        "struct.SwitchProAxis.html": {
+          "declarations": [
+            "pub struct SwitchProAxis(/* private fields */);",
+            "pub const fn new(raw: i16) -> SwitchProAxis",
+            "pub const fn raw(self) -> i16"
+          ],
+          "traits": [
+            "impl Clone for SwitchProAxis",
+            "impl Copy for SwitchProAxis",
+            "impl Debug for SwitchProAxis",
+            "impl Eq for SwitchProAxis",
+            "impl PartialEq for SwitchProAxis",
+            "impl RefUnwindSafe for SwitchProAxis",
+            "impl Send for SwitchProAxis",
+            "impl Sync for SwitchProAxis",
+            "impl Unpin for SwitchProAxis",
+            "impl UnwindSafe for SwitchProAxis"
+          ]
+        },
+        "struct.SwitchProController.html": {
+          "declarations": [
+            "pub struct SwitchProController { /* private fields */ }",
+            "pub fn stream_enabled(&self) -> bool",
+            "pub fn motion_report_counter(&self) -> u8",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &SwitchProState",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn surface(&self) -> &'static SwitchProSurface",
+            "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, c: SwitchProControl, p: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: SwitchProAxis, y: SwitchProAxis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: SwitchProAxis, y: SwitchProAxis, ) -> Result<(), ControlError>",
+            "pub fn set_motion( &mut self, m: SwitchProMotionSample, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(SwitchProOutputEvent), ) -> Result<(), ControllerError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for SwitchProController",
+            "impl !Sync for SwitchProController",
+            "impl !UnwindSafe for SwitchProController",
+            "impl Send for SwitchProController",
+            "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProMotionSample.html": {
+          "declarations": [
+            "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProRumble.html": {
+          "declarations": [
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumble",
+            "impl Copy for SwitchProRumble",
+            "impl Debug for SwitchProRumble",
+            "impl Eq for SwitchProRumble",
+            "impl PartialEq for SwitchProRumble",
+            "impl RefUnwindSafe for SwitchProRumble",
+            "impl Send for SwitchProRumble",
+            "impl Sync for SwitchProRumble",
+            "impl Unpin for SwitchProRumble",
+            "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProState.html": {
+          "declarations": [
+            "pub struct SwitchProState { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SwitchProState",
+            "impl Debug for SwitchProState",
+            "impl Default for SwitchProState",
+            "impl Eq for SwitchProState",
+            "impl PartialEq for SwitchProState",
+            "impl RefUnwindSafe for SwitchProState",
+            "impl Send for SwitchProState",
+            "impl Sync for SwitchProState",
+            "impl Unpin for SwitchProState",
+            "impl UnwindSafe for SwitchProState"
+          ]
+        },
+        "struct.SwitchProSurface.html": {
+          "declarations": [
+            "pub struct SwitchProSurface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for SwitchProSurface",
+            "impl ControllerSurfaceInfo for SwitchProSurface",
+            "impl Copy for SwitchProSurface",
+            "impl Debug for SwitchProSurface",
+            "impl Eq for SwitchProSurface",
+            "impl PartialEq for SwitchProSurface",
+            "impl RefUnwindSafe for SwitchProSurface",
+            "impl Send for SwitchProSurface",
+            "impl Sync for SwitchProSurface",
+            "impl Unpin for SwitchProSurface",
+            "impl UnwindSafe for SwitchProSurface"
+          ]
+        },
+        "struct.TargetRestriction.html": {
+          "declarations": [
+            "pub struct TargetRestriction { pub feature: &'static str, pub reason: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for TargetRestriction",
+            "impl Copy for TargetRestriction",
+            "impl Debug for TargetRestriction",
+            "impl Eq for TargetRestriction",
+            "impl PartialEq for TargetRestriction",
+            "impl RefUnwindSafe for TargetRestriction",
+            "impl Send for TargetRestriction",
+            "impl Sync for TargetRestriction",
+            "impl Unpin for TargetRestriction",
+            "impl UnwindSafe for TargetRestriction"
+          ]
+        },
+        "struct.TouchpadInput.html": {
+          "declarations": [
+            "pub struct TouchpadInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn width(&self) -> u32",
+            "pub const fn height(&self) -> u32",
+            "pub const fn contacts(&self) -> u8",
+            "pub const fn actuation(&self) -> TouchpadActuation"
+          ],
+          "traits": [
+            "impl Clone for TouchpadInput",
+            "impl Copy for TouchpadInput",
+            "impl Debug for TouchpadInput",
+            "impl Eq for TouchpadInput",
+            "impl PartialEq for TouchpadInput",
+            "impl RefUnwindSafe for TouchpadInput",
+            "impl Send for TouchpadInput",
+            "impl Sync for TouchpadInput",
+            "impl Unpin for TouchpadInput",
+            "impl UnwindSafe for TouchpadInput"
+          ]
+        },
+        "struct.TriggerInput.html": {
+          "declarations": [
+            "pub struct TriggerInput { pub label: &'static str, pub kind: TriggerInputKind, }"
+          ],
+          "traits": [
+            "impl Clone for TriggerInput",
+            "impl Copy for TriggerInput",
+            "impl Debug for TriggerInput",
+            "impl Eq for TriggerInput",
+            "impl PartialEq for TriggerInput",
+            "impl RefUnwindSafe for TriggerInput",
+            "impl Send for TriggerInput",
+            "impl Sync for TriggerInput",
+            "impl Unpin for TriggerInput",
+            "impl UnwindSafe for TriggerInput"
+          ]
+        },
+        "struct.TriggerStack.html": {
+          "declarations": [
+            "pub struct TriggerStack { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn controls(&self) -> &'static [TriggerInput]"
+          ],
+          "traits": [
+            "impl Clone for TriggerStack",
+            "impl Copy for TriggerStack",
+            "impl Debug for TriggerStack",
+            "impl Eq for TriggerStack",
+            "impl PartialEq for TriggerStack",
+            "impl RefUnwindSafe for TriggerStack",
+            "impl Send for TriggerStack",
+            "impl Sync for TriggerStack",
+            "impl Unpin for TriggerStack",
+            "impl UnwindSafe for TriggerStack"
+          ]
+        },
+        "struct.Xbox360Axis.html": {
+          "declarations": [
+            "pub struct Xbox360Axis(/* private fields */);",
+            "pub const fn raw(self) -> i16",
+            "pub const fn new(raw: i16) -> Xbox360Axis"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Axis",
+            "impl Copy for Xbox360Axis",
+            "impl Debug for Xbox360Axis",
+            "impl Eq for Xbox360Axis",
+            "impl PartialEq for Xbox360Axis",
+            "impl RefUnwindSafe for Xbox360Axis",
+            "impl Send for Xbox360Axis",
+            "impl Sync for Xbox360Axis",
+            "impl Unpin for Xbox360Axis",
+            "impl UnwindSafe for Xbox360Axis"
+          ]
+        },
+        "struct.Xbox360Controller.html": {
+          "declarations": [
+            "pub struct Xbox360Controller { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &Xbox360State",
+            "pub fn surface(&self) -> &'static Xbox360Surface",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError>",
+            "pub fn set_battery_level( &mut self, level: BatteryLevel, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, control: Xbox360Control, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: Xbox360Axis, y: Xbox360Axis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: Xbox360Axis, y: Xbox360Axis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, left: Xbox360Trigger, right: Xbox360Trigger, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(Xbox360OutputEvent), ) -> Result<(), ControllerError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for Xbox360Controller",
+            "impl !Sync for Xbox360Controller",
+            "impl !UnwindSafe for Xbox360Controller",
+            "impl Send for Xbox360Controller",
+            "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360State.html": {
+          "declarations": [
+            "pub struct Xbox360State { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn battery(&self) -> BatteryState",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+          ],
+          "traits": [
+            "impl Clone for Xbox360State",
+            "impl Debug for Xbox360State",
+            "impl Default for Xbox360State",
+            "impl Eq for Xbox360State",
+            "impl PartialEq for Xbox360State",
+            "impl RefUnwindSafe for Xbox360State",
+            "impl Send for Xbox360State",
+            "impl Sync for Xbox360State",
+            "impl Unpin for Xbox360State",
+            "impl UnwindSafe for Xbox360State"
+          ]
+        },
+        "struct.Xbox360Surface.html": {
+          "declarations": [
+            "pub struct Xbox360Surface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Surface",
+            "impl ControllerSurfaceInfo for Xbox360Surface",
+            "impl Copy for Xbox360Surface",
+            "impl Debug for Xbox360Surface",
+            "impl Eq for Xbox360Surface",
+            "impl PartialEq for Xbox360Surface",
+            "impl RefUnwindSafe for Xbox360Surface",
+            "impl Send for Xbox360Surface",
+            "impl Sync for Xbox360Surface",
+            "impl Unpin for Xbox360Surface",
+            "impl UnwindSafe for Xbox360Surface"
+          ]
+        },
+        "struct.Xbox360Trigger.html": {
+          "declarations": [
+            "pub struct Xbox360Trigger(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> Xbox360Trigger"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Trigger",
+            "impl Copy for Xbox360Trigger",
+            "impl Debug for Xbox360Trigger",
+            "impl Eq for Xbox360Trigger",
+            "impl PartialEq for Xbox360Trigger",
+            "impl RefUnwindSafe for Xbox360Trigger",
+            "impl Send for Xbox360Trigger",
+            "impl Sync for Xbox360Trigger",
+            "impl Unpin for Xbox360Trigger",
+            "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "trait.ControllerSurfaceInfo.html": {
+          "declarations": [
+            "pub trait ControllerSurfaceInfo { // Required method fn common_surface(&self) -> &ControllerSurface; }"
+          ],
+          "traits": [
+            "impl ControllerSurfaceInfo for DualSenseSurface",
+            "impl ControllerSurfaceInfo for DualShock4Surface",
+            "impl ControllerSurfaceInfo for SwitchProSurface",
+            "impl ControllerSurfaceInfo for Xbox360Surface"
+          ]
+        }
+      },
+      "schema": 1,
+      "scope": "ordinary root; experimental and supporting SPI excluded"
+    },
+    "default": {
+      "default_features": [],
+      "features": [
+        "audio-pipewire",
+        "audio-usbip",
+        "default",
+        "experimental"
+      ],
+      "items": {
+        "enum.AudioAccess.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioAccess { Samples, NativeClient, }"
+          ],
+          "traits": [
+            "impl Clone for AudioAccess",
+            "impl Copy for AudioAccess",
+            "impl Debug for AudioAccess",
+            "impl Default for AudioAccess",
+            "impl Eq for AudioAccess",
+            "impl PartialEq for AudioAccess",
+            "impl RefUnwindSafe for AudioAccess",
+            "impl Send for AudioAccess",
+            "impl Sync for AudioAccess",
+            "impl Unpin for AudioAccess",
+            "impl UnwindSafe for AudioAccess"
+          ]
+        },
+        "enum.AudioChannel.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioChannel { AudibleLeft, AudibleRight, Speaker, Microphone, MicrophoneLeft, MicrophoneRight, HapticLeft, HapticRight, }"
+          ],
+          "traits": [
+            "impl Clone for AudioChannel",
+            "impl Copy for AudioChannel",
+            "impl Debug for AudioChannel",
+            "impl Eq for AudioChannel",
+            "impl PartialEq for AudioChannel",
+            "impl RefUnwindSafe for AudioChannel",
+            "impl Send for AudioChannel",
+            "impl Sync for AudioChannel",
+            "impl Unpin for AudioChannel",
+            "impl UnwindSafe for AudioChannel"
+          ]
+        },
+        "enum.AudioEndpointSelector.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioEndpointSelector { PipeWireNode { name: String, }, AlsaPcm { card_id: String, device: u8, subdevice: u8, }, }",
+            "pub fn alsa_pcm(&self) -> Option<(&str, u8, u8)>",
+            "pub fn pipewire_node(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for AudioEndpointSelector",
+            "impl Debug for AudioEndpointSelector",
+            "impl Eq for AudioEndpointSelector",
+            "impl PartialEq for AudioEndpointSelector",
+            "impl RefUnwindSafe for AudioEndpointSelector",
+            "impl Send for AudioEndpointSelector",
+            "impl Sync for AudioEndpointSelector",
+            "impl Unpin for AudioEndpointSelector",
+            "impl UnwindSafe for AudioEndpointSelector"
+          ]
+        },
+        "enum.AudioError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioError { Unavailable, InvalidRequirement, InvalidSampleBuffer, OwnershipMismatch, Unsupported, IncompatibleTopology, AccessDenied, Closed, Backend { reason: String, }, }"
+          ],
+          "traits": [
+            "impl Clone for AudioError",
+            "impl Debug for AudioError",
+            "impl Display for AudioError",
+            "impl Eq for AudioError",
+            "impl Error for AudioError",
+            "impl PartialEq for AudioError",
+            "impl RefUnwindSafe for AudioError",
+            "impl Send for AudioError",
+            "impl Sync for AudioError",
+            "impl Unpin for AudioError",
+            "impl UnwindSafe for AudioError"
+          ]
+        },
+        "enum.AudioExposure.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum AudioExposure { Disabled, Emulated, }"
+          ],
+          "traits": [
+            "impl Clone for AudioExposure",
+            "impl Copy for AudioExposure",
+            "impl Debug for AudioExposure",
+            "impl Default for AudioExposure",
+            "impl Eq for AudioExposure",
+            "impl PartialEq for AudioExposure",
+            "impl RefUnwindSafe for AudioExposure",
+            "impl Send for AudioExposure",
+            "impl Sync for AudioExposure",
+            "impl Unpin for AudioExposure",
+            "impl UnwindSafe for AudioExposure"
+          ]
+        },
+        "enum.CommitError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum CommitError { Closed, Backend { reason: String, }, }"
+          ],
+          "traits": [
+            "impl Clone for CommitError",
+            "impl Debug for CommitError",
+            "impl Display for CommitError",
+            "impl Eq for CommitError",
+            "impl Error for CommitError",
+            "impl PartialEq for CommitError",
+            "impl RefUnwindSafe for CommitError",
+            "impl Send for CommitError",
+            "impl Sync for CommitError",
+            "impl Unpin for CommitError",
+            "impl UnwindSafe for CommitError"
+          ]
+        },
+        "enum.ComponentKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ComponentKind { Input, Audio, }"
+          ],
+          "traits": [
+            "impl Clone for ComponentKind",
+            "impl Copy for ComponentKind",
+            "impl Debug for ComponentKind",
+            "impl Eq for ComponentKind",
+            "impl PartialEq for ComponentKind",
+            "impl RefUnwindSafe for ComponentKind",
+            "impl Send for ComponentKind",
+            "impl Sync for ComponentKind",
+            "impl Unpin for ComponentKind",
+            "impl UnwindSafe for ComponentKind"
+          ]
+        },
+        "enum.ControlError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControlError { UnsupportedControl { control: &'static str, }, ValueOutOfRange { control: &'static str, value: u32, maximum: u32, }, UnavailableInRealization { selected_target: RealizationId, available_in: RealizationTargetSet, }, Closed, }"
+          ],
+          "traits": [
+            "impl Clone for ControlError",
+            "impl Debug for ControlError",
+            "impl Display for ControlError",
+            "impl Eq for ControlError",
+            "impl Error for ControlError",
+            "impl PartialEq for ControlError",
+            "impl RefUnwindSafe for ControlError",
+            "impl Send for ControlError",
+            "impl Sync for ControlError",
+            "impl Unpin for ControlError",
+            "impl UnwindSafe for ControlError"
+          ]
+        },
+        "enum.ControllerError.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControllerError { MissingDeviceNode { target: RealizationId, path: String, }, AccessDenied { target: RealizationId, path: String, }, UnsupportedPlatform { target: RealizationId, }, InvalidRequest { reason: String, }, Open { reason: String, }, Write { reason: String, }, Read { reason: String, }, Unsupported { reason: String, }, Cleanup { cause: Box<ControllerError>, cleanup: Vec<String>, }, Closed, WouldBlock, }"
+          ],
+          "traits": [
+            "impl Clone for ControllerError",
+            "impl Debug for ControllerError",
+            "impl Display for ControllerError",
+            "impl Eq for ControllerError",
+            "impl Error for ControllerError",
+            "impl PartialEq for ControllerError",
+            "impl RefUnwindSafe for ControllerError",
+            "impl Send for ControllerError",
+            "impl Sync for ControllerError",
+            "impl Unpin for ControllerError",
+            "impl UnwindSafe for ControllerError"
+          ]
+        },
+        "enum.ControllerStatus.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ControllerStatus { NotOpen, Open, Closed, Failed, }"
+          ],
+          "traits": [
+            "impl Clone for ControllerStatus",
+            "impl Copy for ControllerStatus",
+            "impl Debug for ControllerStatus",
+            "impl Eq for ControllerStatus",
+            "impl PartialEq for ControllerStatus",
+            "impl RefUnwindSafe for ControllerStatus",
+            "impl Send for ControllerStatus",
+            "impl Sync for ControllerStatus",
+            "impl Unpin for ControllerStatus",
+            "impl UnwindSafe for ControllerStatus"
+          ]
+        },
+        "enum.DigitalControlUpdate.html": {
+          "declarations": [
+            "pub enum DigitalControlUpdate { FaceButton { button: FaceButton, pressed: bool, }, Dpad { direction: DpadDirection, pressed: bool, }, }"
+          ],
+          "traits": [
+            "impl Clone for DigitalControlUpdate",
+            "impl Copy for DigitalControlUpdate",
+            "impl Debug for DigitalControlUpdate",
+            "impl Eq for DigitalControlUpdate",
+            "impl PartialEq for DigitalControlUpdate",
+            "impl RefUnwindSafe for DigitalControlUpdate",
+            "impl Send for DigitalControlUpdate",
+            "impl Sync for DigitalControlUpdate",
+            "impl Unpin for DigitalControlUpdate",
+            "impl UnwindSafe for DigitalControlUpdate"
+          ]
+        },
+        "enum.DpadDirection.html": {
+          "declarations": [
+            "pub enum DpadDirection { Up, Down, Left, Right, }"
+          ],
+          "traits": [
+            "impl Clone for DpadDirection",
+            "impl Copy for DpadDirection",
+            "impl Debug for DpadDirection",
+            "impl Eq for DpadDirection",
+            "impl Hash for DpadDirection",
+            "impl PartialEq for DpadDirection",
+            "impl RefUnwindSafe for DpadDirection",
+            "impl Send for DpadDirection",
+            "impl Sync for DpadDirection",
+            "impl Unpin for DpadDirection",
+            "impl UnwindSafe for DpadDirection"
+          ]
+        },
+        "enum.DpadHoldBehavior.html": {
+          "declarations": [
+            "pub enum DpadHoldBehavior { AdjacentPair, IndependentButtons, }"
+          ],
+          "traits": [
+            "impl Clone for DpadHoldBehavior",
+            "impl Copy for DpadHoldBehavior",
+            "impl Debug for DpadHoldBehavior",
+            "impl Eq for DpadHoldBehavior",
+            "impl PartialEq for DpadHoldBehavior",
+            "impl RefUnwindSafe for DpadHoldBehavior",
+            "impl Send for DpadHoldBehavior",
+            "impl Sync for DpadHoldBehavior",
+            "impl Unpin for DpadHoldBehavior",
+            "impl UnwindSafe for DpadHoldBehavior"
+          ]
+        },
+        "enum.DpadPresentation.html": {
+          "declarations": [
+            "pub enum DpadPresentation { IndependentButtons, SnappingAxis, }"
+          ],
+          "traits": [
+            "impl Clone for DpadPresentation",
+            "impl Copy for DpadPresentation",
+            "impl Debug for DpadPresentation",
+            "impl Eq for DpadPresentation",
+            "impl PartialEq for DpadPresentation",
+            "impl RefUnwindSafe for DpadPresentation",
+            "impl Send for DpadPresentation",
+            "impl Sync for DpadPresentation",
+            "impl Unpin for DpadPresentation",
+            "impl UnwindSafe for DpadPresentation"
+          ]
+        },
+        "enum.DualSenseAudioPath.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseAudioPath { HeadphonesStereo, HeadphonesDualMono, HeadphonesLeftSpeakerRight, SpeakerRightOnly, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseAudioPath",
+            "impl Copy for DualSenseAudioPath",
+            "impl Debug for DualSenseAudioPath",
+            "impl Eq for DualSenseAudioPath",
+            "impl PartialEq for DualSenseAudioPath",
+            "impl RefUnwindSafe for DualSenseAudioPath",
+            "impl Send for DualSenseAudioPath",
+            "impl Sync for DualSenseAudioPath",
+            "impl Unpin for DualSenseAudioPath",
+            "impl UnwindSafe for DualSenseAudioPath"
+          ]
+        },
+        "enum.DualSenseControl.html": {
+          "declarations": [
+            "pub enum DualSenseControl { Show 13 variants Cross, Circle, Square, Triangle, L1, R1, Create, Options, PlayStation, TouchpadClick, MicrophoneMute, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseControl",
+            "impl Copy for DualSenseControl",
+            "impl Debug for DualSenseControl",
+            "impl Eq for DualSenseControl",
+            "impl PartialEq for DualSenseControl",
+            "impl RefUnwindSafe for DualSenseControl",
+            "impl Send for DualSenseControl",
+            "impl Sync for DualSenseControl",
+            "impl Unpin for DualSenseControl",
+            "impl UnwindSafe for DualSenseControl"
+          ]
+        },
+        "enum.DualSenseFeature.html": {
+          "declarations": [
+            "pub enum DualSenseFeature { Touch, Motion, Lightbar, AdaptiveTriggers, Audio, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseFeature",
+            "impl Copy for DualSenseFeature",
+            "impl Debug for DualSenseFeature",
+            "impl Eq for DualSenseFeature",
+            "impl PartialEq for DualSenseFeature",
+            "impl RefUnwindSafe for DualSenseFeature",
+            "impl Send for DualSenseFeature",
+            "impl Sync for DualSenseFeature",
+            "impl Unpin for DualSenseFeature",
+            "impl UnwindSafe for DualSenseFeature"
+          ]
+        },
+        "enum.DualSenseHidOutput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseHidOutput { UsbOutput {Show 16 fields raw: Vec<u8>, valid_flag0: u8, valid_flag1: u8, valid_flag2: u8, right_motor: Option<u8>, left_motor: Option<u8>, right_trigger_effect: [u8; 11], left_trigger_effect: [u8; 11], mute_button_led: Option<bool>, microphone_muted: Option<bool>, audio_path: Option<DualSenseAudioPath>, speaker_volume: Option<u8>, microphone_volume: Option<u8>, speaker_preamp: Option<u8>, player_leds: Option<u8>, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseHidOutput",
+            "impl Debug for DualSenseHidOutput",
+            "impl Eq for DualSenseHidOutput",
+            "impl PartialEq for DualSenseHidOutput",
+            "impl RefUnwindSafe for DualSenseHidOutput",
+            "impl Send for DualSenseHidOutput",
+            "impl Sync for DualSenseHidOutput",
+            "impl Unpin for DualSenseHidOutput",
+            "impl UnwindSafe for DualSenseHidOutput"
+          ]
+        },
+        "enum.DualSenseOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualSenseOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualSenseHidOutput), }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOutputEvent",
+            "impl Debug for DualSenseOutputEvent",
+            "impl Eq for DualSenseOutputEvent",
+            "impl PartialEq for DualSenseOutputEvent",
+            "impl RefUnwindSafe for DualSenseOutputEvent",
+            "impl Send for DualSenseOutputEvent",
+            "impl Sync for DualSenseOutputEvent",
+            "impl Unpin for DualSenseOutputEvent",
+            "impl UnwindSafe for DualSenseOutputEvent"
+          ]
+        },
+        "enum.DualShock4Control.html": {
+          "declarations": [
+            "pub enum DualShock4Control { Cross, Circle, Square, Triangle, L1, R1, Share, Options, PlayStation, TouchpadClick, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Control",
+            "impl Copy for DualShock4Control",
+            "impl Debug for DualShock4Control",
+            "impl Eq for DualShock4Control",
+            "impl PartialEq for DualShock4Control",
+            "impl RefUnwindSafe for DualShock4Control",
+            "impl Send for DualShock4Control",
+            "impl Sync for DualShock4Control",
+            "impl Unpin for DualShock4Control",
+            "impl UnwindSafe for DualShock4Control"
+          ]
+        },
+        "enum.DualShock4HidOutput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualShock4HidOutput { UsbOutput { raw: Vec<u8>, right_motor: u8, left_motor: u8, lightbar_rgb: Option<[u8; 3]>, }, Unknown { report_id: Option<u8>, raw: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4HidOutput",
+            "impl Debug for DualShock4HidOutput",
+            "impl Eq for DualShock4HidOutput",
+            "impl PartialEq for DualShock4HidOutput",
+            "impl RefUnwindSafe for DualShock4HidOutput",
+            "impl Send for DualShock4HidOutput",
+            "impl Sync for DualShock4HidOutput",
+            "impl Unpin for DualShock4HidOutput",
+            "impl UnwindSafe for DualShock4HidOutput"
+          ]
+        },
+        "enum.DualShock4OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DualShock4OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput(DualShock4HidOutput), }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4OutputEvent",
+            "impl Debug for DualShock4OutputEvent",
+            "impl Eq for DualShock4OutputEvent",
+            "impl PartialEq for DualShock4OutputEvent",
+            "impl RefUnwindSafe for DualShock4OutputEvent",
+            "impl Send for DualShock4OutputEvent",
+            "impl Sync for DualShock4OutputEvent",
+            "impl Unpin for DualShock4OutputEvent",
+            "impl UnwindSafe for DualShock4OutputEvent"
+          ]
+        },
+        "enum.DualShock4TouchSlot.html": {
+          "declarations": [
+            "pub enum DualShock4TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4TouchSlot",
+            "impl Copy for DualShock4TouchSlot",
+            "impl Debug for DualShock4TouchSlot",
+            "impl Eq for DualShock4TouchSlot",
+            "impl PartialEq for DualShock4TouchSlot",
+            "impl RefUnwindSafe for DualShock4TouchSlot",
+            "impl Send for DualShock4TouchSlot",
+            "impl Sync for DualShock4TouchSlot",
+            "impl Unpin for DualShock4TouchSlot",
+            "impl UnwindSafe for DualShock4TouchSlot"
+          ]
+        },
+        "enum.ExtraAxisInput.html": {
+          "declarations": [
+            "pub enum ExtraAxisInput { OneDimensional { id: InputControlId, title: &'static str, range: InputAxisRange, }, TwoDimensional { id: InputControlId, title: &'static str, x: InputAxisRange, y: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for ExtraAxisInput",
+            "impl Copy for ExtraAxisInput",
+            "impl Debug for ExtraAxisInput",
+            "impl Eq for ExtraAxisInput",
+            "impl PartialEq for ExtraAxisInput",
+            "impl RefUnwindSafe for ExtraAxisInput",
+            "impl Send for ExtraAxisInput",
+            "impl Sync for ExtraAxisInput",
+            "impl Unpin for ExtraAxisInput",
+            "impl UnwindSafe for ExtraAxisInput"
+          ]
+        },
+        "enum.FaceButton.html": {
+          "declarations": [
+            "pub enum FaceButton { North, South, East, West, }"
+          ],
+          "traits": [
+            "impl Clone for FaceButton",
+            "impl Copy for FaceButton",
+            "impl Debug for FaceButton",
+            "impl Eq for FaceButton",
+            "impl Hash for FaceButton",
+            "impl PartialEq for FaceButton",
+            "impl RefUnwindSafe for FaceButton",
+            "impl Send for FaceButton",
+            "impl Sync for FaceButton",
+            "impl Unpin for FaceButton",
+            "impl UnwindSafe for FaceButton"
+          ]
+        },
+        "enum.ForceFeedbackEffect.html": {
+          "declarations": [
+            "pub enum ForceFeedbackEffect { Rumble(RumbleEffect), Unsupported { id: i16, kind: u16, }, }"
+          ],
+          "traits": [
+            "impl Clone for ForceFeedbackEffect",
+            "impl Copy for ForceFeedbackEffect",
+            "impl Debug for ForceFeedbackEffect",
+            "impl Eq for ForceFeedbackEffect",
+            "impl PartialEq for ForceFeedbackEffect",
+            "impl RefUnwindSafe for ForceFeedbackEffect",
+            "impl Send for ForceFeedbackEffect",
+            "impl Sync for ForceFeedbackEffect",
+            "impl Unpin for ForceFeedbackEffect",
+            "impl UnwindSafe for ForceFeedbackEffect"
+          ]
+        },
+        "enum.ForceFeedbackEvent.html": {
+          "declarations": [
+            "pub enum ForceFeedbackEvent { Uploaded { request_id: u32, effect: ForceFeedbackEffect, status: i32, }, Erased { request_id: u32, effect_id: u32, status: i32, }, Playback { effect: RumbleEffect, repetitions: u32, }, }"
+          ],
+          "traits": [
+            "impl Clone for ForceFeedbackEvent",
+            "impl Copy for ForceFeedbackEvent",
+            "impl Debug for ForceFeedbackEvent",
+            "impl Eq for ForceFeedbackEvent",
+            "impl PartialEq for ForceFeedbackEvent",
+            "impl RefUnwindSafe for ForceFeedbackEvent",
+            "impl Send for ForceFeedbackEvent",
+            "impl Sync for ForceFeedbackEvent",
+            "impl Unpin for ForceFeedbackEvent",
+            "impl UnwindSafe for ForceFeedbackEvent"
+          ]
+        },
+        "enum.HostLifecycle.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum HostLifecycle { Started, Stopped, Opened, Closed, }"
+          ],
+          "traits": [
+            "impl Clone for HostLifecycle",
+            "impl Copy for HostLifecycle",
+            "impl Debug for HostLifecycle",
+            "impl Eq for HostLifecycle",
+            "impl PartialEq for HostLifecycle",
+            "impl RefUnwindSafe for HostLifecycle",
+            "impl Send for HostLifecycle",
+            "impl Sync for HostLifecycle",
+            "impl Unpin for HostLifecycle",
+            "impl UnwindSafe for HostLifecycle"
+          ]
+        },
+        "enum.InputTopologyError.html": {
+          "declarations": [
+            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidScale(InputControlId), }"
+          ],
+          "traits": [
+            "impl Clone for InputTopologyError",
+            "impl Copy for InputTopologyError",
+            "impl Debug for InputTopologyError",
+            "impl Display for InputTopologyError",
+            "impl Eq for InputTopologyError",
+            "impl Error for InputTopologyError",
+            "impl PartialEq for InputTopologyError",
+            "impl RefUnwindSafe for InputTopologyError",
+            "impl Send for InputTopologyError",
+            "impl Sync for InputTopologyError",
+            "impl Unpin for InputTopologyError",
+            "impl UnwindSafe for InputTopologyError"
+          ]
+        },
+        "enum.RealizationValidationStatus.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum RealizationValidationStatus { ResearchBacked, HostValidated, PhysicallyValidated, }"
+          ],
+          "traits": [
+            "impl Clone for RealizationValidationStatus",
+            "impl Copy for RealizationValidationStatus",
+            "impl Debug for RealizationValidationStatus",
+            "impl Eq for RealizationValidationStatus",
+            "impl PartialEq for RealizationValidationStatus",
+            "impl RefUnwindSafe for RealizationValidationStatus",
+            "impl Send for RealizationValidationStatus",
+            "impl Sync for RealizationValidationStatus",
+            "impl Unpin for RealizationValidationStatus",
+            "impl UnwindSafe for RealizationValidationStatus"
+          ]
+        },
+        "enum.SampleDirection.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SampleDirection { HostToController, ControllerToHost, }"
+          ],
+          "traits": [
+            "impl Clone for SampleDirection",
+            "impl Copy for SampleDirection",
+            "impl Debug for SampleDirection",
+            "impl Eq for SampleDirection",
+            "impl PartialEq for SampleDirection",
+            "impl RefUnwindSafe for SampleDirection",
+            "impl Send for SampleDirection",
+            "impl Sync for SampleDirection",
+            "impl Unpin for SampleDirection",
+            "impl UnwindSafe for SampleDirection"
+          ]
+        },
+        "enum.ServiceReadiness.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum ServiceReadiness<'a> { Poll, Descriptor(ReadinessDescriptor<'a>), }"
+          ],
+          "traits": [
+            "impl<'a> Debug for ServiceReadiness<'a>",
+            "impl<'a> RefUnwindSafe for ServiceReadiness<'a>",
+            "impl<'a> Send for ServiceReadiness<'a>",
+            "impl<'a> Sync for ServiceReadiness<'a>",
+            "impl<'a> Unpin for ServiceReadiness<'a>",
+            "impl<'a> UnwindSafe for ServiceReadiness<'a>"
+          ]
+        },
+        "enum.SwitchProControl.html": {
+          "declarations": [
+            "pub enum SwitchProControl { Show 14 variants B, A, Y, X, L, R, Zl, Zr, Minus, Plus, Home, Capture, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProControl",
+            "impl Copy for SwitchProControl",
+            "impl Debug for SwitchProControl",
+            "impl Eq for SwitchProControl",
+            "impl PartialEq for SwitchProControl",
+            "impl RefUnwindSafe for SwitchProControl",
+            "impl Send for SwitchProControl",
+            "impl Sync for SwitchProControl",
+            "impl Unpin for SwitchProControl",
+            "impl UnwindSafe for SwitchProControl"
+          ]
+        },
+        "enum.SwitchProOutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SwitchProOutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), Output { report_id: Option<u8>, bytes: Vec<u8>, }, }",
+            "pub fn rumble(&self) -> Option<SwitchProRumble>"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOutputEvent",
+            "impl Debug for SwitchProOutputEvent",
+            "impl Eq for SwitchProOutputEvent",
+            "impl PartialEq for SwitchProOutputEvent",
+            "impl RefUnwindSafe for SwitchProOutputEvent",
+            "impl Send for SwitchProOutputEvent",
+            "impl Sync for SwitchProOutputEvent",
+            "impl Unpin for SwitchProOutputEvent",
+            "impl UnwindSafe for SwitchProOutputEvent"
+          ]
+        },
+        "enum.TouchSlot.html": {
+          "declarations": [
+            "pub enum TouchSlot { First, Second, }"
+          ],
+          "traits": [
+            "impl Clone for TouchSlot",
+            "impl Copy for TouchSlot",
+            "impl Debug for TouchSlot",
+            "impl Eq for TouchSlot",
+            "impl PartialEq for TouchSlot",
+            "impl RefUnwindSafe for TouchSlot",
+            "impl Send for TouchSlot",
+            "impl Sync for TouchSlot",
+            "impl Unpin for TouchSlot",
+            "impl UnwindSafe for TouchSlot"
+          ]
+        },
+        "enum.TouchpadActuation.html": {
+          "declarations": [
+            "pub enum TouchpadActuation { None, Button(AuxiliaryButtonInput), Deflection { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TouchpadActuation",
+            "impl Copy for TouchpadActuation",
+            "impl Debug for TouchpadActuation",
+            "impl Eq for TouchpadActuation",
+            "impl PartialEq for TouchpadActuation",
+            "impl RefUnwindSafe for TouchpadActuation",
+            "impl Send for TouchpadActuation",
+            "impl Sync for TouchpadActuation",
+            "impl Unpin for TouchpadActuation",
+            "impl UnwindSafe for TouchpadActuation"
+          ]
+        },
+        "enum.TriggerInputKind.html": {
+          "declarations": [
+            "pub enum TriggerInputKind { Button { id: InputControlId, }, Axis { id: InputControlId, range: InputAxisRange, }, }"
+          ],
+          "traits": [
+            "impl Clone for TriggerInputKind",
+            "impl Copy for TriggerInputKind",
+            "impl Debug for TriggerInputKind",
+            "impl Eq for TriggerInputKind",
+            "impl PartialEq for TriggerInputKind",
+            "impl RefUnwindSafe for TriggerInputKind",
+            "impl Send for TriggerInputKind",
+            "impl Sync for TriggerInputKind",
+            "impl Unpin for TriggerInputKind",
+            "impl UnwindSafe for TriggerInputKind"
+          ]
+        },
+        "enum.Xbox360Control.html": {
+          "declarations": [
+            "pub enum Xbox360Control { A, B, X, Y, LeftShoulder, RightShoulder, Back, Start, Guide, LeftStickPress, RightStickPress, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Control",
+            "impl Copy for Xbox360Control",
+            "impl Debug for Xbox360Control",
+            "impl Eq for Xbox360Control",
+            "impl PartialEq for Xbox360Control",
+            "impl RefUnwindSafe for Xbox360Control",
+            "impl Send for Xbox360Control",
+            "impl Sync for Xbox360Control",
+            "impl Unpin for Xbox360Control",
+            "impl UnwindSafe for Xbox360Control"
+          ]
+        },
+        "enum.Xbox360OutputEvent.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum Xbox360OutputEvent { HostLifecycle(HostLifecycle), ForceFeedback(ForceFeedbackEvent), HidOutput { report_id: Option<u8>, bytes: Vec<u8>, }, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360OutputEvent",
+            "impl Debug for Xbox360OutputEvent",
+            "impl Eq for Xbox360OutputEvent",
+            "impl PartialEq for Xbox360OutputEvent",
+            "impl RefUnwindSafe for Xbox360OutputEvent",
+            "impl Send for Xbox360OutputEvent",
+            "impl Sync for Xbox360OutputEvent",
+            "impl Unpin for Xbox360OutputEvent",
+            "impl UnwindSafe for Xbox360OutputEvent"
+          ]
+        },
+        "fn.create_dualsense.html": {
+          "declarations": [
+            "pub fn create_dualsense( options: CreationOptions, ) -> Result<DualSenseController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualsense_with_identity.html": {
+          "declarations": [
+            "pub fn create_dualsense_with_identity( options: CreationOptions, identity: DualSenseIdentity, ) -> Result<DualSenseController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualshock4.html": {
+          "declarations": [
+            "pub fn create_dualshock4( options: CreationOptions, ) -> Result<DualShock4Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_dualshock4_with_identity.html": {
+          "declarations": [
+            "pub fn create_dualshock4_with_identity( options: CreationOptions, identity: DualShock4Identity, ) -> Result<DualShock4Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_switch_pro.html": {
+          "declarations": [
+            "pub fn create_switch_pro( options: CreationOptions, ) -> Result<SwitchProController, ControllerError>"
+          ],
+          "traits": []
+        },
+        "fn.create_xbox360.html": {
+          "declarations": [
+            "pub fn create_xbox360( options: CreationOptions, ) -> Result<Xbox360Controller, ControllerError>"
+          ],
+          "traits": []
+        },
+        "struct.AbsoluteAxisSurface.html": {
+          "declarations": [
+            "pub struct AbsoluteAxisSurface { pub control: &'static str, pub event_code: u16, pub minimum: i32, pub maximum: i32, pub neutral: i32, pub flat: i32, }"
+          ],
+          "traits": [
+            "impl Clone for AbsoluteAxisSurface",
+            "impl Copy for AbsoluteAxisSurface",
+            "impl Debug for AbsoluteAxisSurface",
+            "impl Eq for AbsoluteAxisSurface",
+            "impl PartialEq for AbsoluteAxisSurface",
+            "impl RefUnwindSafe for AbsoluteAxisSurface",
+            "impl Send for AbsoluteAxisSurface",
+            "impl Sync for AbsoluteAxisSurface",
+            "impl Unpin for AbsoluteAxisSurface",
+            "impl UnwindSafe for AbsoluteAxisSurface"
+          ]
+        },
+        "struct.AudioDiagnostics.html": {
+          "declarations": [
+            "pub struct AudioDiagnostics { /* private fields */ }",
+            "pub const fn is_closed(&self) -> bool",
+            "pub const fn failed(&self) -> bool",
+            "pub const fn underrun_frames(&self) -> u64",
+            "pub const fn dropped_playback_frames(&self) -> u64",
+            "pub const fn last_error(&self) -> Option<&AudioError>"
+          ],
+          "traits": [
+            "impl Clone for AudioDiagnostics",
+            "impl Debug for AudioDiagnostics",
+            "impl Eq for AudioDiagnostics",
+            "impl PartialEq for AudioDiagnostics",
+            "impl RefUnwindSafe for AudioDiagnostics",
+            "impl Send for AudioDiagnostics",
+            "impl Sync for AudioDiagnostics",
+            "impl Unpin for AudioDiagnostics",
+            "impl UnwindSafe for AudioDiagnostics"
+          ]
+        },
+        "struct.AudioEndpoint.html": {
+          "declarations": [
+            "pub struct AudioEndpoint { /* private fields */ }",
+            "pub const fn group(&self) -> &'static str",
+            "pub fn clock_domain(&self) -> &str",
+            "pub const fn host(&self) -> &AudioEndpointSelector",
+            "pub const fn caller(&self) -> Option<&AudioEndpointSelector>",
+            "pub const fn format(&self) -> &PcmFormat",
+            "pub const fn direction(&self) -> SampleDirection",
+            "pub const fn access(&self) -> AudioAccess"
+          ],
+          "traits": [
+            "impl Clone for AudioEndpoint",
+            "impl Debug for AudioEndpoint",
+            "impl Eq for AudioEndpoint",
+            "impl PartialEq for AudioEndpoint",
+            "impl RefUnwindSafe for AudioEndpoint",
+            "impl Send for AudioEndpoint",
+            "impl Sync for AudioEndpoint",
+            "impl Unpin for AudioEndpoint",
+            "impl UnwindSafe for AudioEndpoint"
+          ]
+        },
+        "struct.AudioOptions.html": {
+          "declarations": [
+            "pub struct AudioOptions { /* private fields */ }",
+            "pub const fn new(exposure: AudioExposure) -> AudioOptions",
+            "pub const fn with_playback_access(self, access: AudioAccess) -> AudioOptions",
+            "pub const fn with_microphone_access(self, access: AudioAccess) -> AudioOptions",
+            "pub const fn exposure(self) -> AudioExposure",
+            "pub const fn playback_access(self) -> AudioAccess",
+            "pub const fn microphone_access(self) -> AudioAccess"
+          ],
+          "traits": [
+            "impl Clone for AudioOptions",
+            "impl Copy for AudioOptions",
+            "impl Debug for AudioOptions",
+            "impl Default for AudioOptions",
+            "impl Eq for AudioOptions",
+            "impl PartialEq for AudioOptions",
+            "impl RefUnwindSafe for AudioOptions",
+            "impl Send for AudioOptions",
+            "impl Sync for AudioOptions",
+            "impl Unpin for AudioOptions",
+            "impl UnwindSafe for AudioOptions"
+          ]
+        },
+        "struct.AudioRead.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct AudioRead { pub frames: usize, pub first_frame: u64, pub discontinuity: bool, }"
+          ],
+          "traits": [
+            "impl Clone for AudioRead",
+            "impl Copy for AudioRead",
+            "impl Debug for AudioRead",
+            "impl Eq for AudioRead",
+            "impl PartialEq for AudioRead",
+            "impl RefUnwindSafe for AudioRead",
+            "impl Send for AudioRead",
+            "impl Sync for AudioRead",
+            "impl Unpin for AudioRead",
+            "impl UnwindSafe for AudioRead"
+          ]
+        },
+        "struct.AuxiliaryButtonInput.html": {
+          "declarations": [
+            "pub struct AuxiliaryButtonInput { pub id: InputControlId, pub label: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for AuxiliaryButtonInput",
+            "impl Copy for AuxiliaryButtonInput",
+            "impl Debug for AuxiliaryButtonInput",
+            "impl Eq for AuxiliaryButtonInput",
+            "impl PartialEq for AuxiliaryButtonInput",
+            "impl RefUnwindSafe for AuxiliaryButtonInput",
+            "impl Send for AuxiliaryButtonInput",
+            "impl Sync for AuxiliaryButtonInput",
+            "impl Unpin for AuxiliaryButtonInput",
+            "impl UnwindSafe for AuxiliaryButtonInput"
+          ]
+        },
+        "struct.BatteryLevel.html": {
+          "declarations": [
+            "pub struct BatteryLevel(/* private fields */);",
+            "pub const fn percent(self) -> u8",
+            "pub fn new(percent: u8) -> Result<BatteryLevel, ControlError>"
+          ],
+          "traits": [
+            "impl Clone for BatteryLevel",
+            "impl Copy for BatteryLevel",
+            "impl Debug for BatteryLevel",
+            "impl Eq for BatteryLevel",
+            "impl PartialEq for BatteryLevel",
+            "impl RefUnwindSafe for BatteryLevel",
+            "impl Send for BatteryLevel",
+            "impl Sync for BatteryLevel",
+            "impl Unpin for BatteryLevel",
+            "impl UnwindSafe for BatteryLevel"
+          ]
+        },
+        "struct.BatteryState.html": {
+          "declarations": [
+            "pub struct BatteryState { /* private fields */ }",
+            "pub const fn is_exposed(self) -> bool",
+            "pub const fn level(self) -> BatteryLevel"
+          ],
+          "traits": [
+            "impl Clone for BatteryState",
+            "impl Copy for BatteryState",
+            "impl Debug for BatteryState",
+            "impl Default for BatteryState",
+            "impl Eq for BatteryState",
+            "impl PartialEq for BatteryState",
+            "impl RefUnwindSafe for BatteryState",
+            "impl Send for BatteryState",
+            "impl Sync for BatteryState",
+            "impl Unpin for BatteryState",
+            "impl UnwindSafe for BatteryState"
+          ]
+        },
+        "struct.ClusterPlacement.html": {
+          "declarations": [
+            "pub struct ClusterPlacement { pub column: i8, pub row: i8, }",
+            "pub const NORTH: ClusterPlacement",
+            "pub const SOUTH: ClusterPlacement",
+            "pub const EAST: ClusterPlacement",
+            "pub const WEST: ClusterPlacement"
+          ],
+          "traits": [
+            "impl Clone for ClusterPlacement",
+            "impl Copy for ClusterPlacement",
+            "impl Debug for ClusterPlacement",
+            "impl Eq for ClusterPlacement",
+            "impl Hash for ClusterPlacement",
+            "impl PartialEq for ClusterPlacement",
+            "impl RefUnwindSafe for ClusterPlacement",
+            "impl Send for ClusterPlacement",
+            "impl Sync for ClusterPlacement",
+            "impl Unpin for ClusterPlacement",
+            "impl UnwindSafe for ClusterPlacement"
+          ]
+        },
+        "struct.ComponentAssociation.html": {
+          "declarations": [
+            "pub struct ComponentAssociation { /* private fields */ }",
+            "pub const fn kind(&self) -> ComponentKind",
+            "pub const fn role(&self) -> &'static str",
+            "pub const fn surface(&self) -> Option<&'static ControllerSurface>",
+            "pub fn audio_endpoint(&self) -> Option<&AudioEndpoint>",
+            "pub fn requested_physical_path(&self) -> Option<&str>",
+            "pub fn requested_unique_id(&self) -> Option<&str>",
+            "pub fn observed_host_path(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for ComponentAssociation",
+            "impl Debug for ComponentAssociation",
+            "impl Eq for ComponentAssociation",
+            "impl PartialEq for ComponentAssociation",
+            "impl RefUnwindSafe for ComponentAssociation",
+            "impl Send for ComponentAssociation",
+            "impl Sync for ComponentAssociation",
+            "impl Unpin for ComponentAssociation",
+            "impl UnwindSafe for ComponentAssociation"
+          ]
+        },
+        "struct.ControllerAssociation.html": {
+          "declarations": [
+            "pub struct ControllerAssociation { /* private fields */ }",
+            "pub const fn controller(&self) -> ControllerId",
+            "pub const fn realization(&self) -> RealizationId",
+            "pub const fn creation(&self) -> u64",
+            "pub fn components(&self) -> &[ComponentAssociation]"
+          ],
+          "traits": [
+            "impl Clone for ControllerAssociation",
+            "impl Debug for ControllerAssociation",
+            "impl Eq for ControllerAssociation",
+            "impl PartialEq for ControllerAssociation",
+            "impl RefUnwindSafe for ControllerAssociation",
+            "impl Send for ControllerAssociation",
+            "impl Sync for ControllerAssociation",
+            "impl Unpin for ControllerAssociation",
+            "impl UnwindSafe for ControllerAssociation"
+          ]
+        },
+        "struct.ControllerAudio.html": {
+          "declarations": [
+            "pub struct ControllerAudio { /* private fields */ }",
+            "pub fn diagnostics(&self) -> AudioDiagnostics",
+            "pub fn endpoints(&self) -> &[AudioEndpoint]",
+            "pub const fn onboard_speaker_source(&self) -> Option<AudioChannel>",
+            "pub const fn limitation(&self) -> &'static str",
+            "pub fn read_playback( &mut self, dest: &mut [i16], ) -> Result<AudioRead, AudioError>",
+            "pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError>",
+            "pub fn flush_playback(&mut self) -> Result<(), AudioError>",
+            "pub fn flush_microphone(&mut self) -> Result<(), AudioError>",
+            "pub fn is_closed(&self) -> bool",
+            "pub fn underrun_frames(&self) -> u64",
+            "pub fn dropped_playback_frames(&self) -> u64",
+            "pub fn microphone_consumed_frames(&mut self) -> Result<Option<u64>, AudioError>",
+            "pub fn dropped_microphone_frames(&mut self) -> Result<Option<u64>, AudioError>",
+            "pub fn last_error(&self) -> Option<&AudioError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for ControllerAudio",
+            "impl !UnwindSafe for ControllerAudio",
+            "impl Drop for ControllerAudio",
+            "impl Send for ControllerAudio",
+            "impl Sync for ControllerAudio",
+            "impl Unpin for ControllerAudio"
+          ]
+        },
+        "struct.ControllerDiagnostics.html": {
+          "declarations": [
+            "pub struct ControllerDiagnostics { /* private fields */ }",
+            "pub const fn status(&self) -> ControllerStatus",
+            "pub const fn frames_sent(&self) -> u64",
+            "pub const fn reverse_events_drained(&self) -> u64",
+            "pub const fn write_failures(&self) -> u64",
+            "pub const fn lifecycle_events(&self) -> u64",
+            "pub const fn dropped_output_events(&self) -> u64",
+            "pub fn last_error(&self) -> Option<&str>"
+          ],
+          "traits": [
+            "impl Clone for ControllerDiagnostics",
+            "impl Debug for ControllerDiagnostics",
+            "impl Eq for ControllerDiagnostics",
+            "impl PartialEq for ControllerDiagnostics",
+            "impl RefUnwindSafe for ControllerDiagnostics",
+            "impl Send for ControllerDiagnostics",
+            "impl Sync for ControllerDiagnostics",
+            "impl Unpin for ControllerDiagnostics",
+            "impl UnwindSafe for ControllerDiagnostics"
+          ]
+        },
+        "struct.ControllerId.html": {
+          "declarations": [
+            "pub struct ControllerId(/* private fields */);",
+            "pub const fn new(value: &'static str) -> ControllerId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for ControllerId",
+            "impl Copy for ControllerId",
+            "impl Debug for ControllerId",
+            "impl Display for ControllerId",
+            "impl Eq for ControllerId",
+            "impl Hash for ControllerId",
+            "impl PartialEq for ControllerId",
+            "impl RefUnwindSafe for ControllerId",
+            "impl Send for ControllerId",
+            "impl Sync for ControllerId",
+            "impl Unpin for ControllerId",
+            "impl UnwindSafe for ControllerId"
+          ]
+        },
+        "struct.ControllerSurface.html": {
+          "declarations": [
+            "pub struct ControllerSurface { /* private fields */ }",
+            "pub const fn target(&self) -> RealizationId",
+            "pub const fn validation_status(&self) -> RealizationValidationStatus",
+            "pub const fn digital_controls(&self) -> &'static [DigitalControlSurface]",
+            "pub const fn axes(&self) -> &'static [AbsoluteAxisSurface]",
+            "pub const fn outputs(&self) -> &'static [OutputSurface]",
+            "pub const fn restrictions(&self) -> &'static [TargetRestriction]",
+            "pub const fn input_topology(&self) -> &'static InputTopology"
+          ],
+          "traits": [
+            "impl Clone for ControllerSurface",
+            "impl Copy for ControllerSurface",
+            "impl Debug for ControllerSurface",
+            "impl Eq for ControllerSurface",
+            "impl PartialEq for ControllerSurface",
+            "impl RefUnwindSafe for ControllerSurface",
+            "impl Send for ControllerSurface",
+            "impl Sync for ControllerSurface",
+            "impl Unpin for ControllerSurface",
+            "impl UnwindSafe for ControllerSurface"
+          ]
+        },
+        "struct.CreationOptions.html": {
+          "declarations": [
+            "pub struct CreationOptions { /* private fields */ }",
+            "pub const fn new(target: RealizationId) -> Self",
+            "pub const fn realization(self) -> RealizationId",
+            "pub const fn with_audio(self, audio: AudioOptions) -> Self",
+            "pub const fn audio(self) -> AudioOptions"
+          ],
+          "traits": [
+            "impl Clone for CreationOptions",
+            "impl Copy for CreationOptions",
+            "impl Debug for CreationOptions",
+            "impl Eq for CreationOptions",
+            "impl PartialEq for CreationOptions",
+            "impl RefUnwindSafe for CreationOptions",
+            "impl Send for CreationOptions",
+            "impl Sync for CreationOptions",
+            "impl Unpin for CreationOptions",
+            "impl UnwindSafe for CreationOptions"
+          ]
+        },
+        "struct.CustomInputModule.html": {
+          "declarations": [
+            "pub struct CustomInputModule { pub id: InputControlId, pub title: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for CustomInputModule",
+            "impl Copy for CustomInputModule",
+            "impl Debug for CustomInputModule",
+            "impl Eq for CustomInputModule",
+            "impl PartialEq for CustomInputModule",
+            "impl RefUnwindSafe for CustomInputModule",
+            "impl Send for CustomInputModule",
+            "impl Sync for CustomInputModule",
+            "impl Unpin for CustomInputModule",
+            "impl UnwindSafe for CustomInputModule"
+          ]
+        },
+        "struct.DigitalControlSurface.html": {
+          "declarations": [
+            "pub struct DigitalControlSurface { pub control: &'static str, pub event_code: u16, }"
+          ],
+          "traits": [
+            "impl Clone for DigitalControlSurface",
+            "impl Copy for DigitalControlSurface",
+            "impl Debug for DigitalControlSurface",
+            "impl Eq for DigitalControlSurface",
+            "impl PartialEq for DigitalControlSurface",
+            "impl RefUnwindSafe for DigitalControlSurface",
+            "impl Send for DigitalControlSurface",
+            "impl Sync for DigitalControlSurface",
+            "impl Unpin for DigitalControlSurface",
+            "impl UnwindSafe for DigitalControlSurface"
+          ]
+        },
+        "struct.DpadCluster.html": {
+          "declarations": [
+            "pub struct DpadCluster { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn presentation(&self) -> DpadPresentation",
+            "pub const fn hold_behavior(&self) -> DpadHoldBehavior"
+          ],
+          "traits": [
+            "impl Clone for DpadCluster",
+            "impl Copy for DpadCluster",
+            "impl Debug for DpadCluster",
+            "impl Eq for DpadCluster",
+            "impl PartialEq for DpadCluster",
+            "impl RefUnwindSafe for DpadCluster",
+            "impl Send for DpadCluster",
+            "impl Sync for DpadCluster",
+            "impl Unpin for DpadCluster",
+            "impl UnwindSafe for DpadCluster"
+          ]
+        },
+        "struct.DualSenseAxis.html": {
+          "declarations": [
+            "pub struct DualSenseAxis(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> DualSenseAxis",
+            "pub const fn neutral() -> DualSenseAxis"
+          ],
+          "traits": [
+            "impl Clone for DualSenseAxis",
+            "impl Copy for DualSenseAxis",
+            "impl Debug for DualSenseAxis",
+            "impl Eq for DualSenseAxis",
+            "impl PartialEq for DualSenseAxis",
+            "impl RefUnwindSafe for DualSenseAxis",
+            "impl Send for DualSenseAxis",
+            "impl Sync for DualSenseAxis",
+            "impl Unpin for DualSenseAxis",
+            "impl UnwindSafe for DualSenseAxis"
+          ]
+        },
+        "struct.DualSenseController.html": {
+          "declarations": [
+            "pub struct DualSenseController { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &DualSenseState",
+            "pub fn surface(&self) -> &'static DualSenseSurface",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, control: DualSenseControl, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: DualSenseAxis, y: DualSenseAxis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: DualSenseAxis, y: DualSenseAxis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, left: DualSenseTrigger, right: DualSenseTrigger, ) -> Result<(), ControlError>",
+            "pub fn set_touch( &mut self, slot: TouchSlot, contact: Option<DualSenseTouchContact>, ) -> Result<(), ControlError>",
+            "pub fn set_motion(&mut self, motion: MotionSample) -> Result<(), ControlError>",
+            "pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError>",
+            "pub fn set_battery_level( &mut self, level: BatteryLevel, ) -> Result<(), ControlError>",
+            "pub fn feature_available( &self, feature: DualSenseFeature, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(DualSenseOutputEvent), ) -> Result<(), ControllerError>",
+            "pub const fn identity(&self) -> Option<DualSenseIdentity>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for DualSenseController",
+            "impl !Sync for DualSenseController",
+            "impl !UnwindSafe for DualSenseController",
+            "impl Send for DualSenseController",
+            "impl Unpin for DualSenseController"
+          ]
+        },
+        "struct.DualSenseIdentity.html": {
+          "declarations": [
+            "pub struct DualSenseIdentity(/* private fields */);",
+            "pub fn generate() -> Result<Self, ControllerError>",
+            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
+            "pub const fn to_bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for DualSenseIdentity",
+            "impl Copy for DualSenseIdentity",
+            "impl Debug for DualSenseIdentity",
+            "impl Eq for DualSenseIdentity",
+            "impl Hash for DualSenseIdentity",
+            "impl PartialEq for DualSenseIdentity",
+            "impl RefUnwindSafe for DualSenseIdentity",
+            "impl Send for DualSenseIdentity",
+            "impl Sync for DualSenseIdentity",
+            "impl Unpin for DualSenseIdentity",
+            "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseState.html": {
+          "declarations": [
+            "pub struct DualSenseState { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn right_stick(&self) -> (DualSenseAxis, DualSenseAxis)",
+            "pub const fn triggers(&self) -> (DualSenseTrigger, DualSenseTrigger)",
+            "pub const fn touch(&self, slot: TouchSlot) -> Option<DualSenseTouchContact>",
+            "pub const fn motion(&self) -> MotionSample",
+            "pub const fn battery(&self) -> BatteryState",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: DualSenseControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+          ],
+          "traits": [
+            "impl Clone for DualSenseState",
+            "impl Debug for DualSenseState",
+            "impl Default for DualSenseState",
+            "impl Eq for DualSenseState",
+            "impl PartialEq for DualSenseState",
+            "impl RefUnwindSafe for DualSenseState",
+            "impl Send for DualSenseState",
+            "impl Sync for DualSenseState",
+            "impl Unpin for DualSenseState",
+            "impl UnwindSafe for DualSenseState"
+          ]
+        },
+        "struct.DualSenseSurface.html": {
+          "declarations": [
+            "pub struct DualSenseSurface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for DualSenseSurface",
+            "impl ControllerSurfaceInfo for DualSenseSurface",
+            "impl Copy for DualSenseSurface",
+            "impl Debug for DualSenseSurface",
+            "impl Eq for DualSenseSurface",
+            "impl PartialEq for DualSenseSurface",
+            "impl RefUnwindSafe for DualSenseSurface",
+            "impl Send for DualSenseSurface",
+            "impl Sync for DualSenseSurface",
+            "impl Unpin for DualSenseSurface",
+            "impl UnwindSafe for DualSenseSurface"
+          ]
+        },
+        "struct.DualSenseTouchContact.html": {
+          "declarations": [
+            "pub struct DualSenseTouchContact { /* private fields */ }",
+            "pub fn new( id: u8, x: u16, y: u16, ) -> Result<DualSenseTouchContact, ControlError>",
+            "pub const fn id(self) -> u8",
+            "pub const fn x(self) -> u16",
+            "pub const fn y(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTouchContact",
+            "impl Copy for DualSenseTouchContact",
+            "impl Debug for DualSenseTouchContact",
+            "impl Eq for DualSenseTouchContact",
+            "impl PartialEq for DualSenseTouchContact",
+            "impl RefUnwindSafe for DualSenseTouchContact",
+            "impl Send for DualSenseTouchContact",
+            "impl Sync for DualSenseTouchContact",
+            "impl Unpin for DualSenseTouchContact",
+            "impl UnwindSafe for DualSenseTouchContact"
+          ]
+        },
+        "struct.DualSenseTrigger.html": {
+          "declarations": [
+            "pub struct DualSenseTrigger(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> DualSenseTrigger"
+          ],
+          "traits": [
+            "impl Clone for DualSenseTrigger",
+            "impl Copy for DualSenseTrigger",
+            "impl Debug for DualSenseTrigger",
+            "impl Eq for DualSenseTrigger",
+            "impl PartialEq for DualSenseTrigger",
+            "impl RefUnwindSafe for DualSenseTrigger",
+            "impl Send for DualSenseTrigger",
+            "impl Sync for DualSenseTrigger",
+            "impl Unpin for DualSenseTrigger",
+            "impl UnwindSafe for DualSenseTrigger"
+          ]
+        },
+        "struct.DualShock4Axis.html": {
+          "declarations": [
+            "pub struct DualShock4Axis(/* private fields */);",
+            "pub const fn new(raw: u8) -> DualShock4Axis",
+            "pub const fn raw(self) -> u8"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Axis",
+            "impl Copy for DualShock4Axis",
+            "impl Debug for DualShock4Axis",
+            "impl Eq for DualShock4Axis",
+            "impl PartialEq for DualShock4Axis",
+            "impl RefUnwindSafe for DualShock4Axis",
+            "impl Send for DualShock4Axis",
+            "impl Sync for DualShock4Axis",
+            "impl Unpin for DualShock4Axis",
+            "impl UnwindSafe for DualShock4Axis"
+          ]
+        },
+        "struct.DualShock4Controller.html": {
+          "declarations": [
+            "pub struct DualShock4Controller { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &DualShock4State",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn surface(&self) -> &'static DualShock4Surface",
+            "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, c: DualShock4Control, p: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: DualShock4Axis, y: DualShock4Axis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: DualShock4Axis, y: DualShock4Axis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, l: DualShock4Trigger, r: DualShock4Trigger, ) -> Result<(), ControlError>",
+            "pub fn set_motion( &mut self, m: DualShock4MotionSample, ) -> Result<(), ControlError>",
+            "pub fn set_touch( &mut self, slot: DualShock4TouchSlot, contact: Option<DualShock4TouchContact>, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(DualShock4OutputEvent), ) -> Result<(), ControllerError>",
+            "pub const fn identity(&self) -> Option<DualShock4Identity>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for DualShock4Controller",
+            "impl !Sync for DualShock4Controller",
+            "impl !UnwindSafe for DualShock4Controller",
+            "impl Send for DualShock4Controller",
+            "impl Unpin for DualShock4Controller"
+          ]
+        },
+        "struct.DualShock4Identity.html": {
+          "declarations": [
+            "pub struct DualShock4Identity(/* private fields */);",
+            "pub fn generate() -> Result<Self, ControllerError>",
+            "pub const fn from_bytes(bytes: [u8; 6]) -> Option<Self>",
+            "pub const fn to_bytes(self) -> [u8; 6]"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Identity",
+            "impl Copy for DualShock4Identity",
+            "impl Debug for DualShock4Identity",
+            "impl Eq for DualShock4Identity",
+            "impl Hash for DualShock4Identity",
+            "impl PartialEq for DualShock4Identity",
+            "impl RefUnwindSafe for DualShock4Identity",
+            "impl Send for DualShock4Identity",
+            "impl Sync for DualShock4Identity",
+            "impl Unpin for DualShock4Identity",
+            "impl UnwindSafe for DualShock4Identity"
+          ]
+        },
+        "struct.DualShock4MotionSample.html": {
+          "declarations": [
+            "pub struct DualShock4MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4MotionSample",
+            "impl Copy for DualShock4MotionSample",
+            "impl Debug for DualShock4MotionSample",
+            "impl Eq for DualShock4MotionSample",
+            "impl PartialEq for DualShock4MotionSample",
+            "impl RefUnwindSafe for DualShock4MotionSample",
+            "impl Send for DualShock4MotionSample",
+            "impl Sync for DualShock4MotionSample",
+            "impl Unpin for DualShock4MotionSample",
+            "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4State.html": {
+          "declarations": [
+            "pub struct DualShock4State { /* private fields */ }",
+            "pub const fn motion(&self) -> DualShock4MotionSample",
+            "pub const fn left_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn right_stick(&self) -> (DualShock4Axis, DualShock4Axis)",
+            "pub const fn triggers(&self) -> (DualShock4Trigger, DualShock4Trigger)",
+            "pub const fn touch( &self, slot: DualShock4TouchSlot, ) -> Option<DualShock4TouchContact>",
+            "pub const fn native_pressed(&self, control: DualShock4Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+          ],
+          "traits": [
+            "impl Clone for DualShock4State",
+            "impl Debug for DualShock4State",
+            "impl Default for DualShock4State",
+            "impl Eq for DualShock4State",
+            "impl PartialEq for DualShock4State",
+            "impl RefUnwindSafe for DualShock4State",
+            "impl Send for DualShock4State",
+            "impl Sync for DualShock4State",
+            "impl Unpin for DualShock4State",
+            "impl UnwindSafe for DualShock4State"
+          ]
+        },
+        "struct.DualShock4Surface.html": {
+          "declarations": [
+            "pub struct DualShock4Surface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Surface",
+            "impl ControllerSurfaceInfo for DualShock4Surface",
+            "impl Copy for DualShock4Surface",
+            "impl Debug for DualShock4Surface",
+            "impl Eq for DualShock4Surface",
+            "impl PartialEq for DualShock4Surface",
+            "impl RefUnwindSafe for DualShock4Surface",
+            "impl Send for DualShock4Surface",
+            "impl Sync for DualShock4Surface",
+            "impl Unpin for DualShock4Surface",
+            "impl UnwindSafe for DualShock4Surface"
+          ]
+        },
+        "struct.DualShock4TouchContact.html": {
+          "declarations": [
+            "pub struct DualShock4TouchContact { /* private fields */ }",
+            "pub fn new( id: u8, x: u16, y: u16, ) -> Result<DualShock4TouchContact, ControlError>",
+            "pub const fn id(self) -> u8",
+            "pub const fn x(self) -> u16",
+            "pub const fn y(self) -> u16"
+          ],
+          "traits": [
+            "impl Clone for DualShock4TouchContact",
+            "impl Copy for DualShock4TouchContact",
+            "impl Debug for DualShock4TouchContact",
+            "impl Eq for DualShock4TouchContact",
+            "impl PartialEq for DualShock4TouchContact",
+            "impl RefUnwindSafe for DualShock4TouchContact",
+            "impl Send for DualShock4TouchContact",
+            "impl Sync for DualShock4TouchContact",
+            "impl Unpin for DualShock4TouchContact",
+            "impl UnwindSafe for DualShock4TouchContact"
+          ]
+        },
+        "struct.DualShock4Trigger.html": {
+          "declarations": [
+            "pub struct DualShock4Trigger(/* private fields */);",
+            "pub const fn new(raw: u8) -> DualShock4Trigger",
+            "pub const fn raw(self) -> u8"
+          ],
+          "traits": [
+            "impl Clone for DualShock4Trigger",
+            "impl Copy for DualShock4Trigger",
+            "impl Debug for DualShock4Trigger",
+            "impl Eq for DualShock4Trigger",
+            "impl PartialEq for DualShock4Trigger",
+            "impl RefUnwindSafe for DualShock4Trigger",
+            "impl Send for DualShock4Trigger",
+            "impl Sync for DualShock4Trigger",
+            "impl Unpin for DualShock4Trigger",
+            "impl UnwindSafe for DualShock4Trigger"
+          ]
+        },
+        "struct.FaceButtonCluster.html": {
+          "declarations": [
+            "pub struct FaceButtonCluster { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn buttons(&self) -> &'static [FaceButtonInput]"
+          ],
+          "traits": [
+            "impl Clone for FaceButtonCluster",
+            "impl Copy for FaceButtonCluster",
+            "impl Debug for FaceButtonCluster",
+            "impl Eq for FaceButtonCluster",
+            "impl PartialEq for FaceButtonCluster",
+            "impl RefUnwindSafe for FaceButtonCluster",
+            "impl Send for FaceButtonCluster",
+            "impl Sync for FaceButtonCluster",
+            "impl Unpin for FaceButtonCluster",
+            "impl UnwindSafe for FaceButtonCluster"
+          ]
+        },
+        "struct.FaceButtonInput.html": {
+          "declarations": [
+            "pub struct FaceButtonInput { pub button: FaceButton, pub label: &'static str, pub placement: ClusterPlacement, }"
+          ],
+          "traits": [
+            "impl Clone for FaceButtonInput",
+            "impl Copy for FaceButtonInput",
+            "impl Debug for FaceButtonInput",
+            "impl Eq for FaceButtonInput",
+            "impl PartialEq for FaceButtonInput",
+            "impl RefUnwindSafe for FaceButtonInput",
+            "impl Send for FaceButtonInput",
+            "impl Sync for FaceButtonInput",
+            "impl Unpin for FaceButtonInput",
+            "impl UnwindSafe for FaceButtonInput"
+          ]
+        },
+        "struct.InputAxisRange.html": {
+          "declarations": [
+            "pub struct InputAxisRange { pub minimum: i32, pub maximum: i32, pub neutral: i32, }",
+            "pub const fn is_valid(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for InputAxisRange",
+            "impl Copy for InputAxisRange",
+            "impl Debug for InputAxisRange",
+            "impl Eq for InputAxisRange",
+            "impl PartialEq for InputAxisRange",
+            "impl RefUnwindSafe for InputAxisRange",
+            "impl Send for InputAxisRange",
+            "impl Sync for InputAxisRange",
+            "impl Unpin for InputAxisRange",
+            "impl UnwindSafe for InputAxisRange"
+          ]
+        },
+        "struct.InputControlId.html": {
+          "declarations": [
+            "pub struct InputControlId(/* private fields */);",
+            "pub const fn new(value: &'static str) -> InputControlId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for InputControlId",
+            "impl Copy for InputControlId",
+            "impl Debug for InputControlId",
+            "impl Eq for InputControlId",
+            "impl Hash for InputControlId",
+            "impl PartialEq for InputControlId",
+            "impl RefUnwindSafe for InputControlId",
+            "impl Send for InputControlId",
+            "impl Sync for InputControlId",
+            "impl Unpin for InputControlId",
+            "impl UnwindSafe for InputControlId"
+          ]
+        },
+        "struct.InputScale.html": {
+          "declarations": [
+            "pub struct InputScale { pub numerator: i32, pub denominator: u32, }",
+            "pub const IDENTITY: InputScale"
+          ],
+          "traits": [
+            "impl Clone for InputScale",
+            "impl Copy for InputScale",
+            "impl Debug for InputScale",
+            "impl Eq for InputScale",
+            "impl PartialEq for InputScale",
+            "impl RefUnwindSafe for InputScale",
+            "impl Send for InputScale",
+            "impl Sync for InputScale",
+            "impl Unpin for InputScale",
+            "impl UnwindSafe for InputScale"
+          ]
+        },
+        "struct.InputTopology.html": {
+          "declarations": [
+            "pub struct InputTopology { /* private fields */ }",
+            "pub const fn auxiliary_buttons(&self) -> &'static [AuxiliaryButtonInput]",
+            "pub const fn face_button_clusters(&self) -> &'static [FaceButtonCluster]",
+            "pub const fn dpads(&self) -> &'static [DpadCluster]",
+            "pub const fn sticks(&self) -> &'static [StickInput]",
+            "pub const fn trigger_stacks(&self) -> &'static [TriggerStack]",
+            "pub const fn touchpads(&self) -> &'static [TouchpadInput]",
+            "pub const fn motion(&self) -> &'static [MotionInput]",
+            "pub const fn extra_axes(&self) -> &'static [ExtraAxisInput]",
+            "pub const fn custom_modules(&self) -> &'static [CustomInputModule]",
+            "pub const EMPTY: InputTopology",
+            "pub fn validate(&self) -> Result<(), InputTopologyError>"
+          ],
+          "traits": [
+            "impl Clone for InputTopology",
+            "impl Copy for InputTopology",
+            "impl Debug for InputTopology",
+            "impl Eq for InputTopology",
+            "impl PartialEq for InputTopology",
+            "impl RefUnwindSafe for InputTopology",
+            "impl Send for InputTopology",
+            "impl Sync for InputTopology",
+            "impl Unpin for InputTopology",
+            "impl UnwindSafe for InputTopology"
+          ]
+        },
+        "struct.MotionInput.html": {
+          "declarations": [
+            "pub struct MotionInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn range(&self) -> InputAxisRange",
+            "pub const fn gyroscope_scale(&self) -> [InputScale; 3]",
+            "pub const fn accelerometer_scale(&self) -> [InputScale; 3]"
+          ],
+          "traits": [
+            "impl Clone for MotionInput",
+            "impl Copy for MotionInput",
+            "impl Debug for MotionInput",
+            "impl Eq for MotionInput",
+            "impl PartialEq for MotionInput",
+            "impl RefUnwindSafe for MotionInput",
+            "impl Send for MotionInput",
+            "impl Sync for MotionInput",
+            "impl Unpin for MotionInput",
+            "impl UnwindSafe for MotionInput"
+          ]
+        },
+        "struct.MotionSample.html": {
+          "declarations": [
+            "pub struct MotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for MotionSample",
+            "impl Copy for MotionSample",
+            "impl Debug for MotionSample",
+            "impl Eq for MotionSample",
+            "impl PartialEq for MotionSample",
+            "impl RefUnwindSafe for MotionSample",
+            "impl Send for MotionSample",
+            "impl Sync for MotionSample",
+            "impl Unpin for MotionSample",
+            "impl UnwindSafe for MotionSample"
+          ]
+        },
+        "struct.OutputSurface.html": {
+          "declarations": [
+            "pub struct OutputSurface { pub name: &'static str, pub event_type: u16, pub event_code: u16, }"
+          ],
+          "traits": [
+            "impl Clone for OutputSurface",
+            "impl Copy for OutputSurface",
+            "impl Debug for OutputSurface",
+            "impl Eq for OutputSurface",
+            "impl PartialEq for OutputSurface",
+            "impl RefUnwindSafe for OutputSurface",
+            "impl Send for OutputSurface",
+            "impl Sync for OutputSurface",
+            "impl Unpin for OutputSurface",
+            "impl UnwindSafe for OutputSurface"
+          ]
+        },
+        "struct.PcmFormat.html": {
+          "declarations": [
+            "pub struct PcmFormat { /* private fields */ }",
+            "pub fn new( rate: u32, channels: &[AudioChannel], ) -> Result<PcmFormat, AudioError>",
+            "pub const fn sample_rate_hz(&self) -> u32",
+            "pub fn channels(&self) -> &[AudioChannel]"
+          ],
+          "traits": [
+            "impl Clone for PcmFormat",
+            "impl Debug for PcmFormat",
+            "impl Eq for PcmFormat",
+            "impl PartialEq for PcmFormat",
+            "impl RefUnwindSafe for PcmFormat",
+            "impl Send for PcmFormat",
+            "impl Sync for PcmFormat",
+            "impl Unpin for PcmFormat",
+            "impl UnwindSafe for PcmFormat"
+          ]
+        },
+        "struct.ReadinessDescriptor.html": {
+          "declarations": [
+            "pub struct ReadinessDescriptor<'a> { /* private fields */ }",
+            "pub const fn raw_fd(&self) -> i32"
+          ],
+          "traits": [
+            "impl<'a> Debug for ReadinessDescriptor<'a>",
+            "impl<'a> RefUnwindSafe for ReadinessDescriptor<'a>",
+            "impl<'a> Send for ReadinessDescriptor<'a>",
+            "impl<'a> Sync for ReadinessDescriptor<'a>",
+            "impl<'a> Unpin for ReadinessDescriptor<'a>",
+            "impl<'a> UnwindSafe for ReadinessDescriptor<'a>"
+          ]
+        },
+        "struct.RealizationId.html": {
+          "declarations": [
+            "pub struct RealizationId(/* private fields */);",
+            "pub const LINUX_UINPUT: RealizationId",
+            "pub const LINUX_UHID_BLUETOOTH: RealizationId",
+            "pub const LINUX_UHID_USB: RealizationId",
+            "pub const LINUX_DUMMY_HCD_USB_HID: RealizationId",
+            "pub const LINUX_USBIP_USB_AUDIO: RealizationId",
+            "pub const fn new(value: &'static str) -> RealizationId",
+            "pub const fn as_str(self) -> &'static str"
+          ],
+          "traits": [
+            "impl Clone for RealizationId",
+            "impl Copy for RealizationId",
+            "impl Debug for RealizationId",
+            "impl Display for RealizationId",
+            "impl Eq for RealizationId",
+            "impl Hash for RealizationId",
+            "impl Ord for RealizationId",
+            "impl PartialEq for RealizationId",
+            "impl PartialOrd for RealizationId",
+            "impl RefUnwindSafe for RealizationId",
+            "impl Send for RealizationId",
+            "impl Sync for RealizationId",
+            "impl Unpin for RealizationId",
+            "impl UnwindSafe for RealizationId"
+          ]
+        },
+        "struct.RealizationTargetSet.html": {
+          "declarations": [
+            "pub struct RealizationTargetSet(/* private fields */);",
+            "pub const EMPTY: RealizationTargetSet",
+            "pub const fn new(ids: &'static [RealizationId]) -> RealizationTargetSet",
+            "pub const fn contains(self, target: RealizationId) -> bool",
+            "pub const fn is_empty(self) -> bool"
+          ],
+          "traits": [
+            "impl Clone for RealizationTargetSet",
+            "impl Copy for RealizationTargetSet",
+            "impl Debug for RealizationTargetSet",
+            "impl Default for RealizationTargetSet",
+            "impl Eq for RealizationTargetSet",
+            "impl Hash for RealizationTargetSet",
+            "impl PartialEq for RealizationTargetSet",
+            "impl RefUnwindSafe for RealizationTargetSet",
+            "impl Send for RealizationTargetSet",
+            "impl Sync for RealizationTargetSet",
+            "impl Unpin for RealizationTargetSet",
+            "impl UnwindSafe for RealizationTargetSet"
+          ]
+        },
+        "struct.RumbleEffect.html": {
+          "declarations": [
+            "pub struct RumbleEffect { pub id: i16, pub strong: u16, pub weak: u16, pub length_ms: u16, pub delay_ms: u16, pub trigger_button: u16, pub trigger_interval_ms: u16, }"
+          ],
+          "traits": [
+            "impl Clone for RumbleEffect",
+            "impl Copy for RumbleEffect",
+            "impl Debug for RumbleEffect",
+            "impl Eq for RumbleEffect",
+            "impl PartialEq for RumbleEffect",
+            "impl RefUnwindSafe for RumbleEffect",
+            "impl Send for RumbleEffect",
+            "impl Sync for RumbleEffect",
+            "impl Unpin for RumbleEffect",
+            "impl UnwindSafe for RumbleEffect"
+          ]
+        },
+        "struct.StickInput.html": {
+          "declarations": [
+            "pub struct StickInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn x(&self) -> InputAxisRange",
+            "pub const fn y(&self) -> InputAxisRange",
+            "pub const fn press(&self) -> Option<AuxiliaryButtonInput>",
+            "pub const fn capacitive(&self) -> Option<AuxiliaryButtonInput>"
+          ],
+          "traits": [
+            "impl Clone for StickInput",
+            "impl Copy for StickInput",
+            "impl Debug for StickInput",
+            "impl Eq for StickInput",
+            "impl PartialEq for StickInput",
+            "impl RefUnwindSafe for StickInput",
+            "impl Send for StickInput",
+            "impl Sync for StickInput",
+            "impl Unpin for StickInput",
+            "impl UnwindSafe for StickInput"
+          ]
+        },
+        "struct.SwitchProAxis.html": {
+          "declarations": [
+            "pub struct SwitchProAxis(/* private fields */);",
+            "pub const fn new(raw: i16) -> SwitchProAxis",
+            "pub const fn raw(self) -> i16"
+          ],
+          "traits": [
+            "impl Clone for SwitchProAxis",
+            "impl Copy for SwitchProAxis",
+            "impl Debug for SwitchProAxis",
+            "impl Eq for SwitchProAxis",
+            "impl PartialEq for SwitchProAxis",
+            "impl RefUnwindSafe for SwitchProAxis",
+            "impl Send for SwitchProAxis",
+            "impl Sync for SwitchProAxis",
+            "impl Unpin for SwitchProAxis",
+            "impl UnwindSafe for SwitchProAxis"
+          ]
+        },
+        "struct.SwitchProController.html": {
+          "declarations": [
+            "pub struct SwitchProController { /* private fields */ }",
+            "pub fn stream_enabled(&self) -> bool",
+            "pub fn motion_report_counter(&self) -> u8",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &SwitchProState",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn surface(&self) -> &'static SwitchProSurface",
+            "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, c: SwitchProControl, p: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: SwitchProAxis, y: SwitchProAxis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: SwitchProAxis, y: SwitchProAxis, ) -> Result<(), ControlError>",
+            "pub fn set_motion( &mut self, m: SwitchProMotionSample, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(SwitchProOutputEvent), ) -> Result<(), ControllerError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for SwitchProController",
+            "impl !Sync for SwitchProController",
+            "impl !UnwindSafe for SwitchProController",
+            "impl Send for SwitchProController",
+            "impl Unpin for SwitchProController"
+          ]
+        },
+        "struct.SwitchProMotionSample.html": {
+          "declarations": [
+            "pub struct SwitchProMotionSample { pub accelerometer: [i16; 3], pub gyroscope: [i16; 3], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProMotionSample",
+            "impl Copy for SwitchProMotionSample",
+            "impl Debug for SwitchProMotionSample",
+            "impl Eq for SwitchProMotionSample",
+            "impl PartialEq for SwitchProMotionSample",
+            "impl RefUnwindSafe for SwitchProMotionSample",
+            "impl Send for SwitchProMotionSample",
+            "impl Sync for SwitchProMotionSample",
+            "impl Unpin for SwitchProMotionSample",
+            "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProRumble.html": {
+          "declarations": [
+            "pub struct SwitchProRumble { pub packet_counter: u8, pub left: [u8; 4], pub right: [u8; 4], }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProRumble",
+            "impl Copy for SwitchProRumble",
+            "impl Debug for SwitchProRumble",
+            "impl Eq for SwitchProRumble",
+            "impl PartialEq for SwitchProRumble",
+            "impl RefUnwindSafe for SwitchProRumble",
+            "impl Send for SwitchProRumble",
+            "impl Sync for SwitchProRumble",
+            "impl Unpin for SwitchProRumble",
+            "impl UnwindSafe for SwitchProRumble"
+          ]
+        },
+        "struct.SwitchProState.html": {
+          "declarations": [
+            "pub struct SwitchProState { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn right_stick(&self) -> (SwitchProAxis, SwitchProAxis)",
+            "pub const fn motion(&self) -> SwitchProMotionSample",
+            "pub const fn native_pressed(&self, control: SwitchProControl) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool"
+          ],
+          "traits": [
+            "impl Clone for SwitchProState",
+            "impl Debug for SwitchProState",
+            "impl Default for SwitchProState",
+            "impl Eq for SwitchProState",
+            "impl PartialEq for SwitchProState",
+            "impl RefUnwindSafe for SwitchProState",
+            "impl Send for SwitchProState",
+            "impl Sync for SwitchProState",
+            "impl Unpin for SwitchProState",
+            "impl UnwindSafe for SwitchProState"
+          ]
+        },
+        "struct.SwitchProSurface.html": {
+          "declarations": [
+            "pub struct SwitchProSurface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for SwitchProSurface",
+            "impl ControllerSurfaceInfo for SwitchProSurface",
+            "impl Copy for SwitchProSurface",
+            "impl Debug for SwitchProSurface",
+            "impl Eq for SwitchProSurface",
+            "impl PartialEq for SwitchProSurface",
+            "impl RefUnwindSafe for SwitchProSurface",
+            "impl Send for SwitchProSurface",
+            "impl Sync for SwitchProSurface",
+            "impl Unpin for SwitchProSurface",
+            "impl UnwindSafe for SwitchProSurface"
+          ]
+        },
+        "struct.TargetRestriction.html": {
+          "declarations": [
+            "pub struct TargetRestriction { pub feature: &'static str, pub reason: &'static str, }"
+          ],
+          "traits": [
+            "impl Clone for TargetRestriction",
+            "impl Copy for TargetRestriction",
+            "impl Debug for TargetRestriction",
+            "impl Eq for TargetRestriction",
+            "impl PartialEq for TargetRestriction",
+            "impl RefUnwindSafe for TargetRestriction",
+            "impl Send for TargetRestriction",
+            "impl Sync for TargetRestriction",
+            "impl Unpin for TargetRestriction",
+            "impl UnwindSafe for TargetRestriction"
+          ]
+        },
+        "struct.TouchpadInput.html": {
+          "declarations": [
+            "pub struct TouchpadInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn width(&self) -> u32",
+            "pub const fn height(&self) -> u32",
+            "pub const fn contacts(&self) -> u8",
+            "pub const fn actuation(&self) -> TouchpadActuation"
+          ],
+          "traits": [
+            "impl Clone for TouchpadInput",
+            "impl Copy for TouchpadInput",
+            "impl Debug for TouchpadInput",
+            "impl Eq for TouchpadInput",
+            "impl PartialEq for TouchpadInput",
+            "impl RefUnwindSafe for TouchpadInput",
+            "impl Send for TouchpadInput",
+            "impl Sync for TouchpadInput",
+            "impl Unpin for TouchpadInput",
+            "impl UnwindSafe for TouchpadInput"
+          ]
+        },
+        "struct.TriggerInput.html": {
+          "declarations": [
+            "pub struct TriggerInput { pub label: &'static str, pub kind: TriggerInputKind, }"
+          ],
+          "traits": [
+            "impl Clone for TriggerInput",
+            "impl Copy for TriggerInput",
+            "impl Debug for TriggerInput",
+            "impl Eq for TriggerInput",
+            "impl PartialEq for TriggerInput",
+            "impl RefUnwindSafe for TriggerInput",
+            "impl Send for TriggerInput",
+            "impl Sync for TriggerInput",
+            "impl Unpin for TriggerInput",
+            "impl UnwindSafe for TriggerInput"
+          ]
+        },
+        "struct.TriggerStack.html": {
+          "declarations": [
+            "pub struct TriggerStack { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn controls(&self) -> &'static [TriggerInput]"
+          ],
+          "traits": [
+            "impl Clone for TriggerStack",
+            "impl Copy for TriggerStack",
+            "impl Debug for TriggerStack",
+            "impl Eq for TriggerStack",
+            "impl PartialEq for TriggerStack",
+            "impl RefUnwindSafe for TriggerStack",
+            "impl Send for TriggerStack",
+            "impl Sync for TriggerStack",
+            "impl Unpin for TriggerStack",
+            "impl UnwindSafe for TriggerStack"
+          ]
+        },
+        "struct.Xbox360Axis.html": {
+          "declarations": [
+            "pub struct Xbox360Axis(/* private fields */);",
+            "pub const fn raw(self) -> i16",
+            "pub const fn new(raw: i16) -> Xbox360Axis"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Axis",
+            "impl Copy for Xbox360Axis",
+            "impl Debug for Xbox360Axis",
+            "impl Eq for Xbox360Axis",
+            "impl PartialEq for Xbox360Axis",
+            "impl RefUnwindSafe for Xbox360Axis",
+            "impl Send for Xbox360Axis",
+            "impl Sync for Xbox360Axis",
+            "impl Unpin for Xbox360Axis",
+            "impl UnwindSafe for Xbox360Axis"
+          ]
+        },
+        "struct.Xbox360Controller.html": {
+          "declarations": [
+            "pub struct Xbox360Controller { /* private fields */ }",
+            "pub fn audio(&mut self) -> Option<&mut ControllerAudio>",
+            "pub fn wants_write(&self) -> bool",
+            "pub fn next_service_in(&self) -> Option<Duration>",
+            "pub fn dropped_output_events(&self) -> u64",
+            "pub fn state(&self) -> &Xbox360State",
+            "pub fn surface(&self) -> &'static Xbox360Surface",
+            "pub fn is_dirty(&self) -> bool",
+            "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
+            "pub fn set_battery_exposed(&mut self, exposed: bool) -> Result<(), ControlError>",
+            "pub fn set_battery_level( &mut self, level: BatteryLevel, ) -> Result<(), ControlError>",
+            "pub fn set_native( &mut self, control: Xbox360Control, pressed: bool, ) -> Result<(), ControlError>",
+            "pub fn set_left_stick( &mut self, x: Xbox360Axis, y: Xbox360Axis, ) -> Result<(), ControlError>",
+            "pub fn set_right_stick( &mut self, x: Xbox360Axis, y: Xbox360Axis, ) -> Result<(), ControlError>",
+            "pub fn set_triggers( &mut self, left: Xbox360Trigger, right: Xbox360Trigger, ) -> Result<(), ControlError>",
+            "pub fn neutralize(&mut self) -> Result<(), ControlError>",
+            "pub fn commit(&mut self) -> Result<(), CommitError>",
+            "pub fn close(&mut self)",
+            "pub fn readiness(&self) -> Option<ServiceReadiness<'_>>",
+            "pub fn association(&self) -> &ControllerAssociation",
+            "pub fn diagnostics(&mut self) -> ControllerDiagnostics",
+            "pub fn service( &mut self, callback: &mut dyn FnMut(Xbox360OutputEvent), ) -> Result<(), ControllerError>"
+          ],
+          "traits": [
+            "impl !RefUnwindSafe for Xbox360Controller",
+            "impl !Sync for Xbox360Controller",
+            "impl !UnwindSafe for Xbox360Controller",
+            "impl Send for Xbox360Controller",
+            "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360State.html": {
+          "declarations": [
+            "pub struct Xbox360State { /* private fields */ }",
+            "pub const fn left_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn right_stick(&self) -> (Xbox360Axis, Xbox360Axis)",
+            "pub const fn triggers(&self) -> (Xbox360Trigger, Xbox360Trigger)",
+            "pub const fn battery(&self) -> BatteryState",
+            "pub const fn face_pressed(&self, button: FaceButton) -> bool",
+            "pub const fn native_pressed(&self, control: Xbox360Control) -> bool",
+            "pub const fn dpad_pressed(&self, direction: DpadDirection) -> bool"
+          ],
+          "traits": [
+            "impl Clone for Xbox360State",
+            "impl Debug for Xbox360State",
+            "impl Default for Xbox360State",
+            "impl Eq for Xbox360State",
+            "impl PartialEq for Xbox360State",
+            "impl RefUnwindSafe for Xbox360State",
+            "impl Send for Xbox360State",
+            "impl Sync for Xbox360State",
+            "impl Unpin for Xbox360State",
+            "impl UnwindSafe for Xbox360State"
+          ]
+        },
+        "struct.Xbox360Surface.html": {
+          "declarations": [
+            "pub struct Xbox360Surface { /* private fields */ }",
+            "pub const fn common(&self) -> &ControllerSurface"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Surface",
+            "impl ControllerSurfaceInfo for Xbox360Surface",
+            "impl Copy for Xbox360Surface",
+            "impl Debug for Xbox360Surface",
+            "impl Eq for Xbox360Surface",
+            "impl PartialEq for Xbox360Surface",
+            "impl RefUnwindSafe for Xbox360Surface",
+            "impl Send for Xbox360Surface",
+            "impl Sync for Xbox360Surface",
+            "impl Unpin for Xbox360Surface",
+            "impl UnwindSafe for Xbox360Surface"
+          ]
+        },
+        "struct.Xbox360Trigger.html": {
+          "declarations": [
+            "pub struct Xbox360Trigger(/* private fields */);",
+            "pub const fn raw(self) -> u8",
+            "pub const fn new(raw: u8) -> Xbox360Trigger"
+          ],
+          "traits": [
+            "impl Clone for Xbox360Trigger",
+            "impl Copy for Xbox360Trigger",
+            "impl Debug for Xbox360Trigger",
+            "impl Eq for Xbox360Trigger",
+            "impl PartialEq for Xbox360Trigger",
+            "impl RefUnwindSafe for Xbox360Trigger",
+            "impl Send for Xbox360Trigger",
+            "impl Sync for Xbox360Trigger",
+            "impl Unpin for Xbox360Trigger",
+            "impl UnwindSafe for Xbox360Trigger"
+          ]
+        },
+        "trait.ControllerSurfaceInfo.html": {
+          "declarations": [
+            "pub trait ControllerSurfaceInfo { // Required method fn common_surface(&self) -> &ControllerSurface; }"
+          ],
+          "traits": [
+            "impl ControllerSurfaceInfo for DualSenseSurface",
+            "impl ControllerSurfaceInfo for DualShock4Surface",
+            "impl ControllerSurfaceInfo for SwitchProSurface",
+            "impl ControllerSurfaceInfo for Xbox360Surface"
+          ]
+        }
+      },
+      "schema": 1,
+      "scope": "ordinary root; experimental and supporting SPI excluded"
+    }
+  }
+}
