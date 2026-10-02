@@ -107,9 +107,7 @@ impl SampleStreams {
     /// Returns complete frames accepted, never silently consumes an unaccepted suffix.
     pub fn write_microphone(&mut self, samples: &[i16]) -> Result<usize, AudioError> {
         let accepted = self.microphone.push(samples)?;
-        if accepted != 0
-            && let Some(pump) = &self.pump
-        {
+        if let (true, Some(pump)) = (accepted != 0, &self.pump) {
             pump.thread().unpark();
         }
         Ok(accepted)
@@ -258,6 +256,7 @@ mod tests {
                 thread::sleep(Duration::from_millis(1));
             }
             let microphone = vec![-41_i16; 8 * in_channels];
+            assert_eq!(client.write_microphone(&[]).unwrap(), 0);
             assert_eq!(client.write_microphone(&microphone).unwrap(), 8);
             let mut captured = vec![0_i16; 128 * in_channels];
             loop {

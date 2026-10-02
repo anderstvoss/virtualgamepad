@@ -1,0 +1,20 @@
+{
+  "revision": "76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02",
+  "repository": "https://github.com/anderstvoss/virtualgamepad",
+  "consumer_sha256": "3b282ebb665e5d96d54055e21bb42111363a3a83ae27bfb8244ae95aa9a1e8da",
+  "lock_sha256": "f29348bc03f3d4473abe0b163305075957cb20ef46a01d3d3555e373a34221ae",
+  "lock_file": "ALPHA_GIT_CONSUMER_EVIDENCE.lock",
+  "feature_combinations": [
+    "",
+    "audio-pipewire",
+    "audio-usbip",
+    "experimental",
+    "audio-pipewire,audio-usbip",
+    "audio-pipewire,experimental",
+    "audio-usbip,experimental",
+    "audio-pipewire,audio-usbip,experimental"
+  ],
+  "compiler": "rustc 1.95.0 (59807616e 2026-04-14)",
+  "cached_offline_rebuild": "passed",
+  "scope": "compile-only; no host I/O or hardware acceptance"
+}
