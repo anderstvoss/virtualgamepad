@@ -6,6 +6,11 @@ approval are recorded in [the checkpoint](ALPHA_DEMO_REFINEMENT.md); #126 retain
 checklist reconciliation. Final freeze, separate quality review and release remain
 pending. Older baselines and batches below are historical records.
 
+**Final review handoff:** [prepared alpha package](ALPHA_FINAL_REVIEW.md), with
+separate freeze, quality and exact-Git validation PRs. The snapshot is enforced
+in the proposed freeze CI step; final acceptance, merge/release SHAs and any tag
+remain maintainer decisions. WIP and physical evidence gates are not promoted.
+
 **Prior execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
 on merged PR108. It supersedes the execution order below; historical experiment
 results remain unchanged. Gate T representation is required for alpha, while its
