@@ -27,7 +27,7 @@ class PublicPage(HTMLParser):
                 and href.startswith('../src/')):
             self.source = href
         if tag == 'a' and href.endswith('.html') and '/' not in href:
-            if href.startswith(('struct.', 'enum.', 'trait.', 'type.', 'fn.', 'constant.', 'mod.')):
+            if href.startswith(('struct.', 'enum.', 'trait.', 'type.', 'fn.', 'constant.', 'static.', 'macro.', 'union.', 'mod.')):
                 self.links.add(href)
         if self.capture and tag not in ('br', 'wbr', 'img', 'hr', 'input', 'meta', 'link'):
             self.depth += 1

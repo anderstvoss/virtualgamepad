@@ -76,6 +76,9 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Enforce reviewed alpha root API
+        run: python3 scripts/check-alpha-api.py
+
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
