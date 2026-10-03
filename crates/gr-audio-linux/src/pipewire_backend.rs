@@ -411,11 +411,10 @@ impl ManagedStream {
                 &mut [pod],
             )
             .map_err(backend);
-        if connected.is_err() {
-            finish_cleanup(connected, std::iter::once(managed.disconnect()))?;
-        }
+        finish_configuration(connected, || managed.disconnect())?;
         if input && !input_initially_active {
-            managed.stream.set_active(false).map_err(backend)?;
+            let inactive = managed.stream.set_active(false).map_err(backend);
+            finish_configuration(inactive, || managed.disconnect())?;
         }
         Ok(managed)
     }
@@ -504,6 +503,16 @@ fn run(
     // Drain every teardown, including partial registration and backend failure.
     // Drop still protects unwinding, but ordinary errors must retain cleanup causes.
     finish_cleanup(result, streams.iter_mut().map(ManagedStream::disconnect))
+}
+
+fn finish_configuration(
+    result: Result<(), AudioError>,
+    disconnect: impl FnOnce() -> Result<(), AudioError>,
+) -> Result<(), AudioError> {
+    match result {
+        Ok(()) => Ok(()),
+        Err(error) => finish_cleanup(Err(error), std::iter::once(disconnect())),
+    }
 }
 
 fn finish_cleanup(
@@ -937,6 +946,33 @@ mod tests {
         );
         assert_eq!(finish_cleanup(Ok(()), [Ok(()), Ok(())].into_iter()), Ok(()));
     }
+    #[test]
+    fn failed_connect_or_initial_deactivation_retains_rollback_failure() {
+        for stage in ["connect failed", "initial deactivation failed"] {
+            let mut owned = true;
+            let mut attempts = 0;
+            let error = finish_configuration(Err(backend(stage)), || {
+                attempts += 1;
+                owned = false;
+                Err(backend("disconnect failed"))
+            })
+            .unwrap_err()
+            .to_string();
+            assert_eq!(attempts, 1);
+            assert!(!owned);
+            assert!(error.contains(stage));
+            assert!(error.contains("disconnect failed"));
+        }
+        assert_eq!(
+            finish_configuration(Err(AudioError::AccessDenied), || Ok(())),
+            Err(AudioError::AccessDenied)
+        );
+        assert_eq!(
+            finish_configuration(Ok(()), || panic!("live stream must remain connected")),
+            Ok(())
+        );
+    }
+
     #[test]
     fn endpoints_request_small_quanta_without_forcing_graph_or_routing() {
         for input in [true, false] {
