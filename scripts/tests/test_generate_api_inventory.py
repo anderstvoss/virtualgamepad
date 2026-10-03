@@ -12,6 +12,15 @@ SPEC.loader.exec_module(inventory)
 
 
 class InventoryTests(unittest.TestCase):
+    def test_root_module_links_exclude_parent_external_and_nested_pages(self):
+        page = inventory.parse('<a href="experimental/index.html">SPI</a>'
+                               '<a href="ordinary/index.html">Ordinary</a>'
+                               '<a href="../index.html">Parent</a>'
+                               '<a href="./index.html">Self</a>'
+                               '<a href="https://example.invalid/index.html">External</a>'
+                               '<a href="ordinary/nested/index.html">Nested</a>')
+        self.assertEqual(page.modules, {'experimental/index.html', 'ordinary/index.html'})
+
     def test_public_declarations_include_methods_and_skip_trait_implementation_details(self):
         page = inventory.parse('<pre class="rust item-decl"><code>pub struct Read { pub frames: usize }</code></pre>'
                                '<h4 class="code-header">pub fn frames(&amp;self) -&gt; usize</h4>'

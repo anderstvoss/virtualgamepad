@@ -16,8 +16,9 @@ BASELINE = ROOT/'docs/architecture-overhaul/ALPHA_API_SNAPSHOT.json'
 
 
 def snapshot(doc_root, manifest):
-    links = inventory.parse((doc_root/'index.html').read_text()).links
-    unknown_modules = [link for link in links if link.startswith('mod.') and link != 'mod.experimental.html']
+    page = inventory.parse((doc_root/'index.html').read_text())
+    modules = page.modules | {link for link in page.links if link.startswith('mod.')}
+    unknown_modules = sorted(modules - {'experimental/index.html', 'mod.experimental.html'})
     if unknown_modules:
         raise ValueError(f'Unreviewed ordinary root modules: {unknown_modules}')
     surface = inventory.public_surface(doc_root)

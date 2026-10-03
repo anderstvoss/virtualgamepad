@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 
 MODULE = Path(__file__).resolve().parents[1]/'check-alpha-api.py'
@@ -40,3 +41,22 @@ class SnapshotTests(unittest.TestCase):
             index.write_text(index.read_text()+'<a href="mod.extra.html">Extra</a>')
             with self.assertRaisesRegex(ValueError, 'Unreviewed'):
                 api.snapshot(root, {'features': {'default': []}})
+
+    def test_real_rustdoc_modules_fail_closed_but_experimental_is_excluded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root/'lib.rs'
+            manifest = {'features': {'default': [], 'experimental': []}}
+            for ordinary in [False, True]:
+                source.write_text('pub struct Handle; pub mod experimental { pub struct Spi; }'
+                                  + (' pub mod ordinary { pub struct Added; }' if ordinary else ''))
+                docs = root/str(ordinary)
+                subprocess.run(['rustdoc', '--edition=2024', '--crate-name', 'snapshot_fixture',
+                                str(source), '-o', str(docs)], check=True, capture_output=True)
+                doc_root = docs/'snapshot_fixture'
+                if ordinary:
+                    with self.assertRaisesRegex(ValueError, 'ordinary/index.html'):
+                        api.snapshot(doc_root, manifest)
+                else:
+                    self.assertEqual(set(api.snapshot(doc_root, manifest)['items']),
+                                     {'struct.Handle.html'})
