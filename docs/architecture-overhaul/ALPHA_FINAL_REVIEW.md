@@ -7,12 +7,13 @@ Review and merge in dependency order:
 1. PR #130: root freeze candidate and the explicitly authorized CI snapshot guard.
 2. PR #131: separate implementation quality review and PipeWire construction
    cleanup retention fix. Public API remains identical to the freeze candidate.
-3. Release-validation PR: exact Git consumer tooling/evidence, release notes and
-   this acceptance checklist. It stacks on #131 and changes tooling/docs only.
+3. PR #132: exact Git consumer tooling/evidence, release notes and this acceptance
+   checklist. Its separate audio fix restores the declared Rust 1.85 compatibility
+   discovered by expanding release validation to all root features.
 
 These blocks are prepared for review, not automatically merged or accepted.
 The exact source candidate tested through Git is
-`0fe423b73e3aba5399520d845000379a9c42503b` (quality PR head). The consumer evidence
+`76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02` (release-validation audio fix). The consumer evidence
 is `ALPHA_GIT_CONSUMER_EVIDENCE.json`: fresh Git resolution, eight locked root-only
 compile combinations and cached offline rebuild; consumer and lock hashes identify
 what was tested; its adjacent `.lock` file preserves the resolved dependency set
@@ -22,9 +23,9 @@ Git compilation does not exercise hardware, PCM delivery or latency.
 
 After squash merges, the final main commit has a different identity. Before final
 acceptance/tagging, rerun the exact Git consumer command against that main SHA and
-require its CI to pass. The release-validation PR's docs/tooling additions do not
-change controller runtime or the API, but do not magically make an untested merge
-commit release-qualified. Record accepted freeze and release SHAs in the review.
+require its CI to pass. Later evidence/docs changes do not change the tested runtime
+or API; a different merge commit still requires validation. Record accepted freeze
+and release SHAs in the review.
 
 ## Prepared validation
 
@@ -35,12 +36,16 @@ commit release-qualified. Record accepted freeze and release SHAs in the review.
 - Exact Git matrix/offline rebuild passed at the revision above.
 - Python tooling: 98 tests passed; snapshot drift/module/trait tests and exact-SHA
   input tests are deterministic and sanitized.
-- MSRV Rust 1.85 default-root compilation passed.
+- MSRV Rust 1.85 default and all-feature root compilation passed. The expanded
+  check caught an audio worker let-chain requiring newer Rust; an equivalent tuple
+  pattern restores compatibility. The socket regression also exercises an empty
+  microphone write followed by nonempty delivery and terminal close for each profile.
 - Cargo audit/deny passed with existing ttf-parser unmaintained and duplicate/
   license-policy warnings; no new suppression or dependency.
 - Full-history/public-source secret scans and whitespace checks passed.
-- PR CI supplies native Linux/macOS/Windows compile/test, CodeQL, corpus pin and
-  policy evidence at each checked head. Require green final-head checks; network
+- PR CI supplies native Linux/macOS/Windows compile/test, corpus pin and policy
+  evidence. CodeQL runs automatically for the main-targeted freeze PR; dispatch
+  the existing workflow for the stacked final head. Require green final-head checks; network
   installation failures are retained/retried rather than called passing tests.
 
 ## Scope for acceptance
@@ -94,6 +99,7 @@ python3 -m unittest discover -s scripts/tests
 python3 scripts/check-alpha-api.py
 python3 scripts/check-root-consumers.py
 cargo +1.85 check --locked -p virtualgamepad
+cargo +1.85 check --locked -p virtualgamepad --all-features
 cargo audit
 cargo deny check
 gitleaks detect --redact

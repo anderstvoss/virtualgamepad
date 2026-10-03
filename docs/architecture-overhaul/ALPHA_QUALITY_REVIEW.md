@@ -57,6 +57,13 @@ when cleanup succeeds, and rejects accidental rollback of a live stream. No publ
 signature or intended semantic change occurs: this restores the documented retained
 cleanup contract. The root snapshot is unchanged.
 
+Expanded release validation in PR #132 also caught a Rust 1.85 incompatibility in
+the sample microphone worker's wake condition: a let-chain needs newer Rust than
+the declared minimum. An equivalent tuple pattern preserves waking only after
+frames are accepted. Default and all-feature root checks now pass on Rust 1.85;
+the existing socket regression additionally covers an empty write followed by
+nonempty delivery for all compiled profiles. This does not change the root API.
+
 ## Validation and acceptance boundary
 
 Required locked workspace checks, strict clippy/tests, strict docs, snapshot,

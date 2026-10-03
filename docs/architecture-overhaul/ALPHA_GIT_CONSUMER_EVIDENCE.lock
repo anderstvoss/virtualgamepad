@@ -148,7 +148,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 [[package]]
 name = "gr-audio-contract"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "thiserror",
 ]
@@ -156,7 +156,7 @@ dependencies = [
 [[package]]
 name = "gr-audio-linux"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "pipewire",
@@ -165,7 +165,7 @@ dependencies = [
 [[package]]
 name = "gr-audio-worker"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "gr-curated-controllers",
@@ -179,7 +179,7 @@ dependencies = [
 [[package]]
 name = "gr-controller-contract"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "gr-realization-api",
@@ -189,7 +189,7 @@ dependencies = [
 [[package]]
 name = "gr-controller-runtime"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-controller-contract",
  "gr-realization-api",
@@ -199,7 +199,7 @@ dependencies = [
 [[package]]
 name = "gr-controller-wire"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-dualsense-wire",
 ]
@@ -207,7 +207,7 @@ dependencies = [
 [[package]]
 name = "gr-curated-controllers"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "gr-controller-contract",
@@ -224,17 +224,17 @@ dependencies = [
 [[package]]
 name = "gr-dualsense-wire"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 
 [[package]]
 name = "gr-hid"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 
 [[package]]
 name = "gr-privileged-broker"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-controller-wire",
  "gr-dualsense-wire",
@@ -246,7 +246,7 @@ dependencies = [
 [[package]]
 name = "gr-provider-linux-dummy-hcd"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-privileged-broker",
  "gr-realization-api",
@@ -255,7 +255,7 @@ dependencies = [
 [[package]]
 name = "gr-provider-linux-uhid"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-hid",
  "gr-realization-api",
@@ -265,7 +265,7 @@ dependencies = [
 [[package]]
 name = "gr-provider-linux-uinput"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-realization-api",
  "libc",
@@ -274,7 +274,7 @@ dependencies = [
 [[package]]
 name = "gr-realization-api"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-hid",
  "thiserror",
@@ -283,7 +283,7 @@ dependencies = [
 [[package]]
 name = "gr-usbip"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "gr-controller-wire",
@@ -667,7 +667,7 @@ checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
 [[package]]
 name = "virtualgamepad"
 version = "0.1.0"
-source = "git+https://github.com/anderstvoss/virtualgamepad?rev=0fe423b73e3aba5399520d845000379a9c42503b#0fe423b73e3aba5399520d845000379a9c42503b"
+source = "git+https://github.com/anderstvoss/virtualgamepad?rev=76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02#76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02"
 dependencies = [
  "gr-audio-contract",
  "gr-audio-linux",

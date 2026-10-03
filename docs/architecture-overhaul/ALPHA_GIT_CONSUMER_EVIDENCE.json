@@ -1,8 +1,8 @@
 {
-  "revision": "0fe423b73e3aba5399520d845000379a9c42503b",
+  "revision": "76b7b3fcb1e10dc073ec637b1c8469cc5c7a4b02",
   "repository": "https://github.com/anderstvoss/virtualgamepad",
   "consumer_sha256": "3b282ebb665e5d96d54055e21bb42111363a3a83ae27bfb8244ae95aa9a1e8da",
-  "lock_sha256": "b275244302670a7d19d909adc8a0e4914e8f67a6c38fb7dce0f9d4a75186ae87",
+  "lock_sha256": "f29348bc03f3d4473abe0b163305075957cb20ef46a01d3d3555e373a34221ae",
   "lock_file": "ALPHA_GIT_CONSUMER_EVIDENCE.lock",
   "feature_combinations": [
     "",
