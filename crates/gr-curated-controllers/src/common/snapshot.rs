@@ -115,7 +115,7 @@ impl<S: Clone> Protocol for SnapshotProtocol<S> {
             bytes: report.payload().to_vec(),
         }))
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         match event {
             Lifecycle::Start {
                 numbered_input,
@@ -132,6 +132,8 @@ impl<S: Clone> Protocol for SnapshotProtocol<S> {
             }
             Lifecycle::Open | Lifecycle::Close => {}
         }
+
+        Some(RawReverseEvent::HidLifecycle(event))
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }

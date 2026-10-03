@@ -148,7 +148,8 @@ pub trait Protocol: Clone {
     fn deadline(&self) -> Option<u64>;
     fn request(&mut self, kind: &RequestKind, now: u64) -> (Reply, Option<Self::Output>);
     fn output(&mut self, report: Report, now: u64) -> Result<Option<Self::Output>, Error>;
-    fn lifecycle(&mut self, event: Lifecycle, now: u64);
+    /// Handle mandatory state changes and optionally expose a bounded observation.
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output>;
     fn delivered(&mut self, command: &Command, outcome: Delivery);
 }
 /// Providers present events and transport commands without controller semantics.
@@ -391,7 +392,9 @@ impl<P: Protocol, T: Transport> Runtime<P, T> {
                             self.pending.clear();
                             self.dirty = true;
                         }
-                        self.protocol.lifecycle(event, now);
+                        if let Some(output) = self.protocol.lifecycle(event, now) {
+                            self.observe(output);
+                        }
                     }
                 }
             }

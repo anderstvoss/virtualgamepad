@@ -2193,10 +2193,7 @@ impl eframe::App for App {
                                             wide_card(ui, "Controller output", |ui| {
                                                 draw_feedback_rows(ui, &named.indicators);
                                             });
-                                            if let (Some(view), Some(routing)) =
-                                                (audio_view.as_ref(), audio_routing.as_mut())
-                                                && (routing.jack_connector.is_some()
-                                                    || !routing.outputs.is_empty())
+                                            if let Some((view, routing)) = audio_view.as_ref().zip(audio_routing.as_mut()).filter(|(_, routing)| routing.jack_connector.is_some() || !routing.outputs.is_empty())
                                             {
                                                 audio_routing_changed |= wide_card(ui, "Audio", |ui| {
                                                     audio_lab::draw_output_routes(
@@ -2743,8 +2740,9 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                     })
                     .inner
                     .changed();
-                if (slider_changed || entry_changed)
-                    && let Ok(level) = BatteryLevel::new(percentage)
+                if let Some(level) = BatteryLevel::new(percentage)
+                    .ok()
+                    .filter(|_| slider_changed || entry_changed)
                 {
                     let _ = view.set_battery_level(level);
                 }
@@ -4484,9 +4482,7 @@ mod tests {
 
             assert!(metrics_rect.height() > 0.0);
             assert!(!output.shapes.is_empty());
-            if frame > 1
-                && let Some(previous_height) = previous_height
-            {
+            if let Some(previous_height) = previous_height.filter(|_| frame > 1) {
                 assert!(
                     (metrics_rect.height() - previous_height).abs() < f32::EPSILON,
                     "metrics panel changed height: {previous_height} -> {}",

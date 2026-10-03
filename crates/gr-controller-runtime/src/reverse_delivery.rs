@@ -29,10 +29,6 @@ pub enum SubscriptionError {
     Full,
 }
 
-enum Message<E> {
-    Event(E),
-    Close,
-}
 struct SubscriptionState {
     delivered: AtomicU64,
     dropped: AtomicU64,
@@ -42,9 +38,10 @@ struct SubscriptionState {
 
 /// A bounded, isolated typed callback worker.
 pub struct ReverseSubscription<E: Send + 'static> {
-    sender: SyncSender<Message<E>>,
+    sender: Mutex<Option<SyncSender<E>>>,
     state: Arc<SubscriptionState>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    worker_id: thread::ThreadId,
 }
 impl<E: Send + 'static> ReverseSubscription<E> {
     #[must_use]
@@ -60,8 +57,9 @@ impl<E: Send + 'static> ReverseSubscription<E> {
         let worker =
             thread::spawn(move || run_subscription(receiver, &worker_state, &mut callback));
         Self {
-            sender,
+            sender: Mutex::new(Some(sender)),
             state,
+            worker_id: worker.thread().id(),
             worker: Mutex::new(Some(worker)),
         }
     }
@@ -69,7 +67,14 @@ impl<E: Send + 'static> ReverseSubscription<E> {
         if self.state.closed.load(Ordering::Acquire) {
             return Err(SubscriptionError::Closed);
         }
-        match self.sender.try_send(Message::Event(event)) {
+        let sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(sender) = sender.as_ref() else {
+            return Err(SubscriptionError::Closed);
+        };
+        match sender.try_send(event) {
             Ok(()) => Ok(()),
             Err(TrySendError::Full(_)) => {
                 self.state.dropped.fetch_add(1, Ordering::Relaxed);
@@ -78,14 +83,24 @@ impl<E: Send + 'static> ReverseSubscription<E> {
             Err(TrySendError::Disconnected(_)) => Err(SubscriptionError::Closed),
         }
     }
+    /// Stop publication and drain accepted events before returning. A callback
+    /// may close its own subscription; that call disconnects without self-join.
     pub fn close(&self) {
-        if !self.state.closed.swap(true, Ordering::AcqRel) {
-            let _ = self.sender.try_send(Message::Close);
+        self.state.closed.store(true, Ordering::Release);
+        self.sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if thread::current().id() == self.worker_id {
+            return;
         }
-        if let Ok(mut worker_slot) = self.worker.lock() {
-            if let Some(worker) = worker_slot.take() {
-                let _ = worker.join();
-            }
+        // Serialize external closers through the join, so each waits for cleanup.
+        let mut worker_slot = self
+            .worker
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(worker) = worker_slot.take() {
+            let _ = worker.join();
         }
     }
     #[must_use]
@@ -104,22 +119,16 @@ impl<E: Send + 'static> Drop for ReverseSubscription<E> {
     }
 }
 fn run_subscription<E>(
-    receiver: Receiver<Message<E>>,
+    receiver: Receiver<E>,
     state: &SubscriptionState,
     callback: &mut impl FnMut(E),
 ) {
-    while let Ok(message) = receiver.recv() {
-        match message {
-            Message::Event(event) => {
-                if catch_unwind(AssertUnwindSafe(|| callback(event))).is_err() {
-                    state.panics.fetch_add(1, Ordering::Relaxed);
-                    state.closed.store(true, Ordering::Release);
-                    break;
-                }
-                state.delivered.fetch_add(1, Ordering::Relaxed);
-            }
-            Message::Close => break,
+    while let Ok(event) = receiver.recv() {
+        if catch_unwind(AssertUnwindSafe(|| callback(event))).is_err() {
+            state.panics.fetch_add(1, Ordering::Relaxed);
+            break;
         }
+        state.delivered.fetch_add(1, Ordering::Relaxed);
     }
     state.closed.store(true, Ordering::Release);
 }
@@ -210,6 +219,69 @@ mod tests {
         subscription.close();
         assert!(subscription.diagnostics().closed);
     }
+    #[test]
+    fn full_queue_close_and_drop_drain_and_terminate() {
+        for drop_only in [false, true] {
+            let (started_tx, started) = sync_channel(1);
+            let (release, release_rx) = sync_channel(1);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = Arc::clone(&calls);
+            let subscription = ReverseSubscription::new(1, move |value| {
+                if value == 1 {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                }
+                observed.fetch_add(1, Ordering::Relaxed);
+            });
+            subscription.publish(1).unwrap();
+            started.recv_timeout(Duration::from_secs(2)).unwrap();
+            subscription.publish(2).unwrap();
+            let (done_tx, done) = sync_channel(1);
+            let closer = thread::spawn(move || {
+                if !drop_only {
+                    subscription.close();
+                    subscription.close();
+                }
+                drop(subscription);
+                done_tx.send(()).unwrap();
+            });
+            release.send(()).unwrap();
+            done.recv_timeout(Duration::from_secs(2)).unwrap();
+            closer.join().unwrap();
+            assert_eq!(calls.load(Ordering::Relaxed), 2);
+        }
+    }
+
+    #[test]
+    fn zero_capacity_and_concurrent_close_terminate() {
+        let subscription = Arc::new(ReverseSubscription::new(0, |_: u8| {}));
+        let other = Arc::clone(&subscription);
+        let (done_tx, done) = sync_channel(1);
+        let closer = thread::spawn(move || {
+            other.close();
+            done_tx.send(()).unwrap();
+        });
+        subscription.close();
+        done.recv_timeout(Duration::from_secs(2)).unwrap();
+        closer.join().unwrap();
+        assert_eq!(subscription.publish(1), Err(SubscriptionError::Closed));
+    }
+
+    #[test]
+    fn callback_can_close_its_own_subscription() {
+        let (reference_tx, reference) = sync_channel::<std::sync::Weak<ReverseSubscription<u8>>>(1);
+        let (done_tx, done) = sync_channel(1);
+        let subscription = Arc::new(ReverseSubscription::new(1, move |_: u8| {
+            reference.recv().unwrap().upgrade().unwrap().close();
+            done_tx.send(()).unwrap();
+        }));
+        reference_tx.send(Arc::downgrade(&subscription)).unwrap();
+        subscription.publish(1).unwrap();
+        done.recv_timeout(Duration::from_secs(2)).unwrap();
+        subscription.close();
+        assert_eq!(subscription.diagnostics().delivered, 1);
+    }
+
     #[test]
     fn typed_reply_token_is_one_shot() {
         let inbox = ReplyInbox::<u16>::new(1);

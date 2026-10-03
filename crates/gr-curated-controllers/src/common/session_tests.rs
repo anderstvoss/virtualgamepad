@@ -1351,3 +1351,39 @@ fn worker_output_loss_is_reported_and_retained_after_close() {
     assert_eq!(controller.dropped_output_events(), 17);
     assert_eq!(record.lock().unwrap().closes, 1);
 }
+
+#[test]
+fn all_hid_protocols_observe_lifecycle_in_order_without_replay() {
+    fn check<D: HidDriver>(driver: &D, numbered: [bool; 3]) {
+        let (mut runtime, record) = rig(driver, numbered);
+        let events = [
+            gr_hid::Lifecycle::Start {
+                numbered_input: numbered[0],
+                numbered_output: numbered[1],
+                numbered_feature: numbered[2],
+            },
+            gr_hid::Lifecycle::Open,
+            gr_hid::Lifecycle::Close,
+            gr_hid::Lifecycle::Stop,
+        ];
+        for event in events {
+            record
+                .lock()
+                .unwrap()
+                .events
+                .push_back(RawReverseEvent::HidLifecycle(event));
+            assert_eq!(
+                runtime.service(0).unwrap(),
+                [RawReverseEvent::HidLifecycle(event)]
+            );
+            assert!(runtime.service(0).unwrap().is_empty());
+        }
+        runtime.close().unwrap();
+        runtime.close().unwrap();
+        assert_eq!(record.lock().unwrap().destroys, 1);
+    }
+    check(&DualSenseDefinition, [true; 3]);
+    check(&DualShock4Definition, [true; 3]);
+    check(&SwitchProDefinition, [true, true, false]);
+    check(&Xbox360Definition, [false; 3]);
+}

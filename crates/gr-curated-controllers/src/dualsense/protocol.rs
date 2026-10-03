@@ -113,7 +113,7 @@ impl Protocol for DualSenseUsbProtocol {
         // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
         Ok(Some(Self::decode(&report)))
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         match event {
             Lifecycle::Start {
                 numbered_input,
@@ -127,6 +127,8 @@ impl Protocol for DualSenseUsbProtocol {
             Lifecycle::Stop => self.active = false,
             Lifecycle::Open | Lifecycle::Close => {}
         }
+
+        Some(RawReverseEvent::HidLifecycle(event))
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }

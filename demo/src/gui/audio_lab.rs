@@ -1436,7 +1436,7 @@ pub(super) fn draw_output_routes(
             .outputs
             .iter_mut()
             .find(|route| route.id == "jack-output")
-            && route.manual_channel_control != next_manual_control
+            .filter(|route| route.manual_channel_control != next_manual_control)
         {
             route.manual_channel_control = next_manual_control;
             if !next_manual_control {
@@ -2043,9 +2043,7 @@ mod tests {
                 },
             );
             assert!(rect.height() > 0.0);
-            if frame > 1
-                && let Some(previous_height) = previous_height
-            {
+            if let Some(previous_height) = previous_height.filter(|_| frame > 1) {
                 assert!((rect.height() - previous_height).abs() < f32::EPSILON);
             }
             previous_height = Some(rect.height());
