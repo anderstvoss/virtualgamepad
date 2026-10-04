@@ -8,6 +8,7 @@ import argparse
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -36,10 +37,12 @@ def acceptance(result, seconds):
 
 def inside(control, seconds):
     root = Path(os.environ.get('PIPEWIRE_RUNTIME_DIR', '/nonexistent'))
+    metadata = root.lstat()
     if (not root.name.startswith('virtualgamepad-pw-lab-') or
+            not stat.S_ISDIR(metadata.st_mode) or metadata.st_mode & 0o077 or
             os.environ.get('PIPEWIRE_REMOTE') != 'pipewire-0' or
             os.environ.get('XDG_RUNTIME_DIR') != str(root) or
-            root.stat().st_uid != os.getuid()):
+            metadata.st_uid != os.getuid()):
         raise RuntimeError('independent control requires the owned private lab')
     name = 'alpha-independent-' + str(os.getpid())
     loop = subprocess.Popen(['pw-loopback', '-n', name, '-c', '2', '-m', '[ FL FR ]',

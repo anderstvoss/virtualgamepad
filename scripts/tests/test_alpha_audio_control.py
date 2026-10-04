@@ -14,6 +14,15 @@ spec.loader.exec_module(control)
 
 
 class MarkerReceipt(unittest.TestCase):
+    def test_symlink_to_an_existing_runtime_is_rejected_without_spawning(self):
+        with tempfile.TemporaryDirectory() as directory:
+            alias = Path(directory) / 'virtualgamepad-pw-lab-fake'
+            alias.symlink_to(Path(directory), target_is_directory=True)
+            with patch.dict(os.environ, PIPEWIRE_RUNTIME_DIR=str(alias), XDG_RUNTIME_DIR=str(alias), PIPEWIRE_REMOTE='pipewire-0'), \
+                 patch.object(control.subprocess, 'Popen') as spawn:
+                with self.assertRaises(RuntimeError): control.inside(Path('/synthetic/control'), 2)
+                spawn.assert_not_called()
+
     def test_timed_out_control_terminates_and_reaps_owned_loopback(self):
         with tempfile.TemporaryDirectory(prefix='virtualgamepad-pw-lab-') as directory:
             loop = Mock()
