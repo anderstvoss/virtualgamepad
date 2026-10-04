@@ -2,6 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('provider_lab', Path(__file__).parents[1] / 'run-alpha-provider-lab.py')
 lab = importlib.util.module_from_spec(spec)
@@ -40,6 +41,16 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_original_image_receipt_detects_same_inode_content_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'fake-image'
+            path.write_bytes(b'fake-one')
+            with patch.object(lab, 'trusted'):
+                initial = lab.fingerprint(path)
+                path.write_bytes(b'fake-two')
+                changed = lab.fingerprint(path)
+            self.assertEqual(initial['inode'], changed['inode'])
+            self.assertNotEqual(initial['sha256'], changed['sha256'])
     def test_preflight_failure_stops_nothing(self):
         host = Fake(['preflight'])
         with self.assertRaises(RuntimeError): lab.maintenance(host)

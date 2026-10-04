@@ -38,6 +38,21 @@ def identity(path):
     return info.st_dev, info.st_ino
 
 
+def fingerprint(path):
+    for parent in path.parents:
+        trusted(parent, directory=True)
+    if not path.exists() and not path.is_symlink():
+        return dict(absent=True)
+    trusted(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, 'rb') as source:
+        metadata = os.fstat(source.fileno())
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            digest.update(chunk)
+    return dict(device=metadata.st_dev, inode=metadata.st_ino, sha256=digest.hexdigest())
+
+
 def remove_owned(path, expected, directory=False):
     if not path.exists() and not path.is_symlink():
         return
@@ -103,6 +118,7 @@ class Host:
         self.units = []
         self.root = None
         self.client_attempted = False
+        self.original_images = {}
         self.events = []
 
     def run(self, argv, timeout=15):
@@ -114,7 +130,7 @@ class Host:
     def snapshot(self):
         saved = {}
         for unit in ORIGINAL:
-            output = self.run(['systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID'])
+            output = self.run(['systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID', '-p', 'FragmentPath'])
             properties = dict(line.split('=', 1) for line in output.splitlines())
             if properties['ActiveState'] not in ('active', 'inactive'):
                 raise RuntimeError('original service is not in a stable state')
@@ -153,6 +169,18 @@ class Host:
     def preflight(self, saved):
         trusted(STATE, directory=True)
         self.assert_idle(saved)
+        # The original installation is restoration evidence, never candidate
+        # provenance. Preserve exact images/configuration rather than replacing them.
+        for path in (Path('/usr/libexec/virtualgamepad/gr-privileged-broker'),
+                     Path('/usr/libexec/virtualgamepad/gr-audio-worker'),
+                     Path('/etc/virtualgamepad/broker.conf')):
+            self.original_images[str(path)] = fingerprint(path)
+        for properties in saved.values():
+            path = Path(properties['FragmentPath'])
+            if not path.is_absolute():
+                raise RuntimeError('original unit provenance is unavailable')
+            self.original_images[str(path)] = fingerprint(path)
+        self.events.append(dict(original_installation=self.original_images.copy()))
         free_port(VHCI.read_text(), self.args.port)
         for uid in (self.args.client_uid, self.args.worker_uid, self.args.unauthorized_uid):
             if uid <= 0:
@@ -164,6 +192,8 @@ class Host:
 
     def stop_original_socket(self):
         self.run(['systemctl', 'stop', ORIGINAL[0]])
+        if Path('/run/virtualgamepad/broker.sock').exists():
+            raise RuntimeError('original socket remains reachable; refusing service stop')
 
     def stop_original_service(self):
         self.assert_idle(None)
@@ -271,6 +301,9 @@ class Host:
         self.run(['systemctl', 'daemon-reload'])
 
     def restore(self, saved):
+        for path, expected in self.original_images.items():
+            if fingerprint(Path(path)) != expected:
+                raise RuntimeError('original installation changed; operator restoration required')
         errors = []
         for unit in reversed(ORIGINAL):
             try:
