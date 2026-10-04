@@ -268,6 +268,48 @@ mod tests {
     }
 
     #[test]
+    fn publishing_racing_close_drains_every_accepted_event() {
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let delivered = Arc::new(AtomicUsize::new(0));
+        let observed = Arc::clone(&delivered);
+        let subscription = Arc::new(ReverseSubscription::new(256, move |_: u8| {
+            observed.fetch_add(1, Ordering::Relaxed);
+        }));
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+        let publishers: Vec<_> = (0..2)
+            .map(|_| {
+                let subscription = Arc::clone(&subscription);
+                let accepted = Arc::clone(&accepted);
+                let barrier = Arc::clone(&barrier);
+                thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..128 {
+                        match subscription.publish(1) {
+                            Ok(()) => {
+                                accepted.fetch_add(1, Ordering::Relaxed);
+                            }
+                            Err(SubscriptionError::Closed) => break,
+                            Err(SubscriptionError::Full) => {
+                                panic!("queue holds all submitted events")
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        barrier.wait();
+        subscription.close();
+        for publisher in publishers {
+            publisher.join().unwrap();
+        }
+        assert_eq!(
+            accepted.load(Ordering::Relaxed),
+            delivered.load(Ordering::Relaxed)
+        );
+        assert_eq!(subscription.publish(1), Err(SubscriptionError::Closed));
+    }
+
+    #[test]
     fn callback_can_close_its_own_subscription() {
         let (reference_tx, reference) = sync_channel::<std::sync::Weak<ReverseSubscription<u8>>>(1);
         let (done_tx, done) = sync_channel(1);
