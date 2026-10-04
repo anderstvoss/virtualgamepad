@@ -24,6 +24,8 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            archive.ubuntu.com:443
+            security.ubuntu.com:443
             api.github.com:443
             github.com:443
             codeload.github.com:443
@@ -50,21 +52,20 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
-      - name: Install cargo-insta
-        # phase-gate 8 and 9 both shell out to `cargo insta test --check`.
-        run: cargo install cargo-insta --locked
+      - name: Install Linux audio build dependencies
+        run: sudo bash scripts/install-ci-audio-deps.sh
 
-      - name: Check phase 8 and 9 command surfaces
+      - name: Validate maintained protocol surfaces
         run: |
-          cargo run -p virtual_gamepad_demo -- phase-gate 8
-          cargo run -p gr-cli -- run-uinput-smoke generic-gamepad
-          cargo run -p gr-cli -- support-report --profile generic-gamepad --tier compatibility
-          cargo run -p virtual_gamepad_demo -- phase-gate 9
-          cargo run -p gr-cli -- run-uhid-smoke dualsense --bus usb
-          cargo run -p gr-cli -- run-uhid-smoke dualsense --bus bluetooth
-          cargo run -p gr-cli -- compare-real-device --profile dualsense --bus usb
-          cargo run -p gr-cli -- compare-real-device --profile dualsense --bus bluetooth
-          cargo run -p gr-cli -- support-report --profile dualsense
+          python3 scripts/check-workspace-commands.py
+          cargo test --locked -p gr-hid -p gr-curated-controllers -p gr-usbip --lib
+          cargo build --locked -p gr-audio-worker
+          python3 scripts/validate-production-audio-worker.py --worker target/debug/gr-audio-worker
+          cargo build --locked -p gr-usbip --example usb_audio_probe
+          python3 scripts/validate-usb-audio-worker.py --worker target/debug/examples/usb_audio_probe
+
+      - name: Record live acceptance boundary
+        run: echo 'Protocol checks do not establish privileged provider acceptance; prepared-runner job remains disabled.'
 
   privileged-linux:
     name: Privileged Linux provider validation
@@ -93,7 +94,7 @@ jobs:
       - name: Verify uinput device access
         run: test -e /dev/uinput
 
-      - name: Run prep smoke commands
+      - name: Run owned provider lifecycle tests
         run: |
-          cargo run -p gr-cli -- run-uinput-smoke generic-gamepad
-          cargo run -p gr-cli -- support-report --profile generic-gamepad --tier compatibility
+          cargo test --locked -p gr-provider-linux-uinput integration_tests::creates_and_destroys_a_process_owned_device -- --ignored --exact
+          cargo test --locked -p gr-provider-linux-uhid integration_tests::creates_and_destroys_a_process_owned_hid_device -- --ignored --exact
