@@ -76,6 +76,10 @@ The command is executed as the client identity with supplementary groups cleared
 all capability sets dropped and NoNewPrivileges in a bounded systemd unit. The
 trusted util-linux `setpriv` wrapper performs the drop before validator execution;
 setting systemd's supplementary-group property alone does not clear NSS membership.
+Command output is spooled with a 1 MiB per-file limit; exceeding it is a failure,
+not a complete receipt. Preserve quota failures when diagnosing noisy validators.
+Record effective client UID/GID, supplementary groups and capability sets in live
+receipts; deterministic command-argument tests cannot establish actual privileges.
 The runner stops only the verified idle
 original broker/socket, stages hash-verified candidate images and a separate policy,
 and creates temporary socket-activated units. Clients see the private candidate

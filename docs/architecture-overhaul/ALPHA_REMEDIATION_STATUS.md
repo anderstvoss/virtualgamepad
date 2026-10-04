@@ -50,13 +50,17 @@ and no invalid/partial markers. Direct Rust graph controls independently missed
 product cells as **blocked**, not executed or passed; slow-consumer reruns are
 also blocked by qualification. Historical product failures are retained below.
 
-Source/tooling delivery checkpoint: `f40dda0786751240fd75acfa5e41708a8223fe06`,
-tree `36d7953874943f636dde56dc34d7e31e9164ac88`. The change after the control run
-only strengthens provider-lab original-installation fingerprints and tests; audio
-control/product sources are identical. Later delivery documentation commits must
+Source/tooling delivery checkpoint: `32aa38a058341cd4df31e9f323b2a2da683ed8e7`,
+tree `54057ec1b306e3c30f38de9bf6c8e64de413b122`. Subsequent changes strengthen
+installation fingerprints, explicit privilege dropping, output quotas, private-runtime
+validation and sustained-duration reconciliation, with regressions. The C streaming
+and product audio sources are identical to the failed control run; stricter receipt
+validation does not establish a new passing audio result. Later delivery documentation commits must
 be pinned in the external final-revision receipt and revalidated with exact-head
 CI and Git consumers. The source bundle/build manifest is generated from the
 final delivery head, not inferred from older binaries.
+
+Four individually bounded live checks passed at `7d7a943d15f6fac056775d6c69ad4d0d012f98e5`: identity restoration, four-family UHID lifecycle/sibling isolation, three-family root audio creation/terminal cleanup, and bounded audio/HID threads. The final external receipt records their exact-head repeat. These checks do not establish sustained continuity, installed-provider security or physical parity.
 
 This continuation added no Cargo dependencies and changed no persistent host
 configuration. An isolated desktop, four physical references, an administrator-run

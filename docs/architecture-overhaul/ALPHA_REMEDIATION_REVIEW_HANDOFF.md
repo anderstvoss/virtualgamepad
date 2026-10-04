@@ -12,7 +12,9 @@ retain VM failures and never claim VM continuity from native results.
 
 Scrutinize the runner's current-PID/backlog checks, rollback after partial setup,
 identity-bound cleanup, global-lock preservation, candidate image provenance,
-non-root client/worker identities and original service restoration. Test phase
+non-root client/worker identities and original service restoration. Verify the
+setpriv drop occurs before validator execution, output quotas fail visibly, and
+private audio runtimes reject symlinks or shared permissions. Test phase
 transitions are deterministic evidence; real systemd/mount/VHCI behavior still
 requires privileged receipts. Supplying an unauthorized UID does not execute a
 peer-denial test automatically. Check all root/provider/broker rejection boundaries
