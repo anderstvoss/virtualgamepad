@@ -269,6 +269,28 @@ pub fn capture(
     channels: usize,
     observations: Arc<Observations>,
 ) -> Source {
+    capture_inner(target, stamps, started, channels, observations, false)
+}
+
+/// A graph sink which observes incoming markers directly, with no library queue.
+pub fn direct_sink(
+    name: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+) -> Source {
+    capture_inner(name, stamps, started, channels, observations, true)
+}
+
+fn capture_inner(
+    target: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+    direct: bool,
+) -> Source {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
     let worker = thread::spawn(move || {
@@ -276,16 +298,9 @@ pub fn capture(
         let main = pw::main_loop::MainLoopRc::new(None).unwrap();
         let context = pw::context::ContextRc::new(&main, None).unwrap();
         let core = context.connect_rc(None).unwrap();
-        let stream = pw::stream::StreamRc::new(
-            core.clone(),
-            "synthetic-marker-capture",
-            properties! {
-                "media.type" => "Audio", "media.category" => "Capture",
-                "target.object" => target, "node.latency" => "128/48000",
-                "stream.dont-remix" => "true",
-            },
-        )
-        .unwrap();
+        let props = capture_properties(&target, direct);
+        let stream =
+            pw::stream::StreamRc::new(core.clone(), "synthetic-marker-capture", props).unwrap();
         let listener = stream
             .add_local_listener::<()>()
             .process(move |stream, ()| {
@@ -325,14 +340,17 @@ pub fn capture(
             .register()
             .unwrap();
         let bytes = format_bytes(channels);
+        let mut flags = pw::stream::StreamFlags::RT_PROCESS
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::DONT_RECONNECT;
+        if !direct {
+            flags |= pw::stream::StreamFlags::AUTOCONNECT;
+        }
         stream
             .connect(
                 spa::utils::Direction::Input,
                 None,
-                pw::stream::StreamFlags::RT_PROCESS
-                    | pw::stream::StreamFlags::MAP_BUFFERS
-                    | pw::stream::StreamFlags::AUTOCONNECT
-                    | pw::stream::StreamFlags::DONT_RECONNECT,
+                flags,
                 &mut [spa::pod::Pod::from_bytes(&bytes).unwrap()],
             )
             .unwrap();
@@ -348,6 +366,36 @@ pub fn capture(
         worker: Some(worker),
         generated: None,
     }
+}
+
+fn capture_properties(target: &str, direct: bool) -> pw::properties::PropertiesBox {
+    if direct {
+        properties! {
+            "node.name" => target, "node.virtual" => "true",
+            "media.type" => "Audio", "media.class" => "Audio/Sink",
+            "node.autoconnect" => "false", "priority.session" => "0",
+            "node.latency" => "128/48000", "stream.dont-remix" => "true",
+        }
+    } else {
+        properties! {
+            "media.type" => "Audio", "media.category" => "Capture",
+            "target.object" => target, "node.latency" => "128/48000",
+            "stream.dont-remix" => "true",
+        }
+    }
+}
+
+#[test]
+fn direct_control_has_an_owned_sink_and_normal_capture_keeps_its_exact_target() {
+    let sink = capture_properties("synthetic.control.7", true);
+    assert_eq!(sink.get("node.name"), Some("synthetic.control.7"));
+    assert_eq!(sink.get("media.class"), Some("Audio/Sink"));
+    assert_eq!(sink.get("node.autoconnect"), Some("false"));
+    assert_eq!(sink.get("target.object"), None);
+    let capture = capture_properties("synthetic.microphone.8", false);
+    assert_eq!(capture.get("target.object"), Some("synthetic.microphone.8"));
+    assert_eq!(capture.get("media.category"), Some("Capture"));
+    assert_eq!(capture.get("node.name"), None);
 }
 
 #[test]

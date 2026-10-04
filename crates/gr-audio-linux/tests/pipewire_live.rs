@@ -1039,6 +1039,49 @@ fn latency_graph_source_to_library_samples() {
     );
 }
 
+/// Localize graph delivery independently of Session and the library PCM queue.
+#[test]
+#[ignore = "isolated PipeWire; direct graph control with no virtualgamepad backend or queue"]
+fn latency_graph_direct_control() {
+    use std::sync::{Arc, atomic::AtomicU64};
+    let blocks = usize::try_from(trial_seconds() * 48_000 / 128).unwrap();
+    let stamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
+    let observations = marker_source::Observations::new(blocks);
+    let started = Instant::now();
+    let target = format!("virtualgamepad.direct-control.{}", std::process::id());
+    let sink = marker_source::direct_sink(
+        target.clone(),
+        stamps.clone(),
+        started,
+        2,
+        observations.clone(),
+    );
+    let source = marker_source::Source::start(target, stamps.clone(), started, 2);
+    while observations.counts[blocks - 1].load(std::sync::atomic::Ordering::Acquire) < 128
+        && started.elapsed() < Duration::from_secs(trial_seconds() + 5)
+    {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let generated = source.generated_frames();
+    drop(source);
+    drop(sink);
+    let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
+    eprintln!(
+        "direct_control producer_frames={generated} planned_frames={} consumer_frames={} queue=absent",
+        blocks * 128,
+        counts.iter().sum::<usize>()
+    );
+    assert_eq!(generated, (blocks * 128) as u64);
+    assert_direction_latency(
+        "direct_graph_control",
+        &mut latencies,
+        invalid,
+        None,
+        measured_marker_frames(&stamps),
+        marker_frame_errors(&counts, &stamps),
+    );
+}
+
 #[test]
 #[ignore = "isolated PipeWire; graph-driven native playback continuity and latency"]
 fn latency_graph_native_playback() {
