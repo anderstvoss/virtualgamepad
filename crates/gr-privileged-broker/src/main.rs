@@ -149,12 +149,23 @@ impl HostSessionFactory for DaemonFactory {
         _session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
         match target {
-            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => Ok(Box::new(
-                DummyHcdSession::open_authorized(controller, &self.0)?,
-            )),
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => admit_gadget(|| {
+                Ok(
+                    Box::new(DummyHcdSession::open_authorized(controller, &self.0)?)
+                        as Box<dyn gr_privileged_broker::HostSession>,
+                )
+            }),
             _ => Err(BrokerError::UnsupportedController { target, controller }),
         }
     }
+}
+
+#[cfg(target_os = "linux")]
+fn admit_gadget<T>(create: impl FnOnce() -> Result<T, BrokerError>) -> Result<T, BrokerError> {
+    gr_privileged_broker::require_dummy_hcd_contract().map_err(|reason| BrokerError::Host {
+        reason: reason.into(),
+    })?;
+    create()
 }
 
 #[cfg(target_os = "linux")]
@@ -314,6 +325,18 @@ fn peer_uid(stream: &UnixStream) -> Result<u32, io::Error> {
 #[cfg(test)]
 mod tests {
     use super::valid_socket_activation;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn incompatible_gadget_admission_never_calls_resource_factory() {
+        for _ in 0..4 {
+            let result: Result<(), _> = super::admit_gadget(|| panic!("must not create resources"));
+            assert!(
+                matches!(result, Err(gr_privileged_broker::BrokerError::Host { reason })
+                if reason == gr_privileged_broker::DUMMY_HCD_UNAVAILABLE_REASON)
+            );
+        }
+    }
 
     #[test]
     fn socket_activation_requires_this_process_and_exactly_one_fd() {

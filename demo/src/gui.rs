@@ -420,7 +420,7 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
         }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
             title: "Experimental USB gadget (dummy_hcd)",
-            body: "Exercises USB device enumeration through Linux's dummy_hcd virtual USB host-controller path. Unlike UHID, this is a USB gadget test path, but it does not connect a physical USB device or a remote host. Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation; research and test use only.",
+            body: "Unavailable USB gadget test path: Linux f_hid exposes GET_REPORT IDs without report type/request length or an explicit negative reply. This transport cannot represent complete controller request semantics. Creation is rejected before host resources are opened; no alternative realization is selected automatically.",
         }),
         _ => None,
     }

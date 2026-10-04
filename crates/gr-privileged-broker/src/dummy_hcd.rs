@@ -257,6 +257,7 @@ impl HidGadgetIo for LinuxHidGadgetIo {
 }
 impl DummyHcdSession {
     pub fn open(_session: u64, controller: CompiledControllerKind) -> Result<Self, BrokerError> {
+        crate::require_dummy_hcd_contract().map_err(host)?;
         let config = HostConfig::load(Path::new("/etc/virtualgamepad/broker.conf")).map_err(io)?;
         let access = Arc::new(HostAccess::acquire(config).map_err(io)?);
         Self::open_authorized(controller, &access)
@@ -265,6 +266,7 @@ impl DummyHcdSession {
         controller: CompiledControllerKind,
         access: &Arc<HostAccess>,
     ) -> Result<Self, BrokerError> {
+        crate::require_dummy_hcd_contract().map_err(host)?;
         let linux = LinuxDummyHcdHost;
         let profile = profile(controller);
         if !linux.is_dir(Path::new(CONFIGFS)) {
@@ -867,6 +869,22 @@ mod tests {
             assert_eq!(profile.report_length, report_length);
             assert!(!profile.descriptor.is_empty());
             assert!(profile.report_length <= MAX_REPORT_LENGTH);
+        }
+    }
+
+    #[test]
+    fn direct_open_rejects_before_reading_policy_or_creating_host_resources() {
+        for kind in [
+            CompiledControllerKind::DualSense,
+            CompiledControllerKind::DualShock4,
+            CompiledControllerKind::SwitchPro,
+            CompiledControllerKind::Xbox360,
+        ] {
+            for _ in 0..2 {
+                let error = DummyHcdSession::open(1, kind).err().unwrap();
+                assert!(matches!(error, BrokerError::Host { reason }
+                    if reason == crate::DUMMY_HCD_UNAVAILABLE_REASON));
+            }
         }
     }
     #[test]

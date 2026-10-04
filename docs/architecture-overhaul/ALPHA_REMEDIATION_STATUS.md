@@ -2,6 +2,44 @@
 
 ## Gate and revisions
 
+### Complete-resolution continuation
+
+The next candidate starts from `23615da424f8b8d358838e5460e62c3b3969493f`
+(tree `69e99e0dfd8f9c972bf48bb451b204cbe6fc7f1c`). Earlier results below remain
+historical. The current execution boundary permits an idle reversible broker
+maintenance window; installed files and persistent services are preserved.
+
+- A3 gadget contract: provider preflight/open, direct broker host open and daemon
+  admission now reject the implemented ID-only f_hid transport before construction.
+  No kernel-version guess enables it. All four families and repeated rejection are
+  covered; existing protocol/cleanup prototype regressions are retained. The demo
+  and README explain the limitation rather than advertising prepared-host success.
+- Supporting SPI adds `ProviderPreflightError::Unavailable { target, reason }` and
+  the broker contract guard/reason. The ordinary root maps this to its existing
+  `Unsupported` error; ordinary signatures remain stable. The broker wire format
+  does not change. Downstream experimental/provider implementations must recognize
+  the additional non-exhaustive error variant.
+- A1 tooling: maintained independent C graph callbacks distinguish generation,
+  graph submission and reception; marker self-tests reject hidden loss/duplicates
+  and channel errors. The clean-candidate acceptance driver records builds and
+  gates the complete 72-cell matrix on independent and direct graph controls.
+- The first three sustained C controls failed despite full submission of 2,880,000
+  frames each: missing 269,816 / 213,248 / 198,144, invalid 1,016 / 1,536 / 0 and
+  duplicate 0 / 0 / 512. These are preliminary tool-candidate results, not final
+  product acceptance. Later format-accounting refinements must be rerun separately.
+- A3 installed acceptance: the reversible runner defaults to a non-mutating plan,
+  keeps the global lock, stages hash-verified images, tests rollback deterministically
+  and preserves cleanup errors. Privileged execution is **blocked**: current
+  `sudo -n true` requires a password. The active installed broker was not stopped.
+- A2/A4 physical and isolated GUI acceptance are **blocked**: no reference controllers
+  are attached and neither Weston nor Xvfb is available. Native-host evidence must
+  be returned by an external tester; no native result is claimed here.
+
+See [the portable lab procedure](ALPHA_ACCEPTANCE_LAB.md) for administrator and
+external-tester reproduction. A VM that cannot qualify independently remains
+unqualified for sustained audio; exact-candidate qualified native results may close
+native acceptance while VM failures remain visible. PR #133 stays draft.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
@@ -234,10 +272,10 @@ unchanged. The PR stays draft and the alpha gate stays **NOT READY**.
    provenance. Run attached worker-death, malformed-client, broker restart/stale
    lease and recovery acceptance only on test-owned authorized resources. A
    failed unbind must remain visible and must not release a still-owned lease.
-4. **dummy_hcd contract:** establish kernel support for type/length and exact
-   negative completion or retain explicit experimental rejection/limitations.
-   Current unknown-ID handling terminates the gadget; it does not pretend to
-   send a STALL. Never promote its report-type parity from a known-feature test.
+4. **dummy_hcd contract:** the continuation rejects current construction entirely
+   before resource creation. Verify installed candidate rejection; no successful
+   gadget acceptance is required or claimed. Retained unknown-ID prototype tests
+   do not establish full report-type parity or a kernel STALL operation.
 5. **Consumer/physical breadth:** hands-on keyboard/accessibility/error review,
    Steam/game compatibility, native Linux timing and physical comparisons remain
    unverified. macOS/Windows CI is compile/test evidence, not live provider support.

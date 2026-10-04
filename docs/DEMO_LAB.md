@@ -20,7 +20,8 @@ create it. Each controller receives a session-local **Controller ID** in the
 form `NNN-TGT-TYPE`: a three-digit creation sequence, realization abbreviation,
 and controller-family abbreviation. The ID is a GUI label, not library identity
 or session ownership. The Advanced options panel previews the next ID. Hover the
-`!` beside **USB / dummy_hcd** for the experimental-gadget requirements.
+`!` beside **USB / dummy_hcd** for its kernel protocol limitation. This target is
+currently unavailable and rejects creation before opening resources.
 
 Select any controller to exercise its existing button, axis, motion, battery and
 touch controls where supported. The live panel shows its realization, controller ID,

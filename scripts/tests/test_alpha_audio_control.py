@@ -1,0 +1,61 @@
+import importlib.util
+from pathlib import Path
+import unittest
+import shlex
+import shutil
+import subprocess
+import tempfile
+
+spec = importlib.util.spec_from_file_location('control', Path(__file__).parents[1] / 'run-alpha-audio-control.py')
+control = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(control)
+
+
+class MarkerReceipt(unittest.TestCase):
+    def receipt(self):
+        row = dict(planned=2880000, generated=2880000, graph_submitted=2880000,
+                    graph_received=2880000, missing=0, duplicate=0, invalid=0,
+                    partial_bytes=0, errors=0)
+        row.update(source_rate=48000, sink_rate=48000, source_channels=2, sink_channels=2)
+        return row
+
+    def test_complete_graph_accounting(self):
+        self.assertTrue(control.acceptance(self.receipt(), 60))
+
+    @unittest.skipUnless(shutil.which('cc') and shutil.which('pkg-config'), 'C/PipeWire developer tools unavailable')
+    def test_actual_c_marker_logic_excludes_startup_and_detects_channel_and_count_errors(self):
+        flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'libpipewire-0.3'], capture_output=True, text=True)
+        if flags.returncode:
+            self.skipTest('PipeWire headers unavailable')
+        with tempfile.TemporaryDirectory() as directory:
+            binary = str(Path(directory) / 'control')
+            subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', str(Path(__file__).parents[1] / 'alpha-audio-control.c'),
+                            '-o', binary, *shlex.split(flags.stdout)], check=True, timeout=30)
+            subprocess.run([binary, '--self-test'], check=True, timeout=5)
+
+    def test_stdin_or_generation_does_not_prove_graph_submission(self):
+        row = self.receipt()
+        row['graph_submitted'] -= 128
+        self.assertFalse(control.acceptance(row, 60))
+
+    def test_equal_totals_do_not_hide_loss_and_duplication(self):
+        row = self.receipt()
+        row.update(missing=128, duplicate=128)
+        self.assertFalse(control.acceptance(row, 60))
+
+    def test_partial_channel_corruption_incomplete_drain_and_missing_counters(self):
+        for key in ('partial_bytes', 'invalid', 'errors'):
+            row = self.receipt()
+            row[key] = 1
+            self.assertFalse(control.acceptance(row, 60))
+        for key in ('planned', 'generated', 'graph_submitted', 'graph_received'):
+            row = self.receipt()
+            row[key] -= 1
+            self.assertFalse(control.acceptance(row, 60))
+        row = self.receipt()
+        del row['missing']
+        self.assertFalse(control.acceptance(row, 60))
+
+
+if __name__ == '__main__':
+    unittest.main()

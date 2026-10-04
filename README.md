@@ -5,7 +5,7 @@
 - `linux.uinput`: controller-owned Linux evdev controls through uinput.
 - `linux.uhid.usb`: local HID presentation with controller-owned stateful USB protocols.
 - `linux.usbip.usb-audio`: opt-in, initial emulated HID/UAC2 audio via the administrator-installed local broker.
-- `linux.dummy_hcd.usb-hid`: experimental research SPI only; excluded from normal application constructors (Gate G).
+- `linux.dummy_hcd.usb-hid`: unavailable. The current Linux `f_hid` transport lacks complete GET_REPORT metadata and negative replies; provider and broker creation reject it before opening resources. It remains excluded from normal application constructors.
 
 The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro.
 Each retains a compiled experimental `DummyHcd` USB profile; the Xbox 360 profile is explicitly

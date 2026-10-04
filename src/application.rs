@@ -160,6 +160,9 @@ impl std::error::Error for ControllerError {
 pub(crate) fn controller_error(error: ProviderError) -> ControllerError {
     match error {
         ProviderError::Preflight(error) => match error {
+            ProviderPreflightError::Unavailable { reason, .. } => {
+                ControllerError::Unsupported { reason }
+            }
             ProviderPreflightError::MissingDeviceNode { target, path } => {
                 ControllerError::MissingDeviceNode { target, path }
             }
@@ -431,6 +434,19 @@ impl ControllerAssociation {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unavailable_provider_is_unsupported_instead_of_invalid_application_input() {
+        let error = super::controller_error(gr_realization_api::ProviderError::Preflight(
+            gr_realization_api::ProviderPreflightError::Unavailable {
+                target: gr_realization_api::RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                reason: "kernel cannot represent the required request".into(),
+            },
+        ));
+        assert!(
+            matches!(error, super::ControllerError::Unsupported { reason }
+            if reason == "kernel cannot represent the required request")
+        );
+    }
     use super::*;
     #[test]
     fn audio_terminal_diagnostics_preserve_hid_cleanup_failure() {

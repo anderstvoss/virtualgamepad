@@ -12,6 +12,11 @@ SPEC.loader.exec_module(MODULE)
 
 
 class Preflight(unittest.TestCase):
+    def test_gadget_contract_is_unavailable_even_before_host_inventory(self):
+        result = MODULE.inspect(MODULE.TARGETS[2], self.root)
+        self.assertEqual(result['checks'][0]['status'], 'unsupported')
+        self.assertIn('report type/request length', result['checks'][0]['detail'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

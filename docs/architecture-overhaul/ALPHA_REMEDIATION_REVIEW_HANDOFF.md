@@ -2,6 +2,26 @@
 
 ## Objective and candidate control
 
+The complete-resolution continuation adds fail-closed dummy_hcd admission and
+portable acceptance tooling. Review [the lab procedure](ALPHA_ACCEPTANCE_LAB.md)
+and the continuation section of the status document before interpreting historical
+results below. The permitted maintenance window supersedes earlier read-only host
+restrictions, but no administrator-run trial has passed in this continuation.
+Native acceptance may close supported audio while this VM remains unqualified;
+retain VM failures and never claim VM continuity from native results.
+
+Scrutinize the runner's current-PID/backlog checks, rollback after partial setup,
+identity-bound cleanup, global-lock preservation, candidate image provenance,
+non-root client/worker identities and original service restoration. Test phase
+transitions are deterministic evidence; real systemd/mount/VHCI behavior still
+requires privileged receipts. Supplying an unauthorized UID does not execute a
+peer-denial test automatically. Check all root/provider/broker rejection boundaries
+and ensure no incompatible gadget can be created through a direct entrypoint.
+
+For audio, reject stdin-based submission claims or aggregate counts hiding marker
+loss/duplication. Inspect the independent C callback logic and negotiated format,
+then require all three controls and every sustained cell at the accepted SHA.
+
 Review PR [#133](https://github.com/anderstvoss/virtualgamepad/pull/133) against
 `main` as an engineering remediation, including supporting and WIP paths. Decide
 whether each code correction is sound and whether its evidence is sufficient.

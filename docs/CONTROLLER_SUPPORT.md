@@ -16,10 +16,10 @@ future workflow exercises, not new controller APIs or current support.
 
 | Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
 | --- | --- | --- | --- | --- | --- |
-| DualSense | WIP | WIP | WIP | WIP | WIP |
-| DualShock 4 | WIP | WIP | WIP | WIP | WIP |
-| Switch Pro | WIP | WIP | WIP | WIP | WIP |
-| Xbox 360 | WIP | WIP | WIP | WIP | WIP |
+| DualSense | WIP | WIP | Unavailable² | WIP | WIP |
+| DualShock 4 | WIP | WIP | Unavailable² | WIP | WIP |
+| Switch Pro | WIP | WIP | Unavailable² | WIP | WIP |
+| Xbox 360 | WIP | WIP | Unavailable² | WIP | WIP |
 | Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
 | Xbox Series | WIP | WIP | WIP | WIP | WIP |
 | Wii Remote | WIP | WIP | WIP | WIP | WIP |
@@ -28,6 +28,11 @@ future workflow exercises, not new controller APIs or current support.
 virtual HID presentation; dummy_hcd is a separate optional gadget realization.
 The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.
+
+² The implemented Linux f_hid interface exposes report IDs without full GET_REPORT
+metadata or an explicit negative reply. All creation entrypoints reject this
+transport before host construction; permissions or module preparation cannot
+enable it. Existing protocol prototypes remain historical/test evidence.
 
 ## Status definitions and promotion
 

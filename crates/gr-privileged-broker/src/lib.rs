@@ -67,6 +67,20 @@ pub trait HostSessionFactory: Send + Sync {
 
 /// The only broker endpoint accepted by unprivileged providers.
 pub const BROKER_SOCKET_PATH: &str = "/run/virtualgamepad/broker.sock";
+
+/// Why the current Linux HID gadget transport cannot satisfy the controller contract.
+pub const DUMMY_HCD_UNAVAILABLE_REASON: &str = "dummy_hcd HID is unavailable: Linux f_hid exposes GET_REPORT IDs without report type/request length or an explicit negative reply; complete controller request semantics cannot be represented";
+
+/// Reject the current ID-only gadget transport before opening host resources.
+///
+/// A future transport must implement complete request metadata and error replies,
+/// not merely detect a newer kernel version or the presence of an ioctl.
+///
+/// # Errors
+/// Returns the technical limitation of the currently implemented transport.
+pub fn require_dummy_hcd_contract() -> Result<(), &'static str> {
+    Err(DUMMY_HCD_UNAVAILABLE_REASON)
+}
 const PROTOCOL_VERSION: u16 = 1;
 const MAX_WIRE_PAYLOAD: usize = 256;
 
