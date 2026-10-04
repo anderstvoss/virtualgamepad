@@ -331,6 +331,14 @@ mod tests {
     fn incompatible_gadget_admission_never_calls_resource_factory() {
         for _ in 0..4 {
             let result: Result<(), _> = super::admit_gadget(|| panic!("must not create resources"));
+            let body = result.as_ref().unwrap_err().to_string();
+            let mut wire = Vec::new();
+            gr_privileged_broker::write_message(&mut wire, 0x81, body.as_bytes()).unwrap();
+            let mut reader = wire.as_slice();
+            assert_eq!(
+                gr_privileged_broker::read_message(&mut reader).unwrap(),
+                (0x81, body.into_bytes())
+            );
             assert!(
                 matches!(result, Err(gr_privileged_broker::BrokerError::Host { reason })
                 if reason == gr_privileged_broker::DUMMY_HCD_UNAVAILABLE_REASON)
