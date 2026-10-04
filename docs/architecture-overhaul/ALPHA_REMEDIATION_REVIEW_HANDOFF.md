@@ -77,6 +77,11 @@ code checkpoint remains an ancestor and later changes are only documented scope.
    frames must fail. The prefilled `usb_audio_probe --protocol-fixture` is an
    explicit deterministic test mode, not a streaming fix or live acceptance pass.
    Scrutinize simultaneous Samples/NativeClient combinations and teardown.
+   Also inspect the direct graph control: it must bypass `Session` and library
+   queues, select only its named sink, preserve exact marker/latency assertions
+   and terminate both test clients. Shared Rust helper failures remain possible.
+   Independent C-client loss supports a failed host graph baseline, not a claim
+   that the library is defect-free or that every failure has one cause.
 6. **Actual MSRV selection:** inspect `.github/workflows/ci.yml`, the five
    conditional rewrites and final job log. The compiler must actually be 1.85.x
    despite the repository's newer override; installing a compiler alone is
@@ -206,6 +211,34 @@ Never remove pre-existing resources. Device-node permissions alone do not prove
 kernel registration, broker authorization or binary provenance. Do not provision
 modules, replace existing services, alter persistent routing or enable privileged
 jobs as part of this review.
+
+## Graph baseline control
+
+Before repeating the product matrix, qualify graph continuity separately. The
+status document records three failed quiet controls and independent C-client
+corroboration. Reproduce the committed control individually:
+
+```bash
+cargo test --locked -p gr-audio-linux --features pipewire --test pipewire_live --no-run
+VIRTUALGAMEPAD_AUDIO_TRIAL_SECONDS=62 python3 scripts/run-pipewire-audio-lab.py --quantum 512 --timeout 75 -- cargo test --locked -p gr-audio-linux --features pipewire --test pipewire_live latency_graph_direct_control -- --ignored --exact --nocapture
+```
+
+Repeat three times after building, with no concurrent review builds, profiler or
+GUI soak. Record producer totals, missing/duplicate/invalid markers and the exact
+binary/revision. Compile warm-up in the example command is excluded from the
+marker clock, but direct invocation of the built test binary avoids competing
+compiler work entirely. A pass is a graph control, not product acceptance.
+
+For independent reproduction without Rust clients or library queues, create a
+private `pw-loopback` pair with explicit `Audio/Sink` / `Audio/Source` names and
+`node.autoconnect=false`; select those exact names with playback/record `pw-cat`.
+At S16LE, 48 kHz, two channels, feed two seconds of zeros, then 22,500 markers
+(each value 1..22,500 repeated for 128 frames in both channels), then two seconds
+of zeros. Count each nonzero marker exactly 128 times, reject duplicates, channel
+mismatch and partial frames, and retain bounded drain/cleanup. Client stdin
+acceptance is not graph-submit accounting; this corroborating control makes no
+latency claim. The original fixture/logs remain external evidence. Never create
+or route these nodes in the existing desktop graph.
 
 ## Sustained acceptance and reviewer rejection criteria
 

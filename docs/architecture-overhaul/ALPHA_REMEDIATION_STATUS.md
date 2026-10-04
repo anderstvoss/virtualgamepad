@@ -11,8 +11,8 @@ but green builds cannot authorize an alpha release.
 - Review baseline: `0c08fb485292adb4c361a7210efc04bb223f4642`.
 - Remote main/base: `11284f01c58cb80be0d187efa2fca95641513fbf`.
 - Both baseline trees: `b733354460af8162c2863b1f38cb4b1157c21680`.
-- Implementation checkpoint: `cc52b9c603e814f8f7fb61c805a1104a06db6fe1`;
-  checkpoint tree: `9cf2b64d8965b327059a4d5ea033ebef8f7518ec`.
+- Implementation checkpoint: `1f10209d40b8ce52e10bec59508638aa7b029277`;
+  checkpoint tree: `1d126b26b5989ffb3ca3c972a31981b83b8b83be`.
 - Later documentation commits are resolved from the PR head. The handoff explains
   how the reviewer records the exact final head/tree without a self-referential
   document hash. Revalidate every subsequent code candidate separately.
@@ -81,7 +81,7 @@ with neutral UHID state and no routing/touch injection.
 
 Local locked fmt/check/Clippy/workspace tests, Rust 1.85 all-target/all-feature
 check, strict workspace rustdoc, ordinary API snapshot, root feature consumers and
-cached offline rebuild pass. Workspace tests pass (552 passed, 58 explicitly ignored, no failures); ignored
+cached offline rebuild pass. Workspace tests pass (553 passed, 59 explicitly ignored, no failures); ignored
 child entrypoints are never blanket-enabled. Python tooling tests pass (103 tests). Corpus remote
 pin verification passes at `a1789d6ed92b2325016dd78be765342f3ca19aa4`.
 Cargo audit/policy checks pass with the previously acknowledged unmaintained
@@ -168,9 +168,56 @@ exact-final-head acceptance. Final-head compiler, deterministic tests, consumers
 CI and artifact checks are pinned separately. Repeat live acceptance for any
 subsequent behavior change before approving release.
 
+## Continuation: graph baseline isolation (2026-10-04)
+
+The original 72 failed stress trials above remain historical evidence. Fresh
+quiet probes on the same host did not involve the GUI soak or review builds.
+An eight-second DualSense Samples playback smoke passed; all seven other sample,
+native and duplex smoke cells failed. Fresh 60-second measured Samples/native
+playback probes still missed 6,144 / 11,776 frames. These limited reruns do not
+replace the full family/ownership acceptance matrix.
+
+A new ignored `latency_graph_direct_control` bypasses `Session`, endpoint bridges
+and the library PCM queue. It sends the same graph markers directly to a named,
+test-owned sink and retains exact producer, per-marker and latency assertions.
+All three quiet 60-second measured controls fail: 4,608 / 3,072 / 3,072 missing
+frames, with complete planned producer generation and no duplicate/invalid frames.
+The source/capture helpers remain possible causes; this control alone does not
+establish an environment root cause or exonerate the production backend.
+
+A separate profiled control misses 18,944 measured frames, while PipeWire reports
+101 source and 14 sink client xruns. Its p99 callback-to-callback observation is
+343 microseconds. A short compiler check overlapped the end of that profiled run;
+its results are diagnostic, not quiet latency acceptance. The three unprofiled
+controls above exclude that overlap. A read-only scheduling snapshot observes
+non-realtime data-loop policies (priority zero), which is a prerequisite concern,
+not proof that scheduler configuration caused every missing frame.
+
+An additional independent `pw-cat`/`pw-loopback` control bypasses both the library
+and the Rust marker clients. It uses only named nodes in a private graph, two
+seconds of silent warm-up, 60 seconds of markers and two seconds of silent drain.
+All three trials fail: 22,528 / 32,768 / 40,960 missing frames; duplicates,
+corruption and partial frames are zero. Every trial supplies all 2,880,000 marker
+frames to client stdin. That is input-supply accounting, not proof of graph
+submission. An eight-second control passes. The fixture and raw records stay
+outside tracked source; this baseline measures continuity, not latency.
+
+Sustained loss therefore reproduces on a path independent of virtualgamepad and
+its Rust clients. The host graph baseline must be qualified before attributing
+all failed acceptance to library queues or proposing queue-size/latency changes.
+Library-specific loss could still coexist. No production audio behavior or loss
+assertion changed in this continuation. The direct-sink targeting regression
+preserves the existing exact-target capture configuration.
+
+All private graph processes/runtime directories are gone after the probes.
+Fresh preflight still reports missing uinput kernel registration and ConfigFS,
+and unavailable UDC authorization. Persistent host configuration/services remain
+unchanged. The PR stays draft and the alpha gate stays **NOT READY**.
+
 ## Remaining release backlog and acceptance prerequisites
 
-1. **P1 audio continuity:** retain failures and localize loss across producer,
+1. **P1 audio continuity:** first qualify a prepared host graph with independent
+   controls; retain failures and localize loss across producer,
    graph, queue, client and drain. Producer-all/queue-zero/client-missing already
    rules out incomplete planned generation or reported application queue overflow
    for some failed cells. Graph discontinuities correlate but do not prove cause.
