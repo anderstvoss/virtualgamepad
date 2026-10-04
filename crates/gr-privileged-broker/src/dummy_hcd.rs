@@ -332,14 +332,18 @@ impl DummyHcdSession {
                 Ok(session)
             }
             Err(error) => {
-                if rollback_created(&linux, &root, created).is_ok() {
+                let cleanup = rollback_created(&linux, &root, created).and_then(|()| {
                     if recorded {
-                        access.forget(&root).map_err(io)?;
+                        access.forget(&root).map_err(io)
+                    } else {
+                        Ok(())
                     }
+                });
+                if cleanup.is_ok() {
                     release_dummy_udc(&udc);
                 }
                 // Failed cleanup keeps the reservation and journal for recovery.
-                Err(error)
+                Err(retain_open_failure(error, cleanup))
             }
         }
     }
@@ -454,6 +458,15 @@ fn setup(
     host.create_dir(root).map_err(io)?;
     setup_contents(host, root, serial, profile)
 }
+fn retain_open_failure(initiating: BrokerError, cleanup: Result<(), BrokerError>) -> BrokerError {
+    match cleanup {
+        Ok(()) => initiating,
+        Err(cleanup) => BrokerError::Host {
+            reason: format!("{initiating}; cleanup also failed: {cleanup}"),
+        },
+    }
+}
+
 fn rollback_created(
     host: &impl DummyHcdHost,
     root: &Path,
@@ -1014,6 +1027,30 @@ mod tests {
             host.operations.into_inner().last(),
             Some(&format!("rmdir:{}", root.display()))
         );
+    }
+
+    #[test]
+    fn failed_partial_creation_retains_initiating_and_rollback_errors() {
+        let mut host = FakeHost::failing_write("/report_desc");
+        let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
+        let initiating = setup(
+            &host,
+            &root,
+            "synthetic-identity",
+            profile(CompiledControllerKind::DualSense),
+        )
+        .unwrap_err();
+        host.fail_write_suffix = Some("/UDC");
+        let error =
+            retain_open_failure(initiating, rollback_created(&host, &root, true)).to_string();
+        assert!(error.contains("cleanup also failed"));
+        assert_eq!(error.matches("injected write failure").count(), 2);
+        assert_eq!(
+            host.operations.borrow().last().unwrap(),
+            &format!("rmdir:{}", root.display())
+        );
+        let original = super::host("original failure");
+        assert_eq!(retain_open_failure(original.clone(), Ok(())), original);
     }
 
     #[test]
