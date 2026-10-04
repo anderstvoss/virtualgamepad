@@ -48,7 +48,10 @@ code checkpoint remains an ancestor and later changes are only documented scope.
    and `gui/audio_lab.rs`. Controller workers must never enumerate audio devices.
    One worker plus one GUI pending request must remain bounded under refresh spam.
    Generation changes cancel/discard stale results; per-frame polling must not
-   respawn failed discovery. EOF is not necessarily child exit. Check two-second
+   respawn failed discovery. EOF is not necessarily child exit; successful commands
+   can leave descendants after closing stdout. Verify `waitid(WNOWAIT)` retains
+   the leader until group termination and reap, and inspect the normal-success
+   descendant regression. Check two-second
    command deadlines, 256 KiB bound, reader cancellation, owned process-group
    signalling before reap, and joins after termination. Check loading/errors and
    explicit refresh, backend changes, crash reporting and shutdown. Signal only
@@ -189,6 +192,16 @@ python3 scripts/run-pipewire-audio-lab.py --timeout 45 -- cargo test --locked -p
 
 These tests use neutral owned UHID devices and private graphs. Check exact owned
 node removal, sibling survival and graph child/socket cleanup after each run.
+The status document records completed mapping and graph-failure checks and the
+failed sustained/slow-consumer cells. To reproduce mapping safely, run each of
+`dualsense_uhid_individual_mapping`, `ds4_uhid_individual_mapping`,
+`switch_uhid_individual_mapping`, `xbox_uhid_individual_mapping` in
+`gr-curated-controllers --test dualsense_uhid_live`, with `--ignored --exact
+--nocapture`, a private `VIRTUALGAMEPAD_SDL_PROBE` and a 360-second deadline.
+All four run neutral/button/axis cases without touch injection. Check 156 passing
+observations and three cleanup records per test; a timeout is incomplete evidence.
+Do not run the Sony full touch scripts on a shared desktop.
+
 Never remove pre-existing resources. Device-node permissions alone do not prove
 kernel registration, broker authorization or binary provenance. Do not provision
 modules, replace existing services, alter persistent routing or enable privileged

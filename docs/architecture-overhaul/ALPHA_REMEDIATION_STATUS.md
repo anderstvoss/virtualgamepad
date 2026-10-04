@@ -11,8 +11,8 @@ but green builds cannot authorize an alpha release.
 - Review baseline: `0c08fb485292adb4c361a7210efc04bb223f4642`.
 - Remote main/base: `11284f01c58cb80be0d187efa2fca95641513fbf`.
 - Both baseline trees: `b733354460af8162c2863b1f38cb4b1157c21680`.
-- Implementation checkpoint: `efb110b00812f42a1440817daef66c1c4be290f4`;
-  checkpoint tree: `29bb56e5e177856456af5ddb31903f4a62cc7190`.
+- Implementation checkpoint: `cc52b9c603e814f8f7fb61c805a1104a06db6fe1`;
+  checkpoint tree: `9cf2b64d8965b327059a4d5ea033ebef8f7518ec`.
 - Later documentation commits are resolved from the PR head. The handoff explains
   how the reviewer records the exact final head/tree without a self-referential
   document hash. Revalidate every subsequent code candidate separately.
@@ -27,18 +27,18 @@ and proprietary XInput require truthful rejection, not implementation here.
 
 | ID / priority | Trigger and previous consequence | Correction and source | Regression / disposition |
 | --- | --- | --- | --- |
-| F1 / P1 | Full subscription queue loses close message; close/Drop waits forever | `gr-controller-runtime/src/reverse_delivery.rs`: optional sender behind mutex, disconnect then join, self-close avoids join | Full/zero capacity, Drop, concurrent closers, publish race, callback panic and self-close pass. Finite callbacks must return; arbitrary callback preemption is not promised. |
-| F2 / P1 | Stalled or oversized discovery command blocks required controller service and shutdown | `demo/src/gui/host_audio.rs`, `gui.rs`, `audio_lab.rs`: GUI-owned coordinator, zero-capacity worker handoff plus one coalesced pending request, generations, cached display, two-second command bound and 256 KiB limit, owned process-group cancellation/reap before reader join | Stalled descendant, oversized output, non-UTF8/nonzero exit, cancellation, stale result, retry/coalescing, worker crash/no respawn, continued service/removal/shutdown pass. Loading/error visible; no per-frame respawn. |
+| F1 / P1 | Full subscription queue loses close message; close/Drop waits forever | `gr-controller-runtime/src/reverse_delivery.rs`: optional sender behind mutex, disconnect then join, self-close avoids join | Full/zero capacity, Drop, concurrent closers, publish race, callback panic, self-close and self-close during an external join pass. Finite callbacks must return; arbitrary callback preemption is not promised. |
+| F2 / P1 | Stalled or oversized discovery command blocks required controller service and shutdown | `demo/src/gui/host_audio.rs`, `gui.rs`, `audio_lab.rs`: GUI-owned coordinator, zero-capacity worker handoff plus one coalesced pending request, generations, cached display, two-second command bound and 256 KiB limit, owned process-group cancellation/reap before reader join | Stalled descendant, successful parent with surviving descendant, oversized output, non-UTF8/nonzero exit, cancellation, stale result, retry/coalescing, worker crash/no respawn, continued service/removal/shutdown pass. Loading/error visible; no per-frame respawn. |
 | F3 / P2 | UHID Start/Open/Close/Stop counted internally but never delivered to root callbacks | `gr-hid`, curated protocol implementations and common session: lifecycle hook returns optional observation after required state handling | Fake ordered events through all four root families, no replay and existing bounded-observation/required-reply tests pass. Live neutral UHID Start delivery passes all four families. No events synthesized by application close. |
 | F4 / P2 | Five let chains reject Rust 1.85 | `demo/src/gui.rs`, `gui/audio_lab.rs`: equivalent supported conditionals | Forced Rust 1.85 workspace/all-target/all-feature check passes; existing behavior regressions retained. |
 | F5 / P1 | Installed minimum compiler is bypassed by repository override | `.github/workflows/ci.yml`: explicit toolchain environment, actual rustc/cargo print and minimum-version assertion | Forced compiler check and negative newer-syntax fixture pass. Remote job/compiler log must belong to the exact candidate. |
 | F6 / P2 | Removed packages/phase-gate CLI make scheduled/manual validation invalid | `.github/workflows/provider-tier-b.yml`: current deterministic tests and production/USB worker validators; required Ubuntu audio dependency endpoints | Cargo-metadata command inventory rejects removed packages/examples and missing scripts; Python tests pass. Privileged job remains explicitly disabled, so its skip is missing live evidence. |
-| F7 / P2 | Uploaded SBOM contains 16 member reports, omits root | `.github/workflows/sbom.yml`, `scripts/collect-sbom.py`: metadata-driven collection and extracted-artifact verification | All 17 packages locally generated/validated, including root. Missing/duplicate/foreign identity, missing dependency inventory and stale output reject. Uploaded checkpoint artifact verifies all 17 identities; final-head artifact must also be checked. |
+| F7 / P2 | Uploaded SBOM contains 16 member reports, omits root | `.github/workflows/sbom.yml`, `scripts/collect-sbom.py`: metadata-driven collection and extracted-artifact verification | All 17 packages locally generated/validated, including root. Missing/duplicate/foreign identity, missing dependency inventory and stale output reject. Uploaded checkpoint artifact verifies all 17 identities; final-head verification and workflow run IDs are recorded in the PR description and external revision receipt. |
 | F8 / P2 | Entry documents contradict demo defaults, topology and issue status | README, application/audio/support/demo docs and historical ledger annotations | Root defaults empty; demo ALSA/WIP USB/IP defaults distinguished; #112 closure is not native acceptance; new DS4 topology and lifecycle semantics documented. Historical failures preserved. |
 | A1 / P1 | Samples/native audio loses markers even with zero reported queue drops | Marker producer accounting, graph-clock diagnostics, queue/drop/underrun counters, per-marker client accounting and explicit drain; simultaneous duplex for all four ownership combinations | Deterministic duplicate/corrupt/partial-frame and producer/drain tests pass. Protocol fixture now primes exact microphone frames before READY. **Continuity unresolved; assertions unchanged; PR stays draft.** |
 | A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Current host lacks registered uinput; production SDL/touch acceptance blocked. |
 | A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Exhaustive compiled profile/ID reply-or-terminal-rejection test; unknown GET becomes terminal so registry unbinds its owned gadget; initiating + cleanup errors retained for terminal requests and failed construction | Broker admission/peer/FD/framing/recovery and worker process validators pass. Kernel f_hid exposes ID only and no STALL operation: full report-type/length parity **not certified**. Installed/root prerequisites remain external. |
-| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. Two-hour live soak and final cleanup report pending. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
+| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. Two-hour live soak exits successfully; exact owned UHID nodes removed, private graph processes/directories absent. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
 
 Source paths in this table are relative to the repository (`gr-*` sources are
 under `crates/`). Tests run at the lowest practical seams and retain prior tests.
@@ -66,11 +66,13 @@ logical ownership and are removed on rollback/close; SDL gamepad touch APIs cann
 represent the separate evdev contact presentation, an explicit surface restriction.
 
 Discovery owns only its spawned process groups. Generation changes cancel stale
-commands; normal controller workers never discover devices. External subscription
+commands; normal controller workers never discover devices. Normal child exit is
+observed with `waitid(WNOWAIT)` so its process-group identity remains owned until
+descendant termination and reaping; EOF alone cannot establish cleanup. External subscription
 close serializes joiners and releases the sender lock before joining. Self-close
 must also avoid waiting on a join lock held by another closer.
 
-The demo adds a direct `rustix` process feature for safe process-group signalling;
+The demo adds a direct `rustix` process feature for safe process-group signalling and unreaped exit observation;
 version 1.1.5 was already locked transitively. No new ecosystem dependency or
 advisory suppression is introduced. The GUI soak is an explicitly invoked example,
 with neutral UHID state and no routing/touch injection.
@@ -79,7 +81,8 @@ with neutral UHID state and no routing/touch injection.
 
 Local locked fmt/check/Clippy/workspace tests, Rust 1.85 all-target/all-feature
 check, strict workspace rustdoc, ordinary API snapshot, root feature consumers and
-cached offline rebuild pass. Python tooling tests pass (103 tests). Corpus remote
+cached offline rebuild pass. Workspace tests pass (552 passed, 58 explicitly ignored, no failures); ignored
+child entrypoints are never blanket-enabled. Python tooling tests pass (103 tests). Corpus remote
 pin verification passes at `a1789d6ed92b2325016dd78be765342f3ca19aa4`.
 Cargo audit/policy checks pass with the previously acknowledged unmaintained
 `ttf-parser` warning. Gitleaks passes. Inventory source links require rebuilding
@@ -95,12 +98,75 @@ Neutral root UHID creation/service/Start delivery/removal/recreation and identit
 restoration pass. Selected root audio creation/terminal cleanup, bounded PCM/HID worker
 counts, and processing-close/recreate checks pass in isolated graphs. These checks do not substitute for sustained marker continuity.
 
-Live audio matrix and GUI soak are in progress at this documentation checkpoint.
-Results and exact final-CI/SBOM revisions will be recorded before completion.
-Every sustained direction and duplex/mixed cell uses three trials, a private
+The full 72-trial audio matrix completed: **0 passed / 72 failed**, with all
+three trials failing in each of the 24 required cells. The two-hour GUI soak exits successfully with normal teardown. Final-head remote
+evidence and exact consumer/artifact revisions are recorded in the PR description
+and accompanying external revision receipt, avoiding a self-referential hash.
+Every sustained direction and duplex/mixed cell used three trials, a private
 PipeWire graph, 62 seconds of markers (two-second warm-up boundary), bounded drain
 and unchanged zero-loss assertions. Concurrent GUI/build work makes these VM
 stress observations; no native-host latency or physical-fidelity claim follows.
+
+## Live acceptance matrix
+
+The following cells are emulated PipeWire on this ARM64 VM, at quantum 512.
+Every entry is **0/3 passed**, with two-second warm-up and a 60-second measured
+boundary plus bounded drain. Each trial retains its own status and marker/clock
+log. These are failed acceptance observations, not a proven backend defect.
+
+| Direction / playback–microphone ownership | DualSense | DS4 | Xbox 360 |
+| --- | --- | --- | --- |
+| Graph → library Samples | 0/3 | 0/3 | 0/3 |
+| Library Samples → graph | 0/3 | 0/3 | 0/3 |
+| NativeClient playback | 0/3 | 0/3 | 0/3 |
+| NativeClient microphone | 0/3 | 0/3 | 0/3 |
+| Duplex Samples–Samples | 0/3 | 0/3 | 0/3 |
+| Duplex Samples–NativeClient | 0/3 | 0/3 | 0/3 |
+| Duplex NativeClient–Samples | 0/3 | 0/3 | 0/3 |
+| Duplex NativeClient–NativeClient | 0/3 | 0/3 | 0/3 |
+
+For example, a DualSense sample-playback trial generated all 2,976,000 planned
+frames but missed 11,264 measured client frames with zero reported queue drops
+and 99,840 missed graph frames. Correlation with graph discontinuities does not
+establish the cause. Priming, measured markers, silent drain, duplicate/invalid
+frames and queue loss remain distinct; no loss assertion was relaxed.
+
+All four UHID SDL individual-mapping tests pass: 156/156 observations per family,
+three repeated/reused-ID sessions, and three explicit device-removed/consumer-
+reaped records per family. Initial 180-second attempts were incomplete timeouts;
+360-second reruns completed in 240–251 seconds. Those failed/incomplete logs are
+preserved. SDL 3.5.0 input mapping is observed; the probe's version-specific backend
+signature does not identify this build, so backend certification remains unknown.
+No desktop touch injection was performed. This is not production DS4 evdev parity.
+Switch controls/motion and Xbox standard-HID controls also pass their three-session
+scripted tests. Sony full scripts include touch and were not run on the desktop.
+
+All three existing slow-consumer soaks fail their first 60-second measured trial
+with unexplained steady-state queue loss (28,672 / 86,016 / 72,704 frames for
+DualSense / DS4 / Xbox). The deliberately stalled 200 ms interval also reports
+loss, but later trials are not reached after the earlier assertion fails. Do not
+credit those incomplete three-trial soaks as accepted slow-consumer continuity.
+Private graph processes and runtime directories are absent after these runs.
+
+Private-graph death also passes a separate owned-daemon probe for all three
+required audio families: required-audio controllers fail and close, a HID-only
+Switch sibling survives, and repeated close succeeds. Creation/worker-count and
+processing-close/recreate tests pass separately. Live route-change continuity,
+ALSA/USB/IP routing, installed worker crashes and native/physical timing are still
+unverified; fake routing/lifecycle coverage does not establish those live gates.
+
+The two-hour real GUI soak completed at 7,200 seconds and exited with status 0.
+Its 118 per-minute samples/cycles held FD count 16 and thread count 6; RSS ranged
+from 91,404 to 92,632 KiB (about 1.2 MiB growth). Exact PID-associated owned UHID
+nodes were absent after teardown. This establishes the measured run and cleanup,
+not a proof against every unbounded-growth scenario or manual accessibility.
+
+Long live runs span implementation checkpoints. The no-audio GUI binary predates
+later discovery cleanup; marker instrumentation was expanded during the matrix.
+These phase-specific failed/limited observations are retained, not promoted into
+exact-final-head acceptance. Final-head compiler, deterministic tests, consumers,
+CI and artifact checks are pinned separately. Repeat live acceptance for any
+subsequent behavior change before approving release.
 
 ## Remaining release backlog and acceptance prerequisites
 
