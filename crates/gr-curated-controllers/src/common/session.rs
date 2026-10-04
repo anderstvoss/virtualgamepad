@@ -11,6 +11,22 @@ use std::time::{Duration, Instant};
 pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
     type Hid: Protocol<State = Self::State, Output = RawReverseEvent> + Send;
     fn neutralize_state(state: &mut Self::State);
+    fn open_native(
+        &self,
+        request: ProviderOpenRequest,
+        _: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, ProviderError> {
+        use gr_realization_api::{NativeProviderFactory, RealizationTarget};
+        match request.selection.target {
+            RealizationTarget::LINUX_UINPUT => super::LinuxUinputProvider.open(request),
+            RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
+                super::LinuxDummyHcdProvider.open(request)
+            }
+            _ => Err(ProviderError::Unsupported {
+                reason: "unknown native realization".into(),
+            }),
+        }
+    }
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         Ok([0; 6])
     }

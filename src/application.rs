@@ -400,7 +400,7 @@ impl ControllerAssociation {
         old: &gr_curated_controllers::ControllerAssociation,
         surface: &'static crate::ControllerSurface,
     ) -> Self {
-        Self {
+        let mut result = Self {
             controller,
             realization: options.target,
             creation: options.session.0,
@@ -413,7 +413,19 @@ impl ControllerAssociation {
                 requested_unique_id: old.requested_unique_id.clone(),
                 observed_host_path: old.observed_host_path.clone(),
             }],
-        }
+        };
+        result
+            .components
+            .extend(old.companions.iter().map(|companion| ComponentAssociation {
+                kind: ComponentKind::Input,
+                role: companion.role,
+                surface: None, // The primary surface describes the complete logical controller.
+                audio_endpoint: None,
+                requested_physical_path: companion.requested_physical_path.clone(),
+                requested_unique_id: companion.requested_unique_id.clone(),
+                observed_host_path: None,
+            }));
+        result
     }
 }
 
@@ -538,6 +550,47 @@ mod tests {
                 feature = "audio-pipewire"
             ))
         );
+    }
+
+    #[test]
+    fn supporting_companion_is_retained_in_root_creation_topology() {
+        static SURFACE: crate::ControllerSurface =
+            gr_controller_contract::construction::ControllerSurfaceSpec {
+                target: RealizationId::LINUX_UINPUT,
+                validation_status: crate::RealizationValidationStatus::ResearchBacked,
+                digital_controls: &[],
+                axes: &[],
+                outputs: &[],
+                restrictions: &[],
+                input_topology: &crate::InputTopology::EMPTY,
+            }
+            .build();
+        let old = gr_curated_controllers::ControllerAssociation {
+            requested_physical_path: Some("synthetic/gamepad".into()),
+            requested_unique_id: Some("synthetic-primary".into()),
+            observed_host_path: None,
+            companions: vec![gr_curated_controllers::CompanionAssociation {
+                role: "touch",
+                requested_physical_path: Some("synthetic/touch".into()),
+                requested_unique_id: Some("synthetic-companion".into()),
+            }],
+        };
+        let association = ControllerAssociation::single(
+            crate::ControllerId::new("sony.dualshock4"),
+            CreationOptions::new(RealizationId::LINUX_UINPUT)
+                .internal()
+                .unwrap(),
+            &old,
+            &SURFACE,
+        );
+        assert_eq!(association.components().len(), 2);
+        assert!(association.components()[0].surface().is_some());
+        let touch = &association.components()[1];
+        assert_eq!(touch.role(), "touch");
+        assert_eq!(touch.requested_physical_path(), Some("synthetic/touch"));
+        assert_eq!(touch.requested_unique_id(), Some("synthetic-companion"));
+        assert!(touch.surface().is_none());
+        assert!(touch.observed_host_path().is_none());
     }
 
     #[test]

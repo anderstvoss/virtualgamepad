@@ -1,5 +1,4 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
-#[cfg(test)]
 mod evdev;
 mod worker_state;
 
@@ -416,8 +415,8 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
 }];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
     TargetRestriction {
-        feature: "SDL gamepad discovery",
-        reason: "combined touch/gamepad capabilities are classified as a touchscreen on tested udev; a separate touch presentation is pending",
+        feature: "touch companion",
+        reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
     },
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -1326,6 +1325,35 @@ fn create_dualshock4_inner(
     Ok(DualShock4Controller(c))
 }
 impl common::HidDriver for DualShock4Definition {
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        association: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, ProviderError> {
+        use std::io::Read;
+        if request.selection.target != RealizationTarget::LINUX_UINPUT {
+            return gr_realization_api::NativeProviderFactory::open(
+                &gr_provider_linux_dummy_hcd::LinuxDummyHcdProvider,
+                request,
+            );
+        }
+        let mut creation = [0; 16];
+        std::fs::File::open("/dev/urandom")
+            .and_then(|mut entropy| entropy.read_exact(&mut creation))
+            .map_err(|error| ProviderError::Open {
+                reason: error.to_string(),
+            })?;
+        let identity = gr_controller_runtime::CompoundIdentity {
+            logical: creation,
+            creation,
+        };
+        *association = evdev::association(identity, &request)?;
+        evdev::open(
+            identity,
+            request,
+            std::sync::Arc::new(gr_provider_linux_uinput::LinuxUinputProvider),
+        )
+    }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             battery: state.battery,
@@ -1465,7 +1493,7 @@ mod tests {
         assert!(
             EVDEV_RESTRICTIONS
                 .iter()
-                .any(|restriction| restriction.feature == "SDL gamepad discovery")
+                .any(|restriction| restriction.feature == "touch companion")
         );
     }
 

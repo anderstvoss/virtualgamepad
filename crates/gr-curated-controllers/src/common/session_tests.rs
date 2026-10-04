@@ -1151,6 +1151,7 @@ where
     let expected = driver.neutral_state();
     let (session, record) = evdev_rig(driver);
     let association = crate::ControllerAssociation {
+        companions: Vec::new(),
         requested_physical_path: Some("virtual/controller/fresh-creation".into()),
         requested_unique_id: None,
         observed_host_path: Some("/sys/devices/virtual/input/input123".into()),
