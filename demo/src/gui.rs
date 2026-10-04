@@ -4175,7 +4175,7 @@ mod tests {
         });
         let deadline = Instant::now() + Duration::from_secs(2);
         loop {
-            discovery.poll(host_audio::HostBackend::PipeWire);
+            discovery.poll(audio_lab::HostBackend::PipeWire);
             if discovery_started.try_recv().is_ok() {
                 break;
             }
