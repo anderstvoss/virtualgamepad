@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import resource
 import signal
 import stat
 import subprocess
@@ -23,6 +24,7 @@ import time
 
 STATE = Path('/run/virtualgamepad-state')
 VHCI = Path('/sys/devices/platform/vhci_hcd.0/status')
+OUTPUT_LIMIT = 1024 * 1024
 ORIGINAL = ('virtualgamepad-broker.socket', 'virtualgamepad-broker.service')
 
 
@@ -122,10 +124,23 @@ class Host:
         self.events = []
 
     def run(self, argv, timeout=15):
-        result = subprocess.run(argv, check=True, capture_output=True, text=True, timeout=timeout,
-                                env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'})
+        # Regular-file spooling plus inherited/unit quotas prevent a verbose
+        # validator from exhausting the privileged supervisor's memory or disk.
+        def limits():
+            resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_LIMIT, OUTPUT_LIMIT))
+        with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
+            result = subprocess.run(argv, stdout=stdout, stderr=stderr, timeout=timeout,
+                                    preexec_fn=limits,
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'})
+            stdout.seek(0); stderr.seek(0)
+            output = stdout.read(OUTPUT_LIMIT + 1)
+            diagnostic = stderr.read(OUTPUT_LIMIT + 1)
         self.events.append(dict(command=argv, status=result.returncode))
-        return result.stdout
+        if len(output) > OUTPUT_LIMIT or len(diagnostic) > OUTPUT_LIMIT:
+            raise RuntimeError('lab command exceeded output quota')
+        if result.returncode:
+            raise subprocess.CalledProcessError(result.returncode, argv, output, diagnostic)
+        return output.decode('utf-8', errors='strict')
 
     def snapshot(self):
         saved = {}
@@ -265,6 +280,7 @@ class Host:
                   '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
                   '--property=PrivateMounts=yes', '--property=KillMode=control-group',
                   '--property=RuntimeMaxSec=' + str(self.args.timeout),
+                  '--property=LimitFSIZE=' + str(OUTPUT_LIMIT),
                   '--property=BindPaths=' + str(self.root / 'socket') + ':/run/virtualgamepad',
                   '--', '/usr/bin/setpriv', '--reuid=' + str(account.pw_uid),
                   '--regid=' + str(account.pw_gid), '--clear-groups', '--bounding-set=-all',

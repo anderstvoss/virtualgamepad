@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
+import sys
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('provider_lab', Path(__file__).parents[1] / 'run-alpha-provider-lab.py')
@@ -41,6 +43,11 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_verbose_validator_hits_output_quota_instead_of_unbounded_capture(self):
+        host = lab.Host(Mock())
+        with self.assertRaises(subprocess.CalledProcessError):
+            host.run([sys.executable, '-c', 'print("x" * 2000000)'])
+        self.assertNotEqual(host.events[-1]['status'], 0)
     def test_client_privilege_drop_is_explicit_before_the_validator(self):
         args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'])
         host = lab.Host(args)
