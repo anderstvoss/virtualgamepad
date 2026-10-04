@@ -20,6 +20,11 @@ spec.loader.exec_module(lab)
 
 def acceptance(result, seconds):
     expected = seconds * 48000
+    elapsed = result.get('producer_elapsed_ns')
+    # Match the existing steady-state soak's 1% rate envelope. Complete marker
+    # totals from a fast/freewheeling graph do not establish a sustained trial.
+    if type(elapsed) is not int or not seconds * 990_000_000 <= elapsed <= seconds * 1_010_000_000:
+        return False
     for key in ('planned', 'generated', 'graph_submitted', 'graph_received'):
         if type(result.get(key)) is not int or result[key] != expected:
             return False

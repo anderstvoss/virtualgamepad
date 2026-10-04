@@ -28,6 +28,8 @@ running the 72 family/direction/duplex cells and three slow-consumer family test
 The C control counts generation separately from successfully queued graph buffers
 and received markers, excludes two seconds of warm-up, permits bounded drain, and
 verifies the negotiated S16LE/48kHz/stereo format. It makes no latency claim.
+It also rejects complete totals produced outside the existing soak's 1% rate
+envelope; fast/freewheeling or slow generation cannot certify a sustained window.
 Its stream API does not expose a graph xrun total: `graph_xruns: null` is explicitly
 unavailable, not zero. Obtain xrun and driver scheduling diagnostics from the Rust
 graph control and separately identified graph profiling/environment receipts.

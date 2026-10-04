@@ -33,10 +33,17 @@ class MarkerReceipt(unittest.TestCase):
                     graph_received=2880000, missing=0, duplicate=0, invalid=0,
                     partial_bytes=0, errors=0)
         row.update(source_rate=48000, sink_rate=48000, source_channels=2, sink_channels=2)
+        row['producer_elapsed_ns'] = 60_000_000_000
         return row
 
     def test_complete_graph_accounting(self):
         self.assertTrue(control.acceptance(self.receipt(), 60))
+
+    def test_full_totals_from_fast_or_slow_graph_do_not_prove_measured_duration(self):
+        for duration in (1_000_000_000, 58_000_000_000, 62_000_000_000, None):
+            row = self.receipt()
+            row['producer_elapsed_ns'] = duration
+            self.assertFalse(control.acceptance(row, 60))
 
     @unittest.skipUnless(shutil.which('cc') and shutil.which('pkg-config'), 'C/PipeWire developer tools unavailable')
     def test_actual_c_marker_logic_excludes_startup_and_detects_channel_and_count_errors(self):
