@@ -79,19 +79,40 @@ fn run_bounded(
                     {
                         break;
                     }
-                    match child.try_wait() {
+                    let pid = rustix::process::Pid::from_raw(
+                        i32::try_from(child.id()).expect("Linux child PID"),
+                    )
+                    .expect("positive child PID");
+                    match rustix::process::waitid(
+                        rustix::process::WaitId::Pid(pid),
+                        rustix::process::WaitIdOptions::EXITED
+                            | rustix::process::WaitIdOptions::NOHANG
+                            | rustix::process::WaitIdOptions::NOWAIT,
+                    ) {
                         Ok(Some(status)) => {
+                            // Observe without reaping: successful commands may
+                            // leave descendants which have already closed stdout.
+                            // The waitable leader reserves the owned group ID.
+                            terminate_discovery(&mut child);
                             let _ = reader.join();
-                            return if status.success() {
+                            return if status.exit_status() == Some(0) {
                                 String::from_utf8(bytes)
                                     .map_err(|_| format!("{command} returned non-UTF-8 output"))
                             } else {
-                                Err(format!("{command} exited with {status}"))
+                                Err(status.exit_status().map_or_else(
+                                    || format!("{command} terminated"),
+                                    |code| format!("{command} exited with status {code}"),
+                                ))
                             };
                         }
                         Ok(None) => thread::sleep(Duration::from_millis(5)),
+                        Err(rustix::io::Errno::INTR) => {}
                         Err(error) => {
-                            terminate_discovery(&mut child);
+                            // ECHILD means another owner reaped it. Never signal
+                            // that numeric process group after ownership is lost.
+                            if error != rustix::io::Errno::CHILD {
+                                terminate_discovery(&mut child);
+                            }
                             let _ = reader.join();
                             return Err(error.to_string());
                         }
@@ -600,6 +621,34 @@ mod tests {
             .unwrap_err()
             .contains("cancelled")
         );
+    }
+
+    #[test]
+    fn successful_discovery_terminates_background_children_before_reaping_leader() {
+        let generation = AtomicU64::new(1);
+        let output = run_bounded(
+            "sh",
+            &["-c", r#"sleep 30 >/dev/null & echo "$!""#],
+            &generation,
+            1,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let pid: u32 = output.trim().parse().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Ok(stat) if stat.rsplit_once(") ").unwrap().1.starts_with('Z') => break,
+                _ => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "background discovery child survived"
+                    );
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
     }
 
     #[test]
