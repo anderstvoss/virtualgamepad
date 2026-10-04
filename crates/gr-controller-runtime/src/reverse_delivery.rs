@@ -325,6 +325,49 @@ mod tests {
     }
 
     #[test]
+    fn callback_self_close_does_not_wait_on_external_joiner() {
+        let (reference_tx, reference) = sync_channel::<std::sync::Weak<ReverseSubscription<u8>>>(1);
+        let (started_tx, started) = sync_channel(1);
+        let (release, release_rx) = sync_channel(1);
+        let (done_tx, done) = sync_channel(2);
+        let callback_done = done_tx.clone();
+        let subscription = Arc::new(ReverseSubscription::new(1, move |_: u8| {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            reference.recv().unwrap().upgrade().unwrap().close();
+            callback_done.send(()).unwrap();
+        }));
+        reference_tx.send(Arc::downgrade(&subscription)).unwrap();
+        subscription.publish(1).unwrap();
+        started.recv_timeout(Duration::from_secs(2)).unwrap();
+        let external = Arc::clone(&subscription);
+        let closer = thread::spawn(move || {
+            external.close();
+            done_tx.send(()).unwrap();
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if matches!(
+                subscription.worker.try_lock(),
+                Err(std::sync::TryLockError::WouldBlock)
+            ) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "external closer did not start joining"
+            );
+            thread::yield_now();
+        }
+        release.send(()).unwrap();
+        done.recv_timeout(Duration::from_secs(2)).unwrap();
+        done.recv_timeout(Duration::from_secs(2)).unwrap();
+        closer.join().unwrap();
+        subscription.close();
+        assert_eq!(subscription.diagnostics().delivered, 1);
+    }
+
+    #[test]
     fn typed_reply_token_is_one_shot() {
         let inbox = ReplyInbox::<u16>::new(1);
         let token = inbox.issue();
