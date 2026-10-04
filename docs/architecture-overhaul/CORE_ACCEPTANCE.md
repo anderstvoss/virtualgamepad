@@ -19,7 +19,7 @@ recorded kernel; no new baseline or physical-comparison pass is inferred.
 | Switch Pro USB/UHID | handshake, framing, cadence and lifecycle pass | startup/removal during three SDL runs pass | three ten-second control/motion runs pass | compressed-rumble feedback fidelity and concurrency |
 | Xbox standard HID/UHID | standard input and explicit limitations pass | startup/removal during three SDL runs pass | three ten-second standard control runs pass after axis fix | concurrency; no XInput/xpad/rumble claim |
 | DualSense/Switch/Xbox uinput | individual button mapping and bounded FF regressions pass | four-family FF/consumer-exit cleanup pass | three control/neutral/range/typed-rumble runs each pass | touch/auxiliary association and remaining failure/concurrency coverage |
-| DS4 uinput | touch retained, mapping/FF regressions pass | FF and cleanup pass | fails gamepad discovery: combined node classifies as touchscreen | prove separate gamepad/touch presentation and compound ownership |
+| DS4 uinput | production two-node composition; contact/feedback/rollback/ownership tests pass | current host lacks an active uinput kernel device | historical combined node failed SDL discovery; replacement consumer evidence pending | live isolated gamepad/touch consumption and cleanup remain required |
 | Existing compiled dummy_hcd | compiled-path regressions retained | reserved resources/configuration missing | pending | Gate G interface decision and live capability/startup/cleanup |
 
 DS4 review found its feature address also used only the low 16 session bits.
@@ -110,3 +110,11 @@ motion/touch/output, physical fidelity, Steam/Eden or compound acceptance limits
 Switch output framing is corrected and encoded motors are exposed; physical
 compressed-rumble decoding remains unvalidated. ADRs 0010–0011 now settle the
 helper-level compound service/association and native neutralization contracts.
+
+## Expanded remediation gate
+
+The historical results above remain evidence for their pinned candidates. The
+current production DS4 composition supersedes the combined-node implementation,
+without retroactively turning that historical failure into a pass. The expanded
+all-implemented-paths gate, including WIP paths, remains not ready; see
+[resolution and remaining acceptance](ALPHA_REMEDIATION_STATUS.md).

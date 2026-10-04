@@ -33,7 +33,9 @@ workspace crates are excluded from the compatibility promise. Breaking changes
 need demonstrated necessity, API review and migration rationale; alpha status does
 not waive that policy. See [migration notes](ALPHA_API_MIGRATION.md).
 
-Known limits: USB/IP is WIP/excluded from accepted support until #115 closes;
+Known limits: USB/IP is WIP/excluded from accepted support. Installed broker
+security/recovery acceptance is tracked by #115; its closure alone would not
+qualify streaming continuity or the full provider matrix.
 matching and physical microphone equivalence remain unavailable pending #116.
 No sustained/native continuity or latency guarantee is advertised. Ignored host
 probes and compilation do not imply physical acceptance. Host capture beyond the
@@ -41,7 +43,12 @@ reviewed routing/channel scope and native scheduling/shutdown remain explicit
 limits. The existing unmaintained ttf-parser dependency warning is retained for
 review; no new advisory suppression was added.
 
-Review [the final acceptance handoff](architecture-overhaul/ALPHA_FINAL_REVIEW.md),
+The expanded all-implemented-paths release gate is **not ready**. Current code
+resolution and unresolved host/audio gates are in the
+[remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) and
+[reviewer handoff](architecture-overhaul/ALPHA_REMEDIATION_REVIEW_HANDOFF.md).
+
+Review [the historical acceptance handoff](architecture-overhaul/ALPHA_FINAL_REVIEW.md),
 [API disposition](architecture-overhaul/ALPHA_ROOT_API_AUDIT.md),
 [freeze candidate](architecture-overhaul/ALPHA_FREEZE_CANDIDATE.md),
 [quality review](architecture-overhaul/ALPHA_QUALITY_REVIEW.md),

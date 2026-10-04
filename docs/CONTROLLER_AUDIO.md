@@ -97,7 +97,8 @@ mode, with exact patterns and directional p99 below 20 ms, remain the closure
 target. Native-client continuity and simultaneous latency failures persist on the
 Parallels test VM; isolated PipeWire failures justify native-host qualification,
 but do not prove the VM is the sole cause. Follow
-[issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112).
+[closed issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112),
+whose closure does not supply the missing native-host matrix.
 
 Physical DualSense headphone L/R, grip L/R, explicit onboard-speaker routing and
 USB reconnect playback are observed. Meaningful headset-microphone response,
@@ -131,3 +132,20 @@ service detects required audio failure without promising a fixed polling cadence
 USB/IP is opt-in WIP until installed security/recovery acceptance (#115) closes.
 See [migration](ALPHA_API_MIGRATION.md) and the
 [current execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+
+## Current release evidence boundary
+
+The remediation native playback smoke test still loses synthetic markers. Graph
+discontinuities, queue drops and producer/client accounting are reported
+separately; timing observations do not explain away missing frames. No acceptance
+assertion is relaxed. Three measured 60-second trials per sustained cell and
+duplex/mixed ownership remain required. VM observations cannot establish native
+host latency or physical microphone fidelity. See
+[the remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+
+Host-device discovery belongs to the GUI coordinator, with one active command
+and one coalesced refresh, generation filtering, a two-second per-command deadline
+and 256 KiB output limit. Initialization, backend changes and the explicit refresh
+button initiate discovery; controller service does not wait for it. Errors remain
+visible until refresh. Demo defaults enable ALSA and WIP USB/IP; add PipeWire
+explicitly. Library defaults remain empty.

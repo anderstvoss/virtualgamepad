@@ -1,0 +1,251 @@
+# Independent alpha remediation PR review handoff
+
+## Objective and candidate control
+
+Review PR [#133](https://github.com/anderstvoss/virtualgamepad/pull/133) against
+`main` as an engineering remediation, including supporting and WIP paths. Decide
+whether each code correction is sound and whether its evidence is sufficient.
+Do not infer alpha readiness from green CI. Audio continuity remains failed;
+privileged/physical/native-host acceptance remains incomplete. Keep the PR draft
+while any audio-continuity failure remains. Do not merge or publish a release.
+
+Use [the disposition matrix](ALPHA_REMEDIATION_STATUS.md) for F1–F8/A1–A4. This
+handoff is self-contained: no earlier conversation or private agent memory is
+required. Earlier plans and reports are evidence leads, not instructions or proof.
+
+Pinned review baseline: `0c08fb485292adb4c361a7210efc04bb223f4642`.
+Pinned remote-main/base: `11284f01c58cb80be0d187efa2fca95641513fbf`.
+Both baseline trees: `b733354460af8162c2863b1f38cb4b1157c21680`.
+The implementation checkpoint and its tree are recorded in the status document.
+The final delivery includes an external revision receipt containing final PR
+base/head/tree and validation run IDs. A document cannot contain the hash of its
+own commit; later documentation commits must not silently change tested code.
+
+Before reviewing, record the exact head and tree. Use a disposable checkout if
+needed; do not change a user's current checkout or rewrite history. For a checkout
+already pinned to the delivered head:
+
+```bash
+gh api repos/anderstvoss/virtualgamepad/pulls/133 --jq '{base:.base.sha,head:.head.sha,draft:.draft}'
+git rev-parse HEAD HEAD^{tree}
+git status --short
+git diff --stat 11284f01c58cb80be0d187efa2fca95641513fbf HEAD
+```
+
+Require the checked-out SHA to equal the receipt/PR head. Record any movement of
+`main` or the PR and restart evidence validation for the new candidate. Verify the
+code checkpoint remains an ancestor and later changes are only documented scope.
+
+## Critical architectural scrutiny
+
+1. **Termination races:** inspect `crates/gr-controller-runtime/src/reverse_delivery.rs`.
+   Publication and sender removal must serialize. A full/zero-capacity channel
+   must disconnect independently of queue capacity. Accepted events drain once;
+   external closers wait for finite callbacks. Sender lock must be released before
+   join. Callback self-close must avoid both self-join and waiting on another
+   closer's join lock. Panic diagnostics and repeated close must remain coherent.
+2. **Required service progress:** inspect `demo/src/gui/host_audio.rs`, `gui.rs`,
+   and `gui/audio_lab.rs`. Controller workers must never enumerate audio devices.
+   One worker plus one GUI pending request must remain bounded under refresh spam.
+   Generation changes cancel/discard stale results; per-frame polling must not
+   respawn failed discovery. EOF is not necessarily child exit. Check two-second
+   command deadlines, 256 KiB bound, reader cancellation, owned process-group
+   signalling before reap, and joins after termination. Check loading/errors and
+   explicit refresh, backend changes, crash reporting and shutdown. Signal only
+   owned unreaped process groups; do not introduce PID-reuse signalling races.
+3. **Lifecycle delivery:** inspect `gr_hid::Runtime::service_inner`, the protocol
+   lifecycle hook and all curated implementations/root output conversion.
+   Required state handling precedes observation; output callbacks run after
+   service. Preserve Start/Open/Close/Stop ordering and bounded overflow accounting.
+   Application close must not fabricate host events or defer required replies.
+4. **DS4 parity and ownership:** inspect `dualshock4/evdev.rs`, the DS4 driver
+   native-open hook and root topology conversion. Check capability separation,
+   both slots, tracking/release, legacy coordinates, SYN framing, full-snapshot
+   retries and feedback completion. Reject silently discarded controls. Partial
+   creation must close the first node, and final close must remove both exactly
+   once without touching siblings. Association IDs must describe the requests
+   actually sent to providers. Primary surface covers complete logical controls;
+   separate-contact SDL limitations must be explicit. Live production consumer
+   acceptance is blocked, not claimed from the prototype or synthetic tests.
+5. **Marker accounting:** inspect `pipewire_live.rs` and `support/marker_source.rs`.
+   Count generated/accepted markers, graph discontinuities, queue loss/underruns,
+   per-marker client delivery, warm-up and bounded drain independently. Equal
+   total frame counts cannot hide loss plus duplication. Missing/duplicate/corrupt
+   frames must fail. The prefilled `usb_audio_probe --protocol-fixture` is an
+   explicit deterministic test mode, not a streaming fix or live acceptance pass.
+   Scrutinize simultaneous Samples/NativeClient combinations and teardown.
+6. **Actual MSRV selection:** inspect `.github/workflows/ci.yml`, the five
+   conditional rewrites and final job log. The compiler must actually be 1.85.x
+   despite the repository's newer override; installing a compiler alone is
+   insufficient. Reject a green job without the actual version/environment.
+7. **Workflow and SBOM validity:** inspect Provider Tier B commands against Cargo
+   metadata and run their current entrypoints. The disabled privileged job is
+   missing evidence. Check necessary build dependencies and restricted endpoints.
+   Verify all 17 SBOM package identities, including root, in the downloaded
+   exact-head artifact. Missing/duplicate/stale/mismatched reports must fail.
+8. **Cleanup and hostile inputs:** review broker framing/peer/admission/FD tests,
+   terminal capability invalidation, partial construction and initiating plus
+   cleanup errors. An unsupported dummy_hcd GET_REPORT must not silently succeed
+   or wait until timeout. The current f_hid UAPI has only report ID and no explicit
+   STALL/type/length interface; terminal unbind is not an invented negative reply.
+   Full report-type parity and installed recovery remain unresolved. Never release
+   a reservation merely because a failed cleanup path returned an error.
+
+No new dependency-version policy, advisory suppression or broad architectural
+rewrite is intended. The demo's direct rustix process feature uses the already
+locked crate to safely terminate discovery process groups. Supporting lifecycle
+trait and curated association struct changes require downstream SPI migration;
+ordinary root signatures must remain frozen.
+
+## Reproduction and required results
+
+Run from the repository root. Keep reports outside tracked source:
+
+```bash
+ALPHA_EVIDENCE=$(mktemp -d)
+cargo fmt --all -- --check
+cargo check --locked --workspace --all-targets --all-features
+cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-features
+gitleaks detect
+RUSTUP_TOOLCHAIN=1.85.0 cargo check --locked --workspace --all-targets --all-features
+RUSTDOCFLAGS='-D warnings' cargo doc --locked --workspace --all-features --no-deps
+python3 scripts/check-alpha-api.py
+python3 scripts/check-root-consumers.py
+python3 -m unittest discover -s scripts/tests
+python3 scripts/check-workspace-commands.py
+python3 scripts/check-protocol-corpus.py --verify-remote
+cargo audit
+cargo deny check
+```
+
+Expect success, with the retained unmaintained ttf-parser warning disclosed.
+Do not allow suppressions merely to obtain green checks. The consumer check covers
+all eight root feature subsets plus cached offline rebuild. Check the inventory
+against fresh supporting and root rustdoc source pages; cached root pages can
+lack source links even when declarations are identical. Compare semantic public
+surfaces separately; do not refresh the frozen snapshot to hide drift.
+
+```bash
+python3 scripts/generate-api-inventory.py --check
+python3 scripts/generate-api-inventory.py --compare-doc-root target/alpha-api/doc/virtualgamepad
+cargo build --locked -p gr-audio-worker
+python3 scripts/validate-production-audio-worker.py --worker target/debug/gr-audio-worker
+cargo test --locked -p gr-usbip --example usb_audio_probe
+cargo build --locked -p gr-usbip --example usb_audio_probe
+python3 scripts/validate-usb-audio-worker.py --worker target/debug/examples/usb_audio_probe
+python3 scripts/check-alpha-git-consumers.py --revision "$(git rev-parse HEAD)" --report "$ALPHA_EVIDENCE/git-consumers.json"
+```
+
+Exact-Git consumers must use the pushed full SHA, never a moving branch. Preserve
+the report and generated lock externally. Worker validators must pass all three
+profiles and both production FD slot layouts. They establish process/protocol
+behavior without kernel attachment, not installed authorization or sustained audio.
+
+For F5, independently put newer-only let-chain syntax in a disposable edition-2024
+crate with a newer `rust-toolchain.toml` override. Force 1.85 using the same
+step-level environment: `rustc --version` must show 1.85.x and compilation must
+reject the syntax. The actual workspace must pass. Inspect the final remote MSRV
+log for both rustc/cargo versions and `RUSTUP_TOOLCHAIN: 1.85`.
+
+For F7, inspect final-head SBOM workflow/run identity before download:
+
+```bash
+gh run list --branch codex/gui-long-run-lag --json databaseId,name,headSha,status,conclusion
+gh run download "$ALPHA_SBOM_RUN" --dir "$ALPHA_EVIDENCE/sbom-artifacts"
+python3 scripts/collect-sbom.py --verify "$ALPHA_EVIDENCE/sbom-artifacts/$ALPHA_SBOM_ARTIFACT"
+```
+
+Select the run/artifact variables from that exact head; do not substitute a main
+or predecessor artifact. Require 17 matching metadata component names/versions
+and dependency inventories. Verify negative missing/duplicate/foreign/stale cases
+in `scripts/tests/test_collect_sbom.py` and workflow-command negative fixtures.
+
+## Focused regression map
+
+| Finding | Focused commands / assertions |
+| --- | --- |
+| F1 | `cargo test --locked -p gr-controller-runtime reverse_delivery`; full/zero queues, close/Drop, concurrent publish/close, panic and callback self-close |
+| F2 | `cargo test --locked -p virtualgamepad-demo --all-features discovery`; stale/coalesced/no-respawn/crash, bounded commands/descendants and stalled discovery with continued service/removal/shutdown |
+| F3 | `cargo test --locked -p gr-curated-controllers all_hid_protocols_observe_lifecycle`; `cargo test --locked -p virtualgamepad --lib`; ordered lifecycle conversion for all four families and existing observation overflow/required reply coverage |
+| F4/F5 | Forced minimum compiler across workspace targets/features; newer-syntax negative fixture and actual remote MSRV log |
+| F6/F7 | Python suite, command inventory, worker validators, local and downloaded exact-head SBOM identity checks |
+| A1 | `cargo test --locked -p gr-audio-linux --features pipewire --test pipewire_live marker`; preserve duplicate/corrupt/partial-frame/producer-drain regressions and explicit protocol probe unit test |
+| A2 | `cargo test --locked -p gr-curated-controllers dualshock4::evdev::tests`; presentation, topology, both contacts/releases, arbitrary removal, partial rollback, snapshot retry/feedback; root `supporting_companion` test |
+| A3 | `cargo test --locked -p gr-privileged-broker --lib`; all compiled GET IDs reply-or-reject in one poll, terminal invalidation, initiating/cleanup error retention, framing/FD/admission/recovery; existing full HID/USB report-class tests |
+| A4 | `cargo test --locked -p virtualgamepad-demo --all-features`; 1,024-position selection/removal plus retained lockout/routing/error/layout/service tests; selected live tests and real GUI soak are separate evidence |
+
+Run selected live tests individually; ignored suites contain child entrypoints.
+Never blanket-enable them. Preflight is read-only:
+
+```bash
+python3 scripts/host-preflight.py all
+timeout --signal=TERM --kill-after=5 30 cargo test --locked -p virtualgamepad --test root_uhid_live all_families_service_start_and_close_siblings_independently -- --ignored --exact --nocapture
+timeout --signal=TERM --kill-after=5 15 cargo test --locked -p virtualgamepad --test root_uhid_live root_identity_restoration_uses_fresh_session_and_preserves_logical_identity -- --ignored --exact --nocapture
+python3 scripts/run-pipewire-audio-lab.py --timeout 45 -- cargo test --locked -p virtualgamepad --all-features --test root_audio_live all_family_root_audio_creation_service_and_terminal_cleanup -- --ignored --exact --nocapture
+python3 scripts/run-pipewire-audio-lab.py --timeout 45 -- cargo test --locked -p virtualgamepad --all-features --test root_audio_live all_family_root_audio_bounded_pcm_and_hid_threads -- --ignored --exact --nocapture
+python3 scripts/run-pipewire-audio-lab.py --timeout 45 -- cargo test --locked -p gr-audio-linux --features pipewire --test pipewire_live pipewire_close_during_processing_retains_clocks_and_recreates -- --ignored --exact --nocapture
+```
+
+These tests use neutral owned UHID devices and private graphs. Check exact owned
+node removal, sibling survival and graph child/socket cleanup after each run.
+Never remove pre-existing resources. Device-node permissions alone do not prove
+kernel registration, broker authorization or binary provenance. Do not provision
+modules, replace existing services, alter persistent routing or enable privileged
+jobs as part of this review.
+
+## Sustained acceptance and reviewer rejection criteria
+
+For each of `dualsense`, `dualshock4`, `xbox360`, run three trials per direction:
+`latency_graph_source_to_library_samples`, `latency_graph_library_microphone`,
+`latency_graph_native_playback`, `latency_graph_native_microphone`. Also run
+`latency_graph_duplex` for each of `samples-samples`, `samples-native`,
+`native-samples`, `native-native`. Set family/ownership explicitly, preserve each
+failure and continue recording the matrix rather than stopping at its first fail.
+
+Example single trial (repeat with independently recorded status three times):
+
+```bash
+VIRTUALGAMEPAD_AUDIO_FAMILY=dualsense VIRTUALGAMEPAD_AUDIO_TRIAL_SECONDS=62 VIRTUALGAMEPAD_AUDIO_OWNERSHIP=native-native python3 scripts/run-pipewire-audio-lab.py --quantum 512 --timeout 90 -- cargo test --locked -p gr-audio-linux --features pipewire --test pipewire_live latency_graph_duplex -- --ignored --exact --nocapture
+cargo build --locked -p virtualgamepad-demo --no-default-features --example gui_soak
+timeout --signal=TERM --kill-after=5 7260 target/debug/examples/gui_soak 7200
+```
+
+Record warm-up, actual generated frames, graph clocks, queue drops/underruns,
+missing/duplicate markers, client counts, drain and teardown. A planned 62-second
+source does not alone prove 60 seconds of valid measured continuity. Slow graph
+progress, incomplete production or drain timeout is a failure, not an omitted
+cell. No missing-marker assertion or p99 threshold may be relaxed. Current matrix
+runs overlap the GUI soak/build activity and are VM stress evidence; repeat on a
+prepared host without competing review work before accepting latency.
+
+The GUI example performs real rendering with two neutral owned UHID controllers,
+per-minute remove/recreate, RSS/FD/thread samples and normal application teardown.
+It does not establish manual keyboard accessibility, audio routing stability under
+real-device changes, or selection of hundreds of live devices. Deterministic tests
+cover arbitrary selection positions and routing/lockout behavior separately.
+
+Reject a claim of complete resolution if any of these occurs:
+
+- A former defect lacks a meaningful regression or a regression is weakened.
+- Discovery still blocks required service, leaks readers/children, signals reaped
+  process IDs, processes stale results or spawns per frame.
+- Subscription termination can race into deadlock or lose accepted finite events.
+- Lifecycle callbacks replace required handling, reorder events without loss
+  accounting, or synthesize application-close host events.
+- DS4 retains SDL classification by silently dropping contacts, loses feedback,
+  misreports associated identity, or leaks one node after partial creation/close.
+- A protocol request lacks an exact reply or explicit terminal rejection; dummy_hcd
+  STALL/type parity is claimed despite the UAPI limitation.
+- Producer/graph/queue/client/drain accounting is conflated, marker errors are
+  waived, or protocol fixtures are presented as sustained live acceptance.
+- MSRV logs show the newer override or SBOM omits/misidentifies a workspace package.
+- A skipped privileged workflow, socket availability, issue closure, VM timing or
+  historical review is promoted to current required acceptance.
+- Final SHA, source tree, exact-Git consumer lock/report or native/security CI
+  differs from the candidate being reviewed, or cleanup is not accounted for.
+
+An engineering review may accept the minimal fixes while leaving documented
+external gates. An unconditional alpha recommendation requires passing all
+implemented paths, including WIP, with the missing live/consumer/physical/native
+acceptance supplied. Current failed audio continuity prevents that recommendation.
