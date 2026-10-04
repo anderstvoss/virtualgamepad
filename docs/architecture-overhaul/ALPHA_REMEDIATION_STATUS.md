@@ -40,6 +40,29 @@ external-tester reproduction. A VM that cannot qualify independently remains
 unqualified for sustained audio; exact-candidate qualified native results may close
 native acceptance while VM failures remain visible. PR #133 stays draft.
 
+#### Committed control run and delivery checkpoint
+
+The acceptance driver ran at `c77b0012868ef79160a716613c6d530fa4bc184a`.
+Its three C controls negotiated 48 kHz stereo and submitted every planned frame;
+missing counts were 273,920 / 211,712 / 258,048, with 0 / 0 / 1,536 duplicates
+and no invalid/partial markers. Direct Rust graph controls independently missed
+2,048 / 3,584 / 5,120 frames. All six trials failed. The driver records all 72
+product cells as **blocked**, not executed or passed; slow-consumer reruns are
+also blocked by qualification. Historical product failures are retained below.
+
+Source/tooling delivery checkpoint: `f40dda0786751240fd75acfa5e41708a8223fe06`,
+tree `36d7953874943f636dde56dc34d7e31e9164ac88`. The change after the control run
+only strengthens provider-lab original-installation fingerprints and tests; audio
+control/product sources are identical. Later delivery documentation commits must
+be pinned in the external final-revision receipt and revalidated with exact-head
+CI and Git consumers. The source bundle/build manifest is generated from the
+final delivery head, not inferred from older binaries.
+
+This continuation added no Cargo dependencies and changed no persistent host
+configuration. An isolated desktop, four physical references, an administrator-run
+provider window and external native results remain required. The previous two-hour
+soak is historical; its requested final-candidate repeat remains unperformed.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
@@ -75,7 +98,7 @@ and proprietary XInput require truthful rejection, not implementation here.
 | F8 / P2 | Entry documents contradict demo defaults, topology and issue status | README, application/audio/support/demo docs and historical ledger annotations | Root defaults empty; demo ALSA/WIP USB/IP defaults distinguished; #112 closure is not native acceptance; new DS4 topology and lifecycle semantics documented. Historical failures preserved. |
 | A1 / P1 | Samples/native audio loses markers even with zero reported queue drops | Marker producer accounting, graph-clock diagnostics, queue/drop/underrun counters, per-marker client accounting and explicit drain; simultaneous duplex for all four ownership combinations | Deterministic duplicate/corrupt/partial-frame and producer/drain tests pass. Protocol fixture now primes exact microphone frames before READY. **Continuity unresolved; assertions unchanged; PR stays draft.** |
 | A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Current host lacks registered uinput; production SDL/touch acceptance blocked. |
-| A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Exhaustive compiled profile/ID reply-or-terminal-rejection test; unknown GET becomes terminal so registry unbinds its owned gadget; initiating + cleanup errors retained for terminal requests and failed construction | Broker admission/peer/FD/framing/recovery and worker process validators pass. Kernel f_hid exposes ID only and no STALL operation: full report-type/length parity **not certified**. Installed/root prerequisites remain external. |
+| A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Current provider/direct-open/daemon admission rejects incomplete f_hid semantics before construction; separate reversible installed-provider lab preserves original image/config/unit fingerprints and global lock | All-family/repeated rejection and zero-factory-admission regressions pass; earlier protocol/cleanup tests retained. Full gadget parity is explicitly unavailable. Installed audio-provider/security/recovery acceptance remains blocked on administrator execution. |
 | A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. Two-hour live soak exits successfully; exact owned UHID nodes removed, private graph processes/directories absent. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
 
 Source paths in this table are relative to the repository (`gr-*` sources are

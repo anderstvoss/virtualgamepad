@@ -27,7 +27,9 @@ Review PR [#133](https://github.com/anderstvoss/virtualgamepad/pull/133) against
 whether each code correction is sound and whether its evidence is sufficient.
 Do not infer alpha readiness from green CI. Audio continuity remains failed;
 privileged/physical/native-host acceptance remains incomplete. Keep the PR draft
-while any audio-continuity failure remains. Do not merge or publish a release.
+while required native evidence is absent or product continuity fails on a qualified
+acceptance host. Historical or independently unqualified VM failures stay recorded
+without becoming a native-host claim. Do not merge or publish a release.
 
 Use [the disposition matrix](ALPHA_REMEDIATION_STATUS.md) for F1–F8/A1–A4. This
 handoff is self-contained: no earlier conversation or private agent memory is

@@ -83,6 +83,9 @@ Restoration attempts run after setup/test failure, timeout and interruption, and
 retain initiating and cleanup errors. Changed path identities, running candidate
 units, remaining attachments or nonempty journals prevent deletion. Failed cleanup
 must be investigated; rerunning is not permission to erase retained evidence.
+Original binaries, configuration and unit fragments are fingerprinted and checked
+before restoration. A changed original installation requires operator review;
+the runner must not overwrite another administrator's concurrent changes.
 
 The unauthorized identity is a prerequisite for a separately run peer-denial test;
 the runner does not claim that merely supplying its UID executes that test.
