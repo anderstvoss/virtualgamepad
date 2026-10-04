@@ -1049,6 +1049,54 @@ mod tests {
     }
 
     #[test]
+    fn every_compiled_feature_id_replies_or_rejects_in_one_poll() {
+        for kind in [
+            CompiledControllerKind::DualSense,
+            CompiledControllerKind::DualShock4,
+            CompiledControllerKind::SwitchPro,
+            CompiledControllerKind::Xbox360,
+        ] {
+            let gadget = FakeHidGadget::default();
+            let mut session = DummyHcdSession {
+                root: PathBuf::from("/unused"),
+                hidg: PathBuf::from("/unused/hidg"),
+                io: Box::new(gadget.clone()),
+                serial: "synthetic-feature-identity".into(),
+                profile: profile(kind),
+                udc: String::new(),
+                closed: true,
+                access: None,
+            };
+            let known = session.features();
+            for id in 0..=u8::MAX {
+                gadget
+                    .events
+                    .lock()
+                    .unwrap()
+                    .push_back(HidGadgetEvent::GetReport(id));
+                let result = session.poll_reverse();
+                let replies = std::mem::take(&mut *gadget.replies.lock().unwrap());
+                if let Some((_, data)) = known.iter().find(|(known_id, _)| *known_id == id) {
+                    assert_eq!(result.unwrap(), None);
+                    assert_eq!(replies, vec![(id, data.clone(), true)]);
+                } else {
+                    assert!(result.is_err());
+                    assert!(
+                        replies.is_empty(),
+                        "unsupported reports cannot pretend to succeed"
+                    );
+                }
+                assert!(
+                    gadget.events.lock().unwrap().is_empty(),
+                    "request consumed in this poll"
+                );
+            }
+            session.close().unwrap();
+            session.close().unwrap();
+        }
+    }
+
+    #[test]
     fn unknown_get_report_is_terminal_instead_of_silent_success() {
         let gadget = FakeHidGadget::default();
         gadget

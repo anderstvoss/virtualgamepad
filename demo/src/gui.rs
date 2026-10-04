@@ -4164,6 +4164,46 @@ mod tests {
     }
 
     #[test]
+    fn stalled_discovery_does_not_block_service_removal_or_shutdown() {
+        let (discovery_started_tx, discovery_started) = mpsc::sync_channel(1);
+        let mut discovery = host_audio::Discovery::with_runner(move |_, generation, expected| {
+            discovery_started_tx.send(()).unwrap();
+            while generation.load(std::sync::atomic::Ordering::Acquire) == expected {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err("cancelled fake discovery".into())
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            discovery.poll(host_audio::HostBackend::PipeWire);
+            if discovery_started.try_recv().is_ok() {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        let (sender, receiver) = mpsc::channel();
+        let worker = spawn_service_worker(FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        });
+        for _ in 0..3 {
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+        assert_eq!(worker.stop().unwrap().closed, 1);
+        assert!(
+            discovery.result.is_none(),
+            "discovery is still stalled during controller removal"
+        );
+        let before = Instant::now();
+        drop(discovery);
+        assert!(
+            before.elapsed() < Duration::from_secs(2),
+            "shutdown cancels discovery"
+        );
+    }
+
+    #[test]
     fn removing_one_worker_preserves_another_workers_service() {
         let first = FakeService::default();
         let (sender, receiver) = mpsc::channel();
@@ -4703,6 +4743,28 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn selection_and_removal_preserve_positions_beyond_the_viewport() {
+        for count in [12, 257, 1024] {
+            assert_eq!(controller_tab_indices(count).count(), count);
+            for position in 0..count {
+                let selected = selection_after_controller_click(Some(0), position, true);
+                assert_eq!(selected, Some(position));
+                let remaining = count - 1;
+                assert_eq!(
+                    selection_after_removal(remaining, position, selected),
+                    Some(position.min(remaining - 1))
+                );
+                if position > 0 {
+                    assert_eq!(
+                        selection_after_removal(remaining, 0, selected),
+                        Some(position - 1)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -146,7 +146,7 @@ impl Default for Discovery {
     }
 }
 impl Discovery {
-    fn with_runner(
+    pub(super) fn with_runner(
         runner: impl Fn(HostBackend, &AtomicU64, u64) -> Result<DiscoveryResult, String>
         + Send
         + 'static,
@@ -203,9 +203,16 @@ impl Discovery {
             }
         }
         if let Some(request) = self.pending.take() {
-            if let Err(mpsc::TrySendError::Full(request)) = self.requests.try_send(request) {
-                self.pending = Some(request);
+            match self.requests.try_send(request) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(request)) => self.pending = Some(request),
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    self.result = Some(Err("audio discovery worker stopped".into()));
+                }
             }
+        }
+        if self.result.is_none() && self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+            self.result = Some(Err("audio discovery worker stopped".into()));
         }
     }
 }
@@ -653,6 +660,34 @@ mod tests {
         let before = std::time::Instant::now();
         drop(discovery);
         assert!(before.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn discovery_worker_failure_is_visible_without_respawning() {
+        let mut discovery = Discovery::with_runner(|_, _, _| panic!("synthetic worker crash"));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while discovery.result.is_none() {
+            discovery.poll(HostBackend::PipeWire);
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            discovery
+                .result
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap_err()
+                .contains("worker stopped")
+        );
+        let generation = discovery.generation.load(Ordering::Acquire);
+        for _ in 0..32 {
+            discovery.poll(HostBackend::PipeWire);
+        }
+        assert_eq!(discovery.generation.load(Ordering::Acquire), generation);
+        discovery.refresh(HostBackend::PipeWire);
+        discovery.poll(HostBackend::PipeWire);
+        assert!(discovery.result.as_ref().unwrap().is_err());
     }
 
     #[test]
