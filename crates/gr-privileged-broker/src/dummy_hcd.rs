@@ -395,8 +395,16 @@ impl HostSession for DummyHcdSession {
                     .find(|(feature, _)| *feature == id)
                 {
                     self.reply(id, &data, true)?;
+                    Ok(None)
+                } else {
+                    // f_hid exposes only an ID, without report type or STALL.
+                    // A terminal error makes the registry unbind this owned
+                    // gadget, cancelling the request rather than silently
+                    // leaving it pending until the kernel zero-fill timeout.
+                    Err(host(&format!(
+                        "unsupported dummy_hcd GET_REPORT ID {id:#04x}; f_hid cannot express a negative acknowledgement"
+                    )))
                 }
-                Ok(None)
             }
         }
     }
@@ -1038,6 +1046,34 @@ mod tests {
         assert!(replies[0].2);
         drop(replies);
         assert_eq!(session.poll_reverse().unwrap(), Some(vec![2, 7]));
+    }
+
+    #[test]
+    fn unknown_get_report_is_terminal_instead_of_silent_success() {
+        let gadget = FakeHidGadget::default();
+        gadget
+            .events
+            .lock()
+            .unwrap()
+            .push_back(HidGadgetEvent::GetReport(0xff));
+        let mut session = DummyHcdSession {
+            root: PathBuf::from("/unused"),
+            hidg: PathBuf::from("/unused/hidg"),
+            io: Box::new(gadget.clone()),
+            serial: "synthetic".into(),
+            profile: profile(CompiledControllerKind::DualSense),
+            udc: String::new(),
+            closed: true,
+            access: None,
+        };
+        let error = session.poll_reverse().unwrap_err().to_string();
+        assert!(error.contains("unsupported dummy_hcd GET_REPORT ID 0xff"));
+        assert!(
+            gadget.replies.lock().unwrap().is_empty(),
+            "do not invent a successful zero report or STALL"
+        );
+        session.close().unwrap();
+        session.close().unwrap();
     }
 
     #[test]
