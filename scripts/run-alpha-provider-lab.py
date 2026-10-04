@@ -94,6 +94,27 @@ def free_port(text, selected):
         raise RuntimeError('selected VHCI port is absent or occupied')
 
 
+def require_no_clients(text, pid, journald_pid=None):
+    rows = [line.split() for line in text.splitlines()]
+    owner = re.compile(r'pid=' + str(pid) + r',fd=(\d+)\)')
+    for row in rows:
+        fds = {int(value) for value in owner.findall(' '.join(row))}
+        if not fds:
+            continue
+        # Stdio may be a systemd journal stream. Exempt it only when the
+        # configured journal peer and the reciprocal socket identity are proven.
+        if (journald_pid and fds <= {1, 2} and len(row) >= 9 and
+                row[:2] == ['u_str', 'ESTAB']):
+            peers = [peer for peer in rows if len(peer) >= 9 and
+                     peer[:2] == ['u_str', 'ESTAB'] and
+                     peer[4] == '/run/systemd/journal/stdout' and
+                     peer[5] == row[7] and peer[7] == row[5] and
+                     re.search(r'pid=' + str(journald_pid) + r',fd=\d+\)', ' '.join(peer))]
+            if len(peers) == 1:
+                continue
+        raise RuntimeError('installed broker has connected clients or unverified sockets')
+
+
 def maintenance(backend):
     saved = backend.snapshot()
     backend.preflight(saved)
@@ -172,9 +193,13 @@ class Host:
         current = self.snapshot()
         pid = int(current[ORIGINAL[1]]['MainPID'])
         sockets = self.run(['ss', '-H', '-xnp', 'state', 'connected'])
-        if pid and re.search(r'pid=' + str(pid) + r'[,)]', sockets):
-            raise RuntimeError('installed broker has connected clients')
         if pid:
+            logging = dict(line.split('=', 1) for line in self.run(
+                ['systemctl', 'show', ORIGINAL[1], '-p', 'StandardOutput', '-p', 'StandardError']).splitlines())
+            journald_pid = None
+            if logging.get('StandardOutput') == 'journal' and logging.get('StandardError') in ('journal', 'inherit'):
+                journald_pid = int(self.run(['systemctl', 'show', 'systemd-journald.service', '-p', 'MainPID', '--value']).strip())
+            require_no_clients(sockets, pid, journald_pid)
             listeners = self.run(['ss', '-H', '-xlnp'])
             owned = [line.split() for line in listeners.splitlines()
                      if re.search(r'pid=' + str(pid) + r'[,)]', line)]

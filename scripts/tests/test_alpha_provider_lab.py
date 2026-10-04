@@ -43,6 +43,21 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_verified_journal_stdio_is_not_an_application_client(self):
+        stdio = 'u_str ESTAB 0 0 * 101 * 202 users:(("fake",pid=42,fd=2),("fake",pid=42,fd=1))'
+        journal = 'u_str ESTAB 0 0 /run/systemd/journal/stdout 202 * 101 users:(("journal",pid=7,fd=9))'
+        lab.require_no_clients(stdio + '\n' + journal, 42, 7)
+        for text, peer in ((stdio, 7), (stdio + '\n' + journal, None),
+                           (stdio + '\n' + journal, 8),
+                           (stdio.replace('fd=2', 'fd=4') + '\n' + journal, 7),
+                           (stdio + '\n' + journal.replace('202', '303'), 7),
+                           (stdio + '\n' + journal + '\n' + journal, 7)):
+            with self.assertRaisesRegex(RuntimeError, 'connected clients'):
+                lab.require_no_clients(text, 42, peer)
+        client = 'u_str ESTAB 0 0 /run/virtualgamepad/broker.sock 303 * 404 users:(("fake",pid=42,fd=5))'
+        with self.assertRaisesRegex(RuntimeError, 'connected clients'):
+            lab.require_no_clients(stdio + '\n' + journal + '\n' + client, 42, 7)
+
     def test_staging_uses_trusted_executable_filesystem_not_run(self):
         with patch.object(lab, 'trusted'), patch.object(lab.os, 'statvfs', return_value=Mock(f_flag=0)), patch.object(lab.tempfile, 'mkdtemp', return_value='/synthetic/stage') as create:
             self.assertEqual(lab.allocate_staging_directory(), Path('/synthetic/stage'))

@@ -88,7 +88,12 @@ failed before service changes because `/run` is mounted `noexec`. The runner now
 stages binaries under a trusted executable `/var/lib` filesystem and rejects
 `noexec` staging during preflight, with deterministic regressions. Executable
 wrapper delegation must be reprovisioned there; the failed launch establishes no
-installed-provider acceptance. The final external receipt
+installed-provider acceptance. The corrected delegation then refused before service
+changes because the idle check counted systemd journal stdout/stderr as clients.
+It now excludes only stdio sockets with verified reciprocal journald endpoints
+and the configured journal process; real clients and unknown sockets still reject.
+A deterministic regression covers both admission and refusal cases. No successful
+privileged run is claimed by either failed attempt. The final external receipt
 pins the test correction separately from the qualification revision above.
 
 This continuation added no Cargo dependencies and changed no persistent host
