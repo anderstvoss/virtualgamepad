@@ -34,7 +34,16 @@ def matrix():
 
 def digest(path):
     with path.open('rb') as source:
-        return hashlib.file_digest(source, 'sha256').hexdigest()
+        result = hashlib.sha256()
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            result.update(chunk)
+        return result.hexdigest()
+
+
+def ensure_candidate(root, revision):
+    if (subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip() != revision or
+            subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip()):
+        raise RuntimeError('candidate changed during preparation; build evidence is invalid')
 
 
 def private_test(command, logfile, timeout, env=None):
@@ -68,7 +77,7 @@ def prepare(root, report):
         event = json.loads(line)
         if event.get('reason') == 'compiler-artifact' and event.get('executable'):
             name = event['target']['name']
-            if name in ('pipewire_live', 'gr-privileged-broker', 'gr-audio-worker', 'gui_soak'):
+            if name in ('pipewire_live', 'gr-privileged-broker', 'gr-audio-worker', 'gui_soak', 'usb_audio_probe'):
                 # Do not select a binary's unit-test harness as the installed daemon.
                 if event['profile']['test'] and name != 'pipewire_live':
                     continue
@@ -81,8 +90,13 @@ def prepare(root, report):
                     '-o', str(control), *flags], check=True)
     binaries['independent-control'] = control
     subprocess.run([str(control), '--self-test'], check=True)
+    ensure_candidate(root, revision)
     receipt = dict(revision=revision, tree=tree, lockfile_sha256=digest(root / 'Cargo.lock'),
                    compiler=subprocess.check_output(['rustc', '-vV'], text=True), build_command=command,
+                   c_compiler=subprocess.check_output(['cc', '--version'], text=True).splitlines()[0],
+                   c_flags=['-Wall', '-Wextra', '-Werror', *flags],
+                   build_environment={k: os.environ[k] for k in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS',
+                       'CARGO_BUILD_TARGET', 'RUSTUP_TOOLCHAIN') if k in os.environ},
                    binaries={name: dict(path=str(path), sha256=digest(path)) for name, path in binaries.items()})
     (report / 'build-receipt.json').write_text(json.dumps(receipt, indent=2) + '\n')
     subprocess.run(['git', 'archive', '--format=tar', '--output=' + str(report / 'candidate-source.tar'), revision],
@@ -97,7 +111,7 @@ def main():
     parser.add_argument('--native', action='store_true')
     args = parser.parse_args()
     root = Path(__file__).resolve().parent.parent
-    report = args.report_dir.absolute()
+    report = args.report_dir.resolve()
     if report == root or root in report.parents:
         parser.error('report directory must be outside the checkout')
     report.mkdir(mode=0o700)  # Refuse accidental reuse/overwrite of evidence.

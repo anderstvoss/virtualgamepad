@@ -5,6 +5,8 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import os
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('control', Path(__file__).parents[1] / 'run-alpha-audio-control.py')
 control = importlib.util.module_from_spec(spec)
@@ -12,6 +14,20 @@ spec.loader.exec_module(control)
 
 
 class MarkerReceipt(unittest.TestCase):
+    def test_timed_out_control_terminates_and_reaps_owned_loopback(self):
+        with tempfile.TemporaryDirectory(prefix='virtualgamepad-pw-lab-') as directory:
+            loop = Mock()
+            loop.poll.return_value = None
+            name = 'alpha-independent-' + str(os.getpid())
+            nodes = '[{"info":{"props":{"node.name":"' + name + '.sink"}}},{"info":{"props":{"node.name":"' + name + '.source"}}}]'
+            with patch.dict(os.environ, PIPEWIRE_RUNTIME_DIR=directory, XDG_RUNTIME_DIR=directory, PIPEWIRE_REMOTE='pipewire-0'), \
+                 patch.object(control.subprocess, 'Popen', return_value=loop), \
+                 patch.object(control.subprocess, 'check_output', return_value=nodes), \
+                 patch.object(control.subprocess, 'run', side_effect=subprocess.TimeoutExpired('fake-control', 20)):
+                with self.assertRaises(subprocess.TimeoutExpired): control.inside(Path('/synthetic/control'), 2)
+            loop.terminate.assert_called_once()
+            loop.wait.assert_called_once_with(timeout=2)
+
     def receipt(self):
         row = dict(planned=2880000, generated=2880000, graph_submitted=2880000,
                     graph_received=2880000, missing=0, duplicate=0, invalid=0,
