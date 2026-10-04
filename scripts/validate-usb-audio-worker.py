@@ -39,7 +39,7 @@ def trial(worker, family, channels, microphones):
     process = None
     with peer, child:
         peer.settimeout(2)
-        process = subprocess.Popen([str(worker), family, str(0x10001), '1'],
+        process = subprocess.Popen([str(worker), family, str(0x10001), '1', '--protocol-fixture'],
                                    stdin=child, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         child.close()
         try:

@@ -12,6 +12,7 @@ use std::{
 pub struct Source {
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    generated: Option<Arc<AtomicU64>>,
 }
 impl Source {
     pub fn start(
@@ -22,6 +23,8 @@ impl Source {
     ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let generated = Arc::new(AtomicU64::new(0));
+        let worker_generated = Arc::clone(&generated);
         let worker = thread::spawn(move || {
             pw::init();
             let main = pw::main_loop::MainLoopRc::new(None).unwrap();
@@ -56,21 +59,14 @@ impl Source {
                     let stride = channels * 2;
                     let frames = requested.min(bytes.len() / stride);
                     let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
-                    for frame in bytes[..frames * stride].chunks_exact_mut(stride) {
-                        let block = position / 128;
-                        let marker = if block < stamps.len() {
-                            if position % 128 == 0 {
-                                stamps[block].store(now, Ordering::Release);
-                            }
-                            i16::try_from(block + 1).unwrap()
-                        } else {
-                            0
-                        };
-                        for sample in frame.chunks_exact_mut(2) {
-                            sample.copy_from_slice(&marker.to_le_bytes());
-                        }
-                        position += 1;
-                    }
+                    let markers = fill_markers(
+                        &mut bytes[..frames * stride],
+                        channels,
+                        &mut position,
+                        &stamps,
+                        now,
+                    );
+                    worker_generated.fetch_add(markers as u64, Ordering::Release);
                     let chunk = data.chunk_mut();
                     *chunk.offset_mut() = 0;
                     *chunk.stride_mut() = i32::try_from(stride).unwrap();
@@ -100,7 +96,14 @@ impl Source {
         Self {
             stop,
             worker: Some(worker),
+            generated: Some(generated),
         }
+    }
+    pub fn generated_frames(&self) -> u64 {
+        self.generated
+            .as_ref()
+            .expect("producer accounting")
+            .load(Ordering::Acquire)
     }
 }
 impl Drop for Source {
@@ -113,6 +116,46 @@ impl Drop for Source {
             }
         }
     }
+}
+
+// Counts only non-silent marker frames actually submitted by the producer.
+fn fill_markers(
+    bytes: &mut [u8],
+    channels: usize,
+    position: &mut usize,
+    stamps: &[AtomicU64],
+    now: u64,
+) -> usize {
+    let mut generated = 0;
+    for frame in bytes.chunks_exact_mut(channels * 2) {
+        let block = *position / 128;
+        let marker = if block < stamps.len() {
+            if *position % 128 == 0 {
+                stamps[block].store(now, Ordering::Release);
+            }
+            generated += 1;
+            i16::try_from(block + 1).unwrap()
+        } else {
+            0
+        };
+        for sample in frame.chunks_exact_mut(2) {
+            sample.copy_from_slice(&marker.to_le_bytes());
+        }
+        *position += 1;
+    }
+    generated
+}
+
+#[test]
+fn producer_accounting_distinguishes_generated_markers_from_silent_drain() {
+    let stamps = [AtomicU64::new(0), AtomicU64::new(0)];
+    let mut position = 0;
+    let mut bytes = [0; 260 * 4];
+    assert_eq!(fill_markers(&mut bytes, 2, &mut position, &stamps, 37), 256);
+    assert_eq!(position, 260);
+    assert_eq!(stamps.map(|stamp| stamp.load(Ordering::Acquire)), [37, 37]);
+    assert!(bytes[256 * 4..].iter().all(|byte| *byte == 0));
+    assert_eq!(i16::from_le_bytes([bytes[128 * 4], bytes[128 * 4 + 1]]), 2);
 }
 
 fn format_bytes(channels: usize) -> Vec<u8> {
@@ -186,7 +229,7 @@ impl Observations {
             usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap(),
         )
     }
-    fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
+    pub fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
         if channels == 0 || bytes.len() % (channels * 2) != 0 {
             self.invalid.fetch_add(1, Ordering::Relaxed);
             return;
@@ -303,6 +346,7 @@ pub fn capture(
     Source {
         stop,
         worker: Some(worker),
+        generated: None,
     }
 }
 
