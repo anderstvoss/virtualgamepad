@@ -83,7 +83,12 @@ removal of every component. Its deterministic regression rejects missing, foreig
 and duplicate components. The corrected bounded live run passes all four families,
 both normal feedback and consumer-death cleanup. DS4 reports two removed nodes.
 This is neutral-state/feedback acceptance; contact injection, SDL/physical parity
-and the isolated desktop checks remain unperformed. The final external receipt
+and the isolated desktop checks remain unperformed. An administrator provisioned the first bounded broker delegation, but launch
+failed before service changes because `/run` is mounted `noexec`. The runner now
+stages binaries under a trusted executable `/var/lib` filesystem and rejects
+`noexec` staging during preflight, with deterministic regressions. Executable
+wrapper delegation must be reprovisioned there; the failed launch establishes no
+installed-provider acceptance. The final external receipt
 pins the test correction separately from the qualification revision above.
 
 This continuation added no Cargo dependencies and changed no persistent host

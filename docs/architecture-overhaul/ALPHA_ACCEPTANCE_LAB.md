@@ -82,7 +82,11 @@ Record effective client UID/GID, supplementary groups and capability sets in liv
 receipts; deterministic command-argument tests cannot establish actual privileges.
 The runner stops only the verified idle
 original broker/socket, stages hash-verified candidate images and a separate policy,
-and creates temporary socket-activated units. Clients see the private candidate
+and creates temporary socket-activated units. Candidate binaries use an owned
+temporary directory under `/var/lib`, whose filesystem must permit execution.
+`/run` commonly has `noexec`; keep delegated executable wrappers on a trusted
+executable filesystem too. The runner checks this prerequisite before stopping
+services and removes only its remembered staging directory during restoration. Clients see the private candidate
 socket through a mount mapping. The worker binary has a private read-only mapping;
 the real global ownership lock and separate candidate journals remain intact.
 

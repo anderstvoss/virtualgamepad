@@ -24,6 +24,7 @@ import time
 
 STATE = Path('/run/virtualgamepad-state')
 VHCI = Path('/sys/devices/platform/vhci_hcd.0/status')
+STAGING_PARENT = Path('/var/lib')
 OUTPUT_LIMIT = 1024 * 1024
 ORIGINAL = ('virtualgamepad-broker.socket', 'virtualgamepad-broker.service')
 
@@ -33,6 +34,18 @@ def trusted(path, directory=False):
     if (meta.st_uid != 0 or meta.st_mode & 0o022 or
             not (stat.S_ISDIR(meta.st_mode) if directory else stat.S_ISREG(meta.st_mode))):
         raise RuntimeError('expected root-owned, non-symlink, non-writable lab path')
+
+
+def require_executable_staging():
+    for parent in (STAGING_PARENT, *STAGING_PARENT.parents):
+        trusted(parent, directory=True)
+    if os.statvfs(STAGING_PARENT).f_flag & os.ST_NOEXEC:
+        raise RuntimeError('candidate staging filesystem is noexec; refusing maintenance')
+
+
+def allocate_staging_directory():
+    require_executable_staging()
+    return Path(tempfile.mkdtemp(prefix='virtualgamepad-alpha-', dir=STAGING_PARENT))
 
 
 def identity(path):
@@ -182,6 +195,7 @@ class Host:
             raise RuntimeError('existing bound gadgets require operator ownership review')
 
     def preflight(self, saved):
+        require_executable_staging()
         trusted(STATE, directory=True)
         trusted(Path('/usr/bin/setpriv'))
         self.assert_idle(saved)
@@ -231,7 +245,7 @@ class Host:
             os.fsync(output.fileno())
 
     def prepare(self):
-        self.root = Path(tempfile.mkdtemp(prefix='virtualgamepad-alpha-', dir='/run'))
+        self.root = allocate_staging_directory()
         self.remember(self.root, True)
         self.root.chmod(0o755)
         self.instance = self.root.name

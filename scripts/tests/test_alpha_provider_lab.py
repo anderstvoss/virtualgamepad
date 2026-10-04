@@ -43,6 +43,22 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_staging_uses_trusted_executable_filesystem_not_run(self):
+        with patch.object(lab, 'trusted'), patch.object(lab.os, 'statvfs', return_value=Mock(f_flag=0)), patch.object(lab.tempfile, 'mkdtemp', return_value='/synthetic/stage') as create:
+            self.assertEqual(lab.allocate_staging_directory(), Path('/synthetic/stage'))
+            self.assertEqual(create.call_args.kwargs['dir'], Path('/var/lib'))
+        with patch.object(lab, 'trusted'), patch.object(lab.os, 'statvfs', return_value=Mock(f_flag=lab.os.ST_NOEXEC)), patch.object(lab.tempfile, 'mkdtemp') as create:
+            with self.assertRaisesRegex(RuntimeError, 'noexec'):
+                lab.allocate_staging_directory()
+            create.assert_not_called()
+
+    def test_noexec_preflight_never_reaches_service_or_resource_checks(self):
+        host = lab.Host(Mock())
+        with patch.object(lab, 'require_executable_staging', side_effect=RuntimeError('noexec')), patch.object(host, 'assert_idle') as idle:
+            with self.assertRaisesRegex(RuntimeError, 'noexec'):
+                host.preflight({})
+            idle.assert_not_called()
+
     def test_verbose_validator_hits_output_quota_instead_of_unbounded_capture(self):
         host = lab.Host(Mock())
         with self.assertRaises(subprocess.CalledProcessError):
