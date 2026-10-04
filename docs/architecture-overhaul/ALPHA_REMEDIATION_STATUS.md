@@ -62,6 +62,30 @@ final delivery head, not inferred from older binaries.
 
 Four individually bounded live checks passed at `7d7a943d15f6fac056775d6c69ad4d0d012f98e5`: identity restoration, four-family UHID lifecycle/sibling isolation, three-family root audio creation/terminal cleanup, and bounded audio/HID threads. The final external receipt records their exact-head repeat. These checks do not establish sustained continuity, installed-provider security or physical parity.
 
+#### Subsequent execution at the final delivery head
+
+A fresh quiet qualification at `ad236b06ef983f1698b64b4ba473b1433746c95b`
+produced three passing Rust direct controls, but C controls still missed
+3,072 / 1,024 / 2,048 measured frames, with no duplicates or corrupt markers.
+All 72 product cells remain blocked by independent qualification. This improves
+the observed VM result without establishing reliable sustained continuity.
+
+General sudo still requires a password, but the already-installed restricted host
+helper was discovered to have delegated access and its hash matches the reviewed
+source. It loaded missing uinput, journaled temporary creation access and restored
+the ACL afterward. No helper lease remains active; the newly loaded module is
+retained for administrator review, as required by its shared-resource policy.
+
+The first live evdev feedback run failed because its historical harness assumed
+one DS4 node. The corrected harness matches the complete creation-scoped physical
+association, selects the primary regardless of enumeration order and verifies
+removal of every component. Its deterministic regression rejects missing, foreign
+and duplicate components. The corrected bounded live run passes all four families,
+both normal feedback and consumer-death cleanup. DS4 reports two removed nodes.
+This is neutral-state/feedback acceptance; contact injection, SDL/physical parity
+and the isolated desktop checks remain unperformed. The final external receipt
+pins the test correction separately from the qualification revision above.
+
 This continuation added no Cargo dependencies and changed no persistent host
 configuration. An isolated desktop, four physical references, an administrator-run
 provider window and external native results remain required. The previous two-hour

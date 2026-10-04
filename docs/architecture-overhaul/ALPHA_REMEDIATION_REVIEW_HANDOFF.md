@@ -20,6 +20,11 @@ requires privileged receipts. Supplying an unauthorized UID does not execute a
 peer-denial test automatically. Check all root/provider/broker rejection boundaries
 and ensure no incompatible gadget can be created through a direct entrypoint.
 
+Review `evdev_feedback_live.rs` against the complete creation-scoped association:
+DS4 has two nodes, enumeration order is arbitrary, and close must remove both.
+The deterministic selection regression rejects missing/foreign/duplicate identities;
+neutral feedback acceptance does not establish contact injection or SDL parity.
+
 For audio, reject stdin-based submission claims or aggregate counts hiding marker
 loss/duplication. Inspect the independent C callback logic and negotiated format,
 then require all three controls and every sustained cell at the accepted SHA.

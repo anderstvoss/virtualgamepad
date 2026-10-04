@@ -17,6 +17,7 @@ use std::{
 trait LiveController: Sized {
     const NAME: &'static str;
     fn create() -> Self;
+    fn physical_paths(&self) -> Vec<String>;
     fn poll(&mut self, out: &mut Vec<ForceFeedbackEvent>);
     fn close(&mut self);
 }
@@ -32,6 +33,17 @@ macro_rules! live {
                 .unwrap();
                 controller.commit().unwrap();
                 controller
+            }
+            fn physical_paths(&self) -> Vec<String> {
+                let association = self.association();
+                std::iter::once(association.requested_physical_path.clone().unwrap())
+                    .chain(
+                        association
+                            .companions
+                            .iter()
+                            .map(|component| component.requested_physical_path.clone().unwrap()),
+                    )
+                    .collect()
             }
             fn poll(&mut self, out: &mut Vec<ForceFeedbackEvent>) {
                 self.poll_output(&mut |event| {
@@ -86,21 +98,85 @@ fn nodes() -> BTreeSet<PathBuf> {
         .map(|entry| entry.path())
         .collect()
 }
+// Require the complete exact creation-scoped component set. Node enumeration
+// order is arbitrary; names alone cannot distinguish siblings or foreign nodes.
+fn select_primary(
+    inventory: &[(PathBuf, String)],
+    expected: &[String],
+) -> Result<PathBuf, &'static str> {
+    if expected.is_empty() || inventory.len() != expected.len() {
+        return Err("missing or unexpected input components");
+    }
+    if expected.iter().collect::<BTreeSet<_>>().len() != expected.len() {
+        return Err("duplicate requested component identity");
+    }
+    for physical in expected {
+        if inventory
+            .iter()
+            .filter(|(_, actual)| actual == physical)
+            .count()
+            != 1
+        {
+            return Err("missing, duplicate or foreign component identity");
+        }
+    }
+    Ok(inventory
+        .iter()
+        .find(|(_, actual)| actual == &expected[0])
+        .unwrap()
+        .0
+        .clone())
+}
+#[test]
+fn component_selection_checks_complete_association_in_arbitrary_order() {
+    let gamepad = PathBuf::from("event7");
+    let touch = PathBuf::from("event2");
+    let expected = vec!["owned/gamepad".to_owned(), "owned/touch".to_owned()];
+    let inventory = vec![
+        (touch, expected[1].clone()),
+        (gamepad.clone(), expected[0].clone()),
+    ];
+    assert_eq!(select_primary(&inventory, &expected).unwrap(), gamepad);
+    assert!(select_primary(&inventory[..1], &expected).is_err());
+    let foreign = vec![
+        (PathBuf::from("event1"), "foreign/touch".to_owned()),
+        inventory[1].clone(),
+    ];
+    assert!(select_primary(&foreign, &expected).is_err());
+    let duplicate = vec![inventory[1].clone(), inventory[1].clone()];
+    assert!(select_primary(&duplicate, &expected).is_err());
+    assert!(select_primary(&inventory, &[expected[0].clone(), expected[0].clone()]).is_err());
+    assert_eq!(
+        select_primary(&inventory[1..], &expected[..1]).unwrap(),
+        gamepad
+    );
+}
 fn run<C: LiveController>(kill_after_upload: bool) {
     let before = nodes();
     let mut controller = C::create();
     thread::sleep(Duration::from_millis(500));
     let created: Vec<_> = nodes().difference(&before).cloned().collect();
-    assert_eq!(created.len(), 1, "ambiguous new input nodes; abort");
-    let sys = &created[0];
+    let inventory: Vec<_> = created
+        .iter()
+        .map(|sys| {
+            assert!(
+                fs::canonicalize(sys)
+                    .unwrap()
+                    .starts_with("/sys/devices/virtual/input")
+            );
+            (
+                sys.clone(),
+                fs::read_to_string(sys.join("device/phys"))
+                    .unwrap()
+                    .trim()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let sys = select_primary(&inventory, &controller.physical_paths()).unwrap();
     assert_eq!(
         fs::read_to_string(sys.join("device/name")).unwrap().trim(),
         C::NAME
-    );
-    assert!(
-        fs::canonicalize(sys)
-            .unwrap()
-            .starts_with("/sys/devices/virtual/input")
     );
     let node = PathBuf::from("/dev/input").join(sys.file_name().unwrap());
     let mut child = Consumer(
@@ -136,14 +212,18 @@ fn run<C: LiveController>(kill_after_upload: bool) {
     controller.close();
     drop(child);
     let cleanup = Instant::now();
-    while sys.exists() && cleanup.elapsed() < Duration::from_secs(2) {
+    while created.iter().any(|path| path.exists()) && cleanup.elapsed() < Duration::from_secs(2) {
         thread::sleep(Duration::from_millis(5));
     }
-    assert!(!sys.exists(), "session node survived close");
+    assert!(
+        created.iter().all(|path| !path.exists()),
+        "session component survived close"
+    );
     eprintln!(
-        "{{\"schema_version\":1,\"family\":\"{}\",\"path\":\"{}\",\"selected_count\":1,\"consumer_killed\":{},\"elapsed_ms\":{},\"device_removed\":true,\"consumer_reaped\":true,\"observations\":{}}}",
+        "{{\"schema_version\":1,\"family\":\"{}\",\"path\":\"{}\",\"selected_count\":{},\"consumer_killed\":{},\"elapsed_ms\":{},\"device_removed\":true,\"consumer_reaped\":true,\"observations\":{}}}",
         C::NAME,
         node.display(),
+        created.len(),
         killed,
         start.elapsed().as_millis(),
         observations.len()
