@@ -168,6 +168,7 @@ class Host:
 
     def preflight(self, saved):
         trusted(STATE, directory=True)
+        trusted(Path('/usr/bin/setpriv'))
         self.assert_idle(saved)
         # The original installation is restoration evidence, never candidate
         # provenance. Preserve exact images/configuration rather than replacing them.
@@ -260,12 +261,15 @@ class Host:
         account = pwd.getpwuid(self.args.client_uid)
         self.client_attempted = True
         self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + self.instance + '-client',
-                  '--uid=' + str(account.pw_uid), '--gid=' + str(account.pw_gid),
-                  '--property=SupplementaryGroups=', '--property=NoNewPrivileges=yes',
+                  '--property=NoNewPrivileges=yes',
+                  '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
                   '--property=PrivateMounts=yes', '--property=KillMode=control-group',
                   '--property=RuntimeMaxSec=' + str(self.args.timeout),
                   '--property=BindPaths=' + str(self.root / 'socket') + ':/run/virtualgamepad',
-                  '--', *self.args.command], timeout=self.args.timeout + 20)
+                  '--', '/usr/bin/setpriv', '--reuid=' + str(account.pw_uid),
+                  '--regid=' + str(account.pw_gid), '--clear-groups', '--bounding-set=-all',
+                  '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs', '--',
+                  *self.args.command], timeout=self.args.timeout + 20)
 
     def stop_candidate(self):
         errors = []

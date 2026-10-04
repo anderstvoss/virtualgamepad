@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('provider_lab', Path(__file__).parents[1] / 'run-alpha-provider-lab.py')
 lab = importlib.util.module_from_spec(spec)
@@ -41,6 +41,19 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_client_privilege_drop_is_explicit_before_the_validator(self):
+        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'])
+        host = lab.Host(args)
+        host.instance = 'synthetic-instance'
+        host.root = Path('/synthetic/lab')
+        host.run = Mock()
+        with patch.object(lab.pwd, 'getpwuid', return_value=Mock(pw_uid=1001, pw_gid=1002)):
+            host.execute()
+        command = host.run.call_args.args[0]
+        self.assertIn('/usr/bin/setpriv', command)
+        for flag in ('--clear-groups', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs'):
+            self.assertLess(command.index(flag), command.index('/synthetic/validator'))
+
     def test_original_image_receipt_detects_same_inode_content_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'fake-image'

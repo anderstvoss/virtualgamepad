@@ -73,7 +73,10 @@ sudo python3 -I "$TRUSTED_LAB_RUNNER" --apply \
 ```
 
 The command is executed as the client identity with supplementary groups cleared,
-NoNewPrivileges and a bounded systemd unit. The runner stops only the verified idle
+all capability sets dropped and NoNewPrivileges in a bounded systemd unit. The
+trusted util-linux `setpriv` wrapper performs the drop before validator execution;
+setting systemd's supplementary-group property alone does not clear NSS membership.
+The runner stops only the verified idle
 original broker/socket, stages hash-verified candidate images and a separate policy,
 and creates temporary socket-activated units. Clients see the private candidate
 socket through a mount mapping. The worker binary has a private read-only mapping;
