@@ -1421,6 +1421,7 @@ pub struct App {
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     backend_healthy: bool,
+    discovery: host_audio::Discovery,
 }
 impl Default for App {
     fn default() -> Self {
@@ -1441,10 +1442,43 @@ impl Default for App {
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
             backend_healthy: true,
+            discovery: host_audio::Discovery::default(),
         }
     }
 }
 impl App {
+    /// Neutral, test-owned UHID workload for the separately invoked GUI soak example.
+    #[allow(dead_code)] // Used by the validation example, not normal application startup.
+    #[allow(clippy::field_reassign_with_default)] // App owns Drop resources and cannot use struct update syntax.
+    pub(crate) fn validation_soak() -> Result<Self, String> {
+        let mut app = Self::default();
+        app.kind = Kind::DualSense;
+        app.target = RealizationId::LINUX_UHID_USB;
+        for _ in 0..2 {
+            app.create();
+        }
+        if app.controllers.len() != 2 {
+            return Err(format!("soak creation: {:?}", app.lifecycle_status));
+        }
+        Ok(app)
+    }
+    #[allow(dead_code)]
+    pub(crate) fn validation_soak_cycle(&mut self) -> Result<(), String> {
+        self.remove_controller(0);
+        self.create();
+        if self.controllers.len() != 2
+            || self.controllers.iter().any(|named| {
+                named
+                    .service_worker
+                    .as_ref()
+                    .is_none_or(|worker| worker_failure(&worker.failure).is_some())
+            })
+        {
+            return Err("GUI soak worker failed".into());
+        }
+        Ok(())
+    }
+
     fn next_default_name(&self) -> String {
         next_available_name(
             self.kind,
@@ -1722,6 +1756,30 @@ impl eframe::App for App {
                         named.view = display.snapshot.take().expect("checked snapshot");
                     }
                 }
+            }
+        }
+        if let Some(view) = self
+            .selected_controller
+            .and_then(|index| self.controllers.get(index))
+            .and_then(|named| named.audio_view.as_ref())
+        {
+            self.discovery.poll(view.routing.backend);
+        }
+        for named in &mut self.controllers {
+            if let Some(view) = named
+                .audio_view
+                .as_mut()
+                .filter(|view| self.discovery.matches(view.routing.backend))
+            {
+                if let Some(Ok(devices)) = &self.discovery.result {
+                    view.playback_devices.clone_from(&devices.playback);
+                    view.capture_devices.clone_from(&devices.capture);
+                }
+                view.discovery_status = match &self.discovery.result {
+                    None => Some("Discovering audio devices…".into()),
+                    Some(Err(error)) => Some(format!("Audio discovery: {error}")),
+                    Some(Ok(_)) => None,
+                };
             }
         }
         self.backend_healthy = backend_healthy;
@@ -2164,7 +2222,9 @@ impl eframe::App for App {
                                             self.last_cleanup.as_deref(),
                                             &mut recreation_clicked,
                                         ) {
-                                            if !named
+                                            if matches!(action, audio_lab::Action::RetryDiscovery) {
+                                                if let Some(view) = &audio_view { self.discovery.refresh(view.routing.backend); }
+                                            } else if !named
                                                 .service_worker
                                                 .as_ref()
                                                 .is_some_and(|worker| {

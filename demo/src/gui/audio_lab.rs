@@ -338,17 +338,6 @@ fn host_devices(backend: HostBackend) -> [HostDevice; 1] {
     }]
 }
 
-fn discovered_devices(
-    backend: HostBackend,
-    direction: super::host_audio::Direction,
-) -> Vec<HostDevice> {
-    if !backend.compiled() {
-        return host_devices(backend).to_vec();
-    }
-    super::host_audio::enumerate(backend, direction)
-        .unwrap_or_else(|_| host_devices(backend).to_vec())
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct InputRoute {
     pub id: String,
@@ -752,6 +741,7 @@ pub(super) enum Action {
     Tone(bool),
     Routing(RoutingState),
     RetryRouting,
+    RetryDiscovery,
 }
 #[derive(Clone, Debug)]
 pub(super) struct Activity {
@@ -811,8 +801,8 @@ impl Activity {
             peak: 0,
             tone: false,
             routing: RoutingState::for_topology(AudioTopology::for_family(family), backend),
-            playback_devices: discovered_devices(backend, super::host_audio::Direction::Playback),
-            capture_devices: discovered_devices(backend, super::host_audio::Direction::Capture),
+            playback_devices: host_devices(backend).to_vec(),
+            capture_devices: host_devices(backend).to_vec(),
             routing_error: None,
             initialized: true,
             pending: Vec::new(),
@@ -878,7 +868,7 @@ impl Activity {
                 self.routing = routing;
                 Ok(())
             }
-            Action::RetryRouting => Ok(()),
+            Action::RetryRouting | Action::RetryDiscovery => Ok(()),
         }
     }
     #[allow(clippy::too_many_lines)]
@@ -1034,6 +1024,7 @@ impl Activity {
 
 #[derive(Clone, Debug)]
 pub(super) struct View {
+    pub discovery_status: Option<String>,
     pub endpoints: Vec<AudioEndpoint>,
     pub health: AudioDiagnostics,
     pub limitation: &'static str,
@@ -1048,6 +1039,7 @@ pub(super) struct View {
 pub(super) fn snapshot(audio: &ControllerAudio, activity: &Activity) -> View {
     let endpoints = audio.endpoints().to_vec();
     View {
+        discovery_status: None,
         playback_channel_labels: endpoints
             .iter()
             .find(|endpoint| endpoint.direction() == SampleDirection::HostToController)
@@ -1159,6 +1151,13 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
         ui.weak("Waiting for controller audio status…");
         return None;
     };
+
+    if let Some(status) = &view.discovery_status {
+        ui.label(status);
+    }
+    if ui.button("Refresh audio devices").clicked() {
+        action = Some(Action::RetryDiscovery);
+    }
 
     let status = if view.health.failed() {
         "Failed"
