@@ -33,12 +33,12 @@ def acceptance(result, seconds):
         if type(result.get(key)) is not int or result[key] != expected:
             return False
     return all(type(result.get(key)) is int and result[key] == 0
-               for key in ('missing', 'duplicate', 'invalid', 'partial_bytes', 'errors')) and all(
+               for key in ('missing', 'duplicate', 'invalid', 'partial_bytes', 'errors', 'ledger_overflow')) and all(
                    result.get(key) == value for key, value in
                    (('source_rate', 48000), ('sink_rate', 48000), ('source_channels', 2), ('sink_channels', 2)))
 
 
-def inside(control, seconds):
+def inside(control, seconds, ledger=None):
     root = Path(os.environ.get('PIPEWIRE_RUNTIME_DIR', '/nonexistent'))
     metadata = root.lstat()
     if (not root.name.startswith('virtualgamepad-pw-lab-') or
@@ -62,7 +62,9 @@ def inside(control, seconds):
             if loop.poll() is not None or time.monotonic() >= deadline:
                 raise TimeoutError('owned loopback nodes did not become ready')
             time.sleep(.02)
-        result = subprocess.run([str(control), str(seconds), name + '.sink', name + '.source'],
+        command = [str(control), str(seconds), name + '.sink', name + '.source']
+        if ledger is not None: command.append(str(ledger))
+        result = subprocess.run(command,
                                 capture_output=True, text=True, timeout=seconds + 18)
         # One fixed-size JSON receipt, never arbitrary recordings or a stdin count.
         if len(result.stdout) > 16384:
@@ -90,11 +92,12 @@ def main():
     parser.add_argument('--seconds', type=int, choices=range(1, 61), default=60)
     parser.add_argument('--trials', type=int, choices=range(1, 4), default=3)
     parser.add_argument('--report', type=Path)
+    parser.add_argument('--ledger', type=Path, help='exclusive output file for one inside-lab trial')
     parser.add_argument('--inside-lab', action='store_true', help=argparse.SUPPRESS)
     args = parser.parse_args()
     control = args.control.resolve(strict=True)
     if args.inside_lab:
-        return inside(control, args.seconds)
+        return inside(control, args.seconds, args.ledger)
     if args.report is None:
         parser.error('--report is required outside the private child')
     rows = []
@@ -105,7 +108,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix='alpha-control-report-') as directory:
             receipt = Path(directory) / 'receipt.json'
             child = [sys.executable, str(Path(__file__).resolve()), '--control', str(control),
-                     '--seconds', str(args.seconds), '--inside-lab']
+                     '--seconds', str(args.seconds), '--inside-lab', '--ledger',
+                     str(args.report.resolve().with_name(args.report.name + f'.trial-{trial+1}.ledger.jsonl'))]
             command = [sys.executable, '-c',
                        'import subprocess,sys; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],stdout=f); f.close(); sys.exit(r.returncode)',
                        str(receipt), *child]

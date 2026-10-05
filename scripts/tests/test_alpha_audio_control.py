@@ -56,7 +56,7 @@ class MarkerReceipt(unittest.TestCase):
     def receipt(self):
         row = dict(planned=2880000, generated=2880000, graph_submitted=2880000,
                     graph_received=2880000, missing=0, duplicate=0, invalid=0,
-                    partial_bytes=0, errors=0)
+                    partial_bytes=0, errors=0, ledger_overflow=0)
         row.update(source_rate=48000, sink_rate=48000, source_channels=2, sink_channels=2)
         row['producer_elapsed_ns'] = 60_000_000_000
         return row
@@ -100,7 +100,7 @@ class MarkerReceipt(unittest.TestCase):
         self.assertFalse(control.acceptance(row, 60))
 
     def test_partial_channel_corruption_incomplete_drain_and_missing_counters(self):
-        for key in ('partial_bytes', 'invalid', 'errors'):
+        for key in ('partial_bytes', 'invalid', 'errors', 'ledger_overflow'):
             row = self.receipt()
             row[key] = 1
             self.assertFalse(control.acceptance(row, 60))
