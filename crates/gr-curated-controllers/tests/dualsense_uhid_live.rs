@@ -274,29 +274,79 @@ fn unique_new_node(
         Ok(created.into_iter().next())
     }
 }
-fn select_evdev_node(
-    before: &std::collections::BTreeSet<PathBuf>,
-    family: &str,
-) -> Option<PathBuf> {
-    let node = unique_new_node(before, &input_nodes()).expect("ambiguous new input nodes")?;
-    let expected = match family {
-        "dualsense" => "DualSense Wireless Controller",
-        "dualshock4" => "Wireless Controller",
-        "switch-pro" => "Pro Controller",
-        "" => "Virtual Xbox 360",
-        _ => panic!("unrecognized family"),
-    };
-    assert_eq!(
-        fs::read_to_string(node.join("device/name")).unwrap().trim(),
-        expected
-    );
-    assert!(
-        fs::canonicalize(&node)
-            .unwrap()
-            .starts_with("/sys/devices/virtual/input")
-    );
-    Some(node)
+fn select_associated_nodes(
+    inventory: &[(PathBuf, String)],
+    expected: &[String],
+) -> Result<Option<Vec<PathBuf>>, &'static str> {
+    if expected.is_empty()
+        || expected
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != expected.len()
+    {
+        return Err("invalid requested component identity");
+    }
+    let mut nodes = Vec::new();
+    for physical in expected {
+        let matches: Vec<_> = inventory
+            .iter()
+            .filter(|(_, actual)| actual == physical)
+            .collect();
+        match matches.as_slice() {
+            [] => return Ok(None),
+            [entry] => nodes.push(entry.0.clone()),
+            _ => return Err("duplicate owned input component"),
+        }
+    }
+    Ok(Some(nodes))
 }
+
+fn associated_input_nodes<C: AcceptanceController>(controller: &C) -> Option<Vec<PathBuf>> {
+    let inventory: Vec<_> = input_nodes()
+        .into_iter()
+        .filter_map(|node| {
+            let physical = fs::read_to_string(node.join("device/phys")).ok()?;
+            Some((node, physical.trim().to_owned()))
+        })
+        .collect();
+    let selected = select_associated_nodes(&inventory, &controller.physical_paths())
+        .expect("ambiguous owned input association")?;
+    for node in &selected {
+        assert!(
+            fs::canonicalize(node)
+                .unwrap()
+                .starts_with("/sys/devices/virtual/input")
+        );
+    }
+    Some(selected)
+}
+
+#[test]
+fn sdl_association_selection_handles_ds4_companions_and_foreign_siblings() {
+    let expected = vec!["owned/gamepad".to_owned(), "owned/touch".to_owned()];
+    let gamepad = PathBuf::from("event999");
+    let touch = PathBuf::from("event301");
+    let mut inventory: Vec<_> = (0..300)
+        .map(|n| (PathBuf::from(format!("event{n}")), format!("foreign/{n}")))
+        .collect();
+    inventory.push((touch.clone(), expected[1].clone()));
+    assert_eq!(
+        select_associated_nodes(&inventory, &expected).unwrap(),
+        None
+    );
+    inventory.push((gamepad.clone(), expected[0].clone()));
+    assert_eq!(
+        select_associated_nodes(&inventory, &expected).unwrap(),
+        Some(vec![gamepad, touch])
+    );
+    inventory.push(inventory.last().unwrap().clone());
+    assert!(select_associated_nodes(&inventory, &expected).is_err());
+    assert!(
+        select_associated_nodes(&inventory, &[expected[0].clone(), expected[0].clone()]).is_err()
+    );
+}
+
 #[test]
 fn evdev_selection_rejects_ambiguity_and_preserves_large_inventories() {
     let before: std::collections::BTreeSet<_> = (0..300)
@@ -343,11 +393,10 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     assert!(owned_devices().is_empty());
     for session in [7, 7, 7 + (1 << 16)] {
-        let before = input_nodes();
         // On unwind the later-declared controller closes before the child is reaped.
         let mut probe = None;
         let mut controller = C::create(session, target);
-        let mut owned_event = None;
+        let mut owned_events = Vec::new();
         let start = Instant::now();
         let mut result = None;
         let mut rumble_seen = false;
@@ -365,8 +414,9 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             led_seen |= led;
             if probe.is_none() && start.elapsed() >= Duration::from_millis(500) {
                 let paths = if target == RealizationTarget::LINUX_UINPUT {
-                    owned_event = select_evdev_node(&before, C::PREFIX);
-                    owned_event
+                    owned_events = associated_input_nodes(&controller).unwrap_or_default();
+                    owned_events
+                        .first()
                         .iter()
                         .map(|node| PathBuf::from("/dev/input").join(node.file_name().unwrap()))
                         .collect()
@@ -402,14 +452,13 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
         controller.close();
         drop(probe);
         let cleanup = Instant::now();
-        while (!owned_devices().is_empty()
-            || owned_event.as_ref().is_some_and(|node| node.exists()))
+        while (!owned_devices().is_empty() || owned_events.iter().any(|node| node.exists()))
             && cleanup.elapsed() < Duration::from_secs(2)
         {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(
-            owned_devices().is_empty() && owned_event.as_ref().is_none_or(|node| !node.exists()),
+            owned_devices().is_empty() && owned_events.iter().all(|node| !node.exists()),
             "cleanup failed"
         );
         if let Some((_, output)) = &result {
@@ -571,6 +620,7 @@ trait AcceptanceController: Sized {
     const EXPECT_RUMBLE: bool;
     const EXPECT_LED: bool;
     fn create(session: u64, target: RealizationTarget) -> Self;
+    fn physical_paths(&self) -> Vec<String>;
     fn script(&mut self, step: u16);
     fn feedback(&mut self) -> (bool, bool);
     fn close(&mut self);
@@ -621,6 +671,12 @@ macro_rules! acceptance_controller {
                     session: RealizationSessionId(session),
                 })
                 .unwrap()
+            }
+            fn physical_paths(&self) -> Vec<String> {
+                let association = self.association();
+                std::iter::once(association.requested_physical_path.clone().unwrap())
+                    .chain(association.companions.iter().map(|component| component.requested_physical_path.clone().unwrap()))
+                    .collect()
             }
             fn script(&mut self, step: u16) {
                 $script(self, step);
@@ -1243,20 +1299,20 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
     let _guard = LIVE_LOCK.lock().unwrap();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     for id in [7, 7, 65543] {
-        let before = input_nodes();
         let mut probe = None;
         let mut controller = C::create(id, target);
         thread::sleep(Duration::from_millis(500));
-        let (node, path) = if target == RealizationTarget::LINUX_UINPUT {
-            let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
-            let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
-            (node, path)
+        let (nodes, path) = if target == RealizationTarget::LINUX_UINPUT {
+            let nodes =
+                associated_input_nodes(&controller).expect("complete owned input association");
+            let path = PathBuf::from("/dev/input").join(nodes[0].file_name().unwrap());
+            (nodes, path)
         } else {
             let nodes = owned_family_devices(C::PREFIX);
             assert_eq!(nodes.len(), 1, "one exact owned HID device");
             let paths = consumer_paths(&nodes[0], C::HIDRAW);
             assert_eq!(paths.len(), 1, "one exact owned event node");
-            (nodes[0].clone(), paths[0].clone())
+            (nodes, paths[0].clone())
         };
         let mut passed = true;
         for case in (0..=25).flat_map(|case| [case, 0]) {
@@ -1351,15 +1407,25 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
         controller.close();
         drop(probe);
         let start = Instant::now();
-        while node.exists() && start.elapsed() < Duration::from_secs(2) {
+        while nodes.iter().any(|node| node.exists()) && start.elapsed() < Duration::from_secs(2) {
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(!node.exists(), "mapping experiment cleanup failed");
+        assert!(
+            nodes.iter().all(|node| !node.exists()),
+            "mapping experiment cleanup failed"
+        );
         eprintln!(
             "{{\"schema_version\":1,\"record_type\":\"mapping_cleanup\",\"device_removed\":true,\"consumer_reaped\":true}}"
         );
         assert!(passed, "individual control mapping failed");
     }
+}
+#[test]
+#[ignore = "requires exact associated gamepad/contact node access and private SDL probe; no touch injection"]
+fn ds4_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualShock4Controller>(
+        RealizationTarget::LINUX_UINPUT,
+    );
 }
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]

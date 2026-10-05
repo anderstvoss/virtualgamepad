@@ -388,5 +388,18 @@ on every failing seam. Review `--restart-empty`: changed/nonempty journal identi
 occupied ports and unexplained children must refuse before stopping the candidate;
 restart failure must still restore the original service state. Only recorded old/new
 candidate PIDs and a repeated passing client establish empty restart/reconnect.
-These additions require a refreshed reviewed immutable lab snapshot for live proof;
-worker-death, stale-attachment and successful USB audio recovery remain separate.
+The installed 2c1af2f snapshot passes 33 initial checks, one unauthorized check and
+33 reconnected checks, with changed candidate PID and successful restoration.
+Worker-death, stale-attachment and successful USB audio recovery remain separate.
+
+### SDL associated-component selection
+
+Inspect the creation-association selector and DS4 companion/foreign/duplicate
+regression in `dualsense_uhid_live.rs`. It must select the primary in requested
+association order, require all companions and check their removal; unrelated GUI
+or physical nodes must neither cause selection nor be removed. Individual DS4
+evdev mapping is touch-free; full Sony scripts still require desktop isolation.
+The private SDL consumer is pinned to the reviewed 3.2.0 source and its library
+hash, with the unused PipeWire audio backend disabled. Retain the initial build
+failure against newer headers and do not turn controller-only evidence into audio
+acceptance. Require exact candidate/consumer hashes and per-session cleanup records.

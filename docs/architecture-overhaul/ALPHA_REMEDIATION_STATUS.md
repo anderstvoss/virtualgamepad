@@ -212,8 +212,20 @@ The runner adds an opt-in empty candidate restart/reconnect phase, guarded by ow
 journal identity, emptiness, unused VHCI port and absence of children. Deterministic
 regressions cover missing bounds, unreleased permits, wrong replies, socket cleanup,
 changed/nonempty journals, foreign children and restoration after restart failure.
-The expanded live run requires a refreshed immutable administrator snapshot; it is
-not yet passing evidence. It does not claim worker-death or stale-attachment recovery.
+The reviewed installed run at `2c1af2fd64dd014f4c20651c3bf70c589ec77d4e` passes
+33 checks before restart, one unauthorized-peer check and 33 after restart. The
+candidate PID changes, sibling/admission assertions pass, original installation
+fingerprints and service state are restored, and owned runtime resources are removed.
+It does not claim worker-death or stale-attachment recovery.
+
+The SDL evdev harness also retained a one-node assumption. It now selects all
+creation-associated physical identities, chooses the primary regardless of order,
+ignores unrelated inventory and verifies removal of every component. A deterministic
+DS4 companion/foreign/duplicate regression passes. A new ignored individual DS4
+evdev mapping test exercises controls without touch injection. Live proof uses a
+private build of the already-reviewed SDL 3.2.0 revision; its unused PipeWire audio
+backend is disabled for compatibility with newer host headers. No installed SDL or
+product audio behavior changes. Consumer acceptance results must be recorded separately.
 
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
