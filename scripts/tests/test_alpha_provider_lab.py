@@ -30,6 +30,112 @@ class AudioIsolationPolicy(unittest.TestCase):
                     lab.audio_isolation_rule(instance)
 
 
+class AudioIsolationLifecycle(unittest.TestCase):
+    def policy(self, directory, failures=()):
+        calls = []
+        def run(command):
+            calls.append(command)
+            if len(calls) in failures:
+                raise RuntimeError('synthetic preparation/restoration failure')
+        return lab.AudioIsolation('lab-test', run, Path(directory) / 'rules', lambda _: []), calls
+
+    def test_verification_failure_restores_owned_rule_and_directory(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, calls = self.policy(directory, failures=(1,))
+            with self.assertRaises(RuntimeError): policy.prepare()
+            self.assertTrue(policy.path.exists())
+            policy.restore()
+            self.assertFalse(policy.directory.exists())
+            self.assertEqual(calls[-1], ['udevadm', 'control', '--reload-rules'])
+            policy.restore()
+            self.assertEqual(len(calls), 2)
+
+    def test_changed_content_or_identity_keeps_rule(self):
+        for replacement in (False, True):
+            with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+                policy, _ = self.policy(directory)
+                policy.prepare()
+                if replacement:
+                    foreign = policy.directory / 'foreign'
+                    foreign.write_text('synthetic replacement')
+                    foreign.replace(policy.path)
+                else:
+                    policy.path.write_text('synthetic changed content')
+                with self.assertRaisesRegex(RuntimeError, 'rule changed'): policy.restore()
+                self.assertTrue(policy.path.exists())
+
+    def test_active_device_refuses_rule_removal_then_restores_repeatedly(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, calls = self.policy(directory)
+            policy.prepare()
+            policy.inventory = lambda _: ['synthetic-bus']
+            with self.assertRaisesRegex(RuntimeError, 'devices remain'): policy.restore()
+            self.assertTrue(policy.path.exists())
+            policy.inventory = lambda _: []
+            policy.restore()
+            policy.restore()
+            self.assertEqual(len(calls), 3)
+
+    def test_reload_failure_retains_pending_restoration_and_retries(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, _ = self.policy(directory, failures=(3,))
+            policy.prepare()
+            with self.assertRaises(RuntimeError): policy.restore()
+            self.assertFalse(policy.path.exists())
+            self.assertTrue(policy.reload_pending)
+            policy.restore()
+            self.assertFalse(policy.directory.exists())
+
+    def test_changed_directory_retains_original_rule_and_foreign_directory(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, _ = self.policy(directory)
+            policy.prepare()
+            original = Path(directory) / 'original'
+            policy.directory.rename(original)
+            policy.directory.mkdir()
+            with self.assertRaisesRegex(RuntimeError, 'directory changed'): policy.restore()
+            self.assertTrue((original / policy.path.name).exists())
+            self.assertTrue(policy.directory.exists())
+
+    def test_interrupted_preparation_still_has_restoration_identity(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, _ = self.policy(directory)
+            with patch.object(policy, 'run', side_effect=InterruptedError('synthetic interruption')):
+                with self.assertRaises(InterruptedError): policy.prepare()
+            policy.restore()
+            self.assertFalse(policy.directory.exists())
+
+    def test_occupied_rule_is_never_replaced_or_removed(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, calls = self.policy(directory)
+            policy.directory.mkdir()
+            policy.path.write_text('synthetic foreign rule')
+            with self.assertRaises(FileExistsError): policy.prepare()
+            policy.restore()
+            self.assertEqual(policy.path.read_text(), 'synthetic foreign rule')
+            self.assertEqual(calls, [])
+
+
+class PredefinedProviderPhases(unittest.TestCase):
+    def test_only_closed_phase_names_and_compiled_arguments_are_accepted(self):
+        images = Path('/synthetic/immutable')
+        for phase in lab.PHASES:
+            command = lab.phase_command(phase, images, 'lab', 0)
+            self.assertEqual(command[:2], ['/usr/bin/python3', '-I'])
+            self.assertTrue(Path(command[2]).is_relative_to(images))
+            self.assertNotIn('/bin/sh', command)
+        for phase in ['', '../escape', 'provider-lifecycle;reboot', 'steam', 'arbitrary']:
+            with self.assertRaises(ValueError): lab.phase_command(phase, images, 'lab', 0)
+        for port in [-1, True, 65536]:
+            with self.assertRaises(ValueError): lab.phase_command('usb-functional', images, 'lab', port)
+
+    def test_invalid_phase_refuses_even_dry_run_without_privileges(self):
+        completed = subprocess.run([sys.executable, '-I', str(Path(lab.__file__)),
+                                    '--phase', 'arbitrary'], capture_output=True, text=True)
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn('invalid choice', completed.stderr)
+
+
 class Fake:
     def __init__(self, failures=()):
         self.events = []
@@ -119,7 +225,7 @@ class ReversibleMaintenance(unittest.TestCase):
             host.run([sys.executable, '-c', 'print("x" * 2000000)'])
         self.assertNotEqual(host.events[-1]['status'], 0)
     def test_client_privilege_drop_is_explicit_before_the_validator(self):
-        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None, restart_empty=False)
+        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None, restart_empty=False, phase=None)
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -133,7 +239,7 @@ class ReversibleMaintenance(unittest.TestCase):
 
     def test_unauthorized_identity_is_distinct_and_registered_before_startup(self):
         args = Mock(client_uid=1001, unauthorized_uid=1003, timeout=30,
-                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False)
+                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False, phase=None)
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')

@@ -27,6 +27,8 @@ VHCI = Path('/sys/devices/platform/vhci_hcd.0/status')
 STAGING_PARENT = Path('/var/lib')
 OUTPUT_LIMIT = 1024 * 1024
 ORIGINAL = ('virtualgamepad-broker.socket', 'virtualgamepad-broker.service')
+RULES = Path('/run/udev/rules.d')
+USB = Path('/sys/bus/usb/devices')
 
 
 def trusted(path, directory=False):
@@ -74,6 +76,105 @@ def audio_isolation_rule(instance):
         f'ENV{{VG_ALPHA_AUDIO_INSTANCE}}=="{instance}", '
         'SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0", ENV{ACP_IGNORE}="1"\n'
     )
+
+
+def remaining_audio_devices(instance, root=USB):
+    """A serial is an exclusion selector, never authority to remove a device."""
+    audio_isolation_rule(instance)  # Validate before constructing any selector.
+    found = []
+    for entry in root.iterdir():
+        try:
+            serial = (entry / 'serial').read_text().strip()
+        except FileNotFoundError:
+            continue  # Most USB interfaces have no serial attribute.
+        if serial.startswith(f'vg-{instance}-'):
+            resolved = entry.resolve(strict=True)
+            if 'vhci_hcd.0' not in resolved.parts:
+                raise RuntimeError('audio serial has unexpected ancestry; refusing restoration')
+            found.append(entry.name)
+    return sorted(found)
+
+
+class AudioIsolation:
+    """Own one temporary rule; register identities even after partial startup."""
+    def __init__(self, instance, run, directory=RULES, inventory=remaining_audio_devices):
+        self.instance = instance
+        self.run = run
+        self.directory = directory
+        self.path = directory / f'99-{instance}-audio.rules'
+        self.inventory = inventory
+        self.directory_identity = None
+        self.parent_identity = None
+        self.rule_identity = None
+        self.rule_digest = None
+        self.reload_pending = False
+
+    def prepare(self):
+        data = audio_isolation_rule(self.instance).encode()
+        if self.inventory(self.instance):
+            raise RuntimeError('audio isolation requires no existing session devices')
+        for parent in self.directory.parents:
+            trusted(parent, directory=True)
+        if self.directory.exists() or self.directory.is_symlink():
+            trusted(self.directory, directory=True)
+        else:
+            self.directory.mkdir(mode=0o755)
+            self.directory_identity = identity(self.directory)
+        self.parent_identity = identity(self.directory)
+        fd = os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o644)
+        self.rule_identity = identity(self.path)
+        self.reload_pending = True
+        try:
+            with os.fdopen(fd, 'wb') as output:
+                output.write(data)
+                output.flush()
+                os.fsync(output.fileno())
+        finally:
+            # A failed write is still ours, with its observed partial contents.
+            self.rule_digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
+        self.run(['udevadm', 'verify', str(self.path)])
+        self.run(['udevadm', 'control', '--reload-rules'])
+        # Do not trigger existing devices. New attachments receive the rule.
+
+    def restore(self):
+        if (self.parent_identity is not None and
+                (self.rule_identity is not None or self.reload_pending) and
+                identity(self.directory) != self.parent_identity):
+            raise RuntimeError('audio isolation directory changed; refusing restoration')
+        if self.rule_identity is not None:
+            if self.inventory(self.instance):
+                raise RuntimeError('owned audio devices remain; isolation rule retained')
+            if (identity(self.path) != self.rule_identity or
+                    hashlib.sha256(self.path.read_bytes()).hexdigest() != self.rule_digest):
+                raise RuntimeError('audio isolation rule changed; refusing removal')
+            remove_owned(self.path, self.rule_identity)
+            self.rule_identity = None
+        if self.reload_pending:
+            self.run(['udevadm', 'control', '--reload-rules'])
+            self.reload_pending = False
+        if self.directory_identity is not None:
+            remove_owned(self.directory, self.directory_identity, directory=True)
+            self.directory_identity = None
+
+
+PHASES = ('rejection', 'provider-lifecycle', 'provider-client-exit', 'usb-functional')
+
+
+def phase_command(phase, images, instance, port):
+    """Only predefined ordinary-client probes; never a privileged shell hook."""
+    if phase not in PHASES:
+        raise ValueError('unknown predefined provider phase')
+    audio_isolation_rule(instance)
+    if type(port) is not int or not 0 <= port <= 65535:
+        raise ValueError('invalid authorized phase port')
+    if phase == 'rejection':
+        return ['/usr/bin/python3', '-I', str(images / 'validate-broker-rejection-live.py')]
+    if phase == 'usb-functional':
+        return ['/usr/bin/python3', '-I', str(images / 'validate-broker-audio-live.py'),
+                '--instance', instance, '--profile', 'all', '--seconds', '3']
+    return ['/usr/bin/python3', '-I', str(images / 'validate-broker-lifecycle-live.py'),
+            '--instance', instance, '--port', str(port), '--scenario',
+            'client-exit' if phase == 'provider-client-exit' else 'normal']
 
 
 def installed_executable(properties):
@@ -221,6 +322,7 @@ class Host:
         self.client_receipts = []
         self.original_images = {}
         self.events = []
+        self.audio_isolation = None
 
     def run(self, argv, timeout=15):
         # Regular-file spooling plus inherited/unit quotas prevent a verbose
@@ -343,6 +445,9 @@ class Host:
         self.remember(self.root, True)
         self.root.chmod(0o755)
         self.instance = instance_name(self.root)
+        if self.args.isolate_audio:
+            self.audio_isolation = AudioIsolation(self.instance, self.run)
+            self.audio_isolation.prepare()
         self.create_dir(self.root / 'bin')
         self.create_dir(self.root / 'socket')
         self.create_dir(STATE / self.instance)
@@ -382,7 +487,22 @@ class Host:
         self.run(['systemctl', 'start', self.socket])
 
     def execute(self):
-        self.run_client(self.args.client_uid, self.args.command, 'client')
+        if self.args.phase:
+            command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port)
+            self.run_client(self.args.client_uid, command, 'client')
+            if self.args.phase == 'provider-client-exit':
+                deadline = time.monotonic() + 5
+                while True:
+                    try:
+                        free_port(VHCI.read_text(), self.args.port)
+                        break
+                    except RuntimeError:
+                        if time.monotonic() >= deadline: raise
+                        time.sleep(.02)
+                command = phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port)
+                self.run_client(self.args.client_uid, command, 'after-client-exit')
+        else:
+            self.run_client(self.args.client_uid, self.args.command, 'client')
         if self.args.unauthorized_probe:
             self.run_client(self.args.unauthorized_uid,
                             ['/usr/bin/python3', '-I', str(self.args.unauthorized_probe), '--unauthorized'],
@@ -418,6 +538,7 @@ class Host:
         unit = self.instance + '-' + suffix + '.service'
         self.client_units.append(unit)  # Register before a partial systemd-run failure.
         output = self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + unit,
+                  '--setenv=XDG_RUNTIME_DIR=/run/user/' + str(account.pw_uid),
                   '--property=NoNewPrivileges=yes',
                   '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
                   '--property=PrivateMounts=yes', '--property=KillMode=control-group',
@@ -459,6 +580,8 @@ class Host:
                 if time.monotonic() >= deadline:
                     raise RuntimeError('port cleanup unverified; owned evidence retained')
                 time.sleep(.05)
+        if self.audio_isolation is not None:
+            self.audio_isolation.restore()
         for path, expected, directory in reversed(self.owned):
             remove_owned(path, expected, directory)
         self.run(['systemctl', 'daemon-reload'])
@@ -492,8 +615,13 @@ def main():
     parser.add_argument('--unauthorized-uid', type=int)
     parser.add_argument('--unauthorized-probe', type=Path,
                         help='root-owned probe; opens only the temporary lab socket to other UIDs')
+    parser.add_argument('--isolate-audio', action='store_true',
+                        help='install serial/VHCI ACP_IGNORE before candidate attachment')
     parser.add_argument('--restart-empty', action='store_true',
                         help='repeat client after restarting only an empty owned candidate')
+    parser.add_argument('--phase', choices=PHASES)
+    parser.add_argument('--probe-directory', type=Path,
+                        help='immutable administrator-installed phase probe directory')
     parser.add_argument('--port', type=int)
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--report', type=Path)
@@ -512,11 +640,23 @@ def main():
     trusted(script)
     for parent in script.parents:
         trusted(parent, directory=True)
+    if args.phase:
+        if (args.command or args.probe_directory is None or
+                not args.probe_directory.is_absolute() or args.restart_empty):
+            parser.error('named phase requires probe directory, no arbitrary command or empty-restart option')
+        if args.phase != 'rejection' and not args.isolate_audio:
+            parser.error('positive phases require pre-attachment audio isolation')
+        trusted(args.probe_directory, directory=True)
+        for parent in args.probe_directory.parents:
+            trusted(parent, directory=True)
+        for name in ('validate-broker-rejection-live.py', 'validate-broker-lifecycle-live.py',
+                     'validate-broker-audio-live.py', 'validate-usb-audio-live.py'):
+            trusted(args.probe_directory / name)
     if args.command and args.command[0] == '--':
         args.command = args.command[1:]
     if (any(getattr(args, name) is None for name in ('broker', 'worker', 'broker_hash', 'worker_hash',
             'revision', 'client_uid', 'worker_uid', 'unauthorized_uid', 'port', 'report')) or
-            not args.command or not Path(args.command[0]).is_absolute() or
+            (not args.phase and (not args.command or not Path(args.command[0]).is_absolute())) or
             not 1 <= args.timeout <= 7260 or not 0 <= args.port <= 65535 or
             not re.fullmatch('[0-9a-f]{40}', args.revision) or
             not all(re.fullmatch('[0-9a-f]{64}', h) for h in (args.broker_hash, args.worker_hash))):
