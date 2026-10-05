@@ -282,7 +282,7 @@ static const struct pw_stream_events sink_events = {
 };
 
 int main(int argc, char **argv) {
-    if (argc == 2 && !strcmp(argv[1], "--self-test")) {
+    if ((argc == 2 || argc == 3) && !strcmp(argv[1], "--self-test")) {
         struct clock_observation clock = {0};
         observe_clock(&clock, 9000000, 1, 48000, 1, false);
         observe_clock(&clock, 0, 1, 48000, 100, true);
@@ -315,7 +315,9 @@ int main(int argc, char **argv) {
         for (unsigned i = 0; i < 127; i++) observe(&test, 1, 1);
         for (unsigned i = 0; i < 129; i++) observe(&test, 2, 2);
         /* Equal totals hide one lost frame and one duplicate unless counted per marker. */
-        return test.invalid != 2 || test.received != 256 || counts[0] != 127 || counts[1] != 129;
+        if (test.invalid != 2 || test.received != 256 || counts[0] != 127 || counts[1] != 129) return 1;
+        ledger_test.blocks = 2; ledger_test.counts = counts;
+        return argc == 3 && export_ledger(&ledger_test, argv[2]) < 0;
     }
     char *end;
     if (argc != 4 && argc != 5) { fprintf(stderr, "usage: CONTROL SECONDS SINK SOURCE [LEDGER]\n"); return 2; }

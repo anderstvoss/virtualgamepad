@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import json
 import shlex
 import shutil
 import subprocess
@@ -80,6 +81,17 @@ class MarkerReceipt(unittest.TestCase):
             subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', str(Path(__file__).parents[1] / 'alpha-audio-control.c'),
                             '-o', binary, *shlex.split(flags.stdout)], check=True, timeout=30)
             subprocess.run([binary, '--self-test'], check=True, timeout=5)
+            ledger = Path(directory) / 'ledger.jsonl'
+            subprocess.run([binary, '--self-test', str(ledger)], check=True, timeout=5)
+            rows = [json.loads(line) for line in ledger.read_text().splitlines()]
+            self.assertEqual(rows[0]['producer_begin'], 95999)
+            self.assertEqual(rows[0]['measured_frames'], 1)
+            self.assertEqual(rows[0]['queue_result'], -5)
+            self.assertIsNone(rows[0]['header_sequence'])
+            self.assertEqual(rows[1]['marker_counts'], [127, 129])
+            before = ledger.read_bytes()
+            self.assertNotEqual(subprocess.run([binary, '--self-test', str(ledger)], timeout=5).returncode, 0)
+            self.assertEqual(ledger.read_bytes(), before)
 
     def test_callback_gap_diagnostics_never_excuse_marker_loss(self):
         row = self.receipt()
