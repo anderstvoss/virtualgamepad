@@ -49,13 +49,16 @@ def rule(pid):
     settings = ('ENV{ID_SEAT}="' + seat + '", ENV{LIBINPUT_IGNORE_DEVICE}="1"\n')
     return ('SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/*' + prefix +
             '*", ' + settings +
+            'SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/p' + f'{pid:x}' +
+            '/*/c*", ' + settings +
             'SUBSYSTEM=="input", SUBSYSTEMS=="hid", ATTRS{uevent}=="*HID_PHYS=virtualgamepad/*' +
             prefix + '*", ' + settings)
 
 
 def owned_physical(physical, pid):
     prefix, _ = labels(pid)
-    return physical.startswith('virtualgamepad/') and prefix in physical
+    return (physical.startswith('virtualgamepad/') and prefix in physical or
+            re.fullmatch(r'virtualgamepad/p' + f'{pid:x}' + r'/[a-f0-9]{32}/c[a-f0-9]{4}', physical) is not None)
 
 
 def input_is_owned(entry, pid):

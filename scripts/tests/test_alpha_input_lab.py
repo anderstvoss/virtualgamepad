@@ -38,6 +38,16 @@ class InputIsolation(unittest.TestCase):
                 (device / 'phys').write_text(physical)
             self.assertEqual(lab.owned_inputs(42, root), ['event0', 'event1'])
 
+    def test_compound_labels_keep_exact_process_and_full_creation_identity(self):
+        token = '0123456789abcdef0123456789abcdef'
+        self.assertTrue(lab.owned_physical(f'virtualgamepad/p2a/{token}/c0000', 42))
+        self.assertTrue(lab.owned_physical(f'virtualgamepad/p2a/{token}/c0001', 42))
+        for foreign in (f'virtualgamepad/p2aa/{token}/c0001',
+                        f'virtualgamepad/p2a/{token[:16]}/c0001',
+                        f'virtualgamepad/{token}/c0001'):
+            self.assertFalse(lab.owned_physical(foreign, 42))
+        self.assertIn('ATTRS{phys}=="virtualgamepad/p2a/*/c*"', lab.rule(42))
+
     def test_empty_sony_phys_uses_only_matching_hid_ancestor(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

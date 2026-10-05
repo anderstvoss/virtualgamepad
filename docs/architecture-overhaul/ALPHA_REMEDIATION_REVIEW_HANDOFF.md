@@ -1,5 +1,29 @@
 # Independent alpha remediation PR review handoff
 
+### Sony live results and compound ownership labels
+
+The corrected `433b6e3df19bbb41bf0ad34f3e69ba3f3365df0f` installed lab passed
+all 67 broker checks and nine SDL sessions: three each for DualSense HID,
+DS4 HID and DualSense evdev. Sony HID observed first-contact down/up/motion,
+controls, sensors, exact rumble and RGB responses. DualSense evdev observed
+controls/rumble; the SDL gamepad backend does not expose its touch node.
+Every completed session removed its devices and reaped its consumer.
+
+DS4 evdev stopped before injection: compound physical labels lacked the
+process marker used by isolation. Root restoration succeeded, all owned nodes
+were removed and temporary rule/directory cleanup succeeded. Preserve this
+failed cell. The updated compound format is `virtualgamepad/p<process>/<full
+creation token>/c<role>`. All 128 creation bits and stable logical unique IDs
+remain intact; requested association still gives exact component paths. The
+longest label fits the 63-byte UHID physical field. Physical labels are diagnostic
+ownership metadata, not peer authorization. Supporting-interface consumers
+that parse the former physical format must adapt; ordinary-root signatures
+are unchanged. Fresh installed-candidate verification remains required.
+
+Two-contact observations, evdev companion raw frames/releases and remaining
+outputs are still open; these short trials do not close the entire contact gate.
+
+
 ### Input isolation trial and correction
 
 At `c44d7cb7f0e7de0f9b40cd26a9b777bb50bae2f5`, all 67 installed broker
