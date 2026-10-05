@@ -2,10 +2,26 @@
 
 ## Gate and revisions
 
+### Input isolation trial and correction
+
+At `c44d7cb7f0e7de0f9b40cd26a9b777bb50bae2f5`, all 67 installed broker
+rejection/admission/authorization/empty-restart checks passed. Original services
+and installed images were restored. The first active-contact trial failed before
+injection because the Sony kernel driver leaves input `phys` empty. Rule and
+owned device cleanup completed; the temporary rules directory was removed.
+
+The corrected runner matches the process-owned `HID_PHYS` line on the actual
+HID ancestor as well as uinput's physical label. Cleanup inventories the same
+ancestry. A fake sysfs regression covers empty Sony phys and excludes foreign
+and similar-prefix PIDs. The Rust gate reports nodes and properties on failure
+and still requires verified isolation before any active touch. An updated
+administrator-installed snapshot and successful live verification remain required.
+This failure does not establish a product contact defect or acceptance.
+
+
 The current continuation targets all six remaining VM gates. See the
 [execution and closure plan](ALPHA_VM_SIX_GATE_PLAN.md). Input isolation and the
-active-contact property gate are implemented with regressions; administrator
-installation and live isolation are pending. Tooling does not close acceptance.
+active-contact property gate are implemented with regressions; the installed `c44d7cb` trial is recorded below. Tooling does not close acceptance.
 
 ### Current alpha boundary: post-alpha evidence follow-ups
 

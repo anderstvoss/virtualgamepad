@@ -38,6 +38,25 @@ class InputIsolation(unittest.TestCase):
                 (device / 'phys').write_text(physical)
             self.assertEqual(lab.owned_inputs(42, root), ['event0', 'event1'])
 
+    def test_empty_sony_phys_uses_only_matching_hid_ancestor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inventory = root / 'inventory';inventory.mkdir()
+            hid_subsystem = root / 'hid';hid_subsystem.mkdir()
+            for number, physical in enumerate(('virtualgamepad/uhid/dualsense/p2a-i0',
+                    'virtualgamepad/uhid/dualsense/p2aa-i0', 'foreign/p2a-i0')):
+                hid = root / ('controller' + str(number));hid.mkdir()
+                (hid / 'subsystem').symlink_to(hid_subsystem)
+                (hid / 'uevent').write_text('HID_ID=fake\nHID_PHYS=' + physical + '\n')
+                device = hid / 'input' / 'input0';device.mkdir(parents=True)
+                (device / 'phys').write_text('')
+                event = device / ('event' + str(number));event.mkdir()
+                (event / 'device').symlink_to(device)
+                (inventory / event.name).symlink_to(event)
+            self.assertEqual(lab.owned_inputs(42, inventory), ['event0'])
+            text = lab.rule(42)
+            self.assertIn('SUBSYSTEMS=="hid", ATTRS{uevent}=="*HID_PHYS=virtualgamepad/*/p2a-i*"', text)
+
     def test_restoration_requires_device_removal_and_keeps_changed_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'owned.rules';path.write_text('fake rule')

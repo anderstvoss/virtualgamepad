@@ -44,25 +44,45 @@ def labels(pid):
 
 def rule(pid):
     prefix, seat = labels(pid)
-    # ATTRS matches UHID's input child and uinput's own physical label. The
-    # trailing wildcard includes component/input suffixes but never another PID.
+    # Sony's HID driver leaves input phys empty. Match its HID parent's
+    # complete uevent line instead; uinput retains its own physical label.
+    settings = ('ENV{ID_SEAT}="' + seat + '", ENV{LIBINPUT_IGNORE_DEVICE}="1"\n')
     return ('SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/*' + prefix +
-            '*", ENV{ID_SEAT}="' + seat + '", ENV{LIBINPUT_IGNORE_DEVICE}="1"\n')
+            '*", ' + settings +
+            'SUBSYSTEM=="input", SUBSYSTEMS=="hid", ATTRS{uevent}=="*HID_PHYS=virtualgamepad/*' +
+            prefix + '*", ' + settings)
+
+
+def owned_physical(physical, pid):
+    prefix, _ = labels(pid)
+    return physical.startswith('virtualgamepad/') and prefix in physical
+
+
+def input_is_owned(entry, pid):
+    try:
+        if owned_physical((entry / 'device/phys').read_text().strip(), pid):
+            return True
+    except FileNotFoundError:
+        pass
+    # Inspect the actual sysfs ancestry, not global HID inventory: each event
+    # must descend from the matching HID resource. No vendor-only inference.
+    for ancestor in entry.resolve().parents:
+        try:
+            if (ancestor / 'subsystem').resolve().name != 'hid':
+                continue
+            properties = (ancestor / 'uevent').read_text().splitlines()
+        except FileNotFoundError:
+            continue
+        if any(line.startswith('HID_PHYS=') and
+               owned_physical(line[len('HID_PHYS='):], pid) for line in properties):
+            return True
+    return False
 
 
 def owned_inputs(pid, root=INPUT):
-    prefix, _ = labels(pid)
-    result = []
-    for entry in root.iterdir():
-        if not re.fullmatch(r'event[0-9]+', entry.name):
-            continue
-        try:
-            physical = (entry / 'device/phys').read_text().strip()
-        except FileNotFoundError:
-            continue  # A removed event is no longer a resource.
-        if physical.startswith('virtualgamepad/') and prefix in physical:
-            result.append(entry.name)
-    return sorted(result)
+    labels(pid)  # Validate even when inventory is empty.
+    return sorted(entry.name for entry in root.iterdir()
+                  if re.fullmatch(r'event[0-9]+', entry.name) and input_is_owned(entry, pid))
 
 
 def trusted(path, directory=False):

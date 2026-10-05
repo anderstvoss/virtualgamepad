@@ -476,23 +476,34 @@ fn verify_contact_isolation<C: AcceptanceController>(
                 .map(|path| PathBuf::from("/sys/class/input").join(path.file_name().unwrap()))
                 .collect()
         };
-        if !nodes.is_empty()
-            && nodes.iter().all(|node| {
-                Command::new("udevadm")
+        let properties: Vec<_> = nodes
+            .iter()
+            .map(|node| {
+                let output = Command::new("udevadm")
                     .args(["info", "--query=property", "--path"])
                     .arg(node)
-                    .output()
-                    .is_ok_and(|output| {
-                        output.status.success()
-                            && input_is_isolated(&String::from_utf8_lossy(&output.stdout), &seat)
-                    })
+                    .output();
+                let diagnostic = match output {
+                    Ok(output) if output.status.success() => {
+                        String::from_utf8_lossy(&output.stdout).into_owned()
+                    }
+                    Ok(output) => format!("udevadm failed: {}", output.status),
+                    Err(error) => format!("udevadm failed: {error}"),
+                };
+                (node, diagnostic)
             })
+            .collect();
+        if !properties.is_empty()
+            && properties
+                .iter()
+                .all(|(_, properties)| input_is_isolated(properties, &seat))
         {
             return;
         }
         assert!(
             Instant::now() < deadline,
-            "input isolation was not verified; contacts remain neutral"
+            "input isolation was not verified; contacts remain neutral; nodes: {properties:?}; HID devices: {:?}",
+            owned_family_devices(C::PREFIX)
         );
         thread::sleep(Duration::from_millis(10));
     }

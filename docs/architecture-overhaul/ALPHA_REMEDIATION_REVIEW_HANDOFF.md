@@ -1,5 +1,22 @@
 # Independent alpha remediation PR review handoff
 
+### Input isolation trial and correction
+
+At `c44d7cb7f0e7de0f9b40cd26a9b777bb50bae2f5`, all 67 installed broker
+rejection/admission/authorization/empty-restart checks passed. Original services
+and installed images were restored. The first active-contact trial failed before
+injection because the Sony kernel driver leaves input `phys` empty. Rule and
+owned device cleanup completed; the temporary rules directory was removed.
+
+The corrected runner matches the process-owned `HID_PHYS` line on the actual
+HID ancestor as well as uinput's physical label. Cleanup inventories the same
+ancestry. A fake sysfs regression covers empty Sony phys and excludes foreign
+and similar-prefix PIDs. The Rust gate reports nodes and properties on failure
+and still requires verified isolation before any active touch. An updated
+administrator-installed snapshot and successful live verification remain required.
+This failure does not establish a product contact defect or acceptance.
+
+
 ## Objective and candidate control
 
 Review the [six-gate VM continuation](ALPHA_VM_SIX_GATE_PLAN.md). Scrutinize client
