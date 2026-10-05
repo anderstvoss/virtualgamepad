@@ -2,6 +2,11 @@
 
 ## Gate and revisions
 
+The current continuation targets all six remaining VM gates. See the
+[execution and closure plan](ALPHA_VM_SIX_GATE_PLAN.md). Input isolation and the
+active-contact property gate are implemented with regressions; administrator
+installation and live isolation are pending. Tooling does not close acceptance.
+
 ### Current alpha boundary: post-alpha evidence follow-ups
 
 The release owner has deferred these two environment-dependent evidence gates:

@@ -2,6 +2,11 @@
 
 ## Objective and candidate control
 
+Review the [six-gate VM continuation](ALPHA_VM_SIX_GATE_PLAN.md). Scrutinize client
+privilege drop before environment application, PID-specific rules, property checks
+before touch injection, WNOWAIT identity retention, changed-rule refusal, bounds
+and removal of only owned resources. Installation/live acceptance remain pending.
+
 The release owner now defers native timing to [#135](https://github.com/anderstvoss/virtualgamepad/issues/135)
 and physical comparisons to [#136](https://github.com/anderstvoss/virtualgamepad/issues/136)
 as post-alpha cleanup. Missing evidence for those two items alone is not an alpha
