@@ -361,3 +361,20 @@ demo. The validation example must force audio-disabled creation options regardle
 of feature-dependent demo defaults. Review the final build/resource/cleanup receipt;
 interrupted prior runs and a short preflight cannot substitute for two hours. Verify
 that owned display, HID and process resources disappear and foreign resources remain.
+
+### Scoped negative acceptance receipt
+
+The installed corrected 84f4d39 lab passes 30 authorized-client cases plus one
+unauthorized admission case. Independently inspect both UID/no-groups/no-capability
+receipts, original installation identity and service-state restoration. Immediate
+EOF is the daemon admission contract; do not substitute an error frame or accept
+an OS socket-permission denial. The passing negative suite does not close worker
+construction/death, stale leases, restart recovery or successful audio attachment.
+
+Local validation at a8ad387 passes 560 Rust tests (59 explicitly ignored), 138
+Python tests and all 18 release/tooling commands. Its downloaded SBOM covers all
+17 workspace package identities. Preserve the initial macOS Rust-download failure; its exact-head retry passes,
+as do Linux, Windows, MSRV, CodeQL and Gitleaks. The corrected audio-disabled
+GUI soak is running; require its full two-hour receipt and cleanup before closing
+that gate. b6fdccd's two failed independent C controls still block product audio
+qualification despite three passing corrected Rust controls.

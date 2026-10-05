@@ -4,7 +4,7 @@
 
 ### Complete-resolution continuation
 
-The next candidate starts from `23615da424f8b8d358838e5460e62c3b3969493f`
+Historical starting checkpoint (later execution updates follow): the candidate started from `23615da424f8b8d358838e5460e62c3b3969493f`
 (tree `69e99e0dfd8f9c972bf48bb451b204cbe6fc7f1c`). Earlier results below remain
 historical. The current execution boundary permits an idle reversible broker
 maintenance window; installed files and persistent services are preserved.
@@ -181,6 +181,29 @@ with a deterministic regression covering both inherited enabled/disabled states.
 Normal demo defaults remain unchanged. The final neutral two-hour repeat must use
 the new build receipt and complete final cleanup before its gate can close.
 
+#### Scoped provider closure and current validation
+
+The corrected installed lab at `84f4d397f9d73e53c74036bbc8ab08ab37cfc718`
+passes all 30 authorized-client negative probes and the distinct unauthorized-UID
+admission probe. The latter observes immediate EOF before sending. Both clients
+run without supplementary groups or capabilities. The original installation
+fingerprints and active broker/socket state were restored; no cleanup error or
+owned runtime remains. Broad passwordless sudo is still denied. This closes these
+specific negative cases, not successful worker construction or recovery coverage.
+
+All 18 local validation commands pass at `a8ad387cd7185804d3db979773921915753bea6a`
+(tree `4e9f3b649cdfdd37cca5b131bc04ea6f910b18aa`): 560 Rust tests pass, 59 live
+entrypoints remain explicitly ignored, and 138 Python tests pass. Downloaded
+exact-head SBOMs verify all 17 workspace packages, including the root. Conditional
+privileged CI jobs remain skipped and cannot stand in for the missing live cells.
+The first macOS CI attempt failed during Rust download before building; its
+exact-head retry passes. Linux, Windows, MSRV, CodeQL and Gitleaks jobs also pass.
+
+The audio-disabled neutral GUI repeat is running from the a8ad387 build in a
+private rootless display. Its two-hour duration and final cleanup are still pending;
+no intermediate resource sample closes the gate. The most recent b6fdccd audio
+control failures above still block the 72 product trials and slow-consumer reruns.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
@@ -215,9 +238,9 @@ and proprietary XInput require truthful rejection, not implementation here.
 | F7 / P2 | Uploaded SBOM contains 16 member reports, omits root | `.github/workflows/sbom.yml`, `scripts/collect-sbom.py`: metadata-driven collection and extracted-artifact verification | All 17 packages locally generated/validated, including root. Missing/duplicate/foreign identity, missing dependency inventory and stale output reject. Uploaded checkpoint artifact verifies all 17 identities; final-head verification and workflow run IDs are recorded in the PR description and external revision receipt. |
 | F8 / P2 | Entry documents contradict demo defaults, topology and issue status | README, application/audio/support/demo docs and historical ledger annotations | Root defaults empty; demo ALSA/WIP USB/IP defaults distinguished; #112 closure is not native acceptance; new DS4 topology and lifecycle semantics documented. Historical failures preserved. |
 | A1 / P1 | Samples/native audio loses markers even with zero reported queue drops | Marker producer accounting, graph-clock diagnostics, queue/drop/underrun counters, per-marker client accounting and explicit drain; simultaneous duplex for all four ownership combinations | Deterministic duplicate/corrupt/partial-frame and producer/drain tests pass. Protocol fixture now primes exact microphone frames before READY. **Continuity unresolved; assertions unchanged; PR stays draft.** |
-| A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Current host lacks registered uinput; production SDL/touch acceptance blocked. |
-| A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Current provider/direct-open/daemon admission rejects incomplete f_hid semantics before construction; separate reversible installed-provider lab preserves original image/config/unit fingerprints and global lock | All-family/repeated rejection and zero-factory-admission regressions pass; earlier protocol/cleanup tests retained. Full gadget parity is explicitly unavailable. Installed audio-provider/security/recovery acceptance remains blocked on administrator execution. |
-| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. Two-hour live soak exits successfully; exact owned UHID nodes removed, private graph processes/directories absent. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
+| A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Four-family neutral evdev feedback and consumer-death cleanup pass, including both DS4 nodes. Contact injection and reviewed SDL/physical parity remain unverified. |
+| A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Current provider/direct-open/daemon admission rejects incomplete f_hid semantics before construction; separate reversible installed-provider lab preserves original image/config/unit fingerprints and global lock | All-family/repeated rejection and zero-factory-admission regressions pass; earlier protocol/cleanup tests retained. Full gadget parity is explicitly unavailable. The scoped live rejection/framing/descriptor/admission lab passes 31 checks and restores cleanly. Successful audio-provider construction, worker/client-death, stale-lease and restart recovery remain unverified. |
+| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. An earlier two-hour soak passed with owned resources removed; it is historical. The corrected audio-disabled final-candidate repeat is running and requires its complete cleanup receipt. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
 
 Source paths in this table are relative to the repository (`gr-*` sources are
 under `crates/`). Tests run at the lowest practical seams and retain prior tests.
