@@ -335,7 +335,7 @@ maintenance runner. Review its exact error frames, persistent-connection progres
 absolute partial-frame deadline and pipe EOF proof of unexpected-FD release.
 `--unauthorized-probe` must be an administrator-reviewed root-owned copy. Check
 that only the temporary candidate socket opens to 0666 and that the separate UID
-actually receives the daemon's exact unauthorized error, with no supplementary
+is disconnected by daemon admission before sending a request, with no supplementary
 groups or capabilities. A filesystem denial is insufficient evidence for that
 case. Both client units must be registered before launch and stopped on failure;
 retain bounded client receipts. The currently installed helper does not silently

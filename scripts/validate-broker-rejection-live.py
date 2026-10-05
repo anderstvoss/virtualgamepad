@@ -63,7 +63,7 @@ def connect():
 def closed(peer):
     try:
         if peer.recv(1):
-            raise RuntimeError('malformed framing was not terminated')
+            raise RuntimeError('rejected connection was not terminated')
     except ConnectionResetError:
         pass
 
@@ -77,8 +77,8 @@ def probe(unauthorized=False):
         raise RuntimeError('probe capabilities or privilege policy differ')
     if unauthorized:
         with connect() as peer:
-            peer.sendall(frame(1, bytes((1, 1))))
-            expect_error(peer, f'peer {os.geteuid()} is not authorized'.encode())
+            # Admission rejects this UID before reading any request or replying.
+            closed(peer)
         return dict(scope='daemon peer authorization', uid=os.geteuid(), checks=1)
     checks = 0
     for _ in range(2):

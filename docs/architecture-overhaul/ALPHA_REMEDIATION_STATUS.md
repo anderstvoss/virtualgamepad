@@ -145,8 +145,15 @@ root-owned unauthorized probe changes the *temporary candidate* socket to 0666,
 so the negative test reaches daemon authorization rather than stopping at an OS
 ACL. Installed socket permissions are preserved. Deterministic tests cover exact
 replies, response bounds, unexpected-FD cleanup and distinct client identities.
-These broader live checks require installing the reviewed updated snapshot; the
-existing immutable helper remains pinned to the previously passing narrow run.
+The expanded live run at `5753228f2cbd12a58fad4a6db18d6c6baf155a63`
+passed all 30 authorized-client checks, including descriptor release. Its
+unauthorized case failed because the harness attempted a request after admission
+had already closed the connection. Inspection confirms the daemon intentionally
+rejects that UID before reading any frame. The corrected probe asserts immediate
+EOF without sending, with regressions rejecting still-open or successful
+connections. The failed trial restored original service state and fingerprints
+with no cleanup errors; its partial result does not count as a passing whole lab.
+Installing the corrected immutable probe is required before its live rerun.
 
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer

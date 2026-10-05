@@ -1,10 +1,12 @@
 import array
 import importlib.util
 import os
+import io
 from pathlib import Path
 import socket
 import struct
 import unittest
+from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('rejection', Path(__file__).parents[1] / 'validate-broker-rejection-live.py')
 probe = importlib.util.module_from_spec(spec)
@@ -49,3 +51,23 @@ class RejectionReceipt(unittest.TestCase):
     def test_premature_eof_cannot_be_counted_as_a_valid_reply(self):
         with self.assertRaisesRegex(RuntimeError, 'premature EOF'):
             probe.exact(Peer([(b'', [], 0, None)]), 4)
+
+    def test_unauthorized_admission_closes_before_any_request_is_sent(self):
+        peer = Mock()
+        peer.__enter__ = Mock(return_value=peer)
+        peer.__exit__ = Mock(return_value=False)
+        peer.recv.return_value = b''
+        status = 'CapEff: 0\nCapPrm: 0\nCapAmb: 0\nCapBnd: 0\nNoNewPrivs: 1\n'
+        with patch.object(probe.os, 'geteuid', return_value=1003), patch.object(probe.os, 'getegid', return_value=1003), patch.object(probe.os, 'getgroups', return_value=[]), patch.object(probe, 'connect', return_value=peer), patch('builtins.open', return_value=io.StringIO(status)):
+            self.assertEqual(probe.probe(True)['checks'], 1)
+        peer.sendall.assert_not_called()
+        peer.recv.assert_called_once_with(1)
+
+    def test_unauthorized_receipt_rejects_pending_or_successful_connection(self):
+        peer = Mock()
+        peer.recv.return_value = b'x'
+        with self.assertRaisesRegex(RuntimeError, 'not terminated'):
+            probe.closed(peer)
+        peer.recv.side_effect = TimeoutError('still open')
+        with self.assertRaises(TimeoutError):
+            probe.closed(peer)
