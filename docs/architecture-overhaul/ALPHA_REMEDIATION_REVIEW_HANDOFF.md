@@ -1,5 +1,36 @@
 # Independent alpha remediation PR review handoff
 
+### Shared-driver audio diagnostic and keyboard pad correction
+
+At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of
+warm-up, 60 measured) completed 2,976,000 planned producer frames but lost
+4,608 measured markers with no duplicates. It returned 101 with the explicit
+continuity assertion before percentile sorting. This is one diagnostic trial,
+not qualification, and does not establish why the earlier realtime children
+received signal 9. The bounded private graph snapshot shows both linked stream
+nodes running under dummy driver 30, both negotiated stereo S16LE at 48 kHz.
+The daemon and client data loops had ordinary scheduling, priority zero.
+The measured callback gap reached about 31 ms. A different driver or negotiated
+sample format does not explain this particular trial; scheduling causality
+remains unproven. The snapshot consumes part of the existing test deadline,
+has a 1 MiB output quota, never overwrites receipts, and never changes the graph.
+Regressions cover malformed/oversized data, deadline reconciliation, occupied
+receipts and fast-failure identification. Raw graph/process/binary receipts
+remain outside tracked source.
+
+The demo stick and snapping D-pad canvases accepted keyboard focus but ignored
+keyboard input. They now use W/A/S/D for cardinal/diagonal positions and
+opposing keys for neutral. Arrow keys and Tab retain normal focus navigation.
+Releasing keys or losing focus returns momentary controls to neutral; Hold preserves the last position.
+Visible focus outlines and labeled widget information expose the controls.
+Pure regressions cover full integer ranges, release/focus loss, Hold, opposing
+keys, pointer-state preservation, and exact D-pad press/release transitions.
+A headless egui regression sends an actual key event, verifies an adjacent button
+does not steal focus, then removes focus while the key remains down and verifies neutralization. This fixes these two controls;
+touch keyboard access, complete accessibility and live desktop acceptance are
+still open. Do not treat this correction as closure of the full GUI gate.
+
+
 ### Installed scheduling experiment: qualification still fails
 
 The administrator-installed `e88a9078612668cbb5350799dc58c16b5680aafd`

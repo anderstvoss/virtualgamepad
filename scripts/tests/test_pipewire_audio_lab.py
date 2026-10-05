@@ -15,7 +15,7 @@ spec.loader.exec_module(lab)
 class IsolatedLab(unittest.TestCase):
     def test_graph_diagnostic_requires_bounded_object_array(self):
         self.assertEqual(lab.decode_graph(b'[{"id": 1}]'), [{'id': 1}])
-        for value in (b'{}', b'x' * (lab.DIAGNOSTIC_LIMIT + 1), b'invalid'):
+        for value in (b'{}', b'[1]', b'x' * (lab.DIAGNOSTIC_LIMIT + 1), b'invalid'):
             with self.assertRaises(ValueError):
                 lab.decode_graph(value)
 

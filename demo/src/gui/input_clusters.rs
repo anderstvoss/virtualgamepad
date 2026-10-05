@@ -1430,8 +1430,83 @@ fn axis_pad(
     } else if response.drag_stopped() {
         next = axis_release_value(value, x_range, y_range, hold);
     }
+    next = keyboard_pad(
+        ui,
+        &response,
+        "Stick: W/A/S/D keys",
+        next,
+        x_range,
+        y_range,
+        hold,
+    );
     ui.monospace(format!("x={} y={}", next.0, next.1));
     (next, next != value)
+}
+
+fn keyboard_pad(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    label: &str,
+    value: (i32, i32),
+    x_range: InputAxisRange,
+    y_range: InputAxisRange,
+    hold: bool,
+) -> (i32, i32) {
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, ui.is_enabled(), label));
+    ui.small("W/A/S/D · Tab to move focus");
+    let direction = if response.has_focus() && ui.is_enabled() {
+        ui.painter().rect_stroke(
+            response.rect,
+            2.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+        ui.input(|input| {
+            let keys = [egui::Key::A, egui::Key::D, egui::Key::W, egui::Key::S]
+                .map(|key| input.key_down(key));
+            keys.iter().any(|&down| down).then_some((
+                i8::from(keys[1]) - i8::from(keys[0]),
+                i8::from(keys[3]) - i8::from(keys[2]),
+            ))
+        })
+    } else {
+        None
+    };
+    let key = response.id.with("keyboard-active");
+    let previous = ui.data(|data| data.get_temp::<bool>(key).unwrap_or(false));
+    let (next, active) = keyboard_pad_value(value, x_range, y_range, hold, previous, direction);
+    ui.data_mut(|data| {
+        if active {
+            data.insert_temp(key, true);
+        } else {
+            data.remove::<bool>(key);
+        }
+    });
+    next
+}
+
+fn keyboard_pad_value(
+    value: (i32, i32),
+    x_range: InputAxisRange,
+    y_range: InputAxisRange,
+    hold: bool,
+    was_active: bool,
+    direction: Option<(i8, i8)>,
+) -> ((i32, i32), bool) {
+    if let Some((x, y)) = direction {
+        let axis = |direction, range: InputAxisRange| match direction {
+            -1 => range.minimum,
+            0 => range.neutral,
+            1 => range.maximum,
+            _ => unreachable!("keyboard direction is a difference of booleans"),
+        };
+        ((axis(x, x_range), axis(y, y_range)), true)
+    } else if was_active {
+        (axis_release_value(value, x_range, y_range, hold), false)
+    } else {
+        (value, false)
+    }
 }
 
 fn axis_release_value(
@@ -1512,6 +1587,19 @@ fn snapping_pad(
     } else {
         previous
     };
+    let keyboard = keyboard_pad(
+        ui,
+        &response,
+        "D-pad: W/A/S/D keys",
+        (i32::from(next.0), i32::from(next.1)),
+        range,
+        range,
+        hold,
+    );
+    let next = (
+        i8::try_from(keyboard.0).expect("D-pad range"),
+        i8::try_from(keyboard.1).expect("D-pad range"),
+    );
     (next, next_release_pending)
 }
 
@@ -1607,6 +1695,147 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focused_pad_handles_keyboard_and_neutralizes_on_focus_loss() {
+        let context = egui::Context::default();
+        let range = InputAxisRange {
+            minimum: 0,
+            maximum: 255,
+            neutral: 127,
+        };
+        let mut value = (127, 127);
+        let mut pad_id = None;
+        for (frame, events) in [
+            vec![],
+            vec![egui::Event::Key {
+                key: egui::Key::D,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            vec![],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if frame == 2 {
+                context.memory_mut(|memory| memory.surrender_focus(pad_id.unwrap()));
+            }
+            let _ = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let (_, response) =
+                                ui.allocate_exact_size(Vec2::splat(112.0), Sense::drag());
+                            pad_id = Some(response.id);
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            value = keyboard_pad(
+                                ui,
+                                &response,
+                                "Synthetic stick",
+                                value,
+                                range,
+                                range,
+                                false,
+                            );
+                            let _ = ui.button("Adjacent focus target");
+                        });
+                    });
+                },
+            );
+            assert_eq!(value, if frame == 1 { (255, 127) } else { (127, 127) });
+            if frame == 1 {
+                assert_eq!(context.memory(egui::Memory::focused), pad_id);
+            }
+        }
+    }
+
+    #[test]
+    fn keyboard_pads_preserve_ranges_release_and_focus_loss() {
+        let x = InputAxisRange {
+            minimum: i32::MIN,
+            maximum: i32::MAX,
+            neutral: -1,
+        };
+        let y = InputAxisRange {
+            minimum: 0,
+            maximum: 255,
+            neutral: 127,
+        };
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, false, Some((-1, 1))),
+            ((i32::MIN, 255), true)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, true, None),
+            ((-1, 127), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, true, true, None),
+            ((8, 9), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, false, None),
+            ((8, 9), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, true, Some((0, 0))),
+            ((-1, 127), true)
+        );
+    }
+
+    #[test]
+    fn keyboard_dpad_release_emits_exact_button_transitions() {
+        let range = InputAxisRange {
+            minimum: -1,
+            maximum: 1,
+            neutral: 0,
+        };
+        let (pressed, active) =
+            keyboard_pad_value((0, 0), range, range, false, false, Some((1, -1)));
+        assert!(active);
+        let mut events = Vec::new();
+        emit_dpad_transition((0, 0), (1, -1), &mut events);
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Dpad {
+                    direction: DpadDirection::Right,
+                    pressed: true
+                },
+                InputEvent::Dpad {
+                    direction: DpadDirection::Up,
+                    pressed: true
+                }
+            ]
+        );
+        let (released, active) = keyboard_pad_value(pressed, range, range, false, active, None);
+        assert_eq!(released, (0, 0));
+        assert!(!active);
+        events.clear();
+        emit_dpad_transition((1, -1), (0, 0), &mut events);
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Dpad {
+                    direction: DpadDirection::Right,
+                    pressed: false
+                },
+                InputEvent::Dpad {
+                    direction: DpadDirection::Up,
+                    pressed: false
+                }
+            ]
+        );
+    }
 
     #[test]
     fn snapping_pad_covers_center_cardinals_and_corners() {

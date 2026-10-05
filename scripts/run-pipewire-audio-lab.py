@@ -27,7 +27,7 @@ def decode_graph(output):
     if len(output) > DIAGNOSTIC_LIMIT:
         raise ValueError('private graph diagnostic exceeds its quota')
     graph = json.loads(output)
-    if not isinstance(graph, list):
+    if not isinstance(graph, list) or any(not isinstance(item, dict) for item in graph):
         raise ValueError('private graph diagnostic must be an object array')
     return graph
 
