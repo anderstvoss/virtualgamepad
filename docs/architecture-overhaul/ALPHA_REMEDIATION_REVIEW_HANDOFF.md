@@ -413,3 +413,11 @@ nonleader-child and unstable-inventory regressions must pass. The bounded ordina
 user live probe detects and reaps its owned child; this is process-inspection proof,
 not installed audio-worker recovery. An older root snapshot must not silently
 inherit the corrected guard without administrator review and hash-pinned installation.
+
+### C callback diagnostics
+
+Verify that callback-gap accounting excludes startup/drain baselines and reports
+client scheduling only. The C self-test and receipt regression must pass. Counters
+must not alter stream flags, queues or marker-loss assertions; graph xruns remain
+explicitly unknown. Demand fresh quiet measured trials after the GUI and consumer
+batches finish before interpreting the added diagnostics or closing qualification.

@@ -172,3 +172,14 @@ restart or reconnection fails. This tests connection recovery across an empty
 broker restart, not worker death, stale attachment recovery or audio continuity.
 The live run requires an administrator-installed reviewed snapshot; the existing
 fixed helper cannot update its own root-owned code or accept arbitrary arguments.
+
+## Independent-control scheduling diagnostics
+
+C receipts additionally record source/sink callback counts, empty producer
+callbacks, dequeued capture buffers and maximum callback gaps while the producer
+is in the measured marker interval. Startup/drain reset the gap baseline. These
+are client scheduling observations, not graph xruns or end-to-end latency. Large
+gaps do not excuse missing, duplicated or corrupt markers. Callback threading,
+queue capacity, negotiated format and acceptance thresholds remain unchanged.
+Run fresh controls only after the GUI soak, consumer batches and compilation have
+finished and their owned resources are gone. Earlier binary receipts remain historical.

@@ -236,6 +236,14 @@ user probe also confirms detection and reap of an owned child launched by anothe
 thread. The installed 2c1af2f snapshot predates this guard correction; refresh it
 before further privileged execution. Its earlier passing negative receipt is retained.
 
+The independent C control now records callback counts/gaps, empty producer callbacks
+and dequeued capture buffers to localize client scheduling stalls. Its self-test
+checks measured-phase gap accounting, and the receipt regression confirms that
+large gaps never excuse marker loss. Callback flags, queues, formats and acceptance
+thresholds are unchanged. Fresh measurements remain pending until GUI/consumer
+workloads and compilation have completed; diagnostic instrumentation is not a
+passing continuity result.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,

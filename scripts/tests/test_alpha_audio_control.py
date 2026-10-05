@@ -55,7 +55,7 @@ class MarkerReceipt(unittest.TestCase):
             self.assertFalse(control.acceptance(row, 60))
 
     @unittest.skipUnless(shutil.which('cc') and shutil.which('pkg-config'), 'C/PipeWire developer tools unavailable')
-    def test_actual_c_marker_logic_excludes_startup_and_detects_channel_and_count_errors(self):
+    def test_actual_c_marker_and_callback_phase_logic_excludes_startup_and_detects_errors(self):
         flags = subprocess.run(['pkg-config', '--cflags', '--libs', 'libpipewire-0.3'], capture_output=True, text=True)
         if flags.returncode:
             self.skipTest('PipeWire headers unavailable')
@@ -64,6 +64,12 @@ class MarkerReceipt(unittest.TestCase):
             subprocess.run(['cc', '-Wall', '-Wextra', '-Werror', str(Path(__file__).parents[1] / 'alpha-audio-control.c'),
                             '-o', binary, *shlex.split(flags.stdout)], check=True, timeout=30)
             subprocess.run([binary, '--self-test'], check=True, timeout=5)
+
+    def test_callback_gap_diagnostics_never_excuse_marker_loss(self):
+        row = self.receipt()
+        row.update(source_max_process_gap_ns=1000000000, sink_max_process_gap_ns=1000000000)
+        row['missing'] = 128
+        self.assertFalse(control.acceptance(row, 60))
 
     def test_stdin_or_generation_does_not_prove_graph_submission(self):
         row = self.receipt()

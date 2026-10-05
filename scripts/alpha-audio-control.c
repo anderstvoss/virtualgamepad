@@ -23,6 +23,8 @@ struct control {
     uint64_t planned, first_ns, last_ns, deadline_ns;
     uint32_t *counts;
     uint64_t source_ticks, sink_ticks, source_queued_max, sink_queued_max;
+    uint64_t source_process_calls, sink_process_calls, source_empty, capture_buffers;
+    uint64_t source_previous_ns, sink_previous_ns, source_max_gap_ns, sink_max_gap_ns;
     unsigned blocks;
     unsigned source_rate, sink_rate, source_channels, sink_channels;
 };
@@ -31,6 +33,14 @@ static uint64_t now_ns(void) {
     struct timespec t;
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (uint64_t)t.tv_sec * 1000000000 + (uint64_t)t.tv_nsec;
+}
+
+static void process_gap(uint64_t stamp, bool measured, uint64_t *previous,
+                        uint64_t *maximum) {
+    if (!measured) { *previous = 0; return; }
+    if (*previous && stamp >= *previous && stamp - *previous > *maximum)
+        *maximum = stamp - *previous;
+    *previous = stamp;
 }
 
 static int16_t marker_at(uint64_t cursor, uint64_t planned) {
@@ -79,13 +89,16 @@ static void sink_format(void *data, uint32_t id, const struct spa_pod *param) {
 
 static void produce(void *data) {
     struct control *c = data;
+    c->source_process_calls++;
+    process_gap(now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned,
+                &c->source_previous_ns, &c->source_max_gap_ns);
     struct pw_time time;
     if (pw_stream_get_time_n(c->source, &time, sizeof(time)) == 0) {
         c->source_ticks = time.ticks;
         c->source_queued_max = SPA_MAX(c->source_queued_max, time.queued);
     }
     struct pw_buffer *b = pw_stream_dequeue_buffer(c->source);
-    if (!b) return;
+    if (!b) { c->source_empty++; return; }
     if (!b->buffer->n_datas) { c->errors++; pw_stream_queue_buffer(c->source, b); return; }
     struct spa_data *d = &b->buffer->datas[0];
     if (!d->data || !d->chunk) {
@@ -120,6 +133,9 @@ static void produce(void *data) {
 
 static void consume(void *data) {
     struct control *c = data;
+    c->sink_process_calls++;
+    process_gap(now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned,
+                &c->sink_previous_ns, &c->sink_max_gap_ns);
     struct pw_time time;
     if (pw_stream_get_time_n(c->sink, &time, sizeof(time)) == 0) {
         c->sink_ticks = time.ticks;
@@ -127,6 +143,7 @@ static void consume(void *data) {
     }
     struct pw_buffer *b;
     while ((b = pw_stream_dequeue_buffer(c->sink))) {
+        c->capture_buffers++;
         if (!b->buffer->n_datas) { c->errors++; pw_stream_queue_buffer(c->sink, b); continue; }
         struct spa_data *d = &b->buffer->datas[0];
         if (!d->data || !d->chunk || d->chunk->size > d->maxsize ||
@@ -165,6 +182,14 @@ static const struct pw_stream_events sink_events = {
 
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--self-test")) {
+        uint64_t previous = 0, maximum = 0;
+        process_gap(1, false, &previous, &maximum);
+        process_gap(100, true, &previous, &maximum);
+        process_gap(150, true, &previous, &maximum);
+        process_gap(200, false, &previous, &maximum);
+        process_gap(1000, true, &previous, &maximum);
+        process_gap(1025, true, &previous, &maximum);
+        if (previous != 1025 || maximum != 50) return 1;
         uint32_t counts[2] = {0};
         struct control test = {.blocks = 2, .counts = counts};
         if (marker_at(95999, 256) || marker_at(96256, 256) ||
@@ -225,12 +250,17 @@ int main(int argc, char **argv) {
         ",\"invalid\":%" PRIu64 ",\"partial_bytes\":%" PRIu64 ",\"errors\":%" PRIu64
         ",\"producer_elapsed_ns\":%" PRIu64 ",\"source_rate\":%u,\"sink_rate\":%u,\"source_channels\":%u,\"sink_channels\":%u"
         ",\"source_graph_ticks\":%" PRIu64 ",\"sink_graph_ticks\":%" PRIu64 ",\"source_queued_max\":%" PRIu64
-        ",\"sink_queued_max\":%" PRIu64 ",\"client_scheduler\":%d,\"graph_xruns\":null}\n",
+        ",\"sink_queued_max\":%" PRIu64 ",\"client_scheduler\":%d,\"graph_xruns\":null"
+        ",\"source_process_calls\":%" PRIu64 ",\"sink_process_calls\":%" PRIu64
+        ",\"source_empty_callbacks\":%" PRIu64 ",\"capture_buffers\":%" PRIu64
+        ",\"source_max_process_gap_ns\":%" PRIu64 ",\"sink_max_process_gap_ns\":%" PRIu64 "}\n",
         c.planned, c.cursor > 96000 ? SPA_MIN(c.cursor - 96000, c.planned) : 0,
         c.submitted, c.received, missing, duplicate, c.invalid, c.partial, c.errors,
         c.first_ns ? c.last_ns - c.first_ns : 0,
         c.source_rate, c.sink_rate, c.source_channels, c.sink_channels,
-        c.source_ticks, c.sink_ticks, c.source_queued_max, c.sink_queued_max, sched_getscheduler(0));
+        c.source_ticks, c.sink_ticks, c.source_queued_max, c.sink_queued_max, sched_getscheduler(0),
+        c.source_process_calls, c.sink_process_calls, c.source_empty, c.capture_buffers,
+        c.source_max_gap_ns, c.sink_max_gap_ns);
     status = c.submitted != c.planned || c.received != c.planned || missing || duplicate ||
         c.invalid || c.partial || c.errors || c.source_rate != 48000 || c.sink_rate != 48000 ||
         c.source_channels != 2 || c.sink_channels != 2;
