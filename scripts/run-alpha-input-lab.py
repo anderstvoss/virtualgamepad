@@ -128,7 +128,6 @@ def run(args):
         raise RuntimeError('test account must be non-root')
     if args.input_gid <= 0 or args.input_gid != creation_group():
         raise RuntimeError('input group must match the creation device')
-    trusted(RULES, True)
     for parent in RULES.parents:
         trusted(parent, True)
     read_fd, write_fd = os.pipe()
@@ -138,8 +137,13 @@ def run(args):
     initiating = None
     cleanup = []
     status = None
+    created_directory = None
     handlers = {s: signal.signal(s, interrupted) for s in (signal.SIGTERM, signal.SIGINT)}
     try:
+        if not RULES.exists():
+            RULES.mkdir(mode=0o755)
+            created_directory = identity(RULES)
+        trusted(RULES, True)
         with tempfile.TemporaryFile() as output:
             command = ['/usr/bin/setpriv', '--reuid=' + str(account.pw_uid),
                        '--regid=' + str(account.pw_gid), '--groups=' + str(args.input_gid),
@@ -194,6 +198,13 @@ def run(args):
             try:
                 status = process.wait(timeout=10)
             except subprocess.TimeoutExpired as error:
+                cleanup.append(str(error))
+        if created_directory is not None:
+            try:
+                if identity(RULES) != created_directory or any(RULES.iterdir()):
+                    raise RuntimeError('new rule directory changed or is nonempty; retained')
+                RULES.rmdir()
+            except (OSError, RuntimeError) as error:
                 cleanup.append(str(error))
         for signum, handler in handlers.items():
             signal.signal(signum, handler)
