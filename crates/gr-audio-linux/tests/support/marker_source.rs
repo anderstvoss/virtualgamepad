@@ -198,6 +198,8 @@ pub struct Observations {
     pub counts: Vec<AtomicU64>,
     latencies: Vec<AtomicU64>,
     invalid: AtomicU64,
+    buffers: AtomicU64,
+    coalesced_callbacks: AtomicU64,
 }
 impl Observations {
     pub fn new(blocks: usize) -> Arc<Self> {
@@ -205,7 +207,15 @@ impl Observations {
             counts: (0..blocks).map(|_| AtomicU64::new(0)).collect(),
             latencies: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
             invalid: AtomicU64::new(0),
+            buffers: AtomicU64::new(0),
+            coalesced_callbacks: AtomicU64::new(0),
         })
+    }
+    pub fn ready_buffers(&self) -> (u64, u64) {
+        (
+            self.buffers.load(Ordering::Acquire),
+            self.coalesced_callbacks.load(Ordering::Acquire),
+        )
     }
     pub fn snapshot(&self, stamps: &[AtomicU64]) -> (Vec<u64>, Vec<usize>, usize) {
         let mut times = Vec::new();
@@ -304,38 +314,48 @@ fn capture_inner(
         let listener = stream
             .add_local_listener::<()>()
             .process(move |stream, ()| {
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    return;
-                };
-                let Some(data) = buffer.datas_mut().first_mut() else {
-                    return;
-                };
-                let offset = data.chunk().offset() as usize;
-                let size = data.chunk().size() as usize;
-                if data
-                    .chunk()
-                    .flags()
-                    .contains(spa::buffer::ChunkFlags::CORRUPTED)
-                {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
-                if data.chunk().flags().bits() & 2 != 0 {
-                    return;
-                }
-                let Some(bytes) = data
-                    .data()
-                    .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
-                else {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                };
-                observations.record(
-                    bytes,
-                    channels,
-                    &stamps,
-                    u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                let drained = drain_ready(
+                    || stream.dequeue_buffer(),
+                    |mut buffer| {
+                        let Some(data) = buffer.datas_mut().first_mut() else {
+                            return;
+                        };
+                        let offset = data.chunk().offset() as usize;
+                        let size = data.chunk().size() as usize;
+                        if data
+                            .chunk()
+                            .flags()
+                            .contains(spa::buffer::ChunkFlags::CORRUPTED)
+                        {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                        if data.chunk().flags().bits() & 2 != 0 {
+                            return;
+                        }
+                        let Some(bytes) = data
+                            .data()
+                            .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
+                        else {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        };
+                        observations.record(
+                            bytes,
+                            channels,
+                            &stamps,
+                            u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                        );
+                    },
                 );
+                observations
+                    .buffers
+                    .fetch_add(drained as u64, Ordering::Release);
+                if drained > 1 {
+                    observations
+                        .coalesced_callbacks
+                        .fetch_add(1, Ordering::Release);
+                }
             })
             .register()
             .unwrap();
@@ -420,4 +440,62 @@ fn capture_rejects_partial_frames_without_counting_the_valid_prefix() {
     assert!(times.is_empty());
     assert_eq!(counts, [0]);
     assert_eq!(invalid, 2);
+}
+
+// A process notification can cover multiple ready buffers. Returning after one
+// leaves older graph data pending until later callbacks or pool exhaustion.
+fn drain_ready<T>(mut next: impl FnMut() -> Option<T>, mut receive: impl FnMut(T)) -> usize {
+    let mut count = 0;
+    while let Some(buffer) = next() {
+        receive(buffer);
+        count += 1;
+    }
+    count
+}
+
+#[test]
+fn one_notification_drains_all_ready_markers_and_returns_invalid_buffers() {
+    use std::collections::VecDeque;
+    use std::sync::atomic::AtomicUsize;
+    struct Buffer {
+        bytes: Vec<u8>,
+        returned: Arc<AtomicUsize>,
+    }
+    impl Drop for Buffer {
+        fn drop(&mut self) {
+            self.returned.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let returned = Arc::new(AtomicUsize::new(0));
+    let mut ready: VecDeque<_> = [
+        1_i16.to_le_bytes().repeat(64 * 2),
+        vec![1, 0, 1],
+        1_i16.to_le_bytes().repeat(64 * 2),
+    ]
+    .into_iter()
+    .map(|bytes| Buffer {
+        bytes,
+        returned: returned.clone(),
+    })
+    .collect();
+    let observations = Observations::new(1);
+    let stamps = [AtomicU64::new(3_000_000_001)];
+    assert_eq!(
+        drain_ready(
+            || ready.pop_front(),
+            |buffer| {
+                observations.record(&buffer.bytes, 2, &stamps, 3_000_000_010);
+            }
+        ),
+        3
+    );
+    let (latencies, counts, invalid) = observations.snapshot(&stamps);
+    assert_eq!(counts, [128]);
+    assert_eq!(latencies.len(), 128);
+    assert_eq!(invalid, 1);
+    assert_eq!(returned.load(Ordering::Relaxed), 3);
+    assert_eq!(
+        drain_ready(|| ready.pop_front(), |_| panic!("no pending buffers")),
+        0
+    );
 }

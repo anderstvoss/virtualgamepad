@@ -1065,6 +1065,11 @@ fn latency_graph_direct_control() {
     let generated = source.generated_frames();
     drop(source);
     drop(sink);
+    eprintln!(
+        "direct_control ready_buffers={} coalesced_callbacks={}",
+        observations.ready_buffers().0,
+        observations.ready_buffers().1
+    );
     let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
     eprintln!(
         "direct_control producer_frames={generated} planned_frames={} consumer_frames={} queue=absent",
