@@ -566,12 +566,22 @@ fn assert_direction_latency(
         "{label} missing_marker_frames={} duplicate_marker_frames={}",
         marker_errors.0, marker_errors.1
     );
-    latencies.sort_unstable();
+    // Reject known continuity failures before expensive percentile processing.
+    // In a bounded realtime lab, sorting a long failed trial can otherwise
+    // consume its CPU budget before the initiating failure is reported.
+    assert_eq!(invalid, 0);
+    assert_eq!(marker_errors, (0, 0), "per-marker continuity failed");
+    assert_eq!(
+        latencies.len(),
+        expected_frames,
+        "missing or duplicate measured marker frames"
+    );
     assert!(
         latencies.len() > 200_000,
         "insufficient measured frames: {}",
         latencies.len()
     );
+    latencies.sort_unstable();
     let percentile = |p: usize| latencies[(latencies.len() * p).div_ceil(100) - 1];
     eprintln!(
         "{label} frames={} p50_us={} p95_us={} p99_us={} max_us={} invalid={} playback_queue_dropped={:?} expected_marker_frames={expected_frames} (application-to-application; includes client buffering and scheduling; continuity requires separate validation)",
@@ -583,14 +593,24 @@ fn assert_direction_latency(
         invalid,
         dropped
     );
-    assert_eq!(invalid, 0);
-    assert_eq!(marker_errors, (0, 0), "per-marker continuity failed");
-    assert_eq!(
-        latencies.len(),
-        expected_frames,
-        "missing or duplicate measured marker frames"
-    );
     assert!(percentile(99) < 20_000_000, "p99 must be below 20ms");
+}
+
+#[test]
+fn failed_continuity_does_not_sort_latency_samples() {
+    for (invalid, expected, errors) in [
+        (1, 2, (0, 0)),
+        (0, 2, (1, 0)),
+        (0, 2, (0, 1)),
+        (0, 3, (0, 0)),
+    ] {
+        let mut samples = [2, 1];
+        let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert_direction_latency("regression", &mut samples, invalid, None, expected, errors);
+        }));
+        assert!(failure.is_err());
+        assert_eq!(samples, [2, 1], "failed trial must skip percentile sorting");
+    }
 }
 
 /// Reverse-direction measurement. Disable the test client's stdio buffering so

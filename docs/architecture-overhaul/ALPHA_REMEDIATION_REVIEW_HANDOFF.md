@@ -1,5 +1,48 @@
 # Independent alpha remediation PR review handoff
 
+### Installed scheduling experiment: qualification still fails
+
+The administrator-installed `e88a9078612668cbb5350799dc58c16b5680aafd`
+lab completed with an aggregate failure. All 67 broker checks and all six
+Sony input tests passed again. Its six audio controls failed. C trials completed
+2,880,000 planned/submitted frames each but missed 176,128 / 156,672 / 149,504
+measured markers, duplicated 512 / 1,024 / 512 and reported 3,072 / 0 / 0
+corrupt markers. Production took 61.54 / 61.42 / 61.38 seconds for 60 planned
+seconds. The observed C process used round-robin priority 20, priority limit 88
+and a 200,000 microsecond realtime CPU bound. This confirms the temporary grant,
+not the cause of loss. Graph clocks stayed monotonic at 48 kHz.
+
+All Rust trials completed 2,976,000 planned producer frames but missed
+11,264 / 8,704 / 9,216 measured frames, with no duplicated markers. Each
+wrapper returned 247 (the child was killed by signal 9) after printing marker
+accounting, before percentile results. The realtime CPU bound is a plausible
+explanation for that termination, not proven kernel evidence. Independently,
+the harness unnecessarily sorted all latency samples before rejecting known
+continuity failures. It now rejects invalid, missing, duplicated or mismatched
+frame accounting before percentile sorting. A deterministic regression checks
+that all four rejection cases leave an unsorted sample array unchanged. The
+zero-loss and 20 ms p99 requirements remain unchanged. The corrected harness
+has not yet received an installed sustained rerun.
+
+The temporary unit was collected, its cgroup was empty, its identity-checked
+workspace was removed and all input-rule cleanup receipts were clean. Original
+broker/socket services are active and only their verified journal connection
+remains. No broad sudo or persistent scheduling configuration was introduced.
+The 18 local checks and exact-head CI/security workflows at `e88a907` passed;
+downloaded SBOMs validate all 17 workspace identities. Privileged CI was skipped.
+Raw receipts, logs and process-limit evidence are outside tracked source.
+
+The VM remains unqualified; the 72 product trials and sustained slow-consumer
+reruns remain gated. Remaining functional work is full provider recovery,
+other output/sibling-failure cases, USB/IP audio/routing, complete keyboard and
+accessibility checks, and isolated Steam acceptance. Physical comparison and
+native timing remain only the two explicitly deferred post-alpha issues.
+Reviewer: reject any attempt to close audio using these scheduling settings,
+C production totals, or input/provider passes. Check fail-fast assertion order,
+preserved limits, negative child exit status, and restoration independently.
+Earlier preparation notes below are historical and superseded by this receipt.
+
+
 ### Quiet controls and temporary scheduling experiment
 
 At `d963978977a31a92ecbaa3b9627bd730c422f879`, quiet C controls yielded one
