@@ -589,17 +589,15 @@ pub(super) fn draw_trigger_stack(
                                 egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                     .show_value(true),
                             );
-                            if response.changed() {
-                                events.push(InputEvent::Axis1 { id, value });
-                            }
-                            if !state.held(stack.id())
-                                && (response.drag_stopped() || response.clicked())
-                            {
-                                events.push(InputEvent::Axis1 {
-                                    id,
-                                    value: range.neutral,
-                                });
-                            }
+                            emit_axis_slider(
+                                ui,
+                                &response,
+                                id,
+                                range,
+                                value,
+                                state.held(stack.id()),
+                                events,
+                            );
                         }
                     }
                 });
@@ -720,17 +718,15 @@ pub(super) fn draw_touchpad(
                             egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                 .text("Deflection"),
                         );
-                        if response.changed() {
-                            events.push(InputEvent::Axis1 { id, value });
-                        }
-                        if !state.held(input.id())
-                            && (response.drag_stopped() || response.clicked())
-                        {
-                            events.push(InputEvent::Axis1 {
-                                id,
-                                value: range.neutral,
-                            });
-                        }
+                        emit_axis_slider(
+                            ui,
+                            &response,
+                            id,
+                            range,
+                            value,
+                            state.held(input.id()),
+                            events,
+                        );
                     }
                 }
                 reset_requested = ui
@@ -1304,7 +1300,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= motion_interaction_finished(ui, &response);
+                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
             }
             for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
                 .into_iter()
@@ -1315,7 +1311,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= motion_interaction_finished(ui, &response);
+                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
             }
             if motion_should_neutralize(released, hold, interaction_finished) {
                 gyro = [input.range().neutral; 3];
@@ -1333,12 +1329,12 @@ pub(super) fn draw_motion(
     );
 }
 
-fn motion_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
+fn momentary_axis_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
     // egui's lost_focus edge can be consumed before the next draw when a
     // containing view surrenders focus. Retain our own previous-frame evidence.
     let focused = response.has_focus() && ui.is_enabled();
     let lost_focus = ui.data_mut(|data| {
-        let id = response.id.with("motion-keyboard-focus");
+        let id = response.id.with("momentary-axis-keyboard-focus");
         let previous = data.get_temp::<bool>(id).unwrap_or(false);
         data.insert_temp(id, focused);
         previous && !focused
@@ -1363,6 +1359,27 @@ fn motion_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool
                     )
                 })
             }))
+}
+
+fn emit_axis_slider(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    id: InputControlId,
+    range: InputAxisRange,
+    value: i32,
+    held: bool,
+    events: &mut Vec<InputEvent>,
+) {
+    let finished = momentary_axis_interaction_finished(ui, response);
+    if response.changed() {
+        events.push(InputEvent::Axis1 { id, value });
+    }
+    if !held && finished {
+        events.push(InputEvent::Axis1 {
+            id,
+            value: range.neutral,
+        });
+    }
 }
 
 fn motion_should_neutralize(released: bool, hold: bool, interaction_finished: bool) -> bool {
@@ -2309,6 +2326,55 @@ mod tests {
     }
 
     #[test]
+    fn axis_slider_keyboard_release_emits_exact_neutral_and_hold_preserves_value() {
+        for held in [false, true] {
+            let context = egui::Context::default();
+            let id = InputControlId::new("synthetic-slider");
+            let range = InputAxisRange {
+                minimum: -100,
+                maximum: 100,
+                neutral: 0,
+            };
+            let mut value = 0;
+            let mut events = Vec::new();
+            for frame in 0..3 {
+                let _ = context.run(
+                    egui::RawInput {
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::ArrowRight,
+                                physical_key: None,
+                                pressed: frame == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            let response =
+                                ui.add(egui::Slider::new(&mut value, -100..=100).text("Trigger"));
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            emit_axis_slider(ui, &response, id, range, value, held, &mut events);
+                        });
+                    },
+                );
+            }
+            assert!(value > 0);
+            let mut expected = vec![InputEvent::Axis1 { id, value }];
+            if !held {
+                expected.push(InputEvent::Axis1 { id, value: 0 });
+            }
+            assert_eq!(events, expected);
+        }
+    }
+
+    #[test]
     fn motion_slider_keyboard_release_and_focus_loss_end_momentary_input() {
         let context = egui::Context::default();
         let mut value = 0;
@@ -2344,7 +2410,7 @@ mod tests {
                         if frame == 1 {
                             changed_on_press = response.changed();
                         }
-                        let finished = motion_interaction_finished(ui, &response);
+                        let finished = momentary_axis_interaction_finished(ui, &response);
                         if frame == 2 {
                             assert!(
                                 !response.drag_stopped() && !response.clicked(),
