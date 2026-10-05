@@ -2,6 +2,28 @@
 
 ## Gate and revisions
 
+### Current alpha boundary: post-alpha evidence follow-ups
+
+The release owner has deferred these two environment-dependent evidence gates:
+
+- [#135: native Linux timing](https://github.com/anderstvoss/virtualgamepad/issues/135).
+- [#136: four-family physical comparisons](https://github.com/anderstvoss/virtualgamepad/issues/136).
+
+Missing native timing and physical comparison evidence alone no longer blocks
+alpha. Until these issues close, no native timing or physical-equivalence claim is
+supported. This supersedes their earlier mandatory-gate classifications below;
+historical results and failures remain intact. Audio continuity, installed-provider
+recovery, contacts/other implemented outputs, routing and manual GUI/Steam checks
+remain alpha gates. The PR stays draft while those are unresolved.
+
+The Rust direct audio control now records callback/buffer/empty counts and maximum
+measured callback gaps, plus the first 16 deficient marker IDs, missing-frame counts
+and producer timestamps. Diagnostics do not change queues, stream flags or zero-loss
+assertions. Rust RAII buffer-return status remains explicitly unobserved; generated
+markers are not relabeled as acknowledged graph submission. Deterministic tests
+cover phase exclusion, partial marker loss, duplicate offsets and warm-up exclusion.
+Fresh controls and product acceptance remain required.
+
 ### Complete-resolution continuation
 
 Historical starting checkpoint (later execution updates follow): the candidate started from `23615da424f8b8d358838e5460e62c3b3969493f`

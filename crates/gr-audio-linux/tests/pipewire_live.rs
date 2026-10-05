@@ -921,6 +921,41 @@ fn marker_frame_errors(
         })
 }
 
+fn marker_deficits(
+    counts: &[usize],
+    stamps: &[std::sync::atomic::AtomicU64],
+) -> Vec<(usize, usize, u64)> {
+    counts
+        .iter()
+        .zip(stamps)
+        .enumerate()
+        .filter_map(|(index, (count, stamp))| {
+            let timestamp = stamp.load(std::sync::atomic::Ordering::Acquire);
+            (timestamp > 2_000_000_000 && *count < 128).then_some((
+                index + 1,
+                128_usize.saturating_sub(*count),
+                timestamp,
+            ))
+        })
+        .collect()
+}
+
+#[test]
+fn marker_deficits_localize_partial_loss_without_counting_startup_or_duplicates() {
+    use std::sync::atomic::AtomicU64;
+    let stamps = [
+        AtomicU64::new(1),
+        AtomicU64::new(2_000_000_001),
+        AtomicU64::new(2_000_000_002),
+        AtomicU64::new(2_000_000_003),
+    ];
+    assert_eq!(
+        marker_deficits(&[0, 0, 256, 127], &stamps),
+        [(2, 128, 2_000_000_001), (4, 1, 2_000_000_003)]
+    );
+    assert_eq!(marker_frame_errors(&[0, 0, 256, 127], &stamps), (129, 128));
+}
+
 #[test]
 fn marker_counts_reject_equal_total_with_loss_and_duplication() {
     use std::sync::atomic::AtomicU64;
@@ -1063,6 +1098,11 @@ fn latency_graph_direct_control() {
         std::thread::sleep(Duration::from_millis(1));
     }
     let generated = source.generated_frames();
+    eprintln!(
+        "direct_control process_stats=(calls,buffers,empty,max_measured_gap_ns) source={:?} capture={:?}; queue return status unobserved by Rust RAII binding",
+        source.process_accounting(),
+        sink.process_accounting()
+    );
     drop(source);
     drop(sink);
     eprintln!(
@@ -1075,6 +1115,12 @@ fn latency_graph_direct_control() {
         "direct_control producer_frames={generated} planned_frames={} consumer_frames={} queue=absent",
         blocks * 128,
         counts.iter().sum::<usize>()
+    );
+    let deficits = marker_deficits(&counts, &stamps);
+    eprintln!(
+        "direct_control deficit_blocks={} first_16=(marker,missing_frames,producer_ns) {:?}",
+        deficits.len(),
+        &deficits[..deficits.len().min(16)]
     );
     assert_eq!(generated, (blocks * 128) as u64);
     assert_direction_latency(

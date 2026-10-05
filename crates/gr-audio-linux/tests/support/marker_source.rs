@@ -9,10 +9,55 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Default)]
+struct ProcessStats {
+    calls: AtomicU64,
+    buffers: AtomicU64,
+    empty: AtomicU64,
+    max_gap_ns: AtomicU64,
+}
+impl ProcessStats {
+    fn record_buffers(&self, count: u64) {
+        self.buffers.fetch_add(count, Ordering::Relaxed);
+        if count == 0 {
+            self.empty.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    fn snapshot(&self) -> (u64, u64, u64, u64) {
+        (
+            self.calls.load(Ordering::Acquire),
+            self.buffers.load(Ordering::Acquire),
+            self.empty.load(Ordering::Acquire),
+            self.max_gap_ns.load(Ordering::Acquire),
+        )
+    }
+}
+
+fn process_gap(previous: &mut Option<u64>, now: u64, measured: bool) -> u64 {
+    if !measured {
+        *previous = None;
+        return 0;
+    }
+    let gap = previous.map_or(0, |last| now.saturating_sub(last));
+    *previous = Some(now);
+    gap
+}
+
+#[test]
+fn process_gap_excludes_startup_and_drain_baselines() {
+    let mut previous = None;
+    assert_eq!(process_gap(&mut previous, 10, false), 0);
+    assert_eq!(process_gap(&mut previous, 100, true), 0);
+    assert_eq!(process_gap(&mut previous, 140, true), 40);
+    assert_eq!(process_gap(&mut previous, 1_000, false), 0);
+    assert_eq!(process_gap(&mut previous, 2_000, true), 0);
+}
+
 pub struct Source {
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
     generated: Option<Arc<AtomicU64>>,
+    process_stats: Arc<ProcessStats>,
 }
 impl Source {
     pub fn start(
@@ -25,6 +70,8 @@ impl Source {
         let worker_stop = stop.clone();
         let generated = Arc::new(AtomicU64::new(0));
         let worker_generated = Arc::clone(&generated);
+        let process_stats = Arc::new(ProcessStats::default());
+        let worker_stats = Arc::clone(&process_stats);
         let worker = thread::spawn(move || {
             pw::init();
             let main = pw::main_loop::MainLoopRc::new(None).unwrap();
@@ -43,12 +90,23 @@ impl Source {
             )
             .unwrap();
             let mut position = 0_usize;
+            let mut previous_process = None;
             let listener = stream
                 .add_local_listener::<()>()
                 .process(move |stream, ()| {
+                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
+                    worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                    let gap = process_gap(
+                        &mut previous_process,
+                        now,
+                        now > 2_000_000_000 && position < stamps.len() * 128,
+                    );
+                    worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                     let Some(mut buffer) = stream.dequeue_buffer() else {
+                        worker_stats.record_buffers(0);
                         return;
                     };
+                    worker_stats.record_buffers(1);
                     let requested = usize::try_from(buffer.requested()).unwrap();
                     let Some(data) = buffer.datas_mut().first_mut() else {
                         return;
@@ -58,7 +116,6 @@ impl Source {
                     };
                     let stride = channels * 2;
                     let frames = requested.min(bytes.len() / stride);
-                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
                     let markers = fill_markers(
                         &mut bytes[..frames * stride],
                         channels,
@@ -97,7 +154,11 @@ impl Source {
             stop,
             worker: Some(worker),
             generated: Some(generated),
+            process_stats,
         }
+    }
+    pub fn process_accounting(&self) -> (u64, u64, u64, u64) {
+        self.process_stats.snapshot()
     }
     pub fn generated_frames(&self) -> u64 {
         self.generated
@@ -303,6 +364,8 @@ fn capture_inner(
 ) -> Source {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
+    let process_stats = Arc::new(ProcessStats::default());
+    let worker_stats = Arc::clone(&process_stats);
     let worker = thread::spawn(move || {
         pw::init();
         let main = pw::main_loop::MainLoopRc::new(None).unwrap();
@@ -311,9 +374,19 @@ fn capture_inner(
         let props = capture_properties(&target, direct);
         let stream =
             pw::stream::StreamRc::new(core.clone(), "synthetic-marker-capture", props).unwrap();
+        let mut previous_process = None;
         let listener = stream
             .add_local_listener::<()>()
             .process(move |stream, ()| {
+                let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
+                worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                let measured = now > 2_000_000_000
+                    && observations
+                        .counts
+                        .last()
+                        .is_some_and(|n| n.load(Ordering::Acquire) < 128);
+                let gap = process_gap(&mut previous_process, now, measured);
+                worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                 let drained = drain_ready(
                     || stream.dequeue_buffer(),
                     |mut buffer| {
@@ -348,6 +421,7 @@ fn capture_inner(
                         );
                     },
                 );
+                worker_stats.record_buffers(drained as u64);
                 observations
                     .buffers
                     .fetch_add(drained as u64, Ordering::Release);
@@ -385,6 +459,7 @@ fn capture_inner(
         stop,
         worker: Some(worker),
         generated: None,
+        process_stats,
     }
 }
 

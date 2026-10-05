@@ -2,11 +2,24 @@
 
 ## Objective and candidate control
 
+The release owner now defers native timing to [#135](https://github.com/anderstvoss/virtualgamepad/issues/135)
+and physical comparisons to [#136](https://github.com/anderstvoss/virtualgamepad/issues/136)
+as post-alpha cleanup. Missing evidence for those two items alone is not an alpha
+blocker. No native timing or physical-equivalence claim follows. All remaining VM
+functional/continuity/provider/contact/routing/manual gates remain mandatory;
+retain historical classifications below as historical context.
+
+Review Rust direct-control callback counts/gaps and deficient-marker location
+reporting. They must not change stream flags, queue sizes or acceptance thresholds;
+callback-gap phase baselines must exclude startup/drain. The Rust binding does not
+expose RAII buffer-return errors, so generation counts must not claim acknowledged
+submission. Partial loss offset by duplication must still fail the existing gate.
+
 The complete-resolution continuation adds fail-closed dummy_hcd admission and
 portable acceptance tooling. Review [the lab procedure](ALPHA_ACCEPTANCE_LAB.md)
 and the continuation section of the status document before interpreting historical
 results below. The permitted maintenance window supersedes earlier read-only host
-restrictions, but no administrator-run trial has passed in this continuation.
+restrictions, and later installed lab receipts record the guarded negative/admission/empty-restart checks.
 Native acceptance may close supported audio while this VM remains unqualified;
 retain VM failures and never claim VM continuity from native results.
 
