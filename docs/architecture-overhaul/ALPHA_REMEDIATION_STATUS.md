@@ -68,6 +68,19 @@ those narrow interactive cells only: complete keyboard focus traversal,
 touch/lockout, discovery retry, routing and isolated Steam remain unverified.
 The earlier completed two-hour neutral soak remains separate passing evidence.
 
+Five individually selected, 90-second-bounded live checks also passed using the
+hash-verified b64c451 test executable, each in a fresh private PipeWire graph:
+`pipewire_sample_flow_and_independent_cleanup`,
+`pipewire_native_mode_has_explicit_caller_endpoints`,
+`native_clients_exchange_samples_in_both_directions`,
+`usb_bridge_input_stays_empty_until_explicit_activation`, and
+`pipewire_close_during_processing_retains_clocks_and_recreates`. They verify
+functional sample/native exchange, explicit ownership errors, input activation,
+sibling survival and repeated close/recreation with retained clocks. Owned client
+and graph processes were reaped and private runtimes removed. The bridge test
+contains no attached USB/IP device; these passes close neither attached transport
+acceptance nor sustained continuity. No ignored child entrypoint was blanket-run.
+
 Alpha remains **NOT READY** for the remaining VM gates. Only the native timing
 and physical comparison evidence has been deferred to #135 and #136.
 

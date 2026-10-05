@@ -101,6 +101,13 @@ inspection, not a claim of complete manual keyboard/accessibility, touch, audio
 routing or Steam acceptance. Full focus traversal remains unverified. Keep the
 completed two-hour neutral soak distinct from this shorter interactive check.
 
+The latest status also records five separately bounded PipeWire functional and
+lifecycle tests at b64c451. Review their exact executable hash and per-test commands;
+independent cleanup, ownership errors and recreation are passing cells. USB-bridge
+activation is a private-graph test with no attached USB/IP transport. Reject any
+attempt to promote these short functional passes into sustained continuity or full
+provider recovery acceptance.
+
 ## Critical architectural scrutiny
 
 1. **Termination races:** inspect `crates/gr-controller-runtime/src/reverse_delivery.rs`.
