@@ -131,6 +131,33 @@ def require_no_clients(text, pid, journald_pid=None):
         raise RuntimeError('installed broker has connected clients or unverified sockets')
 
 
+def process_children(pid, proc_root=Path('/proc')):
+    """Linux children are per-thread; inspecting only the leader misses workers."""
+    root = proc_root / str(pid)
+    def started():
+        # comm can contain spaces/parentheses; field 22 follows the closing comm.
+        fields = (root / 'stat').read_text().rsplit(')', 1)[1].split()
+        return int(fields[19])
+    try:
+        before = started()
+        tasks = set((root / 'task').iterdir())
+        if root / 'task' / str(pid) not in tasks:
+            raise ValueError('process leader is absent')
+        children = set()
+        for task in tasks:
+            if not task.name.isdigit():
+                raise ValueError('invalid task identity')
+            for value in (task / 'children').read_text().split():
+                if not value.isdigit() or int(value) <= 0:
+                    raise ValueError('invalid child identity')
+                children.add(int(value))
+        if before != started() or tasks != set((root / 'task').iterdir()):
+            raise ValueError('process identity or task inventory changed')
+        return sorted(children)
+    except (OSError, ValueError, IndexError) as error:
+        raise RuntimeError('process child ownership could not be verified') from error
+
+
 def maintenance(backend):
     saved = backend.snapshot()
     backend.preflight(saved)
@@ -227,7 +254,7 @@ class Host:
             if len(owned) != 1 or len(owned[0]) < 4 or owned[0][2] != '0':
                 raise RuntimeError('broker listener ownership/backlog is not verified idle')
             # A worker or unobserved child is unexplained ownership, not idle.
-            children = Path(f'/proc/{pid}/task/{pid}/children').read_text().strip()
+            children = process_children(pid)
             if children:
                 raise RuntimeError('installed broker has child processes')
         for child in STATE.iterdir():
@@ -352,7 +379,7 @@ class Host:
                 raise RuntimeError('candidate journal is changed or nonempty; refusing restart')
         free_port(VHCI.read_text(), self.args.port)
         old = int(self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).strip())
-        if old <= 0 or Path(f'/proc/{old}/task/{old}/children').read_text().strip():
+        if old <= 0 or process_children(old):
             raise RuntimeError('candidate process is absent or has unexplained children')
         self.run(['systemctl', 'stop', self.socket])
         self.run(['systemctl', 'stop', self.service])

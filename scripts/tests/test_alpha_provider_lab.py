@@ -202,7 +202,7 @@ class ReversibleMaintenance(unittest.TestCase):
         host.owned = [(lab.STATE / name, (1, 2), True) for name in ('synthetic', 'synthetic.audio')]
         host.run = Mock(side_effect=['42\n', '', '', 'inactive\n', '43\n'])
         host.start_candidate = Mock(); host.run_client = Mock()
-        with patch.object(lab, 'identity', return_value=(1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter([])), patch.object(Path, 'read_text', return_value=''), patch.object(lab, 'free_port'):
+        with patch.object(lab, 'identity', return_value=(1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter([])), patch.object(Path, 'read_text', return_value=''), patch.object(lab, 'free_port'), patch.object(lab, 'process_children', return_value=[]):
             host.restart_empty_candidate()
         host.run_client.assert_called_once_with(1001, ['/synthetic/probe'], 'reconnected')
         host.start_candidate.assert_called_once()
@@ -214,7 +214,7 @@ class ReversibleMaintenance(unittest.TestCase):
             host = lab.Host(Mock(port=0)); host.instance = 'synthetic'; host.service = 'synthetic.service'
             host.owned = [(lab.STATE / name, (1, 2), True) for name in ('synthetic', 'synthetic.audio')]
             host.run = Mock(return_value='42\n'); host.start_candidate = Mock()
-            with patch.object(lab, 'identity', return_value=(9, 9) if changed else (1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter(entries)), patch.object(Path, 'read_text', return_value=children), patch.object(lab, 'free_port'):
+            with patch.object(lab, 'identity', return_value=(9, 9) if changed else (1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter(entries)), patch.object(Path, 'read_text', return_value=children), patch.object(lab, 'free_port'), patch.object(lab, 'process_children', return_value=[7] if children else []):
                 with self.assertRaisesRegex(RuntimeError, 'refusing restart|unexplained children'): host.restart_empty_candidate()
             self.assertFalse(any('stop' in call.args[0] for call in host.run.call_args_list))
             host.start_candidate.assert_not_called()
@@ -229,6 +229,27 @@ class ReversibleMaintenance(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'candidate restart failed'):
             lab.maintenance(host)
         self.assertEqual(host.events[-3:], ['stop_candidate', 'cleanup', 'restore'])
+
+    def test_child_on_nonleader_thread_prevents_false_idle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / '42'; (root / 'task' / '42').mkdir(parents=True)
+            (root / 'task' / '43').mkdir()
+            (root / 'stat').write_text('42 (fake name) ' + ' '.join(['S'] + ['0'] * 18 + ['100']))
+            (root / 'task' / '42' / 'children').write_text('')
+            (root / 'task' / '43' / 'children').write_text('7 8')
+            self.assertEqual(lab.process_children(42, Path(directory)), [7, 8])
+            (root / 'task' / '43' / 'children').unlink()
+            with self.assertRaisesRegex(RuntimeError, 'ownership could not be verified'):
+                lab.process_children(42, Path(directory))
+
+    def test_child_inspection_refuses_pid_reuse_or_task_change(self):
+        root = Path('/synthetic/proc')
+        task = root / '42' / 'task' / '42'
+        def record(start):return '42 (fake) ' + ' '.join(['S'] + ['0'] * 18 + [str(start)])
+        for stat, tasks in (([record(100), '', record(101)], [[task], [task]]), ([record(100), '', record(100)], [[task], []])):
+            with patch.object(Path, 'read_text', side_effect=stat), patch.object(Path, 'iterdir', side_effect=tasks):
+                with self.assertRaisesRegex(RuntimeError, 'ownership could not be verified'):
+                    lab.process_children(42, root)
 
 
 if __name__ == '__main__':

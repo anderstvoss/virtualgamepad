@@ -227,6 +227,15 @@ private build of the already-reviewed SDL 3.2.0 revision; its unused PipeWire au
 backend is disabled for compatibility with newer host headers. No installed SDL or
 product audio behavior changes. Consumer acceptance results must be recorded separately.
 
+The maintenance idle/restart guard previously inspected only the process leader's
+children. Since Linux child ownership is per-thread, it now checks every task,
+requires a present leader and stable process start-time/task inventory, and refuses
+unverifiable ownership. Sanitized regressions cover a nonleader worker child,
+disappearing task metadata, PID reuse and changed task inventory. A bounded ordinary-
+user probe also confirms detection and reap of an owned child launched by another
+thread. The installed 2c1af2f snapshot predates this guard correction; refresh it
+before further privileged execution. Its earlier passing negative receipt is retained.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,

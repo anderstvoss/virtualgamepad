@@ -403,3 +403,13 @@ The private SDL consumer is pinned to the reviewed 3.2.0 source and its library
 hash, with the unused PipeWire audio backend disabled. Retain the initial build
 failure against newer headers and do not turn controller-only evidence into audio
 acceptance. Require exact candidate/consumer hashes and per-session cleanup records.
+
+### Broker task ownership guard
+
+Verify that idle and empty-restart checks inspect child lists for every broker
+thread, not only the leader. Require a present leader and unchanged process start
+time/task inventory; metadata failure or PID reuse must refuse maintenance. The
+nonleader-child and unstable-inventory regressions must pass. The bounded ordinary-
+user live probe detects and reaps its owned child; this is process-inspection proof,
+not installed audio-worker recovery. An older root snapshot must not silently
+inherit the corrected guard without administrator review and hash-pinned installation.
