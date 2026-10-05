@@ -170,6 +170,8 @@ class Host:
         self.units = []
         self.root = None
         self.client_attempted = False
+        self.client_units = []
+        self.client_receipts = []
         self.original_images = {}
         self.events = []
 
@@ -314,7 +316,8 @@ class Host:
         self.write(self.root / 'broker.conf', config.encode())
         self.service = self.instance + '.service'
         self.socket = self.instance + '.socket'
-        socket_text = (f'[Socket]\nListenStream={self.root}/socket/broker.sock\nSocketMode=0660\n'
+        mode = '0666' if self.args.unauthorized_probe else '0660'
+        socket_text = (f'[Socket]\nListenStream={self.root}/socket/broker.sock\nSocketMode={mode}\n'
                        f'SocketGroup={pwd.getpwuid(self.args.client_uid).pw_gid}\nRemoveOnStop=yes\nService={self.service}\n')
         service_text = (f'[Service]\nExecStart={self.root}/bin/gr-privileged-broker --socket-activation --config {self.root}/broker.conf\n'
             f'PrivateMounts=yes\nBindReadOnlyPaths={self.root}/bin:/usr/libexec/virtualgamepad\n'
@@ -332,9 +335,18 @@ class Host:
         self.run(['systemctl', 'start', self.socket])
 
     def execute(self):
-        account = pwd.getpwuid(self.args.client_uid)
+        self.run_client(self.args.client_uid, self.args.command, 'client')
+        if self.args.unauthorized_probe:
+            self.run_client(self.args.unauthorized_uid,
+                            ['/usr/bin/python3', '-I', str(self.args.unauthorized_probe), '--unauthorized'],
+                            'unauthorized')
+
+    def run_client(self, uid, command, suffix):
+        account = pwd.getpwuid(uid)
         self.client_attempted = True
-        self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + self.instance + '-client',
+        unit = self.instance + '-' + suffix + '.service'
+        self.client_units.append(unit)  # Register before a partial systemd-run failure.
+        output = self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + unit,
                   '--property=NoNewPrivileges=yes',
                   '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
                   '--property=PrivateMounts=yes', '--property=KillMode=control-group',
@@ -344,11 +356,12 @@ class Host:
                   '--', '/usr/bin/setpriv', '--reuid=' + str(account.pw_uid),
                   '--regid=' + str(account.pw_gid), '--clear-groups', '--bounding-set=-all',
                   '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs', '--',
-                  *self.args.command], timeout=self.args.timeout + 20)
+                  *command], timeout=self.args.timeout + 20)
+        self.client_receipts.append(dict(uid=uid, unit=unit, stdout=output))
 
     def stop_candidate(self):
         errors = []
-        clients = [self.instance + '-client.service'] if self.client_attempted else []
+        clients = list(reversed(self.client_units))
         for unit in clients + list(reversed(self.units)):
             try:
                 state = self.run(['systemctl', 'show', unit, '-p', 'LoadState', '--value']).strip()
@@ -406,6 +419,8 @@ def main():
     parser.add_argument('--client-uid', type=int)
     parser.add_argument('--worker-uid', type=int)
     parser.add_argument('--unauthorized-uid', type=int)
+    parser.add_argument('--unauthorized-probe', type=Path,
+                        help='root-owned probe; opens only the temporary lab socket to other UIDs')
     parser.add_argument('--port', type=int)
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--report', type=Path)
@@ -435,6 +450,12 @@ def main():
         parser.error('complete approved candidate/identity/port/report arguments are required')
     for parent in args.report.absolute().parents:
         trusted(parent, directory=True)
+    if args.unauthorized_probe:
+        if not args.unauthorized_probe.is_absolute():
+            parser.error('unauthorized probe must be an absolute root-owned path')
+        trusted(args.unauthorized_probe)
+        for parent in args.unauthorized_probe.parents:
+            trusted(parent, directory=True)
     host = Host(args)
     receipt = dict(revision=args.revision, broker_hash=args.broker_hash, worker_hash=args.worker_hash)
     # Reserve output before any maintenance: never overwrite a user-controlled path.
@@ -453,6 +474,7 @@ def main():
         status = 1
     finally:
         receipt['commands'] = host.events
+        receipt['clients'] = host.client_receipts
         with os.fdopen(fd, 'w') as output:
             json.dump(receipt, output, indent=2)
             output.write('\n')

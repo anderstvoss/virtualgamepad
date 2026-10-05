@@ -100,7 +100,7 @@ class ReversibleMaintenance(unittest.TestCase):
             host.run([sys.executable, '-c', 'print("x" * 2000000)'])
         self.assertNotEqual(host.events[-1]['status'], 0)
     def test_client_privilege_drop_is_explicit_before_the_validator(self):
-        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'])
+        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None)
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -111,6 +111,21 @@ class ReversibleMaintenance(unittest.TestCase):
         self.assertIn('/usr/bin/setpriv', command)
         for flag in ('--clear-groups', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs'):
             self.assertLess(command.index(flag), command.index('/synthetic/validator'))
+
+    def test_unauthorized_identity_is_distinct_and_registered_before_startup(self):
+        args = Mock(client_uid=1001, unauthorized_uid=1003, timeout=30,
+                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'))
+        host = lab.Host(args)
+        host.instance = 'synthetic-instance'
+        host.root = Path('/synthetic/lab')
+        host.run = Mock()
+        with patch.object(lab.pwd, 'getpwuid', side_effect=lambda uid: Mock(pw_uid=uid, pw_gid=uid)):
+            host.execute()
+        self.assertEqual(host.client_units, ['synthetic-instance-client.service', 'synthetic-instance-unauthorized.service'])
+        command = host.run.call_args.args[0]
+        self.assertIn('--reuid=1003', command)
+        self.assertIn('--unauthorized', command)
+        self.assertIn('--clear-groups', command)
 
     def test_original_image_receipt_detects_same_inode_content_changes(self):
         with tempfile.TemporaryDirectory() as directory:

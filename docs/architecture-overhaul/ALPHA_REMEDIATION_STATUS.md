@@ -113,6 +113,41 @@ configuration. An isolated desktop, four physical references, an administrator-r
 provider window and external native results remain required. The previous two-hour
 soak is historical; its requested final-candidate repeat remains unperformed.
 
+#### Further host closure checks
+
+At source `5091b6e4eba2e2565cb71a04c49cf126f9b2c450` (tree
+`703cc4f5081f21bfc28cfcb42db99e3f2f647c9c`), three quiet maintained C controls
+passed: each generated, submitted and received 2,880,000 frames over 60 measured
+seconds with zero missing, duplicated, invalid or partial markers. The control
+binary hash equals the independently rebuilt candidate hash. Graph xrun counts
+are unavailable, not asserted zero. Earlier failures remain above.
+
+The three fresh debug Rust controls still missed 31,744 / 27,136 / 36,352 frames.
+Release optimization also failed all three controls. Neither changing the test
+source latency request to 512 frames nor moving its callbacks to the main loop
+passed a separate short diagnostic. Those experiments used external source copies;
+no production stream flags, queue capacity or acceptance assertions were changed.
+The 72 product trials and slow-consumer reruns remain blocked on full qualification.
+
+A rootless Xvfb extracted into disposable storage now supplies an isolated display;
+no packages or persistent desktop configuration were installed. A 60-second neutral
+GUI soak passed and removed its display resources. The two-hour run is in progress
+and must not be counted as passed until the final resource and cleanup receipt is
+reviewed. Its source and binary are pinned separately from later tooling commits.
+No touch injection or physical comparison is claimed.
+
+The expanded rejection validator covers repeated exact gadget errors on the same
+connection, malformed operations, truncated/oversized framing, the partial-frame
+deadline, unexpected descriptor release and daemon authorization from a distinct
+unprivileged identity. The runner registers both client units before startup and
+preserves their bounded output in receipts. Only an explicitly requested,
+root-owned unauthorized probe changes the *temporary candidate* socket to 0666,
+so the negative test reaches daemon authorization rather than stopping at an OS
+ACL. Installed socket permissions are preserved. Deterministic tests cover exact
+replies, response bounds, unexpected-FD cleanup and distinct client identities.
+These broader live checks require installing the reviewed updated snapshot; the
+existing immutable helper remains pinned to the previously passing narrow run.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,

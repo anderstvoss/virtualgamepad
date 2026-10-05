@@ -327,3 +327,22 @@ An engineering review may accept the minimal fixes while leaving documented
 external gates. An unconditional alpha recommendation requires passing all
 implemented paths, including WIP, with the missing live/consumer/physical/native
 acceptance supplied. Current failed audio continuity prevents that recommendation.
+
+### Additional closure scrutiny
+
+Reproduce `scripts/validate-broker-rejection-live.py` only through the isolated
+maintenance runner. Review its exact error frames, persistent-connection progress,
+absolute partial-frame deadline and pipe EOF proof of unexpected-FD release.
+`--unauthorized-probe` must be an administrator-reviewed root-owned copy. Check
+that only the temporary candidate socket opens to 0666 and that the separate UID
+actually receives the daemon's exact unauthorized error, with no supplementary
+groups or capabilities. A filesystem denial is insufficient evidence for that
+case. Both client units must be registered before launch and stopped on failure;
+retain bounded client receipts. The currently installed helper does not silently
+self-update to this expanded protocol.
+
+Preserve the passing three C controls at source 5091b6e and the subsequent failed
+Rust controls. Optimization and short external diagnostic experiments are not
+product acceptance. Verify the final isolated two-hour GUI receipt before closing
+its gate; a successful short preflight alone is insufficient. Physical, touch,
+routing, native-host timing and successful provider recovery remain separate gates.
