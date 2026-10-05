@@ -343,6 +343,44 @@ Sony contacts, other unexercised output modes, physical fidelity, full installed
 provider crash/stale-attachment recovery, USB/IP audio/routing, manual GUI/Steam
 and native-host timing remain separate release gates.
 
+
+### Completed GUI soak and final-source quiet audio qualification
+
+The audio-disabled neutral GUI run completes 7,200 seconds with status zero and
+no HID nodes remaining. The GUI/driver processes, owned display socket/lock and
+authentication file are gone. Across 120 external samples, steady state after five
+minutes has 16 descriptors, 18 threads, no children and no swap; RSS ranges from
+102,148 to 141,916 KiB and ends at 102,148 KiB. The internal descriptor enumerator
+counts its own temporary directory descriptor (17); external sampling counts 16.
+This closes the neutral sustained-lifecycle/resource/cleanup cell, not manual
+keyboard, routing, errors, Steam or audio-enabled GUI acceptance.
+
+The original source receipt is a8ad387. A final all-target/all-feature rebuild at
+`7bf16cc25d14fbce1bef8739e8f8d477403eaf86` (tree
+`83e532b1d306731f6190bb7f5bf08f5a99cfe801`) produces the identical GUI binary,
+SHA-256 `aa3e1e97bfbd40f4e3243fe104806f0ebdbf0e429d68a1ede900ba119ab8990f`.
+The running process image has that hash, and production source/manifests/lockfile
+have no changes between those revisions. Preserve original and equivalence receipts;
+do not silently relabel the original source run.
+
+After complete GUI/consumer cleanup, quiet audio qualification runs at 7bf16cc.
+All three independent C trials deliver exactly 2,880,000 generated, submitted and
+received measured frames with zero missing/duplicated/corrupt markers. They do not
+measure end-to-end latency, and graph xruns remain unknown. Rust direct controls
+pass two of three; the first loses 2,048 markers despite all 2,976,000 planned frames
+being generated, zero duplication/corruption and zero coalesced capture callbacks.
+Its p99 is 169 microseconds; timing cannot excuse continuity failure. The other two
+have zero missing/duplicate markers with p99 156 and 155 microseconds.
+
+Overall qualification is false. All 72 product cells remain explicitly blocked;
+slow-consumer reruns are not performed. This failure occurs without a product PCM
+queue and does not establish a library queue defect or its cause. Preserve it along
+with historical failures; do not relax zero-loss assertions or enlarge queues.
+Final-head CI passes after retrying a Windows CRYPT_E_REVOCATION_OFFLINE dependency
+fetch failure without weakening TLS. CodeQL/Gitleaks pass and all 17 downloaded SBOM
+identities verify; conditional privileged CI remains skipped. All 18 local checks
+pass at 7bf16cc (562 Rust tests, 62 ignored live entrypoints, 151 Python tests).
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,

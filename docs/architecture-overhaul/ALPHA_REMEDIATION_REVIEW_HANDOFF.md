@@ -498,3 +498,26 @@ scripts retain their transitions. The supporting test helper changes only test
 workloads. Do not count this as contact acceptance, other output-mode fidelity,
 physical equivalence or evdev HID lightbar/motion support. All 18 local checks pass
 at this source (562 Rust tests, 62 ignored, 151 Python); external live gates remain.
+
+### Completed neutral GUI and final-source audio receipts
+
+Require the full 7,200-second neutral GUI receipt: status zero, no remaining HID
+nodes, GUI/driver gone, display socket/lock gone and auth removed. External steady
+samples have 16 descriptors/18 threads/no children/no swap, with bounded RSS ending
+at 102,148 KiB. Internal FD enumeration temporarily includes its own descriptor.
+This accepts neutral resource/lifecycle behavior; manual and audio-enabled GUI cells
+remain open. The original a8ad387 image is byte-identical to the 7bf16cc final-source
+rebuild; inspect both source receipts, running image hash and the empty production
+source/manifest diff. Never replace the original revision in its receipt.
+
+Quiet qualification at `7bf16cc25d14fbce1bef8739e8f8d477403eaf86` passes all
+three C controls but fails the first of three Rust controls with 2,048 missing
+markers; the other two pass. Graph xruns remain unknown, and C callback gaps are
+not end-to-end latency. Require the preserved failed log and explicit 72-cell
+blocked disposition; slow-consumer reruns were not performed. No product PCM queue
+is present in the failing control. Reject attribution to library queues without
+further evidence, relaxed marker assertions, or an unconditional release claim.
+
+Final-head local validation, platform/security CI and downloaded 17-package SBOMs
+pass. Preserve the initial Windows certificate-revocation fetch failure and exact-
+head retry. Privileged CI skips do not close full provider recovery/USB routing.
