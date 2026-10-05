@@ -1,5 +1,30 @@
 # Independent alpha remediation PR review handoff
 
+### Installed input milestone at eb8d468
+
+The installed lab at `eb8d46852cd0aa20d6689cc2f8b2a6686d730bca` passed all
+67 broker checks and all four selected input tests: three sessions each for
+DualSense HID, DS4 HID, DualSense evdev and DS4 evdev. Each session passed
+SDL controls and exact controller-side rumble expectations, removed owned
+devices and reaped its consumer. Both HID families observed first-contact
+press/release/motion, changing valid sensors and exact RGB feedback. Evdev
+SDL measured gamepad controls and rumble only, not companion touch frames.
+All four runner receipts report no initiating/cleanup errors and removed rules;
+the temporary rules directory is absent and original services/images restored.
+
+The 18 local checks passed, including forced Rust 1.85, strict docs/API inventory,
+all root consumers and exact-Git consumers/offline rebuild. The downloaded SBOM
+contains all 17 workspace identities including the root. Remote full-history
+Gitleaks identified the fixed hexadecimal regression creation ID assigned to a
+variable named `token` as a generic API key. This is synthetic data. Rename the
+fixture and suppress only that exact historical fingerprint in `.gitleaksignore`;
+retain history and all other scanning. Revalidate remote security on the next head.
+
+This milestone closes the isolation prerequisite and first-contact HID cell;
+it does not close two-contact/raw evdev frames, full outputs, sustained audio,
+positive provider recovery, USB/IP routing, complete keyboard or isolated Steam.
+
+
 ### Sony live results and compound ownership labels
 
 The corrected `433b6e3df19bbb41bf0ad34f3e69ba3f3365df0f` installed lab passed
