@@ -969,7 +969,8 @@ fn touch_keyboard_command(
             "Touch canvas: Space for contact, W/A/S/D to move",
         )
     });
-    ui.small("Space: contact · W/A/S/D: move · Tab: focus");
+    ui.small("Keyboard simulates a finger: Space down/up · W/A/S/D move · Tab focus")
+        .on_hover_text("These keys operate the demo, not a physical controller. They send the same touch coordinates and contact releases as mouse input. Hold keeps the selected contact down; leaving the canvas releases a momentary contact.");
     let focused = response.has_focus() && ui.is_enabled();
     if focused {
         ui.painter().rect_stroke(
@@ -1290,6 +1291,8 @@ pub(super) fn draw_motion(
         input.id(),
         state,
         |ui, state, released| {
+            ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
+                .on_hover_text("The sliders inject virtual sensor values. Releasing a keyboard adjustment or leaving the slider resets momentary input to the demo's neutral value; this does not model a physical controller's resting sensor readings.");
             let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale());
             let mut accel = unscale_vector(accelerometer, input.accelerometer_scale());
             let mut changed = false;
