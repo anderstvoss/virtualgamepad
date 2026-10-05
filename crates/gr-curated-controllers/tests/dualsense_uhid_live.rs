@@ -1429,6 +1429,13 @@ fn ds4_evdev_individual_mapping() {
 }
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
+fn dualsense_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualSenseController>(
+        RealizationTarget::LINUX_UINPUT,
+    );
+}
+#[test]
+#[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
 fn xbox_evdev_individual_mapping() {
     run_isolated_mapping::<gr_curated_controllers::Xbox360Controller>(
         RealizationTarget::LINUX_UINPUT,
