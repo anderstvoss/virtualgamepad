@@ -416,13 +416,93 @@ fn spawn_sdl(
     )
 }
 fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
-    run_sdl_script::<C>(target, C::script, C::MODE);
+    run_sdl_script::<C>(
+        target,
+        C::script,
+        C::MODE,
+        matches!(C::PREFIX, "dualsense" | "dualshock4"),
+    );
+}
+
+fn input_is_isolated(properties: &str, seat: &str) -> bool {
+    let values: Vec<_> = properties.lines().collect();
+    seat == format!("seat-vg-alpha-p{:x}", std::process::id())
+        && values
+            .iter()
+            .filter(|line| line.starts_with("ID_SEAT="))
+            .count()
+            == 1
+        && values.contains(&format!("ID_SEAT={seat}").as_str())
+        && values
+            .iter()
+            .filter(|line| line.starts_with("LIBINPUT_IGNORE_DEVICE="))
+            .count()
+            == 1
+        && values.contains(&"LIBINPUT_IGNORE_DEVICE=1")
+}
+
+#[test]
+fn contact_gate_rejects_missing_duplicate_and_foreign_seat_properties() {
+    let seat = format!("seat-vg-alpha-p{:x}", std::process::id());
+    let valid = format!("ID_SEAT={seat}\nLIBINPUT_IGNORE_DEVICE=1\n");
+    assert!(input_is_isolated(&valid, &seat));
+    for invalid in [
+        String::new(),
+        format!("ID_SEAT={seat}\n"),
+        "ID_SEAT=seat0\nLIBINPUT_IGNORE_DEVICE=1\n".into(),
+        format!("{valid}ID_SEAT={seat}\n"),
+        format!("{valid}LIBINPUT_IGNORE_DEVICE=0\n"),
+    ] {
+        assert!(!input_is_isolated(&invalid, &seat));
+    }
+    assert!(!input_is_isolated(&valid, "seat0"));
+}
+
+fn verify_contact_isolation<C: AcceptanceController>(
+    controller: &mut C,
+    target: RealizationTarget,
+) {
+    let seat = std::env::var("VIRTUALGAMEPAD_INPUT_LAB_SEAT")
+        .expect("active contacts require the reviewed, process-owned input lab");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        controller.feedback(); // Required host probes progress while udev settles.
+        let nodes = if target == RealizationTarget::LINUX_UINPUT {
+            associated_input_nodes(controller).unwrap_or_default()
+        } else {
+            owned_family_devices(C::PREFIX)
+                .iter()
+                .flat_map(|device| consumer_paths(device, false))
+                .map(|path| PathBuf::from("/sys/class/input").join(path.file_name().unwrap()))
+                .collect()
+        };
+        if !nodes.is_empty()
+            && nodes.iter().all(|node| {
+                Command::new("udevadm")
+                    .args(["info", "--query=property", "--path"])
+                    .arg(node)
+                    .output()
+                    .is_ok_and(|output| {
+                        output.status.success()
+                            && input_is_isolated(&String::from_utf8_lossy(&output.stdout), &seat)
+                    })
+            })
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "input isolation was not verified; contacts remain neutral"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn run_sdl_script<C: AcceptanceController>(
     target: RealizationTarget,
     script: impl Fn(&mut C, u16),
     mode: &str,
+    active_contacts: bool,
 ) {
     let owned_devices = || owned_family_devices(C::PREFIX);
     let _guard = LIVE_LOCK.lock().unwrap();
@@ -432,6 +512,9 @@ fn run_sdl_script<C: AcceptanceController>(
         // On unwind the later-declared controller closes before the child is reaped.
         let mut probe = None;
         let mut controller = C::create(session, target);
+        if active_contacts {
+            verify_contact_isolation(&mut controller, target);
+        }
         let mut owned_events = Vec::new();
         let start = Instant::now();
         let mut result = None;
@@ -526,11 +609,13 @@ fn sony_touch_free_sdl_motion_and_feedback() {
             target,
             |controller, step| apply_script_contacts(controller, step, false),
             "--motion-gamepad-script",
+            false,
         );
         run_sdl_script::<gr_curated_controllers::DualShock4Controller>(
             target,
             |controller, step| apply_ds4_script_contacts(controller, step, false),
             "--motion-gamepad-script",
+            false,
         );
     }
 }
