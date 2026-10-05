@@ -155,7 +155,35 @@ fn wait_for_service(controller: &impl AcceptanceController) {
     }
 }
 
+fn script_contact_active(contacts: bool, step: u16) -> bool {
+    contacts && step % 1250 >= 125 && (step / 100) % 2 == 0
+}
+
+#[test]
+fn touch_free_script_never_activates_contacts() {
+    for step in 0..=u16::MAX {
+        assert!(!script_contact_active(false, step));
+    }
+    for (step, active) in [
+        (0, false),
+        (124, false),
+        (200, true),
+        (300, false),
+        (1250, false),
+    ] {
+        assert_eq!(script_contact_active(true, step), active);
+    }
+}
+
 fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, step: u16) {
+    apply_script_contacts(controller, step, true);
+}
+
+fn apply_script_contacts(
+    controller: &mut gr_curated_controllers::DualSenseController,
+    step: u16,
+    contacts: bool,
+) {
     let neutral = step % 1250 < 125;
     let value = if neutral {
         128
@@ -224,7 +252,7 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
     controller
         .set_touch(
             TouchSlot::First,
-            if !neutral && (step / 100) % 2 == 0 {
+            if script_contact_active(contacts, step) {
                 Some(DualSenseTouchContact::new(1, u16::from(value) * 4, 100).unwrap())
             } else {
                 None
@@ -388,6 +416,14 @@ fn spawn_sdl(
     )
 }
 fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
+    run_sdl_script::<C>(target, C::script, C::MODE);
+}
+
+fn run_sdl_script<C: AcceptanceController>(
+    target: RealizationTarget,
+    script: impl Fn(&mut C, u16),
+    mode: &str,
+) {
     let owned_devices = || owned_family_devices(C::PREFIX);
     let _guard = LIVE_LOCK.lock().unwrap();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
@@ -405,7 +441,7 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
         let mut next_change = Instant::now();
         while start.elapsed() < Duration::from_secs(15) {
             if Instant::now() >= next_change {
-                controller.script(step);
+                script(&mut controller, step);
                 step = step.wrapping_add(1);
                 next_change = Instant::now() + Duration::from_millis(4);
             }
@@ -429,7 +465,7 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
                     }
                 };
                 if paths.len() == 1 {
-                    probe = Some(spawn_sdl(&binary, &paths[0], target, C::MODE));
+                    probe = Some(spawn_sdl(&binary, &paths[0], target, mode));
                 }
             }
             if let Some(child) = &mut probe {
@@ -475,6 +511,26 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             (!(C::EXPECT_RUMBLE || target == RealizationTarget::LINUX_UINPUT) || rumble_seen)
                 && (target == RealizationTarget::LINUX_UINPUT || !C::EXPECT_LED || led_seen),
             "expected SDL output not received"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires exact private SDL probe and prepared owned UHID/uinput access; no active contacts"]
+fn sony_touch_free_sdl_motion_and_feedback() {
+    for target in [
+        RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UINPUT,
+    ] {
+        run_sdl_script::<gr_curated_controllers::DualSenseController>(
+            target,
+            |controller, step| apply_script_contacts(controller, step, false),
+            "--motion-gamepad-script",
+        );
+        run_sdl_script::<gr_curated_controllers::DualShock4Controller>(
+            target,
+            |controller, step| apply_ds4_script_contacts(controller, step, false),
+            "--motion-gamepad-script",
         );
     }
 }
@@ -770,6 +826,14 @@ fn ds4_feedback(controller: &mut gr_curated_controllers::DualShock4Controller) -
     (rumble, led)
 }
 fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controller, step: u16) {
+    apply_ds4_script_contacts(controller, step, true);
+}
+
+fn apply_ds4_script_contacts(
+    controller: &mut gr_curated_controllers::DualShock4Controller,
+    step: u16,
+    contacts: bool,
+) {
     let neutral = step % 1250 < 125;
     let value = if neutral {
         128
@@ -847,7 +911,7 @@ fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controlle
     controller
         .set_touch(
             gr_curated_controllers::DualShock4TouchSlot::First,
-            if !neutral && (step / 100) % 2 == 0 {
+            if script_contact_active(contacts, step) {
                 Some(
                     gr_curated_controllers::DualShock4TouchContact::new(
                         1,
