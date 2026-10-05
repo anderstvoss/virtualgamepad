@@ -2216,6 +2216,64 @@ mod tests {
     }
 
     #[test]
+    fn touch_canvas_tab_traversal_releases_momentary_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let context = egui::Context::default();
+        let mut events = Vec::new();
+        let mut adjacent_focused = false;
+        for frame in 0..4 {
+            let keys = match frame {
+                1 => vec![egui::Key::Space],
+                2 => vec![egui::Key::Tab],
+                _ => vec![],
+            };
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys
+                        .into_iter()
+                        .map(|key| egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let (_, response) =
+                            ui.allocate_exact_size(Vec2::splat(100.0), Sense::click_and_drag());
+                        if frame == 0 {
+                            response.request_focus();
+                        }
+                        let command = touch_keyboard_command(ui, &response, false);
+                        update_touch_keyboard(&input, &mut state, false, command, &mut events);
+                        adjacent_focused |= ui.button("Next control").has_focus();
+                    });
+                },
+            );
+        }
+        assert!(adjacent_focused, "Tab must reach the adjacent focus target");
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: Some((0, 0))
+                },
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: None
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn focused_pad_handles_keyboard_and_neutralizes_on_focus_loss() {
         let context = egui::Context::default();
         let range = InputAxisRange {
