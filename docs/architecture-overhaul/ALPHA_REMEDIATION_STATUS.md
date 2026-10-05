@@ -1,5 +1,38 @@
 # Alpha remediation status
 
+### Quiet controls and temporary scheduling experiment
+
+At `d963978977a31a92ecbaa3b9627bd730c422f879`, quiet C controls yielded one
+pass and two failures: missing markers 0 / 171,008 / 735,232; duplicates
+0 / 1,024 / 5,632; corrupt markers zero; producer durations 60.0 / 61.9 / 67.8
+seconds for 60 planned seconds. Measured clocks stayed monotonic at 48 kHz and
+advanced with wall time, with different absolute origins. Callback gaps increased
+in the failed trials. This does not prove the failure's cause.
+
+All three independent Rust controls failed. Trial 1 completed production but
+lost 3,072 measured frames. Trial 2 produced no frames. Trial 3 generated
+2,660,352 of 2,976,000 planned frames before its bounded deadline. Controls
+bypass product PCM queues. The VM remains unqualified; do not run or accept the
+72 product cells merely because one C trial passed.
+
+An owned private-lab snapshot showed ordinary scheduling (including reset-on-fork
+flags), priority zero and no realtime priority grant. The next experiment is
+`scripts/run-alpha-scheduled-audio-lab.py`: default plan, immutable installed
+images, one temporary systemd unit, non-root clients after capability/group drop,
+priority cap 88, client round-robin priority 20, 200 ms realtime CPU limit and
+540-second total deadline. Its cgroup owns all descendants. Private runtime files
+live in an identity-checked owned workspace, removed with symlink-safe operations
+only after unit restoration. Signals, startup failures, occupied/changed units,
+timeouts and output bounds have deterministic tests. No shared daemon, persistent
+scheduling policy, queue, stream flag, continuity or latency limit changes.
+
+This is a diagnostic experiment awaiting administrator installation and live
+verification. It does not establish that scheduling explains the failures or that
+production clients will qualify. The realtime priority/CPU bounds use the Linux
+[scheduling contract](https://man7.org/linux/man-pages/man7/sched.7.html) and
+[resource limits](https://man7.org/linux/man-pages/man2/getrlimit.2.html).
+
+
 ### Installed two-contact milestone and audio clock investigation
 
 At `1e07adf04d1fdd3bcb7451256f7f86fc7f0b8991`, the installed lab passed 67
@@ -15,7 +48,7 @@ five functional gates still require their own evidence.
 
 Audio controls now record first/last graph ticks, their rate numerator/denominator,
 matching monotonic timestamps and clock discontinuities only in the measured
-phase. Absolute source/sink tick values have different units/origins and cannot
+phase. Absolute source/sink tick values may have different units or origins and cannot
 be compared directly. C self-tests cover startup exclusion, a valid zero origin,
 and clock reversal/rate change. Receipt tests confirm plausible clock diagnostics
 cannot excuse missing markers. No acceptance limits, queues or stream flags change.
