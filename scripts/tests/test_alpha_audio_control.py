@@ -84,6 +84,8 @@ class MarkerReceipt(unittest.TestCase):
     def test_callback_gap_diagnostics_never_excuse_marker_loss(self):
         row = self.receipt()
         row.update(source_max_process_gap_ns=1000000000, sink_max_process_gap_ns=1000000000)
+        row.update(source_measured_clock=dict(first_ticks=0, last_ticks=2880000, rate_num=1, rate_denom=48000, changes=0),
+                   sink_measured_clock=dict(first_ticks=0, last_ticks=60_000_000_000, rate_num=1, rate_denom=1_000_000_000, changes=0))
         row['missing'] = 128
         self.assertFalse(control.acceptance(row, 60))
 

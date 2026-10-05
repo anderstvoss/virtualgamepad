@@ -15,6 +15,40 @@
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 
+struct clock_observation {
+    bool initialized;
+    uint64_t first_ticks, last_ticks, first_ns, last_ns, changes;
+    uint32_t numerator, denominator;
+};
+
+static void observe_clock(struct clock_observation *clock, uint64_t ticks,
+                          uint32_t numerator, uint32_t denominator,
+                          uint64_t stamp, bool measured) {
+    if (!measured) return;
+    if (!clock->initialized) {
+        clock->initialized = true;
+        clock->first_ticks = ticks;
+        clock->first_ns = stamp;
+        clock->numerator = numerator;
+        clock->denominator = denominator;
+    } else if (ticks < clock->last_ticks || stamp < clock->last_ns ||
+               numerator != clock->numerator || denominator != clock->denominator) {
+        clock->changes++;
+    }
+    clock->last_ticks = ticks;
+    clock->last_ns = stamp;
+}
+
+static void print_clock(const char *name, const struct clock_observation *clock) {
+    printf(",\"%s\":", name);
+    if (!clock->initialized) { printf("null"); return; }
+    printf("{\"first_ticks\":%" PRIu64 ",\"last_ticks\":%" PRIu64
+           ",\"first_monotonic_ns\":%" PRIu64 ",\"last_monotonic_ns\":%" PRIu64
+           ",\"rate_num\":%u,\"rate_denom\":%u,\"changes\":%" PRIu64 "}",
+           clock->first_ticks, clock->last_ticks, clock->first_ns, clock->last_ns,
+           clock->numerator, clock->denominator, clock->changes);
+}
+
 struct control {
     struct pw_main_loop *loop;
     struct pw_stream *source, *sink;
@@ -25,6 +59,7 @@ struct control {
     uint64_t source_ticks, sink_ticks, source_queued_max, sink_queued_max;
     uint64_t source_process_calls, sink_process_calls, source_empty, capture_buffers;
     uint64_t source_previous_ns, sink_previous_ns, source_max_gap_ns, sink_max_gap_ns;
+    struct clock_observation source_clock, sink_clock;
     unsigned blocks;
     unsigned source_rate, sink_rate, source_channels, sink_channels;
 };
@@ -95,6 +130,8 @@ static void produce(void *data) {
     struct pw_time time;
     if (pw_stream_get_time_n(c->source, &time, sizeof(time)) == 0) {
         c->source_ticks = time.ticks;
+        observe_clock(&c->source_clock, time.ticks, time.rate.num, time.rate.denom,
+                      now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned);
         c->source_queued_max = SPA_MAX(c->source_queued_max, time.queued);
     }
     struct pw_buffer *b = pw_stream_dequeue_buffer(c->source);
@@ -139,6 +176,8 @@ static void consume(void *data) {
     struct pw_time time;
     if (pw_stream_get_time_n(c->sink, &time, sizeof(time)) == 0) {
         c->sink_ticks = time.ticks;
+        observe_clock(&c->sink_clock, time.ticks, time.rate.num, time.rate.denom,
+                      now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned);
         c->sink_queued_max = SPA_MAX(c->sink_queued_max, time.queued);
     }
     struct pw_buffer *b;
@@ -182,6 +221,14 @@ static const struct pw_stream_events sink_events = {
 
 int main(int argc, char **argv) {
     if (argc == 2 && !strcmp(argv[1], "--self-test")) {
+        struct clock_observation clock = {0};
+        observe_clock(&clock, 9000000, 1, 48000, 1, false);
+        observe_clock(&clock, 0, 1, 48000, 100, true);
+        observe_clock(&clock, 48000, 1, 48000, 1000000100, true);
+        if (!clock.initialized || clock.first_ticks != 0 || clock.last_ticks != 48000 ||
+            clock.first_ns != 100 || clock.last_ns != 1000000100 || clock.changes) return 1;
+        observe_clock(&clock, 10, 1, 1000000, 1000000200, true);
+        if (clock.changes != 1) return 1;
         uint64_t previous = 0, maximum = 0;
         process_gap(1, false, &previous, &maximum);
         process_gap(100, true, &previous, &maximum);
@@ -253,7 +300,7 @@ int main(int argc, char **argv) {
         ",\"sink_queued_max\":%" PRIu64 ",\"client_scheduler\":%d,\"graph_xruns\":null"
         ",\"source_process_calls\":%" PRIu64 ",\"sink_process_calls\":%" PRIu64
         ",\"source_empty_callbacks\":%" PRIu64 ",\"capture_buffers\":%" PRIu64
-        ",\"source_max_process_gap_ns\":%" PRIu64 ",\"sink_max_process_gap_ns\":%" PRIu64 "}\n",
+        ",\"source_max_process_gap_ns\":%" PRIu64 ",\"sink_max_process_gap_ns\":%" PRIu64,
         c.planned, c.cursor > 96000 ? SPA_MIN(c.cursor - 96000, c.planned) : 0,
         c.submitted, c.received, missing, duplicate, c.invalid, c.partial, c.errors,
         c.first_ns ? c.last_ns - c.first_ns : 0,
@@ -261,6 +308,9 @@ int main(int argc, char **argv) {
         c.source_ticks, c.sink_ticks, c.source_queued_max, c.sink_queued_max, sched_getscheduler(0),
         c.source_process_calls, c.sink_process_calls, c.source_empty, c.capture_buffers,
         c.source_max_gap_ns, c.sink_max_gap_ns);
+    print_clock("source_measured_clock", &c.source_clock);
+    print_clock("sink_measured_clock", &c.sink_clock);
+    printf("}\n");
     status = c.submitted != c.planned || c.received != c.planned || missing || duplicate ||
         c.invalid || c.partial || c.errors || c.source_rate != 48000 || c.sink_rate != 48000 ||
         c.source_channels != 2 || c.sink_channels != 2;

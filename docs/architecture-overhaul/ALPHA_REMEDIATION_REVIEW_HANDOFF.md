@@ -1,5 +1,28 @@
 # Independent alpha remediation PR review handoff
 
+### Installed two-contact milestone and audio clock investigation
+
+At `1e07adf04d1fdd3bcb7451256f7f86fc7f0b8991`, the installed lab passed 67
+broker checks plus all six input tests. Twelve SDL sessions passed; both Sony
+HID families observed contact masks `3` for press and release with motion,
+controls, sensors and exact rumble/RGB feedback. Six additional raw evdev
+sessions (three per Sony family) verified both tracking IDs, exact coordinates,
+movement and release at complete synchronization boundaries on exact associated
+nodes. Repeated close and component removal passed. All runner cleanup receipts
+were clean and original services/images restored. This closes these specific
+two-contact frame cells; full output modes, sibling failure cases and the other
+five functional gates still require their own evidence.
+
+Audio controls now record first/last graph ticks, their rate numerator/denominator,
+matching monotonic timestamps and clock discontinuities only in the measured
+phase. Absolute source/sink tick values have different units/origins and cannot
+be compared directly. C self-tests cover startup exclusion, a valid zero origin,
+and clock reversal/rate change. Receipt tests confirm plausible clock diagnostics
+cannot excuse missing markers. No acceptance limits, queues or stream flags change.
+The next quiet controls must run after prebuilding and input teardown, with raw
+failures retained. Instrumentation alone does not qualify this VM.
+
+
 ### Two-contact acceptance expansion
 
 Sony active scripts now exercise both contacts. The HID consumer assertion
