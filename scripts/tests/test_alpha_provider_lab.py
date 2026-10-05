@@ -11,6 +11,25 @@ lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 
 
+class AudioIsolationPolicy(unittest.TestCase):
+    def test_serial_and_platform_require_separate_matching_ancestors(self):
+        lines = lab.audio_isolation_rule('lab-123').splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertIn('ATTRS{serial}=="vg-lab-123-*"', lines[0])
+        self.assertNotIn('ACP_IGNORE', lines[0])
+        self.assertNotIn('KERNELS', lines[0])
+        self.assertIn('ENV{VG_ALPHA_AUDIO_INSTANCE}=="lab-123"', lines[1])
+        self.assertIn('SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0"', lines[1])
+        self.assertIn('ENV{ACP_IGNORE}="1"', lines[1])
+        self.assertNotIn('ATTRS{serial}', lines[1])
+
+    def test_rule_injection_and_wildcard_instances_reject(self):
+        for instance in ['', 'a_b', '../escape', '*', 'a"', 'a\n', 'A', 'a'*33]:
+            with self.subTest(instance=instance):
+                with self.assertRaisesRegex(RuntimeError, 'invalid audio isolation'):
+                    lab.audio_isolation_rule(instance)
+
+
 class Fake:
     def __init__(self, failures=()):
         self.events = []

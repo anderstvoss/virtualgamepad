@@ -26,8 +26,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Setup {
+    /// Validated administrator-owned broker instance used in the USB serial.
+    pub instance: String,
     pub profile: ProfileId,
     pub generation: u64,
     pub device: u32,
@@ -160,6 +162,7 @@ impl Drop for Threads {
 }
 
 pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
+    Profile::for_session(setup.profile, &setup.instance, setup.generation)?;
     if setup.device == 0 || setup.generation == 0 {
         return Err(io::Error::other("invalid worker setup"));
     }
@@ -265,7 +268,7 @@ where
     let worker = Worker::new(
         channels.usb,
         setup.device,
-        Profile::new(setup.profile),
+        Profile::for_session(setup.profile, setup.instance, setup.generation)?,
         handler,
         playback,
         microphone,
@@ -504,6 +507,34 @@ mod tests {
         (a, b)
     }
     #[test]
+    fn invalid_instance_rejects_before_readiness_and_closes_all_channels() {
+        let (usb, mut host) = pair();
+        let (control, mut client) = pair();
+        let (playback, mut samples) = pair();
+        let (microphone, mut mic) = pair();
+        let error = run(
+            Setup {
+                instance: "../escape".into(),
+                profile: ProfileId::DualSenseEmulated,
+                generation: 1,
+                device: 1,
+                identity: [0; 6],
+            },
+            Channels {
+                usb,
+                control,
+                playback,
+                microphone,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "invalid compiled USB session identity");
+        for peer in [&mut host, &mut client, &mut samples, &mut mic] {
+            assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+        }
+    }
+
+    #[test]
     fn pcm_pump_delay_reports_only_excess_over_nominal_interval() {
         assert_eq!(pcm_lateness_us(Duration::ZERO), 0);
         assert_eq!(pcm_lateness_us(Duration::from_micros(499)), 0);
@@ -559,6 +590,7 @@ mod tests {
             let worker = thread::spawn(move || {
                 run(
                     Setup {
+                        instance: "test".into(),
                         profile,
                         generation: 9,
                         device: 1,
@@ -622,6 +654,7 @@ mod tests {
         let worker = thread::spawn(move || {
             run(
                 Setup {
+                    instance: "test".into(),
                     profile: ProfileId::Xbox360HidEmulated,
                     generation: 9,
                     device: 1,
@@ -653,6 +686,7 @@ mod tests {
         let worker = thread::spawn(move || {
             run(
                 Setup {
+                    instance: "test".into(),
                     profile: ProfileId::DualSenseEmulated,
                     generation: 17,
                     device: 1,

@@ -64,8 +64,8 @@ mod linux {
             return Err("audio worker must run unprivileged".into());
         }
         let args: Vec<_> = std::env::args().skip(1).collect();
-        if args.len() != 7 {
-            return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY CONTROL_FD PLAYBACK_FD MICROPHONE_FD".into());
+        if args.len() != 8 {
+            return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY INSTANCE CONTROL_FD PLAYBACK_FD MICROPHONE_FD".into());
         }
         let profile = match args[0].as_str() {
             "dualsense" => ProfileId::DualSenseEmulated,
@@ -81,12 +81,14 @@ mod linux {
             *byte = u8::from_str_radix(&args[3][index * 2..index * 2 + 2], 16)?;
         }
         let setup = Setup {
+            instance: args[4].clone(),
             profile,
             device: args[1].parse()?,
             generation: args[2].parse()?,
             identity,
         };
-        let slots = args[4..]
+        gr_usbip::profile::Profile::for_session(profile, &setup.instance, setup.generation)?;
+        let slots = args[5..]
             .iter()
             .map(|s| s.parse::<libc::c_int>())
             .collect::<Result<Vec<_>, _>>()?;

@@ -31,6 +31,7 @@ impl Session {
         let worker: [UnixStream; 4] = worker
             .try_into()
             .map_err(|_| io::Error::other("incorrect worker channel count"))?;
+        let generation = config.generation;
         let child = audio_launch::spawn(config, &worker)?;
         drop(worker);
         let mut session = Self {
@@ -41,7 +42,7 @@ impl Session {
         let channels: [UnixStream; 3] = parent
             .try_into()
             .map_err(|_| io::Error::other("incorrect client channel count"))?;
-        if let Err(error) = ready(&channels[0], config.generation) {
+        if let Err(error) = ready(&channels[0], generation) {
             let cleanup = session.close();
             return Err(match cleanup {
                 Ok(()) => error,

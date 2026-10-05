@@ -56,6 +56,26 @@ def instance_name(path):
     return name
 
 
+def audio_isolation_rule(instance):
+    """Build a serial AND VHCI ancestry rule, never a shared profile mutation.
+
+    Parent keys on one udev rule must match the same ancestor. USB serial and
+    platform VHCI ancestry therefore require separate stages. The first rule
+    sets a private property, and the second requires both it and the platform.
+    Installing this rule must precede the first candidate attachment.
+    """
+    if not re.fullmatch(r'[a-z0-9-]{1,32}', instance):
+        raise RuntimeError('invalid audio isolation instance')
+    return (
+        'SUBSYSTEM=="sound", KERNEL=="card[0-9]*", '
+        f'ATTRS{{serial}}=="vg-{instance}-*", '
+        f'ENV{{VG_ALPHA_AUDIO_INSTANCE}}="{instance}"\n'
+        'SUBSYSTEM=="sound", KERNEL=="card[0-9]*", '
+        f'ENV{{VG_ALPHA_AUDIO_INSTANCE}}=="{instance}", '
+        'SUBSYSTEMS=="platform", KERNELS=="vhci_hcd.0", ENV{ACP_IGNORE}="1"\n'
+    )
+
+
 def installed_executable(properties):
     value = properties.get('ExecStart', '').strip()
     match = re.fullmatch(r'\{ path=(/[^;\n]+) ; argv\[\]=[^\n]* \}', value)

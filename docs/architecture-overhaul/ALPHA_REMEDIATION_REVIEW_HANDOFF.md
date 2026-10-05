@@ -793,3 +793,39 @@ The five mandatory workspace commands passed before this documentation increment
 No dependencies were added. This is deterministic evidence, not completion of the
 interactive keyboard inventory or the final two-hour soak. Gate 1 remains open;
 the new GUI image requires a fresh soak. Gates 2–6 retain their previous dispositions.
+
+## Session-aware USB serial prerequisite
+
+The supporting `Profile::for_session` constructor validates a broker instance
+(lowercase ASCII letters/digits/hyphens, 1–32 bytes) and a nonzero generation, then
+compiles serial `vg-{instance}-{generation:016x}` at string index 3. `Profile::new`
+retains its static descriptor and rejects index 3. The ordinary root API is unchanged.
+
+Supporting worker `Setup` and broker `Launch` now require an owned `instance` field
+and implement Clone rather than Copy. The installed worker launch ABI now has eight
+arguments: PROFILE DEVICE GENERATION IDENTITY INSTANCE CONTROL_FD PLAYBACK_FD
+MICROPHONE_FD. Broker and worker must be staged together; older installed images are
+not evidence for this candidate. Broker configuration supplies the instance; IPC
+clients cannot choose it. Invalid identities reject before readiness/worker launch,
+and invalid worker setup closes all four owned channels.
+
+Exact string/control regressions cover all three profiles, descriptor index,
+truncation, language, unknown strings and static rejection. Production-worker
+validation covers the exact serial on both FD layouts for all three families,
+bidirectional synthetic PCM, diagnostics and closure. The new pure isolation-rule
+builder uses two udev stages to combine USB serial with platform VHCI ancestry;
+rule-injection regressions and `udevadm verify` pass. **The rule is not yet installed
+or integrated into positive preparation.** It must precede attachment, and shared
+PipeWire defaults/monitor exclusion still require live receipts. The shared-profile
+off fallback is not an acceptable closure path.
+
+The scoped administrator snapshot remains unchanged. No positive attachment,
+shared routing change, audio qualification or Steam launch was performed in this
+increment. The complete named-phase lab package and its preparation/restoration
+regressions remain required before requesting administrator installation.
+
+Keyboard touch now also has an actual Tab traversal regression proving that the
+adjacent control receives focus and exactly one momentary release is generated.
+Gate 1 still requires its complete control inventory, owned-display checks and a
+fresh final-image soak. Gates 2–6 remain open; alpha is not ready and PR #133 stays
+draft. Physical comparison/native timing remain separate post-alpha #136/#135.
