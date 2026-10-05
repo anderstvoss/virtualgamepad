@@ -24,6 +24,53 @@ markers are not relabeled as acknowledged graph submission. Deterministic tests
 cover phase exclusion, partial marker loss, duplicate offsets and warm-up exclusion.
 Fresh controls and product acceptance remain required.
 
+### Latest VM acceptance checkpoint
+
+Evidence source: `b64c4510a7d1cd0f92202a644e2abb04937b98d5`, tree
+`ef1988a55a5fadbfc8809ed50de4580e0424c9fd`, base
+`11284f01c58cb80be0d187efa2fca95641513fbf`.
+
+All 18 local validation commands passed, including 564 Rust tests (62 ignored
+live entrypoints), 151 Python tests, forced Rust 1.85, strict rustdoc, API checks,
+exact-Git feature consumers/offline rebuild and dependency/protocol validators.
+Exact-head CI, CodeQL and full-history Gitleaks passed. SBOM run `37281425192`
+passed and its downloaded reports validated all 17 workspace identities, including
+root. Provider Tier B run `37281428299` passed its contract job; the privileged
+job was skipped and supplies no additional live evidence.
+
+Fresh quiet audio qualification failed. The three independent C controls generated
+and submitted all 2,880,000 planned markers but missed 999,936 / 913,408 / 950,784
+frames, duplicated 9,216 / 5,120 / 7,168 and recorded 1,536 / 1,536 / 512 invalid
+frames. Negotiation remained 48 kHz stereo; generation took 71.626 / 70.932 /
+71.538 seconds, also failing the sustained-duration envelope. Maximum callback
+gaps were approximately 68 / 80 / 74 ms. The C source is unchanged from the
+previous three passing controls, so these failures do not establish a new C code
+defect or identify a product queue defect.
+
+Rust controls missed 36,352 / 10,752 / 0 measured marker frames, with no duplicates
+or invalid markers. The failed trials showed whole-buffer deficits; source/capture
+callback counts were 5,813/5,740 and 5,813/5,787, versus 5,813/5,813 in the passing
+trial. Maximum measured gaps were approximately 37 / 81 / 15 ms. These are
+localization evidence, not proof that scheduling caused the loss. Buffer-return
+errors remain unobserved by the Rust RAII binding. All 72 product trials and the
+slow-consumer reruns were correctly recorded as blocked by qualification, not run
+or passed. The supervisor exited, loopback children were reaped and all private
+PipeWire runtime directories were removed. No assertions were relaxed.
+
+An interactive neutral GUI check used the prebuilt candidate in an owned Xvfb
+with private configuration/state. Visual inspection and XTest events verified
+name entry, creation of 21 Xbox 360 UHID controllers, scrolling/selecting index 19
+beyond the initial viewport, removal of index 20 while preserving its selected
+sibling, stop-all, and visible technical rejection of dummy_hcd without creating a
+controller. The exact executable hash and screenshots are in the external receipt.
+All owned processes, display/socket/auth and HID nodes were removed. This closes
+those narrow interactive cells only: complete keyboard focus traversal,
+touch/lockout, discovery retry, routing and isolated Steam remain unverified.
+The earlier completed two-hour neutral soak remains separate passing evidence.
+
+Alpha remains **NOT READY** for the remaining VM gates. Only the native timing
+and physical comparison evidence has been deferred to #135 and #136.
+
 ### Complete-resolution continuation
 
 Historical starting checkpoint (later execution updates follow): the candidate started from `23615da424f8b8d358838e5460e62c3b3969493f`
@@ -439,7 +486,7 @@ and proprietary XInput require truthful rejection, not implementation here.
 | A1 / P1 | Samples/native audio loses markers even with zero reported queue drops | Marker producer accounting, graph-clock diagnostics, queue/drop/underrun counters, per-marker client accounting and explicit drain; simultaneous duplex for all four ownership combinations | Deterministic duplicate/corrupt/partial-frame and producer/drain tests pass. Protocol fixture now primes exact microphone frames before READY. **Continuity unresolved; assertions unchanged; PR stays draft.** |
 | A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Four-family neutral evdev feedback and consumer-death cleanup pass, including both DS4 nodes. Reviewed SDL controls/removal pass for both DS4 realizations. Contact injection, full reverse-output parity and physical comparison remain unverified. |
 | A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Current provider/direct-open/daemon admission rejects incomplete f_hid semantics before construction; separate reversible installed-provider lab preserves original image/config/unit fingerprints and global lock | All-family/repeated rejection and zero-factory-admission regressions pass; earlier protocol/cleanup tests retained. Full gadget parity is explicitly unavailable. The scoped live rejection/framing/descriptor/admission lab passes 31 checks and restores cleanly. Successful audio-provider construction, worker/client-death, stale-lease and restart recovery remain unverified. |
-| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. An earlier two-hour soak passed with owned resources removed; it is historical. The corrected audio-disabled final-candidate repeat is running and requires its complete cleanup receipt. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
+| A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. An earlier two-hour soak passed with owned resources removed; it is historical. The corrected two-hour neutral repeat passed with complete cleanup; see the completed soak and latest interactive checkpoint. Full keyboard/touch/routing/Steam checks remain open. Physical/native timing evidence is deferred to #135/#136. |
 
 Source paths in this table are relative to the repository (`gr-*` sources are
 under `crates/`). Tests run at the lowest practical seams and retain prior tests.
@@ -624,7 +671,7 @@ unchanged. The PR stays draft and the alpha gate stays **NOT READY**.
    for some failed cells. Graph discontinuities correlate but do not prove cause.
    Fix only a demonstrated seam with deterministic regression, then repeat all
    family/direction/duplex/ownership cells without competing review workloads on
-   a prepared host. Native-host timing remains independently required.
+   a prepared host. Native-host timing is deferred to post-alpha issue #135; functional continuity remains required.
 2. **P2 DS4 consumer parity:** prepare an isolated consumer environment with an
    active uinput kernel device. Verify exact gamepad and companion selection,
    controls, two contacts/releases, feedback, partial rollback, sibling removal
@@ -640,10 +687,10 @@ unchanged. The PR stays draft and the alpha gate stays **NOT READY**.
    gadget acceptance is required or claimed. Retained unknown-ID prototype tests
    do not establish full report-type parity or a kernel STALL operation.
 5. **Consumer/physical breadth:** hands-on keyboard/accessibility/error review,
-   Steam/game compatibility, native Linux timing and physical comparisons remain
-   unverified. macOS/Windows CI is compile/test evidence, not live provider support.
+   isolated Steam compatibility remain unverified. Native Linux timing and physical
+   comparisons are deferred to post-alpha #135/#136. macOS/Windows CI is compile/test evidence, not live provider support.
 
-No persistent host provisioning, installed-service replacement, issue mutation,
-merge, tag or publication is performed by this remediation. Historical failed
+Two post-alpha tracking issues were created at the release owner's request. No
+persistent installed-service replacement, merge, tag or publication was performed. Historical failed
 artifacts remain outside tracked source. The reviewer handoff gives portable
 commands and rejection criteria for every finding.

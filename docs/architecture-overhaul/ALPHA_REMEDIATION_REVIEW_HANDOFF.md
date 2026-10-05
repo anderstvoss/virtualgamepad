@@ -49,9 +49,10 @@ Review PR [#133](https://github.com/anderstvoss/virtualgamepad/pull/133) against
 `main` as an engineering remediation, including supporting and WIP paths. Decide
 whether each code correction is sound and whether its evidence is sufficient.
 Do not infer alpha readiness from green CI. Audio continuity remains failed;
-privileged/physical/native-host acceptance remains incomplete. Keep the PR draft
-while required native evidence is absent or product continuity fails on a qualified
-acceptance host. Historical or independently unqualified VM failures stay recorded
+installed-provider/contact/routing/manual acceptance remains incomplete. Keep the PR
+draft while these VM gates or functional continuity remain unresolved. Native
+timing and physical comparisons are explicitly deferred to #135/#136; their
+missing evidence alone must not be treated as an alpha blocker. Historical or independently unqualified VM failures stay recorded
 without becoming a native-host claim. Do not merge or publish a release.
 
 Use [the disposition matrix](ALPHA_REMEDIATION_STATUS.md) for F1–F8/A1–A4. This
@@ -80,6 +81,25 @@ git diff --stat 11284f01c58cb80be0d187efa2fca95641513fbf HEAD
 Require the checked-out SHA to equal the receipt/PR head. Record any movement of
 `main` or the PR and restart evidence validation for the new candidate. Verify the
 code checkpoint remains an ancestor and later changes are only documented scope.
+
+## Latest acceptance evidence to scrutinize
+
+Use status checkpoint `b64c4510a7d1cd0f92202a644e2abb04937b98d5` and its
+external receipts. Its 18 local checks and exact-head CI/security/SBOM validation
+passed; the privileged CI job was skipped. The fresh three C controls all failed
+continuity and sustained duration, while Rust controls failed twice and passed
+once. Compare source/capture callback counts and marker deficit ranges; do not
+turn their correlation with scheduling gaps into a causal claim. The 72 product
+cells are blocked, not passing evidence. Preserve the earlier passing C controls
+and failed Rust control as separate historical receipts.
+
+The interactive Xvfb receipt covers 21 neutral Xbox UHID creations, off-viewport
+selection, sibling deletion, stop-all and visible dummy_hcd rejection. Verify
+screenshots and the exact executable hash, and require empty final owned HID
+resources, reaped children and removed display/auth. This is XTest plus visual
+inspection, not a claim of complete manual keyboard/accessibility, touch, audio
+routing or Steam acceptance. Full focus traversal remains unverified. Keep the
+completed two-hour neutral soak distinct from this shorter interactive check.
 
 ## Critical architectural scrutiny
 
