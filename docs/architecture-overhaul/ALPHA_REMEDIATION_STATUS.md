@@ -1,5 +1,19 @@
 # Alpha remediation status
 
+### Two-contact acceptance expansion
+
+Sony active scripts now exercise both contacts. The HID consumer assertion
+requires down/up masks for both fingers plus motion. New individually selected
+`dualsense_evdev_two_contacts_and_release` and `ds4_evdev_two_contacts_and_release`
+tests read only exact associated component nodes after verified isolation. Three
+sessions per family require IDs, exact coordinates, movement and release at
+complete `SYN_REPORT` boundaries, followed by repeated close and node removal.
+The decoder regression covers every byte split, suppresses incomplete frames,
+and rejects `SYN_DROPPED`, negative slots and unexpected slots. These are new
+acceptance assertions, not yet a recorded live pass. Do not close the contact gate
+until the installed expanded suite passes; retain the earlier one-contact evidence.
+
+
 ### Installed input milestone at eb8d468
 
 The installed lab at `eb8d46852cd0aa20d6689cc2f8b2a6686d730bca` passed all

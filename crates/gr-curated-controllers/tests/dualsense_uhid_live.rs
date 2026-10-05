@@ -249,16 +249,21 @@ fn apply_script_contacts(
             })
             .unwrap();
     }
-    controller
-        .set_touch(
-            TouchSlot::First,
-            if script_contact_active(contacts, step) {
-                Some(DualSenseTouchContact::new(1, u16::from(value) * 4, 100).unwrap())
-            } else {
-                None
-            },
-        )
-        .unwrap();
+    for (slot, id, x, y) in [
+        (TouchSlot::First, 1, value, 100),
+        (TouchSlot::Second, 2, 255 - value, 200),
+    ] {
+        controller
+            .set_touch(
+                slot,
+                if script_contact_active(contacts, step) {
+                    Some(DualSenseTouchContact::new(id, u16::from(x) * 4, y).unwrap())
+                } else {
+                    None
+                },
+            )
+            .unwrap();
+    }
     controller.commit().unwrap();
 }
 
@@ -593,6 +598,12 @@ fn run_sdl_script<C: AcceptanceController>(
         );
         if let Some((_, output)) = &result {
             eprintln!("{}", output.trim());
+            if active_contacts && target == RealizationTarget::LINUX_UHID_USB {
+                assert!(
+                    output.contains("\"touch\":{\"reason\":null,\"value\":{\"down_mask\":3,\"up_mask\":3,\"motion\":true}"),
+                    "SDL must observe both contact presses, motion and releases"
+                );
+            }
         }
         eprintln!(
             "{{\"schema_version\":1,\"record_type\":\"session_cleanup\",\"device_removed\":true,\"consumer_reaped\":true,\"rumble_seen\":{rumble_seen},\"led_seen\":{led_seen}}}"
@@ -930,6 +941,7 @@ fn apply_ds4_script_contacts(
     step: u16,
     contacts: bool,
 ) {
+    use gr_curated_controllers::{DualShock4TouchContact, DualShock4TouchSlot};
     let neutral = step % 1250 < 125;
     let value = if neutral {
         128
@@ -1004,23 +1016,21 @@ fn apply_ds4_script_contacts(
             })
             .unwrap();
     }
-    controller
-        .set_touch(
-            gr_curated_controllers::DualShock4TouchSlot::First,
-            if script_contact_active(contacts, step) {
-                Some(
-                    gr_curated_controllers::DualShock4TouchContact::new(
-                        1,
-                        u16::from(value) * 4,
-                        100,
-                    )
-                    .unwrap(),
-                )
-            } else {
-                None
-            },
-        )
-        .unwrap();
+    for (slot, id, x, y) in [
+        (DualShock4TouchSlot::First, 1, value, 100),
+        (DualShock4TouchSlot::Second, 2, 255 - value, 200),
+    ] {
+        controller
+            .set_touch(
+                slot,
+                if script_contact_active(contacts, step) {
+                    Some(DualShock4TouchContact::new(id, u16::from(x) * 4, y).unwrap())
+                } else {
+                    None
+                },
+            )
+            .unwrap();
+    }
     controller.commit().unwrap();
 }
 
@@ -1649,4 +1659,195 @@ fn isolated_mapping_cases_touch_only_the_selected_axis() {
             (1..=4).contains(&case) || (12..=15).contains(&case)
         );
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContactFrame {
+    ids: [i32; 2],
+    x: [Option<i32>; 2],
+    y: [Option<i32>; 2],
+}
+struct ContactReader {
+    pending: Vec<u8>,
+    slot: usize,
+    frame: ContactFrame,
+}
+impl ContactReader {
+    fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+            slot: 0,
+            frame: ContactFrame {
+                ids: [-1; 2],
+                x: [None; 2],
+                y: [None; 2],
+            },
+        }
+    }
+    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ContactFrame>, &'static str> {
+        self.pending.extend_from_slice(bytes);
+        let size = std::mem::size_of::<libc::timeval>() + 8;
+        let complete = self.pending.len() / size * size;
+        let mut frames = Vec::new();
+        for event in self.pending[..complete].chunks_exact(size) {
+            let event = &event[size - 8..];
+            let kind = u16::from_ne_bytes(event[..2].try_into().unwrap());
+            let code = u16::from_ne_bytes(event[2..4].try_into().unwrap());
+            let value = i32::from_ne_bytes(event[4..].try_into().unwrap());
+            match (kind, code) {
+                (0, 3) => return Err("input consumer lost events (SYN_DROPPED)"),
+                (0, 0) => frames.push(self.frame.clone()),
+                (3, 47) => {
+                    self.slot = usize::try_from(value).map_err(|_| "negative contact slot")?;
+                    if self.slot >= 2 {
+                        return Err("unexpected contact slot");
+                    }
+                }
+                (3, 57) => self.frame.ids[self.slot] = value,
+                (3, 53) => self.frame.x[self.slot] = Some(value),
+                (3, 54) => self.frame.y[self.slot] = Some(value),
+                _ => {}
+            }
+        }
+        self.pending.drain(..complete);
+        Ok(frames)
+    }
+}
+
+#[test]
+fn contact_frames_require_complete_events_and_sync_and_reject_loss() {
+    fn event(kind: u16, code: u16, value: i32) -> Vec<u8> {
+        let mut bytes = vec![0; std::mem::size_of::<libc::timeval>()];
+        bytes.extend(kind.to_ne_bytes());
+        bytes.extend(code.to_ne_bytes());
+        bytes.extend(value.to_ne_bytes());
+        bytes
+    }
+    let bytes: Vec<_> = [
+        (3, 47, 0),
+        (3, 57, 1),
+        (3, 53, 800),
+        (3, 54, 100),
+        (3, 47, 1),
+        (3, 57, 2),
+        (3, 53, 220),
+        (3, 54, 200),
+        (0, 0, 0),
+    ]
+    .into_iter()
+    .flat_map(|(kind, code, value)| event(kind, code, value))
+    .collect();
+    for split in 0..bytes.len() {
+        let mut reader = ContactReader::new();
+        assert!(reader.feed(&bytes[..split]).unwrap().is_empty());
+        assert_eq!(
+            reader.feed(&bytes[split..]).unwrap(),
+            vec![ContactFrame {
+                ids: [1, 2],
+                x: [Some(800), Some(220)],
+                y: [Some(100), Some(200)]
+            }]
+        );
+        let release: Vec<_> = [(3, 47, 0), (3, 57, -1), (3, 47, 1), (3, 57, -1), (0, 0, 0)]
+            .into_iter()
+            .flat_map(|(kind, code, value)| event(kind, code, value))
+            .collect();
+        assert_eq!(reader.feed(&release).unwrap()[0].ids, [-1, -1]);
+    }
+    assert!(ContactReader::new().feed(&event(0, 3, 0)).is_err());
+    for slot in [-1, 2] {
+        assert!(ContactReader::new().feed(&event(3, 47, slot)).is_err());
+    }
+}
+
+fn run_evdev_contacts<C: AcceptanceController>() {
+    use std::os::unix::fs::OpenOptionsExt;
+    let _guard = LIVE_LOCK.lock().unwrap();
+    for session in [7, 7, 7 + (1 << 16)] {
+        let mut controller = C::create(session, RealizationTarget::LINUX_UINPUT);
+        verify_contact_isolation(&mut controller, RealizationTarget::LINUX_UINPUT);
+        let nodes = associated_input_nodes(&controller).expect("all associated components");
+        let mut readers: Vec<_> = nodes
+            .iter()
+            .map(|node| {
+                let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
+                (
+                    fs::OpenOptions::new()
+                        .read(true)
+                        .custom_flags(libc::O_NONBLOCK)
+                        .open(path)
+                        .unwrap(),
+                    ContactReader::new(),
+                )
+            })
+            .collect();
+        for step in [200_u16, 201, 300] {
+            C::script(&mut controller, step);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut observed = false;
+            while !observed && Instant::now() < deadline {
+                controller.feedback();
+                for (file, reader) in &mut readers {
+                    let mut bytes = [0; 4096];
+                    match file.read(&mut bytes) {
+                        Ok(0) => panic!("owned contact node disconnected"),
+                        Ok(count) => {
+                            for frame in reader.feed(&bytes[..count]).unwrap() {
+                                observed |= if step == 300 {
+                                    frame.ids == [-1, -1] && frame.x.iter().all(Option::is_some)
+                                } else {
+                                    frame
+                                        == ContactFrame {
+                                            ids: [1, 2],
+                                            x: [
+                                                Some(i32::from(step) * 4),
+                                                Some(i32::from(255 - step) * 4),
+                                            ],
+                                            y: [Some(100), Some(200)],
+                                        }
+                                };
+                            }
+                        }
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(error) => panic!("contact read failed: {error}"),
+                    }
+                }
+                if !observed {
+                    wait_for_service(&controller);
+                }
+            }
+            assert!(
+                observed,
+                "two-contact frame/release not observed at step {step}"
+            );
+        }
+        assert!(readers.iter().all(|(_, reader)| reader.pending.is_empty()));
+        drop(readers);
+        controller.close();
+        controller.close();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while nodes.iter().any(|node| node.exists()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            nodes.iter().all(|node| !node.exists()),
+            "owned component cleanup failed"
+        );
+        eprintln!("two contacts, coordinates, motion, release and component cleanup passed");
+    }
+}
+
+#[test]
+#[ignore = "requires reviewed input isolation and exact owned event node access"]
+fn dualsense_evdev_two_contacts_and_release() {
+    run_evdev_contacts::<gr_curated_controllers::DualSenseController>();
+}
+#[test]
+#[ignore = "requires reviewed input isolation and exact owned component node access"]
+fn ds4_evdev_two_contacts_and_release() {
+    run_evdev_contacts::<gr_curated_controllers::DualShock4Controller>();
 }
