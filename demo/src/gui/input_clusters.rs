@@ -1301,7 +1301,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= response.drag_stopped() || response.clicked();
+                interaction_finished |= motion_interaction_finished(ui, &response);
             }
             for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
                 .into_iter()
@@ -1312,7 +1312,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= response.drag_stopped() || response.clicked();
+                interaction_finished |= motion_interaction_finished(ui, &response);
             }
             if motion_should_neutralize(released, hold, interaction_finished) {
                 gyro = [input.range().neutral; 3];
@@ -1328,6 +1328,38 @@ pub(super) fn draw_motion(
             }
         },
     );
+}
+
+fn motion_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
+    // egui's lost_focus edge can be consumed before the next draw when a
+    // containing view surrenders focus. Retain our own previous-frame evidence.
+    let focused = response.has_focus() && ui.is_enabled();
+    let lost_focus = ui.data_mut(|data| {
+        let id = response.id.with("motion-keyboard-focus");
+        let previous = data.get_temp::<bool>(id).unwrap_or(false);
+        data.insert_temp(id, focused);
+        previous && !focused
+    });
+    lost_focus
+        || response.drag_stopped()
+        || response.clicked()
+        || response.lost_focus()
+        || (response.has_focus()
+            && ui.input(|input| {
+                input.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::ArrowLeft
+                                | egui::Key::ArrowRight
+                                | egui::Key::ArrowUp
+                                | egui::Key::ArrowDown,
+                            pressed: false,
+                            ..
+                        }
+                    )
+                })
+            }))
 }
 
 fn motion_should_neutralize(released: bool, hold: bool, interaction_finished: bool) -> bool {
@@ -2271,6 +2303,67 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn motion_slider_keyboard_release_and_focus_loss_end_momentary_input() {
+        let context = egui::Context::default();
+        let mut value = 0;
+        let mut slider_id = None;
+        let mut completion_edges = Vec::new();
+        let mut changed_on_press = false;
+        for frame in 0..5 {
+            if frame == 4 {
+                context.memory_mut(|memory| memory.surrender_focus(slider_id.unwrap()));
+            }
+            let _ = context.run(
+                egui::RawInput {
+                    events: match frame {
+                        1 | 2 => vec![egui::Event::Key {
+                            key: egui::Key::ArrowRight,
+                            physical_key: None,
+                            pressed: frame == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }],
+                        _ => vec![],
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let response =
+                            ui.add(egui::Slider::new(&mut value, -100..=100).text("Gyro X"));
+                        slider_id = Some(response.id);
+                        if frame == 0 {
+                            response.request_focus();
+                        }
+                        if frame == 1 {
+                            changed_on_press = response.changed();
+                        }
+                        let finished = motion_interaction_finished(ui, &response);
+                        if frame == 2 {
+                            assert!(
+                                !response.drag_stopped() && !response.clicked(),
+                                "pointer-only completion misses keyboard release"
+                            );
+                        }
+                        completion_edges.push(finished);
+                        assert!(
+                            !motion_should_neutralize(false, true, finished),
+                            "Hold preserves motion"
+                        );
+                        if motion_should_neutralize(false, false, finished) {
+                            value = 0;
+                        }
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+        }
+        assert!(changed_on_press);
+        assert_eq!(completion_edges, vec![false, false, true, false, true]);
+        assert_eq!(value, 0);
     }
 
     #[test]

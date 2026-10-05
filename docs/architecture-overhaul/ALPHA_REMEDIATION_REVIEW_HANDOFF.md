@@ -829,3 +829,14 @@ adjacent control receives focus and exactly one momentary release is generated.
 Gate 1 still requires its complete control inventory, owned-display checks and a
 fresh final-image soak. Gates 2–6 remain open; alpha is not ready and PR #133 stays
 draft. Physical comparison/native timing remain separate post-alpha #136/#135.
+
+## Motion keyboard lifecycle follow-up
+
+Motion sliders previously completed momentary input only on pointer click/drag
+release. Arrow-key release and focus loss now also neutralize motion when Hold is
+off; Hold retains the value. A real egui slider regression demonstrates that the
+old pointer-only predicate misses key release, and checks actual press/release,
+focus surrender and Hold behavior. Previous-frame focus is retained because the
+normal egui focus-loss edge can disappear before the next draw after containing
+view focus surrender. The same completion helper is used for gyro and accel axes.
+This correction does not close the full interactive inventory or soak gate.
