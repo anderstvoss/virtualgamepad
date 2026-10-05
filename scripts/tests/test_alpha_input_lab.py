@@ -93,6 +93,7 @@ class InputIsolation(unittest.TestCase):
             self.assertIn('--reuid=1001', argv)
             self.assertIn('--bounding-set=-all', argv)
             self.assertIn('--no-new-privs', argv)
+            self.assertEqual(spawn.call_args.kwargs['env'], {'PATH': '/usr/bin:/bin', 'LANG': 'C'})
             return result, release, commands
 
     def test_failed_preparation_never_releases_child_and_restores_rule(self):
@@ -112,7 +113,7 @@ class InputIsolation(unittest.TestCase):
     def test_real_child_waits_for_gate_then_execs_with_the_same_pid(self):
         read_fd, write_fd = os.pipe()
         process = subprocess.Popen([sys.executable, '-I', str(Path(lab.__file__).absolute()),
-            '--child', str(read_fd), sys.executable, '-I', '-c',
+            '--child', str(read_fd), '{}', sys.executable, '-I', '-c',
             'import os;print(os.getpid(),os.environ["VIRTUALGAMEPAD_INPUT_LAB_SEAT"])'],
             pass_fds=(read_fd,), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         os.close(read_fd)
@@ -130,7 +131,7 @@ class InputIsolation(unittest.TestCase):
     def test_gate_eof_rejects_command_without_execution(self):
         read_fd, write_fd = os.pipe()
         process = subprocess.Popen([sys.executable, '-I', str(Path(lab.__file__).absolute()),
-            '--child', str(read_fd), sys.executable, '-I', '-c', 'print("must not execute")'],
+            '--child', str(read_fd), '{}', sys.executable, '-I', '-c', 'print("must not execute")'],
             pass_fds=(read_fd,), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         os.close(read_fd);os.close(write_fd)
         output, _ = process.communicate(timeout=5)

@@ -92,7 +92,7 @@ def restore_rule(path, expected, pid, inventory=owned_inputs):
 
 
 def child(arguments):
-    descriptor, *command = arguments
+    descriptor, client_environment, *command = arguments
     if os.geteuid() == 0 or not command:
         raise RuntimeError('test must execute without root privileges')
     descriptor = int(descriptor)
@@ -103,6 +103,7 @@ def child(arguments):
         os.close(descriptor)
     _, seat = labels(os.getpid())
     environment = os.environ.copy()
+    environment.update(json.loads(client_environment))
     environment['VIRTUALGAMEPAD_INPUT_LAB_SEAT'] = seat
     os.execvpe(command[0], command, environment)
 
@@ -119,6 +120,7 @@ def run(args):
         trusted(image)
         for parent in image.parents:
             trusted(parent, True)
+    trusted(Path('/usr/bin/setpriv'))
     if hashlib.sha256(Path(args.command[0]).read_bytes()).hexdigest() != args.command_hash:
         raise RuntimeError('command image differs from approved hash')
     account = pwd.getpwuid(args.uid)
@@ -143,11 +145,11 @@ def run(args):
                        '--regid=' + str(account.pw_gid), '--groups=' + str(args.input_gid),
                        '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all',
                        '--no-new-privs', '--', sys.executable, '-I', str(Path(__file__).absolute()),
-                       '--child', str(read_fd), *args.command]
+                       '--child', str(read_fd), json.dumps(dict(args.env)), *args.command]
             process = subprocess.Popen(command, pass_fds=(read_fd,), start_new_session=True,
                                        stdout=output, stderr=subprocess.STDOUT,
                                        preexec_fn=output_limit,
-                                       env={'PATH': '/usr/bin:/bin', 'LANG': 'C', **dict(args.env)})
+                                       env={'PATH': '/usr/bin:/bin', 'LANG': 'C'})
             os.close(read_fd); read_fd = -1
             path = RULES / f'71-virtualgamepad-alpha-p{process.pid:x}.rules'
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o644)
