@@ -100,7 +100,7 @@ class ReversibleMaintenance(unittest.TestCase):
             host.run([sys.executable, '-c', 'print("x" * 2000000)'])
         self.assertNotEqual(host.events[-1]['status'], 0)
     def test_client_privilege_drop_is_explicit_before_the_validator(self):
-        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None)
+        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None, restart_empty=False)
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -114,7 +114,7 @@ class ReversibleMaintenance(unittest.TestCase):
 
     def test_unauthorized_identity_is_distinct_and_registered_before_startup(self):
         args = Mock(client_uid=1001, unauthorized_uid=1003, timeout=30,
-                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'))
+                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False)
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -194,6 +194,41 @@ class ReversibleMaintenance(unittest.TestCase):
             self.assertEqual(path.read_text(), 'foreign')
             lab.remove_owned(path, lab.identity(path))
             lab.remove_owned(path, lab.identity(Path(directory)))
+
+
+    def test_empty_candidate_restart_reconnects_and_records_new_identity(self):
+        host = lab.Host(Mock(client_uid=1001, port=0, command=['/synthetic/probe']))
+        host.instance = 'synthetic'; host.service = 'synthetic.service'; host.socket = 'synthetic.socket'
+        host.owned = [(lab.STATE / name, (1, 2), True) for name in ('synthetic', 'synthetic.audio')]
+        host.run = Mock(side_effect=['42\n', '', '', 'inactive\n', '43\n'])
+        host.start_candidate = Mock(); host.run_client = Mock()
+        with patch.object(lab, 'identity', return_value=(1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter([])), patch.object(Path, 'read_text', return_value=''), patch.object(lab, 'free_port'):
+            host.restart_empty_candidate()
+        host.run_client.assert_called_once_with(1001, ['/synthetic/probe'], 'reconnected')
+        host.start_candidate.assert_called_once()
+        self.assertEqual(host.events[-1]['empty_restart'], dict(previous_pid=42, current_pid=43))
+        self.assertEqual(host.run.call_args_list[1].args[0], ['systemctl', 'stop', 'synthetic.socket'])
+
+    def test_restart_refuses_changed_identity_nonempty_journal_or_children(self):
+        for changed, entries, children in ((True, [], ''), (False, [Path('/synthetic/lease')], ''), (False, [], '7')):
+            host = lab.Host(Mock(port=0)); host.instance = 'synthetic'; host.service = 'synthetic.service'
+            host.owned = [(lab.STATE / name, (1, 2), True) for name in ('synthetic', 'synthetic.audio')]
+            host.run = Mock(return_value='42\n'); host.start_candidate = Mock()
+            with patch.object(lab, 'identity', return_value=(9, 9) if changed else (1, 2)), patch.object(Path, 'iterdir', side_effect=lambda: iter(entries)), patch.object(Path, 'read_text', return_value=children), patch.object(lab, 'free_port'):
+                with self.assertRaisesRegex(RuntimeError, 'refusing restart|unexplained children'): host.restart_empty_candidate()
+            self.assertFalse(any('stop' in call.args[0] for call in host.run.call_args_list))
+            host.start_candidate.assert_not_called()
+
+    def test_restart_failure_still_restores_original_service_state(self):
+        host = Fake()
+        def execute():
+            host.operation('execute')
+            host.operation('restart')
+            raise RuntimeError('candidate restart failed')
+        host.execute = execute
+        with self.assertRaisesRegex(RuntimeError, 'candidate restart failed'):
+            lab.maintenance(host)
+        self.assertEqual(host.events[-3:], ['stop_candidate', 'cleanup', 'restore'])
 
 
 if __name__ == '__main__':

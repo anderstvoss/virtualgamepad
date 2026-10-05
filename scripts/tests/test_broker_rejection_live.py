@@ -71,3 +71,77 @@ class RejectionReceipt(unittest.TestCase):
         peer.recv.side_effect = TimeoutError('still open')
         with self.assertRaises(TimeoutError):
             probe.closed(peer)
+
+
+class AdmissionProbe(unittest.TestCase):
+    def test_bound_release_and_sibling_progress_close_every_owned_socket(self):
+        active = []
+        created = []
+        class Socket:
+            def __init__(self):
+                self.accepted = len(active) < 8
+                self.closed = False
+                self.requests = 0
+                if self.accepted: active.append(self)
+                created.append(self)
+            def sendall(self, data):
+                if not self.accepted or self.closed: raise ConnectionResetError()
+                self.requests += 1
+            def recv(self, count):
+                if self.accepted: raise TimeoutError('not rejected')
+                return b''
+            def settimeout(self, value): self.timeout = value
+            def close(self):
+                if not self.closed and self.accepted: active.remove(self)
+                self.closed = True
+            def __enter__(self): return self
+            def __exit__(self, *args): self.close()
+        with patch.object(probe, 'connect', side_effect=Socket), patch.object(probe, 'expect_error'):
+            result = probe.admission_probe()
+        self.assertTrue(result['disconnect_released'])
+        self.assertTrue(result['siblings_progress'])
+        self.assertEqual(len(created), 10)
+        self.assertEqual(created[8].timeout, .25)
+        self.assertTrue(all(peer.closed for peer in created))
+        self.assertEqual(active, [])
+        self.assertEqual(created[0].requests, 3)
+
+    def test_missing_bound_cannot_pass_via_idle_timeout_and_held_sockets_close(self):
+        created = []
+        def connect():
+            peer = Mock()
+            peer.__enter__ = Mock(return_value=peer)
+            peer.__exit__ = Mock(return_value=False)
+            peer.recv.side_effect = TimeoutError('accepted excess connection')
+            created.append(peer)
+            return peer
+        with patch.object(probe, 'connect', side_effect=connect), patch.object(probe, 'expect_error'):
+            with self.assertRaises(TimeoutError): probe.admission_probe()
+        for peer in created[:8]: peer.close.assert_called_once()
+
+    def test_failed_sibling_reply_does_not_leak_held_connections(self):
+        created = [Mock(), Mock()]
+        with patch.object(probe, 'connect', side_effect=created), patch.object(probe, 'expect_error', side_effect=[None, RuntimeError('wrong reply')]):
+            with self.assertRaisesRegex(RuntimeError, 'wrong reply'): probe.admission_probe()
+        for peer in created: peer.close.assert_called_once()
+
+    def test_disconnect_slot_not_released_is_bounded_and_closes_all_siblings(self):
+        peers = [Mock() for _ in range(10)]
+        excess = peers[8]
+        excess.__enter__ = Mock(return_value=excess)
+        excess.__exit__ = Mock(return_value=False)
+        excess.recv.return_value = b''
+        peers[9].sendall.side_effect = ConnectionResetError()
+        with patch.object(probe, 'connect', side_effect=peers), patch.object(probe, 'expect_error'), patch.object(probe.time, 'monotonic', side_effect=[0, 2]):
+            with self.assertRaisesRegex(RuntimeError, 'admission was not released'): probe.admission_probe()
+        for peer in peers[:8] + peers[9:]: peer.close.assert_called_once()
+
+    def test_reconnect_wrong_reply_is_not_retried_or_hidden(self):
+        peers = [Mock() for _ in range(10)]
+        peers[8].__enter__ = Mock(return_value=peers[8])
+        peers[8].__exit__ = Mock(return_value=False)
+        peers[8].recv.return_value = b''
+        with patch.object(probe, 'connect', side_effect=peers) as connect, patch.object(probe, 'expect_error', side_effect=[None] * 16 + [RuntimeError('incorrect rejection response')]):
+            with self.assertRaisesRegex(RuntimeError, 'incorrect rejection'): probe.admission_probe()
+        self.assertEqual(connect.call_count, 10)
+        for peer in peers[:8] + peers[9:]: peer.close.assert_called_once()

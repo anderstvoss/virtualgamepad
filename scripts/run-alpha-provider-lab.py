@@ -340,6 +340,30 @@ class Host:
             self.run_client(self.args.unauthorized_uid,
                             ['/usr/bin/python3', '-I', str(self.args.unauthorized_probe), '--unauthorized'],
                             'unauthorized')
+        if self.args.restart_empty:
+            self.restart_empty_candidate()
+
+    def restart_empty_candidate(self):
+        # Only an empty lab may restart: this does not test stale attachment
+        # recovery and must never interrupt an unexplained worker or lease.
+        for directory in (STATE / self.instance, STATE / (self.instance + '.audio')):
+            recorded = next(item[1] for item in self.owned if item[0] == directory)
+            if identity(directory) != recorded or any(directory.iterdir()):
+                raise RuntimeError('candidate journal is changed or nonempty; refusing restart')
+        free_port(VHCI.read_text(), self.args.port)
+        old = int(self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).strip())
+        if old <= 0 or Path(f'/proc/{old}/task/{old}/children').read_text().strip():
+            raise RuntimeError('candidate process is absent or has unexplained children')
+        self.run(['systemctl', 'stop', self.socket])
+        self.run(['systemctl', 'stop', self.service])
+        if self.run(['systemctl', 'show', self.service, '-p', 'ActiveState', '--value']).strip() != 'inactive':
+            raise RuntimeError('candidate did not stop before restart')
+        self.start_candidate()
+        self.run_client(self.args.client_uid, self.args.command, 'reconnected')
+        new = int(self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).strip())
+        if new <= 0 or new == old:
+            raise RuntimeError('candidate restart identity was not renewed')
+        self.events.append(dict(empty_restart=dict(previous_pid=old, current_pid=new)))
 
     def run_client(self, uid, command, suffix):
         account = pwd.getpwuid(uid)
@@ -421,6 +445,8 @@ def main():
     parser.add_argument('--unauthorized-uid', type=int)
     parser.add_argument('--unauthorized-probe', type=Path,
                         help='root-owned probe; opens only the temporary lab socket to other UIDs')
+    parser.add_argument('--restart-empty', action='store_true',
+                        help='repeat client after restarting only an empty owned candidate')
     parser.add_argument('--port', type=int)
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--report', type=Path)

@@ -378,3 +378,15 @@ as do Linux, Windows, MSRV, CodeQL and Gitleaks. The corrected audio-disabled
 GUI soak is running; require its full two-hour receipt and cleanup before closing
 that gate. b6fdccd's two failed independent C controls still block product audio
 qualification despite three passing corrected Rust controls.
+
+### Admission and empty restart extension
+
+Review the validator's eight simultaneous acknowledged connections, short excess
+closure deadline, sibling replies and bounded disconnect-slot reacquisition. Wrong
+replies must fail immediately, not be retried until they disappear. Check cleanup
+on every failing seam. Review `--restart-empty`: changed/nonempty journal identity,
+occupied ports and unexplained children must refuse before stopping the candidate;
+restart failure must still restore the original service state. Only recorded old/new
+candidate PIDs and a repeated passing client establish empty restart/reconnect.
+These additions require a refreshed reviewed immutable lab snapshot for live proof;
+worker-death, stale-attachment and successful USB audio recovery remain separate.

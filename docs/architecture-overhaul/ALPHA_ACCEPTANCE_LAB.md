@@ -154,3 +154,21 @@ receipt revisions. A source change invalidates affected acceptance; later docs-o
 changes require explicit source-tree equivalence and exact-head CI/consumer checks.
 Keep PR #133 draft until required acceptance is complete. No merge, tag or release
 publication is authorized by this procedure.
+
+## Bounded connection admission and empty restart
+
+The maintained rejection validator additionally holds eight acknowledged connections
+for one authorized UID, requires immediate closure of a ninth, verifies all eight
+siblings still reply, disconnects one and requires its admission slot to become
+usable again. The excess connection uses a 250 ms deadline so the daemon's longer
+idle deadline cannot be mistaken for admission rejection. Timing failures remain
+failures; they must not be hidden by counting expired siblings as capacity proof.
+
+For a reviewed negative-only client, `--restart-empty` repeats that client after
+stopping and reactivating only the candidate socket/service. It refuses changed or
+nonempty owned journal directories, an occupied VHCI port or unexplained children,
+and records the old/new candidate process identities. Restoration still runs if
+restart or reconnection fails. This tests connection recovery across an empty
+broker restart, not worker death, stale attachment recovery or audio continuity.
+The live run requires an administrator-installed reviewed snapshot; the existing
+fixed helper cannot update its own root-owned code or accept arbitrary arguments.

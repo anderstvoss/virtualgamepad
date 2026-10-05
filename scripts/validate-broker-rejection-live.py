@@ -17,6 +17,10 @@ REASON = (b'privileged host session failed: dummy_hcd HID is unavailable: Linux 
           b'complete controller request semantics cannot be represented')
 
 
+class PeerClosedError(RuntimeError):
+    pass
+
+
 def frame(tag, body=b''):
     return struct.pack('<IHB', len(body) + 3, 1, tag) + body
 
@@ -33,8 +37,10 @@ def exact(peer, count):
                 descriptors.frombytes(payload[:len(payload) // descriptors.itemsize * descriptors.itemsize])
                 for descriptor in descriptors:
                     os.close(descriptor)
-        if unexpected or flags & socket.MSG_CTRUNC or not data:
-            raise RuntimeError('unexpected descriptors, truncation or premature EOF')
+        if unexpected or flags & socket.MSG_CTRUNC:
+            raise RuntimeError('unexpected descriptors or truncation')
+        if not data:
+            raise PeerClosedError('premature EOF')
         result.extend(data)
     return bytes(result)
 
@@ -66,6 +72,53 @@ def closed(peer):
             raise RuntimeError('rejected connection was not terminated')
     except ConnectionResetError:
         pass
+
+
+def admission_probe():
+    """Verify the daemon's eight-connection UID bound and disconnect release.
+
+    Confirm every held connection with a reply. A short deadline distinguishes
+    immediate admission closure from the one-second idle-read deadline. Checking
+    all siblings afterward prevents expired slots from hiding a missing bound.
+    """
+    held = []
+    try:
+        for _ in range(8):
+            peer = connect()
+            held.append(peer)
+            peer.sendall(frame(255))
+            expect_error(peer, b'malformed broker request')
+        with connect() as excess:
+            excess.settimeout(.25)
+            closed(excess)
+        for peer in held:
+            peer.sendall(frame(255))
+            expect_error(peer, b'malformed broker request')
+        held.pop().close()
+        deadline = time.monotonic() + 1
+        while True:
+            peer = connect()
+            try:
+                peer.sendall(frame(255))
+                expect_error(peer, b'malformed broker request')
+                held.append(peer)
+                break
+            except (ConnectionError, PeerClosedError):
+                peer.close()
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('disconnected client admission was not released') from None
+                time.sleep(.01)
+            except BaseException:
+                peer.close()
+                raise
+        for peer in held:
+            peer.sendall(frame(255))
+            expect_error(peer, b'malformed broker request')
+        return dict(limit=8, excess_rejected=True, disconnect_released=True,
+                    siblings_progress=True)
+    finally:
+        for peer in held:
+            peer.close()
 
 
 def probe(unauthorized=False):
@@ -126,8 +179,9 @@ def probe(unauthorized=False):
         os.close(reader)
         if writer is not None:
             os.close(writer)
-    return dict(scope='rejection, framing, progress and unexpected-FD ownership only',
-                uid=os.geteuid(), checks=checks)
+    admission = admission_probe()
+    return dict(scope='rejection, framing, FD ownership and connection admission',
+                uid=os.geteuid(), checks=checks + 3, admission=admission)
 
 
 if __name__ == '__main__':

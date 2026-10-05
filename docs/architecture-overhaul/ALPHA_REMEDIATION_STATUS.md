@@ -204,6 +204,17 @@ private rootless display. Its two-hour duration and final cleanup are still pend
 no intermediate resource sample closes the gate. The most recent b6fdccd audio
 control failures above still block the 72 product trials and slow-consumer reruns.
 
+#### Connection admission and empty restart extension
+
+The maintained negative validator now exercises the eight-connection UID limit,
+immediate excess rejection, sibling progress and admission release after disconnect.
+The runner adds an opt-in empty candidate restart/reconnect phase, guarded by owned
+journal identity, emptiness, unused VHCI port and absence of children. Deterministic
+regressions cover missing bounds, unreleased permits, wrong replies, socket cleanup,
+changed/nonempty journals, foreign children and restoration after restart failure.
+The expanded live run requires a refreshed immutable administrator snapshot; it is
+not yet passing evidence. It does not claim worker-death or stale-attachment recovery.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
