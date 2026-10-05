@@ -346,3 +346,18 @@ Rust controls. Optimization and short external diagnostic experiments are not
 product acceptance. Verify the final isolated two-hour GUI receipt before closing
 its gate; a successful short preflight alone is insufficient. Physical, touch,
 routing, native-host timing and successful provider recovery remain separate gates.
+
+### Graph input and GUI workload regression map
+
+Check `one_notification_drains_all_ready_markers_and_returns_invalid_buffers` in
+the marker-source support module: one notification must drain all pending buffers,
+including returning malformed buffers before continuing. The new counters localize
+coalescing; three passing trials with zero coalescing do not prove that previous
+VM loss was caused by this issue. Production callback changes need separate evidence.
+The independently failing C controls still prevent product qualification.
+
+Check `neutral_soak_disables_inherited_audio_before_any_controller_creation` in the
+demo. The validation example must force audio-disabled creation options regardless
+of feature-dependent demo defaults. Review the final build/resource/cleanup receipt;
+interrupted prior runs and a short preflight cannot substitute for two hours. Verify
+that owned display, HID and process resources disappear and foreign resources remain.

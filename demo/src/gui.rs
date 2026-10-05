@@ -1452,8 +1452,7 @@ impl App {
     #[allow(clippy::field_reassign_with_default)] // App owns Drop resources and cannot use struct update syntax.
     pub(crate) fn validation_soak() -> Result<Self, String> {
         let mut app = Self::default();
-        app.kind = Kind::DualSense;
-        app.target = RealizationId::LINUX_UHID_USB;
+        app.configure_neutral_soak();
         for _ in 0..2 {
             app.create();
         }
@@ -1461,6 +1460,14 @@ impl App {
             return Err(format!("soak creation: {:?}", app.lifecycle_status));
         }
         Ok(app)
+    }
+    #[allow(dead_code)] // Used by the validation example and its configuration regression.
+    fn configure_neutral_soak(&mut self) {
+        self.kind = Kind::DualSense;
+        self.target = RealizationId::LINUX_UHID_USB;
+        // The normal demo enables audio for some feature/target combinations.
+        // This workload must not attach to the user's running audio session.
+        self.audio_creation.enabled = false;
     }
     #[allow(dead_code)]
     pub(crate) fn validation_soak_cycle(&mut self) -> Result<(), String> {
@@ -3536,6 +3543,28 @@ fn draw_switch_pro(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn neutral_soak_disables_inherited_audio_before_any_controller_creation() {
+        for enabled in [false, true] {
+            let mut app = App::default();
+            app.kind = Kind::SwitchPro;
+            app.target = RealizationId::LINUX_USBIP_USB_AUDIO;
+            app.audio_creation.enabled = enabled;
+            app.configure_neutral_soak();
+            assert!(matches!(app.kind, Kind::DualSense));
+            assert_eq!(app.target, RealizationId::LINUX_UHID_USB);
+            assert!(app.controllers.is_empty());
+            assert_eq!(
+                app.audio_creation
+                    .options(app.target, true)
+                    .unwrap()
+                    .audio()
+                    .exposure(),
+                virtualgamepad::AudioExposure::Disabled
+            );
+        }
+    }
 
     #[test]
     fn uhid_creation_failure_distinguishes_registration_from_access() {

@@ -108,8 +108,10 @@ the 32-character grammar and preserves bounded failure stdout/stderr in receipts
 Focused sanitized regressions cover both corrections. The privileged helper is
 pinned to reviewed artifacts and cannot install arbitrary updated code itself.
 
-This continuation added no Cargo dependencies and changed no persistent host
-configuration. An isolated desktop, four physical references, an administrator-run
+This continuation added no Cargo dependencies. Installed broker images and
+persistent scheduling, routing and desktop configuration were preserved. Human
+administrators provisioned narrowly scoped lab delegation outside the repository;
+broad passwordless delegation was revoked. An isolated desktop, four physical references, an administrator-run
 provider window and external native results remain required. The previous two-hour
 soak is historical; its requested final-candidate repeat remains unperformed.
 
@@ -154,6 +156,30 @@ EOF without sending, with regressions rejecting still-open or successful
 connections. The failed trial restored original service state and fingerprints
 with no cleanup errors; its partial result does not count as a passing whole lab.
 Installing the corrected immutable probe is required before its live rerun.
+
+#### Graph-control and neutral-soak hardening
+
+The marker capture helper now drains every ready input buffer for a notification
+and records ready-buffer/coalescing counters. A deterministic fake-buffer test
+verifies complete marker receipt and release of all buffers even when an intervening
+payload is malformed. Production PipeWire callbacks, queues and assertions are
+unchanged; the helper correction is not proof of the cause of earlier VM loss.
+
+At `b6fdccd9f5185fa73c8d6e1736cfa5af2ffeb25d`, all three corrected Rust controls
+passed with 2,976,000 generated/received frames each and no loss, duplication or
+corruption. They observed no coalesced callbacks. The fresh independent C batch
+failed two of three trials: missing 666,368 / 61,440 / 0 and duplicates 5,120 / 0 / 0.
+Complete submission and negotiated format did not establish repeatable graph
+continuity. All 72 product cells and slow-consumer reruns remain blocked.
+
+The prior GUI runs were stopped with owned-process identity checks; display sockets,
+locks and owned HID nodes were removed. Their partial samples are not two-hour
+acceptance. Inspection found that the validation helper inherited enabled audio
+under the all-feature demo default despite intending a neutral workload. It now
+explicitly selects audio-disabled creation options before opening any controller,
+with a deterministic regression covering both inherited enabled/disabled states.
+Normal demo defaults remain unchanged. The final neutral two-hour repeat must use
+the new build receipt and complete final cleanup before its gate can close.
 
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
