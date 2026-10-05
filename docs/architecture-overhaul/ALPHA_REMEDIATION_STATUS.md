@@ -277,8 +277,9 @@ The consumer source is reviewed SDL commit
 `535d80badefc83c5c527ec5748f2a20d6a9310fe`; the first private build lacked release
 tag metadata, so its strict backend classifier remained unknown despite the source
 pin. Preserve that limitation. A separate tagged build reports the exact reviewed
-`SDL3-3.2.0-release-3.2.0` contract and is repeating all seven cases. DS4 evdev,
-DualSense UHID and DS4 UHID have passed; the complete repeat is not yet accepted.
+`SDL3-3.2.0-release-3.2.0` contract and passes all seven repeats: 1,092 passing
+observations and 21 cleanup records. The reported backend is HIDAPI for DualSense,
+DS4 and Switch UHID, and Linux evdev for Xbox UHID and every evdev case.
 These input and removal checks do not establish motion, contacts, reverse outputs,
 physical comparison, Steam compatibility or audio. Raw receipts and hashes are
 retained outside tracked source.
@@ -288,6 +289,34 @@ Its bounded audio coordinator waits for the complete two-hour GUI receipt, all
 seven tagged consumer results and display cleanup before starting independent
 controls. Product trials remain conditional on qualification. A queued run is not
 passing evidence, and the historical audio failures remain release gates.
+
+#### Completed controls coverage and additional scripted consumers
+
+A new touch-free `dualsense_evdev_individual_mapping` live entrypoint closes the
+missing individual-controls cell. At `44a6faa9bce15e7149590ee7aaeaaeab11ddd4e8`
+(tree `b835276e1fbacf0d581c99a97c81445b27ce32f7`) it passes 156 observations,
+three repeated cleanup records and zero touch events with the same tagged reviewed
+SDL build. Combined with the seven tests at 12417df above, all four families have
+UHID and evdev individual-controls evidence: 1,248 observations and 24 cleanup
+records. These are two exact source receipts, not eight trials at one revision.
+The intervening changes affect tooling, tests and evidence documents, not controller
+production code. This does not close Sony contact or full output acceptance.
+
+Four existing scripted tests also pass at 44a6faa: Switch UHID controls/motion,
+Xbox standard-HID controls, Switch evdev and Xbox evdev. Each repeats three sessions
+with device removal and consumer reap. Switch UHID has distinct accelerometer and
+gyroscope samples without invalid timestamps/values; both evdev scripts receive
+exact requested rumble magnitudes. UHID Switch/Xbox output fidelity remains separate;
+standard-HID Xbox evidence does not establish XInput/xpad. All four record zero
+touch events. Raw consumer hashes, observations and cleanup receipts are external.
+
+All 18 local commands pass at 44a6faa (561 Rust tests, 61 ignored live entrypoints,
+150 Python tests), and its downloaded SBOMs verify all 17 packages. Platform/MSRV,
+policy and audit CI jobs pass, but the pinned-corpus job fails when its real rustdoc
+fixture returns nonzero. That test previously discarded compiler diagnostics; it
+now preserves stdout/stderr with a sanitized failing-compiler regression. The failed
+run is retained. The cause and exact-head rerun remain unresolved until visible
+compiler evidence is available; diagnostic improvement is not a corrected compiler.
 
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
@@ -323,7 +352,7 @@ and proprietary XInput require truthful rejection, not implementation here.
 | F7 / P2 | Uploaded SBOM contains 16 member reports, omits root | `.github/workflows/sbom.yml`, `scripts/collect-sbom.py`: metadata-driven collection and extracted-artifact verification | All 17 packages locally generated/validated, including root. Missing/duplicate/foreign identity, missing dependency inventory and stale output reject. Uploaded checkpoint artifact verifies all 17 identities; final-head verification and workflow run IDs are recorded in the PR description and external revision receipt. |
 | F8 / P2 | Entry documents contradict demo defaults, topology and issue status | README, application/audio/support/demo docs and historical ledger annotations | Root defaults empty; demo ALSA/WIP USB/IP defaults distinguished; #112 closure is not native acceptance; new DS4 topology and lifecycle semantics documented. Historical failures preserved. |
 | A1 / P1 | Samples/native audio loses markers even with zero reported queue drops | Marker producer accounting, graph-clock diagnostics, queue/drop/underrun counters, per-marker client accounting and explicit drain; simultaneous duplex for all four ownership combinations | Deterministic duplicate/corrupt/partial-frame and producer/drain tests pass. Protocol fixture now primes exact microphone frames before READY. **Continuity unresolved; assertions unchanged; PR stays draft.** |
-| A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Four-family neutral evdev feedback and consumer-death cleanup pass, including both DS4 nodes. Contact injection and reviewed SDL/physical parity remain unverified. |
+| A2 / P2 | Combined DS4 node is classified as touchscreen and misses SDL gamepad discovery | Production `dualshock4/evdev.rs`: transactionally associated gamepad/contact nodes; primary retains controls/feedback, companion retains both contacts and release | Capability split, frame routing, partial creation rollback, reverse feedback, sibling identity/cleanup and root companion metadata pass. Four-family neutral evdev feedback and consumer-death cleanup pass, including both DS4 nodes. Reviewed SDL controls/removal pass for both DS4 realizations. Contact injection, full reverse-output parity and physical comparison remain unverified. |
 | A3 / gate | Installed candidate provenance, privileged authorization/recovery and dummy_hcd report semantics unverified | Current provider/direct-open/daemon admission rejects incomplete f_hid semantics before construction; separate reversible installed-provider lab preserves original image/config/unit fingerprints and global lock | All-family/repeated rejection and zero-factory-admission regressions pass; earlier protocol/cleanup tests retained. Full gadget parity is explicitly unavailable. The scoped live rejection/framing/descriptor/admission lab passes 31 checks and restores cleanly. Successful audio-provider construction, worker/client-death, stale-lease and restart recovery remain unverified. |
 | A4 / gate | Consumer breadth, long-run GUI, accessibility and physical/native timing evidence incomplete | Selection/removal tests through 1,024 positions; explicit neutral-owned-device GUI soak; selected root lifecycle/audio/reconnect tests | Deterministic selection/lockout/routing/error/lifecycle coverage passes. An earlier two-hour soak passed with owned resources removed; it is historical. The corrected audio-disabled final-candidate repeat is running and requires its complete cleanup receipt. Steam/game/manual keyboard/physical/native-host evidence remains unverified. |
 

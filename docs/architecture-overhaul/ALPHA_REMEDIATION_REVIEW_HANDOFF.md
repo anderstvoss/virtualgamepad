@@ -459,3 +459,26 @@ The two-hour GUI run and subsequent quiet audio qualification are still pending.
 The prepared 9e64801 audio checkout is clean and its coordinator waits for GUI,
 consumer and display cleanup. Reject any claim that preparation or queuing closes
 a measured gate. Preserve historical audio failures even if new trials pass.
+
+### Completed controls and scripted-consumer follow-up
+
+The tagged reviewed SDL repeat at 12417df passes all seven tests: 1,092 control
+observations and 21 cleanup records. Backend classification is HIDAPI for Sony and
+Switch UHID, Linux evdev for Xbox UHID and evdev cases. The added touch-free
+DualSense evdev individual test passes 156 observations and three cleanup sessions
+at `44a6faa9bce15e7149590ee7aaeaaeab11ddd4e8`, tree
+`b835276e1fbacf0d581c99a97c81445b27ce32f7`. Audit both source receipts; combined
+counts do not mean eight cells were rerun at the same head. Full Sony contact/output
+and physical acceptance remain open.
+
+At 44a6faa, the existing Switch UHID controls/motion and Xbox standard-HID controls
+scripts pass, as do Switch/Xbox evdev scripts with exact rumble feedback. All four
+repeat three sessions and remove owned devices/reap consumers; no touch injection.
+Check sensor timestamps/values and controller-side feedback, not just successful
+SDL calls. Switch/Xbox UHID output fidelity and XInput/xpad remain outside this proof.
+
+All 18 local commands pass at 44a6faa and SBOM coverage is complete. Preserve its
+failed pinned-corpus CI job: the real rustdoc fixture failed while previously
+hiding stderr. The diagnostic regression now requires compiler stdout/stderr to
+survive failure. Require a visible cause and exact-head rerun before treating CI
+as green; do not skip the real-rustdoc regression or weaken snapshot assertions.
