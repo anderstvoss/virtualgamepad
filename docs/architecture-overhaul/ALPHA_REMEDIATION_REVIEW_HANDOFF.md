@@ -429,3 +429,33 @@ excludes. Helper imports must not write source bytecode caches or invalidate the
 clean-candidate preflight. The sanitized fixture regression verifies both entrypoints;
 dirty or changing real source must still refuse. Preserve the initial failed
 prebuild and demand a new source/build receipt for the corrected candidate.
+
+### Latest evidence checkpoint
+
+All 18 local validation commands pass at
+`9e64801b76666d13cc87182b3639827cb02ef673`, tree
+`fa595e94c9aa8eb2a06e73fce1831ea87fbe25e9`: 561 Rust tests, 60 explicitly
+ignored live entrypoints and 150 Python tests. Exact-Git consumers/offline rebuild,
+exact-head native platform/MSRV/security workflows and all 17 downloaded workspace
+SBOM identities pass. Conditional privileged CI remains skipped.
+
+The administrator-installed all-thread guard at
+`d307b5c393a2ccd45aae3e96d74ec3644b4bd266` has now passed the 67-check lab.
+Inspect the receipt for unchanged installed identities, restored service/socket
+state, removed runtime and changed candidate PID. Earlier installation requirements
+above describe historical checkpoints, not a pending refresh. Do not extend this
+negative/admission/empty-restart result into successful worker or stale-lease recovery.
+
+Seven controls-only SDL tests at `12417df47288048821320b2d526f3c78083422b9`
+passed 1,092 observations and 21 cleanup records. Their reviewed-source consumer
+initially lacked release-tag metadata; preserve its unknown backend classification.
+The separately tagged reviewed build is repeating the seven cases, with DS4 evdev,
+DualSense UHID and DS4 UHID passed so far. Require all final receipts rather than
+intermediate progress. Check exact binary/library hashes, zero touch injection,
+all DS4 companion removals and the absent DualSense evdev individual cell. Full
+motion/touch/output/physical acceptance remains separate.
+
+The two-hour GUI run and subsequent quiet audio qualification are still pending.
+The prepared 9e64801 audio checkout is clean and its coordinator waits for GUI,
+consumer and display cleanup. Reject any claim that preparation or queuing closes
+a measured gate. Preserve historical audio failures even if new trials pass.

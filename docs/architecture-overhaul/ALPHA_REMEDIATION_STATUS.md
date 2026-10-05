@@ -233,8 +233,12 @@ requires a present leader and stable process start-time/task inventory, and refu
 unverifiable ownership. Sanitized regressions cover a nonleader worker child,
 disappearing task metadata, PID reuse and changed task inventory. A bounded ordinary-
 user probe also confirms detection and reap of an owned child launched by another
-thread. The installed 2c1af2f snapshot predates this guard correction; refresh it
-before further privileged execution. Its earlier passing negative receipt is retained.
+thread. After administrator installation, the guarded snapshot at
+`d307b5c393a2ccd45aae3e96d74ec3644b4bd266` passes all 67 checks again.
+Original installation identities and active service/socket state are restored;
+owned runtime resources are removed. Its earlier passing receipts are retained.
+This closes the guarded negative/admission/empty-restart run, not successful
+worker construction, worker death or stale-attachment recovery.
 
 The independent C control now records callback counts/gaps, empty producer callbacks
 and dequeued capture buffers to localize client scheduling stalls. Its self-test
@@ -251,6 +255,39 @@ drivers now disable bytecode writes before loading source helpers. A fresh Git
 fixture regression runs each plain CLI without local excludes and verifies a clean
 checkout afterward. Existing dirty-source rejection remains strict; no ignored
 source or relaxed identity check is introduced. The failed prebuild receipt is retained.
+
+#### Current validation and bounded consumer evidence
+
+At `9e64801b76666d13cc87182b3639827cb02ef673` (tree
+`fa595e94c9aa8eb2a06e73fce1831ea87fbe25e9`), all 18 local validation commands
+pass: 561 Rust tests, 60 explicitly ignored live entrypoints and 150 Python tests.
+Exact-Git root consumers and offline rebuild pass. Linux, macOS, Windows, MSRV,
+CodeQL and Gitleaks jobs pass at this exact head. Downloaded SBOMs cover all 17
+workspace identities, including the root. The conditional privileged CI job is
+skipped and remains missing evidence beyond the independently recorded lab scope.
+
+The controls-only consumer batch at `12417df47288048821320b2d526f3c78083422b9`
+(tree `2817ed916435520332d39b83c5bbba294dbe8642`) passes four UHID families
+and DS4, Switch Pro and Xbox 360 evdev: 156 observations and three cleanup records
+per test, 1,092 observations and 21 cleanup records total. Both DS4 associated
+nodes are removed. Every case records zero touch events. DualSense evdev individual
+mapping was not included; the full Sony scripts require desktop isolation.
+
+The consumer source is reviewed SDL commit
+`535d80badefc83c5c527ec5748f2a20d6a9310fe`; the first private build lacked release
+tag metadata, so its strict backend classifier remained unknown despite the source
+pin. Preserve that limitation. A separate tagged build reports the exact reviewed
+`SDL3-3.2.0-release-3.2.0` contract and is repeating all seven cases. DS4 evdev,
+DualSense UHID and DS4 UHID have passed; the complete repeat is not yet accepted.
+These input and removal checks do not establish motion, contacts, reverse outputs,
+physical comparison, Steam compatibility or audio. Raw receipts and hashes are
+retained outside tracked source.
+
+A clean disposable checkout of 9e64801 has completed source/binary preparation.
+Its bounded audio coordinator waits for the complete two-hour GUI receipt, all
+seven tagged consumer results and display cleanup before starting independent
+controls. Product trials remain conditional on qualification. A queued run is not
+passing evidence, and the historical audio failures remain release gates.
 
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
