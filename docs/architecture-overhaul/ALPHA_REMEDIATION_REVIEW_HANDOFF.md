@@ -12,7 +12,10 @@ retain VM failures and never claim VM continuity from native results.
 
 Scrutinize the runner's current-PID/backlog checks, rollback after partial setup,
 identity-bound cleanup, global-lock preservation, candidate image provenance,
-non-root client/worker identities and original service restoration. Verify the
+non-root client/worker identities and original service restoration. Verify that
+fingerprints include the actual configured ExecStart executable, rather than an
+absent package-name alias; temporary instance names must obey the broker grammar
+and failure receipts must preserve bounded stdout/stderr. Verify the
 setpriv drop occurs before validator execution, output quotas fail visibly, and
 private audio runtimes reject symlinks or shared permissions. Test phase
 transitions are deterministic evidence; real systemd/mount/VHCI behavior still

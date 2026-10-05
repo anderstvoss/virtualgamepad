@@ -96,6 +96,18 @@ A deterministic regression covers both admission and refusal cases. No successfu
 privileged run is claimed by either failed attempt. The final external receipt
 pins the test correction separately from the qualification revision above.
 
+The subsequently installed, immutable scoped helper completed the bounded live
+gadget scenario at `3b53921f2a6b8cf60ab649f4cc440c77e641bd33`: all eight
+exact rejection replies and the non-root/no-groups/no-capabilities checks passed;
+original units and installation fingerprints were restored and owned runtime
+resources removed. This closes live rejection for the unavailable gadget, not
+the full provider/audio security and recovery matrix. The prior failed trial
+remains visible. Temporary directory suffixes can contain underscores, which the
+broker instance parser rejects; the runner now normalizes them to hyphens, validates
+the 32-character grammar and preserves bounded failure stdout/stderr in receipts.
+Focused sanitized regressions cover both corrections. The privileged helper is
+pinned to reviewed artifacts and cannot install arbitrary updated code itself.
+
 This continuation added no Cargo dependencies and changed no persistent host
 configuration. An isolated desktop, four physical references, an administrator-run
 provider window and external native results remain required. The previous two-hour

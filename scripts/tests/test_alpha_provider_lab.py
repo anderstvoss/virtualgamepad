@@ -43,6 +43,26 @@ class Fake:
 
 
 class ReversibleMaintenance(unittest.TestCase):
+    def test_fingerprint_uses_actual_configured_executable_not_package_alias(self):
+        value = '{ path=/synthetic/installed/broker ; argv[]=/synthetic/installed/broker --config /synthetic/policy ; ignore_errors=no ; pid=42 ; code=(null) ; status=0/0 }'
+        self.assertEqual(lab.installed_executable({'ExecStart': value}), Path('/synthetic/installed/broker'))
+        for properties in ({}, {'ExecStart': ''}, {'ExecStart': value + value}, {'ExecStart': value.replace('/synthetic/installed/broker', 'relative')}):
+            with self.assertRaises(RuntimeError):lab.installed_executable(properties)
+
+    def test_temporary_names_map_to_valid_broker_instances(self):
+        self.assertEqual(lab.instance_name(Path('/synthetic/virtualgamepad-alpha-a_b_c_d_')), 'virtualgamepad-alpha-a-b-c-d-')
+        self.assertEqual(lab.instance_name(Path('/synthetic/virtualgamepad-alpha-12345678')), 'virtualgamepad-alpha-12345678')
+        for name in ('Uppercase', 'a' * 33, 'dot.name'):
+            with self.assertRaises(RuntimeError): lab.instance_name(Path('/synthetic') / name)
+
+    def test_failed_command_preserves_bounded_stdout_and_stderr(self):
+        host = lab.Host(Mock())
+        with self.assertRaises(subprocess.CalledProcessError):
+            host.run([sys.executable, '-c', 'import sys; print("fake output"); print("fake cause", file=sys.stderr); sys.exit(7)'])
+        self.assertEqual(host.events[-1]['status'], 7)
+        self.assertEqual(host.events[-1]['stdout'], 'fake output\n')
+        self.assertEqual(host.events[-1]['stderr'], 'fake cause\n')
+
     def test_verified_journal_stdio_is_not_an_application_client(self):
         stdio = 'u_str ESTAB 0 0 * 101 * 202 users:(("fake",pid=42,fd=2),("fake",pid=42,fd=1))'
         journal = 'u_str ESTAB 0 0 /run/systemd/journal/stdout 202 * 101 users:(("journal",pid=7,fd=9))'

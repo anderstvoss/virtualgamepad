@@ -48,6 +48,22 @@ def allocate_staging_directory():
     return Path(tempfile.mkdtemp(prefix='virtualgamepad-alpha-', dir=STAGING_PARENT))
 
 
+def instance_name(path):
+    # tempfile's suffix alphabet includes underscores; broker instances don't.
+    name = path.name.replace('_', '-')
+    if not re.fullmatch(r'[a-z0-9-]{1,32}', name):
+        raise RuntimeError('staging name cannot represent a broker instance')
+    return name
+
+
+def installed_executable(properties):
+    value = properties.get('ExecStart', '').strip()
+    match = re.fullmatch(r'\{ path=(/[^;\n]+) ; argv\[\]=[^\n]* \}', value)
+    if not match or value.count('{ path=') != 1:
+        raise RuntimeError('installed executable provenance is unavailable or ambiguous')
+    return Path(match[1])
+
+
 def identity(path):
     info = path.lstat()
     return info.st_dev, info.st_ino
@@ -169,17 +185,20 @@ class Host:
             stdout.seek(0); stderr.seek(0)
             output = stdout.read(OUTPUT_LIMIT + 1)
             diagnostic = stderr.read(OUTPUT_LIMIT + 1)
-        self.events.append(dict(command=argv, status=result.returncode))
+        event = dict(command=argv, status=result.returncode)
+        self.events.append(event)
         if len(output) > OUTPUT_LIMIT or len(diagnostic) > OUTPUT_LIMIT:
             raise RuntimeError('lab command exceeded output quota')
         if result.returncode:
+            event.update(stdout=output.decode('utf-8', errors='replace'),
+                         stderr=diagnostic.decode('utf-8', errors='replace'))
             raise subprocess.CalledProcessError(result.returncode, argv, output, diagnostic)
         return output.decode('utf-8', errors='strict')
 
     def snapshot(self):
         saved = {}
         for unit in ORIGINAL:
-            output = self.run(['systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID', '-p', 'FragmentPath'])
+            output = self.run(['systemctl', 'show', unit, '-p', 'ActiveState', '-p', 'MainPID', '-p', 'FragmentPath', '-p', 'ExecStart'])
             properties = dict(line.split('=', 1) for line in output.splitlines())
             if properties['ActiveState'] not in ('active', 'inactive'):
                 raise RuntimeError('original service is not in a stable state')
@@ -226,7 +245,8 @@ class Host:
         self.assert_idle(saved)
         # The original installation is restoration evidence, never candidate
         # provenance. Preserve exact images/configuration rather than replacing them.
-        for path in (Path('/usr/libexec/virtualgamepad/gr-privileged-broker'),
+        for path in (installed_executable(saved[ORIGINAL[1]]),
+                     Path('/usr/libexec/virtualgamepad/gr-privileged-broker'),
                      Path('/usr/libexec/virtualgamepad/gr-audio-worker'),
                      Path('/etc/virtualgamepad/broker.conf')):
             self.original_images[str(path)] = fingerprint(path)
@@ -273,7 +293,7 @@ class Host:
         self.root = allocate_staging_directory()
         self.remember(self.root, True)
         self.root.chmod(0o755)
-        self.instance = self.root.name
+        self.instance = instance_name(self.root)
         self.create_dir(self.root / 'bin')
         self.create_dir(self.root / 'socket')
         self.create_dir(STATE / self.instance)
