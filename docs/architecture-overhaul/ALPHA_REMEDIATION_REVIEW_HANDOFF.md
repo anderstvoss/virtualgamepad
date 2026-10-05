@@ -482,3 +482,19 @@ failed pinned-corpus CI job: the real rustdoc fixture failed while previously
 hiding stderr. The diagnostic regression now requires compiler stdout/stderr to
 survive failure. Require a visible cause and exact-head rerun before treating CI
 as green; do not skip the real-rustdoc regression or weaken snapshot assertions.
+
+### Sony motion and reverse outputs without active contacts
+
+Review `sony_touch_free_sdl_motion_and_feedback` at
+`5f2f59db07252ae9d41888571c5ea46437914e60`, tree
+`62aec02635cfa5918332c1fc39b0cdf7eb375b9e`. It passes all 12 DualSense/DS4
+UHID/evdev sessions using the reviewed tagged SDL build. Require exact consumer
+and candidate hashes, control sweeps, valid distinct UHID sensor observations,
+controller-side rumble/RGB observations and all associated-node cleanup. Every
+record must have zero touch events; no active contacts may be injected.
+
+The exhaustive disabled-contact regression must pass while the old contact-enabled
+scripts retain their transitions. The supporting test helper changes only test
+workloads. Do not count this as contact acceptance, other output-mode fidelity,
+physical equivalence or evdev HID lightbar/motion support. All 18 local checks pass
+at this source (562 Rust tests, 62 ignored, 151 Python); external live gates remain.

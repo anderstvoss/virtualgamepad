@@ -318,6 +318,31 @@ now preserves stdout/stderr with a sanitized failing-compiler regression. The fa
 run is retained. The cause and exact-head rerun remain unresolved until visible
 compiler evidence is available; diagnostic improvement is not a corrected compiler.
 
+
+### Sony touch-free motion and feedback acceptance
+
+At `5f2f59db07252ae9d41888571c5ea46437914e60` (tree
+`62aec02635cfa5918332c1fc39b0cdf7eb375b9e`), the new Sony touch-free SDL test
+passes DualSense and DS4 through UHID and evdev, three repeated sessions per cell.
+All 12 sessions pass control sweeps and cleanup. UHID delivers distinct valid
+motion samples, exact rumble and RGB lightbar observations; evdev delivers exact
+rumble feedback. All consumer observations record zero touch events. Both DS4
+associated nodes are checked on removal. Evdev does not represent the HID lightbar
+or motion contract; this evidence does not silently extend that surface.
+
+The test-only script option prevents active contacts while retaining existing full
+contact scripts. Its deterministic regression checks every u16 step with contacts
+disabled and preserves enabled transition boundaries. This does not alter production
+controller or demo behavior, remove old regressions, or weaken full contact tests.
+The reviewed SDL consumer/library hashes and raw observations remain external.
+
+All 18 local commands pass at this source: 562 Rust tests, 62 explicitly ignored
+live entrypoints and 151 Python tests, plus exact-Git consumers/offline rebuild.
+The two-hour GUI run and independent quiet audio qualification remain pending.
+Sony contacts, other unexercised output modes, physical fidelity, full installed
+provider crash/stale-attachment recovery, USB/IP audio/routing, manual GUI/Steam
+and native-host timing remain separate release gates.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
