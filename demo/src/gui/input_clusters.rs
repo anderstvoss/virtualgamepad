@@ -83,6 +83,8 @@ struct TouchpadState {
     lockout_started: Option<Instant>,
     suppress_until_neutral: bool,
     suppress_until_pointer_release: bool,
+    keyboard_contact: Option<usize>,
+    suppress_until_keyboard_release: bool,
 }
 
 impl Default for TouchpadState {
@@ -96,6 +98,8 @@ impl Default for TouchpadState {
             lockout_started: None,
             suppress_until_neutral: false,
             suppress_until_pointer_release: false,
+            keyboard_contact: None,
+            suppress_until_keyboard_release: false,
         }
     }
 }
@@ -140,10 +144,13 @@ impl InputUiState {
                 contact.active = false;
                 contact.held = false;
                 contact.relative = false;
+                contact.release_pending = false;
             }
             touchpad.lockout_started = None;
             touchpad.suppress_until_neutral = false;
             touchpad.suppress_until_pointer_release = false;
+            touchpad.keyboard_contact = None;
+            touchpad.suppress_until_keyboard_release = false;
         }
     }
 
@@ -669,14 +676,14 @@ pub(super) fn draw_touchpad(
             let mut timer_enabled = was_enabled;
             let mut timer_seconds = previous_seconds;
             ui.horizontal(|ui| {
-                ui.checkbox(&mut timer_enabled, "");
-                ui.colored_label(
-                    if timer_enabled {
-                        ui.visuals().text_color()
-                    } else {
-                        Color32::RED
-                    },
-                    "Lockout timer",
+                let label_color = if timer_enabled {
+                    ui.visuals().text_color()
+                } else {
+                    Color32::RED
+                };
+                ui.checkbox(
+                    &mut timer_enabled,
+                    egui::RichText::new("Lockout timer").color(label_color),
                 );
                 ui.add_enabled(
                     timer_enabled,
@@ -751,6 +758,8 @@ pub(super) fn draw_touchpad(
                 egui::StrokeKind::Inside,
             );
             let pointer_down = response.is_pointer_button_down_on();
+            let pointer_clicked = response.clicked()
+                && ui.input(|input| input.pointer.button_released(egui::PointerButton::Primary));
             let mut touch_input_suppressed = reset_this_frame;
             if reset_this_frame {
                 touch_state.suppress_until_neutral |= current.iter().any(Option::is_some);
@@ -758,13 +767,14 @@ pub(super) fn draw_touchpad(
             }
             touch_input_suppressed |=
                 touch_state.suppress_until_neutral || touch_state.suppress_until_pointer_release;
-            if !touch_input_suppressed && (pointer_down || response.clicked()) {
+            if !touch_input_suppressed && (pointer_down || pointer_clicked) {
+                touch_state.keyboard_contact = None;
                 if let Some(position) = response.interact_pointer_pos() {
                     let (x, y) = touch_point(rect, position, input.width(), input.height());
                     let selected = touch_state.selected;
                     let contact = &mut touch_state.contacts[selected];
                     contact.active = true;
-                    contact.release_pending = response.clicked()
+                    contact.release_pending = pointer_clicked
                         && !touch_contact_persists(selected, multitouch, contact.held);
                     emit_touch_move(input, touch_state, selected, (x, y), events);
                 }
@@ -781,6 +791,8 @@ pub(super) fn draw_touchpad(
                     });
                 }
             }
+            let keyboard = touch_keyboard_command(ui, &response, touch_input_suppressed);
+            update_touch_keyboard(input, touch_state, multitouch, keyboard, events);
             for (index, contact) in touch_state.contacts.iter().enumerate() {
                 if contact.active {
                     let point = Pos2::new(
@@ -931,6 +943,161 @@ fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut 
     touch_state.selected = 0;
     touch_state.relative_input = false;
     touch_state.lockout_started = None;
+    touch_state.keyboard_contact = None;
+    touch_state.suppress_until_keyboard_release = true;
+}
+
+#[derive(Default, Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // Independent focus, press edge, held key and lockout evidence.
+struct TouchKeyboardCommand {
+    focused: bool,
+    space_pressed: bool,
+    space_down: bool,
+    direction: (i8, i8),
+    suppressed: bool,
+}
+
+fn touch_keyboard_command(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    suppressed: bool,
+) -> TouchKeyboardCommand {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Other,
+            ui.is_enabled(),
+            "Touch canvas: Space for contact, W/A/S/D to move",
+        )
+    });
+    ui.small("Space: contact · W/A/S/D: move · Tab: focus");
+    let focused = response.has_focus() && ui.is_enabled();
+    if focused {
+        ui.painter().rect_stroke(
+            response.rect,
+            3.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    ui.input(|input| {
+        let space_pressed = input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::Space,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                }
+            )
+        });
+        let keys = [egui::Key::A, egui::Key::D, egui::Key::W, egui::Key::S]
+            .map(|key| input.key_pressed(key));
+        TouchKeyboardCommand {
+            focused,
+            space_pressed,
+            space_down: input.key_down(egui::Key::Space),
+            direction: (
+                i8::from(keys[1]) - i8::from(keys[0]),
+                i8::from(keys[3]) - i8::from(keys[2]),
+            ),
+            suppressed,
+        }
+    })
+}
+
+fn release_keyboard_contact(
+    input: &TouchpadInput,
+    state: &mut TouchpadState,
+    multitouch: bool,
+    events: &mut Vec<InputEvent>,
+) {
+    if let Some(index) = state.keyboard_contact.take() {
+        if let Some(contact) = state.contacts.get_mut(index) {
+            if contact.active && !touch_contact_persists(index, multitouch, contact.held) {
+                contact.active = false;
+                contact.release_pending = false;
+                events.push(InputEvent::Touch {
+                    id: input.id(),
+                    contact: u8::try_from(index).expect("contact count is u8"),
+                    point: None,
+                });
+            }
+        }
+    }
+}
+
+fn update_touch_keyboard(
+    input: &TouchpadInput,
+    state: &mut TouchpadState,
+    multitouch: bool,
+    command: TouchKeyboardCommand,
+    events: &mut Vec<InputEvent>,
+) {
+    if !command.space_down {
+        state.suppress_until_keyboard_release = false;
+    }
+    if !command.focused || command.suppressed {
+        release_keyboard_contact(input, state, multitouch, events);
+        state.suppress_until_keyboard_release |= command.space_down;
+        return;
+    }
+    if state.suppress_until_keyboard_release {
+        return;
+    }
+    if state
+        .keyboard_contact
+        .is_some_and(|index| index != state.selected)
+        || !command.space_down
+    {
+        release_keyboard_contact(input, state, multitouch, events);
+    }
+    let selected = state.selected;
+    let contacts: Vec<_> = state
+        .contacts
+        .iter()
+        .map(|contact| (contact.active, contact.held))
+        .collect();
+    if !touch_contact_selectable(selected, multitouch, &contacts) {
+        return;
+    }
+    let Some(contact) = state.contacts.get(selected).copied() else {
+        return;
+    };
+    if command.space_pressed {
+        if contact.active && touch_contact_persists(selected, multitouch, contact.held) {
+            state.contacts[selected].active = false;
+            state.contacts[selected].release_pending = false;
+            state.keyboard_contact = None;
+            events.push(InputEvent::Touch {
+                id: input.id(),
+                contact: u8::try_from(selected).expect("contact count is u8"),
+                point: None,
+            });
+            return;
+        }
+        state.keyboard_contact = Some(selected);
+        emit_touch_move(input, state, selected, (contact.x, contact.y), events);
+    }
+    if state.contacts[selected].active && command.direction != (0, 0) {
+        let contact = state.contacts[selected];
+        let move_axis = |value: u32, direction: i8, extent: u32| {
+            clamp_touch_coordinate(
+                i64::from(value) + i64::from(direction) * i64::from((extent / 100).max(1)),
+                extent,
+            )
+        };
+        emit_touch_move(
+            input,
+            state,
+            selected,
+            (
+                move_axis(contact.x, command.direction.0, input.width()),
+                move_axis(contact.y, command.direction.1, input.height()),
+            ),
+            events,
+        );
+    }
 }
 
 fn clear_touchpad_input(
@@ -1695,6 +1862,358 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keyboard_touch_fixture() -> (TouchpadInput, TouchpadState) {
+        let input = gr_controller_contract::construction::TouchpadInputSpec {
+            id: InputControlId::new("keyboard-touch"),
+            title: "Synthetic touch",
+            width: 100,
+            height: 50,
+            contacts: 2,
+            actuation: TouchpadActuation::None,
+        }
+        .build();
+        let state = TouchpadState {
+            contacts: vec![TouchContactState::default(); 2],
+            ..Default::default()
+        };
+        (input, state)
+    }
+
+    #[test]
+    fn keyboard_touch_quick_press_release_and_focus_loss_are_exact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let mut events = Vec::new();
+        let pressed = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: Some((0, 0))
+            }]
+        );
+        assert!(state.contacts[0].active);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None
+            }]
+        );
+        events.clear();
+        let pressed = TouchKeyboardCommand {
+            space_down: true,
+            ..pressed
+        };
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                space_down: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None
+            }]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        assert!(
+            events.is_empty(),
+            "held key cannot reactivate after focus loss"
+        );
+    }
+
+    #[test]
+    fn keyboard_touch_hold_toggle_and_relative_motion_preserve_other_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        state.relative_input = true;
+        state.contacts[0] = TouchContactState {
+            active: true,
+            held: true,
+            relative: true,
+            x: 90,
+            y: 49,
+            ..Default::default()
+        };
+        state.contacts[1] = TouchContactState {
+            held: true,
+            x: 20,
+            y: 10,
+            ..Default::default()
+        };
+        state.selected = 1;
+        let mut events = Vec::new();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, &mut state, true, press, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            true,
+            TouchKeyboardCommand {
+                focused: true,
+                direction: (1, 1),
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: Some((91, 49))
+                },
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 1,
+                    point: Some((21, 11))
+                },
+            ]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, true, press, &mut events);
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 1,
+                point: None
+            }]
+        );
+        assert!(state.contacts[0].active);
+    }
+
+    #[test]
+    fn keyboard_touch_reset_requires_key_release_and_clamps_coordinates() {
+        let (input, _) = keyboard_touch_fixture();
+        let mut ui_state = InputUiState::default();
+        let state = ui_state.touchpad(&input);
+        state.contacts[0] = TouchContactState {
+            active: true,
+            x: 99,
+            y: 49,
+            ..Default::default()
+        };
+        state.keyboard_contact = Some(0);
+        let mut events = Vec::new();
+        reset_touchpad(&input, &mut ui_state, &mut events);
+        assert_eq!(events.len(), 1);
+        events.clear();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, ui_state.touchpad(&input), false, press, &mut events);
+        assert!(events.is_empty());
+        update_touch_keyboard(
+            &input,
+            ui_state.touchpad(&input),
+            false,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        let state = ui_state.touchpad(&input);
+        state.contacts[0].x = 99;
+        state.contacts[0].y = 49;
+        update_touch_keyboard(
+            &input,
+            state,
+            false,
+            TouchKeyboardCommand {
+                direction: (1, 1),
+                ..press
+            },
+            &mut events,
+        );
+        assert!(events.iter().all(|event| matches!(
+            event,
+            InputEvent::Touch {
+                point: Some((99, 49)),
+                ..
+            }
+        )));
+        ui_state.release_all();
+        let state = ui_state.touchpad(&input);
+        assert!(state.keyboard_contact.is_none());
+        assert!(!state.contacts[0].active);
+        assert!(!state.contacts[0].release_pending);
+    }
+
+    #[test]
+    fn keyboard_touch_selection_change_and_suppression_release_only_owned_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        let mut events = Vec::new();
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        state.selected = 1;
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                space_pressed: false,
+                ..press
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None,
+            }]
+        );
+        assert!(!state.contacts[1].active, "locked contact cannot activate");
+        state.selected = 0;
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                suppressed: true,
+                ..press
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None,
+            }]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        assert!(events.is_empty(), "suppression cannot rearm a held key");
+        state.selected = usize::MAX;
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            true,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert!(events.is_empty(), "removed selection cannot produce input");
+    }
+
+    #[test]
+    fn touch_canvas_handles_real_space_movement_and_focus_events() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let context = egui::Context::default();
+        let mut id = None;
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for (frame, keys) in [
+            vec![],
+            vec![key(egui::Key::Space)],
+            vec![key(egui::Key::D)],
+            vec![],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if frame == 3 {
+                context.memory_mut(|memory| memory.surrender_focus(id.unwrap()));
+            }
+            let mut events = Vec::new();
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let (_, response) =
+                                ui.allocate_exact_size(Vec2::splat(100.0), Sense::click_and_drag());
+                            id = Some(response.id);
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            let command = touch_keyboard_command(ui, &response, false);
+                            update_touch_keyboard(&input, &mut state, false, command, &mut events);
+                            let _ = ui.button("Adjacent control");
+                        });
+                    });
+                },
+            );
+            let expected = match frame {
+                0 => vec![],
+                1 => vec![Some((0, 0))],
+                2 => vec![Some((1, 0))],
+                _ => vec![None],
+            };
+            assert_eq!(
+                events,
+                expected
+                    .into_iter()
+                    .map(|point| InputEvent::Touch {
+                        id: input.id(),
+                        contact: 0,
+                        point
+                    })
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
 
     #[test]
     fn focused_pad_handles_keyboard_and_neutralizes_on_focus_loss() {

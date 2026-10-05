@@ -921,3 +921,20 @@ Two post-alpha tracking issues were created at the release owner's request. No
 persistent installed-service replacement, merge, tag or publication was performed. Historical failed
 artifacts remain outside tracked source. The reviewer handoff gives portable
 commands and rejection criteria for every finding.
+
+## Sequential continuation: keyboard touch
+
+The touch canvas now supports focused Space activation/release and bounded WASD
+movement. Hold retains a contact; a new Space press toggles it off. Relative movement
+uses the existing composition path. Focus loss and selection changes release only
+the keyboard-owned momentary contact. Reset/lockout suppression requires key release
+before rearming. The canvas has a descriptive label, visible focus and keyboard hint;
+the lockout checkbox itself is labelled.
+
+Five new regressions cover exact quick-press/release events, focus loss, held sibling
+preservation, relative edge clamping, reset/removal, selection and suppression, and
+actual egui Space/D events beside an adjacent focus target. All 14 touch tests pass.
+The five mandatory workspace commands passed before this documentation increment.
+No dependencies were added. This is deterministic evidence, not completion of the
+interactive keyboard inventory or the final two-hour soak. Gate 1 remains open;
+the new GUI image requires a fresh soak. Gates 2–6 retain their previous dispositions.
