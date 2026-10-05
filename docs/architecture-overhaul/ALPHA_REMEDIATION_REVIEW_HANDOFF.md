@@ -421,3 +421,11 @@ client scheduling only. The C self-test and receipt regression must pass. Counte
 must not alter stream flags, queues or marker-loss assertions; graph xruns remain
 explicitly unknown. Demand fresh quiet measured trials after the GUI and consumer
 batches finish before interpreting the added diagnostics or closing qualification.
+
+### Fresh checkout cleanliness
+
+Run the plain acceptance/control CLIs in a fresh Git checkout without per-clone
+excludes. Helper imports must not write source bytecode caches or invalidate the
+clean-candidate preflight. The sanitized fixture regression verifies both entrypoints;
+dirty or changing real source must still refuse. Preserve the initial failed
+prebuild and demand a new source/build receipt for the corrected candidate.

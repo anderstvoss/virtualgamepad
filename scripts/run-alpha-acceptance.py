@@ -15,6 +15,9 @@ import shlex
 import subprocess
 import sys
 
+# A clean candidate must not become dirty merely by loading its lab helper.
+sys.dont_write_bytecode = True
+
 spec = importlib.util.spec_from_file_location('lab', Path(__file__).with_name('run-pipewire-audio-lab.py'))
 lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)

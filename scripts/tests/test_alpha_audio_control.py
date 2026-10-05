@@ -14,6 +14,22 @@ spec.loader.exec_module(control)
 
 
 class MarkerReceipt(unittest.TestCase):
+    def test_cli_helper_import_leaves_fresh_checkout_clean_without_local_excludes(self):
+        for script in ('run-alpha-acceptance.py', 'run-alpha-audio-control.py'):
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory); scripts = root / 'scripts'; scripts.mkdir()
+                shutil.copyfile(Path(__file__).parents[1] / script, scripts / script)
+                (scripts / 'run-pipewire-audio-lab.py').write_text('# Sanitized helper fixture.\n')
+                subprocess.run(['git', 'init', '-q', str(root)], check=True)
+                subprocess.run(['git', '-C', str(root), 'add', '.'], check=True)
+                subprocess.run(['git', '-C', str(root), '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture'], check=True)
+                environment = dict(os.environ)
+                environment.pop('PYTHONDONTWRITEBYTECODE', None)
+                environment.pop('PYTHONPYCACHEPREFIX', None)
+                subprocess.run([os.sys.executable, str(scripts / script), '--help'], env=environment, check=True, stdout=subprocess.DEVNULL, timeout=5)
+                self.assertEqual(subprocess.check_output(['git', '-C', str(root), 'status', '--porcelain'], text=True), '')
+                self.assertFalse((scripts / '__pycache__').exists())
+
     def test_symlink_to_an_existing_runtime_is_rejected_without_spawning(self):
         with tempfile.TemporaryDirectory() as directory:
             alias = Path(directory) / 'virtualgamepad-pw-lab-fake'

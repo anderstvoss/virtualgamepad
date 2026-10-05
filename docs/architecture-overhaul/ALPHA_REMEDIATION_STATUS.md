@@ -244,6 +244,14 @@ thresholds are unchanged. Fresh measurements remain pending until GUI/consumer
 workloads and compilation have completed; diagnostic instrumentation is not a
 passing continuity result.
 
+A fresh disposable candidate checkout exposed another acceptance-tool defect:
+loading the private lab helper wrote `scripts/__pycache__` before the clean-tree
+check, causing preparation to reject its own newly generated artifact. Both audio
+drivers now disable bytecode writes before loading source helpers. A fresh Git
+fixture regression runs each plain CLI without local excludes and verifies a clean
+checkout afterward. Existing dirty-source rejection remains strict; no ignored
+source or relaxed identity check is introduced. The failed prebuild receipt is retained.
+
 **NOT READY for alpha under the all-implemented-paths boundary.** Code defects
 F1–F8 are addressed; failed audio continuity and incomplete provider/consumer
 acceptance remain release gates. PR #133 remains draft. Code review is useful now,
