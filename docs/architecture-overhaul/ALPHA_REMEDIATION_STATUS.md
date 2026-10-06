@@ -1030,3 +1030,23 @@ receipts. No dependencies added. Gates 1–6 remain open, PR #133 stays draft, a
 alpha remains not ready. Reviewers must distinguish deterministic supervisor tests,
 bounded bootstrap/smoke evidence and live product acceptance. Next interventions
 must install one complete immutable named-phase package, not grant broad sudo.
+
+### Immutable provider package follow-up
+
+`package-alpha-provider-lab.py` prepares all eight maintained provider/short USB
+phases together from a clean committed source tree. Its default only prints a
+plan. The generated administrator installer authenticates all payloads, checks the
+existing three-action sudo scope, preserves the old exact helper/policy and rolls
+back both atomically on validation failure. The installed run selector accepts
+only predefined phase names, never commands, paths, environment or identities.
+Client and candidate service units now have hard memory limits. Package tests cover
+root/repeated identities, explicit port allowlists, symlinks/FIFOs, tampered hashes,
+broad old policies and failed post-install validation restoration. All 238 Python
+tests pass. Packaging/installation does not run trials or change services.
+
+This package provides positive provider and short USB functional acceptance, not
+complete Steam/controller-output or sustained audio acceptance. Those remain
+separate gates. Unrepresentable gadget paths still require explicit rejection.
+The new GUI soak is running under the frozen accepted-smoke image; it must not be
+restarted on an observation timeout. Its persistent boot/PID/hash record is the
+reference until process completion or a verified reboot.

@@ -544,7 +544,7 @@ class Host:
             f'PrivateMounts=yes\nBindReadOnlyPaths={self.root}/bin:/usr/libexec/virtualgamepad\n'
             'ProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nNoNewPrivileges=yes\n'
             'CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SETUID CAP_SETGID\nRestrictAddressFamilies=AF_UNIX\n'
-            'ProtectKernelModules=yes\nKillMode=control-group\nTimeoutStopSec=10\n'
+            'ProtectKernelModules=yes\nKillMode=control-group\nTimeoutStopSec=10\nMemoryHigh=768M\nMemoryMax=1G\nMemorySwapMax=0\n'
             f'ReadWritePaths={STATE} /sys/devices/platform/vhci_hcd.0/attach\n')
         for name, text in ((self.service, service_text), (self.socket, socket_text)):
             self.write(Path('/run/systemd/system') / name, text.encode())
@@ -744,7 +744,8 @@ class Host:
         self.client_units.append(unit)  # Register before a partial systemd-run failure.
         output = self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + unit,
                   '--setenv=XDG_RUNTIME_DIR=/run/user/' + str(account.pw_uid),
-                  '--property=NoNewPrivileges=yes',
+                  '--property=NoNewPrivileges=yes', '--property=MemoryHigh=384M',
+                  '--property=MemoryMax=512M', '--property=MemorySwapMax=0',
                   '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
                   '--property=PrivateMounts=yes', '--property=KillMode=control-group',
                   '--property=RuntimeMaxSec=' + str(self.args.timeout),
