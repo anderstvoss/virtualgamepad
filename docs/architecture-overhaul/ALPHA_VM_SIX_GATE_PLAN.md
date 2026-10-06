@@ -176,3 +176,31 @@ separate gates. Unrepresentable gadget paths still require explicit rejection.
 The new GUI soak is running under the frozen accepted-smoke image; it must not be
 restarted on an observation timeout. Its persistent boot/PID/hash record is the
 reference until process completion or a verified reboot.
+
+### Direct HID output evidence
+
+`crates/gr-curated-controllers/tests/hid_outputs_live.rs` adds individually opt-in
+ordinary-client tests using only process/family/instance-selected hidraw nodes.
+No touch, motion or PCM is injected. Each scenario services production controllers,
+checks exact host observations, rejects output replay during idle service, closes
+twice and verifies that its own HID node disappeared. Live trials use bounded
+ordinary-user units with a 256 MiB memory ceiling and 20-second deadline.
+
+| Family / HID output boundary | New exact live evidence | Remaining scope |
+| --- | --- | --- |
+| DualSense | Four audio-path values, independent mic mute/indicator, speaker/mic/preamp levels, player/RGB indicators, both 11-byte trigger fields, rumble start/update/zero stop and callback ordering | Raw effects and host route observations do not establish physical actuation or PCM routing; evdev/USB parity remains separate |
+| DS4 | Rumble start/update/zero stop, RGB validity enabled/disabled and raw retention | Evdev/USB output parity and compound-node failure/isolation scenarios remain separate |
+| Switch Pro | Exact motor words on reports 0x10/0x01, player command observation and success reply; USB handshake commands 1–6 with exact 64-byte replies | Encoded words do not establish decoded physical amplitude/frequency or player LED actuation; other report/protocol cells remain separate |
+| Xbox 360 standard HID | Existing deterministic surface test explicitly declares no HID output capability | Conventional rumble belongs to evdev; no XInput/xpad or HID rumble claim |
+
+The four named live scenarios passed separately, including owned cleanup. Two
+deterministic tests cover exact ownership selection and malformed/truncated reply
+rejection. Normal workspace testing leaves the four live tests ignored; run each
+by its exact name with `VIRTUALGAMEPAD_OUTPUT_LAB=1`, `--ignored --exact`, a bounded
+owned unit and prepared ordinary-user creation/hidraw access. Never blanket-enable
+ignored tests. These receipts advance gate 2, not all-realization acceptance.
+
+The administrator package already prepared for 247e6fc remains the compatible
+provider/worker candidate: this increment only adds tests and documentation, with
+no library behavior or supporting ABI change. Do not claim newer exact-source
+provider acceptance from that installed package without final-candidate receipts.
