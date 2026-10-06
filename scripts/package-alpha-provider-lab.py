@@ -79,7 +79,7 @@ def main():
             print(json.dumps({'revision':CONFIG['revision'],'tree':CONFIG['tree'],'phases':CONFIG['phases']}));return 0
         if argv==['receipt']:
             marker=STAGE/'latest';trusted(marker);name=marker.read_text().strip()
-            if not re.fullmatch('[a-f0-9]{32}\\.json',name):raise ValueError('invalid receipt marker')
+            if not re.fullmatch(r'[a-f0-9]{32}\\.json',name):raise ValueError('invalid receipt marker')
             report=STAGE/'reports'/name;trusted(report)
             if report.stat().st_size>1048576:raise ValueError('oversized receipt')
             print(report.read_text(),end='');return 0
@@ -147,7 +147,7 @@ def main():
     # The existing 0440 policy is readable only by root. Validate its exact
     # three-action grammar here instead of obtaining extra sudo read privileges.
     accounts=(re.escape(CONFIG['client_name']), re.escape('#'+str(CONFIG['client_uid'])))
-    pattern='(?:'+'|'.join(accounts)+') ALL=\\(root\\) NOPASSWD: '+re.escape(str(HELPER))+' (status|run|receipt)'
+    pattern='(?:'+'|'.join(accounts)+r') ALL=\\(root\\) NOPASSWD: '+re.escape(str(HELPER))+' (status|run|receipt)'
     actions=[]
     for line in previous_policy.decode().splitlines():
         line=' '.join(line.split())
