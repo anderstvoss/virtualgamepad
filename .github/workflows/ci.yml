@@ -371,7 +371,8 @@ jobs:
     # Host and lab helpers under scripts/ are lint-gated by the ruff hook in
     # the policy job. This runs their unit tests on every public PR; the
     # corpus workflow tests need the private submodule and stay in the
-    # protocol-corpus job below.
+    # protocol-corpus job below. static.rust-lang.org lets rustup install
+    # the pinned toolchain for the rustdoc-based API snapshot test.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -382,6 +383,7 @@ jobs:
         with:
           egress-policy: block
           allowed-endpoints: >
+            static.rust-lang.org:443
             api.github.com:443
             github.com:443
             codeload.github.com:443

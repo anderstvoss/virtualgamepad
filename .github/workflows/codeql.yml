@@ -36,8 +36,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The Rust extractor only supports build-mode none; the cargo
+          # build below still runs so dependencies resolve the same way.
           - language: rust
-            build-mode: manual
+            build-mode: none
           # Scans the workflow files themselves (script injection,
           # untrusted checkout, excessive permissions). No build needed.
           - language: actions

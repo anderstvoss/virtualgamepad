@@ -14,3 +14,4 @@
 /systemd/                @anderstvoss
 /udev/                   @anderstvoss
 /modules-load.d/         @anderstvoss
+/.gitleaksignore        @anderstvoss
