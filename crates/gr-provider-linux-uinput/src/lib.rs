@@ -347,6 +347,8 @@ mod linux_io {
         request: libc::c_ulong,
         pointer: *mut libc::c_void,
     ) -> Result<(), ProviderError> {
+        // SAFETY: callers pass a live uinput descriptor and a pointer to a buffer
+        // whose type and size match `request`; the kernel only accesses that buffer.
         let result = unsafe { libc::ioctl(fd, request, pointer) };
         if result == -1 {
             Err(ProviderError::Open {
@@ -358,6 +360,8 @@ mod linux_io {
     }
     fn set_bit(fd: i32, number: u64, value: u16) -> Result<(), ProviderError> {
         let request = ioctl_code(IOC_WRITE, number, std::mem::size_of::<i32>());
+        // SAFETY: set-bit requests take an integer argument, not a pointer, so no
+        // memory is accessed through it; `fd` is a live uinput descriptor.
         let result = unsafe { libc::ioctl(fd, request, libc::c_ulong::from(value)) };
         if result == -1 {
             Err(ProviderError::Open {
@@ -493,6 +497,8 @@ mod linux_io {
                 code: event.code,
                 value: event.value,
             };
+            // SAFETY: `raw` is a fully initialized `#[repr(C)]` value that outlives the
+            // slice; viewing its bytes for exactly `size_of::<InputEvent>()` is in bounds.
             let bytes = unsafe {
                 std::slice::from_raw_parts(
                     (&raw as *const InputEvent).cast(),
@@ -546,6 +552,8 @@ mod linux_io {
         erases: &mut HashMap<u32, FfErase>,
     ) -> Result<(), ProviderError> {
         let mut raw = std::mem::MaybeUninit::<InputEvent>::zeroed();
+        // SAFETY: the destination is a live, writable buffer of exactly
+        // `size_of::<InputEvent>()` bytes and the descriptor is owned by `io`.
         let read = unsafe {
             libc::read(
                 io.as_raw_fd(),
@@ -568,6 +576,8 @@ mod linux_io {
                 reason: "truncated uinput event".into(),
             });
         }
+        // SAFETY: the buffer was zero-initialized and the full-size read above
+        // succeeded; `InputEvent` consists of integer fields valid for any bytes.
         let event = unsafe { raw.assume_init() };
         *sequence += 1;
         let event = if event.event_type == EV_UINPUT && event.code == UI_FF_UPLOAD {
@@ -606,6 +616,7 @@ mod linux_io {
     fn begin_upload(io: &mut File, request_id: u32) -> Result<FfUpload, ProviderError> {
         // The libc upload consists solely of integer fields and an integer
         // representation of the native union; all-zero is a valid ioctl buffer.
+        // SAFETY: see above; all-zero is a valid value for this integer-only type.
         let mut upload: FfUpload = unsafe { std::mem::zeroed() };
         upload.request_id = request_id;
         ioctl(

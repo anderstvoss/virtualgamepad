@@ -28,6 +28,8 @@ For the tickable one-page version, see
 | Pre-commit gitleaks + custom blockers (env files, keys, local paths, private IPs, cloud URIs, binary artifacts) | `.pre-commit-config.yaml`, invoked via committed `.githooks/pre-commit` |
 | Pre-push gitleaks + tracked-file blocker + local-paths guard + `cargo deny` + `cargo audit` | `.githooks/pre-push` + `.pre-commit-config.yaml` pre-push hooks |
 | Full CI matrix: `cargo fmt`, `clippy -D warnings`, `cargo check`, `cargo test` on Ubuntu + macOS + Windows | `.github/workflows/ci.yml` `rust-lint`, `rust-test` jobs |
+| Python helper lint (pyflakes + bandit via ruff) and unit tests | `ruff.toml` + `ruff-check` hook; `.github/workflows/ci.yml` `python-scripts` job |
+| CodeQL `security-extended` for Rust and GitHub Actions workflows | `.github/workflows/codeql.yml` |
 | Full pre-commit policy replay in CI on the same matrix | `.github/workflows/ci.yml` `policy` job |
 | Supply chain audit (`cargo-deny` + `cargo-audit`) | `.github/workflows/ci.yml` `supply-chain` job |
 | `actions/dependency-review-action` on PRs, `fail-on-severity: moderate` | `.github/workflows/ci.yml` `dependency-review` job |
@@ -42,7 +44,8 @@ For the tickable one-page version, see
 | Branch protection / Rulesets with required-status checks | `gh api` setup |
 | Codeowner review required on sensitive paths | `.github/CODEOWNERS` |
 | AGPL-3.0 license | `LICENSE` + `Cargo.toml` `[package].license` |
-| Clippy `pedantic` + `unsafe_code = "forbid"` | `Cargo.toml` `[lints.*]` |
+| Clippy `pedantic` + `undocumented_unsafe_blocks = "deny"`; `unsafe_code` denied workspace-wide and forbidden at every non-FFI crate root | `Cargo.toml` `[lints.*]`, crate-root attributes |
+| Read-only default `GITHUB_TOKEN`; Actions cannot approve PRs; `v*` tags protected | `gh api` setup |
 
 ---
 
@@ -143,7 +146,9 @@ cat > /tmp/branch-protection.json <<'EOF'
       "Policy checks (macos-latest)",
       "Policy checks (windows-latest)",
       "Supply chain audit",
+      "Python script tests",
       "CodeQL (rust)",
+      "CodeQL (actions)",
       "Gitleaks (full history)"
     ]
   },
@@ -166,14 +171,31 @@ gh api -X PUT /repos/$REPO/branches/main/protection --input /tmp/branch-protecti
 For repos accepting community PRs, bump `required_approving_review_count`
 to `1` and flip `require_code_owner_reviews` to `true`.
 
+```bash
+# Actions: read-only default token, no PR approval by workflows
+gh api -X PUT /repos/$REPO/actions/permissions/workflow \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+
+# Require approval before running workflows from first-time fork contributors
+gh api -X PUT /repos/$REPO/actions/permissions/fork-pr-contributor-approval \
+  -f approval_policy=first_time_contributors
+
+# Protect release tags from update and deletion
+gh api -X POST /repos/$REPO/rulesets --input - <<'JSON'
+{"name":"release-tags","target":"tag","enforcement":"active",
+ "conditions":{"ref_name":{"include":["refs/tags/v*"],"exclude":[]}},
+ "rules":[{"type":"deletion"},{"type":"update"},{"type":"non_fast_forward"}]}
+JSON
+```
+
 ### Step 4 — First push
 
 The pre-push hook will run gitleaks + tracked-file + local-paths
 checks, then `cargo deny check` + `cargo audit`. All must pass before
 the push is accepted.
 
-Once pushed, CI runs the eight required-status contexts plus the
-PR-only `dependency-review` job (when triggered by a PR).
+Once pushed, CI runs the required-status contexts listed above plus
+the PR-only `dependency-review` job (when triggered by a PR).
 
 ### Step 5 — Verify
 
@@ -184,10 +206,10 @@ gh api /repos/$REPO | jq '.security_and_analysis'
 # → secret_scanning + secret_scanning_push_protection both "enabled"
 
 gh api /repos/$REPO/branches/main/protection | jq '.required_status_checks.contexts'
-# → returns all eight contexts
+# → returns every context from the list above
 
 gh pr create --draft --title "verify ci" --body "noop"
-# → opens a PR running full 8-job CI + dep-review
+# → opens a PR running the full required CI + dep-review
 
 gh workflow run scorecard.yml --repo $REPO
 # → SARIF appears in Security tab within ~5 min

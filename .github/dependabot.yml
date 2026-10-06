@@ -4,8 +4,27 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Hash-locked pre-commit install used by the CI policy job.
+  - package-ecosystem: pip
+    directory: /.github/requirements
+    schedule:
+      interval: weekly
+    groups:
+      pre-commit-toolchain:
+        patterns: ["*"]
+
+  # protocol-corpus is deliberately absent: it is a private submodule whose
+  # pin only moves through the reviewed corpus workflow (see the
+  # protocol-corpus job in ci.yml).

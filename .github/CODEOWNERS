@@ -8,3 +8,10 @@
 /deny.toml               @anderstvoss
 /.gitignore              @anderstvoss
 /LICENSE                 @anderstvoss
+/.githooks/              @anderstvoss
+/ruff.toml               @anderstvoss
+/rust-toolchain.toml     @anderstvoss
+/systemd/                @anderstvoss
+/udev/                   @anderstvoss
+/modules-load.d/         @anderstvoss
+/.gitleaksignore        @anderstvoss

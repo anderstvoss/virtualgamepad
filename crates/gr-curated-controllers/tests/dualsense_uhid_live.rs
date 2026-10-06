@@ -139,6 +139,7 @@ fn wait_for_service(controller: &impl AcceptanceController) {
             revents: 0,
         };
         // The controller remains alive and exclusively borrowed throughout poll.
+        // SAFETY: one initialized pollfd for a descriptor that stays open (see above).
         let result = unsafe {
             libc::poll(
                 &raw mut descriptor,
@@ -1288,9 +1289,11 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
                 .unwrap()
                 .as_raw_fd();
             // Preserve descriptor flags while enabling bounded readiness polling.
+            // SAFETY: F_GETFL reads flags only; `fd` is the child stdout pipe it owns.
             let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
             assert!(flags >= 0);
             assert_eq!(
+                // SAFETY: F_SETFL takes integer flags; `fd` is the child stdout pipe it owns.
                 unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) },
                 0
             );
