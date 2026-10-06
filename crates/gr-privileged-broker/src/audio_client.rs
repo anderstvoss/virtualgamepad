@@ -138,6 +138,8 @@ fn root_peer(socket: &UnixStream) -> io::Result<()> {
     let mut credentials: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len =
         libc::socklen_t::try_from(std::mem::size_of_val(&credentials)).map_err(io::Error::other)?;
+    // SAFETY: `credentials` and `len` are live locals; `len` holds the exact size
+    // of the `ucred` buffer the kernel fills for SO_PEERCRED.
     if unsafe {
         libc::getsockopt(
             socket.as_raw_fd(),

@@ -215,11 +215,13 @@ impl HidGadgetIo for LinuxHidGadgetIo {
             events: libc::POLLIN | libc::POLLPRI,
             revents: 0,
         };
+        // SAFETY: one initialized pollfd referencing the descriptor owned by `self.file`.
         if unsafe { libc::poll(&raw mut poll, 1, 0) } <= 0 {
             return Ok(HidGadgetEvent::None);
         }
         if poll.revents & libc::POLLPRI != 0 {
             let mut id = 0;
+            // SAFETY: HIDG_GET_REPORT_ID writes one integer into `id`, a live local.
             if unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_GET_REPORT_ID, &mut id) } >= 0 {
                 return Ok(HidGadgetEvent::GetReport(id));
             }
@@ -249,6 +251,8 @@ impl HidGadgetIo for LinuxHidGadgetIo {
             padding: [0; 4],
         };
         reply.data[..data.len()].copy_from_slice(data);
+        // SAFETY: `reply` is a fully initialized `FeatureReply` matching the kernel
+        // layout for HIDG_WRITE_GET_REPORT and lives for the whole call.
         if unsafe { libc::ioctl(self.file.as_raw_fd(), HIDG_WRITE_GET_REPORT, &reply) } < 0 {
             return Err(io(std::io::Error::last_os_error()));
         }
@@ -1152,6 +1156,7 @@ mod tests {
     #[test]
     #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_session_enumerates_and_cleans_its_owned_gadget() {
+        // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
         let known_input_events = input_nodes("event").expect("list pre-existing input nodes");
@@ -1172,6 +1177,8 @@ mod tests {
             bytes[0] = 0x05;
             // HIDIOCGFEATURE(64): query the fixed DualSense calibration
             // feature exactly as a host gyro setup does through hidraw.
+            // SAFETY: HIDIOCGFEATURE(64) writes at most 64 bytes into the live
+            // `bytes` buffer, which is at least that long.
             let result = unsafe { libc::ioctl(file.as_raw_fd(), 0xc040_4807, bytes.as_mut_ptr()) };
             if result < 0 {
                 return Err(std::io::Error::last_os_error().to_string());
@@ -1193,6 +1200,7 @@ mod tests {
     #[test]
     #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_ds4_profile_accepts_its_exact_report() {
+        // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualShock4)
             .expect("open DualShock 4 profile");
@@ -1210,6 +1218,7 @@ mod tests {
     #[test]
     #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_switch_profile_opens_and_cleans_up() {
+        // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         // hid-nintendo's controller-info handshake is served by the
         // unprivileged Switch session after broker open; adapter-only coverage
@@ -1224,6 +1233,7 @@ mod tests {
     #[test]
     #[ignore = "requires root, administrator broker config/state, and reserved dummy_hcd UDC"]
     fn root_only_xbox_hid_profile_accepts_its_exact_report() {
+        // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::Xbox360)
             .expect("open Xbox HID profile");

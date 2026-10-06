@@ -366,6 +366,47 @@ jobs:
           fail-on-severity: moderate
           comment-summary-in-pr: on-failure
 
+  python-scripts:
+    name: Python script tests
+    # Host and lab helpers under scripts/ are lint-gated by the ruff hook in
+    # the policy job. This runs their unit tests on every public PR; the
+    # corpus workflow tests need the private submodule and stay in the
+    # protocol-corpus job below.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.x"
+
+      - name: Run script unit tests (excluding private-corpus workflow)
+        working-directory: scripts/tests
+        run: |
+          modules=$(ls test_*.py | grep -vx 'test_protocol_corpus.py' | sed 's/\.py$//')
+          python -m unittest -v $modules
+
   protocol-corpus:
     name: Pinned protocol corpus
     # Private execution remains local. Fork PRs have no corpus credentials;
