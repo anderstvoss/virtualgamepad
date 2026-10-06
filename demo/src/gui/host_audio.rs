@@ -22,53 +22,262 @@ pub(super) enum Direction {
     Capture,
 }
 
-pub(super) fn enumerate(
-    backend: HostBackend,
-    direction: Direction,
-) -> Result<Vec<HostDevice>, String> {
-    let mut devices = match backend {
-        HostBackend::PipeWire => enumerate_pipewire(direction)?,
-        HostBackend::Alsa => enumerate_alsa(direction)?,
-    };
-    devices.insert(
-        0,
-        HostDevice {
-            id: "default".into(),
-            label: match backend {
-                HostBackend::PipeWire => "System default".into(),
-                HostBackend::Alsa => "ALSA default".into(),
-            },
-        },
-    );
-    devices.dedup_by(|left, right| left.id == right.id);
-    Ok(devices)
-}
-
-fn run(command: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new(command)
+fn run_bounded(
+    command: &str,
+    args: &[&str],
+    generation: &AtomicU64,
+    expected: u64,
+    timeout: Duration,
+) -> Result<String, String> {
+    use std::os::unix::process::CommandExt;
+    const MAX_OUTPUT: u64 = 256 * 1024;
+    let mut child = Command::new(command)
         .args(args)
+        .process_group(0)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .spawn()
         .map_err(|error| format!("{command} is unavailable: {error}"))?;
-    if !output.status.success() {
-        return Err(format!("{command} exited with {}", output.status));
-    }
-    String::from_utf8(output.stdout).map_err(|_| format!("{command} returned non-UTF-8 output"))
-}
-
-fn enumerate_pipewire(direction: Direction) -> Result<Vec<HostDevice>, String> {
-    let output = run("wpctl", &["status", "-n"])?;
-    Ok(parse_pipewire_listing(&output, direction))
-}
-
-fn enumerate_alsa(direction: Direction) -> Result<Vec<HostDevice>, String> {
-    let (command, args): (&str, &[&str]) = match direction {
-        Direction::Playback => ("aplay", &["-L"]),
-        Direction::Capture => ("arecord", &["-L"]),
+    let stdout = child.stdout.take().expect("piped discovery output");
+    let (tx, rx) = mpsc::sync_channel(1);
+    let reader = thread::Builder::new()
+        .name("audio-discovery-output".into())
+        .spawn(move || {
+            let mut bytes = Vec::new();
+            let result = stdout
+                .take(MAX_OUTPUT + 1)
+                .read_to_end(&mut bytes)
+                .map(|_| bytes);
+            let _ = tx.send(result);
+        });
+    let reader = match reader {
+        Ok(reader) => reader,
+        Err(error) => {
+            terminate_discovery(&mut child);
+            return Err(error.to_string());
+        }
     };
-    let output = run(command, args)?;
-    Ok(parse_alsa_listing(&output))
+    let started = std::time::Instant::now();
+    let result = loop {
+        if generation.load(Ordering::Acquire) != expected {
+            break Err("audio discovery cancelled".into());
+        }
+        if started.elapsed() >= timeout {
+            break Err(format!("{command} discovery timed out"));
+        }
+        match rx.try_recv() {
+            Ok(Ok(bytes)) if bytes.len() as u64 > MAX_OUTPUT => {
+                break Err(format!("{command} output exceeds 256 KiB"));
+            }
+            Ok(Ok(bytes)) => {
+                // EOF does not imply the process has exited. Continue with a
+                // bounded wait, retaining ownership of its process-group ID.
+                loop {
+                    if generation.load(Ordering::Acquire) != expected
+                        || started.elapsed() >= timeout
+                    {
+                        break;
+                    }
+                    let pid = rustix::process::Pid::from_raw(
+                        i32::try_from(child.id()).expect("Linux child PID"),
+                    )
+                    .expect("positive child PID");
+                    match rustix::process::waitid(
+                        rustix::process::WaitId::Pid(pid),
+                        rustix::process::WaitIdOptions::EXITED
+                            | rustix::process::WaitIdOptions::NOHANG
+                            | rustix::process::WaitIdOptions::NOWAIT,
+                    ) {
+                        Ok(Some(status)) => {
+                            // Observe without reaping: successful commands may
+                            // leave descendants which have already closed stdout.
+                            // The waitable leader reserves the owned group ID.
+                            terminate_discovery(&mut child);
+                            let _ = reader.join();
+                            return if status.exit_status() == Some(0) {
+                                String::from_utf8(bytes)
+                                    .map_err(|_| format!("{command} returned non-UTF-8 output"))
+                            } else {
+                                Err(status.exit_status().map_or_else(
+                                    || format!("{command} terminated"),
+                                    |code| format!("{command} exited with status {code}"),
+                                ))
+                            };
+                        }
+                        Ok(None) => thread::sleep(Duration::from_millis(5)),
+                        Err(rustix::io::Errno::INTR) => {}
+                        Err(error) => {
+                            // ECHILD means another owner reaped it. Never signal
+                            // that numeric process group after ownership is lost.
+                            if error != rustix::io::Errno::CHILD {
+                                terminate_discovery(&mut child);
+                            }
+                            let _ = reader.join();
+                            return Err(error.to_string());
+                        }
+                    }
+                }
+                break Err(format!("{command} discovery cancelled or timed out"));
+            }
+            Ok(Err(error)) => break Err(error.to_string()),
+            Err(mpsc::TryRecvError::Disconnected) => {
+                break Err("discovery output reader failed".into());
+            }
+            Err(mpsc::TryRecvError::Empty) => thread::sleep(Duration::from_millis(5)),
+        }
+    };
+    terminate_discovery(&mut child);
+    let _ = reader.join();
+    result
+}
+
+fn terminate_discovery(child: &mut Child) {
+    // Signal before reaping: the owned, unreaped leader reserves its group ID.
+    if let Some(pid) =
+        rustix::process::Pid::from_raw(i32::try_from(child.id()).expect("Linux child PID"))
+    {
+        let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct DiscoveryResult {
+    pub playback: Vec<HostDevice>,
+    pub capture: Vec<HostDevice>,
+}
+
+type DiscoveryReply = (u64, Result<DiscoveryResult, String>);
+
+/// GUI-owned discovery; required controller workers only use cached UI data.
+pub(super) struct Discovery {
+    generation: Arc<AtomicU64>,
+    backend: Option<HostBackend>,
+    pending: Option<(u64, HostBackend)>,
+    requests: SyncSender<(u64, HostBackend)>,
+    replies: Arc<Mutex<Option<DiscoveryReply>>>,
+    worker: Option<JoinHandle<()>>,
+    pub result: Option<Result<DiscoveryResult, String>>,
+}
+impl Default for Discovery {
+    fn default() -> Self {
+        Self::with_runner(discover)
+    }
+}
+impl Discovery {
+    pub(super) fn with_runner(
+        runner: impl Fn(HostBackend, &AtomicU64, u64) -> Result<DiscoveryResult, String>
+        + Send
+        + 'static,
+    ) -> Self {
+        let generation = Arc::new(AtomicU64::new(1));
+        let state = Arc::clone(&generation);
+        let (requests, request_rx) = mpsc::sync_channel::<(u64, HostBackend)>(0);
+        let replies = Arc::new(Mutex::new(None));
+        let reply_slot = Arc::clone(&replies);
+        let worker = thread::spawn(move || {
+            while let Ok((expected, backend)) = request_rx.recv() {
+                if expected == 0 {
+                    break;
+                }
+                let result = runner(backend, &state, expected);
+                *reply_slot
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((expected, result));
+            }
+        });
+        Self {
+            generation,
+            backend: None,
+            pending: None,
+            requests,
+            replies,
+            worker: Some(worker),
+            result: None,
+        }
+    }
+}
+impl Discovery {
+    pub fn matches(&self, backend: HostBackend) -> bool {
+        self.backend == Some(backend)
+    }
+    pub fn refresh(&mut self, backend: HostBackend) {
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+        self.backend = Some(backend);
+        self.pending = Some((generation, backend));
+        self.result = None;
+    }
+    pub fn poll(&mut self, backend: HostBackend) {
+        if self.backend != Some(backend) {
+            self.refresh(backend);
+        }
+        if let Some((generation, result)) = self
+            .replies
+            .try_lock()
+            .ok()
+            .and_then(|mut slot| slot.take())
+        {
+            if generation == self.generation.load(Ordering::Acquire) {
+                self.result = Some(result);
+            }
+        }
+        if let Some(request) = self.pending.take() {
+            match self.requests.try_send(request) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(request)) => self.pending = Some(request),
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    self.result = Some(Err("audio discovery worker stopped".into()));
+                }
+            }
+        }
+        if self.result.is_none() && self.worker.as_ref().is_some_and(JoinHandle::is_finished) {
+            self.result = Some(Err("audio discovery worker stopped".into()));
+        }
+    }
+}
+impl Drop for Discovery {
+    fn drop(&mut self) {
+        self.generation.store(0, Ordering::Release);
+        // Disconnect after cancelling, waking the worker even when idle.
+        let (replacement, _) = mpsc::sync_channel(0);
+        drop(std::mem::replace(&mut self.requests, replacement));
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+fn discover(
+    backend: HostBackend,
+    generation: &AtomicU64,
+    expected: u64,
+) -> Result<DiscoveryResult, String> {
+    let mut lists = Vec::new();
+    for direction in [Direction::Playback, Direction::Capture] {
+        let (command, args): (&str, &[&str]) = match (backend, direction) {
+            (HostBackend::PipeWire, _) => ("wpctl", &["status", "-n"]),
+            (HostBackend::Alsa, Direction::Playback) => ("aplay", &["-L"]),
+            (HostBackend::Alsa, Direction::Capture) => ("arecord", &["-L"]),
+        };
+        let text = run_bounded(command, args, generation, expected, Duration::from_secs(2))?;
+        let mut devices = match backend {
+            HostBackend::PipeWire => parse_pipewire_listing(&text, direction),
+            HostBackend::Alsa => parse_alsa_listing(&text),
+        };
+        devices.insert(
+            0,
+            HostDevice {
+                id: "default".into(),
+                label: "System default".into(),
+            },
+        );
+        lists.push(devices);
+    }
+    Ok(DiscoveryResult {
+        playback: lists.remove(0),
+        capture: lists.remove(0),
+    })
 }
 
 fn child_control(child: Child) -> Arc<Mutex<Child>> {
@@ -354,6 +563,181 @@ impl Drop for InputPort {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovery_timeout_cancels_descendants_and_bounds_output() {
+        let generation = AtomicU64::new(1);
+        let started = std::time::Instant::now();
+        let error = run_bounded(
+            "sh",
+            &["-c", "sleep 30 & wait"],
+            &generation,
+            1,
+            Duration::from_millis(100),
+        )
+        .unwrap_err();
+        assert!(error.contains("timed out"));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        let error = run_bounded(
+            "sh",
+            &["-c", "head -c 300000 /dev/zero"],
+            &generation,
+            1,
+            Duration::from_secs(2),
+        )
+        .unwrap_err();
+        assert!(error.contains("256 KiB"));
+        assert!(
+            run_bounded(
+                "sh",
+                &["-c", "exit 7"],
+                &generation,
+                1,
+                Duration::from_secs(2)
+            )
+            .unwrap_err()
+            .contains("exited")
+        );
+        assert!(
+            run_bounded(
+                "sh",
+                &["-c", "printf '\\377'"],
+                &generation,
+                1,
+                Duration::from_secs(2)
+            )
+            .unwrap_err()
+            .contains("UTF-8")
+        );
+        generation.store(2, Ordering::Release);
+        assert!(
+            run_bounded(
+                "sh",
+                &["-c", "sleep 30"],
+                &generation,
+                1,
+                Duration::from_secs(2)
+            )
+            .unwrap_err()
+            .contains("cancelled")
+        );
+    }
+
+    #[test]
+    fn successful_discovery_terminates_background_children_before_reaping_leader() {
+        let generation = AtomicU64::new(1);
+        let output = run_bounded(
+            "sh",
+            &["-c", r#"sleep 30 >/dev/null & echo "$!""#],
+            &generation,
+            1,
+            Duration::from_secs(2),
+        )
+        .unwrap();
+        let pid: u32 = output.trim().parse().unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+                Ok(stat) if stat.rsplit_once(") ").unwrap().1.starts_with('Z') => break,
+                _ => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "background discovery child survived"
+                    );
+                    thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn discovery_coalesces_refresh_and_ignores_stale_results() {
+        let (started_tx, started) = mpsc::sync_channel(4);
+        let mut discovery = Discovery::with_runner(move |_, generation, expected| {
+            started_tx.send(expected).unwrap();
+            if expected == 2 {
+                while generation.load(Ordering::Acquire) == expected {
+                    thread::sleep(Duration::from_millis(1));
+                }
+                return Err("stale result".into());
+            }
+            Ok(DiscoveryResult {
+                playback: vec![HostDevice {
+                    id: expected.to_string(),
+                    label: "current".into(),
+                }],
+                capture: vec![],
+            })
+        });
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            discovery.poll(HostBackend::PipeWire);
+            if started.try_recv().is_ok() {
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        discovery.refresh(HostBackend::Alsa);
+        discovery.refresh(HostBackend::PipeWire);
+        let current = discovery.generation.load(Ordering::Acquire);
+        while discovery.result.is_none() {
+            discovery.poll(HostBackend::PipeWire);
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            started.recv_timeout(Duration::from_secs(2)).unwrap(),
+            current
+        );
+        assert_eq!(
+            discovery
+                .result
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .playback[0]
+                .id,
+            current.to_string()
+        );
+        for _ in 0..32 {
+            discovery.poll(HostBackend::PipeWire);
+        }
+        assert!(matches!(started.try_recv(), Err(mpsc::TryRecvError::Empty)));
+        let before = std::time::Instant::now();
+        drop(discovery);
+        assert!(before.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn discovery_worker_failure_is_visible_without_respawning() {
+        let mut discovery = Discovery::with_runner(|_, _, _| panic!("synthetic worker crash"));
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while discovery.result.is_none() {
+            discovery.poll(HostBackend::PipeWire);
+            assert!(std::time::Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            discovery
+                .result
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap_err()
+                .contains("worker stopped")
+        );
+        let generation = discovery.generation.load(Ordering::Acquire);
+        for _ in 0..32 {
+            discovery.poll(HostBackend::PipeWire);
+        }
+        assert_eq!(discovery.generation.load(Ordering::Acquire), generation);
+        discovery.refresh(HostBackend::PipeWire);
+        discovery.poll(HostBackend::PipeWire);
+        assert!(discovery.result.as_ref().unwrap().is_err());
+    }
 
     #[test]
     fn pipewire_listing_parses_playback_and_capture_independently() {

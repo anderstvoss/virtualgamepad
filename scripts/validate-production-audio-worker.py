@@ -46,7 +46,7 @@ def trial(worker, family, tag, channels, microphones, slots):
             copies = [fcntl.fcntl(child.fileno(), fcntl.F_DUPFD_CLOEXEC, 10) for _, child in pairs]
             for source, destination in zip(copies, (0, *slots)):
                 os.dup2(source, destination, inheritable=True)
-            os.execv(str(worker), [str(worker), family, str(0x10001), '7', '020102030405', *map(str, slots)])
+            os.execv(str(worker), [str(worker), family, str(0x10001), '7', '020102030405', 'validator', *map(str, slots)])
         except BaseException:
             os._exit(125)
     reaped = False
@@ -59,7 +59,12 @@ def trial(worker, family, tag, channels, microphones, slots):
     try:
         assert receive(control) == (0, b'\x01'+generation)
         # Real USB enumeration and controller-owned request completion.
-        assert probe.transfer(usb,1,0,1,18,bytes([0x80,6,0,1,0,0,18,0]))[:2] == (0,18)
+        descriptor = probe.transfer(usb,1,0,1,18,bytes([0x80,6,0,1,0,0,18,0]))
+        assert descriptor[:2] == (0,18) and descriptor[2][16] == 3
+        encoded = 'vg-validator-0000000000000007'.encode('utf-16le')
+        serial = bytes([len(encoded)+2, 3])+encoded
+        assert probe.transfer(usb,100,0,1,255,bytes([0x80,6,3,3,9,4,255,0]))[:3] == (0,len(serial),serial)
+        assert probe.transfer(usb,101,0,1,255,bytes([0x80,6,3,3,0x11,4,255,0]))[:2] == (0xffffffe0,0)
         for sequence, setup in [(2,[0,9,1,0,0,0,0,0]),(3,[1,11,1,0,1,0,0,0]),(4,[1,11,1,0,2,0,0,0])]:
             assert probe.transfer(usb,sequence,0,0,0,bytes(setup))[:2] == (0,0)
         assert probe.transfer(usb,5,3,1,64)[0] == 0

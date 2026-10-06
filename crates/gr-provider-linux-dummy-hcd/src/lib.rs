@@ -21,6 +21,12 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
             });
         }
         compiled_controller(request)?;
+        gr_privileged_broker::require_dummy_hcd_contract().map_err(|reason| {
+            ProviderPreflightError::Unavailable {
+                target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                reason: reason.into(),
+            }
+        })?;
         BrokerClient::connect().map(|_| ()).map_err(preflight_error)
     }
 
@@ -34,6 +40,11 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
                 reason: error.to_string(),
             })?;
         let controller = compiled_controller(&request).map_err(ProviderError::Preflight)?;
+        gr_privileged_broker::require_dummy_hcd_contract().map_err(|reason| {
+            ProviderError::Unsupported {
+                reason: reason.into(),
+            }
+        })?;
         let mut broker = BrokerClient::connect().map_err(open_error)?;
         let broker_session = broker
             .open(RealizationTarget::LINUX_DUMMY_HCD_USB_HID, controller)
@@ -220,6 +231,39 @@ fn decode_hid_output(bytes: Vec<u8>) -> Result<RawReverseEvent, ProviderError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_compiled_controller_is_rejected_before_broker_connection() {
+        for controller in [
+            CompiledControllerKind::DualSense,
+            CompiledControllerKind::DualShock4,
+            CompiledControllerKind::SwitchPro,
+            CompiledControllerKind::Xbox360,
+        ] {
+            let request = ProviderOpenRequest {
+                session: RealizationSessionId(42),
+                selection: RealizationSelection {
+                    controller: ControllerId::new("test.controller"),
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                },
+                requirements: ProviderRequirements::default(),
+                realization: NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                    controller,
+                }),
+            };
+            let provider = LinuxDummyHcdProvider;
+            let error = provider.preflight(&request).unwrap_err().to_string();
+            if cfg!(target_os = "linux") {
+                assert!(error.contains(gr_privileged_broker::DUMMY_HCD_UNAVAILABLE_REASON));
+            }
+            for _ in 0..2 {
+                assert!(
+                    matches!(provider.open(request.clone()), Err(ProviderError::Unsupported { reason })
+                    if reason == gr_privileged_broker::DUMMY_HCD_UNAVAILABLE_REASON)
+                );
+            }
+        }
+    }
 
     #[test]
     fn dummy_hcd_output_separates_the_usb_report_id_from_its_payload() {

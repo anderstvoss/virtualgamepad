@@ -1,0 +1,3 @@
+# Synthetic compound creation ID in a regression fixture; not a credential.
+# Exact historical finding only. Keep history and scan all other commits/files.
+eb8d46852cd0aa20d6689cc2f8b2a6686d730bca:scripts/tests/test_alpha_input_lab.py:generic-api-key:42

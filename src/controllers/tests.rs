@@ -167,6 +167,19 @@ macro_rules! consumer_case {
             }
             let (mut controller, record) = create();
             let (mut other, other_record) = create();
+            for (event, expected) in [
+                (gr_hid::Lifecycle::Start { numbered_input: true, numbered_output: true, numbered_feature: true }, crate::HostLifecycle::Started),
+                (gr_hid::Lifecycle::Open, crate::HostLifecycle::Opened),
+                (gr_hid::Lifecycle::Close, crate::HostLifecycle::Closed),
+                (gr_hid::Lifecycle::Stop, crate::HostLifecycle::Stopped),
+            ] {
+                record.lock().unwrap().events.push_back(RawReverseEvent::HidLifecycle(event));
+                let mut seen = Vec::new();
+                controller.service(&mut |output| if let $output::HostLifecycle(event) = output { seen.push(event); }).unwrap();
+                assert_eq!(seen, [expected]);
+                controller.service(&mut |_| panic!("lifecycle replayed")).unwrap();
+            }
+
             assert_ne!(controller.association().creation(), other.association().creation());
             assert_eq!(controller.association().components().len(), 1);
             assert_eq!(controller.association().components()[0].role(), "primary");

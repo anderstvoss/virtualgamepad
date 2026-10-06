@@ -1,6 +1,9 @@
 import importlib.util
 from pathlib import Path
+from unittest.mock import Mock, patch
 import socket
+import array
+import os
 import struct
 import threading
 import unittest
@@ -11,6 +14,80 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_invalid_ancillary_metadata_closes_all_delivered_fds(self):
+        for malformed in ('unexpected', 'truncated', 'marker', 'count', 'partial'):
+            with self.subTest(malformed=malformed):
+                originals = [socket.socketpair() for _ in range(3)]
+                received = [os.dup(pair[0].fileno()) for pair in originals]
+                peer = Mock()
+                ancillary = [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', received).tobytes())]
+                flags = 0
+                marker = b'\xa2'
+                if malformed == 'unexpected': ancillary.insert(0, (999, 999, b'fake'))
+                if malformed == 'truncated': flags = socket.MSG_CTRUNC
+                if malformed == 'marker': marker = b'bad'
+                if malformed == 'count': ancillary[0] = (socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', received[:2]).tobytes()); os.close(received.pop())
+                if malformed == 'partial': ancillary[0] = (socket.SOL_SOCKET, socket.SCM_RIGHTS, ancillary[0][2] + b'x')
+                peer.recvmsg.return_value = (marker, ancillary, flags, None)
+                try:
+                    with self.assertRaisesRegex(ValueError, 'handoff'): module.channel_handoff(peer)
+                    for descriptor in received:
+                        with self.assertRaises(OSError): os.fstat(descriptor)
+                finally:
+                    for pair in originals:
+                        for channel in pair: channel.close()
+
+    def test_valid_handoff_preserves_channel_order_and_owned_cleanup(self):
+        originals = [socket.socketpair() for _ in range(3)]
+        received = [os.dup(pair[0].fileno()) for pair in originals]
+        peer = Mock()
+        peer.recvmsg.return_value = (b'\xa2', [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                             array.array('i', received).tobytes())], 0, None)
+        channels = []
+        try:
+            channels = module.channel_handoff(peer)
+            self.assertEqual([channel.fileno() for channel in channels], received)
+            for index, channel in enumerate(channels):
+                originals[index][1].sendall(bytes([index]))
+                self.assertEqual(channel.recv(1), bytes([index]))
+        finally:
+            for channel in channels: channel.close()
+            for pair in originals:
+                for channel in pair: channel.close()
+
+    def test_open_failure_always_closes_the_broker_socket(self):
+        for response in [(2, 0x80, b'partial'), (2, 0x80, bytes(12) + b'4-1'), (2, 0xff, b'rejected')]:
+            peer = Mock()
+            peer.getsockopt.return_value = struct.pack('3i', 42, 0, 0)
+            with patch.object(module.socket, 'socket', return_value=peer), \
+                 patch.object(module, 'reply', return_value=response), patch.object(module, 'message'):
+                with self.assertRaises(ValueError): module.opened('dualsense')
+            peer.close.assert_called_once()
+            peer.recvmsg.assert_not_called()
+
+    def test_worker_counters_must_prove_host_transfer_and_no_reported_loss(self):
+        counters = dict(playback_frames=240000, capture_frames=240000,
+                        lost_outputs=0, microphone_queue_dropped_frames=0)
+        self.assertTrue(module.functional_worker_evidence(counters, 240000))
+        for key, bad in [('playback_frames', 239999), ('capture_frames', 0),
+                         ('lost_outputs', 1), ('microphone_queue_dropped_frames', 1)]:
+            with self.subTest(key=key):
+                self.assertFalse(module.functional_worker_evidence({**counters, key: bad}, 240000))
+
+    def test_close_keeps_required_channels_until_ack_and_closes_on_error(self):
+        for fail in [False, True]:
+            broker = Mock()
+            channels = [Mock() for _ in range(3)]
+            def acknowledge(_):
+                for channel in channels: channel.close.assert_not_called()
+                if fail: raise EOFError('synthetic broker loss')
+                return (2, 0x80, struct.pack('<Q', 7))
+            with patch.object(module, 'message'), patch.object(module, 'reply', side_effect=acknowledge):
+                errors = module.close_broker_session(broker, channels, 7)
+            self.assertEqual(errors, ['synthetic broker loss'] if fail else [])
+            for channel in channels: channel.close.assert_called_once()
+            broker.close.assert_called_once()
+
     def test_test_only_microphone_fill_stays_below_one_pcm_queue(self):
         self.assertEqual(module.microphone_fill_frames(8),384)
         self.assertEqual(module.microphone_fill_frames(12),576)

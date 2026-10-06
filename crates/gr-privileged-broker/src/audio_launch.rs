@@ -70,8 +70,10 @@ fn duplicate(socket: &impl AsRawFd) -> io::Result<OwnedFd> {
     // SAFETY: successful fcntl transfers this newly allocated descriptor to us.
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Launch {
+    /// Administrator-owned instance; never supplied by a broker client.
+    pub instance: String,
     pub profile: Profile,
     pub device: u32,
     pub generation: u64,
@@ -86,6 +88,12 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
         || config.gid == u32::MAX
         || config.device == 0
         || config.generation == 0
+        || config.instance.is_empty()
+        || config.instance.len() > 32
+        || !config
+            .instance
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
     {
         return Err(io::Error::other("invalid worker launch identity"));
     }
@@ -112,6 +120,7 @@ pub fn spawn(config: Launch, channels: &[UnixStream; 4]) -> io::Result<Child> {
         config.device.to_string(),
         config.generation.to_string(),
         identity,
+        config.instance,
     ]);
     command
         .env_clear()
@@ -288,6 +297,7 @@ mod tests {
             assert!(
                 spawn(
                     Launch {
+                        instance: "test".into(),
                         profile: Profile::DualSense,
                         device: 1,
                         generation: 1,
@@ -301,6 +311,33 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn malformed_instance_is_rejected_before_worker_resources() {
+        let channels = std::array::from_fn(|_| UnixStream::pair().unwrap().0);
+        for instance in [
+            "",
+            "../escape",
+            "upperCase",
+            "a_b",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            let error = spawn(
+                Launch {
+                    instance: instance.into(),
+                    profile: Profile::DualSense,
+                    device: 1,
+                    generation: 1,
+                    identity: [0; 6],
+                    uid: 42,
+                    gid: 42,
+                },
+                &channels,
+            )
+            .unwrap_err();
+            assert_eq!(error.to_string(), "invalid worker launch identity");
+        }
+    }
+
     #[test]
     fn writable_or_symlinked_parents_cannot_supply_worker_code() {
         assert!(executable(Path::new("/tmp/not-a-worker")).is_err());

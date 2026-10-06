@@ -9,9 +9,55 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[derive(Default)]
+struct ProcessStats {
+    calls: AtomicU64,
+    buffers: AtomicU64,
+    empty: AtomicU64,
+    max_gap_ns: AtomicU64,
+}
+impl ProcessStats {
+    fn record_buffers(&self, count: u64) {
+        self.buffers.fetch_add(count, Ordering::Relaxed);
+        if count == 0 {
+            self.empty.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    fn snapshot(&self) -> (u64, u64, u64, u64) {
+        (
+            self.calls.load(Ordering::Acquire),
+            self.buffers.load(Ordering::Acquire),
+            self.empty.load(Ordering::Acquire),
+            self.max_gap_ns.load(Ordering::Acquire),
+        )
+    }
+}
+
+fn process_gap(previous: &mut Option<u64>, now: u64, measured: bool) -> u64 {
+    if !measured {
+        *previous = None;
+        return 0;
+    }
+    let gap = previous.map_or(0, |last| now.saturating_sub(last));
+    *previous = Some(now);
+    gap
+}
+
+#[test]
+fn process_gap_excludes_startup_and_drain_baselines() {
+    let mut previous = None;
+    assert_eq!(process_gap(&mut previous, 10, false), 0);
+    assert_eq!(process_gap(&mut previous, 100, true), 0);
+    assert_eq!(process_gap(&mut previous, 140, true), 40);
+    assert_eq!(process_gap(&mut previous, 1_000, false), 0);
+    assert_eq!(process_gap(&mut previous, 2_000, true), 0);
+}
+
 pub struct Source {
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    generated: Option<Arc<AtomicU64>>,
+    process_stats: Arc<ProcessStats>,
 }
 impl Source {
     pub fn start(
@@ -22,6 +68,10 @@ impl Source {
     ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let generated = Arc::new(AtomicU64::new(0));
+        let worker_generated = Arc::clone(&generated);
+        let process_stats = Arc::new(ProcessStats::default());
+        let worker_stats = Arc::clone(&process_stats);
         let worker = thread::spawn(move || {
             pw::init();
             let main = pw::main_loop::MainLoopRc::new(None).unwrap();
@@ -40,12 +90,23 @@ impl Source {
             )
             .unwrap();
             let mut position = 0_usize;
+            let mut previous_process = None;
             let listener = stream
                 .add_local_listener::<()>()
                 .process(move |stream, ()| {
+                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
+                    worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                    let gap = process_gap(
+                        &mut previous_process,
+                        now,
+                        now > 2_000_000_000 && position < stamps.len() * 128,
+                    );
+                    worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                     let Some(mut buffer) = stream.dequeue_buffer() else {
+                        worker_stats.record_buffers(0);
                         return;
                     };
+                    worker_stats.record_buffers(1);
                     let requested = usize::try_from(buffer.requested()).unwrap();
                     let Some(data) = buffer.datas_mut().first_mut() else {
                         return;
@@ -55,22 +116,14 @@ impl Source {
                     };
                     let stride = channels * 2;
                     let frames = requested.min(bytes.len() / stride);
-                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
-                    for frame in bytes[..frames * stride].chunks_exact_mut(stride) {
-                        let block = position / 128;
-                        let marker = if block < stamps.len() {
-                            if position % 128 == 0 {
-                                stamps[block].store(now, Ordering::Release);
-                            }
-                            i16::try_from(block + 1).unwrap()
-                        } else {
-                            0
-                        };
-                        for sample in frame.chunks_exact_mut(2) {
-                            sample.copy_from_slice(&marker.to_le_bytes());
-                        }
-                        position += 1;
-                    }
+                    let markers = fill_markers(
+                        &mut bytes[..frames * stride],
+                        channels,
+                        &mut position,
+                        &stamps,
+                        now,
+                    );
+                    worker_generated.fetch_add(markers as u64, Ordering::Release);
                     let chunk = data.chunk_mut();
                     *chunk.offset_mut() = 0;
                     *chunk.stride_mut() = i32::try_from(stride).unwrap();
@@ -100,7 +153,18 @@ impl Source {
         Self {
             stop,
             worker: Some(worker),
+            generated: Some(generated),
+            process_stats,
         }
+    }
+    pub fn process_accounting(&self) -> (u64, u64, u64, u64) {
+        self.process_stats.snapshot()
+    }
+    pub fn generated_frames(&self) -> u64 {
+        self.generated
+            .as_ref()
+            .expect("producer accounting")
+            .load(Ordering::Acquire)
     }
 }
 impl Drop for Source {
@@ -113,6 +177,46 @@ impl Drop for Source {
             }
         }
     }
+}
+
+// Counts only non-silent marker frames actually submitted by the producer.
+fn fill_markers(
+    bytes: &mut [u8],
+    channels: usize,
+    position: &mut usize,
+    stamps: &[AtomicU64],
+    now: u64,
+) -> usize {
+    let mut generated = 0;
+    for frame in bytes.chunks_exact_mut(channels * 2) {
+        let block = *position / 128;
+        let marker = if block < stamps.len() {
+            if *position % 128 == 0 {
+                stamps[block].store(now, Ordering::Release);
+            }
+            generated += 1;
+            i16::try_from(block + 1).unwrap()
+        } else {
+            0
+        };
+        for sample in frame.chunks_exact_mut(2) {
+            sample.copy_from_slice(&marker.to_le_bytes());
+        }
+        *position += 1;
+    }
+    generated
+}
+
+#[test]
+fn producer_accounting_distinguishes_generated_markers_from_silent_drain() {
+    let stamps = [AtomicU64::new(0), AtomicU64::new(0)];
+    let mut position = 0;
+    let mut bytes = [0; 260 * 4];
+    assert_eq!(fill_markers(&mut bytes, 2, &mut position, &stamps, 37), 256);
+    assert_eq!(position, 260);
+    assert_eq!(stamps.map(|stamp| stamp.load(Ordering::Acquire)), [37, 37]);
+    assert!(bytes[256 * 4..].iter().all(|byte| *byte == 0));
+    assert_eq!(i16::from_le_bytes([bytes[128 * 4], bytes[128 * 4 + 1]]), 2);
 }
 
 fn format_bytes(channels: usize) -> Vec<u8> {
@@ -155,6 +259,8 @@ pub struct Observations {
     pub counts: Vec<AtomicU64>,
     latencies: Vec<AtomicU64>,
     invalid: AtomicU64,
+    buffers: AtomicU64,
+    coalesced_callbacks: AtomicU64,
 }
 impl Observations {
     pub fn new(blocks: usize) -> Arc<Self> {
@@ -162,7 +268,15 @@ impl Observations {
             counts: (0..blocks).map(|_| AtomicU64::new(0)).collect(),
             latencies: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
             invalid: AtomicU64::new(0),
+            buffers: AtomicU64::new(0),
+            coalesced_callbacks: AtomicU64::new(0),
         })
+    }
+    pub fn ready_buffers(&self) -> (u64, u64) {
+        (
+            self.buffers.load(Ordering::Acquire),
+            self.coalesced_callbacks.load(Ordering::Acquire),
+        )
     }
     pub fn snapshot(&self, stamps: &[AtomicU64]) -> (Vec<u64>, Vec<usize>, usize) {
         let mut times = Vec::new();
@@ -186,7 +300,7 @@ impl Observations {
             usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap(),
         )
     }
-    fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
+    pub fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
         if channels == 0 || bytes.len() % (channels * 2) != 0 {
             self.invalid.fetch_add(1, Ordering::Relaxed);
             return;
@@ -226,70 +340,111 @@ pub fn capture(
     channels: usize,
     observations: Arc<Observations>,
 ) -> Source {
+    capture_inner(target, stamps, started, channels, observations, false)
+}
+
+/// A graph sink which observes incoming markers directly, with no library queue.
+pub fn direct_sink(
+    name: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+) -> Source {
+    capture_inner(name, stamps, started, channels, observations, true)
+}
+
+fn capture_inner(
+    target: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+    direct: bool,
+) -> Source {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
+    let process_stats = Arc::new(ProcessStats::default());
+    let worker_stats = Arc::clone(&process_stats);
     let worker = thread::spawn(move || {
         pw::init();
         let main = pw::main_loop::MainLoopRc::new(None).unwrap();
         let context = pw::context::ContextRc::new(&main, None).unwrap();
         let core = context.connect_rc(None).unwrap();
-        let stream = pw::stream::StreamRc::new(
-            core.clone(),
-            "synthetic-marker-capture",
-            properties! {
-                "media.type" => "Audio", "media.category" => "Capture",
-                "target.object" => target, "node.latency" => "128/48000",
-                "stream.dont-remix" => "true",
-            },
-        )
-        .unwrap();
+        let props = capture_properties(&target, direct);
+        let stream =
+            pw::stream::StreamRc::new(core.clone(), "synthetic-marker-capture", props).unwrap();
+        let mut previous_process = None;
         let listener = stream
             .add_local_listener::<()>()
             .process(move |stream, ()| {
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    return;
-                };
-                let Some(data) = buffer.datas_mut().first_mut() else {
-                    return;
-                };
-                let offset = data.chunk().offset() as usize;
-                let size = data.chunk().size() as usize;
-                if data
-                    .chunk()
-                    .flags()
-                    .contains(spa::buffer::ChunkFlags::CORRUPTED)
-                {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
-                if data.chunk().flags().bits() & 2 != 0 {
-                    return;
-                }
-                let Some(bytes) = data
-                    .data()
-                    .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
-                else {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                };
-                observations.record(
-                    bytes,
-                    channels,
-                    &stamps,
-                    u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
+                worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                let measured = now > 2_000_000_000
+                    && observations
+                        .counts
+                        .last()
+                        .is_some_and(|n| n.load(Ordering::Acquire) < 128);
+                let gap = process_gap(&mut previous_process, now, measured);
+                worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
+                let drained = drain_ready(
+                    || stream.dequeue_buffer(),
+                    |mut buffer| {
+                        let Some(data) = buffer.datas_mut().first_mut() else {
+                            return;
+                        };
+                        let offset = data.chunk().offset() as usize;
+                        let size = data.chunk().size() as usize;
+                        if data
+                            .chunk()
+                            .flags()
+                            .contains(spa::buffer::ChunkFlags::CORRUPTED)
+                        {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                        if data.chunk().flags().bits() & 2 != 0 {
+                            return;
+                        }
+                        let Some(bytes) = data
+                            .data()
+                            .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
+                        else {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        };
+                        observations.record(
+                            bytes,
+                            channels,
+                            &stamps,
+                            u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                        );
+                    },
                 );
+                worker_stats.record_buffers(drained as u64);
+                observations
+                    .buffers
+                    .fetch_add(drained as u64, Ordering::Release);
+                if drained > 1 {
+                    observations
+                        .coalesced_callbacks
+                        .fetch_add(1, Ordering::Release);
+                }
             })
             .register()
             .unwrap();
         let bytes = format_bytes(channels);
+        let mut flags = pw::stream::StreamFlags::RT_PROCESS
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::DONT_RECONNECT;
+        if !direct {
+            flags |= pw::stream::StreamFlags::AUTOCONNECT;
+        }
         stream
             .connect(
                 spa::utils::Direction::Input,
                 None,
-                pw::stream::StreamFlags::RT_PROCESS
-                    | pw::stream::StreamFlags::MAP_BUFFERS
-                    | pw::stream::StreamFlags::AUTOCONNECT
-                    | pw::stream::StreamFlags::DONT_RECONNECT,
+                flags,
                 &mut [spa::pod::Pod::from_bytes(&bytes).unwrap()],
             )
             .unwrap();
@@ -303,7 +458,39 @@ pub fn capture(
     Source {
         stop,
         worker: Some(worker),
+        generated: None,
+        process_stats,
     }
+}
+
+fn capture_properties(target: &str, direct: bool) -> pw::properties::PropertiesBox {
+    if direct {
+        properties! {
+            "node.name" => target, "node.virtual" => "true",
+            "media.type" => "Audio", "media.class" => "Audio/Sink",
+            "node.autoconnect" => "false", "priority.session" => "0",
+            "node.latency" => "128/48000", "stream.dont-remix" => "true",
+        }
+    } else {
+        properties! {
+            "media.type" => "Audio", "media.category" => "Capture",
+            "target.object" => target, "node.latency" => "128/48000",
+            "stream.dont-remix" => "true",
+        }
+    }
+}
+
+#[test]
+fn direct_control_has_an_owned_sink_and_normal_capture_keeps_its_exact_target() {
+    let sink = capture_properties("synthetic.control.7", true);
+    assert_eq!(sink.get("node.name"), Some("synthetic.control.7"));
+    assert_eq!(sink.get("media.class"), Some("Audio/Sink"));
+    assert_eq!(sink.get("node.autoconnect"), Some("false"));
+    assert_eq!(sink.get("target.object"), None);
+    let capture = capture_properties("synthetic.microphone.8", false);
+    assert_eq!(capture.get("target.object"), Some("synthetic.microphone.8"));
+    assert_eq!(capture.get("media.category"), Some("Capture"));
+    assert_eq!(capture.get("node.name"), None);
 }
 
 #[test]
@@ -328,4 +515,62 @@ fn capture_rejects_partial_frames_without_counting_the_valid_prefix() {
     assert!(times.is_empty());
     assert_eq!(counts, [0]);
     assert_eq!(invalid, 2);
+}
+
+// A process notification can cover multiple ready buffers. Returning after one
+// leaves older graph data pending until later callbacks or pool exhaustion.
+fn drain_ready<T>(mut next: impl FnMut() -> Option<T>, mut receive: impl FnMut(T)) -> usize {
+    let mut count = 0;
+    while let Some(buffer) = next() {
+        receive(buffer);
+        count += 1;
+    }
+    count
+}
+
+#[test]
+fn one_notification_drains_all_ready_markers_and_returns_invalid_buffers() {
+    use std::collections::VecDeque;
+    use std::sync::atomic::AtomicUsize;
+    struct Buffer {
+        bytes: Vec<u8>,
+        returned: Arc<AtomicUsize>,
+    }
+    impl Drop for Buffer {
+        fn drop(&mut self) {
+            self.returned.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let returned = Arc::new(AtomicUsize::new(0));
+    let mut ready: VecDeque<_> = [
+        1_i16.to_le_bytes().repeat(64 * 2),
+        vec![1, 0, 1],
+        1_i16.to_le_bytes().repeat(64 * 2),
+    ]
+    .into_iter()
+    .map(|bytes| Buffer {
+        bytes,
+        returned: returned.clone(),
+    })
+    .collect();
+    let observations = Observations::new(1);
+    let stamps = [AtomicU64::new(3_000_000_001)];
+    assert_eq!(
+        drain_ready(
+            || ready.pop_front(),
+            |buffer| {
+                observations.record(&buffer.bytes, 2, &stamps, 3_000_000_010);
+            }
+        ),
+        3
+    );
+    let (latencies, counts, invalid) = observations.snapshot(&stamps);
+    assert_eq!(counts, [128]);
+    assert_eq!(latencies.len(), 128);
+    assert_eq!(invalid, 1);
+    assert_eq!(returned.load(Ordering::Relaxed), 3);
+    assert_eq!(
+        drain_ready(|| ready.pop_front(), |_| panic!("no pending buffers")),
+        0
+    );
 }

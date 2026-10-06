@@ -566,12 +566,22 @@ fn assert_direction_latency(
         "{label} missing_marker_frames={} duplicate_marker_frames={}",
         marker_errors.0, marker_errors.1
     );
-    latencies.sort_unstable();
+    // Reject known continuity failures before expensive percentile processing.
+    // In a bounded realtime lab, sorting a long failed trial can otherwise
+    // consume its CPU budget before the initiating failure is reported.
+    assert_eq!(invalid, 0);
+    assert_eq!(marker_errors, (0, 0), "per-marker continuity failed");
+    assert_eq!(
+        latencies.len(),
+        expected_frames,
+        "missing or duplicate measured marker frames"
+    );
     assert!(
         latencies.len() > 200_000,
         "insufficient measured frames: {}",
         latencies.len()
     );
+    latencies.sort_unstable();
     let percentile = |p: usize| latencies[(latencies.len() * p).div_ceil(100) - 1];
     eprintln!(
         "{label} frames={} p50_us={} p95_us={} p99_us={} max_us={} invalid={} playback_queue_dropped={:?} expected_marker_frames={expected_frames} (application-to-application; includes client buffering and scheduling; continuity requires separate validation)",
@@ -583,14 +593,24 @@ fn assert_direction_latency(
         invalid,
         dropped
     );
-    assert_eq!(invalid, 0);
-    assert_eq!(marker_errors, (0, 0), "per-marker continuity failed");
-    assert_eq!(
-        latencies.len(),
-        expected_frames,
-        "missing or duplicate measured marker frames"
-    );
     assert!(percentile(99) < 20_000_000, "p99 must be below 20ms");
+}
+
+#[test]
+fn failed_continuity_does_not_sort_latency_samples() {
+    for (invalid, expected, errors) in [
+        (1, 2, (0, 0)),
+        (0, 2, (1, 0)),
+        (0, 2, (0, 1)),
+        (0, 3, (0, 0)),
+    ] {
+        let mut samples = [2, 1];
+        let failure = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            assert_direction_latency("regression", &mut samples, invalid, None, expected, errors);
+        }));
+        assert!(failure.is_err());
+        assert_eq!(samples, [2, 1], "failed trial must skip percentile sorting");
+    }
 }
 
 /// Reverse-direction measurement. Disable the test client's stdio buffering so
@@ -921,6 +941,41 @@ fn marker_frame_errors(
         })
 }
 
+fn marker_deficits(
+    counts: &[usize],
+    stamps: &[std::sync::atomic::AtomicU64],
+) -> Vec<(usize, usize, u64)> {
+    counts
+        .iter()
+        .zip(stamps)
+        .enumerate()
+        .filter_map(|(index, (count, stamp))| {
+            let timestamp = stamp.load(std::sync::atomic::Ordering::Acquire);
+            (timestamp > 2_000_000_000 && *count < 128).then_some((
+                index + 1,
+                128_usize.saturating_sub(*count),
+                timestamp,
+            ))
+        })
+        .collect()
+}
+
+#[test]
+fn marker_deficits_localize_partial_loss_without_counting_startup_or_duplicates() {
+    use std::sync::atomic::AtomicU64;
+    let stamps = [
+        AtomicU64::new(1),
+        AtomicU64::new(2_000_000_001),
+        AtomicU64::new(2_000_000_002),
+        AtomicU64::new(2_000_000_003),
+    ];
+    assert_eq!(
+        marker_deficits(&[0, 0, 256, 127], &stamps),
+        [(2, 128, 2_000_000_001), (4, 1, 2_000_000_003)]
+    );
+    assert_eq!(marker_frame_errors(&[0, 0, 256, 127], &stamps), (129, 128));
+}
+
 #[test]
 fn marker_counts_reject_equal_total_with_loss_and_duplication() {
     use std::sync::atomic::AtomicU64;
@@ -1015,14 +1070,84 @@ fn latency_graph_source_to_library_samples() {
         "first incomplete graph markers: {missing:?}; queue_gaps={queue_gaps} position_gaps={position_gaps}; clocks: {:?}",
         session.timings()
     );
+    let generated = source.generated_frames();
+    eprintln!(
+        "marker_producer_frames={generated} planned_frames={} consumer_frames={} drain_seconds=5",
+        blocks * 128,
+        counts.iter().sum::<usize>()
+    );
     drop(source);
     session.close();
     assert!(session.error().is_none());
+    assert_eq!(
+        generated,
+        (blocks * 128) as u64,
+        "producer did not submit every planned marker"
+    );
     assert_direction_latency(
         "graph_source_to_library",
         &mut latencies,
         invalid,
         Some(session.dropped_playback_frames()),
+        measured_marker_frames(&stamps),
+        marker_frame_errors(&counts, &stamps),
+    );
+}
+
+/// Localize graph delivery independently of Session and the library PCM queue.
+#[test]
+#[ignore = "isolated PipeWire; direct graph control with no virtualgamepad backend or queue"]
+fn latency_graph_direct_control() {
+    use std::sync::{Arc, atomic::AtomicU64};
+    let blocks = usize::try_from(trial_seconds() * 48_000 / 128).unwrap();
+    let stamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
+    let observations = marker_source::Observations::new(blocks);
+    let started = Instant::now();
+    let target = format!("virtualgamepad.direct-control.{}", std::process::id());
+    let sink = marker_source::direct_sink(
+        target.clone(),
+        stamps.clone(),
+        started,
+        2,
+        observations.clone(),
+    );
+    let source = marker_source::Source::start(target, stamps.clone(), started, 2);
+    while observations.counts[blocks - 1].load(std::sync::atomic::Ordering::Acquire) < 128
+        && started.elapsed() < Duration::from_secs(trial_seconds() + 5)
+    {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let generated = source.generated_frames();
+    eprintln!(
+        "direct_control process_stats=(calls,buffers,empty,max_measured_gap_ns) source={:?} capture={:?}; queue return status unobserved by Rust RAII binding",
+        source.process_accounting(),
+        sink.process_accounting()
+    );
+    drop(source);
+    drop(sink);
+    eprintln!(
+        "direct_control ready_buffers={} coalesced_callbacks={}",
+        observations.ready_buffers().0,
+        observations.ready_buffers().1
+    );
+    let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
+    eprintln!(
+        "direct_control producer_frames={generated} planned_frames={} consumer_frames={} queue=absent",
+        blocks * 128,
+        counts.iter().sum::<usize>()
+    );
+    let deficits = marker_deficits(&counts, &stamps);
+    eprintln!(
+        "direct_control deficit_blocks={} first_16=(marker,missing_frames,producer_ns) {:?}",
+        deficits.len(),
+        &deficits[..deficits.len().min(16)]
+    );
+    assert_eq!(generated, (blocks * 128) as u64);
+    assert_direction_latency(
+        "direct_graph_control",
+        &mut latencies,
+        invalid,
+        None,
         measured_marker_frames(&stamps),
         marker_frame_errors(&counts, &stamps),
     );
@@ -1086,9 +1211,20 @@ fn native_graph_latency(direction: SampleDirection) {
     {
         std::thread::sleep(Duration::from_millis(1));
     }
+    let generated = source.generated_frames();
     drop(source);
     drop(capture);
     let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
+    eprintln!(
+        "marker_producer_frames={generated} planned_frames={} consumer_frames={} drain_seconds=5",
+        blocks * 128,
+        counts.iter().sum::<usize>()
+    );
+    assert_eq!(
+        generated,
+        (blocks * 128) as u64,
+        "producer did not submit every planned marker"
+    );
     eprintln!(
         "native_graph_timings={:?} underrun_frames={}",
         session.timings(),
@@ -1209,6 +1345,7 @@ fn latency_graph_library_microphone() {
         std::thread::sleep(Duration::from_nanos(128 * 1_000_000_000 / 48000));
     }
     let streaming_started = Instant::now();
+    let mut generated = 0_usize;
     // Follow graph consumption instead of a separate wall-clock producer. Keep
     // one graph block available, but do not accumulate spare queue capacity as
     // steady-state latency. The private lab controls the nominal quantum.
@@ -1234,7 +1371,9 @@ fn latency_graph_library_microphone() {
         let deadline = Instant::now() + Duration::from_secs(1);
         while offset < samples.len() {
             assert!(Instant::now() < deadline);
-            offset += session.write_microphone(&samples[offset..]).unwrap() * channels;
+            let accepted = session.write_microphone(&samples[offset..]).unwrap();
+            generated += accepted;
+            offset += accepted * channels;
             if offset < samples.len() {
                 std::thread::sleep(Duration::from_micros(500));
             }
@@ -1253,6 +1392,12 @@ fn latency_graph_library_microphone() {
     );
     drop(capture);
     let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
+    eprintln!(
+        "marker_producer_frames={generated} planned_frames={} consumer_frames={} warmup_marker=1 drain_seconds=3",
+        (blocks - 1) * 128,
+        counts.iter().sum::<usize>()
+    );
+    assert_eq!(generated, (blocks - 1) * 128);
     session.close();
     assert!(session.error().is_none());
     assert!(!session.failed());
@@ -1267,5 +1412,148 @@ fn latency_graph_library_microphone() {
     assert!(
         streaming_elapsed <= Duration::from_millis(seconds * 1_100),
         "graph delivered microphone frames below 90% of nominal real-time rate"
+    );
+}
+
+#[test]
+#[ignore = "isolated PipeWire; simultaneous duplex, including mixed Samples/NativeClient ownership"]
+#[allow(clippy::too_many_lines)] // Keep simultaneous streams, clocks and owned drain/teardown in one acceptance scenario.
+fn latency_graph_duplex() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    };
+    let ownership =
+        std::env::var("VIRTUALGAMEPAD_AUDIO_OWNERSHIP").unwrap_or_else(|_| "native-native".into());
+    let (playback_access, microphone_access) = match ownership.as_str() {
+        "samples-samples" => (AudioAccess::Samples, AudioAccess::Samples),
+        "samples-native" => (AudioAccess::Samples, AudioAccess::NativeClient),
+        "native-samples" => (AudioAccess::NativeClient, AudioAccess::Samples),
+        "native-native" => (AudioAccess::NativeClient, AudioAccess::NativeClient),
+        _ => panic!("unknown duplex ownership"),
+    };
+    let seconds = trial_seconds();
+    let blocks = usize::try_from(seconds * 48_000 / 128).unwrap();
+    let mut session = Session::open(
+        &closure_profile(),
+        AudioOptions::new(AudioExposure::Emulated)
+            .with_playback_access(playback_access)
+            .with_microphone_access(microphone_access),
+        1600,
+    )
+    .unwrap();
+    let playback = session.endpoints()[0].clone();
+    let microphone = session.endpoints()[1].clone();
+    let pch = playback.format.channels().len();
+    let mch = microphone.format.channels().len();
+    let pstamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
+    let mstamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
+    let pobs = marker_source::Observations::new(blocks);
+    let mobs = marker_source::Observations::new(blocks);
+    let started = Instant::now();
+    let pcapture = playback
+        .caller_node
+        .clone()
+        .map(|target| marker_source::capture(target, pstamps.clone(), started, pch, pobs.clone()));
+    let mcapture = marker_source::capture(
+        microphone.host_node,
+        mstamps.clone(),
+        started,
+        mch,
+        mobs.clone(),
+    );
+    let psource = marker_source::Source::start(playback.host_node, pstamps.clone(), started, pch);
+    let msource = microphone
+        .caller_node
+        .map(|target| marker_source::Source::start(target, mstamps.clone(), started, mch));
+    let quantum = std::env::var("VIRTUALGAMEPAD_AUDIO_LAB_QUANTUM")
+        .ok()
+        .map_or(512, |v| v.parse::<usize>().unwrap());
+    assert!([128, 256, 512].contains(&quantum));
+    let mut block = 1;
+    let mut microphone_generated = 0;
+    let priming = vec![1; 128 * mch];
+    let mut buffer = vec![0; 4096 * pch];
+    while started.elapsed() < Duration::from_secs(seconds + 8) {
+        if playback_access == AudioAccess::Samples {
+            let read = session.read_playback(&mut buffer).unwrap();
+            let bytes: Vec<_> = buffer[..read.frames * pch]
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect();
+            pobs.record(
+                &bytes,
+                pch,
+                &pstamps,
+                u64::try_from(started.elapsed().as_nanos()).unwrap(),
+            );
+        }
+        if microphone_access == AudioAccess::Samples
+            && block < blocks
+            && session.queued_microphone_frames().unwrap() <= quantum - 128
+        {
+            if mobs.counts[0].load(Ordering::Acquire) < 1024 {
+                mstamps[0].store(1, Ordering::Release);
+                assert_eq!(session.write_microphone(&priming).unwrap(), 128);
+            } else {
+                let samples = vec![i16::try_from(block + 1).unwrap(); 128 * mch];
+                mstamps[block].store(
+                    u64::try_from(started.elapsed().as_nanos()).unwrap() + 1,
+                    Ordering::Release,
+                );
+                assert_eq!(session.write_microphone(&samples).unwrap(), 128);
+                microphone_generated += 128;
+                block += 1;
+            }
+        }
+        if pobs.counts[blocks - 1].load(Ordering::Acquire) >= 128
+            && mobs.counts[blocks - 1].load(Ordering::Acquire) >= 128
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_micros(250));
+    }
+    let playback_generated = psource.generated_frames();
+    let native_microphone_generated = msource
+        .as_ref()
+        .map(marker_source::Source::generated_frames);
+    drop(psource);
+    drop(msource);
+    drop(pcapture);
+    drop(mcapture);
+    let (mut ptimes, pcounts, pinvalid) = pobs.snapshot(&pstamps);
+    let (mut mtimes, mcounts, minvalid) = mobs.snapshot(&mstamps);
+    eprintln!(
+        "duplex ownership={ownership} producer_playback={playback_generated} producer_microphone={native_microphone_generated:?}/{microphone_generated} graph={:?} queue_dropped={} underruns={} client_playback_errors={:?} client_microphone_errors={:?} warmup_seconds=2 drain_limit_seconds=8",
+        session.timings(),
+        session.dropped_playback_frames(),
+        session.underrun_frames(),
+        marker_frame_errors(&pcounts, &pstamps),
+        marker_frame_errors(&mcounts, &mstamps)
+    );
+    session.close();
+    session.close();
+    assert!(session.error().is_none());
+    assert_eq!(playback_generated, (blocks * 128) as u64);
+    if let Some(generated) = native_microphone_generated {
+        assert_eq!(generated, (blocks * 128) as u64);
+    } else {
+        assert_eq!(microphone_generated, (blocks - 1) * 128);
+    }
+    assert_direction_latency(
+        "duplex_playback",
+        &mut ptimes,
+        pinvalid,
+        Some(session.dropped_playback_frames()),
+        measured_marker_frames(&pstamps),
+        marker_frame_errors(&pcounts, &pstamps),
+    );
+    assert_direction_latency(
+        "duplex_microphone",
+        &mut mtimes,
+        minvalid,
+        None,
+        measured_marker_frames(&mstamps),
+        marker_frame_errors(&mcounts, &mstamps),
     );
 }

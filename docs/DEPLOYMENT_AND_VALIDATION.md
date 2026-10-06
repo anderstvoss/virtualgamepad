@@ -14,7 +14,7 @@ not normal root creation or a supported alpha target. No automatic fallback or
 runtime host preparation is introduced by the new application layer.
 
 
-The implemented realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback.
+The realization IDs (`linux.uinput`, `linux.uhid.usb`, and `linux.dummy_hcd.usb-hid`) are peers. A controller is created only for the exact target selected by the application and declared by that controller. There is no target ordering and no fallback. The current dummy_hcd transport is unavailable: Linux f_hid does not expose complete GET_REPORT metadata or negative replies. Provider and broker creation reject it before resource construction; preparation cannot enable it.
 
 `Evdev` uses an already accessible `/dev/uinput`. `Uhid` uses an already accessible `/dev/uhid`. Neither provider changes permissions or host setup.
 
@@ -72,6 +72,11 @@ an existing socket and never cleans up service-owned gadgets.
 
 ## Demo validation
 
+Current dummy_hcd acceptance is explicit rejection for all four families, with
+the GET_REPORT limitation visible and no created resources. Use UHID/evdev for
+available controller checks. The following prototype procedure is historical;
+preparing the host no longer enables gadget creation.
+
 For an interactive local check, run `cargo run -p virtualgamepad-demo`, select
 one of the curated controllers and `USB / dummy_hcd`, then create it. The create panel
 shows whether the broker socket is reachable; creation continues to provide the
@@ -83,6 +88,11 @@ proprietary XInput/xpad implementation. Diagnostics and reverse-output
 indicators show host activity.
 
 ## Host validation
+
+The retained ignored gadget tests describe the earlier prototype, not current
+successful construction. Do not blanket-enable them. Require the deterministic
+rejection regressions and installed candidate rejection instead. Installed USB/IP
+audio acceptance remains a separate gate; see [the alpha lab](architecture-overhaul/ALPHA_ACCEPTANCE_LAB.md).
 
 Root-only integration tests are intentionally ignored in normal test runs.
 DummyHcd validation covers USB enumeration, HID feature exchange, motion input,

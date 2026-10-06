@@ -1,4 +1,4 @@
-//! Test-only DS4 gamepad/contact prototype; live display isolation is unresolved.
+//! Owned DS4 gamepad/contact composition. Live touch requires display isolation.
 use super::common;
 use gr_controller_runtime::{
     ComponentFrame, ComponentId, ComponentOpen, CompoundIdentity, CompoundSession,
@@ -23,6 +23,12 @@ fn requests(mut request: ProviderOpenRequest) -> Result<[ProviderOpenRequest; 2]
         });
     };
     let mut touch = spec.clone();
+    if let Some(path) = spec.physical_path.as_mut() {
+        path.push_str("/gamepad");
+    }
+    if let Some(path) = touch.physical_path.as_mut() {
+        path.push_str("/touch");
+    }
     // Pinned SDL's Linux native layout revision; not physical firmware evidence.
     spec.identity.version = 0x8111;
     spec.key_codes.retain(|code| *code != 330);
@@ -50,6 +56,22 @@ fn requests(mut request: ProviderOpenRequest) -> Result<[ProviderOpenRequest; 2]
     companion.realization = NativeControllerRealization::Evdev(touch);
     companion.requirements = gr_realization_api::ProviderRequirements::default();
     Ok([request, companion])
+}
+
+pub(super) fn association(
+    identity: CompoundIdentity,
+    request: &ProviderOpenRequest,
+) -> Result<crate::ControllerAssociation, ProviderError> {
+    let [gamepad, _] = requests(request.clone())?;
+    let mut association = crate::ControllerAssociation::requested(&gamepad.realization);
+    association.requested_physical_path = Some(identity.component(GAMEPAD).physical_path);
+    association.requested_unique_id = Some(identity.component(GAMEPAD).unique_id);
+    association.companions.push(crate::CompanionAssociation {
+        role: "touch",
+        requested_physical_path: Some(identity.component(TOUCH).physical_path),
+        requested_unique_id: Some(identity.component(TOUCH).unique_id),
+    });
+    Ok(association)
 }
 
 pub(super) fn open(
@@ -382,6 +404,35 @@ mod tests {
             vec![47, 57, 53, 54, 0, 1]
         );
     }
+    #[test]
+    fn topology_reports_both_creation_scoped_owned_nodes() {
+        let identity = CompoundIdentity {
+            logical: [1; 16],
+            creation: [2; 16],
+        };
+        let association = association(identity, &request()).unwrap();
+        assert_eq!(
+            association.requested_physical_path,
+            Some(identity.component(GAMEPAD).physical_path)
+        );
+        assert_eq!(
+            association.requested_unique_id,
+            Some(identity.component(GAMEPAD).unique_id)
+        );
+        assert_eq!(association.companions.len(), 1);
+        let touch = &association.companions[0];
+        assert_eq!(touch.role, "touch");
+        assert_eq!(
+            touch.requested_physical_path,
+            Some(identity.component(TOUCH).physical_path)
+        );
+        assert_eq!(
+            touch.requested_unique_id,
+            Some(identity.component(TOUCH).unique_id)
+        );
+        assert_ne!(touch.requested_unique_id, association.requested_unique_id);
+    }
+
     #[test]
     fn both_slots_coordinates_and_release_survive_routing() {
         for touches in [

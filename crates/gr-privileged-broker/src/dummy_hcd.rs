@@ -257,6 +257,7 @@ impl HidGadgetIo for LinuxHidGadgetIo {
 }
 impl DummyHcdSession {
     pub fn open(_session: u64, controller: CompiledControllerKind) -> Result<Self, BrokerError> {
+        crate::require_dummy_hcd_contract().map_err(host)?;
         let config = HostConfig::load(Path::new("/etc/virtualgamepad/broker.conf")).map_err(io)?;
         let access = Arc::new(HostAccess::acquire(config).map_err(io)?);
         Self::open_authorized(controller, &access)
@@ -265,6 +266,7 @@ impl DummyHcdSession {
         controller: CompiledControllerKind,
         access: &Arc<HostAccess>,
     ) -> Result<Self, BrokerError> {
+        crate::require_dummy_hcd_contract().map_err(host)?;
         let linux = LinuxDummyHcdHost;
         let profile = profile(controller);
         if !linux.is_dir(Path::new(CONFIGFS)) {
@@ -332,14 +334,18 @@ impl DummyHcdSession {
                 Ok(session)
             }
             Err(error) => {
-                if rollback_created(&linux, &root, created).is_ok() {
+                let cleanup = rollback_created(&linux, &root, created).and_then(|()| {
                     if recorded {
-                        access.forget(&root).map_err(io)?;
+                        access.forget(&root).map_err(io)
+                    } else {
+                        Ok(())
                     }
+                });
+                if cleanup.is_ok() {
                     release_dummy_udc(&udc);
                 }
                 // Failed cleanup keeps the reservation and journal for recovery.
-                Err(error)
+                Err(retain_open_failure(error, cleanup))
             }
         }
     }
@@ -395,8 +401,16 @@ impl HostSession for DummyHcdSession {
                     .find(|(feature, _)| *feature == id)
                 {
                     self.reply(id, &data, true)?;
+                    Ok(None)
+                } else {
+                    // f_hid exposes only an ID, without report type or STALL.
+                    // A terminal error makes the registry unbind this owned
+                    // gadget, cancelling the request rather than silently
+                    // leaving it pending until the kernel zero-fill timeout.
+                    Err(host(&format!(
+                        "unsupported dummy_hcd GET_REPORT ID {id:#04x}; f_hid cannot express a negative acknowledgement"
+                    )))
                 }
-                Ok(None)
             }
         }
     }
@@ -446,6 +460,15 @@ fn setup(
     host.create_dir(root).map_err(io)?;
     setup_contents(host, root, serial, profile)
 }
+fn retain_open_failure(initiating: BrokerError, cleanup: Result<(), BrokerError>) -> BrokerError {
+    match cleanup {
+        Ok(()) => initiating,
+        Err(cleanup) => BrokerError::Host {
+            reason: format!("{initiating}; cleanup also failed: {cleanup}"),
+        },
+    }
+}
+
 fn rollback_created(
     host: &impl DummyHcdHost,
     root: &Path,
@@ -848,6 +871,22 @@ mod tests {
             assert!(profile.report_length <= MAX_REPORT_LENGTH);
         }
     }
+
+    #[test]
+    fn direct_open_rejects_before_reading_policy_or_creating_host_resources() {
+        for kind in [
+            CompiledControllerKind::DualSense,
+            CompiledControllerKind::DualShock4,
+            CompiledControllerKind::SwitchPro,
+            CompiledControllerKind::Xbox360,
+        ] {
+            for _ in 0..2 {
+                let error = DummyHcdSession::open(1, kind).err().unwrap();
+                assert!(matches!(error, BrokerError::Host { reason }
+                    if reason == crate::DUMMY_HCD_UNAVAILABLE_REASON));
+            }
+        }
+    }
     #[test]
     fn unreadable_bindings_prevent_reservation() {
         let entries = vec![
@@ -1009,6 +1048,30 @@ mod tests {
     }
 
     #[test]
+    fn failed_partial_creation_retains_initiating_and_rollback_errors() {
+        let mut host = FakeHost::failing_write("/report_desc");
+        let root = Path::new(CONFIGFS).join("virtualgamepad-0000000000000001");
+        let initiating = setup(
+            &host,
+            &root,
+            "synthetic-identity",
+            profile(CompiledControllerKind::DualSense),
+        )
+        .unwrap_err();
+        host.fail_write_suffix = Some("/UDC");
+        let error =
+            retain_open_failure(initiating, rollback_created(&host, &root, true)).to_string();
+        assert!(error.contains("cleanup also failed"));
+        assert_eq!(error.matches("injected write failure").count(), 2);
+        assert_eq!(
+            host.operations.borrow().last().unwrap(),
+            &format!("rmdir:{}", root.display())
+        );
+        let original = super::host("original failure");
+        assert_eq!(retain_open_failure(original.clone(), Ok(())), original);
+    }
+
+    #[test]
     fn fake_hid_gadget_covers_input_feature_reply_and_reverse_output() {
         let gadget = FakeHidGadget::default();
         gadget.events.lock().unwrap().extend([
@@ -1038,6 +1101,82 @@ mod tests {
         assert!(replies[0].2);
         drop(replies);
         assert_eq!(session.poll_reverse().unwrap(), Some(vec![2, 7]));
+    }
+
+    #[test]
+    fn every_compiled_feature_id_replies_or_rejects_in_one_poll() {
+        for kind in [
+            CompiledControllerKind::DualSense,
+            CompiledControllerKind::DualShock4,
+            CompiledControllerKind::SwitchPro,
+            CompiledControllerKind::Xbox360,
+        ] {
+            let gadget = FakeHidGadget::default();
+            let mut session = DummyHcdSession {
+                root: PathBuf::from("/unused"),
+                hidg: PathBuf::from("/unused/hidg"),
+                io: Box::new(gadget.clone()),
+                serial: "synthetic-feature-identity".into(),
+                profile: profile(kind),
+                udc: String::new(),
+                closed: true,
+                access: None,
+            };
+            let known = session.features();
+            for id in 0..=u8::MAX {
+                gadget
+                    .events
+                    .lock()
+                    .unwrap()
+                    .push_back(HidGadgetEvent::GetReport(id));
+                let result = session.poll_reverse();
+                let replies = std::mem::take(&mut *gadget.replies.lock().unwrap());
+                if let Some((_, data)) = known.iter().find(|(known_id, _)| *known_id == id) {
+                    assert_eq!(result.unwrap(), None);
+                    assert_eq!(replies, vec![(id, data.clone(), true)]);
+                } else {
+                    assert!(result.is_err());
+                    assert!(
+                        replies.is_empty(),
+                        "unsupported reports cannot pretend to succeed"
+                    );
+                }
+                assert!(
+                    gadget.events.lock().unwrap().is_empty(),
+                    "request consumed in this poll"
+                );
+            }
+            session.close().unwrap();
+            session.close().unwrap();
+        }
+    }
+
+    #[test]
+    fn unknown_get_report_is_terminal_instead_of_silent_success() {
+        let gadget = FakeHidGadget::default();
+        gadget
+            .events
+            .lock()
+            .unwrap()
+            .push_back(HidGadgetEvent::GetReport(0xff));
+        let mut session = DummyHcdSession {
+            root: PathBuf::from("/unused"),
+            hidg: PathBuf::from("/unused/hidg"),
+            io: Box::new(gadget.clone()),
+            serial: "synthetic".into(),
+            profile: profile(CompiledControllerKind::DualSense),
+            udc: String::new(),
+            closed: true,
+            access: None,
+        };
+        let error = session.poll_reverse().unwrap_err().to_string();
+        assert!(error.contains("unsupported dummy_hcd GET_REPORT ID 0xff"));
+        assert!(
+            gadget.replies.lock().unwrap().is_empty(),
+            "do not invent a successful zero report or STALL"
+        );
+        session.close().unwrap();
+        session.close().unwrap();
     }
 
     #[test]

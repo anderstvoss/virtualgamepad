@@ -155,7 +155,35 @@ fn wait_for_service(controller: &impl AcceptanceController) {
     }
 }
 
+fn script_contact_active(contacts: bool, step: u16) -> bool {
+    contacts && step % 1250 >= 125 && (step / 100) % 2 == 0
+}
+
+#[test]
+fn touch_free_script_never_activates_contacts() {
+    for step in 0..=u16::MAX {
+        assert!(!script_contact_active(false, step));
+    }
+    for (step, active) in [
+        (0, false),
+        (124, false),
+        (200, true),
+        (300, false),
+        (1250, false),
+    ] {
+        assert_eq!(script_contact_active(true, step), active);
+    }
+}
+
 fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, step: u16) {
+    apply_script_contacts(controller, step, true);
+}
+
+fn apply_script_contacts(
+    controller: &mut gr_curated_controllers::DualSenseController,
+    step: u16,
+    contacts: bool,
+) {
     let neutral = step % 1250 < 125;
     let value = if neutral {
         128
@@ -221,16 +249,21 @@ fn apply_script(controller: &mut gr_curated_controllers::DualSenseController, st
             })
             .unwrap();
     }
-    controller
-        .set_touch(
-            TouchSlot::First,
-            if !neutral && (step / 100) % 2 == 0 {
-                Some(DualSenseTouchContact::new(1, u16::from(value) * 4, 100).unwrap())
-            } else {
-                None
-            },
-        )
-        .unwrap();
+    for (slot, id, x, y) in [
+        (TouchSlot::First, 1, value, 100),
+        (TouchSlot::Second, 2, 255 - value, 200),
+    ] {
+        controller
+            .set_touch(
+                slot,
+                if script_contact_active(contacts, step) {
+                    Some(DualSenseTouchContact::new(id, u16::from(x) * 4, y).unwrap())
+                } else {
+                    None
+                },
+            )
+            .unwrap();
+    }
     controller.commit().unwrap();
 }
 
@@ -274,29 +307,79 @@ fn unique_new_node(
         Ok(created.into_iter().next())
     }
 }
-fn select_evdev_node(
-    before: &std::collections::BTreeSet<PathBuf>,
-    family: &str,
-) -> Option<PathBuf> {
-    let node = unique_new_node(before, &input_nodes()).expect("ambiguous new input nodes")?;
-    let expected = match family {
-        "dualsense" => "DualSense Wireless Controller",
-        "dualshock4" => "Wireless Controller",
-        "switch-pro" => "Pro Controller",
-        "" => "Virtual Xbox 360",
-        _ => panic!("unrecognized family"),
-    };
-    assert_eq!(
-        fs::read_to_string(node.join("device/name")).unwrap().trim(),
-        expected
-    );
-    assert!(
-        fs::canonicalize(&node)
-            .unwrap()
-            .starts_with("/sys/devices/virtual/input")
-    );
-    Some(node)
+fn select_associated_nodes(
+    inventory: &[(PathBuf, String)],
+    expected: &[String],
+) -> Result<Option<Vec<PathBuf>>, &'static str> {
+    if expected.is_empty()
+        || expected
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != expected.len()
+    {
+        return Err("invalid requested component identity");
+    }
+    let mut nodes = Vec::new();
+    for physical in expected {
+        let matches: Vec<_> = inventory
+            .iter()
+            .filter(|(_, actual)| actual == physical)
+            .collect();
+        match matches.as_slice() {
+            [] => return Ok(None),
+            [entry] => nodes.push(entry.0.clone()),
+            _ => return Err("duplicate owned input component"),
+        }
+    }
+    Ok(Some(nodes))
 }
+
+fn associated_input_nodes<C: AcceptanceController>(controller: &C) -> Option<Vec<PathBuf>> {
+    let inventory: Vec<_> = input_nodes()
+        .into_iter()
+        .filter_map(|node| {
+            let physical = fs::read_to_string(node.join("device/phys")).ok()?;
+            Some((node, physical.trim().to_owned()))
+        })
+        .collect();
+    let selected = select_associated_nodes(&inventory, &controller.physical_paths())
+        .expect("ambiguous owned input association")?;
+    for node in &selected {
+        assert!(
+            fs::canonicalize(node)
+                .unwrap()
+                .starts_with("/sys/devices/virtual/input")
+        );
+    }
+    Some(selected)
+}
+
+#[test]
+fn sdl_association_selection_handles_ds4_companions_and_foreign_siblings() {
+    let expected = vec!["owned/gamepad".to_owned(), "owned/touch".to_owned()];
+    let gamepad = PathBuf::from("event999");
+    let touch = PathBuf::from("event301");
+    let mut inventory: Vec<_> = (0..300)
+        .map(|n| (PathBuf::from(format!("event{n}")), format!("foreign/{n}")))
+        .collect();
+    inventory.push((touch.clone(), expected[1].clone()));
+    assert_eq!(
+        select_associated_nodes(&inventory, &expected).unwrap(),
+        None
+    );
+    inventory.push((gamepad.clone(), expected[0].clone()));
+    assert_eq!(
+        select_associated_nodes(&inventory, &expected).unwrap(),
+        Some(vec![gamepad, touch])
+    );
+    inventory.push(inventory.last().unwrap().clone());
+    assert!(select_associated_nodes(&inventory, &expected).is_err());
+    assert!(
+        select_associated_nodes(&inventory, &[expected[0].clone(), expected[0].clone()]).is_err()
+    );
+}
+
 #[test]
 fn evdev_selection_rejects_ambiguity_and_preserves_large_inventories() {
     let before: std::collections::BTreeSet<_> = (0..300)
@@ -338,16 +421,117 @@ fn spawn_sdl(
     )
 }
 fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
+    run_sdl_script::<C>(
+        target,
+        C::script,
+        C::MODE,
+        matches!(C::PREFIX, "dualsense" | "dualshock4"),
+    );
+}
+
+fn input_is_isolated(properties: &str, seat: &str) -> bool {
+    let values: Vec<_> = properties.lines().collect();
+    seat == format!("seat-vg-alpha-p{:x}", std::process::id())
+        && values
+            .iter()
+            .filter(|line| line.starts_with("ID_SEAT="))
+            .count()
+            == 1
+        && values.contains(&format!("ID_SEAT={seat}").as_str())
+        && values
+            .iter()
+            .filter(|line| line.starts_with("LIBINPUT_IGNORE_DEVICE="))
+            .count()
+            == 1
+        && values.contains(&"LIBINPUT_IGNORE_DEVICE=1")
+}
+
+#[test]
+fn contact_gate_rejects_missing_duplicate_and_foreign_seat_properties() {
+    let seat = format!("seat-vg-alpha-p{:x}", std::process::id());
+    let valid = format!("ID_SEAT={seat}\nLIBINPUT_IGNORE_DEVICE=1\n");
+    assert!(input_is_isolated(&valid, &seat));
+    for invalid in [
+        String::new(),
+        format!("ID_SEAT={seat}\n"),
+        "ID_SEAT=seat0\nLIBINPUT_IGNORE_DEVICE=1\n".into(),
+        format!("{valid}ID_SEAT={seat}\n"),
+        format!("{valid}LIBINPUT_IGNORE_DEVICE=0\n"),
+    ] {
+        assert!(!input_is_isolated(&invalid, &seat));
+    }
+    assert!(!input_is_isolated(&valid, "seat0"));
+}
+
+fn verify_contact_isolation<C: AcceptanceController>(
+    controller: &mut C,
+    target: RealizationTarget,
+) {
+    let seat = std::env::var("VIRTUALGAMEPAD_INPUT_LAB_SEAT")
+        .expect("active contacts require the reviewed, process-owned input lab");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        controller.feedback(); // Required host probes progress while udev settles.
+        let nodes = if target == RealizationTarget::LINUX_UINPUT {
+            associated_input_nodes(controller).unwrap_or_default()
+        } else {
+            owned_family_devices(C::PREFIX)
+                .iter()
+                .flat_map(|device| consumer_paths(device, false))
+                .map(|path| PathBuf::from("/sys/class/input").join(path.file_name().unwrap()))
+                .collect()
+        };
+        let properties: Vec<_> = nodes
+            .iter()
+            .map(|node| {
+                let output = Command::new("udevadm")
+                    .args(["info", "--query=property", "--path"])
+                    .arg(node)
+                    .output();
+                let diagnostic = match output {
+                    Ok(output) if output.status.success() => {
+                        String::from_utf8_lossy(&output.stdout).into_owned()
+                    }
+                    Ok(output) => format!("udevadm failed: {}", output.status),
+                    Err(error) => format!("udevadm failed: {error}"),
+                };
+                (node, diagnostic)
+            })
+            .collect();
+        if !properties.is_empty()
+            && properties
+                .iter()
+                .all(|(_, properties)| input_is_isolated(properties, &seat))
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "input isolation was not verified; contacts remain neutral; nodes: {properties:?}; HID devices: {:?}",
+            owned_family_devices(C::PREFIX)
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn run_sdl_script<C: AcceptanceController>(
+    target: RealizationTarget,
+    script: impl Fn(&mut C, u16),
+    mode: &str,
+    active_contacts: bool,
+) {
     let owned_devices = || owned_family_devices(C::PREFIX);
     let _guard = LIVE_LOCK.lock().unwrap();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     assert!(owned_devices().is_empty());
     for session in [7, 7, 7 + (1 << 16)] {
-        let before = input_nodes();
         // On unwind the later-declared controller closes before the child is reaped.
         let mut probe = None;
         let mut controller = C::create(session, target);
-        let mut owned_event = None;
+        if active_contacts {
+            verify_contact_isolation(&mut controller, target);
+        }
+        let mut owned_events = Vec::new();
         let start = Instant::now();
         let mut result = None;
         let mut rumble_seen = false;
@@ -356,7 +540,7 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
         let mut next_change = Instant::now();
         while start.elapsed() < Duration::from_secs(15) {
             if Instant::now() >= next_change {
-                controller.script(step);
+                script(&mut controller, step);
                 step = step.wrapping_add(1);
                 next_change = Instant::now() + Duration::from_millis(4);
             }
@@ -365,8 +549,9 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             led_seen |= led;
             if probe.is_none() && start.elapsed() >= Duration::from_millis(500) {
                 let paths = if target == RealizationTarget::LINUX_UINPUT {
-                    owned_event = select_evdev_node(&before, C::PREFIX);
-                    owned_event
+                    owned_events = associated_input_nodes(&controller).unwrap_or_default();
+                    owned_events
+                        .first()
                         .iter()
                         .map(|node| PathBuf::from("/dev/input").join(node.file_name().unwrap()))
                         .collect()
@@ -379,7 +564,7 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
                     }
                 };
                 if paths.len() == 1 {
-                    probe = Some(spawn_sdl(&binary, &paths[0], target, C::MODE));
+                    probe = Some(spawn_sdl(&binary, &paths[0], target, mode));
                 }
             }
             if let Some(child) = &mut probe {
@@ -402,18 +587,23 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
         controller.close();
         drop(probe);
         let cleanup = Instant::now();
-        while (!owned_devices().is_empty()
-            || owned_event.as_ref().is_some_and(|node| node.exists()))
+        while (!owned_devices().is_empty() || owned_events.iter().any(|node| node.exists()))
             && cleanup.elapsed() < Duration::from_secs(2)
         {
             thread::sleep(Duration::from_millis(5));
         }
         assert!(
-            owned_devices().is_empty() && owned_event.as_ref().is_none_or(|node| !node.exists()),
+            owned_devices().is_empty() && owned_events.iter().all(|node| !node.exists()),
             "cleanup failed"
         );
         if let Some((_, output)) = &result {
             eprintln!("{}", output.trim());
+            if active_contacts && target == RealizationTarget::LINUX_UHID_USB {
+                assert!(
+                    output.contains("\"touch\":{\"reason\":null,\"value\":{\"down_mask\":3,\"up_mask\":3,\"motion\":true}"),
+                    "SDL must observe both contact presses, motion and releases"
+                );
+            }
         }
         eprintln!(
             "{{\"schema_version\":1,\"record_type\":\"session_cleanup\",\"device_removed\":true,\"consumer_reaped\":true,\"rumble_seen\":{rumble_seen},\"led_seen\":{led_seen}}}"
@@ -426,6 +616,28 @@ fn run_sdl_target<C: AcceptanceController>(target: RealizationTarget) {
             (!(C::EXPECT_RUMBLE || target == RealizationTarget::LINUX_UINPUT) || rumble_seen)
                 && (target == RealizationTarget::LINUX_UINPUT || !C::EXPECT_LED || led_seen),
             "expected SDL output not received"
+        );
+    }
+}
+
+#[test]
+#[ignore = "requires exact private SDL probe and prepared owned UHID/uinput access; no active contacts"]
+fn sony_touch_free_sdl_motion_and_feedback() {
+    for target in [
+        RealizationTarget::LINUX_UHID_USB,
+        RealizationTarget::LINUX_UINPUT,
+    ] {
+        run_sdl_script::<gr_curated_controllers::DualSenseController>(
+            target,
+            |controller, step| apply_script_contacts(controller, step, false),
+            "--motion-gamepad-script",
+            false,
+        );
+        run_sdl_script::<gr_curated_controllers::DualShock4Controller>(
+            target,
+            |controller, step| apply_ds4_script_contacts(controller, step, false),
+            "--motion-gamepad-script",
+            false,
         );
     }
 }
@@ -571,6 +783,7 @@ trait AcceptanceController: Sized {
     const EXPECT_RUMBLE: bool;
     const EXPECT_LED: bool;
     fn create(session: u64, target: RealizationTarget) -> Self;
+    fn physical_paths(&self) -> Vec<String>;
     fn script(&mut self, step: u16);
     fn feedback(&mut self) -> (bool, bool);
     fn close(&mut self);
@@ -621,6 +834,12 @@ macro_rules! acceptance_controller {
                     session: RealizationSessionId(session),
                 })
                 .unwrap()
+            }
+            fn physical_paths(&self) -> Vec<String> {
+                let association = self.association();
+                std::iter::once(association.requested_physical_path.clone().unwrap())
+                    .chain(association.companions.iter().map(|component| component.requested_physical_path.clone().unwrap()))
+                    .collect()
             }
             fn script(&mut self, step: u16) {
                 $script(self, step);
@@ -714,6 +933,15 @@ fn ds4_feedback(controller: &mut gr_curated_controllers::DualShock4Controller) -
     (rumble, led)
 }
 fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controller, step: u16) {
+    apply_ds4_script_contacts(controller, step, true);
+}
+
+fn apply_ds4_script_contacts(
+    controller: &mut gr_curated_controllers::DualShock4Controller,
+    step: u16,
+    contacts: bool,
+) {
+    use gr_curated_controllers::{DualShock4TouchContact, DualShock4TouchSlot};
     let neutral = step % 1250 < 125;
     let value = if neutral {
         128
@@ -788,23 +1016,21 @@ fn apply_ds4_script(controller: &mut gr_curated_controllers::DualShock4Controlle
             })
             .unwrap();
     }
-    controller
-        .set_touch(
-            gr_curated_controllers::DualShock4TouchSlot::First,
-            if !neutral && (step / 100) % 2 == 0 {
-                Some(
-                    gr_curated_controllers::DualShock4TouchContact::new(
-                        1,
-                        u16::from(value) * 4,
-                        100,
-                    )
-                    .unwrap(),
-                )
-            } else {
-                None
-            },
-        )
-        .unwrap();
+    for (slot, id, x, y) in [
+        (DualShock4TouchSlot::First, 1, value, 100),
+        (DualShock4TouchSlot::Second, 2, 255 - value, 200),
+    ] {
+        controller
+            .set_touch(
+                slot,
+                if script_contact_active(contacts, step) {
+                    Some(DualShock4TouchContact::new(id, u16::from(x) * 4, y).unwrap())
+                } else {
+                    None
+                },
+            )
+            .unwrap();
+    }
     controller.commit().unwrap();
 }
 
@@ -1243,20 +1469,20 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
     let _guard = LIVE_LOCK.lock().unwrap();
     let binary = std::env::var_os("VIRTUALGAMEPAD_SDL_PROBE").expect("private compiled SDL probe");
     for id in [7, 7, 65543] {
-        let before = input_nodes();
         let mut probe = None;
         let mut controller = C::create(id, target);
         thread::sleep(Duration::from_millis(500));
-        let (node, path) = if target == RealizationTarget::LINUX_UINPUT {
-            let node = select_evdev_node(&before, C::PREFIX).expect("one exact session node");
-            let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
-            (node, path)
+        let (nodes, path) = if target == RealizationTarget::LINUX_UINPUT {
+            let nodes =
+                associated_input_nodes(&controller).expect("complete owned input association");
+            let path = PathBuf::from("/dev/input").join(nodes[0].file_name().unwrap());
+            (nodes, path)
         } else {
             let nodes = owned_family_devices(C::PREFIX);
             assert_eq!(nodes.len(), 1, "one exact owned HID device");
             let paths = consumer_paths(&nodes[0], C::HIDRAW);
             assert_eq!(paths.len(), 1, "one exact owned event node");
-            (nodes[0].clone(), paths[0].clone())
+            (nodes, paths[0].clone())
         };
         let mut passed = true;
         for case in (0..=25).flat_map(|case| [case, 0]) {
@@ -1351,15 +1577,32 @@ fn run_isolated_mapping<C: MappingController>(target: RealizationTarget) {
         controller.close();
         drop(probe);
         let start = Instant::now();
-        while node.exists() && start.elapsed() < Duration::from_secs(2) {
+        while nodes.iter().any(|node| node.exists()) && start.elapsed() < Duration::from_secs(2) {
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(!node.exists(), "mapping experiment cleanup failed");
+        assert!(
+            nodes.iter().all(|node| !node.exists()),
+            "mapping experiment cleanup failed"
+        );
         eprintln!(
             "{{\"schema_version\":1,\"record_type\":\"mapping_cleanup\",\"device_removed\":true,\"consumer_reaped\":true}}"
         );
         assert!(passed, "individual control mapping failed");
     }
+}
+#[test]
+#[ignore = "requires exact associated gamepad/contact node access and private SDL probe; no touch injection"]
+fn ds4_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualShock4Controller>(
+        RealizationTarget::LINUX_UINPUT,
+    );
+}
+#[test]
+#[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
+fn dualsense_evdev_individual_mapping() {
+    run_isolated_mapping::<gr_curated_controllers::DualSenseController>(
+        RealizationTarget::LINUX_UINPUT,
+    );
 }
 #[test]
 #[ignore = "requires exact uinput node access and private SDL probe; no touch injection"]
@@ -1416,4 +1659,195 @@ fn isolated_mapping_cases_touch_only_the_selected_axis() {
             (1..=4).contains(&case) || (12..=15).contains(&case)
         );
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ContactFrame {
+    ids: [i32; 2],
+    x: [Option<i32>; 2],
+    y: [Option<i32>; 2],
+}
+struct ContactReader {
+    pending: Vec<u8>,
+    slot: usize,
+    frame: ContactFrame,
+}
+impl ContactReader {
+    fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+            slot: 0,
+            frame: ContactFrame {
+                ids: [-1; 2],
+                x: [None; 2],
+                y: [None; 2],
+            },
+        }
+    }
+    fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ContactFrame>, &'static str> {
+        self.pending.extend_from_slice(bytes);
+        let size = std::mem::size_of::<libc::timeval>() + 8;
+        let complete = self.pending.len() / size * size;
+        let mut frames = Vec::new();
+        for event in self.pending[..complete].chunks_exact(size) {
+            let event = &event[size - 8..];
+            let kind = u16::from_ne_bytes(event[..2].try_into().unwrap());
+            let code = u16::from_ne_bytes(event[2..4].try_into().unwrap());
+            let value = i32::from_ne_bytes(event[4..].try_into().unwrap());
+            match (kind, code) {
+                (0, 3) => return Err("input consumer lost events (SYN_DROPPED)"),
+                (0, 0) => frames.push(self.frame.clone()),
+                (3, 47) => {
+                    self.slot = usize::try_from(value).map_err(|_| "negative contact slot")?;
+                    if self.slot >= 2 {
+                        return Err("unexpected contact slot");
+                    }
+                }
+                (3, 57) => self.frame.ids[self.slot] = value,
+                (3, 53) => self.frame.x[self.slot] = Some(value),
+                (3, 54) => self.frame.y[self.slot] = Some(value),
+                _ => {}
+            }
+        }
+        self.pending.drain(..complete);
+        Ok(frames)
+    }
+}
+
+#[test]
+fn contact_frames_require_complete_events_and_sync_and_reject_loss() {
+    fn event(kind: u16, code: u16, value: i32) -> Vec<u8> {
+        let mut bytes = vec![0; std::mem::size_of::<libc::timeval>()];
+        bytes.extend(kind.to_ne_bytes());
+        bytes.extend(code.to_ne_bytes());
+        bytes.extend(value.to_ne_bytes());
+        bytes
+    }
+    let bytes: Vec<_> = [
+        (3, 47, 0),
+        (3, 57, 1),
+        (3, 53, 800),
+        (3, 54, 100),
+        (3, 47, 1),
+        (3, 57, 2),
+        (3, 53, 220),
+        (3, 54, 200),
+        (0, 0, 0),
+    ]
+    .into_iter()
+    .flat_map(|(kind, code, value)| event(kind, code, value))
+    .collect();
+    for split in 0..bytes.len() {
+        let mut reader = ContactReader::new();
+        assert!(reader.feed(&bytes[..split]).unwrap().is_empty());
+        assert_eq!(
+            reader.feed(&bytes[split..]).unwrap(),
+            vec![ContactFrame {
+                ids: [1, 2],
+                x: [Some(800), Some(220)],
+                y: [Some(100), Some(200)]
+            }]
+        );
+        let release: Vec<_> = [(3, 47, 0), (3, 57, -1), (3, 47, 1), (3, 57, -1), (0, 0, 0)]
+            .into_iter()
+            .flat_map(|(kind, code, value)| event(kind, code, value))
+            .collect();
+        assert_eq!(reader.feed(&release).unwrap()[0].ids, [-1, -1]);
+    }
+    assert!(ContactReader::new().feed(&event(0, 3, 0)).is_err());
+    for slot in [-1, 2] {
+        assert!(ContactReader::new().feed(&event(3, 47, slot)).is_err());
+    }
+}
+
+fn run_evdev_contacts<C: AcceptanceController>() {
+    use std::os::unix::fs::OpenOptionsExt;
+    let _guard = LIVE_LOCK.lock().unwrap();
+    for session in [7, 7, 7 + (1 << 16)] {
+        let mut controller = C::create(session, RealizationTarget::LINUX_UINPUT);
+        verify_contact_isolation(&mut controller, RealizationTarget::LINUX_UINPUT);
+        let nodes = associated_input_nodes(&controller).expect("all associated components");
+        let mut readers: Vec<_> = nodes
+            .iter()
+            .map(|node| {
+                let path = PathBuf::from("/dev/input").join(node.file_name().unwrap());
+                (
+                    fs::OpenOptions::new()
+                        .read(true)
+                        .custom_flags(libc::O_NONBLOCK)
+                        .open(path)
+                        .unwrap(),
+                    ContactReader::new(),
+                )
+            })
+            .collect();
+        for step in [200_u16, 201, 300] {
+            C::script(&mut controller, step);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            let mut observed = false;
+            while !observed && Instant::now() < deadline {
+                controller.feedback();
+                for (file, reader) in &mut readers {
+                    let mut bytes = [0; 4096];
+                    match file.read(&mut bytes) {
+                        Ok(0) => panic!("owned contact node disconnected"),
+                        Ok(count) => {
+                            for frame in reader.feed(&bytes[..count]).unwrap() {
+                                observed |= if step == 300 {
+                                    frame.ids == [-1, -1] && frame.x.iter().all(Option::is_some)
+                                } else {
+                                    frame
+                                        == ContactFrame {
+                                            ids: [1, 2],
+                                            x: [
+                                                Some(i32::from(step) * 4),
+                                                Some(i32::from(255 - step) * 4),
+                                            ],
+                                            y: [Some(100), Some(200)],
+                                        }
+                                };
+                            }
+                        }
+                        Err(error)
+                            if matches!(
+                                error.kind(),
+                                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                            ) => {}
+                        Err(error) => panic!("contact read failed: {error}"),
+                    }
+                }
+                if !observed {
+                    wait_for_service(&controller);
+                }
+            }
+            assert!(
+                observed,
+                "two-contact frame/release not observed at step {step}"
+            );
+        }
+        assert!(readers.iter().all(|(_, reader)| reader.pending.is_empty()));
+        drop(readers);
+        controller.close();
+        controller.close();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while nodes.iter().any(|node| node.exists()) && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            nodes.iter().all(|node| !node.exists()),
+            "owned component cleanup failed"
+        );
+        eprintln!("two contacts, coordinates, motion, release and component cleanup passed");
+    }
+}
+
+#[test]
+#[ignore = "requires reviewed input isolation and exact owned event node access"]
+fn dualsense_evdev_two_contacts_and_release() {
+    run_evdev_contacts::<gr_curated_controllers::DualSenseController>();
+}
+#[test]
+#[ignore = "requires reviewed input isolation and exact owned component node access"]
+fn ds4_evdev_two_contacts_and_release() {
+    run_evdev_contacts::<gr_curated_controllers::DualShock4Controller>();
 }

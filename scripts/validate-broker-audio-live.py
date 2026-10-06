@@ -7,6 +7,8 @@ import array
 import importlib.util
 import heapq
 import json
+import os
+import re
 from pathlib import Path
 import socket
 import struct
@@ -83,45 +85,105 @@ def worker_diagnostics(control,generation):
     return result
 
 
+def functional_worker_evidence(counters, expected_frames):
+    """Short functional transfer proof, not sustained continuity or latency."""
+    return (counters['playback_frames'] >= expected_frames
+            and counters['capture_frames'] >= expected_frames
+            and counters['lost_outputs'] == 0
+            and counters['microphone_queue_dropped_frames'] == 0)
+
+
+def close_broker_session(broker, channels, generation):
+    """Retain required channels until broker close; preserve all cleanup errors."""
+    errors = []
+    try:
+        message(broker, 2, 2, struct.pack('<Q', generation))
+        if reply(broker) != (2, 0x80, struct.pack('<Q', generation)):
+            raise ValueError('cleanup not acknowledged')
+    except Exception as error:
+        errors.append(str(error))
+    finally:
+        for item in channels:
+            try: item.shutdown(socket.SHUT_RDWR)
+            except OSError: pass
+            try: item.close()
+            except OSError as error: errors.append(str(error))
+        broker.close()
+    return errors
+
+
 def microphone_fill_frames(milliseconds):
     if not 1 <= milliseconds <= 16:
         raise ValueError('microphone fill must be 1..16 ms')
     return milliseconds*48
 
 
+def channel_handoff(peer):
+    """Take ownership of every delivered descriptor before validating metadata."""
+    data, ancillary, flags, _ = peer.recvmsg(1, socket.CMSG_SPACE(3*4), socket.MSG_CMSG_CLOEXEC)
+    raw = []
+    sockets = []
+    invalid = False
+    try:
+        for level, kind, payload in ancillary:
+            if (level, kind) != (socket.SOL_SOCKET, socket.SCM_RIGHTS):
+                invalid = True
+                continue
+            descriptors = array.array('i')
+            aligned = len(payload) - len(payload) % descriptors.itemsize
+            descriptors.frombytes(payload[:aligned])
+            raw.extend(descriptors)
+            invalid |= aligned != len(payload)
+        if (invalid or data != b'\xa2' or len(raw) != 3 or len(set(raw)) != 3 or
+                flags & (socket.MSG_CTRUNC | socket.MSG_TRUNC)):
+            raise ValueError('invalid channel handoff')
+        while raw:
+            # socket(fileno=...) transfers ownership only on successful return.
+            channel = socket.socket(fileno=raw[-1])
+            raw.pop()
+            sockets.append(channel)
+        sockets.reverse()
+        for channel in sockets: channel.settimeout(2)
+        return sockets
+    except BaseException:
+        for channel in sockets: channel.close()
+        for descriptor in set(raw):
+            try: os.close(descriptor)
+            except OSError: pass
+        raise
+
+
 def opened(profile):
-    peer = socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
-    peer.settimeout(10)
-    peer.connect('/run/virtualgamepad/broker.sock')
-    _, uid, _ = struct.unpack('3i',peer.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
-    if uid != 0:
-        raise ValueError('broker is not root')
-    tag = {'dualsense':1,'dualshock4':2,'xbox360':3}[profile]
-    message(peer,2,1,bytes([tag,2,1,2,3,4,5]))
-    version, operation, body = reply(peer)
-    if (version,operation) != (2,0x80):
-        raise ValueError(body.decode(errors='replace'))
-    generation, device = struct.unpack('<QI',body[:12])
-    bus = body[12:].decode('ascii')
-    data, ancillary, flags, _ = peer.recvmsg(1,socket.CMSG_SPACE(3*4),socket.MSG_CMSG_CLOEXEC)
-    received = []
-    for level, kind, payload in ancillary:
-        if (level,kind) != (socket.SOL_SOCKET,socket.SCM_RIGHTS):
-            raise ValueError('unexpected ancillary message')
-        fds = array.array('i'); fds.frombytes(payload)
-        received.extend(socket.socket(fileno=fd) for fd in fds)
-    if data != b'\xa2' or len(received) != 3 or flags & socket.MSG_CTRUNC:
-        for item in received: item.close()
-        raise ValueError('invalid channel handoff')
-    for item in received: item.settimeout(2)
-    return peer,generation,device,bus,tag,received
+    tag = {'dualsense':1, 'dualshock4':2, 'xbox360':3}[profile]
+    peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    handed_off = False
+    try:
+        peer.settimeout(10)
+        peer.connect('/run/virtualgamepad/broker.sock')
+        _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != 0: raise ValueError('broker is not root')
+        message(peer, 2, 1, bytes([tag,2,1,2,3,4,5]))
+        version, operation, body = reply(peer)
+        if (version, operation) != (2, 0x80):
+            raise ValueError(body.decode(errors='replace'))
+        if len(body) < 15: raise ValueError('truncated attachment identity')
+        generation, device = struct.unpack('<QI', body[:12])
+        bus = body[12:].decode('ascii')
+        if generation == 0 or device == 0 or not re.fullmatch(r'[0-9]+-[0-9]+(?:\.[0-9]+)*', bus):
+            raise ValueError('invalid attachment identity')
+        received = channel_handoff(peer)
+        handed_off = True
+        return peer, generation, device, bus, tag, received
+    finally:
+        if not handed_off: peer.close()
 
 
 owned_pipewire_device = live.owned_pipewire_device
 reserve_direct_alsa = live.reserve_direct_alsa
 
 
-def trial(profile, seconds, microphone_fill_ms=8):
+def trial(profile, seconds, instance, microphone_fill_ms=8):
+    live.compiled_serial(instance, 1)  # Reject invalid expectations before creation.
     broker, generation, device, bus, tag, channels = opened(profile)
     control, playback, microphone = channels
     stop = threading.Event()
@@ -172,6 +234,9 @@ def trial(profile, seconds, microphone_fill_ms=8):
         except (OSError,EOFError,ValueError) as error:
             if not stop.is_set(): errors.append(str(error))
     threads = [threading.Thread(target=f) for f in (consume,produce)]
+    result = None
+    initiating = None
+    cleanup = []
     try:
         deadline = time.monotonic()+3
         while True:
@@ -182,37 +247,44 @@ def trial(profile, seconds, microphone_fill_ms=8):
             if time.monotonic() >= deadline: raise TimeoutError('owned ALSA card did not appear')
             time.sleep(.01)
         subprocess.run(['udevadm','settle','--timeout=3'],check=True,timeout=4)
-        reserve_direct_alsa(int(cards[0].name[4:]),bus)
+        isolation = reserve_direct_alsa(int(cards[0].name[4:]),bus,instance,generation)
         for thread in threads: thread.start()
         result = live.run_trial(int(cards[0].name[4:]),profile,seconds)
         stop.set()
         for thread in threads:
             thread.join(3)
             if thread.is_alive(): errors.append('PCM client thread failed to stop')
+        after = reserve_direct_alsa(int(cards[0].name[4:]),bus,instance,generation)
+        result['shared_defaults_unchanged'] = after['shared_defaults'] == isolation['shared_defaults']
+        result['passed'] &= result['shared_defaults_unchanged']
         result['worker_diagnostics'] = worker_diagnostics(control,generation)
+        result['worker_functional_evidence'] = functional_worker_evidence(result['worker_diagnostics'], (seconds+2)*48000)
+        result['passed'] &= result['worker_functional_evidence']
         result.update(totals)
         result['ipc_errors'] = errors
         result['microphone_refill_largest_delays'] = delays.summary()
         result['microphone_fill_ms'] = microphone_fill_ms
         result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+2)*48000
-        return result
+    except Exception as error:
+        initiating = str(error)
     finally:
         stop.set()
-        for item in channels:
-            try: item.shutdown(socket.SHUT_RDWR)
-            except OSError: pass
+        cleanup = close_broker_session(broker, channels, generation)
         for thread in threads:
-            if thread.ident is not None: thread.join(3)
-        for item in channels: item.close()
-        message(broker,2,2,struct.pack('<Q',generation))
-        if reply(broker) != (2,0x80,struct.pack('<Q',generation)):
-            raise ValueError('cleanup not acknowledged')
-        broker.close()
+            if thread.ident is not None:
+                thread.join(3)
+                if thread.is_alive(): cleanup.append('PCM client thread remains alive')
+    if result is None:
+        result = dict(passed=False)
+    result.update(initiating_error=initiating, cleanup_errors=cleanup)
+    result['passed'] &= initiating is None and not cleanup
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--profile',choices=live.PROFILES,required=True)
+    parser.add_argument('--profile',choices=[*live.PROFILES, 'all'],required=True)
+    parser.add_argument('--instance', required=True)
     parser.add_argument('--seconds',type=int,default=3)
     parser.add_argument('--trials',type=int,default=1)
     parser.add_argument('--microphone-fill-ms',type=int,default=8,
@@ -222,12 +294,15 @@ def main():
     if not 1 <= args.trials <= 3: parser.error('trials must be 1..3')
     try: microphone_fill_frames(args.microphone_fill_ms)
     except ValueError as error: parser.error(str(error))
-    for index in range(args.trials):
-        print(json.dumps(dict(event='start',profile=args.profile,trial=index,seconds=args.seconds)),flush=True)
-        result = trial(args.profile,args.seconds,args.microphone_fill_ms)
-        result.update(profile=args.profile,trial=index)
-        print(json.dumps(result),flush=True)
-        if not result['passed']: raise SystemExit(1)
+    profiles = list(live.PROFILES) if args.profile == 'all' else [args.profile]
+    for profile in profiles:
+        for index in range(args.trials):
+            print(json.dumps(dict(event='start',profile=profile,trial=index,seconds=args.seconds)),flush=True)
+            result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms)
+            result.update(profile=profile,trial=index)
+            print(json.dumps(result),flush=True)
+            if not result['passed']: raise SystemExit(1)
+
 
 
 if __name__ == '__main__': main()

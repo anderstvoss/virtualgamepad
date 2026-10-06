@@ -191,7 +191,9 @@ impl Protocol for Remote {
     fn output(&mut self, _: Report, _: u64) -> Result<Option<()>, Error> {
         Ok(None)
     }
-    fn lifecycle(&mut self, _: Lifecycle, _: u64) {}
+    fn lifecycle(&mut self, _: Lifecycle, _: u64) -> Option<Self::Output> {
+        None
+    }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }
 fn node() -> Nunchuk {

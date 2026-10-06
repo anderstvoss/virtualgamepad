@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import re
 import struct
+import resource
+import tempfile
 import subprocess
 import time
 
@@ -47,8 +49,10 @@ def resolve_card(port, family, previous=None):
         raise ValueError('selected device is not the requested compiled emulation')
     cards = [card for card in Path('/sys/class/sound').glob('card[0-9]*')
              if (card/'device').resolve().is_relative_to(device)]
+    if not cards:
+        raise FileNotFoundError('associated ALSA card not yet registered')
     if len(cards) != 1:
-        raise ValueError('expected exactly one associated ALSA card')
+        raise ValueError('ambiguous associated ALSA cards')
     return ownership, int(cards[0].name[4:])
 
 
@@ -61,27 +65,70 @@ def owned_pipewire_device(objects, card):
     return candidates[0] if candidates else None
 
 
-def reserve_direct_alsa(card, bus):
-    # Test-harness-only exclusion of the session manager from this newly owned
-    # virtual card. Never change defaults or a physical audio device.
-    device = (Path('/sys/bus/usb/devices')/bus).resolve(strict=True)
-    if 'vhci_hcd.0' not in device.parts or not (Path('/sys/class/sound')/f'card{card}'/'device').resolve().is_relative_to(device):
-        raise ValueError('ALSA ancestry changed before reservation')
-    deadline = time.monotonic()+2
-    while time.monotonic() < deadline:
-        result = subprocess.run(['pw-dump'],capture_output=True,timeout=3)
+def compiled_serial(instance, generation):
+    if (not re.fullmatch(r'[a-z0-9-]{1,32}', instance) or
+            type(generation) is not int or not 0 < generation < 2**64):
+        raise ValueError('invalid expected session identity')
+    return f'vg-{instance}-{generation:016x}'
+
+
+def shared_graph():
+    # A shared graph inspection must be bounded and read-only. Spool rather
+    # than accumulating unbounded stdout from another process in memory.
+    limit = 1024 * 1024
+    def quota():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    with tempfile.TemporaryFile() as output:
+        result = subprocess.run(['pw-dump'], stdout=output, stderr=subprocess.DEVNULL,
+                                timeout=3, preexec_fn=quota)
         if result.returncode:
-            return
-        item = owned_pipewire_device(json.loads(result.stdout),card)
-        if item:
-            profiles = item['info'].get('params',{}).get('EnumProfile',[])
-            off = [profile['index'] for profile in profiles if profile.get('name') == 'off']
-            if len(off) != 1:
-                raise ValueError('owned PipeWire device has no unique off profile')
-            subprocess.run(['pw-cli','set-param',str(item['id']),'Profile',json.dumps(dict(index=off[0],save=False))],check=True,stdout=subprocess.DEVNULL,timeout=3)
-            return
-        time.sleep(.02)
-    raise TimeoutError('owned PipeWire card not ready for exclusive ALSA test')
+            raise RuntimeError('shared PipeWire inspection unavailable or exceeded quota')
+        output.seek(0)
+        objects = json.loads(output.read(limit + 1))
+    if not isinstance(objects, list) or any(not isinstance(item, dict) for item in objects):
+        raise ValueError('invalid shared PipeWire graph')
+    return objects
+
+
+def shared_defaults(objects):
+    values = []
+    for item in objects:
+        if (item.get('type') == 'PipeWire:Interface:Metadata' and
+                item.get('props', {}).get('metadata.name') == 'default'):
+            for entry in item.get('metadata', []):
+                if entry.get('key', '').startswith(('default.audio.', 'default.configured.audio.')):
+                    values.append(entry)
+    return sorted(values, key=lambda entry: (entry.get('subject', 0), entry['key']))
+
+
+def isolated_card(properties, objects, card, instance):
+    if properties.get('ACP_IGNORE') != '1' or properties.get('VG_ALPHA_AUDIO_INSTANCE') != instance:
+        raise ValueError('owned card lacks pre-attachment audio isolation')
+    for item in objects:
+        props = item.get('info', {}).get('props', {})
+        if item.get('type') in ('PipeWire:Interface:Device', 'PipeWire:Interface:Node') and any(
+                str(props.get(key, '')) == str(card)
+                for key in ('api.alsa.card', 'api.alsa.pcm.card')):
+            raise ValueError('shared session manager imported the owned card')
+
+
+def reserve_direct_alsa(card, bus, instance, generation):
+    """Verify pre-attachment exclusion; never change a shared device profile."""
+    serial = compiled_serial(instance, generation)
+    device = (Path('/sys/bus/usb/devices') / bus).resolve(strict=True)
+    entry = Path('/sys/class/sound') / f'card{card}'
+    if ('vhci_hcd.0' not in device.parts or
+            not (entry / 'device').resolve().is_relative_to(device) or
+            (device / 'serial').read_text().strip() != serial):
+        raise ValueError('ALSA session identity or ancestry changed before verification')
+    result = subprocess.run(['udevadm', 'info', '--query=property', '--path=' + str(entry)],
+                            capture_output=True, check=True, timeout=3)
+    if len(result.stdout) > 64 * 1024:
+        raise ValueError('ALSA properties exceeded quota')
+    properties = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+    objects = shared_graph()
+    isolated_card(properties, objects, card, instance)
+    return dict(serial=serial, shared_defaults=shared_defaults(objects))
 
 
 def inspect_capture(data, channels):
@@ -146,10 +193,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--profile',choices=PROFILES,required=True)
+    parser.add_argument('--instance', required=True)
+    parser.add_argument('--generation', type=int, required=True)
     parser.add_argument('--seconds',type=int,default=60)
     parser.add_argument('--trials',type=int,default=3)
     parser.add_argument('--reserve-owned-card',action='store_true',
-                        help='temporarily release only this owned virtual card from PipeWire')
+                        help='verify pre-attachment isolation without changing shared profiles')
     parser.add_argument('--prepare-only',action='store_true',
                         help='verify and reserve the owned virtual card without streaming')
     args = parser.parse_args()
@@ -159,15 +208,14 @@ def main():
         if not args.reserve_owned_card:
             parser.error('--prepare-only requires --reserve-owned-card')
         ownership, card = resolve_card(args.port,args.profile)
-        reserve_direct_alsa(card,ownership[1])
+        reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
         print(json.dumps(dict(profile=args.profile,card=card,port=args.port,
                               ownership=ownership[1])),flush=True)
         return 0
     ownership = None
     for trial in range(args.trials):
         ownership, card = resolve_card(args.port,args.profile,ownership)
-        if args.reserve_owned_card:
-            reserve_direct_alsa(card,ownership[1])
+        isolation = reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
         print(json.dumps(dict(status='running',profile=args.profile,trial=trial,
                               duration_seconds=args.seconds)),flush=True)
         result = run_trial(card,args.profile,args.seconds)
@@ -176,6 +224,9 @@ def main():
         # A disconnected session must not replace the useful result with a traceback.
         try:
             resolve_card(args.port,args.profile,ownership)
+            after = reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
+            result['shared_defaults_unchanged'] = after['shared_defaults'] == isolation['shared_defaults']
+            result['passed'] &= result['shared_defaults_unchanged']
             result['session_present_after_trial'] = True
         except (ValueError, OSError) as error:
             result['session_present_after_trial'] = False

@@ -153,7 +153,13 @@ jobs:
           key: msrv-${{ steps.msrv.outputs.msrv }}
 
       - name: cargo check at MSRV
-        run: cargo check --locked --workspace --all-targets --all-features
+        env:
+          RUSTUP_TOOLCHAIN: ${{ steps.msrv.outputs.msrv }}
+        run: |
+          rustc --version
+          cargo --version
+          test "$(rustc --version | cut -d' ' -f2 | cut -d. -f1-2)" = "$RUSTUP_TOOLCHAIN"
+          cargo check --locked --workspace --all-targets --all-features
 
   rust-test:
     name: Rust build and test (${{ matrix.os }})

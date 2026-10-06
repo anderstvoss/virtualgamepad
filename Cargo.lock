@@ -2800,6 +2800,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "gr-controller-contract",
+ "rustix 1.1.5",
  "virtualgamepad",
 ]
 

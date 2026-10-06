@@ -43,9 +43,9 @@ mod probe {
     }
     pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         let args: Vec<_> = std::env::args().skip(1).collect();
-        if args.len() != 3 {
+        if !(args.len() == 3 || (args.len() == 4 && args[3] == "--protocol-fixture")) {
             return Err(
-                "expected FAMILY DEVICE_ID SECONDS; use the administrator lab harness".into(),
+                "expected FAMILY DEVICE_ID SECONDS [--protocol-fixture]; use the explicit lab harness".into(),
             );
         }
         let device: u32 = args[1].parse()?;
@@ -56,6 +56,7 @@ mod probe {
         let mut identity = [0; 6];
         std::fs::File::open("/dev/urandom")?.read_exact(&mut identity)?;
         identity[0] = (identity[0] | 2) & !1;
+        let protocol_fixture = args.len() == 4;
         match args[0].as_str() {
             "dualsense" => run(
                 usb_personality::dualsense(identity),
@@ -64,6 +65,7 @@ mod probe {
                 device,
                 seconds,
                 true,
+                protocol_fixture,
             ),
             "dualshock4" => run(
                 usb_personality::dualshock4(identity),
@@ -72,6 +74,7 @@ mod probe {
                 device,
                 seconds,
                 true,
+                protocol_fixture,
             ),
             "xbox360" => run(
                 usb_personality::xbox360(),
@@ -80,10 +83,30 @@ mod probe {
                 device,
                 seconds,
                 false,
+                protocol_fixture,
             ),
             _ => Err("unknown compiled profile".into()),
         }
     }
+    fn microphone_pattern(samples: &mut [i16], channels: usize, position: usize) {
+        for (i, frame) in samples.chunks_exact_mut(channels).enumerate() {
+            for (channel, sample) in frame.iter_mut().enumerate() {
+                *sample = i16::try_from((position + i) % 97).unwrap()
+                    + 100 * i16::try_from(channel + 1).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn protocol_fixture_pattern_survives_wrap_and_partial_queue_admission() {
+        let mut samples = [0; 8];
+        microphone_pattern(&mut samples, 2, 96);
+        assert_eq!(samples, [196, 296, 100, 200, 101, 201, 102, 202]);
+        // Only two frames were accepted; regenerate the suffix at that position.
+        microphone_pattern(&mut samples, 2, (96 + 2) % 97);
+        assert_eq!(&samples[..4], &[101, 201, 102, 202]);
+    }
+
     fn run<P: Protocol>(
         protocol: P,
         id: ProfileId,
@@ -91,6 +114,7 @@ mod probe {
         device: u32,
         seconds: u64,
         numbered: bool,
+        protocol_fixture: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let socket = UnixStream::from(std::io::stdin().as_fd().try_clone_to_owned()?);
         // Verify stdin really is a connected socket before announcing readiness.
@@ -100,6 +124,19 @@ mod probe {
         let (mut writer, microphone) = pcm_queue(audio.streams()[1].format(), 4096)?;
         let channels = audio.streams()[0].format().channels().len();
         let mic_channels = audio.streams()[1].format().channels().len();
+        // Protocol-only validation drains a fixed burst. Populate it before
+        // READY so its exact-byte assertions do not depend on VM scheduling.
+        // The ordinary live lab retains its small timed source and loss counters.
+        let mut initial_position = 0;
+        if protocol_fixture {
+            let mut initial = vec![0; 4096 * mic_channels];
+            microphone_pattern(&mut initial, mic_channels, 0);
+            let accepted = writer.push(&initial)?;
+            if accepted != 4096 {
+                return Err("protocol fixture did not prime every frame".into());
+            }
+            initial_position = accepted % 97;
+        }
         let counters = Arc::new(Counters::default());
         let state = protocol.neutral();
         let worker = Worker::new(
@@ -123,7 +160,7 @@ mod probe {
             let mut samples = vec![0; 512 * channels];
             // Deterministic, quiet, non-physical microphone source for isolation tests.
             let mut mic_samples = vec![0; 512 * mic_channels];
-            let mut mic_position = 0_usize;
+            let mut mic_position = initial_position;
             let mut frames = 0_u64;
             let mut gaps = 0_u64;
             let mut sum = [0_i64; 4];
@@ -140,12 +177,7 @@ mod probe {
                     }
                     Err(_) => break,
                 }
-                for (i, frame) in mic_samples.chunks_exact_mut(mic_channels).enumerate() {
-                    for (channel, sample) in frame.iter_mut().enumerate() {
-                        *sample = i16::try_from((mic_position + i) % 97).unwrap_or(0)
-                            + 100 * i16::try_from(channel + 1).unwrap_or(0);
-                    }
-                }
+                microphone_pattern(&mut mic_samples, mic_channels, mic_position);
                 // Keep four milliseconds in flight, not the entire 2048-frame
                 // capacity. Capacity absorbs stalls; it is not a latency target.
                 let wanted = 192_usize.saturating_sub(writer.queued_frames());

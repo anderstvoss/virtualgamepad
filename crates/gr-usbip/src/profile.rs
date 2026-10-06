@@ -8,7 +8,7 @@ pub enum ProfileId {
     DualShock4Emulated,
     Xbox360HidEmulated,
 }
-/// No constructor accepts caller descriptors, identities, paths or endpoints.
+/// Compiled descriptors; session identity is restricted to a validated broker instance.
 pub struct Profile {
     id: ProfileId,
     device: [u8; 18],
@@ -16,6 +16,7 @@ pub struct Profile {
     report: &'static [u8],
     playback: u8,
     microphone: u8,
+    serial: Option<String>,
 }
 impl Profile {
     /// Reject a mismatched stream before any host attachment. Semantic channel
@@ -66,7 +67,33 @@ impl Profile {
             report,
             playback,
             microphone,
+            serial: None,
         }
+    }
+    /// Compile a session serial for isolation before attachment. The instance
+    /// must come from administrator-owned broker configuration, never a client.
+    /// Static profiles created by `new` retain their original descriptors.
+    pub fn for_session(
+        id: ProfileId,
+        instance: impl AsRef<str>,
+        generation: u64,
+    ) -> std::io::Result<Self> {
+        let instance = instance.as_ref();
+        if instance.is_empty()
+            || instance.len() > 32
+            || !instance
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            || generation == 0
+        {
+            return Err(std::io::Error::other(
+                "invalid compiled USB session identity",
+            ));
+        }
+        let mut profile = Self::new(id);
+        profile.serial = Some(format!("vg-{instance}-{generation:016x}"));
+        profile.device[16] = 3;
+        Ok(profile)
     }
     #[must_use]
     pub const fn id(&self) -> ProfileId {
@@ -104,6 +131,7 @@ impl Profile {
                 ProfileId::DualShock4Emulated => "Virtualgamepad DS4 emulated audio",
                 ProfileId::Xbox360HidEmulated => "Virtualgamepad Xbox 360 HID emulated audio",
             },
+            3 => self.serial.as_deref()?,
             _ => return None,
         };
         let mut bytes = vec![0, 3];
@@ -180,6 +208,41 @@ fn configuration(report_length: usize, playback: u8, microphone: u8) -> Vec<u8> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn session_serial_is_exact_and_invalid_identity_is_rejected() {
+        for id in [
+            ProfileId::DualSenseEmulated,
+            ProfileId::DualShock4Emulated,
+            ProfileId::Xbox360HidEmulated,
+        ] {
+            let static_profile = Profile::new(id);
+            let profile = Profile::for_session(id, "lab-test", 0x123).unwrap();
+            assert_eq!(static_profile.device()[16], 0);
+            assert_eq!(profile.device()[16], 3);
+            assert_eq!(profile.configuration(), static_profile.configuration());
+            assert_eq!(profile.report(), static_profile.report());
+            let mut expected = vec![60, 3];
+            for unit in "vg-lab-test-0000000000000123".encode_utf16() {
+                expected.extend(unit.to_le_bytes());
+            }
+            expected[0] = u8::try_from(expected.len()).unwrap();
+            assert_eq!(profile.string(3), Some(expected));
+            assert!(profile.string(4).is_none());
+        }
+        for instance in [
+            "",
+            "../escape",
+            "Upper",
+            "a_b",
+            "a/b",
+            "a\n",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        ] {
+            assert!(Profile::for_session(ProfileId::DualSenseEmulated, instance, 1).is_err());
+        }
+        assert!(Profile::for_session(ProfileId::DualSenseEmulated, "lab", 0).is_err());
+    }
+
     #[test]
     fn all_profiles_have_complete_lengths_and_separate_hid_audio_endpoints() {
         for (id, playback, microphone) in [

@@ -420,7 +420,7 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
         }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
             title: "Experimental USB gadget (dummy_hcd)",
-            body: "Exercises USB device enumeration through Linux's dummy_hcd virtual USB host-controller path. Unlike UHID, this is a USB gadget test path, but it does not connect a physical USB device or a remote host. Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation; research and test use only.",
+            body: "Unavailable USB gadget test path: Linux f_hid exposes GET_REPORT IDs without report type/request length or an explicit negative reply. This transport cannot represent complete controller request semantics. Creation is rejected before host resources are opened; no alternative realization is selected automatically.",
         }),
         _ => None,
     }
@@ -1421,6 +1421,7 @@ pub struct App {
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     backend_healthy: bool,
+    discovery: host_audio::Discovery,
 }
 impl Default for App {
     fn default() -> Self {
@@ -1441,10 +1442,50 @@ impl Default for App {
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
             backend_healthy: true,
+            discovery: host_audio::Discovery::default(),
         }
     }
 }
 impl App {
+    /// Neutral, test-owned UHID workload for the separately invoked GUI soak example.
+    #[allow(dead_code)] // Used by the validation example, not normal application startup.
+    #[allow(clippy::field_reassign_with_default)] // App owns Drop resources and cannot use struct update syntax.
+    pub(crate) fn validation_soak() -> Result<Self, String> {
+        let mut app = Self::default();
+        app.configure_neutral_soak();
+        for _ in 0..2 {
+            app.create();
+        }
+        if app.controllers.len() != 2 {
+            return Err(format!("soak creation: {:?}", app.lifecycle_status));
+        }
+        Ok(app)
+    }
+    #[allow(dead_code)] // Used by the validation example and its configuration regression.
+    fn configure_neutral_soak(&mut self) {
+        self.kind = Kind::DualSense;
+        self.target = RealizationId::LINUX_UHID_USB;
+        // The normal demo enables audio for some feature/target combinations.
+        // This workload must not attach to the user's running audio session.
+        self.audio_creation.enabled = false;
+    }
+    #[allow(dead_code)]
+    pub(crate) fn validation_soak_cycle(&mut self) -> Result<(), String> {
+        self.remove_controller(0);
+        self.create();
+        if self.controllers.len() != 2
+            || self.controllers.iter().any(|named| {
+                named
+                    .service_worker
+                    .as_ref()
+                    .is_none_or(|worker| worker_failure(&worker.failure).is_some())
+            })
+        {
+            return Err("GUI soak worker failed".into());
+        }
+        Ok(())
+    }
+
     fn next_default_name(&self) -> String {
         next_available_name(
             self.kind,
@@ -1722,6 +1763,30 @@ impl eframe::App for App {
                         named.view = display.snapshot.take().expect("checked snapshot");
                     }
                 }
+            }
+        }
+        if let Some(view) = self
+            .selected_controller
+            .and_then(|index| self.controllers.get(index))
+            .and_then(|named| named.audio_view.as_ref())
+        {
+            self.discovery.poll(view.routing.backend);
+        }
+        for named in &mut self.controllers {
+            if let Some(view) = named
+                .audio_view
+                .as_mut()
+                .filter(|view| self.discovery.matches(view.routing.backend))
+            {
+                if let Some(Ok(devices)) = &self.discovery.result {
+                    view.playback_devices.clone_from(&devices.playback);
+                    view.capture_devices.clone_from(&devices.capture);
+                }
+                view.discovery_status = match &self.discovery.result {
+                    None => Some("Discovering audio devices…".into()),
+                    Some(Err(error)) => Some(format!("Audio discovery: {error}")),
+                    Some(Ok(_)) => None,
+                };
             }
         }
         self.backend_healthy = backend_healthy;
@@ -2164,7 +2229,9 @@ impl eframe::App for App {
                                             self.last_cleanup.as_deref(),
                                             &mut recreation_clicked,
                                         ) {
-                                            if !named
+                                            if matches!(action, audio_lab::Action::RetryDiscovery) {
+                                                if let Some(view) = &audio_view { self.discovery.refresh(view.routing.backend); }
+                                            } else if !named
                                                 .service_worker
                                                 .as_ref()
                                                 .is_some_and(|worker| {
@@ -2193,10 +2260,7 @@ impl eframe::App for App {
                                             wide_card(ui, "Controller output", |ui| {
                                                 draw_feedback_rows(ui, &named.indicators);
                                             });
-                                            if let (Some(view), Some(routing)) =
-                                                (audio_view.as_ref(), audio_routing.as_mut())
-                                                && (routing.jack_connector.is_some()
-                                                    || !routing.outputs.is_empty())
+                                            if let Some((view, routing)) = audio_view.as_ref().zip(audio_routing.as_mut()).filter(|(_, routing)| routing.jack_connector.is_some() || !routing.outputs.is_empty())
                                             {
                                                 audio_routing_changed |= wide_card(ui, "Audio", |ui| {
                                                     audio_lab::draw_output_routes(
@@ -2743,8 +2807,9 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
                     })
                     .inner
                     .changed();
-                if (slider_changed || entry_changed)
-                    && let Ok(level) = BatteryLevel::new(percentage)
+                if let Some(level) = BatteryLevel::new(percentage)
+                    .ok()
+                    .filter(|_| slider_changed || entry_changed)
                 {
                     let _ = view.set_battery_level(level);
                 }
@@ -3480,6 +3545,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn neutral_soak_disables_inherited_audio_before_any_controller_creation() {
+        for enabled in [false, true] {
+            let mut app = App::default();
+            app.kind = Kind::SwitchPro;
+            app.target = RealizationId::LINUX_USBIP_USB_AUDIO;
+            app.audio_creation.enabled = enabled;
+            app.configure_neutral_soak();
+            assert!(matches!(app.kind, Kind::DualSense));
+            assert_eq!(app.target, RealizationId::LINUX_UHID_USB);
+            assert!(app.controllers.is_empty());
+            assert_eq!(
+                app.audio_creation
+                    .options(app.target, true)
+                    .unwrap()
+                    .audio()
+                    .exposure(),
+                virtualgamepad::AudioExposure::Disabled
+            );
+        }
+    }
+
+    #[test]
     fn uhid_creation_failure_distinguishes_registration_from_access() {
         use virtualgamepad::ControllerError;
         for target in [
@@ -4106,6 +4193,46 @@ mod tests {
     }
 
     #[test]
+    fn stalled_discovery_does_not_block_service_removal_or_shutdown() {
+        let (discovery_started_tx, discovery_started) = mpsc::sync_channel(1);
+        let mut discovery = host_audio::Discovery::with_runner(move |_, generation, expected| {
+            discovery_started_tx.send(()).unwrap();
+            while generation.load(std::sync::atomic::Ordering::Acquire) == expected {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err("cancelled fake discovery".into())
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            discovery.poll(audio_lab::HostBackend::PipeWire);
+            if discovery_started.try_recv().is_ok() {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        let (sender, receiver) = mpsc::channel();
+        let worker = spawn_service_worker(FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        });
+        for _ in 0..3 {
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+        assert_eq!(worker.stop().unwrap().closed, 1);
+        assert!(
+            discovery.result.is_none(),
+            "discovery is still stalled during controller removal"
+        );
+        let before = Instant::now();
+        drop(discovery);
+        assert!(
+            before.elapsed() < Duration::from_secs(2),
+            "shutdown cancels discovery"
+        );
+    }
+
+    #[test]
     fn removing_one_worker_preserves_another_workers_service() {
         let first = FakeService::default();
         let (sender, receiver) = mpsc::channel();
@@ -4484,9 +4611,7 @@ mod tests {
 
             assert!(metrics_rect.height() > 0.0);
             assert!(!output.shapes.is_empty());
-            if frame > 1
-                && let Some(previous_height) = previous_height
-            {
+            if let Some(previous_height) = previous_height.filter(|_| frame > 1) {
                 assert!(
                     (metrics_rect.height() - previous_height).abs() < f32::EPSILON,
                     "metrics panel changed height: {previous_height} -> {}",
@@ -4647,6 +4772,28 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn selection_and_removal_preserve_positions_beyond_the_viewport() {
+        for count in [12, 257, 1024] {
+            assert_eq!(controller_tab_indices(count).count(), count);
+            for position in 0..count {
+                let selected = selection_after_controller_click(Some(0), position, true);
+                assert_eq!(selected, Some(position));
+                let remaining = count - 1;
+                assert_eq!(
+                    selection_after_removal(remaining, position, selected),
+                    Some(position.min(remaining - 1))
+                );
+                if position > 0 {
+                    assert_eq!(
+                        selection_after_removal(remaining, 0, selected),
+                        Some(position - 1)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

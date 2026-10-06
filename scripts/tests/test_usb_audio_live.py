@@ -57,37 +57,63 @@ class LiveHarness(unittest.TestCase):
         with self.assertRaises(ValueError):
             lab.inspect_capture(bytes(3),2)
 
+    def test_pre_attachment_isolation_is_required_for_integer_and_string_cards(self):
+        properties = dict(ACP_IGNORE='1', VG_ALPHA_AUDIO_INSTANCE='lab')
+        lab.isolated_card(properties, [], 7, 'lab')
+        for bad in [{}, dict(ACP_IGNORE='0', VG_ALPHA_AUDIO_INSTANCE='lab'),
+                    dict(ACP_IGNORE='1', VG_ALPHA_AUDIO_INSTANCE='foreign')]:
+            with self.assertRaises(ValueError): lab.isolated_card(bad, [], 7, 'lab')
+        for card in [7, '7']:
+            for kind in ['PipeWire:Interface:Device', 'PipeWire:Interface:Node']:
+                imported = dict(type=kind, info=dict(props={'api.alsa.card': card}))
+                with self.assertRaisesRegex(ValueError, 'imported'):
+                    lab.isolated_card(properties, [imported], 7, 'lab')
+
+    def test_session_serial_rejects_malformed_or_zero_generation(self):
+        self.assertEqual(lab.compiled_serial('lab', 7), 'vg-lab-0000000000000007')
+        for instance, generation in [('', 1), ('../escape', 1), ('lab', 0),
+                                     ('lab', True), ('lab', 2**64)]:
+            with self.assertRaises(ValueError): lab.compiled_serial(instance, generation)
+
+    def test_shared_defaults_are_collected_without_profile_or_route_mutations(self):
+        values = [dict(subject=0, key='default.audio.sink', value='synthetic-a'),
+                  dict(subject=0, key='unrelated', value='ignored')]
+        metadata = dict(type='PipeWire:Interface:Metadata', props={'metadata.name':'default'}, metadata=values)
+        self.assertEqual(lab.shared_defaults([metadata]), values[:1])
+
     def test_progress_is_visible_before_blocking_trial(self):
         output = io.StringIO()
         def trial(*_):
             self.assertEqual(json.loads(output.getvalue().splitlines()[0])['status'],'running')
             return {'passed':True}
         with patch('sys.argv',
-                          ['validator','--profile','xbox360','--port','0','--trials','1']), \
+                          ['validator','--profile','xbox360','--port','0','--instance','lab','--generation','7','--trials','1']), \
              patch('sys.stdout',output), \
              patch.object(lab,'resolve_card',return_value=((1,'4-1'),1)), \
+             patch.object(lab,'reserve_direct_alsa',return_value={'shared_defaults': []}), \
              patch.object(lab,'run_trial',side_effect=trial):
             self.assertEqual(lab.main(),0)
 
     def test_prepare_only_reserves_exact_owned_card_without_streaming(self):
         output = io.StringIO()
-        with patch('sys.argv',['validator','--profile','dualsense','--port','1',
+        with patch('sys.argv',['validator','--profile','dualsense','--port','1','--instance','lab','--generation','7',
                                '--reserve-owned-card','--prepare-only']), \
              patch('sys.stdout',output), \
              patch.object(lab,'resolve_card',return_value=((17,'4-2'),9)), \
              patch.object(lab,'reserve_direct_alsa') as reserve, \
              patch.object(lab,'run_trial') as trial:
             self.assertEqual(lab.main(),0)
-        reserve.assert_called_once_with(9,'4-2')
+        reserve.assert_called_once_with(9,'4-2','lab',7)
         trial.assert_not_called()
         self.assertEqual(json.loads(output.getvalue())['card'],9)
 
     def test_disappearance_preserves_pcm_result_and_stops_trials(self):
         output = io.StringIO()
-        with patch('sys.argv',['validator','--profile','xbox360','--port','0']), \
+        with patch('sys.argv',['validator','--profile','xbox360','--port','0','--instance','lab','--generation','7']), \
              patch('sys.stdout',output), \
              patch.object(lab,'resolve_card',side_effect=[((1,'4-1'),1),
                           ValueError('selected port has no active high-speed lab session')]), \
+             patch.object(lab,'reserve_direct_alsa',return_value={'shared_defaults': []}), \
              patch.object(lab,'run_trial',return_value={'passed':False,
                           'capture_status':1,'frames':1200}) as trial:
             self.assertEqual(lab.main(),1)

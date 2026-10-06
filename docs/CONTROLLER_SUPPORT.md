@@ -4,9 +4,10 @@ Current pre-alpha API refinement is tracked in
 [the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
 Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
 security/recovery acceptance. Native-client continuity and matching fidelity remain
-open. The demo does not yet enable audio; its audio integration and actual
-maintainer feedback follow this package. Historical evidence below retains its
-original scope.
+open. Demo defaults enable ALSA routing and WIP USB/IP; UHID/PipeWire
+requires its feature. Root defaults remain empty. The expanded release gate is
+not ready; see [remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+Historical evidence below retains its original scope.
 
 All entries are **WIP** during pre-alpha API/controller refinement. WIP
 includes implemented work under assessment and work not yet started. It does not
@@ -15,10 +16,10 @@ future workflow exercises, not new controller APIs or current support.
 
 | Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
 | --- | --- | --- | --- | --- | --- |
-| DualSense | WIP | WIP | WIP | WIP | WIP |
-| DualShock 4 | WIP | WIP | WIP | WIP | WIP |
-| Switch Pro | WIP | WIP | WIP | WIP | WIP |
-| Xbox 360 | WIP | WIP | WIP | WIP | WIP |
+| DualSense | WIP | WIP | Unavailable² | WIP | WIP |
+| DualShock 4 | WIP | WIP | Unavailable² | WIP | WIP |
+| Switch Pro | WIP | WIP | Unavailable² | WIP | WIP |
+| Xbox 360 | WIP | WIP | Unavailable² | WIP | WIP |
 | Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
 | Xbox Series | WIP | WIP | WIP | WIP | WIP |
 | Wii Remote | WIP | WIP | WIP | WIP | WIP |
@@ -27,6 +28,11 @@ future workflow exercises, not new controller APIs or current support.
 virtual HID presentation; dummy_hcd is a separate optional gadget realization.
 The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.
+
+² The implemented Linux f_hid interface exposes report IDs without full GET_REPORT
+metadata or an explicit negative reply. All creation entrypoints reject this
+transport before host construction; permissions or module preparation cannot
+enable it. Existing protocol prototypes remain historical/test evidence.
 
 ## Status definitions and promotion
 
@@ -70,8 +76,9 @@ demo entry, Bluetooth personality, or any support cell.
 
 | Path | Implemented | Deterministic | Host/live | Consumer | Physical matching |
 | --- | --- | --- | --- | --- | --- |
-| UHID + emulated PipeWire | Yes, opt-in | Queue/profile/policy/lifecycle | Selected short and recorded longer probes; mixed historical failures retained | Native continuity/duplex qualification open (#112) | Unavailable (#116) |
-| USB/IP HID/UAC2 | Yes, opt-in WIP | Framing/personality/IPC/ownership/rollback | Selected installed sample/lifecycle trials | Native continuity and full latency matrix open (#112); security/recovery open (#115) | Unavailable; UAC2 differs from reference UAC1 |
+| UHID + emulated PipeWire | Yes, opt-in | Queue/profile/policy/lifecycle | Selected short and recorded longer probes; mixed historical failures retained | Native continuity/duplex qualification unresolved; #112 is closed with incomplete acceptance | Unavailable (#116) |
+| USB/IP HID/UAC2 | Yes, opt-in WIP | Framing/personality/IPC/ownership/rollback | Selected installed sample/lifecycle trials | Native continuity/full latency matrix unresolved; installed security/recovery open (#115) | Unavailable; UAC2 differs from reference UAC1 |
 
-No support cell is promoted by this API refinement. Demo audio and maintainer
-feedback, final whole-root review, freeze and separate quality/release gates remain.
+No support cell is promoted by compilation, issue closure or API signature freeze.
+The holistic review found defects; remediation and remaining live, security,
+consumer and physical acceptance are the current release gate.
