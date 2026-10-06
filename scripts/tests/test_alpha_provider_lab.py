@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import subprocess
+import select
 import sys
 import os
 from unittest.mock import Mock, patch
@@ -154,9 +155,15 @@ class WorkerFaultOwnership(unittest.TestCase):
 
     @unittest.skipUnless(hasattr(os, 'pidfd_open') and hasattr(lab.signal, 'pidfd_send_signal'), 'Linux pidfds unavailable')
     def test_actual_pidfd_terminates_only_a_child_owned_by_this_test(self):
-        child = subprocess.Popen(['/usr/bin/sleep', '30'])
+        child = subprocess.Popen([sys.executable, '-I', '-c',
+            "import time; print('READY', flush=True); time.sleep(30)"], stdout=subprocess.PIPE)
         held = None
         try:
+            # Popen's exec handshake is not application readiness. Reserve only
+            # after the owned child has completed interpreter initialization.
+            if not select.select([child.stdout], [], [], 3)[0]:
+                self.fail('owned child did not become ready within three seconds')
+            self.assertEqual(child.stdout.readline(6), b'READY\n')
             def verify(snapshot):
                 if snapshot['parent'] != os.getpid(): raise RuntimeError('synthetic child parent changed')
             held = lab.PinnedWorker(child.pid, verify)
@@ -165,6 +172,7 @@ class WorkerFaultOwnership(unittest.TestCase):
         finally:
             if held is not None: held.close()
             if child.poll() is None: child.kill(); child.wait(timeout=3)
+            child.stdout.close()
 
     def test_identity_requires_root_unit_image_parent_credentials_and_generation(self):
         original = self.snapshot(); self.verify(original)

@@ -933,3 +933,29 @@ The administrator package already prepared for 247e6fc remains the compatible
 provider/worker candidate: this increment only adds tests and documentation, with
 no library behavior or supporting ABI change. Do not claim newer exact-source
 provider acceptance from that installed package without final-candidate receipts.
+
+#### CI readiness barrier and portable fixtures
+
+Exact-head 6c43825 native Linux/macOS/Windows builds, Rust lint, MSRV, CodeQL and
+full-history Gitleaks passed. Its aggregate CI failed: the actual pidfd child test
+could snapshot a process while exec/interpreter initialization was changing its
+identity, and a fake home-path literal triggered the private-path policy hook.
+The child now signals explicit readiness before reservation. Thirty bounded
+owned-child repetitions pass; production ownership checks still reject every
+identity change. Home fixtures use a synthetic non-account path. The exact policy
+regex finds no matches in tracked text, and all 238 Python tests pass. No workflow
+or policy rule is changed. New-head remote CI remains required.
+
+At 6c43825, strict rustdoc, both API snapshot views, regenerated source inventory,
+forced Rust 1.85, source-path feature consumers/offline rebuild, corpus provenance,
+and production/USB protocol validators pass. The USB validator requires the
+`gr-usbip` `usb_audio_probe` example rather than the privileged production worker;
+a wrong initial invocation rejected at readiness and is retained as a failed
+command receipt. Inventory source links were missing until dependency source
+pages and the root documentation were regenerated; no baseline was refreshed.
+Dependency audit/policy pass with the audit's allowed unmaintained-ttf-parser
+warning (RUSTSEC-2026-0192); do not describe this as a warning-free audit.
+
+The new neutral GUI soak remains live, under its memory cap, and has no completion
+receipt yet. Administrator installation of the prepared 247e6fc immutable package
+is still pending. All six release gates remain open.

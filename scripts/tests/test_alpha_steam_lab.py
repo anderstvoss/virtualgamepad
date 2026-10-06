@@ -28,20 +28,20 @@ class SteamNamespace(unittest.TestCase):
             with self.assertRaises(RuntimeError): lab.memory_sample(info, pressure)
 
     def test_actual_passwd_home_is_mapped_and_private_proc_dev_environment_are_required(self):
-        command = lab.command(Path('/synthetic/workspace'), Path('/home/synthetic'), 42, 43,
+        command = lab.command(Path('/synthetic/workspace'), Path('/synthetic/account-home'), 42, 43,
                               '.vg-alpha-sentinel-test', 'synthetic')
         self.assertIn('--clearenv', command)
         self.assertIn('--unshare-pid', command)
         self.assertIn('--unshare-user', command)
         self.assertEqual(command[command.index('--cap-drop')+1], 'ALL')
         bind = command.index('--bind')
-        self.assertEqual(command[bind+1:bind+3], ['/synthetic/workspace/home', '/home/synthetic'])
+        self.assertEqual(command[bind+1:bind+3], ['/synthetic/workspace/home', '/synthetic/account-home'])
         self.assertNotIn('--ro-bind-try', command)
         self.assertIn('--dev', command)
         self.assertIn('--proc', command)
 
     def test_bootstrap_keeps_host_loader_libc_and_owned_display_private(self):
-        command = lab.bootstrap_command(Path('/synthetic/workspace'), Path('/home/synthetic'),
+        command = lab.bootstrap_command(Path('/synthetic/workspace'), Path('/synthetic/account-home'),
                                         42, 43, '.vg-alpha-sentinel-test', 'marker', 200, 120)
         self.assertNotIn('LD_LIBRARY_PATH', command)
         self.assertNotIn('--tmpfs', command)
@@ -51,14 +51,14 @@ class SteamNamespace(unittest.TestCase):
         self.assertIn('/auth', command)
         for display, seconds in [(0, 120), (True, 120), (300, 120), (200, 0), (200, 901)]:
             with self.assertRaises(ValueError):
-                lab.bootstrap_command(Path('/synthetic/workspace'), Path('/home/synthetic'),
+                lab.bootstrap_command(Path('/synthetic/workspace'), Path('/synthetic/account-home'),
                                       42, 43, '.vg-alpha-sentinel-test', 'marker', display, seconds)
 
     def test_invalid_identity_or_sentinel_is_rejected(self):
         for home, uid, name in [(Path('/'), 42, '.vg-alpha-sentinel-a'),
-                                (Path('/home/a'), 0, '.vg-alpha-sentinel-a'),
+                                (Path('/synthetic/account-home'), 0, '.vg-alpha-sentinel-a'),
                                 (Path('relative'), 42, '.vg-alpha-sentinel-a'),
-                                (Path('/home/a'), 42, '.vg-alpha-sentinel-../b')]:
+                                (Path('/synthetic/account-home'), 42, '.vg-alpha-sentinel-../b')]:
             with self.assertRaises(ValueError):
                 lab.command(Path('/synthetic/workspace'), home, uid, 43, name, 'synthetic')
 
