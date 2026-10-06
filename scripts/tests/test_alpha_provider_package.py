@@ -112,3 +112,19 @@ class ProviderPacket(unittest.TestCase):
                 self.assertFalse(namespace['STAGE'].exists())
                 self.assertEqual(namespace['POLICY'].read_bytes(),before)
                 self.assertEqual(namespace['HELPER'].read_bytes(),b'previous helper')
+
+    def test_previous_named_phase_policy_accepts_only_complete_reviewed_set(self):
+        for changed in (False, True):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                namespace=self.installer(Path(directory))
+                actions=['status', 'receipt', *('run '+phase for phase in packet.PHASES)]
+                if changed:actions[-1]='run arbitrary'
+                prefix='synthetic ALL=(root) NOPASSWD: '+str(namespace['HELPER'])+' '
+                namespace['POLICY'].write_text(''.join(prefix+action+'\n' for action in actions))
+                with patch.object(packet.os,'geteuid',return_value=0), patch.object(namespace['subprocess'],'run'):
+                    if changed:
+                        with self.assertRaisesRegex(ValueError,'scope changed'):namespace['main']()
+                        self.assertFalse(namespace['STAGE'].exists())
+                    else:
+                        namespace['main']()
+                        self.assertTrue(namespace['STAGE'].is_dir())

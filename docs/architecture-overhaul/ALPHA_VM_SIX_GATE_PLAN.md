@@ -256,3 +256,26 @@ Host available memory stayed above 19 GiB and measured full memory PSI averaged
 zero. Audio, contacts and Steam were excluded. This receipt does not close the
 remaining interactive gate or any audio/consumer gate. Preserve the previous
 reboot-interrupted run as unaccepted. Raw receipts remain outside tracked source.
+
+### Live provider startup defect: duplicate generated identity
+
+The immutable db48dc4 lab passed its identity/hash checks, then both rejection
+and positive lifecycle phases failed with connection reset before attachment.
+The two test-owned broker journals show `invalid or duplicate instance`.
+Their restoration records contain no cleanup errors; the original broker socket
+was restored active and the original service inactive. These are failed acceptance
+receipts, not passing security or positive-attachment evidence.
+
+A deterministic reproduction found adjacent Python string literals preceding
+`.join()` made the configuration prefix the separator between VHCI port lines.
+Four selected ports produced three `allow_uid` and `instance` entries. The broker
+correctly rejected this configuration. The lab now builds explicit configuration
+lines, with exact one-port/four-port regressions and invalid-instance rejection.
+No broker validation, resource isolation or privileged access is relaxed.
+
+The packet installer additionally accepts replacement of the complete existing
+named-phase policy (or the legacy three-command spelling), with a regression
+rejecting an unrecognized phase. Exact previous-helper hashing remains required.
+A new administrator-installed immutable packet is needed to rerun live phases;
+the currently installed code cannot replace itself. Journal access is separately
+limited to a fixed no-argument reader of alpha-lab units. Six gates remain open.

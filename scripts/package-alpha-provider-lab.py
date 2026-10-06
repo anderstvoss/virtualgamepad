@@ -148,7 +148,7 @@ def main():
     # three-action grammar here instead of obtaining extra sudo read privileges.
     accounts=(re.escape(CONFIG['client_name']), re.escape('#'+str(CONFIG['client_uid'])))
     pattern='(?:'+'|'.join(accounts)+r') ALL=\\(root\\) NOPASSWD: (.+)'
-    command_pattern=re.escape(str(HELPER))+' (status|run|receipt)'
+    command_pattern=re.escape(str(HELPER))+' (status|receipt|run(?: [a-z-]+)?)'
     actions=[]
     for line in previous_policy.decode().splitlines():
         line=' '.join(line.split())
@@ -159,7 +159,9 @@ def main():
             command_match=re.fullmatch(command_pattern,command.strip())
             if command_match is None:raise ValueError('existing policy is not the reviewed three-action scope')
             actions.append(command_match[1])
-    if sorted(actions)!=['receipt','run','status']:raise ValueError('existing policy scope changed')
+    legacy=['receipt','run','status']
+    named=sorted(['receipt','status',*('run '+phase for phase in CONFIG['phases'])])
+    if sorted(actions) not in (legacy,named):raise ValueError('existing policy scope changed')
     STAGE.mkdir(mode=0o755,exist_ok=False)
     for name,data in images.items():
         path=STAGE/name

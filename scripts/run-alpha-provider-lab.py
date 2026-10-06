@@ -52,6 +52,16 @@ def allocate_staging_directory():
     return Path(tempfile.mkdtemp(prefix='virtualgamepad-alpha-', dir=STAGING_PARENT))
 
 
+def broker_config(client_uid, instance, ports, worker_uid, worker_gid):
+    # Build lines explicitly: adjacent string literals before .join() would
+    # otherwise turn the configuration prefix into the port separator.
+    audio_isolation_rule(instance)
+    lines = [f'allow_uid={client_uid}', f'instance={instance}']
+    lines.extend(f'allow_vhci_port={port}' for port in ports)
+    lines.extend((f'worker_uid={worker_uid}', f'worker_gid={worker_gid}'))
+    return '\n'.join(lines) + '\n'
+
+
 def instance_name(path):
     # tempfile's suffix alphabet includes underscores; broker instances don't.
     name = path.name.replace('_', '-')
@@ -531,9 +541,9 @@ class Host:
                 raise RuntimeError('candidate image differs from approved hash')
             self.write(self.root / 'bin' / name, data, 0o755)
         worker = pwd.getpwuid(self.args.worker_uid)
-        config = (f'allow_uid={self.args.client_uid}\ninstance={self.instance}\n'
-                  ''.join(f'allow_vhci_port={port}\n' for port in selected_ports(self.args.port,self.args.additional_port))+
-                  f'worker_uid={worker.pw_uid}\nworker_gid={worker.pw_gid}\n')
+        config = broker_config(self.args.client_uid, self.instance,
+                               selected_ports(self.args.port, self.args.additional_port),
+                               worker.pw_uid, worker.pw_gid)
         self.write(self.root / 'broker.conf', config.encode())
         self.service = self.instance + '.service'
         self.socket = self.instance + '.socket'

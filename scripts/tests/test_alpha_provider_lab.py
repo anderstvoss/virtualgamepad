@@ -13,6 +13,27 @@ lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 
 
+class BrokerConfiguration(unittest.TestCase):
+    def test_one_and_four_ports_have_exactly_one_identity_and_worker_pair(self):
+        for ports in ((0,), (0, 1, 2, 3)):
+            with self.subTest(ports=ports):
+                expected = ['allow_uid=1001', 'instance=lab-test']
+                expected += [f'allow_vhci_port={port}' for port in ports]
+                expected += ['worker_uid=1002', 'worker_gid=1003']
+                config = lab.broker_config(1001, 'lab-test', ports, 1002, 1003)
+                self.assertEqual(config, '\n'.join(expected) + '\n')
+                self.assertEqual(config.count('allow_uid='), 1)
+                self.assertEqual(config.count('instance='), 1)
+                self.assertEqual(config.count('worker_uid='), 1)
+                self.assertEqual(config.count('worker_gid='), 1)
+
+    def test_invalid_instance_is_rejected_before_config_generation(self):
+        for instance in ('', 'Uppercase', 'lab\nallow_uid=1002', 'x' * 33):
+            with self.subTest(instance=instance):
+                with self.assertRaises(RuntimeError):
+                    lab.broker_config(1001, instance, (0,), 1002, 1003)
+
+
 class AudioIsolationPolicy(unittest.TestCase):
     def test_serial_and_platform_require_separate_matching_ancestors(self):
         lines = lab.audio_isolation_rule('lab-123').splitlines()
