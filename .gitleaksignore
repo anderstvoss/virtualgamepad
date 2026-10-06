@@ -1,0 +1,3 @@
+# Synthetic hex fixture (not a credential) on the codex/gui-long-run-lag branch,
+# flagged by the all-refs history scan. Fingerprint-scoped: commit:file:rule:line.
+eb8d46852cd0aa20d6689cc2f8b2a6686d730bca:scripts/tests/test_alpha_input_lab.py:generic-api-key:42
