@@ -112,3 +112,30 @@ class SiblingAdmission(unittest.TestCase):
         self.assertIn('synthetic construction', str(error.exception))
         self.assertIn('synthetic cleanup', str(error.exception))
         first.close.assert_called_once()
+
+
+class AttachmentFailureEvidence(unittest.TestCase):
+    def test_pending_reply_is_bounded_and_not_consumed(self):
+        import socket
+        left,right=socket.socketpair()
+        try:
+            right.sendall(b'synthetic terminal reply')
+            with patch.object(lab.Path,'read_text',return_value='header\nhs 0000 004 000 00000000 000000 0-0\n'):
+                result=lab.attachment_snapshot(0,left)
+            self.assertEqual(bytes.fromhex(result['broker_reply_hex']),b'synthetic terminal reply')
+            self.assertFalse(result['broker_eof'])
+            self.assertEqual(left.recv(100),b'synthetic terminal reply')
+            self.assertEqual(result['vhci_rows'],['hs 0000 004 000 00000000 000000 0-0'])
+        finally:left.close();right.close()
+
+    def test_eof_and_unreadable_peer_are_distinguished(self):
+        import socket
+        left,right=socket.socketpair()
+        try:
+            with patch.object(lab.Path,'read_text',side_effect=OSError('synthetic unavailable')):
+                self.assertFalse(lab.attachment_snapshot(0,left)['broker_readable'])
+                right.close()
+                result=lab.attachment_snapshot(0,left)
+                self.assertTrue(result['broker_eof'])
+                self.assertIn('vhci_unavailable',result)
+        finally:left.close();right.close()

@@ -148,14 +148,17 @@ class AudioIsolation:
         self.run(['udevadm', 'control', '--reload-rules'])
         # Do not trigger existing devices. New attachments receive the rule.
 
-    def restore(self):
+    def restore(self, timeout=5):
         if (self.parent_identity is not None and
                 (self.rule_identity is not None or self.reload_pending) and
                 identity(self.directory) != self.parent_identity):
             raise RuntimeError('audio isolation directory changed; refusing restoration')
         if self.rule_identity is not None:
-            if self.inventory(self.instance):
-                raise RuntimeError('owned audio devices remain; isolation rule retained')
+            deadline = time.monotonic() + timeout
+            while self.inventory(self.instance):
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('owned audio devices remain; isolation rule retained')
+                time.sleep(.05)
             if (identity(self.path) != self.rule_identity or
                     hashlib.sha256(self.path.read_bytes()).hexdigest() != self.rule_digest):
                 raise RuntimeError('audio isolation rule changed; refusing removal')

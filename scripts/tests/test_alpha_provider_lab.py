@@ -92,12 +92,42 @@ class AudioIsolationLifecycle(unittest.TestCase):
             policy, calls = self.policy(directory)
             policy.prepare()
             policy.inventory = lambda _: ['synthetic-bus']
-            with self.assertRaisesRegex(RuntimeError, 'devices remain'): policy.restore()
+            with self.assertRaisesRegex(RuntimeError, 'devices remain'): policy.restore(timeout=0)
             self.assertTrue(policy.path.exists())
             policy.inventory = lambda _: []
             policy.restore()
             policy.restore()
             self.assertEqual(len(calls), 3)
+
+    def test_delayed_kernel_removal_waits_without_touching_live_rule(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, _ = self.policy(directory)
+            policy.prepare()
+            observations=[]
+            def inventory(_):
+                observations.append(policy.path.exists())
+                return ['synthetic-owned-device'] if len(observations)==1 else []
+            policy.inventory=inventory
+            with patch.object(lab.time, 'sleep') as pause:
+                policy.restore()
+                pause.assert_called_once_with(.05)
+            self.assertEqual(observations,[True,True])
+            self.assertFalse(policy.path.exists())
+            policy.restore()
+
+    def test_delayed_removal_identity_change_still_refuses_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):
+            policy, _ = self.policy(directory)
+            policy.prepare()
+            calls=[]
+            def inventory(_):
+                calls.append(True)
+                return ['synthetic-owned-device'] if len(calls)==1 else []
+            policy.inventory=inventory
+            with patch.object(lab.time, 'sleep', side_effect=lambda _: policy.path.write_text('synthetic changed rule')):
+                with self.assertRaisesRegex(RuntimeError, 'rule changed'):
+                    policy.restore()
+            self.assertTrue(policy.path.exists())
 
     def test_reload_failure_retains_pending_restoration_and_retries(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(lab, 'trusted'):

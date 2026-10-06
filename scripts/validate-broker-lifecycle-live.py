@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import select
 import subprocess
 import struct
 import time
@@ -46,6 +47,27 @@ def wait_detached(port, ownership, timeout=5):
         time.sleep(.02)
 
 
+def attachment_snapshot(port, peer):
+    """Bounded failure evidence; never consume the broker's pending reply."""
+    result = {}
+    try:
+        rows = Path('/sys/devices/platform/vhci_hcd.0/status').read_text().splitlines()[1:]
+        result['vhci_rows'] = [row for row in rows if len(row.split()) == 7 and
+                               row.split()[1].isdigit() and int(row.split()[1]) == port]
+    except OSError as error:
+        result['vhci_unavailable'] = str(error)
+    try:
+        if select.select([peer], [], [], 0)[0]:
+            data = peer.recv(259 + 4, socket.MSG_PEEK | socket.MSG_DONTWAIT)
+            result['broker_reply_hex'] = data.hex()
+            result['broker_eof'] = not data
+        else:
+            result['broker_readable'] = False
+    except OSError as error:
+        result['broker_unavailable'] = str(error)
+    return result
+
+
 class Session:
     def __init__(self, profile, instance, port):
         audio.live.compiled_serial(instance, 1)  # Validate before resource creation.
@@ -68,10 +90,13 @@ class Session:
                     if time.monotonic() >= deadline: raise
                     time.sleep(.02)
         except BaseException as initiating:
+            evidence = attachment_snapshot(port, self.broker)
             try: self.close()
             except BaseException as cleanup:
-                raise RuntimeError(json.dumps(dict(initiating=str(initiating), cleanup=str(cleanup)))) from initiating
-            raise
+                raise RuntimeError(json.dumps(dict(initiating=str(initiating),
+                    attachment=evidence, cleanup=str(cleanup)))) from initiating
+            raise RuntimeError(json.dumps(dict(initiating=str(initiating),
+                attachment=evidence, cleanup=[]))) from initiating
 
     def close(self, abandon=False):
         if self.closed:

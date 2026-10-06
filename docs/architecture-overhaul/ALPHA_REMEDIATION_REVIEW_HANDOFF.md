@@ -1028,3 +1028,41 @@ parses complete policies for numeric-leading and letter-leading revisions with
 real visudo when available; this check passed locally. No command scope or broker
 contract changes. The complete corrected packet still requires administrator
 installation because immutable privileged tooling cannot replace itself.
+
+### Installed 688fc10 provider and short USB acceptance
+
+The installed immutable lab's source/tree and binary hashes were verified. The
+rejection phase passed 33 framing, FD ownership and admission checks plus one
+unauthorized-peer check. The first positive lifecycle attempt failed when its
+handed-off VHCI port was no longer active; this failure remains unexplained and
+must remain visible. A bounded observation run then passed nine normal/abandoned
+sessions across DualSense, DS4 and Xbox 360 with exact serial, ALSA ancestry,
+pre-attachment exclusion, worker diagnostics and repeated cleanup checks.
+Post-handoff process exit and pre-handoff connection exit phases also passed,
+with capacity recovery. The pre-handoff case does not establish worker death
+during construction, because no construction barrier is asserted.
+
+Both worker- and broker-death phases completed their injected failure checks,
+but failed overall in subsequent normal lifecycle probes with the intermittent
+inactive-port symptom. Do not mark either complete recovery phase accepted.
+The sibling/admission client passed, but restoration failed because its USB
+sysfs device was still visible after the VHCI ports became free. The isolation
+rule was retained; the device later disappeared. This is failed restoration,
+not a passing overall sibling phase. Retained privileged evidence remains for
+operator review; do not remove it based solely on remembered resource numbers.
+
+Short USB/IP functional duplex passed separately for all three audio families:
+three measured seconds (144,000 frames) plus two warm-up seconds, exact synthetic
+microphone markers, playback validation, worker counters, unchanged shared
+defaults and complete teardown. This is neither sustained continuity nor route
+transition/native-ownership acceptance. No PipeWire qualification was run.
+Host available memory remained above 18 GiB with zero measured full PSI.
+
+The demonstrated teardown race now receives a bounded five-second wait for
+owned USB disappearance before isolation-rule removal. Identity/content checks
+still run after waiting; timeout retains the rule. Regressions cover delayed
+removal, unchanged live rule while waiting, timeout and changed content. Lifecycle
+startup failures additionally retain a bounded VHCI snapshot and non-consuming
+broker reply/EOF evidence before cleanup, with socket-pair regressions. These
+new lab changes require an immutable administrator update before live validation.
+All six release gates retain remaining required cells and the PR remains draft.
