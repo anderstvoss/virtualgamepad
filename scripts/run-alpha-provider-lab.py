@@ -14,9 +14,11 @@ import os
 from pathlib import Path
 import pwd
 import re
-import resource
 import signal
 import stat
+import socket
+import struct
+import threading
 import subprocess
 import sys
 import tempfile
@@ -157,16 +159,31 @@ class AudioIsolation:
             self.directory_identity = None
 
 
-PHASES = ('rejection', 'provider-lifecycle', 'provider-client-exit', 'usb-functional')
+PHASES = ('rejection', 'provider-lifecycle', 'provider-client-exit', 'provider-client-before-handoff', 'provider-worker-death', 'provider-broker-death', 'provider-siblings-admission', 'usb-functional')
 
 
-def phase_command(phase, images, instance, port):
+def selected_ports(first, additional=()):
+    ports = (first, *additional)
+    if (not 1 <= len(ports) <= 4 or len(set(ports)) != len(ports) or
+            any(type(port) is not int or not 0 <= port <= 65535 for port in ports) or
+            ports != tuple(sorted(ports))):
+        raise ValueError('invalid explicit port allowlist')
+    return ports
+
+
+def phase_command(phase, images, instance, port, additional=()):
     """Only predefined ordinary-client probes; never a privileged shell hook."""
     if phase not in PHASES:
         raise ValueError('unknown predefined provider phase')
     audio_isolation_rule(instance)
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError('invalid authorized phase port')
+    ports = selected_ports(port, additional)
+    if phase == 'provider-siblings-admission':
+        if len(ports) != 4: raise ValueError('sibling/admission phase requires four explicitly authorized ports')
+        return ['/usr/bin/python3','-I',str(images/'validate-broker-lifecycle-live.py'),
+                '--instance',instance,'--port',str(port),'--scenario','siblings-admission',
+                '--ports',*[str(value) for value in ports]]
     if phase == 'rejection':
         return ['/usr/bin/python3', '-I', str(images / 'validate-broker-rejection-live.py')]
     if phase == 'usb-functional':
@@ -174,7 +191,7 @@ def phase_command(phase, images, instance, port):
                 '--instance', instance, '--profile', 'all', '--seconds', '3']
     return ['/usr/bin/python3', '-I', str(images / 'validate-broker-lifecycle-live.py'),
             '--instance', instance, '--port', str(port), '--scenario',
-            'client-exit' if phase == 'provider-client-exit' else 'normal']
+            {'provider-client-exit': 'client-exit', 'provider-client-before-handoff': 'client-before-handoff', 'provider-worker-death': 'worker-death', 'provider-broker-death': 'broker-death'}.get(phase, 'normal')]
 
 
 def installed_executable(properties):
@@ -279,6 +296,56 @@ def process_children(pid, proc_root=Path('/proc')):
         raise RuntimeError('process child ownership could not be verified') from error
 
 
+def worker_snapshot(pid, proc=Path('/proc')):
+    root = proc / str(pid)
+    status = dict(line.split(':', 1) for line in (root / 'status').read_text().splitlines() if ':' in line)
+    fields = (root / 'stat').read_text().rsplit(')', 1)[1].split()
+    executable = (root / 'exe').stat()
+    arguments = (root / 'cmdline').read_bytes()
+    if len(arguments) > 4096: raise RuntimeError('oversized worker launch identity')
+    return dict(start=int(fields[19]), parent=int(fields[1]), uids=status['Uid'].split(),
+                caps=int(status['CapEff'].strip(), 16), nnp=status['NoNewPrivs'].strip(),
+                groups=status['Groups'].split(), image=(executable.st_dev, executable.st_ino),
+                cgroups=(root / 'cgroup').read_text().splitlines(), argv=arguments.split(b'\0')[:-1])
+
+
+def validate_worker(snapshot, parent, uid, image, cgroup, instance, generation, device):
+    argv = snapshot['argv']
+    if (snapshot['parent'] != parent or snapshot['uids'] != [str(uid)]*4 or
+            snapshot['caps'] != 0 or snapshot['nnp'] != '1' or snapshot['groups'] or
+            snapshot['image'] != image or snapshot['cgroups'] != ['0::' + cgroup] or
+            len(argv) != 9 or argv[1] not in (b'dualsense', b'dualshock4', b'xbox360') or
+            argv[2:4] != [str(device).encode(), str(generation).encode()] or
+            argv[5] != instance.encode()):
+        raise RuntimeError('worker process identity is not the owned session')
+
+
+class PinnedWorker:
+    """A pidfd capability, acquired only after matching root-owned evidence."""
+    def __init__(self, pid, verify):
+        before = worker_snapshot(pid)
+        verify(before)
+        self.descriptor = os.pidfd_open(pid)
+        try:
+            after = worker_snapshot(pid)
+            verify(after)
+            if before != after: raise RuntimeError('worker identity changed during reservation')
+        except BaseException:
+            os.close(self.descriptor)
+            self.descriptor = None
+            raise
+
+    def kill(self):
+        if self.descriptor is None: raise RuntimeError('owned process handle is closed')
+        try: signal.pidfd_send_signal(self.descriptor, signal.SIGKILL)
+        except ProcessLookupError: pass  # The held capability cannot select a replacement PID.
+
+    def close(self):
+        if self.descriptor is not None:
+            os.close(self.descriptor)
+            self.descriptor = None
+
+
 def maintenance(backend):
     saved = backend.snapshot()
     backend.preflight(saved)
@@ -316,6 +383,7 @@ class Host:
         self.args = args
         self.owned = []
         self.units = []
+        self.unit_images = {}
         self.root = None
         self.client_attempted = False
         self.client_units = []
@@ -327,11 +395,9 @@ class Host:
     def run(self, argv, timeout=15):
         # Regular-file spooling plus inherited/unit quotas prevent a verbose
         # validator from exhausting the privileged supervisor's memory or disk.
-        def limits():
-            resource.setrlimit(resource.RLIMIT_FSIZE, (OUTPUT_LIMIT, OUTPUT_LIMIT))
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
-            result = subprocess.run(argv, stdout=stdout, stderr=stderr, timeout=timeout,
-                                    preexec_fn=limits,
+            result = subprocess.run(['/usr/bin/prlimit', '--fsize='+str(OUTPUT_LIMIT), '--', *argv],
+                                    stdout=stdout, stderr=stderr, timeout=timeout,
                                     env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'})
             stdout.seek(0); stderr.seek(0)
             output = stdout.read(OUTPUT_LIMIT + 1)
@@ -393,6 +459,7 @@ class Host:
         require_executable_staging()
         trusted(STATE, directory=True)
         trusted(Path('/usr/bin/setpriv'))
+        trusted(Path('/usr/bin/prlimit'))
         self.assert_idle(saved)
         # The original installation is restoration evidence, never candidate
         # provenance. Preserve exact images/configuration rather than replacing them.
@@ -407,7 +474,8 @@ class Host:
                 raise RuntimeError('original unit provenance is unavailable')
             self.original_images[str(path)] = fingerprint(path)
         self.events.append(dict(original_installation=self.original_images.copy()))
-        free_port(VHCI.read_text(), self.args.port)
+        for port in selected_ports(self.args.port, self.args.additional_port):
+            free_port(VHCI.read_text(), port)
         for uid in (self.args.client_uid, self.args.worker_uid, self.args.unauthorized_uid):
             if uid <= 0:
                 raise RuntimeError('all test identities must be non-root')
@@ -454,7 +522,7 @@ class Host:
         self.create_dir(STATE / (self.instance + '.audio'))
         for source, expected, name in ((self.args.broker, self.args.broker_hash, 'gr-privileged-broker'),
                                       (self.args.worker, self.args.worker_hash, 'gr-audio-worker')):
-            fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+            fd = os.open(source, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
             with os.fdopen(fd, 'rb') as image:
                 if not stat.S_ISREG(os.fstat(image.fileno()).st_mode):
                     raise RuntimeError('candidate image must be a regular file')
@@ -464,7 +532,8 @@ class Host:
             self.write(self.root / 'bin' / name, data, 0o755)
         worker = pwd.getpwuid(self.args.worker_uid)
         config = (f'allow_uid={self.args.client_uid}\ninstance={self.instance}\n'
-                  f'allow_vhci_port={self.args.port}\nworker_uid={worker.pw_uid}\nworker_gid={worker.pw_gid}\n')
+                  ''.join(f'allow_vhci_port={port}\n' for port in selected_ports(self.args.port,self.args.additional_port))+
+                  f'worker_uid={worker.pw_uid}\nworker_gid={worker.pw_gid}\n')
         self.write(self.root / 'broker.conf', config.encode())
         self.service = self.instance + '.service'
         self.socket = self.instance + '.socket'
@@ -480,6 +549,7 @@ class Host:
         for name, text in ((self.service, service_text), (self.socket, socket_text)):
             self.write(Path('/run/systemd/system') / name, text.encode())
             self.units.append(name)
+            self.unit_images[name] = fingerprint(Path("/run/systemd/system") / name)
         self.run(['systemctl', 'daemon-reload'])
 
     def start_candidate(self):
@@ -488,13 +558,22 @@ class Host:
 
     def execute(self):
         if self.args.phase:
-            command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port)
-            self.run_client(self.args.client_uid, command, 'client')
-            if self.args.phase == 'provider-client-exit':
+            command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
+            if self.args.phase in ('provider-worker-death','provider-broker-death'):
+                self.worker_death(command)
+            else:
+                self.run_client(self.args.client_uid, command, 'client')
+            if self.args.phase in ('provider-client-exit', 'provider-client-before-handoff'):
                 deadline = time.monotonic() + 5
                 while True:
                     try:
                         free_port(VHCI.read_text(), self.args.port)
+                        if any((STATE / (self.instance+'.audio')).iterdir()):
+                            raise RuntimeError('owned journal cleanup remains pending')
+                        # A pre-handoff close can race construction. Confirm the
+                        # broker has no worker children, not just a momentary free port.
+                        parent = int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())
+                        if parent and process_children(parent): raise RuntimeError('owned construction is still active')
                         break
                     except RuntimeError:
                         if time.monotonic() >= deadline: raise
@@ -509,6 +588,132 @@ class Host:
                             'unauthorized')
         if self.args.restart_empty:
             self.restart_empty_candidate()
+
+    def worker_death(self, command):
+        path = self.root / 'fault.sock'
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(str(path)); self.remember(path)
+        os.chown(path, 0, pwd.getpwuid(self.args.client_uid).pw_gid)
+        path.chmod(0o660); listener.listen(1); listener.settimeout(.2)
+        cancelled = threading.Event()
+        failures = []
+        def supervise():
+            try:
+                for _ in range(3):
+                    deadline = time.monotonic() + 20
+                    while True:
+                        if cancelled.is_set(): return
+                        try: peer, _ = listener.accept(); break
+                        except socket.timeout:
+                            if time.monotonic() >= deadline: raise TimeoutError('owned fault client did not become ready')
+                    with peer:
+                        peer.settimeout(5)
+                        client_pid, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+                        client_group = self.run(['systemctl', 'show', self.instance+'-client.service', '-p', 'ControlGroup', '--value']).strip()
+                        if uid != self.args.client_uid or (Path('/proc')/str(client_pid)/'cgroup').read_text().splitlines() != ['0::'+client_group]:
+                            raise RuntimeError('fault request did not originate in the owned client unit')
+                        data = bytearray()
+                        while not data.endswith(b'\n'):
+                            chunk = peer.recv(128)
+                            if not chunk: raise EOFError('fault readiness ended')
+                            data.extend(chunk)
+                            if len(data)>256: raise ValueError('oversized fault readiness')
+                        request = json.loads(data)
+                        if (set(request) != {'generation', 'device'} or
+                                type(request['generation']) is not int or not 0 < request['generation'] < 2**64 or
+                                type(request['device']) is not int or not 0 < request['device'] < 2**32):
+                            raise ValueError('invalid fault readiness identity')
+                        generation, device = request['generation'], request['device']
+                        record = STATE / (self.instance+'.audio') / f'{generation:016x}'
+                        trusted(record)
+                        record_identity = identity(record)
+                        if record.read_bytes() != f'1 {generation} {device} {self.args.port}\n'.encode():
+                            raise RuntimeError('fault request differs from root-owned journal')
+                        parent = int(self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).strip())
+                        group = self.run(['systemctl', 'show', self.service, '-p', 'ControlGroup', '--value']).strip()
+                        image = identity(self.root/'bin/gr-audio-worker')
+                        held = []
+                        try:
+                            for pid in process_children(parent):
+                                try:
+                                    verify = lambda snapshot: validate_worker(snapshot, parent, self.args.worker_uid,
+                                        image, group, self.instance, generation, device)
+                                    held.append(PinnedWorker(pid, verify))
+                                except RuntimeError: continue
+                            if len(held) != 1: raise RuntimeError('owned session worker is absent or ambiguous')
+                            if self.args.phase == 'provider-broker-death':
+                                self.broker_death(parent, group, held[0], record, record_identity, generation, device)
+                                peer.sendall(b'B')
+                            else:
+                                held[0].kill()
+                                self.events.append(dict(injected_worker_death=dict(generation=generation, device=device, pidfd=True)))
+                                peer.sendall(b'K')
+                        finally:
+                            for worker in held: worker.close()
+            except BaseException as error: failures.append(str(error))
+        worker = threading.Thread(target=supervise)
+        worker.start()
+        initiating = None
+        try:
+            self.run_client(self.args.client_uid, [*command, '--fault-socket', str(path)], 'client')
+        except BaseException as error: initiating = str(error)
+        finally:
+            cancelled.set(); worker.join(timeout=10); listener.close()
+        if worker.is_alive(): failures.append('owned fault supervisor did not terminate')
+        if initiating is not None or failures:
+            raise RuntimeError(json.dumps(dict(initiating=initiating, supervisor=failures)))
+        self.run_client(self.args.client_uid,
+                        phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port),
+                        'after-worker-death')
+
+    def broker_death(self, parent, group, worker, record, expected, generation, device):
+        import select
+        image = identity(self.root/'bin/gr-privileged-broker')
+        def verify(snapshot):
+            if (snapshot['uids']!=['0']*4 or snapshot['image']!=image or
+                    snapshot['cgroups']!=['0::'+group] or snapshot['nnp']!='1' or
+                    snapshot['argv'][1:]!=[b'--socket-activation',b'--config',str(self.root/'broker.conf').encode()]):
+                raise RuntimeError('broker process identity is not the staged owned unit')
+        broker = PinnedWorker(parent,verify)
+        self.owned.append((record, expected, False))  # Register before injected failure.
+        data = f'1 {generation} {device} {self.args.port}\n'.encode()
+        try:
+            broker.kill()
+            if not select.select([worker.descriptor],[],[],5)[0]:
+                raise RuntimeError('owned worker survived broker death')
+        finally: broker.close()
+        self.run(['systemctl','stop',self.socket])
+        self.run(['systemctl','stop',self.service])
+        deadline=time.monotonic()+5
+        while True:
+            try:
+                for port in selected_ports(self.args.port,self.args.additional_port): free_port(VHCI.read_text(),port)
+                break
+            except RuntimeError:
+                if time.monotonic()>=deadline: raise RuntimeError('owned attachment survived broker death')
+                time.sleep(.02)
+        if identity(record)!=expected or record.read_bytes()!=data:
+            raise RuntimeError('pending journal identity changed; operator restoration refused')
+        self.run(['systemctl','reset-failed',self.service])
+        self.start_candidate()
+        self.run_client(self.args.client_uid,
+            ['/usr/bin/python3','-I',str(self.args.probe_directory/'validate-broker-lifecycle-live.py'),
+             '--instance',self.instance,'--port',str(self.args.port),'--scenario','startup-rejection'],
+            'pending-restart-'+str(generation))
+        state=self.run(['systemctl','show',self.service,'-p','ActiveState','--value']).strip()
+        if state!='failed' or identity(record)!=expected or record.read_bytes()!=data:
+            raise RuntimeError('pending restart was not rejected with journal preserved')
+        self.run(['systemctl','stop',self.socket]); self.run(['systemctl','stop',self.service])
+        for port in selected_ports(self.args.port,self.args.additional_port): free_port(VHCI.read_text(),port)
+        if int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())!=0:
+            raise RuntimeError('candidate broker remains alive; journal not cleared')
+        # The root supervisor retained pidfds and exact inode/content while the
+        # failure occurred. Reusable record fields alone never authorize cleanup.
+        remove_owned(record,expected)
+        self.run(['systemctl','reset-failed',self.service]); self.start_candidate()
+        self.events.append(dict(broker_death_recovery=dict(generation=generation,device=device,
+            worker_exit_verified=True,attachment_removed=True,pending_restart_rejected=True,
+            journal_cleared_by_held_identity=True)))
 
     def restart_empty_candidate(self):
         # Only an empty lab may restart: this does not test stale attachment
@@ -558,8 +763,13 @@ class Host:
             try:
                 state = self.run(['systemctl', 'show', unit, '-p', 'LoadState', '--value']).strip()
                 if state != 'not-found':
+                    if unit in self.units:
+                        path = Path('/run/systemd/system') / unit
+                        fragment = self.run(['systemctl', 'show', unit, '-p', 'FragmentPath', '--value']).strip()
+                        if fragment != str(path) or fingerprint(path) != self.unit_images[unit]:
+                            raise RuntimeError('candidate unit identity changed; refusing to stop it')
                     self.run(['systemctl', 'stop', unit])
-            except subprocess.SubprocessError as error:
+            except (subprocess.SubprocessError, RuntimeError) as error:
                 errors.append(str(error))
         if errors:
             raise RuntimeError('; '.join(errors))
@@ -574,7 +784,8 @@ class Host:
         deadline = time.monotonic() + 5
         while True:
             try:
-                free_port(VHCI.read_text(), self.args.port)
+                for port in selected_ports(self.args.port, self.args.additional_port):
+                    free_port(VHCI.read_text(), port)
                 break
             except RuntimeError:
                 if time.monotonic() >= deadline:
@@ -623,6 +834,7 @@ def main():
     parser.add_argument('--probe-directory', type=Path,
                         help='immutable administrator-installed phase probe directory')
     parser.add_argument('--port', type=int)
+    parser.add_argument('--additional-port', type=int, action='append', default=[], help='explicit unused additional port, at most three')
     parser.add_argument('--timeout', type=int, default=300)
     parser.add_argument('--report', type=Path)
     parser.add_argument('command', nargs=argparse.REMAINDER)
@@ -661,6 +873,8 @@ def main():
             not re.fullmatch('[0-9a-f]{40}', args.revision) or
             not all(re.fullmatch('[0-9a-f]{64}', h) for h in (args.broker_hash, args.worker_hash))):
         parser.error('complete approved candidate/identity/port/report arguments are required')
+    try: selected_ports(args.port, args.additional_port)
+    except ValueError as error: parser.error(str(error))
     for parent in args.report.absolute().parents:
         trusted(parent, directory=True)
     if args.unauthorized_probe:

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import subprocess
 import sys
+import os
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location('provider_lab', Path(__file__).parents[1] / 'run-alpha-provider-lab.py')
@@ -120,7 +121,7 @@ class PredefinedProviderPhases(unittest.TestCase):
     def test_only_closed_phase_names_and_compiled_arguments_are_accepted(self):
         images = Path('/synthetic/immutable')
         for phase in lab.PHASES:
-            command = lab.phase_command(phase, images, 'lab', 0)
+            command = lab.phase_command(phase, images, 'lab', 0, (1,2,3))
             self.assertEqual(command[:2], ['/usr/bin/python3', '-I'])
             self.assertTrue(Path(command[2]).is_relative_to(images))
             self.assertNotIn('/bin/sh', command)
@@ -129,11 +130,116 @@ class PredefinedProviderPhases(unittest.TestCase):
         for port in [-1, True, 65536]:
             with self.assertRaises(ValueError): lab.phase_command('usb-functional', images, 'lab', port)
 
+    def test_explicit_port_allowlist_rejects_duplicates_overflow_and_bools(self):
+        self.assertEqual(lab.selected_ports(0,(1,2,3)), (0,1,2,3))
+        for first, additional in [(0,(0,)), (0,(1,2,3,4)), (-1,()), (0,(True,)), (0,(65536,))]:
+            with self.assertRaises(ValueError): lab.selected_ports(first,additional)
+        with self.assertRaises(ValueError): lab.phase_command('provider-siblings-admission', Path('/synthetic'), 'lab',0)
+
     def test_invalid_phase_refuses_even_dry_run_without_privileges(self):
         completed = subprocess.run([sys.executable, '-I', str(Path(lab.__file__)),
                                     '--phase', 'arbitrary'], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 2)
         self.assertIn('invalid choice', completed.stderr)
+
+
+class WorkerFaultOwnership(unittest.TestCase):
+    def snapshot(self):
+        return dict(start=123, parent=42, uids=['997']*4, caps=0, nnp='1', groups=[],
+                    image=(1,2), cgroups=['0::/system.slice/owned.service'],
+                    argv=[b'worker', b'dualsense', b'9', b'7', b'020102030405', b'lab', b'11', b'12', b'13'])
+
+    def verify(self, snapshot):
+        lab.validate_worker(snapshot, 42, 997, (1,2), '/system.slice/owned.service', 'lab', 7, 9)
+
+    @unittest.skipUnless(hasattr(os, 'pidfd_open') and hasattr(lab.signal, 'pidfd_send_signal'), 'Linux pidfds unavailable')
+    def test_actual_pidfd_terminates_only_a_child_owned_by_this_test(self):
+        child = subprocess.Popen(['/usr/bin/sleep', '30'])
+        held = None
+        try:
+            def verify(snapshot):
+                if snapshot['parent'] != os.getpid(): raise RuntimeError('synthetic child parent changed')
+            held = lab.PinnedWorker(child.pid, verify)
+            held.kill()
+            self.assertEqual(child.wait(timeout=3), -lab.signal.SIGKILL)
+        finally:
+            if held is not None: held.close()
+            if child.poll() is None: child.kill(); child.wait(timeout=3)
+
+    def test_identity_requires_root_unit_image_parent_credentials_and_generation(self):
+        original = self.snapshot(); self.verify(original)
+        for key, changed in [('parent',43), ('uids',['0']*4), ('caps',1), ('nnp','0'), ('groups',['1']),
+                             ('image',(1,3)), ('cgroups',['0::/foreign']), ('argv',[b'foreign'])]:
+            with self.subTest(key=key), self.assertRaisesRegex(RuntimeError, 'owned session'):
+                self.verify({**original, key:changed})
+        for index, changed in [(2,b'10'),(3,b'8'),(5,b'foreign')]:
+            argv = original['argv'].copy(); argv[index]=changed
+            with self.assertRaises(RuntimeError): self.verify({**original,'argv':argv})
+
+    def test_pidfd_is_acquired_after_validation_and_is_closed_idempotently(self):
+        with patch.object(lab, 'worker_snapshot', return_value=self.snapshot()), \
+             patch.object(lab.os, 'pidfd_open', return_value=77) as opened, \
+             patch.object(lab.os, 'close') as closed, patch.object(lab.signal, 'pidfd_send_signal') as sent:
+            worker = lab.PinnedWorker(100, self.verify)
+            worker.kill(); worker.close(); worker.close()
+            opened.assert_called_once_with(100)
+            sent.assert_called_once_with(77, lab.signal.SIGKILL)
+            closed.assert_called_once_with(77)
+            with self.assertRaises(RuntimeError): worker.kill()
+
+    def test_identity_change_after_pidfd_open_refuses_signal_and_closes_handle(self):
+        with patch.object(lab, 'worker_snapshot', side_effect=[self.snapshot(), {**self.snapshot(),'start':124}]), \
+             patch.object(lab.os, 'pidfd_open', return_value=77), patch.object(lab.os, 'close') as closed, \
+             patch.object(lab.signal, 'pidfd_send_signal') as sent:
+            with self.assertRaisesRegex(RuntimeError, 'changed'): lab.PinnedWorker(100, self.verify)
+            closed.assert_called_once_with(77); sent.assert_not_called()
+
+    def test_foreign_identity_never_opens_a_process_capability(self):
+        with patch.object(lab, 'worker_snapshot', return_value={**self.snapshot(),'image':(9,9)}), \
+             patch.object(lab.os, 'pidfd_open') as opened:
+            with self.assertRaises(RuntimeError): lab.PinnedWorker(100,self.verify)
+            opened.assert_not_called()
+
+
+class BrokerCrashRestoration(unittest.TestCase):
+    def test_pending_restart_preserves_journal_and_operator_clear_requires_held_identity(self):
+        for changed in (False,True):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); (root/'bin').mkdir(); (root/'bin/gr-privileged-broker').write_bytes(b'synthetic image')
+                record=root/'record'; record.write_bytes(b'1 7 9 0\n'); expected=lab.identity(record)
+                vhci=root/'status'; vhci.write_text('hub port sta spd dev sockfd local_busid\nhs 0 004 000 0 0 0-0\n')
+                host=lab.Host(Mock(port=0,additional_port=[],client_uid=42,probe_directory=root))
+                host.root=root; host.instance='lab'; host.service='owned.service'; host.socket='owned.socket'
+                host.run=Mock(side_effect=lambda command: 'failed' if 'ActiveState' in command else '0')
+                host.start_candidate=Mock()
+                def rejected(uid,command,suffix):
+                    self.assertEqual(record.read_bytes(),b'1 7 9 0\n')
+                    self.assertIn('startup-rejection',command)
+                    if changed: record.write_bytes(b'synthetic changed record')
+                host.run_client=Mock(side_effect=rejected)
+                worker=Mock(descriptor=77); broker=Mock()
+                with patch.object(lab,'PinnedWorker',return_value=broker), \
+                     patch.object(lab,'VHCI',vhci), patch('select.select',return_value=([77],[],[])):
+                    if changed:
+                        with self.assertRaisesRegex(RuntimeError,'journal preserved'):
+                            host.broker_death(100,'/owned',worker,record,expected,7,9)
+                        self.assertEqual(record.read_bytes(),b'synthetic changed record')
+                    else:
+                        host.broker_death(100,'/owned',worker,record,expected,7,9)
+                        self.assertFalse(record.exists())
+                        self.assertTrue(host.events[-1]['broker_death_recovery']['pending_restart_rejected'])
+                broker.kill.assert_called_once(); broker.close.assert_called_once()
+                self.assertIn((record,expected,False),host.owned)
+
+    def test_worker_survival_retains_evidence_and_never_starts_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); (root/'bin').mkdir(); (root/'bin/gr-privileged-broker').write_bytes(b'synthetic image')
+            record=root/'record'; record.write_bytes(b'1 7 9 0\n')
+            host=lab.Host(Mock(port=0,additional_port=[])); host.root=root; host.run=Mock()
+            broker=Mock()
+            with patch.object(lab,'PinnedWorker',return_value=broker),patch('select.select',return_value=([],[],[])):
+                with self.assertRaisesRegex(RuntimeError,'survived'): host.broker_death(100,'/owned',Mock(descriptor=77),record,lab.identity(record),7,9)
+            host.run.assert_not_called(); self.assertTrue(record.exists()); broker.close.assert_called_once()
 
 
 class Fake:
@@ -225,7 +331,7 @@ class ReversibleMaintenance(unittest.TestCase):
             host.run([sys.executable, '-c', 'print("x" * 2000000)'])
         self.assertNotEqual(host.events[-1]['status'], 0)
     def test_client_privilege_drop_is_explicit_before_the_validator(self):
-        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None, restart_empty=False, phase=None)
+        args = Mock(client_uid=1001, timeout=30, command=['/synthetic/validator'], unauthorized_probe=None, restart_empty=False, phase=None, additional_port=[])
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -239,7 +345,7 @@ class ReversibleMaintenance(unittest.TestCase):
 
     def test_unauthorized_identity_is_distinct_and_registered_before_startup(self):
         args = Mock(client_uid=1001, unauthorized_uid=1003, timeout=30,
-                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False, phase=None)
+                    command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False, phase=None, additional_port=[])
         host = lab.Host(args)
         host.instance = 'synthetic-instance'
         host.root = Path('/synthetic/lab')
@@ -379,3 +485,23 @@ class ReversibleMaintenance(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class UnitStopOwnership(unittest.TestCase):
+    def test_replaced_candidate_unit_is_never_stopped(self):
+        host = lab.Host(Mock())
+        host.units = ['synthetic.service']
+        host.unit_images = {'synthetic.service': {'sha256': 'owned'}}
+        host.run = Mock(side_effect=['loaded', '/run/systemd/system/synthetic.service'])
+        with patch.object(lab, 'fingerprint', return_value={'sha256': 'foreign'}):
+            with self.assertRaisesRegex(RuntimeError, 'identity changed'): host.stop_candidate()
+        self.assertFalse(any('stop' in call.args[0] for call in host.run.call_args_list))
+
+    def test_owned_candidate_unit_stops_and_absent_unit_is_idempotent(self):
+        host = lab.Host(Mock())
+        host.units = ['synthetic.service']
+        host.unit_images = {'synthetic.service': {'sha256': 'owned'}}
+        host.run = Mock(side_effect=['loaded', '/run/systemd/system/synthetic.service', '', 'not-found'])
+        with patch.object(lab, 'fingerprint', return_value={'sha256': 'owned'}):
+            host.stop_candidate(); host.stop_candidate()
+        self.assertEqual(sum('stop' in call.args[0] for call in host.run.call_args_list), 1)

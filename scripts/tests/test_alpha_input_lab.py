@@ -17,6 +17,16 @@ spec.loader.exec_module(lab)
 
 
 class InputIsolation(unittest.TestCase):
+    def test_acl_based_creation_keeps_client_nonroot_and_uses_input_read_group(self):
+        with patch.object(lab.Path, 'stat', return_value=SimpleNamespace(st_gid=0)), \
+             patch.object(lab.grp,'getgrnam',return_value=SimpleNamespace(gr_gid=1003)) as configured:
+            self.assertEqual(lab.creation_group(),1003)
+            configured.assert_called_once_with('input')
+        with patch.object(lab.Path,'stat',return_value=SimpleNamespace(st_gid=1004)), \
+             patch.object(lab.grp,'getgrnam') as configured:
+            self.assertEqual(lab.creation_group(),1004)
+            configured.assert_not_called()
+
     def test_rules_select_one_pid_and_never_change_unrelated_device_permissions(self):
         text = lab.rule(42)
         self.assertIn('ATTRS{phys}=="virtualgamepad/*/p2a-i*"', text)

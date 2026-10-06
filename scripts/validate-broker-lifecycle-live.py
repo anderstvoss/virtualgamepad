@@ -121,19 +121,124 @@ def exercise(profile, instance, port, cycles=2):
     return receipts
 
 
+def exit_before_handoff(instance, port):
+    audio.live.compiled_serial(instance, 1)
+    peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        peer.settimeout(2); peer.connect('/run/virtualgamepad/broker.sock')
+        _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        if uid != 0: raise RuntimeError('broker is not root')
+        audio.message(peer, 2, 1, bytes([1,2,1,2,3,4,5]))
+        peer.shutdown(socket.SHUT_RDWR)
+    finally: peer.close()
+    # The server may still be constructing a session. The supervisor waits for
+    # bounded attachment/journal cleanup before recreating the positive session.
+    print(json.dumps(dict(event='client-disconnected-before-handoff', port=port)), flush=True)
+
+
+def worker_death(profile, instance, port, fault_socket, broker_death=False):
+    before = fd_count()
+    session = Session(profile, instance, port)
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as supervisor:
+            supervisor.settimeout(10); supervisor.connect(str(fault_socket))
+            _, uid, _ = struct.unpack('3i', supervisor.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+            if uid != 0: raise RuntimeError('fault supervisor is not root')
+            supervisor.sendall(json.dumps(dict(generation=session.generation, device=session.device)).encode()+b'\n')
+            if supervisor.recv(1) != (b'B' if broker_death else b'K'): raise RuntimeError('fault supervisor did not confirm injection')
+        session.broker.settimeout(5)
+        if broker_death:
+            error = b'owned broker terminated; connection closed'
+            try:
+                if session.broker.recv(1)!=b'': raise RuntimeError('dead broker connection remained open')
+            except ConnectionResetError: pass
+        else:
+            version, tag, error = audio.reply(session.broker)
+            if (version, tag) != (2, 0x81) or not error.startswith(b'audio worker exited: '):
+                raise RuntimeError('worker death did not produce the exact terminal error')
+            if session.broker.recv(1) != b'': raise RuntimeError('worker-death connection remained open')
+        for channel in session.channels:
+            channel.settimeout(5)
+            if channel.recv(1) != b'': raise RuntimeError('worker-death channel remained open')
+    finally:
+        session.close(abandon=True)
+    if fd_count() != before: raise RuntimeError('worker-death descriptor ownership did not return to baseline')
+    return dict(profile=profile, generation=session.generation, terminal_error=error.decode(), cleanup=True)
+
+
+def capacity_rejection():
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+        peer.settimeout(5); peer.connect('/run/virtualgamepad/broker.sock')
+        _, uid, _ = struct.unpack('3i',peer.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+        if uid != 0: raise RuntimeError('broker is not root')
+        audio.message(peer,2,1,bytes([1,2,1,2,3,4,5]))
+        if audio.reply(peer) != (2,0x81,b'broker resource limit reached'):
+            raise RuntimeError('per-peer admission did not produce exact rejection')
+        if peer.recv(1) != b'': raise RuntimeError('rejected admission connection remained open')
+
+
+def siblings_and_admission(instance, ports):
+    if len(ports) != 4 or len(set(ports)) != 4 or any(not 0 <= port <= 65535 for port in ports):
+        raise ValueError('four distinct explicitly authorized ports required')
+    before = fd_count(); sessions=[]; cleanup=[]; initiating=None; receipts=[]
+    try:
+        for profile,port in zip(['dualsense','dualshock4','xbox360','dualsense'],ports):
+            sessions.append(Session(profile,instance,port))
+        capacity_rejection()
+        removed = sessions[1].generation
+        sessions[1].close()
+        for index,session in enumerate(sessions):
+            if index != 1: audio.worker_diagnostics(session.channels[0],session.generation)
+        sessions[1] = Session('dualshock4',instance,ports[1])
+        if sessions[1].generation == removed: raise RuntimeError('capacity recovery reused an identity')
+        for session in sessions:
+            receipts.append(dict(generation=session.generation,serial=session.isolation['serial'],
+                                 diagnostics=audio.worker_diagnostics(session.channels[0],session.generation)))
+    except BaseException as error: initiating=str(error)
+    finally:
+        for session in reversed(sessions):
+            try: session.close(); session.close()
+            except BaseException as error: cleanup.append(str(error))
+    if fd_count()!=before: cleanup.append('sibling descriptors did not return to baseline')
+    if initiating is not None or cleanup: raise RuntimeError(json.dumps(dict(initiating=initiating,cleanup=cleanup)))
+    return receipts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--instance', required=True)
     parser.add_argument('--port', type=int, required=True)
-    parser.add_argument('--scenario', choices=['normal', 'client-exit'], default='normal')
+    parser.add_argument('--scenario', choices=['normal', 'client-exit', 'client-before-handoff', 'worker-death','broker-death','startup-rejection','siblings-admission'], default='normal')
+    parser.add_argument('--fault-socket', type=Path)
+    parser.add_argument('--ports', type=int, nargs='+')
     args = parser.parse_args()
     if os.geteuid() == 0: parser.error('client must run without root privileges')
     if not 0 <= args.port <= 65535: parser.error('invalid authorized port')
     audio.live.compiled_serial(args.instance, 1)
+    if args.scenario == 'startup-rejection':
+        with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as peer:
+            peer.settimeout(5); peer.connect('/run/virtualgamepad/broker.sock')
+            try:
+                if peer.recv(1)!=b'': raise RuntimeError('pending journal unexpectedly admitted a client')
+            except ConnectionResetError: pass
+        print(json.dumps(dict(status='passed',scenario='pending-startup-rejected')),flush=True)
+        return
+    if args.scenario == 'siblings-admission':
+        if args.ports is None: parser.error('four authorized ports required')
+        print(json.dumps(dict(status='passed',scenario='siblings-admission',sessions=siblings_and_admission(args.instance,args.ports))),flush=True)
+        return
+    if args.scenario == 'client-before-handoff':
+        exit_before_handoff(args.instance, args.port)
+        return
     if args.scenario == 'client-exit':
         session = Session('dualsense', args.instance, args.port)
         print(json.dumps(dict(event='verified-client-exit', generation=session.generation)), flush=True)
         os._exit(0)  # Deliberately bypass application cleanup after handoff.
+    if args.scenario in ('worker-death','broker-death'):
+        if args.fault_socket is None or not args.fault_socket.is_absolute(): parser.error('immutable supervisor socket is required')
+        receipts = [worker_death(profile, args.instance, args.port, args.fault_socket, args.scenario=='broker-death') for profile in audio.live.PROFILES]
+        print(json.dumps(dict(status='passed', scenario=args.scenario, sessions=receipts)), flush=True)
+        return
     receipts = []
     for profile in audio.live.PROFILES:
         receipts.extend(exercise(profile, args.instance, args.port))

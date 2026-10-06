@@ -111,3 +111,48 @@ focus surrender and Hold behavior. Previous-frame focus is retained because the
 normal egui focus-loss edge can disappear before the next draw after containing
 view focus surrender. The same completion helper is used for gyro and accel axes.
 This correction does not close the full interactive inventory or soak gate.
+
+## Reboot-aware continuation and bounded acceptance tooling
+
+The VM restarted before the previous GUI soak produced a final receipt. That run
+is interrupted, not accepted. A maintained neutral soak runner now records the
+boot ID, frozen executable hash, persistent samples and final cleanup; its owned
+unit has a 1 GiB memory ceiling and checks global available memory and pressure.
+Its 60-second smoke completed with clean teardown and a 243 MiB cgroup peak. A new
+7200-second trial is running; it is not accepted until its final receipt and
+resource trend have been inspected. Raw receipts remain outside tracked source.
+
+The C independent audio control now assigns a unique stereo block/phase marker to
+each measured frame. A regression demonstrates that a missing frame and duplicate
+within an old 128-frame block could otherwise cancel in totals. Qualification
+requires zero missing, duplicated, corrupt or reordered frames and a complete
+bounded event ledger. This corrects a harness blind spot; it does not resolve the
+historical 4608-frame graph loss or qualify the VM. No new product continuity
+claim is made. Ledger exports happen after teardown, not in realtime callbacks.
+
+Positive provider probes now cover four-session admission exhaustion, sibling
+removal and fresh-generation capacity recovery, verified client exit, worker death
+and broker death. Root fault injection pins process identity with pidfds, verifies
+worker privileges/image/cgroup and journal identity, and rejects stale startup
+before clearing only an authoritative matching owned record. Candidate unit
+identity is checked before stopping it. Synthetic regressions cover changed
+identities, partial construction, combined initiating/cleanup errors and repeated
+restoration. These phases have not been installed or run against live attachments.
+The old scoped helper remains incompatible with the session-aware serial ABI.
+
+The maintained Steam runner hides the real account home, uses a private bus,
+disposable public rootfs and disk-backed private home/tmp, and caps its owned unit
+at 2 GiB. Memory guards interrupted earlier bounded bootstrap attempts; retaining
+RAM-backed rootfs data was demonstrated in these new attempts, not established as
+the cause of the earlier VM reboot. The latest attempt reached the actual Steam
+setup window and timed out at 120 seconds, with complete owned cleanup. There is
+no login, controller-recognition or Steam acceptance receipt yet. Rootfs extraction
+streams regular files, drops their cache and confines archive links to the guest.
+No user profile or credentials are copied.
+
+Current checkpoint: 232 Python tooling tests pass; the five required workspace
+commands passed before the final Python-only additions and need final-candidate
+receipts. No dependencies added. Gates 1–6 remain open, PR #133 stays draft, and
+alpha remains not ready. Reviewers must distinguish deterministic supervisor tests,
+bounded bootstrap/smoke evidence and live product acceptance. Next interventions
+must install one complete immutable named-phase package, not grant broad sudo.

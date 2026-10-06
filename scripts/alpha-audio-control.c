@@ -21,7 +21,7 @@ struct event {
     uint64_t stamp, begin, end, ticks, sequence;
     uint32_t frames, measured, first, last, flags;
     int queue_result;
-    bool capture, header_present;
+    bool capture, header_present, buffer_dequeued;
 };
 
 struct clock_observation {
@@ -63,6 +63,7 @@ struct control {
     struct pw_stream *source, *sink;
     bool ready[2];
     uint64_t cursor, submitted, received, invalid, partial, errors;
+    uint64_t last_received_frame, out_of_order;
     uint64_t planned, first_ns, last_ns, deadline_ns;
     uint32_t *counts;
     uint64_t source_ticks, sink_ticks, source_queued_max, sink_queued_max;
@@ -94,19 +95,19 @@ static int export_ledger(const struct control *c, const char *path) {
     if (!output) return -1;
     for (unsigned i = 0; i < c->ledger_length; i++) {
         const struct event *e = &c->ledger[i];
-        fprintf(output, "{\"capture\":%s,\"stamp_ns\":%" PRIu64
+        fprintf(output, "{\"capture\":%s,\"buffer_dequeued\":%s,\"stamp_ns\":%" PRIu64
             ",\"producer_begin\":%" PRIu64 ",\"producer_end\":%" PRIu64
             ",\"graph_ticks\":%" PRIu64 ",\"frames\":%u,\"measured_frames\":%u"
             ",\"first_marker\":%u,\"last_marker\":%u,\"chunk_flags\":%u"
             ",\"queue_result\":%d,\"header_sequence\":",
-            e->capture ? "true" : "false", e->stamp, e->begin, e->end, e->ticks,
+            e->capture ? "true" : "false", e->buffer_dequeued ? "true" : "false", e->stamp, e->begin, e->end, e->ticks,
             e->frames, e->measured, e->first, e->last, e->flags, e->queue_result);
         if (e->header_present) fprintf(output, "%" PRIu64, e->sequence);
         else fputs("null", output);
         fputs("}\n", output);
     }
     fputs("{\"marker_counts\":[", output);
-    for (unsigned i = 0; i < c->blocks; i++) fprintf(output, "%s%u", i ? "," : "", c->counts[i]);
+    for (unsigned i = 0; i < c->blocks*128; i++) fprintf(output, "%s%u", i ? "," : "", c->counts[i]);
     fputs("]}\n", output);
     bool failed = ferror(output);
     return fclose(output) || failed ? -1 : 0;
@@ -124,10 +125,18 @@ static int16_t marker_at(uint64_t cursor, uint64_t planned) {
     return cursor >= 96000 && cursor < 96000 + planned ?
         (int16_t)((cursor - 96000) / 128 + 1) : 0;
 }
+static uint32_t frame_marker(uint16_t left, uint16_t right) {
+    return left && right && right <= 128 ? ((uint32_t)left - 1)*128 + right : 0;
+}
 static void observe(struct control *c, uint16_t left, uint16_t right) {
     if (!left && !right) return;
-    if (left != right || left == 0 || left > c->blocks) c->invalid++;
-    else { c->counts[left - 1]++; c->received++; }
+    uint32_t frame = frame_marker(left, right);
+    if (!frame || left > c->blocks) c->invalid++;
+    else {
+        if (c->last_received_frame && frame <= c->last_received_frame) c->out_of_order++;
+        c->last_received_frame = frame;
+        c->counts[frame - 1]++; c->received++;
+    }
 }
 
 static void source_state(void *data, enum pw_stream_state old,
@@ -176,8 +185,10 @@ static void produce(void *data) {
                       now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned);
         c->source_queued_max = SPA_MAX(c->source_queued_max, time.queued);
     }
+    struct event event = {.stamp = now_ns(), .begin = c->cursor, .end = c->cursor, .ticks = c->source_ticks};
     struct pw_buffer *b = pw_stream_dequeue_buffer(c->source);
-    if (!b) { c->source_empty++; return; }
+    if (!b) { c->source_empty++; record_event(c, event); return; }
+    event.buffer_dequeued = true;
     if (!b->buffer->n_datas) { c->errors++; pw_stream_queue_buffer(c->source, b); return; }
     struct spa_data *d = &b->buffer->datas[0];
     if (!d->data || !d->chunk) {
@@ -187,7 +198,7 @@ static void produce(void *data) {
     if (b->requested && b->requested < frames) frames = (uint32_t)b->requested;
     uint8_t *samples = d->data;
     uint64_t markers = 0;
-    struct event event = {.stamp = now_ns(), .begin = c->cursor, .ticks = c->source_ticks, .frames = frames};
+    event.frames = frames;
     bool ready = c->ready[0] && c->ready[1];
     for (uint32_t i = 0; i < frames; i++) {
         int16_t value = 0;
@@ -195,13 +206,15 @@ static void produce(void *data) {
             value = marker_at(c->cursor, c->planned);
             if (!c->first_ns) c->first_ns = now_ns();
             c->last_ns = now_ns();
-            if (!event.first) event.first = (uint16_t)value;
-            event.last = (uint16_t)value;
+            if (!event.first) event.first = (uint32_t)(c->cursor - 96000 + 1);
+            event.last = (uint32_t)(c->cursor - 96000 + 1);
             markers++;
         }
         for (unsigned channel = 0; channel < 2; channel++) {
-            samples[i * 4 + channel * 2] = (uint8_t)value;
-            samples[i * 4 + channel * 2 + 1] = (uint8_t)((uint16_t)value >> 8);
+            uint16_t channel_value = channel == 0 || !value ? (uint16_t)value :
+                (uint16_t)((c->cursor - 96000) % 128 + 1);
+            samples[i * 4 + channel * 2] = (uint8_t)channel_value;
+            samples[i * 4 + channel * 2 + 1] = (uint8_t)(channel_value >> 8);
         }
         if (ready) c->cursor++;
     }
@@ -230,9 +243,11 @@ static void consume(void *data) {
         c->sink_queued_max = SPA_MAX(c->sink_queued_max, time.queued);
     }
     struct pw_buffer *b;
+    bool had_buffer = false;
     while ((b = pw_stream_dequeue_buffer(c->sink))) {
+        had_buffer = true;
         c->capture_buffers++;
-        struct event event = {.capture = true, .stamp = now_ns(), .begin = c->cursor,
+        struct event event = {.capture = true, .buffer_dequeued = true, .stamp = now_ns(), .begin = c->cursor,
                               .end = c->cursor, .ticks = c->sink_ticks};
         struct spa_meta_header *header = spa_buffer_find_meta_data(b->buffer, SPA_META_Header, sizeof(*header));
         if (header) { event.header_present = true; event.sequence = header->seq; }
@@ -253,8 +268,8 @@ static void consume(void *data) {
                 uint16_t r = bytes[(off + 2) % d->maxsize] |
                     ((uint16_t)bytes[(off + 3) % d->maxsize] << 8);
                 if (l || r) {
-                    if (!event.first) event.first = l;
-                    event.last = l;
+                    if (!event.first) event.first = frame_marker(l, r);
+                    event.last = frame_marker(l, r);
                     event.measured++;
                 }
                 observe(c, l, r);
@@ -264,6 +279,8 @@ static void consume(void *data) {
         if (event.queue_result < 0) c->errors++;
         record_event(c, event);
     }
+    if (!had_buffer) record_event(c, (struct event){.capture = true, .stamp = now_ns(),
+        .begin = c->cursor, .end = c->cursor, .ticks = c->sink_ticks});
 }
 
 static void tick(void *data, uint64_t expirations) {
@@ -301,21 +318,24 @@ int main(int argc, char **argv) {
         if (previous != 1025 || maximum != 50) return 1;
         struct event events[1];
         struct control ledger_test = {.ledger = events, .ledger_capacity = 1};
-        record_event(&ledger_test, (struct event){.begin = 95999, .end = 96001, .measured = 1, .queue_result = -5});
+        record_event(&ledger_test, (struct event){.begin = 95999, .end = 96001, .measured = 1, .queue_result = -5, .buffer_dequeued = true});
         record_event(&ledger_test, (struct event){.capture = true});
         if (ledger_test.ledger_length != 1 || ledger_test.ledger_overflow != 1 ||
             events[0].measured != 1 || events[0].queue_result != -5 || events[0].begin != 95999) return 1;
-        uint32_t counts[2] = {0};
+        uint32_t counts[256] = {0};
         struct control test = {.blocks = 2, .counts = counts};
         if (marker_at(95999, 256) || marker_at(96256, 256) ||
             marker_at(96000, 256) != 1 || marker_at(96128, 256) != 2) return 1;
         observe(&test, 0, 0);
-        observe(&test, 1, 2);
+        observe(&test, 1, 0);
         observe(&test, 3, 3);
-        for (unsigned i = 0; i < 127; i++) observe(&test, 1, 1);
-        for (unsigned i = 0; i < 129; i++) observe(&test, 2, 2);
-        /* Equal totals hide one lost frame and one duplicate unless counted per marker. */
-        if (test.invalid != 2 || test.received != 256 || counts[0] != 127 || counts[1] != 129) return 1;
+        for (unsigned i = 0; i < 256; i++) {
+            if (i != 1) observe(&test, (uint16_t)(i/128 + 1), (uint16_t)(i%128 + 1));
+            if (i == 2) observe(&test, 1, 3);
+        }
+        /* Loss offset by duplication within one old 128-frame marker must fail. */
+        if (test.invalid != 2 || test.received != 256 || counts[1] != 0 || counts[2] != 2 ||
+            test.out_of_order != 1 || frame_marker(1,128) != 128 || frame_marker(2,1) != 129) return 1;
         ledger_test.blocks = 2; ledger_test.counts = counts;
         return argc == 3 && export_ledger(&ledger_test, argv[2]) < 0;
     }
@@ -327,7 +347,7 @@ int main(int argc, char **argv) {
     if (errno || *end || seconds < 1 || seconds > 60) return 2;
     struct control c = { .planned = (uint64_t)seconds * 48000 };
     c.blocks = (unsigned)(c.planned / 128);
-    c.counts = calloc(c.blocks, sizeof(*c.counts));
+    c.counts = calloc(c.blocks*128, sizeof(*c.counts));
     c.ledger_capacity = LEDGER_CAPACITY;
     c.ledger = calloc(c.ledger_capacity, sizeof(*c.ledger));
     if (!c.counts || !c.ledger) { free(c.counts); free(c.ledger); return 2; }
@@ -360,9 +380,9 @@ int main(int argc, char **argv) {
     pw_main_loop_run(c.loop);
     pw_loop_destroy_source(loop, timer);
     uint64_t missing = 0, duplicate = 0;
-    for (unsigned i = 0; i < c.blocks; i++) {
-        if (c.counts[i] < 128) missing += 128 - c.counts[i];
-        else duplicate += c.counts[i] - 128;
+    for (unsigned i = 0; i < c.blocks*128; i++) {
+        if (!c.counts[i]) missing++;
+        else duplicate += c.counts[i] - 1;
     }
     printf("{\"scope\":\"independent C graph callbacks; no product queues; no latency claim\","
         "\"planned\":%" PRIu64 ",\"generated\":%" PRIu64 ",\"graph_submitted\":%" PRIu64
@@ -383,9 +403,11 @@ int main(int argc, char **argv) {
         c.source_max_gap_ns, c.sink_max_gap_ns);
     print_clock("source_measured_clock", &c.source_clock);
     print_clock("sink_measured_clock", &c.sink_clock);
-    printf(",\"ledger_events\":%u,\"ledger_overflow\":%" PRIu64 "}\n", c.ledger_length, c.ledger_overflow);
+    printf(",\"ledger_events\":%u,\"ledger_overflow\":%" PRIu64
+           ",\"out_of_order\":%" PRIu64 ",\"marker_scheme\":\"block-phase-per-frame-v1\"}\n",
+           c.ledger_length, c.ledger_overflow, c.out_of_order);
     status = c.submitted != c.planned || c.received != c.planned || missing || duplicate ||
-        c.invalid || c.partial || c.errors || c.ledger_overflow || c.source_rate != 48000 || c.sink_rate != 48000 ||
+        c.invalid || c.partial || c.errors || c.ledger_overflow || c.out_of_order || c.source_rate != 48000 || c.sink_rate != 48000 ||
         c.source_channels != 2 || c.sink_channels != 2;
 out:
     if (c.sink) pw_stream_destroy(c.sink);

@@ -2,7 +2,7 @@ import importlib.util
 from pathlib import Path
 import struct
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 spec = importlib.util.spec_from_file_location('lifecycle', Path(__file__).parents[1] / 'validate-broker-lifecycle-live.py')
 lab = importlib.util.module_from_spec(spec)
@@ -53,7 +53,62 @@ class LifecycleProbe(unittest.TestCase):
         send.assert_not_called()
         self.assertTrue(session.closed)
 
+    def test_worker_death_requires_terminal_error_and_eof_without_an_application_close(self):
+        for reply, accepted in [((2, 0x81, b'audio worker exited: signal: 9 (SIGKILL)'), True),
+                                ((2, 0x80, b'ack'), False), ((2, 0x81, b'other error'), False)]:
+            session = self.session(); session.device = 17; session.generation = 7
+            session.close = Mock()
+            for channel in session.channels: channel.recv.return_value = b''
+            supervisor = MagicMock()
+            supervisor.__enter__.return_value = supervisor
+            supervisor.getsockopt.return_value = struct.pack('3i', 42, 0, 0)
+            supervisor.recv.return_value = b'K'
+            with patch.object(lab, 'Session', return_value=session), \
+                 patch.object(lab, 'fd_count', return_value=4), \
+                 patch.object(lab.socket, 'socket', return_value=supervisor), \
+                 patch.object(lab.audio, 'reply', return_value=reply):
+                if accepted:
+                    result = lab.worker_death('dualsense','lab',0,Path('/synthetic/socket'))
+                    self.assertTrue(result['cleanup'])
+                else:
+                    with self.assertRaises(RuntimeError): lab.worker_death('dualsense','lab',0,Path('/synthetic/socket'))
+            session.close.assert_called_once_with(abandon=True)
+
     def test_invalid_expected_instance_rejects_before_creation(self):
         with patch.object(lab.audio, 'opened') as opened:
             with self.assertRaises(ValueError): lab.Session('dualsense', '../escape', 0)
         opened.assert_not_called()
+
+
+class SiblingAdmission(unittest.TestCase):
+    def session(self, generation):
+        session = Mock()
+        session.generation = generation
+        session.isolation = {'serial': 'synthetic-' + str(generation)}
+        session.channels = [Mock()]
+        return session
+
+    def test_removal_preserves_siblings_and_recovers_capacity_with_fresh_identity(self):
+        sessions = [self.session(i) for i in range(1, 6)]
+        with patch.object(lab, 'Session', side_effect=sessions) as create, \
+             patch.object(lab, 'fd_count', return_value=8), \
+             patch.object(lab, 'capacity_rejection') as reject, \
+             patch.object(lab.audio, 'worker_diagnostics', return_value={'alive': True}) as diagnostics:
+            receipts = lab.siblings_and_admission('lab', [0, 1, 2, 3])
+        reject.assert_called_once()
+        self.assertEqual(create.call_args_list[-1].args, ('dualshock4', 'lab', 1))
+        self.assertEqual([r['generation'] for r in receipts], [1, 5, 3, 4])
+        self.assertEqual(diagnostics.call_count, 7)
+        for session in sessions: self.assertGreaterEqual(session.close.call_count, 1)
+
+    def test_partial_construction_preserves_initiating_and_cleanup_errors(self):
+        first = self.session(1)
+        first.close.side_effect = RuntimeError('synthetic cleanup')
+        with patch.object(lab, 'Session', side_effect=[first, RuntimeError('synthetic construction')]), \
+             patch.object(lab, 'fd_count', return_value=8), \
+             patch.object(lab, 'capacity_rejection') as reject:
+            with self.assertRaises(RuntimeError) as error: lab.siblings_and_admission('lab', [0,1,2,3])
+        reject.assert_not_called()
+        self.assertIn('synthetic construction', str(error.exception))
+        self.assertIn('synthetic cleanup', str(error.exception))
+        first.close.assert_called_once()

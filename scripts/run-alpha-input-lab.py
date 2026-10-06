@@ -7,6 +7,7 @@ or persistent configuration changed. Child identity is retained until restoratio
 """
 import argparse
 import hashlib
+import grp
 import json
 import os
 from pathlib import Path
@@ -101,7 +102,11 @@ def identity(path):
 
 
 def creation_group():
-    return Path('/dev/uinput').stat().st_gid
+    group = Path('/dev/uinput').stat().st_gid
+    # ACL-based creation access can leave uinput in group root after boot.
+    # Root is never granted to the test client; its read group is then the
+    # configured Linux input group. The test still opens creation as its UID.
+    return group if group != 0 else grp.getgrnam('input').gr_gid
 
 
 def restore_rule(path, expected, pid, inventory=owned_inputs):
@@ -150,7 +155,7 @@ def run(args):
     if account.pw_uid <= 0 or account.pw_gid == 0:
         raise RuntimeError('test account must be non-root')
     if args.input_gid <= 0 or args.input_gid != creation_group():
-        raise RuntimeError('input group must match the creation device')
+        raise RuntimeError('input group must match the prepared creation/input read group')
     for parent in RULES.parents:
         trusted(parent, True)
     read_fd, write_fd = os.pipe()

@@ -33,7 +33,7 @@ def acceptance(result, seconds):
         if type(result.get(key)) is not int or result[key] != expected:
             return False
     return all(type(result.get(key)) is int and result[key] == 0
-               for key in ('missing', 'duplicate', 'invalid', 'partial_bytes', 'errors', 'ledger_overflow')) and all(
+               for key in ('missing', 'duplicate', 'invalid', 'partial_bytes', 'errors', 'ledger_overflow', 'out_of_order')) and all(
                    result.get(key) == value for key, value in
                    (('source_rate', 48000), ('sink_rate', 48000), ('source_channels', 2), ('sink_channels', 2)))
 

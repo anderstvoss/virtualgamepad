@@ -57,7 +57,7 @@ class MarkerReceipt(unittest.TestCase):
     def receipt(self):
         row = dict(planned=2880000, generated=2880000, graph_submitted=2880000,
                     graph_received=2880000, missing=0, duplicate=0, invalid=0,
-                    partial_bytes=0, errors=0, ledger_overflow=0)
+                    partial_bytes=0, errors=0, ledger_overflow=0, out_of_order=0)
         row.update(source_rate=48000, sink_rate=48000, source_channels=2, sink_channels=2)
         row['producer_elapsed_ns'] = 60_000_000_000
         return row
@@ -87,8 +87,11 @@ class MarkerReceipt(unittest.TestCase):
             self.assertEqual(rows[0]['producer_begin'], 95999)
             self.assertEqual(rows[0]['measured_frames'], 1)
             self.assertEqual(rows[0]['queue_result'], -5)
+            self.assertTrue(rows[0]['buffer_dequeued'])
             self.assertIsNone(rows[0]['header_sequence'])
-            self.assertEqual(rows[1]['marker_counts'], [127, 129])
+            self.assertEqual(rows[1]['marker_counts'][:3], [1, 0, 2])
+            self.assertEqual(sum(rows[1]['marker_counts']), 256)
+            self.assertEqual(len(rows[1]['marker_counts']), 256)
             before = ledger.read_bytes()
             self.assertNotEqual(subprocess.run([binary, '--self-test', str(ledger)], timeout=5).returncode, 0)
             self.assertEqual(ledger.read_bytes(), before)
@@ -112,7 +115,7 @@ class MarkerReceipt(unittest.TestCase):
         self.assertFalse(control.acceptance(row, 60))
 
     def test_partial_channel_corruption_incomplete_drain_and_missing_counters(self):
-        for key in ('partial_bytes', 'invalid', 'errors', 'ledger_overflow'):
+        for key in ('partial_bytes', 'invalid', 'errors', 'ledger_overflow', 'out_of_order'):
             row = self.receipt()
             row[key] = 1
             self.assertFalse(control.acceptance(row, 60))
