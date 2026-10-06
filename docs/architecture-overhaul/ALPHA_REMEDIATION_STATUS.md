@@ -1211,3 +1211,27 @@ startup failures additionally retain a bounded VHCI snapshot and non-consuming
 broker reply/EOF evidence before cleanup, with socket-pair regressions. These
 new lab changes require an immutable administrator update before live validation.
 All six release gates retain remaining required cells and the PR remains draft.
+
+### Installed 3ca0d97 live rerun
+
+The installed 3ca0d97 identity/tree and immutable hashes were verified.
+Sibling/admission passed including complete restoration, providing live evidence
+for the bounded USB-disappearance wait. Worker- and broker-death phases still
+failed overall in their follow-up lifecycle probes. Their new failure snapshots
+show the selected VHCI port free and no readable terminal broker reply before
+cleanup; kernel enumeration diagnostics are required before assigning cause.
+The original broker service/socket states were restored inactive/active.
+
+A new short USB functional rerun failed on DualSense: worker diagnostics reported
+192 microphone silence frames and maximum PCM pump lateness of 11,636 microseconds;
+playback remained exact, shared defaults unchanged, and cleanup succeeded. DS4
+and Xbox cells were not reached because the validator stopped on that failure.
+Retain the earlier 688fc10 three-family pass as a historical receipt; it does not
+close reliability or continuity in the presence of this newer failure. Scheduling
+is not established as the cause, and no buffer size or loss assertion is changed.
+The old failed sibling lab retains its staging binaries/configuration, empty
+journal directories and isolation rule for operator review; the user-supplied
+inventory is not authority to delete arbitrary similarly named resources.
+Host available memory remained above 18 GiB with zero measured full PSI.
+No library behavior, dependencies or validation assertions changed in this rerun.
+All six gates remain open and the PR remains draft.
