@@ -230,3 +230,29 @@ warning (RUSTSEC-2026-0192); do not describe this as a warning-free audit.
 The new neutral GUI soak remains live, under its memory cap, and has no completion
 receipt yet. Administrator installation of the prepared 247e6fc immutable package
 is still pending. All six release gates remain open.
+
+### Scoped installer syntax correction and completed neutral soak
+
+The administrator attempted the 247e6fc package installation. Its exact-scope
+check rejected the existing sudo policy because three commands appeared on one
+comma-separated line, while the installer accepted only separate rule lines.
+The failure occurred before stage creation or helper/policy replacement. The
+installer now accepts either spelling, requiring the same account, root run-as,
+fixed helper path and exactly one each of status, run and receipt. Extra commands,
+arguments, duplicate actions and broad sudo remain rejected before mutation.
+Regressions execute the generated installer against sanitized combined/split
+rules for both named and numeric accounts, including fail-closed rejection.
+No permission is widened and the administrator must install the corrected packet.
+
+The 64222a5 neutral GUI image completed 7,200 seconds with exit zero and empty
+cleanup errors. Its SHA-256 is
+`e78018adf58977ce26de84e8e4738ac31f76556b86fbf43d9b8c4b4d0cc990ea`;
+the current local executable is byte-identical. Both owned processes are gone.
+After startup, descriptors stayed at 16 and threads at 23, with no child processes.
+RSS was 144,008 KiB at five minutes and 144,456 KiB at the end (448 KiB increase);
+the last half-hour increased by 12 KiB. This is a bounded neutral-soak receipt,
+not proof of zero allocation growth or acceptance of interactive accessibility.
+Host available memory stayed above 19 GiB and measured full memory PSI averaged
+zero. Audio, contacts and Steam were excluded. This receipt does not close the
+remaining interactive gate or any audio/consumer gate. Preserve the previous
+reboot-interrupted run as unaccepted. Raw receipts remain outside tracked source.

@@ -84,3 +84,31 @@ class ProviderPacket(unittest.TestCase):
             self.assertEqual(namespace['POLICY'].read_bytes(),before)
             self.assertEqual((namespace['STAGE']/'previous-sudoers').read_bytes(),before)
             self.assertFalse(list(namespace['POLICY'].parent.glob('.virtualgamepad-alpha-*')))
+
+    def test_existing_three_actions_accept_split_or_combined_rules(self):
+        for account in ('synthetic', '#1001'):
+            for combined in (False, True):
+                with self.subTest(account=account, combined=combined), tempfile.TemporaryDirectory() as directory:
+                    namespace=self.installer(Path(directory))
+                    commands=[str(namespace['HELPER'])+' '+action for action in ('status','run','receipt')]
+                    prefix=account+' ALL=(root) NOPASSWD: '
+                    lines=[prefix+', '.join(commands)] if combined else [prefix+command for command in commands]
+                    namespace['POLICY'].write_text('# sanitized scope\n'+'\n'.join(lines)+'\n')
+                    with patch.object(packet.os,'geteuid',return_value=0), patch.object(namespace['subprocess'],'run'):
+                        namespace['main']()
+                    self.assertTrue(namespace['STAGE'].is_dir())
+
+    def test_combined_rules_reject_extra_commands_duplicates_and_changed_scope(self):
+        for suffix in ('ALL', '/synthetic/foreign status', 'run extra', 'status', 'receipt'):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as directory:
+                namespace=self.installer(Path(directory))
+                helper=str(namespace['HELPER'])
+                commands=', '.join(helper+' '+action for action in ('status','run','receipt'))
+                namespace['POLICY'].write_text('synthetic ALL=(root) NOPASSWD: '+commands+', '+
+                                              (suffix if suffix.startswith('/') or suffix=='ALL' else helper+' '+suffix)+'\n')
+                before=namespace['POLICY'].read_bytes()
+                with patch.object(packet.os,'geteuid',return_value=0):
+                    with self.assertRaises(ValueError):namespace['main']()
+                self.assertFalse(namespace['STAGE'].exists())
+                self.assertEqual(namespace['POLICY'].read_bytes(),before)
+                self.assertEqual(namespace['HELPER'].read_bytes(),b'previous helper')

@@ -147,14 +147,18 @@ def main():
     # The existing 0440 policy is readable only by root. Validate its exact
     # three-action grammar here instead of obtaining extra sudo read privileges.
     accounts=(re.escape(CONFIG['client_name']), re.escape('#'+str(CONFIG['client_uid'])))
-    pattern='(?:'+'|'.join(accounts)+r') ALL=\\(root\\) NOPASSWD: '+re.escape(str(HELPER))+' (status|run|receipt)'
+    pattern='(?:'+'|'.join(accounts)+r') ALL=\\(root\\) NOPASSWD: (.+)'
+    command_pattern=re.escape(str(HELPER))+' (status|run|receipt)'
     actions=[]
     for line in previous_policy.decode().splitlines():
         line=' '.join(line.split())
         if not line or line.startswith('#') and not line.startswith('#'+str(CONFIG['client_uid'])+' '):continue
         match=re.fullmatch(pattern,line)
         if match is None:raise ValueError('existing policy is not the reviewed three-action scope')
-        actions.append(match[1])
+        for command in match[1].split(','):
+            command_match=re.fullmatch(command_pattern,command.strip())
+            if command_match is None:raise ValueError('existing policy is not the reviewed three-action scope')
+            actions.append(command_match[1])
     if sorted(actions)!=['receipt','run','status']:raise ValueError('existing policy scope changed')
     STAGE.mkdir(mode=0o755,exist_ok=False)
     for name,data in images.items():
