@@ -135,6 +135,13 @@ def atomic(destination,data,mode):
         with os.fdopen(fd,'wb') as output:output.write(data);output.flush();os.fsync(output.fileno())
         os.chmod(name,mode);os.replace(name,destination)
     finally:Path(name).unlink(missing_ok=True)
+def render_policy():
+    # A comment must not begin with # followed directly by a numeric revision:
+    # sudoers interprets that token as a numeric user ID.
+    rules=[f"# alpha lab revision {CONFIG['revision']}; three bounded action categories"]
+    prefix=f"#{CONFIG['client_uid']} ALL=(root) NOPASSWD: "+str(HELPER)
+    for suffix in ('status','receipt',*('run '+phase for phase in CONFIG['phases'])):rules.append(prefix+' '+suffix)
+    return ('\\n'.join(rules)+'\\n').encode()
 def main():
     if os.geteuid()!=0 or not sys.flags.isolated or len(sys.argv)!=1:raise ValueError('administrator isolated no-argument installation required')
     # Capture and authenticate every payload before creating privileged state.
@@ -170,10 +177,7 @@ def main():
     (STAGE/'reports').mkdir(mode=0o700)
     (STAGE/'previous-helper').write_bytes(previous_helper);(STAGE/'previous-helper').chmod(0o600)
     (STAGE/'previous-sudoers').write_bytes(previous_policy);(STAGE/'previous-sudoers').chmod(0o600)
-    rules=[f"#{CONFIG['revision']} immutable alpha lab; three bounded action categories"]
-    prefix=f"#{CONFIG['client_uid']} ALL=(root) NOPASSWD: "+str(HELPER)
-    for suffix in ('status','receipt',*('run '+phase for phase in CONFIG['phases'])):rules.append(prefix+' '+suffix)
-    policy=('\\n'.join(rules)+'\\n').encode()
+    policy=render_policy()
     temporary=POLICY.parent/('.virtualgamepad-alpha-'+CONFIG['revision'][:12])
     with temporary.open('xb') as output:output.write(policy)
     temporary.chmod(0o440)
@@ -231,7 +235,15 @@ def main():
     config.update(compiler=compiler,lockfile_sha256=hashlib.sha256((root/'Cargo.lock').read_bytes()).hexdigest())
     args.output.mkdir(mode=0o700,parents=False,exist_ok=False)
     for name,data in images.items():(args.output/name).write_bytes(data)
-    (args.output/'install.py').write_text(INSTALLER.replace('__CONFIG__',repr(config)))
+    installer=INSTALLER.replace('__CONFIG__',repr(config))
+    namespace={'__name__':'policy_preview','__file__':str(args.output/'install.py')}
+    exec(compile(installer,'install.py','exec'),namespace)
+    # Validate exactly the bytes the administrator will install, including the
+    # header; a hand-written command-only preview missed numeric-SHA comments.
+    preview=args.output/'sudoers-preview'
+    preview.write_bytes(namespace['render_policy']())
+    subprocess.run(['/usr/sbin/visudo','-c','-f',str(preview)],check=True,timeout=10)
+    (args.output/'install.py').write_text(installer)
     (args.output/'manifest.json').write_text(json.dumps(config,indent=2)+'\n')
     print(json.dumps(dict(packet=str(args.output),revision=revision,tree=tree,phases=PHASES)))
 

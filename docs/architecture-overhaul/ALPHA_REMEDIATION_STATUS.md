@@ -1153,3 +1153,23 @@ rejecting an unrecognized phase. Exact previous-helper hashing remains required.
 A new administrator-installed immutable packet is needed to rerun live phases;
 the currently installed code cannot replace itself. Journal access is separately
 limited to a fixed no-argument reader of alpha-lab units. Six gates remain open.
+
+### Complete sudoers policy preflight
+
+Administrator installation of the 112360b configuration correction failed while
+validating its temporary policy: the header began with `#112360...`, which sudoers
+interpreted as a numeric user rather than a comment. The installed helper still
+reports db48dc4 and the original socket/service states remain active/inactive.
+No live scenario was rerun with the uninstalled correction. An unused root-owned
+staging directory may remain from failed preparation; do not mistake it for the
+active installation or remove it without authoritative ownership checks.
+
+The header now starts with `# alpha lab revision`. Policy rendering is a single
+pure function shared by installer execution and package preflight. Packaging
+runs the real sudoers parser against the exact rendered bytes, including the
+header, before writing the administrator installer. The earlier manually built
+command-only preview was incomplete and is not sufficient evidence. A regression
+parses complete policies for numeric-leading and letter-leading revisions with
+real visudo when available; this check passed locally. No command scope or broker
+contract changes. The complete corrected packet still requires administrator
+installation because immutable privileged tooling cannot replace itself.

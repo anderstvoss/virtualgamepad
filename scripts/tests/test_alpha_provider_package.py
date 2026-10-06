@@ -128,3 +128,22 @@ class ProviderPacket(unittest.TestCase):
                     else:
                         namespace['main']()
                         self.assertTrue(namespace['STAGE'].is_dir())
+
+    def test_actual_rendered_policy_numeric_and_letter_revisions_parse_with_visudo(self):
+        import subprocess
+        checker=Path('/usr/sbin/visudo')
+        if not checker.is_file():self.skipTest('sudoers parser unavailable on this platform')
+        for revision in ('1'+'a'*39, 'a'*40):
+            with self.subTest(revision=revision), tempfile.TemporaryDirectory() as directory:
+                namespace=self.installer(Path(directory))
+                namespace['CONFIG']['revision']=revision
+                policy=namespace['render_policy']()
+                self.assertTrue(policy.startswith(b'# alpha lab revision '))
+                preview=Path(directory)/'preview';preview.write_bytes(policy)
+                subprocess.run([str(checker),'-c','-f',str(preview)],check=True,
+                               capture_output=True,timeout=10)
+                lines=policy.decode().splitlines()
+                self.assertEqual(len(lines),3+len(packet.PHASES))
+                self.assertEqual(lines[1:3],[
+                    '#1001 ALL=(root) NOPASSWD: '+str(namespace['HELPER'])+' status',
+                    '#1001 ALL=(root) NOPASSWD: '+str(namespace['HELPER'])+' receipt'])
