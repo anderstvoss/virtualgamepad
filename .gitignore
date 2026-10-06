@@ -6,8 +6,9 @@ target/
 .env.*
 !.env.example
 
-# Agent and harness files
-.claude/
+# Agent and harness files (shared Claude Code project settings are tracked)
+.claude/*
+!.claude/settings.json
 .codex/
 
 # Secrets and credentials
