@@ -96,7 +96,7 @@ class SiblingAdmission(unittest.TestCase):
              patch.object(lab.audio, 'worker_diagnostics', return_value={'alive': True}) as diagnostics:
             receipts = lab.siblings_and_admission('lab', [0, 1, 2, 3])
         reject.assert_called_once()
-        self.assertEqual(create.call_args_list[-1].args, ('dualshock4', 'lab', 1))
+        self.assertEqual(create.call_args_list[-1].args, ('dualshock4', 'lab', [0, 1, 2, 3]))
         self.assertEqual([r['generation'] for r in receipts], [1, 5, 3, 4])
         self.assertEqual(diagnostics.call_count, 7)
         for session in sessions: self.assertGreaterEqual(session.close.call_count, 1)
@@ -139,3 +139,43 @@ class AttachmentFailureEvidence(unittest.TestCase):
                 self.assertTrue(result['broker_eof'])
                 self.assertIn('vhci_unavailable',result)
         finally:left.close();right.close()
+
+
+class SessionPortIdentity(unittest.TestCase):
+    header='hub port sta spd dev sockfd local_busid\n'
+    free='hs 0000 004 000 00000000 000000 0-0\n'
+    owned='hs 0001 006 003 00000011 000009 4-2\n'
+
+    def test_owned_second_port_is_resolved_instead_of_assuming_first(self):
+        self.assertEqual(lab.resolve_session_port(self.header+self.free+self.owned,(0,1),(17,'4-2')),1)
+        foreign='hs 0000 006 003 00000022 000010 4-1\n'
+        self.assertEqual(lab.resolve_session_port(self.header+foreign+self.owned,(0,1),(17,'4-2')),1)
+
+    def test_wrong_identity_unauthorized_port_and_ambiguous_inventory_reject(self):
+        for status,ports,identity in [
+            (self.header+self.owned,(0,),(17,'4-2')),
+            (self.header+self.owned,(0,1),(18,'4-2')),
+            (self.header+self.owned,(0,1),(17,'4-1')),
+            (self.header+self.owned+self.owned,(0,1),(17,'4-2')),
+            (self.header+'malformed\n'+self.owned,(0,1),(17,'4-2')),
+            (self.header+self.owned+'hs 0002 006 003 00000011 000009 4-2\n',(1,2),(17,'4-2'))]:
+            with self.subTest(status=status,ports=ports,identity=identity):
+                with self.assertRaises(ValueError):lab.resolve_session_port(status,ports,identity)
+
+    def test_invalid_allowlist_rejects_before_open(self):
+        for ports in ([],[0,0],[True],[-1],[65536]):
+            with patch.object(lab.audio,'opened') as opened:
+                with self.assertRaises(ValueError):lab.Session('dualsense','lab',ports)
+                opened.assert_not_called()
+
+    def test_constructor_and_repeated_close_follow_handed_off_second_port(self):
+        broker=Mock();broker.recv.return_value=b''
+        channels=[Mock() for _ in range(3)]
+        with patch.object(lab.audio,'opened',return_value=(broker,7,17,'4-2',1,channels)),              patch.object(lab.Path,'read_text',return_value=self.header+self.free+self.owned),              patch.object(lab.subprocess,'run'),              patch.object(lab.audio.live,'resolve_card',return_value=((17,'4-2'),9)) as resolve,              patch.object(lab.audio,'reserve_direct_alsa',return_value={'serial':'synthetic'}),              patch.object(lab.audio,'worker_diagnostics',return_value={}),              patch.object(lab.audio,'message'),              patch.object(lab.audio,'reply',return_value=(2,0x80,struct.pack('<Q',7))),              patch.object(lab,'wait_detached') as detached:
+            session=lab.Session('dualsense','lab',(0,1))
+            self.assertEqual(session.port,1)
+            resolve.assert_called_once_with(1,'dualsense',(17,'4-2'))
+            session.close();session.close()
+            detached.assert_called_once_with(1,(17,'4-2'))
+            broker.close.assert_called_once()
+            for channel in channels:channel.close.assert_called_once()

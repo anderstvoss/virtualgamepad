@@ -47,6 +47,31 @@ def wait_detached(port, ownership, timeout=5):
         time.sleep(.02)
 
 
+def authorized_ports(ports):
+    allowed = (ports,) if type(ports) is int else tuple(ports)
+    if (not 1 <= len(allowed) <= 4 or len(set(allowed)) != len(allowed) or
+            any(type(port) is not int or not 0 <= port <= 65535 for port in allowed)):
+        raise ValueError('invalid explicit session port allowlist')
+    return allowed
+
+
+def resolve_session_port(status, ports, ownership):
+    allowed = authorized_ports(ports)
+    rows = [line.split() for line in status.splitlines()[1:]]
+    if any(len(row) != 7 or not row[1].isdigit() for row in rows):
+        raise ValueError('malformed VHCI inventory')
+    if len({int(row[1]) for row in rows}) != len(rows):
+        raise ValueError('duplicate VHCI port inventory')
+    matches = []
+    for port in allowed:
+        try: current = audio.live.active_device(status, port)
+        except ValueError: continue
+        if current == ownership: matches.append(port)
+    if len(matches) != 1:
+        raise ValueError('owned handoff absent or ambiguous within authorized VHCI ports')
+    return matches[0]
+
+
 def attachment_snapshot(port, peer):
     """Bounded failure evidence; never consume the broker's pending reply."""
     result = {}
@@ -71,16 +96,19 @@ def attachment_snapshot(port, peer):
 class Session:
     def __init__(self, profile, instance, port):
         audio.live.compiled_serial(instance, 1)  # Validate before resource creation.
+        port = authorized_ports(port)
         self.closed = False
         self.broker, self.generation, self.device, self.bus, self.tag, self.channels = audio.opened(profile)
-        self.port = port
+        self.port = None
         self.ownership = (self.device, self.bus)
         try:
+            self.port = resolve_session_port(Path('/sys/devices/platform/vhci_hcd.0/status').read_text(),
+                                             port, self.ownership)
             subprocess.run(['udevadm', 'settle', '--timeout=3'], check=True, timeout=4)
             deadline = time.monotonic() + 3
             while True:
                 try:
-                    ownership, card = audio.live.resolve_card(port, profile, self.ownership)
+                    ownership, card = audio.live.resolve_card(self.port, profile, self.ownership)
                     if ownership != self.ownership:
                         raise RuntimeError('broker handoff and VHCI identity differ')
                     self.isolation = audio.reserve_direct_alsa(card, self.bus, instance, self.generation)
@@ -90,7 +118,7 @@ class Session:
                     if time.monotonic() >= deadline: raise
                     time.sleep(.02)
         except BaseException as initiating:
-            evidence = attachment_snapshot(port, self.broker)
+            evidence = attachment_snapshot(self.port, self.broker)
             try: self.close()
             except BaseException as cleanup:
                 raise RuntimeError(json.dumps(dict(initiating=str(initiating),
@@ -119,7 +147,8 @@ class Session:
                 except OSError as error: errors.append(str(error))
             self.broker.close()
             self.closed = True
-        try: wait_detached(self.port, self.ownership)
+        try:
+            if self.port is not None: wait_detached(self.port, self.ownership)
         except BaseException as error: errors.append(str(error))
         if errors:
             raise RuntimeError(json.dumps(dict(cleanup=errors)))
@@ -207,14 +236,14 @@ def siblings_and_admission(instance, ports):
         raise ValueError('four distinct explicitly authorized ports required')
     before = fd_count(); sessions=[]; cleanup=[]; initiating=None; receipts=[]
     try:
-        for profile,port in zip(['dualsense','dualshock4','xbox360','dualsense'],ports):
-            sessions.append(Session(profile,instance,port))
+        for profile in ['dualsense','dualshock4','xbox360','dualsense']:
+            sessions.append(Session(profile,instance,ports))
         capacity_rejection()
         removed = sessions[1].generation
         sessions[1].close()
         for index,session in enumerate(sessions):
             if index != 1: audio.worker_diagnostics(session.channels[0],session.generation)
-        sessions[1] = Session('dualshock4',instance,ports[1])
+        sessions[1] = Session('dualshock4',instance,ports)
         if sessions[1].generation == removed: raise RuntimeError('capacity recovery reused an identity')
         for session in sessions:
             receipts.append(dict(generation=session.generation,serial=session.isolation['serial'],
@@ -240,6 +269,7 @@ def main():
     if os.geteuid() == 0: parser.error('client must run without root privileges')
     if not 0 <= args.port <= 65535: parser.error('invalid authorized port')
     audio.live.compiled_serial(args.instance, 1)
+    ports = authorized_ports(args.ports if args.ports is not None else args.port)
     if args.scenario == 'startup-rejection':
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as peer:
             peer.settimeout(5); peer.connect('/run/virtualgamepad/broker.sock')
@@ -256,17 +286,17 @@ def main():
         exit_before_handoff(args.instance, args.port)
         return
     if args.scenario == 'client-exit':
-        session = Session('dualsense', args.instance, args.port)
+        session = Session('dualsense', args.instance, ports)
         print(json.dumps(dict(event='verified-client-exit', generation=session.generation)), flush=True)
         os._exit(0)  # Deliberately bypass application cleanup after handoff.
     if args.scenario in ('worker-death','broker-death'):
         if args.fault_socket is None or not args.fault_socket.is_absolute(): parser.error('immutable supervisor socket is required')
-        receipts = [worker_death(profile, args.instance, args.port, args.fault_socket, args.scenario=='broker-death') for profile in audio.live.PROFILES]
+        receipts = [worker_death(profile, args.instance, ports, args.fault_socket, args.scenario=='broker-death') for profile in audio.live.PROFILES]
         print(json.dumps(dict(status='passed', scenario=args.scenario, sessions=receipts)), flush=True)
         return
     receipts = []
     for profile in audio.live.PROFILES:
-        receipts.extend(exercise(profile, args.instance, args.port))
+        receipts.extend(exercise(profile, args.instance, ports))
     print(json.dumps(dict(status='passed', scenario='normal', sessions=receipts)), flush=True)
 
 

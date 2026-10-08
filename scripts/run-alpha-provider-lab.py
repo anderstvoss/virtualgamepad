@@ -204,7 +204,13 @@ def phase_command(phase, images, instance, port, additional=()):
                 '--instance', instance, '--profile', 'all', '--seconds', '3']
     return ['/usr/bin/python3', '-I', str(images / 'validate-broker-lifecycle-live.py'),
             '--instance', instance, '--port', str(port), '--scenario',
-            {'provider-client-exit': 'client-exit', 'provider-client-before-handoff': 'client-before-handoff', 'provider-worker-death': 'worker-death', 'provider-broker-death': 'broker-death'}.get(phase, 'normal')]
+            {'provider-client-exit': 'client-exit', 'provider-client-before-handoff': 'client-before-handoff', 'provider-worker-death': 'worker-death', 'provider-broker-death': 'broker-death'}.get(phase, 'normal'), '--ports', *[str(value) for value in ports]]
+
+
+def journal_port(data, generation, device, allowed):
+    for port in allowed:
+        if data == f'1 {generation} {device} {port}\n'.encode(): return port
+    raise RuntimeError('fault request differs from root-owned journal or authorized ports')
 
 
 def installed_executable(properties):
@@ -591,7 +597,7 @@ class Host:
                     except RuntimeError:
                         if time.monotonic() >= deadline: raise
                         time.sleep(.02)
-                command = phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port)
+                command = phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
                 self.run_client(self.args.client_uid, command, 'after-client-exit')
         else:
             self.run_client(self.args.client_uid, self.args.command, 'client')
@@ -640,8 +646,8 @@ class Host:
                         record = STATE / (self.instance+'.audio') / f'{generation:016x}'
                         trusted(record)
                         record_identity = identity(record)
-                        if record.read_bytes() != f'1 {generation} {device} {self.args.port}\n'.encode():
-                            raise RuntimeError('fault request differs from root-owned journal')
+                        owned_port = journal_port(record.read_bytes(), generation, device,
+                                                  selected_ports(self.args.port, self.args.additional_port))
                         parent = int(self.run(['systemctl', 'show', self.service, '-p', 'MainPID', '--value']).strip())
                         group = self.run(['systemctl', 'show', self.service, '-p', 'ControlGroup', '--value']).strip()
                         image = identity(self.root/'bin/gr-audio-worker')
@@ -655,7 +661,7 @@ class Host:
                                 except RuntimeError: continue
                             if len(held) != 1: raise RuntimeError('owned session worker is absent or ambiguous')
                             if self.args.phase == 'provider-broker-death':
-                                self.broker_death(parent, group, held[0], record, record_identity, generation, device)
+                                self.broker_death(parent, group, held[0], record, record_identity, generation, device, owned_port)
                                 peer.sendall(b'B')
                             else:
                                 held[0].kill()
@@ -676,10 +682,10 @@ class Host:
         if initiating is not None or failures:
             raise RuntimeError(json.dumps(dict(initiating=initiating, supervisor=failures)))
         self.run_client(self.args.client_uid,
-                        phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port),
+                        phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port, self.args.additional_port),
                         'after-worker-death')
 
-    def broker_death(self, parent, group, worker, record, expected, generation, device):
+    def broker_death(self, parent, group, worker, record, expected, generation, device, port=None):
         import select
         image = identity(self.root/'bin/gr-privileged-broker')
         def verify(snapshot):
@@ -689,7 +695,7 @@ class Host:
                 raise RuntimeError('broker process identity is not the staged owned unit')
         broker = PinnedWorker(parent,verify)
         self.owned.append((record, expected, False))  # Register before injected failure.
-        data = f'1 {generation} {device} {self.args.port}\n'.encode()
+        data = f'1 {generation} {device} {self.args.port if port is None else port}\n'.encode()
         try:
             broker.kill()
             if not select.select([worker.descriptor],[],[],5)[0]:

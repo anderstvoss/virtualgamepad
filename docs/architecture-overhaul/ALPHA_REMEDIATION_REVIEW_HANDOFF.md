@@ -1090,3 +1090,32 @@ inventory is not authority to delete arbitrary similarly named resources.
 Host available memory remained above 18 GiB with zero measured full PSI.
 No library behavior, dependencies or validation assertions changed in this rerun.
 All six gates remain open and the PR remains draft.
+
+### Kernel correlation: allowlisted-port selection in lifecycle probes
+
+The supplied kernel capture shows successful DualSense/DS4 enumeration and a DS4
+session on VHCI port 1 in the failing recovery run. The broker selects the first
+currently free, unreserved administrator-allowlisted port; asynchronous teardown
+can leave an earlier reservation briefly unavailable. The normal lifecycle probe
+incorrectly assumed every handoff used port 0. Inspecting an unrelated free port
+therefore produced a false attachment-failure diagnosis. The capture's connection
+closures alone do not establish an unsolicited product disconnect: the probe
+itself closes its handed-off session after validation failure.
+
+The probe now resolves the exact handed-off device/bus identity among the complete
+explicit port allowlist, requires one unique match, verifies that same port/card,
+and checks that port during repeated cleanup. Sibling recreation follows identity
+rather than a preferred port. Root fault injection validates the exact journal
+against the full allowlist and retains its actual port for fail-closed recovery;
+PID, executable, unit, UID and inode checks remain required. No arbitrary port
+selection or fallback to foreign resources is permitted. The ordinary root API
+and broker allocation policy are unchanged; all four lab ports remain covered.
+
+Regressions cover a legitimate second port, a foreign first port, unauthorized
+ports, wrong identities, malformed/duplicate inventories, invalid allowlists
+before open, constructor-to-repeated-close propagation, exact journal selection
+and full allowlist forwarding to recovery probes. These use synthetic fixtures,
+not the supplied kernel logs. Earlier failed receipts remain historical failures;
+live acceptance must be rerun after administrator installation of the corrected
+immutable lab. This correction does not resolve or defer the measured USB audio
+silence/lateness failure. The six-gate objective and draft PR remain unchanged.

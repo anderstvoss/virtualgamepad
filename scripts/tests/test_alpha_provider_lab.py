@@ -564,3 +564,15 @@ class UnitStopOwnership(unittest.TestCase):
         with patch.object(lab, 'fingerprint', return_value={'sha256': 'owned'}):
             host.stop_candidate(); host.stop_candidate()
         self.assertEqual(sum('stop' in call.args[0] for call in host.run.call_args_list), 1)
+
+
+class FaultJournalPort(unittest.TestCase):
+    def test_root_journal_can_select_any_explicitly_authorized_port(self):
+        self.assertEqual(lab.journal_port(b'1 7 17 1\n',7,17,(0,1,2,3)),1)
+        for data in (b'1 7 17 4\n',b'1 8 17 1\n',b'1 7 18 1\n',b'2 7 17 1\n',b'1 7 17 1\n1 7 17 1\n'):
+            with self.subTest(data=data):
+                with self.assertRaises(RuntimeError):lab.journal_port(data,7,17,(0,1,2,3))
+
+    def test_followup_normal_phase_carries_full_allowlist(self):
+        command=lab.phase_command('provider-lifecycle',Path('/synthetic/images'),'lab',0,(1,2,3))
+        self.assertEqual(command[-5:],['--ports','0','1','2','3'])
