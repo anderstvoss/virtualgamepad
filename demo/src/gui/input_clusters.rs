@@ -519,7 +519,14 @@ pub(super) fn draw_stick(
                     });
                 }
             }
-            let (next, changed) = axis_pad(ui, value, stick.x(), stick.y(), state.held(stick.id()));
+            let (next, changed) = axis_pad(
+                ui,
+                stick.title(),
+                value,
+                stick.x(),
+                stick.y(),
+                state.held(stick.id()),
+            );
             if changed {
                 events.push(InputEvent::Axis2 {
                     id: stick.id(),
@@ -1411,13 +1418,22 @@ pub(super) fn draw_extra_axis(
         ExtraAxisInput::OneDimensional { id, title, range } => {
             card(ui, title, |ui| {
                 let mut next = value.0;
-                if ui
-                    .add(egui::Slider::new(&mut next, range.minimum..=range.maximum))
-                    .changed()
-                {
+                let response = ui.add(egui::Slider::new(&mut next, range.minimum..=range.maximum));
+                response.widget_info(|| {
+                    egui::WidgetInfo::slider(ui.is_enabled(), f64::from(next), title)
+                });
+                if response.changed() {
                     events.push(InputEvent::Axis1 { id, value: next });
                 }
-                if ui.button("Reset").clicked() {
+                let reset = ui.button("Reset");
+                reset.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        format!("Reset {title}"),
+                    )
+                });
+                if reset.clicked() {
                     events.push(InputEvent::Axis1 {
                         id,
                         value: range.neutral,
@@ -1427,7 +1443,7 @@ pub(super) fn draw_extra_axis(
         }
         ExtraAxisInput::TwoDimensional { id, title, x, y } => {
             card(ui, title, |ui| {
-                let (next, changed) = axis_pad(ui, value, x, y, false);
+                let (next, changed) = axis_pad(ui, title, value, x, y, false);
                 if changed {
                     events.push(InputEvent::Axis2 {
                         id,
@@ -1645,6 +1661,7 @@ fn value_axis(values: &[(InputControlId, InputValue)], id: InputControlId, neutr
 
 fn axis_pad(
     ui: &mut egui::Ui,
+    label: &str,
     value: (i32, i32),
     x_range: InputAxisRange,
     y_range: InputAxisRange,
@@ -1663,15 +1680,7 @@ fn axis_pad(
     } else if response.drag_stopped() {
         next = axis_release_value(value, x_range, y_range, hold);
     }
-    next = keyboard_pad(
-        ui,
-        &response,
-        "Stick: W/A/S/D keys",
-        next,
-        x_range,
-        y_range,
-        hold,
-    );
+    next = keyboard_pad(ui, &response, label, next, x_range, y_range, hold);
     ui.monospace(format!("x={} y={}", next.0, next.1));
     (next, next != value)
 }
@@ -2751,6 +2760,95 @@ mod tests {
         };
         assert_eq!(axis_release_value((4, -7), range, range, true), (4, -7));
         assert_eq!(axis_release_value((4, -7), range, range, false), (0, 0));
+    }
+
+    #[test]
+    fn extra_axes_keyboard_traversal_names_controls_and_emits_exact_values() {
+        let range = InputAxisRange {
+            minimum: -10,
+            maximum: 10,
+            neutral: 0,
+        };
+        let one = ExtraAxisInput::OneDimensional {
+            id: InputControlId::new("one"),
+            title: "Throttle",
+            range,
+        };
+        let two = ExtraAxisInput::TwoDimensional {
+            id: InputControlId::new("two"),
+            title: "Camera",
+            x: range,
+            y: range,
+        };
+        let context = egui::Context::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut generated = Vec::new();
+        let mut pad = (0, 0);
+        let mut focus_label = String::new();
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for frame in 0..31 {
+            let mut keys = if frame == 0 {
+                vec![]
+            } else {
+                vec![key(egui::Key::Tab, frame % 2 == 1)]
+            };
+            if focus_label == "Reset Throttle" {
+                keys.push(key(egui::Key::Space, true));
+            }
+            if focus_label == "Camera" {
+                keys.push(key(egui::Key::W, true));
+            } else {
+                keys.push(key(egui::Key::W, false));
+            }
+            let mut events = Vec::new();
+            let output = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_extra_axis(ui, &one, (7, 0), &mut events);
+                        draw_extra_axis(ui, &two, pad, &mut events);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            for event in &events {
+                if let InputEvent::Axis2 { x, y, .. } = event {
+                    pad = (*x, *y);
+                }
+            }
+            generated.extend(events);
+            focus_label.clear();
+            for event in output.platform_output.events {
+                if let Some(label) = &event.widget_info().label {
+                    labels.insert(label.clone());
+                    if matches!(event, egui::output::OutputEvent::FocusGained(_)) {
+                        focus_label = label.clone();
+                    }
+                }
+            }
+        }
+        for label in ["Throttle", "Reset Throttle", "Camera", "Adjacent control"] {
+            assert!(
+                labels.contains(label),
+                "missing focused control {label}: {labels:?}"
+            );
+        }
+        assert!(generated.iter().any(|event| matches!(event, InputEvent::Axis1 { id, value: 0 } if *id == InputControlId::new("one"))));
+        assert!(generated.iter().any(|event| matches!(event, InputEvent::Axis2 { id, x: 0, y: -10 } if *id == InputControlId::new("two"))));
+        assert_eq!(
+            pad,
+            (0, 0),
+            "momentary pad must neutralize after focus moves on"
+        );
     }
 
     #[test]

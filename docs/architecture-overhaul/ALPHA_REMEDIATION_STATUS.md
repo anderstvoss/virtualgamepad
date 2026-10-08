@@ -1524,3 +1524,16 @@ updated immutable client snapshot. This does not close Gate 3 or any other gate.
 The failed f29f2f0 receipt is preserved outside tracked source. Review the
 confirmation deadline separately from product service progress and refuse a
 passing disposition without completed restoration and all-family receipts.
+
+
+### Declared names for supporting axis keyboard controls
+
+The keyboard inventory exposed unnamed supporting one-dimensional sliders and
+generic stick metadata on two-dimensional pads. Each now identifies its declared
+control; reset identifies the axis, and curated stick pads likewise use their
+declared title. Input ranges, momentary release and pointer behavior are unchanged.
+The real Tab/Space/WASD regression fails on the prior unnamed implementation and
+passes with exact reset, movement, adjacent traversal and focus-loss neutralization.
+This is deterministic GUI evidence, not native assistive-technology or full owned-
+display acceptance. The updated GUI requires its own final executable/soak receipt.
+All six gates remain open; immutable provider installation remains pending.
