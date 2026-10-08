@@ -9,6 +9,7 @@ public Steam/FEX assets with an owned display and bounded user unit. Neither
 proves controller recognition or replaces interactive acceptance.
 """
 import argparse
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -17,6 +18,7 @@ import secrets
 import shutil
 import signal
 import struct
+import stat
 import zlib
 import time
 import threading
@@ -84,7 +86,7 @@ def termination_reason(code, output):
     return 'normal-exit' if code == 0 else 'nonzero-exit'
 
 
-def command(workspace, home, uid, gid, sentinel, marker):
+def command(workspace, home, uid, gid, sentinel, marker, profile=None):
     if (type(uid) is not int or type(gid) is not int or uid <= 0 or gid <= 0 or
             not home.is_absolute() or home in (Path('/'), Path('/home')) or
             not workspace.is_absolute() or not sentinel.startswith('.vg-alpha-sentinel-') or
@@ -98,7 +100,7 @@ def command(workspace, home, uid, gid, sentinel, marker):
     for path in ['/lib', '/lib64', '/bin', '/sbin']:
         if Path(path).exists(): args += ['--ro-bind', path, path]
     args += ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--dir', '/run',
-             '--dir', f'/run/user/{uid}', '--bind', str(workspace / 'home'), str(home),
+             '--dir', f'/run/user/{uid}', '--bind', str(profile if profile is not None else workspace / 'home'), str(home),
              '--ro-bind', str(workspace / 'sentinel.py'), '/sentinel.py',
              '--setenv', 'HOME', str(home), '--setenv', 'PATH', '/usr/bin:/bin',
              '--setenv', 'LANG', 'C', '--setenv', 'XDG_RUNTIME_DIR', f'/run/user/{uid}',
@@ -125,10 +127,10 @@ exec /usr/bin/dbus-run-session -- "$SNAP/usr/bin/FEXBash" -c "$SNAP/usr/bin/stea
 '''
 
 
-def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds):
+def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds, profile=None):
     if type(display) is not int or not 200 <= display <= 299 or type(seconds) is not int or not 30 <= seconds <= 900:
         raise ValueError('invalid owned display or bounded deadline')
-    args = command(workspace, home, uid, gid, sentinel, marker)
+    args = command(workspace, home, uid, gid, sentinel, marker, profile)
     temporary = args.index("--tmpfs")
     args[temporary:temporary+2] = ["--bind", str(workspace / "tmp"), "/tmp"]
     boundary = args.index('--')
@@ -181,7 +183,7 @@ def display_command(server, display, auth, visible=False):
     return command + ['-nolisten', 'tcp', '-auth', str(auth), '-noreset']
 
 
-def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False):
+def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False, profile=None):
     if not xvfb.is_absolute() or not xvfb.is_file():
         raise RuntimeError('an explicit available Xvfb binary is required')
     display = next((number for number in range(200, 300)
@@ -224,7 +226,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
             if daemon.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError('owned display startup failed')
             time.sleep(.02)
-        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds)
+        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds, profile)
         require_memory(memory_sample(), starting=True)
         launcher = subprocess.Popen(bootstrap_unit_command(unit, client, seconds, budget),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -299,7 +301,52 @@ def workspace_parent(selected=None):
     return parent
 
 
-def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False):
+def profile_home(workspace, selected, real_home):
+    if selected is None:
+        path = workspace / 'home'
+        path.mkdir(mode=0o700)
+        return path, False
+    if (not selected.is_absolute() or selected.resolve() != selected or
+            selected == real_home or selected in real_home.parents):
+        raise RuntimeError('persistent profile must be an explicit separate non-symlink path')
+    parent = selected.parent.lstat()
+    if parent.st_uid != os.getuid() or parent.st_mode & 0o022:
+        raise RuntimeError('persistent profile parent must be owned and not writable by others')
+    marker = selected / '.virtualgamepad-alpha-profile'
+    expected = dict(version=1, scope='isolated-steam-lab', uid=os.getuid())
+    reused = selected.exists()
+    if not reused:
+        selected.mkdir(mode=0o700)
+        with marker.open('x') as output: output.write(json.dumps(expected) + '\n')
+    info = selected.lstat()
+    if not selected.is_dir() or selected.is_symlink() or info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise RuntimeError('persistent profile must remain an owned private directory')
+    fd = os.open(marker, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 512:
+        os.close(fd)
+        raise RuntimeError('invalid test profile identity marker')
+    with os.fdopen(fd) as source:
+        if json.loads(source.read(513)) != expected or source.read(1):
+            raise RuntimeError('existing directory is not an identified isolated test profile')
+    return selected, reused
+
+
+def lock_profile(profile):
+    descriptor = os.open(profile / '.virtualgamepad-alpha-lock',
+                         os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1:
+            raise RuntimeError('invalid test profile lock')
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BaseException:
+        os.close(descriptor)
+        raise RuntimeError('isolated test profile is already in use or cannot be locked')
+    return descriptor
+
+
+def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False, profile_directory=None):
     if os.geteuid() == 0:
         raise RuntimeError('Steam lab must run as an ordinary user')
     if shutil.which('bwrap') is None:
@@ -315,30 +362,37 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
     initiating = None
     cleanup = []
     receipt = None
+    profile_lock = None
     try:
         with os.fdopen(fd, 'w') as output: output.write('synthetic review sentinel')
         parent = workspace_parent(work_directory) if bootstrap else None
         with tempfile.TemporaryDirectory(prefix='virtualgamepad-alpha-steam-', dir=parent) as directory:
             workspace = Path(directory)
-            (workspace / 'home').mkdir(mode=0o700)
-            (workspace / 'home' / 'private-home-marker').write_text(marker)
+            profile, reused = profile_home(workspace, profile_directory, home)
+            profile_lock = lock_profile(profile)
+            with tempfile.NamedTemporaryFile(mode='w', dir=profile, delete=False) as output:
+                output.write(marker)
+                marker_path = Path(output.name)
+            marker_path.replace(profile / 'private-home-marker')
             (workspace / 'sentinel.py').write_text(SENTINEL)
-            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker),
+            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile),
                                        capture_output=True, text=True, timeout=20, env={'PATH':'/usr/bin:/bin'})
             if completed.returncode:
                 raise RuntimeError('namespace sentinel failed: ' + completed.stderr[:4096])
             if len(completed.stdout) > 4096:
                 raise RuntimeError('oversized namespace receipt')
             receipt = json.loads(completed.stdout)
+            receipt.update(test_profile_retained=profile_directory is not None, test_profile_reused=reused)
             if bootstrap:
                 if captures is not None: captures.mkdir(mode=0o700, exist_ok=False)
-                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible)
+                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile)
                 receipt["bootstrap"] = result
                 if result["initiating"] or result["cleanup"]:
                     raise RuntimeError("isolated Steam bootstrap did not complete")
     except Exception as error:
         initiating = str(error)
     finally:
+        if profile_lock is not None: os.close(profile_lock)
         try: remove_sentinel(canary, expected)
         except Exception as error: cleanup.append(str(error))
     result = dict(status='passed' if initiating is None and not cleanup else 'failed',
@@ -356,6 +410,7 @@ def main():
     display.add_argument('--xvfb', type=Path, help='ordinary-user hidden display server binary')
     display.add_argument('--xephyr', type=Path, help='visible owned nested display for direct disposable login')
     parser.add_argument('--work-directory', type=Path, help='owned disk-backed parent for disposable bootstrap state')
+    parser.add_argument('--profile-directory', type=Path, help='opt-in private test profile retained across runs; never the normal account profile')
     parser.add_argument('--captures', type=Path, help='exclusive external directory for owned-display snapshots')
     parser.add_argument('--seconds', type=int, choices=range(30, 901), default=120)
     args = parser.parse_args()
@@ -365,7 +420,7 @@ def main():
         return 0
     server = args.xephyr if args.xephyr is not None else args.xvfb
     if args.bootstrap and server is None: parser.error('--bootstrap requires --xvfb or --xephyr')
-    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None)
+    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory)
 
 
 if __name__ == '__main__':

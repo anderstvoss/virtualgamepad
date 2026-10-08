@@ -1175,3 +1175,25 @@ The receipt explicitly describes whether existing profile credentials were
 copied; it no longer asserts that interactive credentials were never used.
 A new private profile requires another direct login. Login alone does not close
 recognition, input/output, sibling/removal or isolation acceptance cells.
+
+### User-authorized retained isolated Steam profile
+
+The user confirmed sign-in and the home/store screen in the host-sized-budget
+trial, then explicitly requested retaining that login for later trials. The
+ordinary-user runner now has opt-in `--profile-directory` reuse of an identified,
+private test profile. The real passwd home stays hidden and no normal account
+profile is copied. The selected directory must be separate, owned, private,
+non-symlink and carry the lab identity marker; unexpected entries fail closed.
+A held file lock excludes concurrent use. Profile retention is explicit in the
+receipt; default disposable-profile behavior remains unchanged. All process,
+display, temporary namespace and sentinel cleanup remains mandatory even when
+the identified test profile is retained. Test credentials remain outside tracked
+source and are not exported as acceptance artifacts.
+
+The owned trial was stopped after user-confirmed home access to prepare device
+isolation and validation. It was not a completed controller acceptance trial.
+Final pre-stop counters are preserved externally. Regressions use synthetic
+profile state and cover reuse, actual-home rejection, missing identity markers,
+symlinks, unsafe permissions, FIFO markers, concurrent locking and the exact
+private-home bind. Steam recognition still needs an allowlist of test-owned
+input/hidraw devices; exposing the host's complete device directories is excluded.

@@ -109,3 +109,40 @@ class SteamNamespace(unittest.TestCase):
         self.assertEqual(lab.termination_reason(0, 'Finished with result: oom-kill\n'), 'oom-kill')
         self.assertEqual(lab.termination_reason(1, 'synthetic failure'), 'nonzero-exit')
         self.assertEqual(lab.termination_reason(0, ''), 'normal-exit')
+
+    def test_only_private_identified_test_profile_can_be_retained_and_reused(self):
+        import os
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); workspace = root / 'workspace'; workspace.mkdir()
+            home = root / 'normal-home'; home.mkdir()
+            profile = root / 'test-profile'
+            path, reused = lab.profile_home(workspace, profile, home)
+            self.assertEqual(path, profile); self.assertFalse(reused)
+            (profile / 'synthetic-login-state').write_text('fake state')
+            self.assertTrue(lab.profile_home(workspace, profile, home)[1])
+            self.assertEqual((profile / 'synthetic-login-state').read_text(), 'fake state')
+            with self.assertRaises(RuntimeError): lab.profile_home(workspace, home, home)
+            foreign = root / 'foreign'; foreign.mkdir(mode=0o700)
+            with self.assertRaises(OSError): lab.profile_home(workspace, foreign, home)
+            alias = root / 'alias'; alias.symlink_to(profile, target_is_directory=True)
+            with self.assertRaises(RuntimeError): lab.profile_home(workspace, alias, home)
+            profile.chmod(0o755)
+            with self.assertRaises(RuntimeError): lab.profile_home(workspace, profile, home)
+            profile.chmod(0o700)
+            first = lab.lock_profile(profile)
+            try:
+                with self.assertRaises(RuntimeError): lab.lock_profile(profile)
+            finally: os.close(first)
+            os.close(lab.lock_profile(profile))
+            marker = profile / '.virtualgamepad-alpha-profile'; marker.unlink()
+            marker.symlink_to(root / 'synthetic-foreign-marker')
+            with self.assertRaises(OSError): lab.profile_home(workspace, profile, home)
+            marker.unlink(); os.mkfifo(marker)
+            with self.assertRaises(RuntimeError): lab.profile_home(workspace, profile, home)
+
+    def test_namespace_binds_only_selected_test_profile_over_actual_home(self):
+        args = lab.command(Path('/synthetic/work'), Path('/synthetic/normal-home'), 42, 43,
+                           '.vg-alpha-sentinel-test', 'marker', Path('/synthetic/test-profile'))
+        bind = args.index('--bind')
+        self.assertEqual(args[bind+1:bind+3], ['/synthetic/test-profile', '/synthetic/normal-home'])
+        self.assertNotIn('/synthetic/work/home', args)
