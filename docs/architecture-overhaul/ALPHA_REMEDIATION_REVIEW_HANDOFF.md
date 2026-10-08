@@ -1285,3 +1285,20 @@ and missing execution cannot count as a passing journal-rejection trial.
 Synthetic cases cover these false-positive paths without modifying any record.
 The pacing follows systemd's socket trigger accounting, which is separate from
 service start-limit state (systemd v257 `src/core/socket.c`, trigger-limit check).
+
+### Trigger keyboard identification
+
+A new real egui Tab-event regression reproduced an accessibility defect in the
+production trigger stack: focused digital trigger buttons identified themselves
+only as “Press”, and analog sliders supplied no control name. The controls now
+emit the declared trigger label in their widget information. The regression
+checks both names, traversal to an adjacent control and that traversal emits
+only the exact neutral analog value on focus loss, never a trigger press.
+Visual layout, mouse operation, controller values and ordinary APIs are unchanged.
+This is deterministic focus/event evidence, not a complete screen-reader or
+owned-display acceptance result. Final GUI soak still needs the final image.
+
+The [GUI control inventory](ALPHA_GUI_CONTROL_INVENTORY.md) enumerates every
+interactive boundary, including supporting extra-axis paths, its deterministic
+evidence and outstanding owned-display acceptance. No row is closed by layout
+or compilation alone.

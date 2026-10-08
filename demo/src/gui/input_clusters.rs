@@ -579,6 +579,13 @@ pub(super) fn draw_trigger_stack(
                                     .selected(current || button_is_selected(state, key))
                                     .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
                             );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Button,
+                                    ui.is_enabled(),
+                                    format!("{} press", control.label),
+                                )
+                            });
                             emit_holdable(ui, &response, stack.id(), key, state, |pressed| {
                                 events.push(InputEvent::Button { id, pressed });
                             });
@@ -589,6 +596,13 @@ pub(super) fn draw_trigger_stack(
                                 egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                     .show_value(true),
                             );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::slider(
+                                    ui.is_enabled(),
+                                    f64::from(value),
+                                    control.label,
+                                )
+                            });
                             emit_axis_slider(
                                 ui,
                                 &response,
@@ -2737,6 +2751,90 @@ mod tests {
         };
         assert_eq!(axis_release_value((4, -7), range, range, true), (4, -7));
         assert_eq!(axis_release_value((4, -7), range, range, false), (0, 0));
+    }
+
+    #[test]
+    fn trigger_keyboard_traversal_identifies_each_control() {
+        static CONTROLS: [virtualgamepad::TriggerInput; 2] = [
+            virtualgamepad::TriggerInput {
+                label: "Digital trigger",
+                kind: TriggerInputKind::Button {
+                    id: InputControlId::new("digital"),
+                },
+            },
+            virtualgamepad::TriggerInput {
+                label: "Analog trigger",
+                kind: TriggerInputKind::Axis {
+                    id: InputControlId::new("analog"),
+                    range: InputAxisRange {
+                        minimum: 0,
+                        maximum: 255,
+                        neutral: 0,
+                    },
+                },
+            },
+        ];
+        let stack = gr_controller_contract::construction::TriggerStackSpec {
+            id: InputControlId::new("keyboard-triggers"),
+            title: "Triggers",
+            controls: &CONTROLS,
+        }
+        .build();
+        let context = egui::Context::default();
+        let mut state = InputUiState::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut events = Vec::new();
+        for frame in 0..25 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_trigger_stack(ui, &stack, &[], &mut state, &mut events);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        assert!(
+            labels.contains("Adjacent control"),
+            "Tab must leave the trigger stack"
+        );
+        assert!(
+            labels.contains("Digital trigger press"),
+            "focused press must identify its trigger: {labels:?}"
+        );
+        assert!(
+            labels.contains("Analog trigger"),
+            "focused axis must identify its trigger: {labels:?}"
+        );
+        assert!(
+            events.iter().all(|event| *event
+                == InputEvent::Axis1 {
+                    id: InputControlId::new("analog"),
+                    value: 0,
+                }),
+            "traversal may release focus to neutral, but must never press a trigger: {events:?}",
+        );
     }
 
     #[test]
