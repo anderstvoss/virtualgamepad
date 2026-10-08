@@ -1392,3 +1392,17 @@ passes with exact reset, movement, adjacent traversal and focus-loss neutralizat
 This is deterministic GUI evidence, not native assistive-technology or full owned-
 display acceptance. The updated GUI requires its own final executable/soak receipt.
 All six gates remain open; immutable provider installation remains pending.
+
+
+### Keyboard identification and activation of destructive symbol controls
+
+Clear-name and per-controller removal buttons previously identified themselves
+only as “×”. Their real production helpers now expose “Clear optional controller
+name” and “Remove controller <declared name>” while preserving visible symbols,
+layout and click behavior. A real Tab/Space regression clears the optional draft
+and removes exactly controller 23 from a 28-controller scroll on a 160-pixel-high
+surface, preserving both neighbors. It fails with the former symbol-only metadata.
+The test covers the production buttons and list action boundary, not installed
+provider cleanup or native assistive technology. Existing lifecycle regressions
+remain intact. Full owned-display acceptance and final-image soak remain required;
+all six gates remain open and the pending provider packet is unchanged.

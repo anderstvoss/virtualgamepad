@@ -426,6 +426,37 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
     }
 }
 
+fn controller_remove_button(ui: &mut egui::Ui, name: &str) -> egui::Response {
+    let response = ui
+        .add_sized(
+            [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
+            Button::new("×").fill(destructive_button_fill(ui)),
+        )
+        .on_hover_text("Remove controller");
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            response.enabled(),
+            format!("Remove controller {name}"),
+        )
+    });
+    response
+}
+
+fn clear_name_button(ui: &mut egui::Ui, rect: egui::Rect) -> egui::Response {
+    let response = ui
+        .put(rect, Button::new("×").frame(false).min_size(Vec2::ZERO))
+        .on_hover_text("Clear name");
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            response.enabled(),
+            "Clear optional controller name",
+        )
+    });
+    response
+}
+
 fn show_information<R>(
     response: &egui::Response,
     label: &str,
@@ -1920,13 +1951,7 @@ impl eframe::App for App {
                                         ),
                                         name_response.rect.right_bottom(),
                                     );
-                                    if ui
-                                        .put(
-                                            clear_rect,
-                                            Button::new("×").frame(false).min_size(Vec2::ZERO),
-                                        )
-                                        .on_hover_text("Clear name")
-                                        .clicked()
+                                    if clear_name_button(ui, clear_rect).clicked()
                                     {
                                         self.name_draft.clear();
                                     }
@@ -2108,17 +2133,7 @@ impl eframe::App for App {
                                                             index,
                                                             controller_response.clicked(),
                                                         );
-                                                    let delete_clicked = ui
-                                                        .add_sized(
-                                                            [
-                                                                CONTROLLER_DELETE_WIDTH,
-                                                                CONTROLLER_ROW_HEIGHT,
-                                                            ],
-                                                            egui::Button::new("×")
-                                                                .fill(destructive_button_fill(ui)),
-                                                        )
-                                                        .on_hover_text("Remove controller")
-                                                        .clicked();
+                                                    let delete_clicked = controller_remove_button(ui, &controller.name).clicked();
                                                     if let Some(index) =
                                                         controller_removal_after_delete_click(
                                                             index,
@@ -4855,6 +4870,81 @@ mod tests {
         assert_eq!(requested_create_count("", 0), 1);
         assert_eq!(requested_create_count("  ", 4), 4);
         assert_eq!(requested_create_count("Named pad", 9), 1);
+    }
+
+    #[test]
+    fn symbol_buttons_describe_and_activate_keyboard_actions_beyond_the_viewport() {
+        let context = egui::Context::default();
+        let mut names: Vec<String> = (0..28).map(|index| format!("Controller {index}")).collect();
+        let mut draft = String::from("Optional name");
+        let mut labels = std::collections::BTreeSet::new();
+        let mut activate = false;
+        let mut removed = Vec::new();
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for frame in 0..68 {
+            let mut keys = if frame == 0 {
+                vec![]
+            } else {
+                vec![key(egui::Key::Tab, frame % 2 == 1)]
+            };
+            keys.push(key(egui::Key::Space, activate));
+            activate = false;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(320.0, 160.0),
+                    )),
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                        if clear_name_button(ui, rect).clicked() {
+                            draft.clear();
+                        }
+                        let mut remove = None;
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            for (index, name) in names.iter().enumerate() {
+                                ui.push_id(name, |ui| {
+                                    if controller_remove_button(ui, name).clicked() {
+                                        remove = Some(index);
+                                    }
+                                });
+                            }
+                        });
+                        if let Some(index) = remove {
+                            removed.push(names.remove(index));
+                        }
+                    });
+                },
+            );
+            for event in output.platform_output.events {
+                if let Some(label) = &event.widget_info().label {
+                    labels.insert(label.clone());
+                    if matches!(event, egui::output::OutputEvent::FocusGained(_))
+                        && (label == "Clear optional controller name"
+                            || label == "Remove controller Controller 23")
+                    {
+                        activate = true;
+                    }
+                }
+            }
+        }
+        assert!(draft.is_empty(), "clear must activate without a pointer");
+        assert_eq!(removed, ["Controller 23"]);
+        assert_eq!(names.len(), 27);
+        assert!(names.contains(&String::from("Controller 22")));
+        assert!(names.contains(&String::from("Controller 24")));
+        assert!(labels.contains("Clear optional controller name"));
+        assert!(labels.contains("Remove controller Controller 23"));
     }
 
     #[test]
