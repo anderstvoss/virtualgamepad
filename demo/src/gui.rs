@@ -3605,6 +3605,7 @@ mod tests {
             assert!(matches!(app.kind, Kind::DualSense));
             assert_eq!(app.target, RealizationId::LINUX_UHID_USB);
             assert!(app.controllers.is_empty());
+            assert!(!app.audio_creation.enabled);
             assert_eq!(
                 app.audio_creation
                     .options(app.target, true)
@@ -3704,8 +3705,11 @@ mod tests {
         }
         assert!(owned_nodes().is_empty());
         let mut app = App::default();
-        app.kind = Kind::DualSense;
-        app.target = RealizationId::LINUX_UHID_USB;
+        app.configure_neutral_soak();
+        assert!(
+            !app.audio_creation.enabled,
+            "neutral lifecycle must not join host audio"
+        );
         for count in 1..=2 {
             app.create();
             assert!(

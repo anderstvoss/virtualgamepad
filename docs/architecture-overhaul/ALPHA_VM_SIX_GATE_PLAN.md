@@ -677,3 +677,17 @@ The test covers the production buttons and list action boundary, not installed
 provider cleanup or native assistive technology. Existing lifecycle regressions
 remain intact. Full owned-display acceptance and final-image soak remain required;
 all six gates remain open and the pending provider packet is unchanged.
+
+
+### Neutral live GUI lifecycle isolation
+
+The selected GUI UHID lifecycle test inherited enabled audio under the all-feature
+configuration. It now invokes the same explicit neutral/no-audio configuration
+as the owned soak before any controller is created. The deterministic regression
+checks both inherited audio states and disabled exposure; the selected live test
+asserts audio is disabled. The bounded live invocation passed two-controller
+creation, repeated polling, individual removal, recreation and shutdown, including
+zero owned HID nodes after cleanup. This receipt applies to the tested source
+increment and does not prove full interactive accessibility or the final two-hour
+GUI executable soak. No public behavior or dependency changed. All six gates
+remain open; the immutable provider packet still requires installation.
