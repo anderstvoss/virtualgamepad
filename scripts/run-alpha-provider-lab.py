@@ -795,7 +795,14 @@ class Host:
         # reset-failed clears service start limits, but socket trigger rate
         # accounting survives stop/start. Respect the configured lab window;
         # never disable limits or alter installed units.
-        self.run(['systemctl', 'reset-failed', self.service, self.socket])
+        # Stopped units may already be unloaded by systemd. Querying the
+        # service loads its owned definition; only a retained failed state needs
+        # reset. Failed units cannot be collected before that reset.
+        state = self.run(['systemctl', 'show', self.service, '-p', 'ActiveState', '--value']).strip()
+        if state == 'failed':
+            self.run(['systemctl', 'reset-failed', self.service])
+        elif state != 'inactive':
+            raise RuntimeError('candidate is not stopped before rejection recovery')
         time.sleep(SOCKET_TRIGGER_INTERVAL + .1)
         self.start_candidate()
 

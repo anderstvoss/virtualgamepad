@@ -634,19 +634,20 @@ class ActivationLimitRestoration(unittest.TestCase):
     def test_intentional_failure_series_preserves_limits_and_waits_between_restarts(self):
         host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
         sequence = []
-        host.run = Mock(side_effect=lambda command: sequence.append(('reset', command)))
+        host.run = Mock(side_effect=lambda command: (sequence.append(('command', command)) or ('failed' if 'ActiveState' in command else '')))
         host.start_candidate = Mock(side_effect=lambda: sequence.append(('start',)))
         with patch.object(lab.time, 'sleep', side_effect=lambda delay: sequence.append(('wait', delay))):
             for _ in range(5): host.restart_after_rejection()
         self.assertEqual(sequence, [
-            ('reset', ['systemctl', 'reset-failed', 'owned.service', 'owned.socket']),
+            ('command', ['systemctl', 'show', 'owned.service', '-p', 'ActiveState', '--value']),
+            ('command', ['systemctl', 'reset-failed', 'owned.service']),
             ('wait', lab.SOCKET_TRIGGER_INTERVAL + .1), ('start',)
         ] * 5)
         self.assertFalse(any('virtualgamepad-broker' in str(item) for item in sequence))
 
     def test_reset_failure_prevents_wait_and_activation(self):
         host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
-        host.run = Mock(side_effect=RuntimeError('reset failed')); host.start_candidate = Mock()
+        host.run = Mock(side_effect=['failed', RuntimeError('reset failed')]); host.start_candidate = Mock()
         with patch.object(lab.time, 'sleep') as waiting:
             with self.assertRaisesRegex(RuntimeError, 'reset failed'): host.restart_after_rejection()
         waiting.assert_not_called(); host.start_candidate.assert_not_called()
@@ -664,3 +665,46 @@ class PendingStartupExecution(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'did not fail from broker execution'):
                     host.reject_pending_startup(record, lab.identity(record), b'canonical', 'trial')
                 self.assertEqual(record.read_bytes(), b'canonical')
+
+
+class UnloadedSocketRecovery(unittest.TestCase):
+    def test_collected_stopped_socket_does_not_prevent_rejection_recovery(self):
+        host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
+        service_limited = True
+        elapsed = 0.0
+        def reset(command):
+            nonlocal service_limited
+            if host.socket in command:
+                raise subprocess.CalledProcessError(1, command, stderr=b'Unit not loaded')
+            if 'ActiveState' in command: return 'failed'
+            if command != ['systemctl', 'reset-failed', host.service]:
+                raise AssertionError('unexpected recovery mutation')
+            service_limited = False
+        def wait(delay):
+            nonlocal elapsed
+            elapsed += delay
+        def activate():
+            self.assertFalse(service_limited)
+            self.assertGreater(elapsed, lab.SOCKET_TRIGGER_INTERVAL)
+        host.run = Mock(side_effect=reset); host.start_candidate = Mock(side_effect=activate)
+        with patch.object(lab.time, 'sleep', side_effect=wait): host.restart_after_rejection()
+        host.start_candidate.assert_called_once()
+
+
+class InactiveServiceRecovery(unittest.TestCase):
+    def test_collected_service_reloads_inactive_and_needs_no_reset(self):
+        host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
+        host.run = Mock(return_value='inactive'); host.start_candidate = Mock()
+        with patch.object(lab.time, 'sleep') as waiting: host.restart_after_rejection()
+        host.run.assert_called_once_with(['systemctl', 'show', 'owned.service', '-p', 'ActiveState', '--value'])
+        waiting.assert_called_once_with(lab.SOCKET_TRIGGER_INTERVAL + .1)
+        host.start_candidate.assert_called_once()
+
+    def test_running_or_ambiguous_service_is_not_reset_or_activated(self):
+        for state in ['active', 'activating', 'deactivating', 'unknown', '']:
+            with self.subTest(state=state):
+                host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
+                host.run = Mock(return_value=state); host.start_candidate = Mock()
+                with patch.object(lab.time, 'sleep') as waiting:
+                    with self.assertRaisesRegex(RuntimeError, 'not stopped'): host.restart_after_rejection()
+                self.assertEqual(host.run.call_count, 1); waiting.assert_not_called(); host.start_candidate.assert_not_called()

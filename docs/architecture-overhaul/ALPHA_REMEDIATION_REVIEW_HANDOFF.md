@@ -1319,3 +1319,35 @@ without changing creation options. These tests establish their rendering/focus
 boundary only. Full owned-display control traversal, active isolated input and a
 fresh final-image two-hour soak remain required; no whole gate is closed here.
 The scoped recovery lab update is still a separate pending prerequisite.
+
+### Stopped-unit collection during recovery
+
+The e9be9bf4dd1517b2ad5abb971b3a58bddd16baf5 privileged rerun failed
+before pending-journal rejection: `reset-failed` attempted to reset a stopped
+socket which systemd had already unloaded. Its initiating error is retained,
+cleanup reported no errors, and the original service inactive/socket active
+state was restored. This was an orchestration defect; it supplies no new passing
+provider recovery evidence.
+
+A separate ordinary-user synthetic systemd control exposed the corresponding
+inactive-service collection boundary before packaging. Recovery now queries the
+owned service state, resets only a retained failed service, skips reset for an
+inactive definition, and rejects running/transitional/ambiguous states. The
+socket's bounded trigger window still expires before activation; its limits are
+not disabled or increased. New deterministic regressions cover stopped-socket
+collection, reloaded inactive service and refusal to mutate an active service.
+
+The corrected method passed four consecutive intentional rejection cycles and
+a successful final connection on real disposable user service/socket units with
+matching two-second/twenty-trigger settings. The control restored every owned
+unit file/socket and reports no cleanup error. It is narrower than privileged
+provider acceptance: it creates no USB attachment and does not close Gate 3.
+A refreshed immutable privileged snapshot and full all-family rerun remain
+required. The earlier failed run and the first diagnostic control failure remain
+historical evidence outside tracked source.
+
+Separately, exact 4ce67c1 platform/MSRV/security workflows passed; the MSRV log
+prints Rust 1.85.1 during the actual check. All eight exact-Git consumers and
+cached offline rebuild passed, and all seventeen downloaded SBOM identities
+verified. Privileged CI and workflow-dispatch dependency review were skipped,
+so neither is promoted to acceptance evidence for those boundaries.
