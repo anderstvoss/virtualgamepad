@@ -199,6 +199,10 @@ def worker_death(profile, instance, port, fault_socket, broker_death=False):
             _, uid, _ = struct.unpack('3i', supervisor.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
             if uid != 0: raise RuntimeError('fault supervisor is not root')
             supervisor.sendall(json.dumps(dict(generation=session.generation, device=session.device)).encode()+b'\n')
+            # Broker confirmation includes five paced activations and hostile
+            # journal probes followed by operator restoration. This is a lab
+            # recovery deadline, separate from product service/EOF deadlines.
+            supervisor.settimeout(45 if broker_death else 10)
             if supervisor.recv(1) != (b'B' if broker_death else b'K'): raise RuntimeError('fault supervisor did not confirm injection')
         session.broker.settimeout(5)
         if broker_death:

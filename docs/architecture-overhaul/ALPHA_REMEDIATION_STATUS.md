@@ -1496,3 +1496,31 @@ prints Rust 1.85.1 during the actual check. All eight exact-Git consumers and
 cached offline rebuild passed, and all seventeen downloaded SBOM identities
 verified. Privileged CI and workflow-dispatch dependency review were skipped,
 so neither is promoted to acceptance evidence for those boundaries.
+
+
+### Recovery confirmation deadline after paced hostile-journal checks
+
+The installed f29f2f0567ca2c511cc7117a09801dde236f719a rerun rejected the
+first family's canonical pending, truncated, malformed and replacement-inode
+journals and completed held-identity operator restoration. The full phase still
+failed: the non-root client timed out awaiting confirmation after ten seconds,
+then the supervisor encountered a broken pipe. Five required activation waits
+alone total 10.5 seconds. The external failed receipt reports no cleanup errors;
+the original inactive broker service and active socket were restored.
+
+The client now retains its ten-second connection/authentication deadline and
+worker-death confirmation deadline, but allows 45 seconds for broker-death
+confirmation, which includes hostile-journal probes and completed restoration.
+The five-second product connection/channel EOF checks, exact acknowledgement,
+descriptor accounting and bounded owned-unit lifetime remain unchanged. No
+confirmation is sent before restoration and no product/audio acceptance limit
+is relaxed. Supporting-script change only; public Rust contracts are unchanged.
+
+Two added deterministic regressions fail against the former deadline: paced
+restoration must fit the confirmation budget while retaining every EOF check;
+wrong confirmations and bounded timeout must still abandon/clean the session.
+All 270 Python tests pass. The full privileged all-family rerun requires an
+updated immutable client snapshot. This does not close Gate 3 or any other gate.
+The failed f29f2f0 receipt is preserved outside tracked source. Review the
+confirmation deadline separately from product service progress and refuse a
+passing disposition without completed restoration and all-family receipts.

@@ -74,6 +74,48 @@ class LifecycleProbe(unittest.TestCase):
                     with self.assertRaises(RuntimeError): lab.worker_death('dualsense','lab',0,Path('/synthetic/socket'))
             session.close.assert_called_once_with(abandon=True)
 
+    def test_broker_confirmation_waits_for_paced_restoration_and_keeps_eof_checks(self):
+        session = self.session(); session.device = 17; session.close = Mock()
+        for channel in session.channels: channel.recv.return_value = b''
+        supervisor = MagicMock(); supervisor.__enter__.return_value = supervisor
+        supervisor.getsockopt.return_value = struct.pack('3i', 42, 0, 0)
+        timeout = [None]
+        supervisor.settimeout.side_effect = lambda value: timeout.__setitem__(0, value)
+        def restored(_):
+            # Five activation waits alone exceed the former ten-second limit.
+            if timeout[0] <= 5 * 2.1: raise TimeoutError('restoration still in progress')
+            return b'B'
+        supervisor.recv.side_effect = restored
+        with patch.object(lab, 'Session', return_value=session), \
+             patch.object(lab, 'fd_count', return_value=4), \
+             patch.object(lab.socket, 'socket', return_value=supervisor):
+            result = lab.worker_death('dualsense', 'lab', 0, Path('/synthetic/socket'), broker_death=True)
+        self.assertTrue(result['cleanup'])
+        self.assertEqual(supervisor.settimeout.call_args_list[0].args, (10,))
+        self.assertLessEqual(timeout[0], 60)
+        session.broker.settimeout.assert_called_once_with(5)
+        session.broker.recv.assert_called_once_with(1)
+        for channel in session.channels:
+            channel.settimeout.assert_called_once_with(5)
+            channel.recv.assert_called_once_with(1)
+        session.close.assert_called_once_with(abandon=True)
+
+    def test_fault_confirmation_failure_still_closes_session(self):
+        for broker_death, response in [(False, b'B'), (True, b'K'), (True, TimeoutError('bounded recovery timeout'))]:
+            with self.subTest(broker_death=broker_death, response=response):
+                session = self.session(); session.device = 17; session.close = Mock()
+                supervisor = MagicMock(); supervisor.__enter__.return_value = supervisor
+                supervisor.getsockopt.return_value = struct.pack('3i', 42, 0, 0)
+                if isinstance(response, Exception): supervisor.recv.side_effect = response
+                else: supervisor.recv.return_value = response
+                with patch.object(lab, 'Session', return_value=session), \
+                     patch.object(lab, 'fd_count', return_value=4), \
+                     patch.object(lab.socket, 'socket', return_value=supervisor):
+                    with self.assertRaises((RuntimeError, TimeoutError)):
+                        lab.worker_death('dualsense', 'lab', 0, Path('/synthetic/socket'), broker_death=broker_death)
+                self.assertEqual(supervisor.settimeout.call_args_list[-1].args, (45 if broker_death else 10,))
+                session.close.assert_called_once_with(abandon=True)
+
     def test_invalid_expected_instance_rejects_before_creation(self):
         with patch.object(lab.audio, 'opened') as opened:
             with self.assertRaises(ValueError): lab.Session('dualsense', '../escape', 0)
