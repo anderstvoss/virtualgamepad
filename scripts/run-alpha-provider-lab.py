@@ -226,6 +226,22 @@ def identity(path):
     return info.st_dev, info.st_ino
 
 
+def rewrite_owned_record(path, expected, current, replacement):
+    """Change only a held lab record for a predefined hostile-journal trial."""
+    if len(current) > 256 or len(replacement) > 256:
+        raise ValueError('bounded journal fixture required')
+    descriptor = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, 'r+b') as output:
+        info = os.fstat(output.fileno())
+        if ((info.st_dev, info.st_ino) != expected or not stat.S_ISREG(info.st_mode) or
+                output.read(257) != current):
+            raise RuntimeError('owned journal changed; refusing fixture mutation')
+        output.seek(0); output.truncate(); output.write(replacement); output.flush()
+        os.fsync(output.fileno())
+    if identity(path) != expected or path.read_bytes() != replacement:
+        raise RuntimeError('owned journal changed during fixture mutation')
+
+
 def fingerprint(path):
     for parent in path.parents:
         trusted(parent, directory=True)
@@ -713,12 +729,70 @@ class Host:
                 time.sleep(.02)
         if identity(record)!=expected or record.read_bytes()!=data:
             raise RuntimeError('pending journal identity changed; operator restoration refused')
+        self.reject_pending_startup(record, expected, data, 'pending-restart-' + str(generation))
+        rejected = []
+        for name, payload in [('truncated', b'1 '), ('malformed', b'not-a-valid-audio-record\n')]:
+            rewrite_owned_record(record, expected, data, payload)
+            self.reject_pending_startup(record, expected, payload, name + '-restart-' + str(generation))
+            rewrite_owned_record(record, expected, payload, data)
+            rejected.append(name)
+        self.reject_replaced_journal(record, expected, data, generation)
+        rejected.append('identity-replacement')
+        # The root supervisor retained pidfds and exact inode/content while the
+        # failure occurred. Reusable record fields alone never authorize cleanup.
+        remove_owned(record,expected)
+        self.run(['systemctl','reset-failed',self.service]); self.start_candidate()
+        self.events.append(dict(broker_death_recovery=dict(generation=generation,device=device,
+            worker_exit_verified=True,attachment_removed=True,pending_restart_rejected=True,
+            journal_cleared_by_held_identity=True, hostile_journal_rejections=rejected)))
+
+    def reject_replaced_journal(self, record, expected, data, generation):
+        # Both identities are test-owned and registered before restart. The
+        # original capability must never authorize clearing the replacement.
+        if identity(record) != expected or record.read_bytes() != data:
+            raise RuntimeError('original journal changed before replacement trial')
+        backup = self.root / ('held-journal-' + str(generation))
+        if backup.exists() or backup.is_symlink():
+            raise RuntimeError('owned journal backup path occupied')
+        self.owned.append((backup, expected, False))
+        record.rename(backup)
+        descriptor = os.open(record, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        info = os.fstat(descriptor)
+        replacement = (info.st_dev, info.st_ino)
+        self.owned.append((record, replacement, False))
+        with os.fdopen(descriptor, 'wb') as output:
+            output.write(data); output.flush(); os.fsync(output.fileno())
+        try:
+            self.reject_pending_startup(record, expected, data, 'identity-restart-' + str(generation))
+        except RuntimeError as error:
+            state = self.run(['systemctl', 'show', self.service, '-p', 'ActiveState', '--value']).strip()
+            if ('journal preserved' not in str(error) or state != 'failed' or
+                    identity(record) != replacement or record.read_bytes() != data):
+                raise
+        else:
+            raise RuntimeError('replacement journal was accepted under the old identity')
+        self.run(['systemctl', 'stop', self.socket]); self.run(['systemctl', 'stop', self.service])
+        try:
+            remove_owned(record, expected)
+        except RuntimeError:
+            if identity(record) != replacement or record.read_bytes() != data:
+                raise RuntimeError('replacement record was altered by old-identity cleanup')
+        else:
+            raise RuntimeError('old identity unexpectedly cleared replacement journal')
+        # Only the independently held identity of our injected fixture permits
+        # its removal. Restore the original inode before ordinary lab recovery.
+        remove_owned(record, replacement)
+        if identity(backup) != expected or backup.read_bytes() != data:
+            raise RuntimeError('original held journal changed; restoration refused')
+        backup.rename(record)
+
+    def reject_pending_startup(self, record, expected, data, suffix):
         self.run(['systemctl','reset-failed',self.service])
         self.start_candidate()
         self.run_client(self.args.client_uid,
             ['/usr/bin/python3','-I',str(self.args.probe_directory/'validate-broker-lifecycle-live.py'),
              '--instance',self.instance,'--port',str(self.args.port),'--scenario','startup-rejection'],
-            'pending-restart-'+str(generation))
+            suffix)
         state=self.run(['systemctl','show',self.service,'-p','ActiveState','--value']).strip()
         if state!='failed' or identity(record)!=expected or record.read_bytes()!=data:
             raise RuntimeError('pending restart was not rejected with journal preserved')
@@ -726,13 +800,6 @@ class Host:
         for port in selected_ports(self.args.port,self.args.additional_port): free_port(VHCI.read_text(),port)
         if int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())!=0:
             raise RuntimeError('candidate broker remains alive; journal not cleared')
-        # The root supervisor retained pidfds and exact inode/content while the
-        # failure occurred. Reusable record fields alone never authorize cleanup.
-        remove_owned(record,expected)
-        self.run(['systemctl','reset-failed',self.service]); self.start_candidate()
-        self.events.append(dict(broker_death_recovery=dict(generation=generation,device=device,
-            worker_exit_verified=True,attachment_removed=True,pending_restart_rejected=True,
-            journal_cleared_by_held_identity=True)))
 
     def restart_empty_candidate(self):
         # Only an empty lab may restart: this does not test stale attachment

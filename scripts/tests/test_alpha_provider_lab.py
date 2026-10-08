@@ -272,7 +272,8 @@ class BrokerCrashRestoration(unittest.TestCase):
                 host.run=Mock(side_effect=lambda command: 'failed' if 'ActiveState' in command else '0')
                 host.start_candidate=Mock()
                 def rejected(uid,command,suffix):
-                    self.assertEqual(record.read_bytes(),b'1 7 9 0\n')
+                    expected_data = b'1 7 9 0\n' if suffix.startswith(('pending-', 'identity-')) else (b'1 ' if suffix.startswith('truncated-') else b'not-a-valid-audio-record\n')
+                    self.assertEqual(record.read_bytes(),expected_data)
                     self.assertIn('startup-rejection',command)
                     if changed: record.write_bytes(b'synthetic changed record')
                 host.run_client=Mock(side_effect=rejected)
@@ -287,6 +288,7 @@ class BrokerCrashRestoration(unittest.TestCase):
                         host.broker_death(100,'/owned',worker,record,expected,7,9)
                         self.assertFalse(record.exists())
                         self.assertTrue(host.events[-1]['broker_death_recovery']['pending_restart_rejected'])
+                        self.assertEqual(host.events[-1]['broker_death_recovery']['hostile_journal_rejections'], ['truncated', 'malformed', 'identity-replacement'])
                 broker.kill.assert_called_once(); broker.close.assert_called_once()
                 self.assertIn((record,expected,False),host.owned)
 
@@ -576,3 +578,32 @@ class FaultJournalPort(unittest.TestCase):
     def test_followup_normal_phase_carries_full_allowlist(self):
         command=lab.phase_command('provider-lifecycle',Path('/synthetic/images'),'lab',0,(1,2,3))
         self.assertEqual(command[-5:],['--ports','0','1','2','3'])
+
+
+class OwnedJournalFixtures(unittest.TestCase):
+    def test_mutation_requires_exact_inode_content_and_rejects_symlinks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); record = root / 'record'; record.write_bytes(b'canonical')
+            expected = lab.identity(record)
+            lab.rewrite_owned_record(record, expected, b'canonical', b'1 ')
+            self.assertEqual(record.read_bytes(), b'1 ')
+            for identity, original in [((0, 0), b'1 '), (expected, b'wrong')]:
+                with self.assertRaises(RuntimeError): lab.rewrite_owned_record(record, identity, original, b'malformed')
+                self.assertEqual(record.read_bytes(), b'1 ')
+            with self.assertRaises(ValueError): lab.rewrite_owned_record(record, expected, b'1 ', b'x'*257)
+            alias = root / 'alias'; alias.symlink_to(record)
+            with self.assertRaises(OSError): lab.rewrite_owned_record(alias, expected, b'1 ', b'malformed')
+            self.assertEqual(record.read_bytes(), b'1 ')
+
+    def test_replacement_trial_never_claims_rejection_when_candidate_admits_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); record = root / 'record'; record.write_bytes(b'canonical')
+            expected = lab.identity(record)
+            host = lab.Host(Mock()); host.root = root
+            host.reject_pending_startup = Mock(return_value=None)
+            with self.assertRaisesRegex(RuntimeError, 'accepted under the old identity'):
+                host.reject_replaced_journal(record, expected, b'canonical', 7)
+            self.assertTrue(record.exists())
+            self.assertNotEqual(lab.identity(record), expected)
+            self.assertEqual((root / 'held-journal-7').read_bytes(), b'canonical')
+            self.assertEqual(lab.identity(root / 'held-journal-7'), expected)

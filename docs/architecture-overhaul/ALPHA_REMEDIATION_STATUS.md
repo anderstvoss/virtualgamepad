@@ -1342,3 +1342,25 @@ profile state and cover reuse, actual-home rejection, missing identity markers,
 symlinks, unsafe permissions, FIFO markers, concurrent locking and the exact
 private-home bind. Steam recognition still needs an allowlist of test-owned
 input/hidraw devices; exposing the host's complete device directories is excluded.
+
+### Hostile-journal restart probe extension (live evidence pending)
+
+The existing finite broker-death phase now tests truncated and malformed
+root-owned journal contents after canonical pending-record rejection. Each
+mutation requires the held inode and exact original bytes, is bounded, and is
+restored only after startup rejected with the fixture unchanged. A separate
+controlled inode-replacement trial verifies startup remains rejected and that
+the old identity cannot authorize removal of the replacement. Both injected
+identities are registered before restart; cleanup of the replacement uses only
+its independently held creation identity before restoring the original inode.
+No record value authorizes signaling a PID or detaching a port.
+
+Synthetic regressions cover exact-inode/content mutation, symlink rejection,
+bounded fixtures, all three rejected cases, original inode restoration and
+refusal to claim success if startup admits the replacement. The fixed eight
+phase names and sudo action categories are unchanged. This root orchestration
+extension requires administrator installation of a new immutable snapshot before
+its live cases can be accepted. Existing 66f47dd live passes remain narrower
+historical evidence. Construction/cleanup-failure and remaining sibling-failure
+cells are still unresolved; this extension does not close the entire provider
+gate or audio, output, accessibility and Steam acceptance.
