@@ -265,7 +265,7 @@ class BrokerCrashRestoration(unittest.TestCase):
         for changed in (False,True):
             with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
                 root=Path(directory); (root/'bin').mkdir(); (root/'bin/gr-privileged-broker').write_bytes(b'synthetic image')
-                record=root/'record'; record.write_bytes(b'1 7 9 0\n'); expected=lab.identity(record)
+                (root/'audio').mkdir(); record=root/'audio/record'; record.write_bytes(b'1 7 9 0\n'); expected=lab.identity(record)
                 vhci=root/'status'; vhci.write_text('hub port sta spd dev sockfd local_busid\nhs 0 004 000 0 0 0-0\n')
                 host=lab.Host(Mock(port=0,additional_port=[],client_uid=42,probe_directory=root))
                 host.root=root; host.instance='lab'; host.service='owned.service'; host.socket='owned.socket'
@@ -597,13 +597,34 @@ class OwnedJournalFixtures(unittest.TestCase):
 
     def test_replacement_trial_never_claims_rejection_when_candidate_admits_it(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); record = root / 'record'; record.write_bytes(b'canonical')
+            root = Path(directory); (root/'audio').mkdir(); record = root / 'audio/record'; record.write_bytes(b'canonical')
             expected = lab.identity(record)
-            host = lab.Host(Mock()); host.root = root
+            host = lab.Host(Mock()); host.root = root; host.instance = 'lab'
             host.reject_pending_startup = Mock(return_value=None)
             with self.assertRaisesRegex(RuntimeError, 'accepted under the old identity'):
                 host.reject_replaced_journal(record, expected, b'canonical', 7)
             self.assertTrue(record.exists())
             self.assertNotEqual(lab.identity(record), expected)
-            self.assertEqual((root / 'held-journal-7').read_bytes(), b'canonical')
-            self.assertEqual(lab.identity(root / 'held-journal-7'), expected)
+            self.assertEqual((root / '.lab-held-journal-7').read_bytes(), b'canonical')
+            self.assertEqual(lab.identity(root / '.lab-held-journal-7'), expected)
+
+
+class SeparateJournalFilesystem(unittest.TestCase):
+    @unittest.skipUnless(Path('/dev/shm').is_dir(), 'separate test filesystem unavailable')
+    def test_replacement_preserves_inode_on_journal_filesystem_not_staging_filesystem(self):
+        with tempfile.TemporaryDirectory() as stage, tempfile.TemporaryDirectory(dir='/dev/shm') as state:
+            root = Path(state); (root / 'audio').mkdir()
+            record = root / 'audio/record'; record.write_bytes(b'canonical')
+            expected = lab.identity(record)
+            if expected[0] == Path(stage).stat().st_dev:
+                self.skipTest('test filesystems are identical')
+            host = lab.Host(Mock()); host.root = Path(stage); host.instance = 'lab'
+            host.service = 'owned.service'; host.socket = 'owned.socket'
+            host.run = Mock(return_value='failed')
+            host.reject_pending_startup = Mock(side_effect=RuntimeError('pending restart was not rejected with journal preserved'))
+            host.reject_replaced_journal(record, expected, b'canonical', 7)
+            self.assertEqual(lab.identity(record), expected)
+            self.assertEqual(record.read_bytes(), b'canonical')
+            self.assertFalse((root / '.lab-held-journal-7').exists())
+            self.assertFalse(any(Path(stage).iterdir()))
+            self.assertEqual(host.owned[-2][0].parent, root)

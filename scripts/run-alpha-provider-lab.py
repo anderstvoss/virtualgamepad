@@ -751,7 +751,10 @@ class Host:
         # original capability must never authorize clearing the replacement.
         if identity(record) != expected or record.read_bytes() != data:
             raise RuntimeError('original journal changed before replacement trial')
-        backup = self.root / ('held-journal-' + str(generation))
+        # Preserve the inode with rename on the journal filesystem; /var/lib
+        # staging can be a different filesystem from /run. Keep the backup
+        # outside either provider's pending-record directory.
+        backup = record.parent.parent / ('.' + self.instance + '-held-journal-' + str(generation))
         if backup.exists() or backup.is_symlink():
             raise RuntimeError('owned journal backup path occupied')
         self.owned.append((backup, expected, False))

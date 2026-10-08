@@ -1236,3 +1236,24 @@ remaining GUI changes are settled. The focused regression passes; complete
 interactive accessibility and the remaining five gates remain open. Separately,
 exact e24c9ee Git consumers passed all eight feature combinations and cached
 locked offline rebuild. All 17 downloaded e24c9ee SBOM identities verify.
+
+### Hostile-journal live trial: cross-filesystem lab correction
+
+The installed e24c9eeb363d3eb2825864665012b3c26e6fcbe3 snapshot passed
+canonical, truncated and malformed pending-journal startup rejection for the
+first family. The phase then failed before the inode-replacement check because
+its backup rename crossed from the runtime journal filesystem to disk staging
+(`EXDEV`). This is a confirmed lab defect, not evidence of a provider recovery
+failure or a completed gate. The receipt records no cleanup errors and restores
+the original broker service inactive/socket active state. Keep this failed run
+as historical evidence.
+
+The backup now stays on the journal filesystem, outside both pending-record
+directories, under the unique owned instance/generation name. Held inode/content
+checks and refusal to remove a changed identity remain required. A synthetic
+regression uses distinct staging and journal filesystems and verifies the exact
+original inode/bytes are restored, the backup is removed, and staging receives
+no journal. The immutable installed lab must be refreshed before rerunning the
+complete all-family hostile-journal phase. This correction adds no public API,
+provider policy, phase names, sudo scope or dependencies. Full provider recovery
+and the other five gates remain open.
