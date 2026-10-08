@@ -73,3 +73,19 @@ class SteamNamespace(unittest.TestCase):
             foreign.replace(sentinel)
             with self.assertRaises(RuntimeError): lab.remove_sentinel(sentinel, expected)
             self.assertTrue(sentinel.exists())
+
+    def test_visible_display_uses_owned_geometry_and_cookie_without_host_auth_binding(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            server=Path(directory)/'server';server.write_text('synthetic')
+            auth=Path(directory)/'private-auth'
+            with patch.dict(lab.os.environ,{'DISPLAY':':0'}):
+                command=lab.display_command(server,200,auth,True)
+            self.assertEqual(command[:4],[str(server),':200','-screen','1280x900'])
+            self.assertIn('Virtualgamepad alpha: disposable Steam session',command)
+            self.assertEqual(command[-5:],['-nolisten','tcp','-auth',str(auth),'-noreset'])
+            hidden=lab.display_command(server,200,auth)
+            self.assertEqual(hidden[:5],[str(server),':200','-screen','0','1280x900x24'])
+            with patch.dict(lab.os.environ,{},clear=True):
+                with self.assertRaises(RuntimeError):lab.display_command(server,200,auth,True)
+            with self.assertRaises(ValueError):lab.display_command(server,0,auth)

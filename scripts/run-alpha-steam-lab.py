@@ -145,7 +145,22 @@ def capture_display(workspace, display, path):
     with path.open('xb') as output: output.write(png)
 
 
-def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None):
+def display_command(server, display, auth, visible=False):
+    if not server.is_absolute() or not server.is_file():
+        raise RuntimeError('an explicit available display server binary is required')
+    if type(display) is not int or not 200 <= display < 300:
+        raise ValueError('invalid owned display number')
+    command = [str(server), f':{display}', '-screen']
+    if visible:
+        if not os.environ.get('DISPLAY'):
+            raise RuntimeError('visible nested display requires a host display')
+        command += ['1280x900', '-title', 'Virtualgamepad alpha: disposable Steam session']
+    else:
+        command += ['0', '1280x900x24']
+    return command + ['-nolisten', 'tcp', '-auth', str(auth), '-noreset']
+
+
+def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False):
     if not xvfb.is_absolute() or not xvfb.is_file():
         raise RuntimeError('an explicit available Xvfb binary is required')
     display = next((number for number in range(200, 300)
@@ -180,8 +195,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
                 if allowed < len(chunk): overflow.set()
     try:
         with (workspace / 'display.log').open('wb') as output:
-            daemon = subprocess.Popen([str(xvfb), f':{display}', '-screen', '0', '1280x900x24',
-                '-nolisten', 'tcp', '-auth', str(auth), '-noreset'],
+            daemon = subprocess.Popen(display_command(xvfb, display, auth, visible),
                 stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
         deadline = time.monotonic() + 5
         while not Path(f'/tmp/.X11-unix/X{display}').exists():
@@ -265,7 +279,7 @@ def workspace_parent(selected=None):
     return parent
 
 
-def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None):
+def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False):
     if os.geteuid() == 0:
         raise RuntimeError('Steam lab must run as an ordinary user')
     if shutil.which('bwrap') is None:
@@ -298,7 +312,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
             receipt = json.loads(completed.stdout)
             if bootstrap:
                 if captures is not None: captures.mkdir(mode=0o700, exist_ok=False)
-                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures)
+                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible)
                 receipt["bootstrap"] = result
                 if result["initiating"] or result["cleanup"]:
                     raise RuntimeError("isolated Steam bootstrap did not complete")
@@ -318,7 +332,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--bootstrap', action='store_true', help='bounded isolated Steam/FEX bootstrap, not consumer acceptance')
-    parser.add_argument('--xvfb', type=Path, help='ordinary-user owned-display server binary')
+    display = parser.add_mutually_exclusive_group()
+    display.add_argument('--xvfb', type=Path, help='ordinary-user hidden display server binary')
+    display.add_argument('--xephyr', type=Path, help='visible owned nested display for direct disposable login')
     parser.add_argument('--work-directory', type=Path, help='owned disk-backed parent for disposable bootstrap state')
     parser.add_argument('--captures', type=Path, help='exclusive external directory for owned-display snapshots')
     parser.add_argument('--seconds', type=int, choices=range(30, 901), default=120)
@@ -327,8 +343,9 @@ def main():
         print(json.dumps(dict(apply=False, phases=['private namespace', 'synthetic isolation sentinel'],
                               steam_launched=False, copies_existing_profile=False)))
         return 0
-    if args.bootstrap and args.xvfb is None: parser.error("--bootstrap requires --xvfb")
-    return run(args.bootstrap, args.xvfb, args.seconds, args.work_directory, args.captures)
+    server = args.xephyr if args.xephyr is not None else args.xvfb
+    if args.bootstrap and server is None: parser.error('--bootstrap requires --xvfb or --xephyr')
+    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None)
 
 
 if __name__ == '__main__':

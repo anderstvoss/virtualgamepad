@@ -390,3 +390,38 @@ not the supplied kernel logs. Earlier failed receipts remain historical failures
 live acceptance must be rerun after administrator installation of the corrected
 immutable lab. This correction does not resolve or defer the measured USB audio
 silence/lateness failure. The six-gate objective and draft PR remain unchanged.
+
+### Installed 66f47dd recovery and disposable Steam login
+
+The installed immutable lab was verified at 66f47dd. Individually bounded normal
+lifecycle, post-handoff process exit, pre-handoff connection exit, worker death,
+broker death, and sibling/admission phases all passed with restoration. This
+supports the handoff-identity port correction without erasing prior failures.
+The root death-injection phases include all three audio families and follow-up
+normal lifecycle. The broader provider gate still requires remaining construction
+and cleanup-failure cells, malformed/truncated/identity-changed journals and any
+uncompleted sibling-failure cells; six passing phase receipts are not the entire
+gate. Physical comparison/native timing remain the separate post-alpha issues.
+
+Exact 66f47dd remote CI (native platform jobs and actual MSRV), CodeQL and
+full-history Gitleaks passed. SBOM generation passed and all 17 downloaded
+workspace identities, including root, were verified. The provider contract job
+passed; its privileged job was skipped and remains missing remote evidence.
+These receipts do not establish release readiness or validate later source heads.
+
+A disk-backed, privately mapped Steam/FEX trial on public snap revision 280,
+version 1.0.0.85, reached the disposable login screen at 120 seconds. Isolation
+sentinels proved actual/passwd home hiding, private proc/dev and dropped caps;
+no existing Steam profile or credentials were copied. The bounded trial ended
+with a final X11 BadDrawable screenshot failure, with clean owned teardown, so
+its raw receipt remains failed. The login screenshot establishes bootstrap
+progress only, not controller recognition. The 2 GiB cgroup recorded no OOM kills
+in the observed memory event sample; host reserve stayed above 16 GiB.
+
+The ordinary-user Steam runner now supports an explicit Xephyr display server
+for a visible private login window while keeping the same namespace, private
+cookie, disk-backed home/tmp, memory cap and bounded cleanup. Regression checks
+cover visible/hidden command shape, private cookie, owned display range and
+missing parent display. Login requires the user's direct interaction in that
+window; passwords must not be supplied to the agent. This adds no dependencies
+or ordinary product API changes and does not count as Steam acceptance.
