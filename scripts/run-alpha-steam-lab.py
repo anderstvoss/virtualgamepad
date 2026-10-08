@@ -56,11 +56,32 @@ def memory_sample(meminfo=Path('/proc/meminfo'), pressure=Path('/proc/pressure/m
     return dict(total_bytes=fields['MemTotal'], available_bytes=fields['MemAvailable'], full_avg10=full)
 
 
-def require_memory(sample):
+def memory_budget(sample):
+    # Bound the isolated consumer to half the detected physical RAM.
+    maximum = sample['total_bytes'] // (2 * 1024**2) * 1024**2
+    return dict(max_bytes=maximum, high_bytes=maximum * 3 // 4)
+
+
+def require_memory(sample, starting=False):
     reserve = max(2 * 1024**3, sample['total_bytes'] * 15 // 100)
-    if sample['available_bytes'] < reserve or sample['full_avg10'] >= 5:
+    required = reserve + (memory_budget(sample)['max_bytes'] if starting else 0)
+    if sample['available_bytes'] < required or sample['full_avg10'] >= 5:
         raise RuntimeError('memory safety reserve or pressure threshold exceeded; owned trial stopped')
 
+
+
+def bootstrap_unit_command(unit, client, seconds, budget):
+    return ['systemd-run', '--user', '--wait', '--pipe', '--collect',
+        '--unit=' + unit, '--property=KillMode=control-group', '--property=TimeoutStopSec=5',
+        '--property=MemoryAccounting=yes', '--property=MemoryHigh=' + str(budget['high_bytes']),
+        '--property=MemoryMax=' + str(budget['max_bytes']), '--property=MemorySwapMax=0',
+        '--property=RuntimeMaxSec=' + str(seconds), '--', *client]
+
+
+def termination_reason(code, output):
+    if 'Finished with result: oom-kill' in output:
+        return 'oom-kill'
+    return 'normal-exit' if code == 0 else 'nonzero-exit'
 
 
 def command(workspace, home, uid, gid, sentinel, marker):
@@ -193,6 +214,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
                 output.write(chunk[:allowed])
                 written += allowed
                 if allowed < len(chunk): overflow.set()
+    budget = memory_budget(memory_sample())
     try:
         with (workspace / 'display.log').open('wb') as output:
             daemon = subprocess.Popen(display_command(xvfb, display, auth, visible),
@@ -203,11 +225,8 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
                 raise RuntimeError('owned display startup failed')
             time.sleep(.02)
         client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds)
-        launcher = subprocess.Popen(['systemd-run', '--user', '--wait', '--pipe', '--collect',
-            '--unit=' + unit, '--property=KillMode=control-group', '--property=TimeoutStopSec=5',
-            '--property=MemoryAccounting=yes', '--property=MemoryHigh=2G', '--property=MemoryMax=2G',
-            '--property=MemorySwapMax=0',
-            '--property=RuntimeMaxSec=' + str(seconds), '--', *client],
+        require_memory(memory_sample(), starting=True)
+        launcher = subprocess.Popen(bootstrap_unit_command(unit, client, seconds, budget),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         reader = threading.Thread(target=drain)
         reader.start()
@@ -256,9 +275,10 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
         if Path(f'/tmp/.X11-unix/X{display}').exists(): errors.append('owned display socket remains')
     return dict(scope='Steam bootstrap only; no controller acceptance',
                 unit=unit, exit=code, initiating=initiating, cleanup=errors,
-                memory_samples=samples, memory_high_bytes=2*1024**3, memory_max_bytes=2*1024**3,
+                memory_samples=samples, memory_high_bytes=budget['high_bytes'], memory_max_bytes=budget['max_bytes'],
+                termination=termination_reason(code, log.read_text(errors='replace') if log.exists() else ''),
                 log=log.read_text(errors='replace') if log.exists() else '',
-                accepted=False, profile_credentials_used=False)
+                accepted=False, existing_profile_credentials_copied=False)
 
 
 def require_disk(filesystem, available):
@@ -323,7 +343,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
         except Exception as error: cleanup.append(str(error))
     result = dict(status='passed' if initiating is None and not cleanup else 'failed',
                   evidence=receipt, initiating=initiating, cleanup=cleanup,
-                  steam_launched=bootstrap and receipt is not None and "bootstrap" in receipt, profile_credentials_used=False)
+                  steam_launched=bootstrap and receipt is not None and "bootstrap" in receipt, existing_profile_credentials_copied=False)
     print(json.dumps(result), flush=True)
     return 0 if result['status'] == 'passed' else 1
 

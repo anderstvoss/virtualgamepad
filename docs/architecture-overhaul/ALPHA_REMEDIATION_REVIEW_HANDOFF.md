@@ -1154,3 +1154,24 @@ cover visible/hidden command shape, private cookie, owned display range and
 missing parent display. Login requires the user's direct interaction in that
 window; passwords must not be supplied to the agent. This adds no dependencies
 or ordinary product API changes and does not count as Steam acceptance.
+
+### Steam login OOM and host-sized budget correction
+
+The visible c8afaf8 Steam trial reached sign-in; the user reports completing
+login and reaching the home screen. The owned unit then terminated with
+`oom-kill` after 2 minutes 49 seconds at its former 2 GiB cap. This is a failed
+consumer trial, not accepted Steam evidence. Its owned cleanup completed;
+historical receipts remain unchanged. Earlier samples with zero OOM counters
+were observations before the terminal kill and do not disprove this outcome.
+
+The ordinary-user runner now derives a hard limit of half detected physical
+RAM and a soft limit of three quarters of that budget. Startup requires the
+whole budget plus a separate reserve of at least 2 GiB or 15 percent of RAM;
+live reserve and pressure checks remain active. Swap remains disabled for the
+owned unit, with the existing bounded deadline and complete teardown. No host
+configuration, acceptance assertions or product queue sizes change. Regressions
+cover budget calculation, inadequate startup headroom and OOM classification.
+The receipt explicitly describes whether existing profile credentials were
+copied; it no longer asserts that interactive credentials were never used.
+A new private profile requires another direct login. Login alone does not close
+recognition, input/output, sibling/removal or isolation acceptance cells.

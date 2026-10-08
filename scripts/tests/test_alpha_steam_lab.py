@@ -89,3 +89,23 @@ class SteamNamespace(unittest.TestCase):
             with patch.dict(lab.os.environ,{},clear=True):
                 with self.assertRaises(RuntimeError):lab.display_command(server,200,auth,True)
             with self.assertRaises(ValueError):lab.display_command(server,0,auth)
+
+    def test_bootstrap_budget_is_bounded_and_requires_headroom_before_launch(self):
+        sample = dict(total_bytes=24*1024**3, available_bytes=20*1024**3, full_avg10=0)
+        self.assertEqual(lab.memory_budget(sample), dict(max_bytes=12*1024**3, high_bytes=9*1024**3))
+        lab.require_memory(sample, starting=True)
+        insufficient = {**sample, 'available_bytes': 5*1024**3}
+        lab.require_memory(insufficient)
+        with self.assertRaises(RuntimeError): lab.require_memory(insufficient, starting=True)
+        command = lab.bootstrap_unit_command('synthetic-owned.service', ['/synthetic/client'], 120, lab.memory_budget(sample))
+        self.assertIn('--property=MemoryHigh=9663676416', command)
+        self.assertIn('--property=MemoryMax=12884901888', command)
+        self.assertIn('--property=MemorySwapMax=0', command)
+        self.assertIn('--property=RuntimeMaxSec=120', command)
+        self.assertEqual(command[-2:], ['--', '/synthetic/client'])
+
+    def test_oom_termination_cannot_be_reported_as_successful_bootstrap(self):
+        self.assertEqual(lab.termination_reason(1, 'Finished with result: oom-kill\n'), 'oom-kill')
+        self.assertEqual(lab.termination_reason(0, 'Finished with result: oom-kill\n'), 'oom-kill')
+        self.assertEqual(lab.termination_reason(1, 'synthetic failure'), 'nonzero-exit')
+        self.assertEqual(lab.termination_reason(0, ''), 'normal-exit')
