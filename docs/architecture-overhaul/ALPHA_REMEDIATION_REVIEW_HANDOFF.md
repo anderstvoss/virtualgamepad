@@ -1302,3 +1302,20 @@ The [GUI control inventory](ALPHA_GUI_CONTROL_INVENTORY.md) enumerates every
 interactive boundary, including supporting extra-axis paths, its deterministic
 evidence and outstanding owned-display acceptance. No row is closed by layout
 or compilation alone.
+
+### Keyboard access to information controls
+
+A real Tab-event regression failed before the correction because the realization
+information button rendered its transport explanation only while the mouse was
+hovering. The shared information path now shows a tooltip anchored to the focused
+control without requiring a pointer and supplies descriptive widget names. It
+covers realization help, target capabilities, audio creation details and audio
+session details. Mouse-hover behavior and the explanation contents remain intact.
+
+Regressions verify that unavailable-gadget technical details are actually painted
+with keyboard-only input, focus reaches the adjacent control, information closes
+on focus loss, and both audio information controls display their explanations
+without changing creation options. These tests establish their rendering/focus
+boundary only. Full owned-display control traversal, active isolated input and a
+fresh final-image two-hour soak remain required; no whole gate is closed here.
+The scoped recovery lab update is still a separate pending prerequisite.

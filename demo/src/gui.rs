@@ -426,6 +426,33 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
     }
 }
 
+fn show_information<R>(
+    response: &egui::Response,
+    label: &str,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<egui::InnerResponse<R>> {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, response.enabled(), label)
+    });
+    if response.has_focus() {
+        // Keyboard users have no pointer anchor. Keep information next to its
+        // control and let Tab move on without creating another focus target.
+        egui::Tooltip::always_open(
+            response.ctx.clone(),
+            response.layer_id,
+            response.id,
+            response.rect,
+        )
+        .show(contents)
+    } else if response.hovered() {
+        egui::Tooltip::for_widget(response)
+            .at_pointer()
+            .show(contents)
+    } else {
+        None
+    }
+}
+
 fn draw_target_selector(
     ui: &mut egui::Ui,
     target: &mut RealizationId,
@@ -463,14 +490,10 @@ fn draw_target_selector(
             if let Some(help) = help {
                 let response = ui.add_sized([18.0, 18.0], Button::new("!"));
                 help_rect = Some(response.rect);
-                if response.hovered() {
-                    egui::Tooltip::for_widget(&response)
-                        .at_pointer()
-                        .show(|ui| {
-                            ui.strong(help.title);
-                            ui.label(help.body);
-                        });
-                }
+                show_information(&response, "Controller realization details", |ui| {
+                    ui.strong(help.title);
+                    ui.label(help.body);
+                });
             }
         })
         .response
@@ -2911,34 +2934,30 @@ fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfac
         [INPUT_HEADER_BUTTON_WIDTH, NAME_INPUT_HEIGHT],
         Button::new("Target surface"),
     );
-    if surface_response.hovered() {
-        egui::Tooltip::for_widget(&surface_response)
-            .at_pointer()
-            .show(|ui| {
-                let surface = surface.common_surface();
-                ui.strong("Selected target surface");
-                ui.label(format!("Target: {}", surface.target()));
-                ui.label(format!("Evidence: {:?}", surface.validation_status()));
-                ui.label(format!(
-                    "{} axes, {} digital controls, {} output channels",
-                    surface.axes().len(),
-                    surface.digital_controls().len(),
-                    surface.outputs().len()
-                ));
-                for axis in surface.axes() {
-                    ui.monospace(format!(
-                        "{}: code {} {}..={} (neutral {})",
-                        axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
-                    ));
-                }
-                for restriction in surface.restrictions() {
-                    ui.small(format!(
-                        "Unavailable: {} — {}",
-                        restriction.feature, restriction.reason
-                    ));
-                }
-            });
-    }
+    show_information(&surface_response, "Target surface details", |ui| {
+        let surface = surface.common_surface();
+        ui.strong("Selected target surface");
+        ui.label(format!("Target: {}", surface.target()));
+        ui.label(format!("Evidence: {:?}", surface.validation_status()));
+        ui.label(format!(
+            "{} axes, {} digital controls, {} output channels",
+            surface.axes().len(),
+            surface.digital_controls().len(),
+            surface.outputs().len()
+        ));
+        for axis in surface.axes() {
+            ui.monospace(format!(
+                "{}: code {} {}..={} (neutral {})",
+                axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
+            ));
+        }
+        for restriction in surface.restrictions() {
+            ui.small(format!(
+                "Unavailable: {} — {}",
+                restriction.feature, restriction.reason
+            ));
+        }
+    });
 }
 
 #[allow(clippy::too_many_lines)]
@@ -3750,6 +3769,100 @@ mod tests {
             controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
             "009-UIP-DUALSENSE"
         );
+    }
+
+    #[test]
+    fn focused_information_dismisses_when_tab_moves_to_the_next_control() {
+        let context = egui::Context::default();
+        let mut shown = [false; 5];
+        let mut adjacent_focused = false;
+        for (frame, visible) in shown.iter_mut().enumerate() {
+            let _ = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let response = ui.button("!");
+                        show_information(&response, "Synthetic details", |ui| {
+                            *visible = true;
+                            ui.label("Test-owned explanation");
+                        });
+                        adjacent_focused |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+        }
+        assert_eq!(shown, [false, true, true, false, false]);
+        assert!(adjacent_focused);
+    }
+
+    #[test]
+    fn target_help_is_readable_with_keyboard_focus_without_pointer_input() {
+        let context = egui::Context::default();
+        let mut target = RealizationId::LINUX_DUMMY_HCD_USB_HID;
+        let mut explained = false;
+        let mut identified = false;
+        let mut adjacent_focused = false;
+        for frame in 0..7 {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(800.0, 600.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_target_selector(ui, &mut target, 220.0);
+                        adjacent_focused |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+            explained |= output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => text
+                    .galley
+                    .job
+                    .text
+                    .contains("complete controller request semantics"),
+                _ => false,
+            });
+            identified |= output.platform_output.events.iter().any(|event| {
+                event.widget_info().label.as_deref() == Some("Controller realization details")
+            });
+        }
+        assert!(
+            explained,
+            "keyboard users must see the unavailable transport reason without hovering"
+        );
+        assert!(
+            identified,
+            "the symbol button must identify its information"
+        );
+        assert!(adjacent_focused, "Tab must leave the information control");
     }
 
     #[test]

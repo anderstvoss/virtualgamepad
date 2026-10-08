@@ -644,8 +644,7 @@ pub(super) fn draw_creation(
         ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut config.enabled, "Emulated audio");
             let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
-            if info.hovered() {
-                egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+            super::show_information(&info, "Audio creation details", |ui| {
                     ui.strong("Audio creation details");
                     ui.label("Audio endpoints and the selected host backend are created with the controller. Recreate it to change those choices.");
                     ui.label("Samples ownership routes speaker output to the system default device. Microphone piping starts disabled.");
@@ -656,8 +655,7 @@ pub(super) fn draw_creation(
                     if let Err(error) = &validation {
                         ui.colored_label(egui::Color32::YELLOW, error.to_string());
                     }
-                });
-            }
+            });
         });
 
         let status = if let Some(status) = backend_status(target, has_audio) {
@@ -1218,8 +1216,7 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
 fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
     ui.horizontal(|ui| {
         let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
-        if info.hovered() {
-            egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+        super::show_information(&info, "Audio session details", |ui| {
                 ui.set_max_width(360.0);
                 ui.strong("Controller audio details");
                 if let Some(view) = view {
@@ -1227,8 +1224,7 @@ fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
                 }
                 ui.label("Playback samples are monitored here. The meters and device selectors in Output and Input belong to this controller's physical audio endpoints.");
                 ui.label("Endpoint selectors belong to this open creation; resolve them again after recreating the controller.");
-            });
-        }
+        });
     });
 }
 
@@ -2428,6 +2424,94 @@ mod tests {
             JackDevice::Headset.label_for_connector(JackConnector::Mm35),
             "TRRS headset"
         );
+    }
+
+    #[test]
+    fn audio_information_is_keyboard_visible_without_changing_creation_options() {
+        for creation in [true, false] {
+            let context = egui::Context::default();
+            let mut config = CreationAudio::default();
+            let original = (
+                config.enabled,
+                config.playback,
+                config.microphone,
+                config.host_backend,
+            );
+            let mut explained = false;
+            let mut identified = false;
+            let mut adjacent_focused = false;
+            for frame in 0..9 {
+                let output = context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Tab,
+                                physical_key: None,
+                                pressed: frame % 2 == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            if creation {
+                                draw_creation(
+                                    ui,
+                                    &mut config,
+                                    RealizationId::LINUX_UHID_USB,
+                                    false,
+                                );
+                            } else {
+                                draw_audio_info_header(ui, None);
+                            }
+                            adjacent_focused |= ui.button("Adjacent control").has_focus();
+                        });
+                    },
+                );
+                let body = if creation {
+                    "Recreate it to change those choices"
+                } else {
+                    "resolve them again after recreating"
+                };
+                explained |= output.shapes.iter().any(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) => text.galley.job.text.contains(body),
+                    _ => false,
+                });
+                let label = if creation {
+                    "Audio creation details"
+                } else {
+                    "Audio session details"
+                };
+                identified |= output
+                    .platform_output
+                    .events
+                    .iter()
+                    .any(|event| event.widget_info().label.as_deref() == Some(label));
+            }
+            assert!(explained, "audio information must not require a mouse");
+            assert!(
+                identified,
+                "symbol controls must identify their information"
+            );
+            assert!(adjacent_focused, "information must not trap Tab");
+            assert_eq!(
+                (
+                    config.enabled,
+                    config.playback,
+                    config.microphone,
+                    config.host_backend
+                ),
+                original
+            );
+        }
     }
 
     #[test]
