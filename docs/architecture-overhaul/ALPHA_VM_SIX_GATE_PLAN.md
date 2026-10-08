@@ -528,3 +528,31 @@ no journal. The immutable installed lab must be refreshed before rerunning the
 complete all-family hostile-journal phase. This correction adds no public API,
 provider policy, phase names, sudo scope or dependencies. Full provider recovery
 and the other five gates remain open.
+
+### Hostile-journal rerun: temporary activation-limit exhaustion
+
+The b7c8dbcbf0c703048bc997ea7c78fe45859521e9 live phase completed the
+first family's canonical, truncated, malformed and controlled replacement-inode
+startup rejection, held-identity refusal and operator restoration. The next
+family's connection failed: the scoped journal shows the temporary socket hit
+its trigger limit after repeated intentional startup failures. The overall
+phase is failed, not accepted; no cleanup errors were recorded and the original
+broker service inactive/socket active state was restored.
+
+The lab now states the existing systemd non-accepting socket defaults explicitly
+(two-second trigger window, twenty activations). Between intentional rejection
+trials and before positive recovery, it resets only its own service/socket
+failed state and waits just beyond that window. The socket trigger counter is
+not assumed to reset on stop/start or service reset. No rate limit is disabled,
+no burst is increased, and installed units are untouched. Synthetic regressions
+exercise five sequential restarts, exact owned-unit scope and ordering, and
+refusal to activate after a reset failure. A refreshed immutable lab and full
+all-family rerun are still required. Remaining construction/cleanup-failure,
+sibling-failure and other gate cells remain open.
+
+Startup-rejection evidence now also requires the candidate service to have run
+and exited with its expected error status; rate-limit refusal, signal termination
+and missing execution cannot count as a passing journal-rejection trial.
+Synthetic cases cover these false-positive paths without modifying any record.
+The pacing follows systemd's socket trigger accounting, which is separate from
+service start-limit state (systemd v257 `src/core/socket.c`, trigger-limit check).

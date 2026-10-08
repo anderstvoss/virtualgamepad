@@ -269,7 +269,7 @@ class BrokerCrashRestoration(unittest.TestCase):
                 vhci=root/'status'; vhci.write_text('hub port sta spd dev sockfd local_busid\nhs 0 004 000 0 0 0-0\n')
                 host=lab.Host(Mock(port=0,additional_port=[],client_uid=42,probe_directory=root))
                 host.root=root; host.instance='lab'; host.service='owned.service'; host.socket='owned.socket'
-                host.run=Mock(side_effect=lambda command: 'failed' if 'ActiveState' in command else '0')
+                host.run=Mock(side_effect=lambda command: 'failed' if 'ActiveState' in command else ('exit-code' if 'Result' in command else ('1' if 'ExecMainStatus' in command else '0')))
                 host.start_candidate=Mock()
                 def rejected(uid,command,suffix):
                     expected_data = b'1 7 9 0\n' if suffix.startswith(('pending-', 'identity-')) else (b'1 ' if suffix.startswith('truncated-') else b'not-a-valid-audio-record\n')
@@ -279,7 +279,7 @@ class BrokerCrashRestoration(unittest.TestCase):
                 host.run_client=Mock(side_effect=rejected)
                 worker=Mock(descriptor=77); broker=Mock()
                 with patch.object(lab,'PinnedWorker',return_value=broker), \
-                     patch.object(lab,'VHCI',vhci), patch('select.select',return_value=([77],[],[])):
+                     patch.object(lab,'VHCI',vhci), patch.object(lab.time,'sleep'), patch('select.select',return_value=([77],[],[])):
                     if changed:
                         with self.assertRaisesRegex(RuntimeError,'journal preserved'):
                             host.broker_death(100,'/owned',worker,record,expected,7,9)
@@ -628,3 +628,39 @@ class SeparateJournalFilesystem(unittest.TestCase):
             self.assertFalse((root / '.lab-held-journal-7').exists())
             self.assertFalse(any(Path(stage).iterdir()))
             self.assertEqual(host.owned[-2][0].parent, root)
+
+
+class ActivationLimitRestoration(unittest.TestCase):
+    def test_intentional_failure_series_preserves_limits_and_waits_between_restarts(self):
+        host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
+        sequence = []
+        host.run = Mock(side_effect=lambda command: sequence.append(('reset', command)))
+        host.start_candidate = Mock(side_effect=lambda: sequence.append(('start',)))
+        with patch.object(lab.time, 'sleep', side_effect=lambda delay: sequence.append(('wait', delay))):
+            for _ in range(5): host.restart_after_rejection()
+        self.assertEqual(sequence, [
+            ('reset', ['systemctl', 'reset-failed', 'owned.service', 'owned.socket']),
+            ('wait', lab.SOCKET_TRIGGER_INTERVAL + .1), ('start',)
+        ] * 5)
+        self.assertFalse(any('virtualgamepad-broker' in str(item) for item in sequence))
+
+    def test_reset_failure_prevents_wait_and_activation(self):
+        host = lab.Host(Mock()); host.service = 'owned.service'; host.socket = 'owned.socket'
+        host.run = Mock(side_effect=RuntimeError('reset failed')); host.start_candidate = Mock()
+        with patch.object(lab.time, 'sleep') as waiting:
+            with self.assertRaisesRegex(RuntimeError, 'reset failed'): host.restart_after_rejection()
+        waiting.assert_not_called(); host.start_candidate.assert_not_called()
+
+
+class PendingStartupExecution(unittest.TestCase):
+    def test_rate_limit_signal_and_missing_execution_never_count_as_journal_rejection(self):
+        for result, status in [('start-limit-hit', '0'), ('signal', '9'), ('exit-code', '0')]:
+            with self.subTest(result=result), tempfile.TemporaryDirectory() as directory:
+                record = Path(directory) / 'record'; record.write_bytes(b'canonical')
+                host = lab.Host(Mock(client_uid=42, probe_directory=Path(directory), port=0))
+                host.instance = 'lab'; host.service = 'owned.service'
+                host.restart_after_rejection = Mock(); host.run_client = Mock()
+                host.run = Mock(side_effect=['failed', result, status])
+                with self.assertRaisesRegex(RuntimeError, 'did not fail from broker execution'):
+                    host.reject_pending_startup(record, lab.identity(record), b'canonical', 'trial')
+                self.assertEqual(record.read_bytes(), b'canonical')

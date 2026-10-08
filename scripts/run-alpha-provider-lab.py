@@ -28,6 +28,7 @@ STATE = Path('/run/virtualgamepad-state')
 VHCI = Path('/sys/devices/platform/vhci_hcd.0/status')
 STAGING_PARENT = Path('/var/lib')
 OUTPUT_LIMIT = 1024 * 1024
+SOCKET_TRIGGER_INTERVAL = 2
 ORIGINAL = ('virtualgamepad-broker.socket', 'virtualgamepad-broker.service')
 RULES = Path('/run/udev/rules.d')
 USB = Path('/sys/bus/usb/devices')
@@ -574,7 +575,8 @@ class Host:
         self.socket = self.instance + '.socket'
         mode = '0666' if self.args.unauthorized_probe else '0660'
         socket_text = (f'[Socket]\nListenStream={self.root}/socket/broker.sock\nSocketMode={mode}\n'
-                       f'SocketGroup={pwd.getpwuid(self.args.client_uid).pw_gid}\nRemoveOnStop=yes\nService={self.service}\n')
+                       f'SocketGroup={pwd.getpwuid(self.args.client_uid).pw_gid}\nRemoveOnStop=yes\nService={self.service}\n'
+                       f'TriggerLimitIntervalSec={SOCKET_TRIGGER_INTERVAL}\nTriggerLimitBurst=20\n')
         service_text = (f'[Service]\nExecStart={self.root}/bin/gr-privileged-broker --socket-activation --config {self.root}/broker.conf\n'
             f'PrivateMounts=yes\nBindReadOnlyPaths={self.root}/bin:/usr/libexec/virtualgamepad\n'
             'ProtectSystem=strict\nProtectHome=yes\nPrivateTmp=yes\nNoNewPrivileges=yes\n'
@@ -741,7 +743,7 @@ class Host:
         # The root supervisor retained pidfds and exact inode/content while the
         # failure occurred. Reusable record fields alone never authorize cleanup.
         remove_owned(record,expected)
-        self.run(['systemctl','reset-failed',self.service]); self.start_candidate()
+        self.restart_after_rejection()
         self.events.append(dict(broker_death_recovery=dict(generation=generation,device=device,
             worker_exit_verified=True,attachment_removed=True,pending_restart_rejected=True,
             journal_cleared_by_held_identity=True, hostile_journal_rejections=rejected)))
@@ -789,15 +791,26 @@ class Host:
             raise RuntimeError('original held journal changed; restoration refused')
         backup.rename(record)
 
-    def reject_pending_startup(self, record, expected, data, suffix):
-        self.run(['systemctl','reset-failed',self.service])
+    def restart_after_rejection(self):
+        # reset-failed clears service start limits, but socket trigger rate
+        # accounting survives stop/start. Respect the configured lab window;
+        # never disable limits or alter installed units.
+        self.run(['systemctl', 'reset-failed', self.service, self.socket])
+        time.sleep(SOCKET_TRIGGER_INTERVAL + .1)
         self.start_candidate()
+
+    def reject_pending_startup(self, record, expected, data, suffix):
+        self.restart_after_rejection()
         self.run_client(self.args.client_uid,
             ['/usr/bin/python3','-I',str(self.args.probe_directory/'validate-broker-lifecycle-live.py'),
              '--instance',self.instance,'--port',str(self.args.port),'--scenario','startup-rejection'],
             suffix)
         state=self.run(['systemctl','show',self.service,'-p','ActiveState','--value']).strip()
-        if state!='failed' or identity(record)!=expected or record.read_bytes()!=data:
+        result = self.run(['systemctl', 'show', self.service, '-p', 'Result', '--value']).strip()
+        status = self.run(['systemctl', 'show', self.service, '-p', 'ExecMainStatus', '--value']).strip()
+        if state != 'failed' or result != 'exit-code' or status != '1':
+            raise RuntimeError('candidate startup did not fail from broker execution')
+        if identity(record)!=expected or record.read_bytes()!=data:
             raise RuntimeError('pending restart was not rejected with journal preserved')
         self.run(['systemctl','stop',self.socket]); self.run(['systemctl','stop',self.service])
         for port in selected_ports(self.args.port,self.args.additional_port): free_port(VHCI.read_text(),port)
