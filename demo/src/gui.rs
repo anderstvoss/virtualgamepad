@@ -584,6 +584,22 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     let (increment_rect, decrement_rect) = spinbox_arrow_rects(text_response.rect, ARROW_WIDTH);
     let increment_response = ui.interact(increment_rect, id.with("increment"), Sense::click());
     let decrement_response = ui.interact(decrement_rect, id.with("decrement"), Sense::click());
+    for (response, label) in [
+        (&increment_response, "Increase controller count"),
+        (&decrement_response, "Decrease controller count"),
+    ] {
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, response.enabled(), label)
+        });
+        if response.has_focus() {
+            ui.painter().rect_stroke(
+                response.rect.shrink(0.5),
+                0.0,
+                ui.visuals().selection.stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
     paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
     paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
     if increment_response.clicked() {
@@ -4733,6 +4749,77 @@ mod tests {
         assert_eq!(step_create_count(1, false), 1);
         assert_eq!(step_create_count(4, false), 3);
         assert_eq!(step_create_count(9_999, true), 10_000);
+    }
+
+    #[test]
+    fn create_count_arrows_handle_keyboard_traversal_and_describe_focus() {
+        let context = egui::Context::default();
+        let mut count = 2;
+        let mut labels = Vec::new();
+        let mut adjacent_focused = false;
+        let mut increment_rect = egui::Rect::NOTHING;
+        let mut focus_outline = false;
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frames = [
+            vec![],
+            vec![key(egui::Key::Space, true)],
+            vec![key(egui::Key::Space, false), key(egui::Key::Tab, true)],
+            vec![key(egui::Key::Tab, false), key(egui::Key::Space, true)],
+            vec![key(egui::Key::Space, false), key(egui::Key::Tab, true)],
+        ];
+        for (frame, events) in frames.into_iter().enumerate() {
+            let output = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let id = ui.make_persistent_id("create_count_spinbox");
+                            let response = create_count_spinbox(ui, &mut count);
+                            increment_rect = spinbox_arrow_rects(response.rect, 16.0).0;
+                            if frame == 0 {
+                                ui.memory_mut(|memory| memory.request_focus(id.with("increment")));
+                            }
+                            adjacent_focused |= ui.button("Adjacent control").has_focus();
+                        });
+                    });
+                },
+            );
+            if frame == 1 {
+                focus_outline = output.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::Shape::Rect(rect)
+                        if rect.rect == increment_rect.shrink(0.5) && rect.stroke.width > 0.0)
+                });
+            }
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .into_iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+            assert_eq!(count, [2, 3, 3, 2, 2][frame]);
+        }
+        assert!(adjacent_focused, "Tab must leave the complete spinbox");
+        assert!(focus_outline, "keyboard focus must have a visible outline");
+        assert!(
+            labels
+                .iter()
+                .any(|label| label == "Increase controller count")
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label == "Decrease controller count")
+        );
     }
 
     #[test]

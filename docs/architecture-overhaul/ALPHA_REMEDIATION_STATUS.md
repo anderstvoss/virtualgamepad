@@ -1364,3 +1364,20 @@ its live cases can be accepted. Existing 66f47dd live passes remain narrower
 historical evidence. Construction/cleanup-failure and remaining sibling-failure
 cells are still unresolved; this extension does not close the entire provider
 gate or audio, output, accessibility and Steam acceptance.
+
+### Creation-count accessibility regression
+
+The creation-count arrows already accepted real Space/Tab keyboard events, but
+they emitted no descriptive widget information and painted no explicit keyboard
+focus outline. A real egui regression failed on the missing increase label before
+the correction. The arrows now identify their increase/decrease actions and draw
+a focus outline. The same regression checks exact count changes, traversal through
+both arrows to an adjacent control, descriptive output events and the painted
+focus rectangle. Mouse and typed-number behavior remain unchanged.
+
+This GUI executable change invalidates reuse of the earlier neutral-soak image
+for final GUI acceptance. A new image must receive its own two-hour soak after
+remaining GUI changes are settled. The focused regression passes; complete
+interactive accessibility and the remaining five gates remain open. Separately,
+exact e24c9ee Git consumers passed all eight feature combinations and cached
+locked offline rebuild. All 17 downloaded e24c9ee SBOM identities verify.
