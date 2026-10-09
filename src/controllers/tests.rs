@@ -1124,7 +1124,12 @@ mod worker_outputs {
                     audio.write_microphone(&[0; $microphone]),
                     Err(crate::AudioError::Closed)
                 );
-                assert!(controller.diagnostics().last_error().is_none());
+                let diagnostics = controller.diagnostics();
+                assert!(
+                    diagnostics.last_error().is_none(),
+                    "family={} diagnostics={diagnostics:?}",
+                    $family
+                );
                 println!("public_usb_sample_factory family={} passed=true", $family);
             }};
         }
