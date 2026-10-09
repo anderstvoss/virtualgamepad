@@ -291,7 +291,7 @@ def owned_hidraw(instance, generation, device, port, status, usb=USB,
     """Resolve one leased HID node, never grant an input group or foreign node."""
     audio_isolation_rule(instance)
     rows=[line.split() for line in status.splitlines()[1:]]
-    selected=[row for row in rows if len(row)==7 and row[1]==str(port)]
+    selected=[row for row in rows if len(row)==7 and row[1].isdigit() and int(row[1])==port]
     if len(selected)!=1:
         raise RuntimeError('ambiguous owned HID port')
     row=selected[0]

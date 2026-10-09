@@ -28,7 +28,7 @@ class OwnedHidIdentity(unittest.TestCase):
         hid=root/'hidraw';hid.mkdir();entry=hid/'hidraw8';entry.mkdir()
         device=parent/'4-1:1.3'/'hid';device.mkdir(parents=True)
         (entry/'device').symlink_to(device);(entry/'dev').write_text('240:8\n')
-        status='hub port sta spd dev sockfd local_busid\nhs 0 006 003 00040001 42 4-1\n'
+        status='hub port sta spd dev sockfd local_busid\nhs 0000 006 003 00040001 42 4-1\n'
         return usb,hid,parent,status
 
     def test_exact_lease_serial_ancestry_and_device_number(self):
