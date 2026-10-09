@@ -90,9 +90,18 @@ mod probe {
     }
     fn microphone_pattern(samples: &mut [i16], channels: usize, position: usize) {
         for (i, frame) in samples.chunks_exact_mut(channels).enumerate() {
-            for (channel, sample) in frame.iter_mut().enumerate() {
-                *sample = i16::try_from((position + i) % 97).unwrap()
-                    + 100 * i16::try_from(channel + 1).unwrap();
+            let absolute = position + i;
+            let index = if channels == 1 {
+                absolute / 2
+            } else {
+                absolute
+            };
+            let high = i16::try_from(index / 32767 + 1).unwrap();
+            let low = i16::try_from(index % 32767 + 1).unwrap();
+            if channels == 1 {
+                frame[0] = if absolute % 2 == 0 { high } else { -low };
+            } else {
+                frame.copy_from_slice(&[high, low]);
             }
         }
     }
@@ -100,11 +109,20 @@ mod probe {
     #[test]
     fn protocol_fixture_pattern_survives_wrap_and_partial_queue_admission() {
         let mut samples = [0; 8];
-        microphone_pattern(&mut samples, 2, 96);
-        assert_eq!(samples, [196, 296, 100, 200, 101, 201, 102, 202]);
+        microphone_pattern(&mut samples, 2, 32766);
+        assert_eq!(samples, [1, 32767, 2, 1, 2, 2, 2, 3]);
         // Only two frames were accepted; regenerate the suffix at that position.
-        microphone_pattern(&mut samples, 2, (96 + 2) % 97);
-        assert_eq!(&samples[..4], &[101, 201, 102, 202]);
+        microphone_pattern(&mut samples, 2, 32768);
+        assert_eq!(&samples[..4], &[2, 2, 2, 3]);
+    }
+
+    #[test]
+    fn mono_markers_preserve_pair_phase_after_partial_admission() {
+        let mut samples = [0; 4];
+        microphone_pattern(&mut samples, 1, 65532);
+        assert_eq!(samples, [1, -32767, 2, -1]);
+        microphone_pattern(&mut samples, 1, 65533);
+        assert_eq!(samples, [-32767, 2, -1, 2]);
     }
 
     fn run<P: Protocol>(
@@ -135,7 +153,7 @@ mod probe {
             if accepted != 4096 {
                 return Err("protocol fixture did not prime every frame".into());
             }
-            initial_position = accepted % 97;
+            initial_position = accepted;
         }
         let counters = Arc::new(Counters::default());
         let state = protocol.neutral();
@@ -158,7 +176,7 @@ mod probe {
             let start = Instant::now();
             let mut next = Duration::from_secs(1);
             let mut samples = vec![0; 512 * channels];
-            // Deterministic, quiet, non-physical microphone source for isolation tests.
+            // Deterministic, non-physical microphone source for isolation tests.
             let mut mic_samples = vec![0; 512 * mic_channels];
             let mut mic_position = initial_position;
             let mut frames = 0_u64;
@@ -182,7 +200,7 @@ mod probe {
                 // capacity. Capacity absorbs stalls; it is not a latency target.
                 let wanted = 192_usize.saturating_sub(writer.queued_frames());
                 match writer.push(&mic_samples[..wanted.min(512) * mic_channels]) {
-                    Ok(count) => mic_position = (mic_position + count) % 97,
+                    Ok(count) => mic_position += count,
                     Err(_) => break,
                 }
                 if start.elapsed() >= next {

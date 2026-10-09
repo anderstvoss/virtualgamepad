@@ -239,7 +239,7 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
     delays = RefillDelays()
     def consume():
         position = 0
-        pattern = tuple([101,-202,303,-404][:nout])
+        marker_position = 0
         try:
             while not stop.is_set():
                 header = exact(playback,40)
@@ -249,8 +249,11 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
                 totals['playback_gaps'] += int(first != position or flags != 0)
                 position = first+frames
                 for frame in struct.iter_unpack('<'+'h'*nout,exact(playback,frames*nout*2)):
-                    if frame == pattern: totals['playback_frames'] += 1
-                    elif any(frame): totals['playback_invalid'] += 1
+                    if not any(frame): continue
+                    if frame == live.marker_frame(marker_position,nout):
+                        totals['playback_frames'] += 1
+                        marker_position += 1
+                    else: totals['playback_invalid'] += 1
         except (OSError,EOFError,ValueError) as error:
             if not stop.is_set(): errors.append(str(error))
     def produce():
@@ -266,7 +269,8 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
                 available = max(0,consumed+fill_frames-submitted)
                 while available:
                     frames = min(128,available)
-                    values = [100+(submitted+frame)%97+100*c for frame in range(frames) for c in range(nin)]
+                    values = [value for frame in range(frames)
+                              for value in live.marker_frame(submitted+frame,nin)]
                     header = b'VGPA'+bytes([1,0,tag,1])+struct.pack('<QQIIQ',generation,submitted,frames,0,time.monotonic_ns()//1000)
                     microphone.sendall(header+struct.pack('<'+'h'*len(values),*values))
                     submitted += frames; available -= frames
@@ -304,13 +308,13 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
             control, generation, totals['microphone_submitted'])
         result['microphone_final_accounting'] = accounting
         result['worker_diagnostics'] = counters
-        result['worker_functional_evidence'] = functional_worker_evidence(result['worker_diagnostics'], (seconds+2)*48000)
+        result['worker_functional_evidence'] = functional_worker_evidence(result['worker_diagnostics'], (seconds+3)*48000)
         result['passed'] &= result['worker_functional_evidence']
         result.update(totals)
         result['ipc_errors'] = errors
         result['microphone_refill_largest_delays'] = delays.summary()
         result['microphone_fill_ms'] = microphone_fill_ms
-        result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+2)*48000
+        result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+3)*48000
     except Exception as error:
         initiating = str(error)
     finally:

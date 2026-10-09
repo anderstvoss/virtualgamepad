@@ -1550,3 +1550,48 @@ python3 scripts/run-alpha-audio-control.py --control /tmp/alpha-audio-control --
 Use a fresh report/ledger destination for each repetition. A three-second result
 is diagnostic evidence, never a sustained qualification receipt. All six gates
 remain open. No dependency or ordinary-root API changed.
+
+
+### Indexed USB markers replace a demonstrated false-success pattern
+
+A deterministic fixture reproduced a false success in the previous USB audio
+checker: remove 97 measured frames and replay 97 later frames, preserving the
+sample count. The repeating 97-frame samples are byte-identical under that
+corruption, and the previous checker accepted them. This is a confirmed harness
+blind spot, not evidence that the library caused the historical live losses.
+
+Playback and microphone sources now use indexed signed-16-bit markers. Stereo
+uses high/low words per frame; mono uses positive/negative-tagged frame pairs.
+The tested duration is far below their index-wrap limit. The four-channel playback
+pattern validates both additional channels too. Production-worker IPC fixtures
+and the standalone USB probe use the same indexed scheme, with exact-byte protocol
+checks. The probe advances its position only by admitted frames and preserves
+partial-queue-admission behavior. No queue capacity, operating fill, service or
+latency threshold changes, and no ordinary-root API or worker control protocol
+changes. These are synthetic harness payloads; historical receipts retain their
+original scheme and results.
+
+Capture is decoded once across warm-up, the unchanged measured window and one
+second of explicitly reported trailing capture for marker-edge validation. Mono pairs crossing either window
+edge are validated together; an incomplete final pair cannot prove a measured
+frame. Warm-up/trailing-capture counts remain separate. All measured frames must be valid
+with no silence or sequence gaps. Playback additionally requires every indexed
+frame in order on the worker's PCM channel. The trailing capture extends trial duration but
+does not shorten measurement or relax loss assertions. The source remains active
+until capture completes; this is not producer-stop/drain acceptance. Complete
+production and shutdown drain accounting remain separately gated.
+
+Four new Python regressions cover balanced period loss/replay in all three
+families, mono window-edge/complete-pair behavior, index wrap/channel/framing/bounds and
+partial/reordered/replayed pairs. Existing warm-up exclusion, steady-loss, channel,
+frame-gap and partial-PCM regressions retain their assertions with indexed fixtures.
+The Rust probe retains its wrap/partial-admission regression and adds odd-phase
+mono admission. All 284 Python tests and both Rust probe tests pass. Process-level
+USB worker validation passes three families; production-worker validation passes
+all three families with both descriptor-slot layouts. These tests create no kernel
+attachment or PipeWire graph and do not qualify sustained host audio.
+
+The immutable installed lab still has its old client payload. Live USB revalidation
+requires a reviewed payload update. Independent audio trials remain queued behind
+the running neutral GUI soak. Historical silence and graph-loss failures are not
+reclassified as passes; all six gates remain open. No dependency was added.

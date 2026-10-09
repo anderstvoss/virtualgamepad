@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Unprivileged process-level USB/IP test; no kernel attach or physical devices."""
 import argparse
+import importlib.util
 from pathlib import Path
 import socket
 import struct
 import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('validate-usb-audio-live.py'))
+live = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(live)
 
 
 def exact(peer, size):
@@ -73,10 +80,9 @@ def trial(worker, family, channels, microphones):
             assert all(struct.unpack_from('>4I',iso,i*16)[2:] == (48*channels*2,0) for i in range(8))
             status, actual, data, iso = transfer(peer,9,2,1,49*microphones*2*32,packets=32)
             assert status == 0 and actual == 48*microphones*2*32
-            frames = list(struct.iter_unpack('<'+'h'*microphones,data))
-            assert all(100 <= frame[0] <= 196 for frame in frames)
-            assert all(frame[c]-frame[0] == 100*c for frame in frames for c in range(microphones))
-            assert all((b[0]-100) == ((a[0]-100+1)%97) for a,b in zip(frames,frames[1:]))
+            assert data == live.marker_pcm(48*32, microphones)
+            markers = live.inspect_capture(data, microphones)
+            assert markers['exact_pattern'] == 48*32 and markers['pattern_gaps'] == 0
             assert all(struct.unpack_from('>4I',iso,i*16)[2:] == (48*microphones*2,0) for i in range(32))
             stdout, stderr = process.communicate(timeout=3)
             if process.returncode:

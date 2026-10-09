@@ -6,6 +6,7 @@ synthetic microphone data and retain only aggregate results, never recordings.
 Successful playback submission does not establish worker-side loss acceptance.
 """
 import argparse
+import array
 import concurrent.futures
 import json
 from pathlib import Path
@@ -131,39 +132,109 @@ def reserve_direct_alsa(card, bus, instance, generation):
     return dict(serial=serial, shared_defaults=shared_defaults(objects))
 
 
-def inspect_capture(data, channels):
-    if len(data) % (channels*2):
-        raise ValueError('partial captured PCM frame')
-    total = valid = silence = gaps = 0
+MARKER_BASE = 32767
+MAX_CAPTURE_FRAMES = 3_200_000
+
+
+def marker_frame(position, channels):
+    """Indexed S16 markers: stereo frames or sign-tagged pairs for mono.
+
+    Mono needs two frames to encode a complete index. Positive/negative tags
+    prevent phase ambiguity; capture analysis carries pairs across window edges.
+    """
+    if (type(position) is not int or position < 0
+            or type(channels) is not int or channels not in (1, 2, 4)):
+        raise ValueError('invalid indexed marker position or channels')
+    index = position // 2 if channels == 1 else position
+    high, low = divmod(index, MARKER_BASE)
+    if high >= MARKER_BASE: raise ValueError('indexed marker exhausted')
+    high += 1; low += 1
+    if channels == 1: return (high if position % 2 == 0 else -low,)
+    return (high, low) if channels == 2 else (high, low, -high, -low)
+
+
+def marker_pcm(frames, channels, start=0):
+    if type(frames) is not int or not 0 <= frames <= MAX_CAPTURE_FRAMES:
+        raise ValueError('bounded marker production required')
+    marker_frame(start, channels)
+    if frames: marker_frame(start+frames-1, channels)
+    samples = array.array('h', (value for position in range(start, start+frames)
+                              for value in marker_frame(position, channels)))
+    if samples.itemsize != 2: raise ValueError('16-bit sample storage required')
+    import sys
+    if sys.byteorder != 'little': samples.byteswap()
+    return samples.tobytes()
+
+
+def decode_capture(data, channels):
+    if type(channels) is not int or channels not in (1, 2, 4) or len(data) % (channels*2):
+        raise ValueError('partial captured PCM frame or invalid channels')
+    frames = len(data) // (channels*2)
+    if frames > MAX_CAPTURE_FRAMES: raise ValueError('oversized captured PCM')
+    valid = bytearray(frames)
+    silence = bytearray(frames)
+    gaps = bytearray(frames)
+    positions = array.array('q', [-1]) * frames
     previous = None
-    first_unexpected = last_unexpected = None
-    first_pattern_gap = last_pattern_gap = None
-    for frame in struct.iter_unpack('<'+'h'*channels,data):
-        first = frame[0]
-        matches = 100 <= first <= 196 and all(value-first == 100*c for c,value in enumerate(frame))
-        total += 1
-        if not matches:
-            if first_unexpected is None:
-                first_unexpected = total - 1
-            last_unexpected = total - 1
-        valid += matches
-        silence += all(value == 0 for value in frame)
-        if previous is not None and matches and first-100 != (previous-100+1)%97:
-            gaps += 1
-            if first_pattern_gap is None:
-                first_pattern_gap = total - 1
-            last_pattern_gap = total - 1
-        previous = first if matches else None
-    return dict(frames=total, exact_pattern=valid, silence=silence, pattern_gaps=gaps,
-                first_unexpected_frame=first_unexpected,last_unexpected_frame=last_unexpected,
-                first_pattern_gap=first_pattern_gap,last_pattern_gap=last_pattern_gap)
+    pending = None
+    for offset, frame in enumerate(struct.iter_unpack('<'+'h'*channels, data)):
+        if not any(frame): silence[offset] = 1
+        if channels == 1:
+            value = frame[0]
+            if 1 <= value <= MARKER_BASE:
+                # A repeated header leaves the earlier incomplete pair invalid.
+                pending = (offset, value)
+            elif -MARKER_BASE <= value <= -1 and pending is not None:
+                header_offset, high = pending
+                index = (high-1)*MARKER_BASE + (-value-1)
+                valid[header_offset] = valid[offset] = 1
+                positions[header_offset], positions[offset] = 2*index, 2*index+1
+                if previous is not None and index != previous+1:
+                    # Both halves carry the discontinuity, including a pair
+                    # straddling warm-up, measurement or drain boundaries.
+                    gaps[header_offset] = gaps[offset] = 1
+                previous, pending = index, None
+            else:
+                pending = None
+        else:
+            high, low = frame[:2]
+            if not (1 <= high <= MARKER_BASE and 1 <= low <= MARKER_BASE): continue
+            index = (high-1)*MARKER_BASE + low-1
+            if frame != marker_frame(index, channels): continue
+            valid[offset] = 1
+            positions[offset] = index
+            if previous is not None and index != previous+1: gaps[offset] = 1
+            previous = index
+    return valid, silence, gaps, positions
+
+
+def capture_summary(decoded, begin=0, end=None):
+    valid, silence, gaps, positions = decoded
+    end = len(valid) if end is None else end
+    if not 0 <= begin <= end <= len(valid): raise ValueError('invalid capture window')
+    first_bad = next((i for i in range(begin, end) if not valid[i]), None)
+    last_bad = next((i for i in range(end-1, begin-1, -1) if not valid[i]), None)
+    first_gap = next((i for i in range(begin, end) if gaps[i]), None)
+    last_gap = next((i for i in range(end-1, begin-1, -1) if gaps[i]), None)
+    relative = lambda value: None if value is None else value-begin
+    return dict(frames=end-begin, exact_pattern=valid.count(1, begin, end),
+                silence=silence.count(1, begin, end), pattern_gaps=gaps.count(1, begin, end),
+                first_unexpected_frame=relative(first_bad), last_unexpected_frame=relative(last_bad),
+                first_pattern_gap=relative(first_gap), last_pattern_gap=relative(last_gap),
+                first_source_frame=next((positions[i] for i in range(begin, end) if valid[i]), None),
+                last_source_frame=next((positions[i] for i in range(end-1, begin-1, -1) if valid[i]), None))
+
+
+def inspect_capture(data, channels):
+    return capture_summary(decode_capture(data, channels))
 
 
 def run_trial(card, family, seconds):
     _, channels, microphones = PROFILES[family]
     warmup_seconds = 2
-    total_seconds = seconds + warmup_seconds
-    data = struct.pack('<'+'h'*channels,*[101,-202,303,-404][:channels]) * (48000*total_seconds)
+    edge_capture_seconds = 1
+    total_seconds = seconds + warmup_seconds + edge_capture_seconds
+    data = marker_pcm(48000*total_seconds, channels)
     common = ['-q','-D',f'hw:{card},0','-t','raw','-f','S16_LE','-r','48000','-c']
     started = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(2) as pool:
@@ -172,9 +243,15 @@ def run_trial(card, family, seconds):
         capture = pool.submit(subprocess.run,['arecord',*common,str(microphones),'-d',str(total_seconds)],
                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=total_seconds+8)
         output, incoming = playback.result(), capture.result()
-    warmup_bytes = 48000 * warmup_seconds * microphones * 2
-    result = inspect_capture(incoming.stdout[warmup_bytes:],microphones)
-    result['warmup'] = inspect_capture(incoming.stdout[:warmup_bytes],microphones)
+    decoded = decode_capture(incoming.stdout, microphones)
+    warmup_frames, measured_frames = warmup_seconds*48000, seconds*48000
+    measured_end = min(warmup_frames+measured_frames, len(decoded[0]))
+    measured_begin = min(warmup_frames, measured_end)
+    result = capture_summary(decoded, measured_begin, measured_end)
+    result['warmup'] = capture_summary(decoded, 0, min(warmup_frames, len(decoded[0])))
+    result['edge_capture'] = capture_summary(decoded, measured_end)
+    result['edge_capture_seconds'] = edge_capture_seconds
+    result['marker_scheme'] = 'indexed-s16-frame-or-mono-pair-v1'
     result['warmup_seconds'] = warmup_seconds
     result['captured_total_frames'] = len(incoming.stdout) // (microphones * 2)
     result.update(command_interval_seconds=time.monotonic()-started,

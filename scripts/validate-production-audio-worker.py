@@ -71,8 +71,7 @@ def trial(worker, family, tag, channels, microphones, slots):
         # Feed caller microphone IPC, then verify those exact frames on USB.
         expected = bytearray()
         for block in range(8):
-            samples = [(100+(block*128+frame)%97)+channel*100 for frame in range(128) for channel in range(microphones)]
-            pcm = struct.pack('<'+'h'*len(samples), *samples)
+            pcm = probe.live.marker_pcm(128, microphones, block*128)
             expected.extend(pcm)
             header = b'VGPA'+bytes([1,0,tag,1])+struct.pack('<QQIIQ',7,block*128,128,0,block)
             microphone.sendall(header+pcm)
@@ -82,7 +81,7 @@ def trial(worker, family, tag, channels, microphones, slots):
         assert status == 0 and actual == 48*microphones*2*8
         assert captured == expected[:actual]
         # Host USB playback must traverse the independent outbound PCM channel.
-        pcm = struct.pack('<'+'h'*channels, *range(1,channels+1))*48*8
+        pcm = probe.live.marker_pcm(48*8, channels)
         assert probe.transfer(usb,7,1,0,len(pcm),payload=pcm,packets=8)[:2] == (0,len(pcm))
         received = bytearray()
         position = 0
