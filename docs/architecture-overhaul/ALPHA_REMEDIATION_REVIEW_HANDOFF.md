@@ -1,5 +1,9 @@
 # Independent alpha remediation PR review handoff
 
+Current closure criteria and verifier gaps are in
+[the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
+entries below retain their original scope and may be superseded by that audit.
+
 ### Shared-driver audio diagnostic and keyboard pad correction
 
 At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of

@@ -1,5 +1,9 @@
 # Six-gate acceptance on the current VM
 
+Current closure criteria and verifier gaps are in
+[the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
+entries below retain their original scope and may be superseded by that audit.
+
 Continue in PR #133 on its existing branch. Native timing and physical comparisons
 remain post-alpha #135/#136. These six gates remain alpha requirements. Compilation
 and short functional trials close only their stated cells. Keep historical failures
