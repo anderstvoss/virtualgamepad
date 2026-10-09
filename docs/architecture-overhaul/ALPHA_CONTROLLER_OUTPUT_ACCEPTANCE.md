@@ -135,3 +135,5 @@ a contact node. It removes no device by remembered name; production compound
 rollback owns the descriptor. The original deterministic
 `second_open_failure_rolls_back_gamepad` regression remains. The new selected
 live test passed within its 25-second bound; no other ignored tests were enabled.
+
+The separately pinned live rollback receipt is source `1be7d948e5df6353dda99c832f2d19c25223fa08`, tree `6bbb2381af63c171b67c3c777c37d1da0aee2976`, with unit-test executable SHA-256 `5e97b256bca48cde97fcf3ca6863116c40f6408e8ec6e3415d15eedefcfb0759`. The exact selected test returned zero after all three rollback attempts. Rebuilt production worker and broker images remain byte-identical to the accepted provider candidate, so this test-only increment does not invalidate that functional evidence.
