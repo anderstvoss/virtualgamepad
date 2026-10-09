@@ -184,6 +184,7 @@ fn run<C: LiveController>(kill_after_upload: bool) {
             .args(["--ignored", "--exact", "uinput_consumer", "--nocapture"])
             .env("VIRTUALGAMEPAD_EVDEV_NODE", &node)
             .env("VIRTUALGAMEPAD_EVDEV_NAME", C::NAME)
+            .env("VIRTUALGAMEPAD_EVDEV_PHYS", &controller.physical_paths()[0])
             .env(
                 "VIRTUALGAMEPAD_EVDEV_HOLD",
                 if kill_after_upload { "1" } else { "0" },
@@ -244,6 +245,7 @@ fn assert_observations(observations: Vec<ForceFeedbackEvent>, kill_after_upload:
     let mut erases = 0;
     let mut starts = 0;
     let mut stops = 0;
+    let mut sequence = Vec::new();
     for event in observations {
         match event {
             ForceFeedbackEvent::Uploaded {
@@ -254,9 +256,13 @@ fn assert_observations(observations: Vec<ForceFeedbackEvent>, kill_after_upload:
                 assert_eq!(effect.weak, 0x8000);
                 assert!(matches!(effect.strong, 0x4000 | 0x2000));
                 assert_eq!((effect.length_ms, effect.delay_ms), (100, 17));
+                sequence.push((1, u32::from(effect.strong)));
                 uploads += 1;
             }
-            ForceFeedbackEvent::Erased { status: 0, .. } => erases += 1,
+            ForceFeedbackEvent::Erased { status: 0, .. } => {
+                sequence.push((3, 0));
+                erases += 1;
+            }
             ForceFeedbackEvent::Playback {
                 effect,
                 repetitions,
@@ -265,6 +271,7 @@ fn assert_observations(observations: Vec<ForceFeedbackEvent>, kill_after_upload:
                     (effect.strong, effect.weak),
                     (if kill_after_upload { 0x4000 } else { 0x2000 }, 0x8000)
                 );
+                sequence.push((2, repetitions));
                 match repetitions {
                     2 => starts += 1,
                     0 => stops += 1,
@@ -274,6 +281,7 @@ fn assert_observations(observations: Vec<ForceFeedbackEvent>, kill_after_upload:
             _ => panic!("unexpected feedback: {event:?}"),
         }
     }
+    assert_feedback_sequence(&sequence, kill_after_upload);
     // Linux erase_effect issues another playback(0) before the erase callback.
     assert_eq!(
         (uploads, starts, stops, erases),
@@ -284,6 +292,34 @@ fn assert_observations(observations: Vec<ForceFeedbackEvent>, kill_after_upload:
         }
     );
 }
+fn assert_feedback_sequence(sequence: &[(u8, u32)], killed: bool) {
+    let expected = if killed {
+        vec![(1, 0x4000), (2, 0), (3, 0)]
+    } else {
+        [(1, 0x4000), (1, 0x2000), (2, 2), (2, 0), (2, 0), (3, 0)].repeat(3)
+    };
+    assert_eq!(
+        sequence, expected,
+        "exact upload/update/start/stop/erase order"
+    );
+}
+
+#[test]
+fn feedback_order_rejects_reordering_replay_and_missing_completion() {
+    let expected = [(1, 0x4000), (1, 0x2000), (2, 2), (2, 0), (2, 0), (3, 0)].repeat(3);
+    assert_feedback_sequence(&expected, false);
+    let mut reordered = expected.clone();
+    reordered.swap(2, 3);
+    let mut replayed = expected.clone();
+    replayed.push(expected[0]);
+    let mut missing = expected.clone();
+    missing.pop();
+    for invalid in [reordered, replayed, missing] {
+        assert!(std::panic::catch_unwind(|| assert_feedback_sequence(&invalid, false)).is_err());
+    }
+    assert_feedback_sequence(&[(1, 0x4000), (2, 0), (3, 0)], true);
+}
+
 #[test]
 #[ignore = "requires prepared uinput and access to exact created event nodes"]
 fn all_families_complete_live_evdev_feedback() {
@@ -294,16 +330,146 @@ fn all_families_complete_live_evdev_feedback() {
         run::<Xbox360Controller>(kill_after_upload);
     }
 }
+fn owned_components(expected: &[String]) -> Vec<PathBuf> {
+    let inventory: Vec<_> = nodes()
+        .into_iter()
+        .filter_map(|path| {
+            let physical = fs::read_to_string(path.join("device/phys"))
+                .ok()?
+                .trim()
+                .to_owned();
+            expected.contains(&physical).then_some((path, physical))
+        })
+        .collect();
+    select_primary(&inventory, expected).expect("exact complete owned component set");
+    inventory.into_iter().map(|(path, _)| path).collect()
+}
+
+fn feedback_after_removal<C: LiveController>() {
+    let mut first = C::create();
+    let mut survivor = C::create();
+    thread::sleep(Duration::from_millis(500));
+    let removed = owned_components(&first.physical_paths());
+    let surviving = owned_components(&survivor.physical_paths());
+    assert!(removed.iter().all(|path| !surviving.contains(path)));
+    first.close();
+    first.close();
+    assert!(removed.iter().all(|path| !path.exists()));
+    assert!(surviving.iter().all(|path| path.exists()));
+    let expected = survivor.physical_paths();
+    let inventory: Vec<_> = surviving
+        .iter()
+        .map(|path| {
+            (
+                path.clone(),
+                fs::read_to_string(path.join("device/phys"))
+                    .unwrap()
+                    .trim()
+                    .to_owned(),
+            )
+        })
+        .collect();
+    let primary = select_primary(&inventory, &expected).unwrap();
+    let node = PathBuf::from("/dev/input").join(primary.file_name().unwrap());
+    let mut child = Consumer(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--ignored", "--exact", "uinput_consumer", "--nocapture"])
+            .env("VIRTUALGAMEPAD_EVDEV_NODE", node)
+            .env("VIRTUALGAMEPAD_EVDEV_NAME", C::NAME)
+            .env("VIRTUALGAMEPAD_EVDEV_PHYS", &expected[0])
+            .env("VIRTUALGAMEPAD_EVDEV_HOLD", "0")
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut observations = Vec::new();
+    let mut status = None;
+    while Instant::now() < deadline {
+        survivor.poll(&mut observations);
+        if let Some(result) = child.0.try_wait().unwrap() {
+            status = Some(result);
+            break;
+        }
+        thread::sleep(Duration::from_millis(1));
+    }
+    // Drain asynchronous final erase/playback notifications after the child exits.
+    for _ in 0..5 {
+        survivor.poll(&mut observations);
+    }
+    survivor.close();
+    survivor.close();
+    drop(child);
+    assert!(
+        status.is_some_and(|result| result.success()),
+        "surviving consumer failed or timed out"
+    );
+    assert!(surviving.iter().all(|path| !path.exists()));
+    assert_observations(observations, false);
+    eprintln!(
+        "family={} removed_components={} surviving_components={} feedback_after_removal=true cleanup=true",
+        C::NAME,
+        removed.len(),
+        surviving.len()
+    );
+}
+
 #[test]
-#[ignore = "private child entry point; requires an exact parent-selected event node"]
-#[allow(unsafe_code)] // Reviewed event-node ioctls in an isolated acceptance child.
-fn uinput_consumer() {
+#[ignore = "prepared ordinary-user uinput/event access; neutral devices and owned feedback only"]
+fn all_families_feedback_survives_sibling_removal() {
+    assert_eq!(
+        std::env::var("VIRTUALGAMEPAD_OUTPUT_LAB").as_deref(),
+        Ok("1")
+    );
+    feedback_after_removal::<DualSenseController>();
+    feedback_after_removal::<DualShock4Controller>();
+    feedback_after_removal::<SwitchProController>();
+    feedback_after_removal::<Xbox360Controller>();
+}
+
+fn exact_consumer_identity(
+    name: &str,
+    physical: &str,
+    expected_name: &str,
+    expected_physical: &str,
+) -> bool {
+    !expected_physical.is_empty() && name == expected_name && physical == expected_physical
+}
+
+#[test]
+fn consumer_identity_rejects_same_name_siblings_empty_and_changed_physical_labels() {
+    assert!(exact_consumer_identity(
+        "controller",
+        "owned/a",
+        "controller",
+        "owned/a"
+    ));
+    for (name, physical, expected) in [
+        ("controller", "owned/b", "owned/a"),
+        ("foreign", "owned/a", "owned/a"),
+        ("controller", "", ""),
+        ("controller", "owned/a/changed", "owned/a"),
+    ] {
+        assert!(!exact_consumer_identity(
+            name,
+            physical,
+            "controller",
+            expected
+        ));
+    }
+}
+
+#[allow(unsafe_code)] // Bounded identity queries on the held parent-selected descriptor.
+fn consumer_file() -> fs::File {
+    use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
     let path = std::env::var_os("VIRTUALGAMEPAD_EVDEV_NODE").expect("parent-selected node");
     let file = fs::OpenOptions::new()
         .read(true)
         .write(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
         .open(path)
         .unwrap();
+    assert!(file.metadata().unwrap().file_type().is_char_device());
     let fd = file.as_raw_fd();
     let mut name = [0_u8; 128];
     // Only query and operate the already-open, parent-selected event descriptor.
@@ -316,11 +482,37 @@ fn uinput_consumer() {
             )
         } >= 0
     );
-    let length = name.iter().position(|byte| *byte == 0).unwrap();
-    assert_eq!(
-        std::str::from_utf8(&name[..length]).unwrap(),
-        std::env::var("VIRTUALGAMEPAD_EVDEV_NAME").unwrap()
+    let mut physical = [0_u8; 512];
+    // SAFETY: the held event FD is queried into bounded live byte storage.
+    assert!(
+        unsafe {
+            libc::ioctl(
+                fd,
+                libc::_IOR::<[u8; 512]>(u32::from(b'E'), 0x07),
+                physical.as_mut_ptr(),
+            )
+        } >= 0
     );
+    let length = name.iter().position(|byte| *byte == 0).unwrap();
+    let physical_length = physical.iter().position(|byte| *byte == 0).unwrap();
+    assert!(
+        exact_consumer_identity(
+            std::str::from_utf8(&name[..length]).unwrap(),
+            std::str::from_utf8(&physical[..physical_length]).unwrap(),
+            &std::env::var("VIRTUALGAMEPAD_EVDEV_NAME").unwrap(),
+            &std::env::var("VIRTUALGAMEPAD_EVDEV_PHYS").unwrap()
+        ),
+        "held consumer descriptor differs from the parent-owned component"
+    );
+    file
+}
+
+#[test]
+#[ignore = "private child entry point; requires an exact parent-selected event node"]
+#[allow(unsafe_code)] // Reviewed event-node ioctls in an isolated acceptance child.
+fn uinput_consumer() {
+    let file = consumer_file();
+    let fd = file.as_raw_fd();
     for _ in 0..3 {
         let mut effect = libc::ff_effect {
             type_: 0x50,
