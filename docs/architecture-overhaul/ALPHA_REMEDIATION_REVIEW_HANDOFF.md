@@ -1652,3 +1652,34 @@ resolve observed graph loss, qualify the host, or fix the separate measured
 production duration/rate verification gap. Preserve failed receipts and the
 zero-loss and p99 thresholds. All six gates remain open; the accepted byte-identical
 neutral GUI soak is unaffected.
+
+## Bounded realtime callback comparisons
+
+After `8146f71`, external diagnostic C variants compared buffer quanta without
+product sessions or queues. The source, sink and private daemon data loops and
+main threads had verified round-robin priority 20 through existing RealtimeKit
+admission. Each planned/generated/successfully submitted 144000 frames, with
+zero duplication/corruption and complete reconciled ledgers:
+
+| Topology | Quantum | Missing frames | Production seconds for three planned seconds | Result |
+| --- | --- | --- | --- | --- |
+| Direct | 512 | 2560 | 3.639789585 | Failed |
+| Direct | 256 | 13056 | 4.309629169 | Failed |
+| Direct | 128 | 34560 | 4.830507877 | Failed |
+| Loopback | 512 | 2560 | 3.732355752 | Failed |
+
+Every measured direct source callback filled the requested quantum; available
+capacity was 12288 frames. No request was underfilled. The graph clock nevertheless
+advanced by multiple quanta between some callbacks. Main-thread scheduling alone
+and these smaller quanta did not resolve loss or the rate deficit. Callback CPU
+cost, graph discontinuity and VM scheduling still require discriminating evidence;
+these results do not identify the cause. Xrun totals remain unavailable.
+
+These are three-second diagnostics using experimental C callback/concurrency
+instrumentation outside tracked source, not maintained-control qualification or
+product acceptance. They followed prebuilding and soak teardown, with no competing
+compiler, GUI or Steam trial. All granted owned processes exited, and private graph
+supervisors returned terminal failures after cleanup. No shared scheduling/service
+configuration, queues, loss thresholds or latency limits were changed. No 60-second
+qualification or product matrix is accepted by these results. Raw binary, grant,
+clock, requested-buffer and ledger receipts remain outside tracked source.
