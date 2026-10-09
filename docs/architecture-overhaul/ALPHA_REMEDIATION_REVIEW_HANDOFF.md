@@ -1460,3 +1460,42 @@ external input frame rather than counting internal layout passes. This resolves
 the recorded rapid battery-focus case, not every possible numeric control or
 whole native accessibility acceptance. Final rendered-image/soak checks remain
 required; no ordinary-root API or dependency changes.
+
+
+### Installed named-phase acceptance follow-up
+
+Evidence revision: `bbc1e1eb93baffdccf2840ae130d0cb139043a34`, tree
+`eabc429ebe3273871c35ce1317aaf972d711121e`. The installed snapshot completed
+seven bounded phases: rejection, normal lifecycle, client exit after handoff,
+client exit before handoff, worker death after readiness, broker death with hostile
+journals, and sibling/admission recovery. Each passed its declared assertions and
+restored the original broker/socket state. This closes those cells, not the entire
+provider gate. Actual worker death during construction, combined initiating and
+cleanup failures, and remaining forced sibling-failure cells still need evidence.
+
+The eighth phase, USB functional audio, failed on the first DualSense cell and
+therefore did not accept DS4 or Xbox 360. Playback delivered 240,000 exact frames
+with no invalid markers or gaps. Microphone capture contained 11,760 silence
+frames: 4,320 in warm-up and 7,440 in the measured interval. The worker reported
+240,096 capture frames and 11,760 silence frames; the last client credit recorded
+228,336 consumed marker frames and 228,720 submitted frames. The numerical
+difference between capture and the last consumed credit equals the silence count.
+These snapshots are not atomic: this supports a refill-starvation hypothesis but
+does not prove an exact final conservation equation or exclude another defect.
+The largest observed refill intervals approached 9.9 ms with an 8 ms operating
+fill. Queue capacity and zero-loss assertions remain unchanged. No corrected
+continuity behavior is claimed. Client and root cleanup reported no errors, shared
+audio defaults stayed unchanged, and the original service state was restored.
+
+Next audio investigation must align final consumed credit with worker counters
+and correlate submitted marker ranges with capture/silence boundaries. It must
+separate incomplete production from downstream loss before changing pacing.
+Increasing queues or accepting silence cannot close this failure. Raw receipts
+remain outside tracked source; historical failed runs remain preserved.
+
+All six mandatory gates remain open. Later GUI-only commits require acceptance
+against their own rendered executable; the installed provider receipt does not
+establish whole-candidate acceptance. Physical comparisons and native-host timing
+remain the separately deferred post-alpha issues. Self-replacement is not enabled:
+allowing replacement of root-running code changes the earlier immutable-lab trust
+boundary and requires an explicit choice of update scope.
