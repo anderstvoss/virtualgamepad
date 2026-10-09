@@ -5,6 +5,7 @@ Synthetic samples only. This is continuity evidence, not end-to-end latency.
 import argparse
 import array
 import errno
+import fcntl
 import stat
 import importlib.util
 import heapq
@@ -261,6 +262,14 @@ def output_observation(control,generation):
     return data
 
 
+def submit_hid_output(descriptor,wire,operation):
+    if operation=='interrupt':return os.write(descriptor,wire)
+    if operation=='set-report':
+        # Linux HIDIOCSOUTPUT: bidirectional IOC, type H, number 0x0b.
+        return fcntl.ioctl(descriptor,(3<<30)|(len(wire)<<16)|(ord('H')<<8)|0x0b,bytearray(wire),True)
+    raise ValueError('unknown fixed HID output operation')
+
+
 def hid_outputs(control,generation,device,profile,path):
     peer=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);peer.settimeout(5)
     descriptor=None
@@ -288,26 +297,27 @@ def hid_outputs(control,generation,device,profile,path):
         else:raise ValueError('kernel HID outputs did not quiesce')
         results=[]
         for report_id,raw,supported in output_cases(profile):
-            wire=bytes([report_id])+raw
-            try:
-                written=os.write(descriptor,wire)
-                if not supported:raise ValueError('unsupported Xbox HID output was acknowledged')
-                if written!=len(wire):raise ValueError('partial kernel HID output write')
-            except OSError as error:
-                if supported or error.errno not in (errno.EPIPE,errno.EINVAL,errno.ENOSYS):raise
-                results.append(dict(report_id=report_id,rejected_errno=error.errno))
-                if output_observation(control,generation)!=empty:raise ValueError('rejected HID output emitted an event')
-                continue
-            expected=struct.pack('<Q',generation)+bytes([1,report_id])+raw
-            deadline=time.monotonic()+1
-            while True:
-                observed=output_observation(control,generation)
-                if observed==expected:break
-                if observed!=empty:raise ValueError('kernel HID output differs or is reordered')
-                if time.monotonic()>=deadline:raise TimeoutError('kernel HID output observation missing')
-                time.sleep(.001)
-            if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
-            results.append(dict(report_id=report_id,raw=raw.hex(),written=written,observed_exactly_once=True))
+            for operation in ('interrupt','set-report'):
+                wire=bytes([report_id])+raw
+                try:
+                    written=submit_hid_output(descriptor,wire,operation)
+                    if not supported:raise ValueError('unsupported Xbox HID output was acknowledged')
+                    if written!=len(wire):raise ValueError('partial kernel HID output write')
+                except OSError as error:
+                    if supported or error.errno not in (errno.EPIPE,errno.EINVAL,errno.ENOSYS):raise
+                    results.append(dict(operation=operation,report_id=report_id,rejected_errno=error.errno))
+                    if output_observation(control,generation)!=empty:raise ValueError('rejected HID output emitted an event')
+                    continue
+                expected=struct.pack('<Q',generation)+bytes([1,report_id])+raw
+                deadline=time.monotonic()+1
+                while True:
+                    observed=output_observation(control,generation)
+                    if observed==expected:break
+                    if observed!=empty:raise ValueError('kernel HID output differs or is reordered')
+                    if time.monotonic()>=deadline:raise TimeoutError('kernel HID output observation missing')
+                    time.sleep(.001)
+                if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
+                results.append(dict(operation=operation,report_id=report_id,raw=raw.hex(),written=written,observed_exactly_once=True))
         peer.sendall(b'D')
         return dict(startup_outputs=startup,synthetic_outputs=results,passed=True)
     finally:

@@ -84,3 +84,29 @@ partial writes, duplicate/reordered reports and bounded startup draining.
 
 Live results will be recorded only after the committed package is installed and
 the bounded phase terminates with an independently retrieved root receipt.
+
+## Live interrupt output acceptance
+
+At `15b0f01f45602a1f15d58a0b74a9e8b43312ad5e`, tree
+`acf455f3431d8db66383c8435aee7b3375284757`, the bounded `usb-functional`
+phase passed for all three compiled families. Its independently retrieved root
+receipt pins worker SHA-256
+`bf3e795fb1d9759c39898884fb6dcc6b7fc92b5d68955c9029c90815076d0c37`.
+DualSense delivered four distinct report-2 payloads and DS4 three report-5
+payloads exactly once, in order, through live hidraw writes and worker RPC.
+Xbox start/update/stop-shaped writes each rejected with EPIPE (errno 32) and
+produced no event. Driver startup outputs were separately recorded before the
+synthetic sequence. All three ALSA duplex trials retained 288000 exact playback
+markers, zero gaps/corruption and empty initiating/cleanup errors. Original
+service/socket state was restored; memory pressure averages remained zero.
+
+The first probe attempt at `c64e1a101dba437a552ff04976d1d80e67c6c085`
+failed before descriptor handoff because its port lookup did not parse the
+kernel's zero-padded `0000` port. Its cleanup was complete. The corrected parser
+and exact-format regression are retained; that failed attempt is not acceptance.
+
+The next probe increment adds Linux HIDIOCSOUTPUT to test the control SET_REPORT
+path through the same held descriptor. It uses only the same fixed synthetic
+reports, checks exact returned length and one ordered worker observation, and
+requires explicit rejection for unsupported Xbox outputs. Its results remain
+pending until the new immutable package completes a bounded live run.

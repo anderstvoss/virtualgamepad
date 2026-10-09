@@ -87,7 +87,7 @@ class KernelOutputObservations(unittest.TestCase):
         peer=Mock();peer.recvmsg.return_value=(b'H',[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[descriptor]).tobytes())],0,None)
         writer=write or (lambda fd,data:len(data))
         try:
-            with patch.object(client.socket,'socket',return_value=peer),patch.object(client.os,'write',side_effect=writer),patch.object(client,'output_observation',side_effect=observations):
+            with patch.object(client.socket,'socket',return_value=peer),patch.object(client,'submit_hid_output',side_effect=lambda fd,data,operation:writer(fd,data)),patch.object(client,'output_observation',side_effect=observations):
                 result=client.hid_outputs(Mock(),7,0x40001,'dualshock4','/fake-owned-socket')
             peer.sendall.assert_called_with(b'D')
             return result
@@ -99,9 +99,9 @@ class KernelOutputObservations(unittest.TestCase):
         empty=struct.pack('<Q',7)+b'\0'
         events=[empty]
         for report,raw,_ in client.output_cases('dualshock4'):
-            events.extend((struct.pack('<Q',7)+bytes([1,report])+raw,empty))
+            events.extend((struct.pack('<Q',7)+bytes([1,report])+raw,empty)*2)
         result=self.run_client(events)
-        self.assertEqual(len(result['synthetic_outputs']),3)
+        self.assertEqual(len(result['synthetic_outputs']),6)
         self.assertTrue(result['passed'])
 
     def test_duplicate_wrong_report_partial_write_and_stalled_startup_fail(self):
@@ -110,3 +110,15 @@ class KernelOutputObservations(unittest.TestCase):
         for events in ([empty,event,event],[empty,event[:-1]+b'\xff'],[event]*64):
             with self.assertRaises(ValueError):self.run_client(events)
         with self.assertRaises(ValueError):self.run_client([empty],lambda fd,data:len(data)-1)
+
+
+class KernelReportOperation(unittest.TestCase):
+    def test_exact_ioctl_number_report_id_and_partial_result_preserved(self):
+        wire=bytes([5,17,33])
+        with patch.object(client.fcntl,'ioctl',return_value=2) as ioctl:
+            self.assertEqual(client.submit_hid_output(9,wire,'set-report'),2)
+            ioctl.assert_called_once_with(9,(3<<30)|(3<<16)|(ord('H')<<8)|0x0b,bytearray(wire),True)
+        with patch.object(client.os,'write',return_value=3) as write:
+            self.assertEqual(client.submit_hid_output(9,wire,'interrupt'),3)
+            write.assert_called_once_with(9,wire)
+        with self.assertRaises(ValueError):client.submit_hid_output(9,wire,'arbitrary')
