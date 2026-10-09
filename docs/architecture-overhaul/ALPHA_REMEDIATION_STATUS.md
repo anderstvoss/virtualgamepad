@@ -1,5 +1,11 @@
 # Alpha remediation status
 
+Current gate disposition: **Gate 3 passed** at
+`7ed863a219a343b90fe2171f96aaafde17f4a550`; Gates 1, 2, 4, 5 and 6 remain open.
+See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+This current evidence supersedes older whole-gate ratings below. Reopen affected
+cells after relevant code/binary changes. Alpha remains not ready.
+
 Current closure criteria and verifier gaps are in
 [the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
 entries below retain their original scope and may be superseded by that audit.

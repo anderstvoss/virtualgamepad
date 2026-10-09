@@ -1,5 +1,11 @@
 # Alpha gate criteria audit
 
+Current gate disposition: **Gate 3 passed** at
+`7ed863a219a343b90fe2171f96aaafde17f4a550`; Gates 1, 2, 4, 5 and 6 remain open.
+See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+This current evidence supersedes older whole-gate ratings below. Reopen affected
+cells after relevant code/binary changes. Alpha remains not ready.
+
 This is the current closure checklist for the approved six-gate plan. It does
 not replace failed receipts or broaden a narrow test into a complete gate pass.
 Physical-controller comparisons and native-host timing remain post-alpha
