@@ -1146,6 +1146,39 @@ class Host:
             raise RuntimeError('original service state was not restored')
 
 
+
+def installed_input_checkpoint(directory=None):
+    """Read only the fixed historical input lab; never accept a caller path."""
+    revision='1e07adf04d1fdd3bcb7451256f7f86fc7f0b8991'
+    directory=directory or STAGING_PARENT/('virtualgamepad-codex-lab-'+revision[:7])
+    for parent in (directory,*directory.parents):trusted(parent,directory=True)
+    def bounded(path):
+        trusted(path)
+        before=identity(path)
+        descriptor=os.open(path,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)
+        with os.fdopen(descriptor,'rb') as source:
+            info=os.fstat(source.fileno())
+            if (info.st_dev,info.st_ino)!=before or info.st_size>OUTPUT_LIMIT:
+                raise RuntimeError('checkpoint identity or quota changed')
+            data=source.read(OUTPUT_LIMIT+1)
+        if len(data)>OUTPUT_LIMIT or identity(path)!=before:
+            raise RuntimeError('checkpoint identity or quota changed')
+        return data
+    manifest=bounded(directory/'approved-manifest.json')
+    name=bounded(directory/'latest').decode().strip()
+    if not re.fullmatch(r'[0-9a-f]{32}\.json',name):raise RuntimeError('invalid fixed checkpoint report name')
+    reports=directory/'reports';trusted(reports,directory=True)
+    raw=bounded(reports/name)
+    binary=directory/'curated-live';trusted(binary)
+    before=identity(binary)
+    digest=hashlib.sha256()
+    with binary.open('rb') as source:
+        for chunk in iter(lambda:source.read(1024*1024),b''):digest.update(chunk)
+    if identity(binary)!=before:raise RuntimeError('checkpoint binary identity changed')
+    return dict(expected_revision=revision,manifest=json.loads(manifest),report=json.loads(raw),
+                report_sha256=hashlib.sha256(raw).hexdigest(),binary_sha256=digest.hexdigest())
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
@@ -1218,6 +1251,12 @@ def main():
             trusted(parent, directory=True)
     host = Host(args)
     receipt = dict(revision=args.revision, broker_hash=args.broker_hash, worker_hash=args.worker_hash)
+    if args.phase == 'rejection':
+        # Evidence collection is optional and never changes current phase success.
+        # A missing archive remains unavailable evidence, not fabricated acceptance.
+        try:receipt['historical_input_checkpoint']=installed_input_checkpoint()
+        except (OSError,RuntimeError,ValueError) as error:
+            receipt['historical_input_checkpoint_unavailable']=str(error)
     # Reserve output before any maintenance: never overwrite a user-controlled path.
     fd = os.open(args.report, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     status = 0

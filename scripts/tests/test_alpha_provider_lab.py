@@ -806,3 +806,40 @@ class ConstructionInjection(unittest.TestCase):
             with patch.object(lab,'STATE',state),patch.object(lab,'VHCI') as vhci,patch.object(lab,'free_port'),patch.object(lab,'process_children',return_value=[]),patch.object(lab.time,'sleep'):
                 host.verify_client_cleanup()
             self.assertEqual(host.run.call_count,2)
+
+
+class InstalledInputCheckpoint(unittest.TestCase):
+    def fixture(self, root, name='a'*32+'.json'):
+        import json
+        stage=Path(root);(stage/'reports').mkdir()
+        (stage/'approved-manifest.json').write_text(json.dumps(dict(revision='fixture')))
+        (stage/'latest').write_text(name+'\n')
+        (stage/'curated-live').write_bytes(b'fake immutable executable')
+        if '/' not in name:(stage/'reports'/name).write_text(json.dumps(dict(status='passed',inputs=[])))
+        return stage
+
+    def test_bounded_checkpoint_captures_exact_receipt_and_frozen_image(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as root:
+            stage=self.fixture(root)
+            with patch.object(lab,'trusted'):
+                result=lab.installed_input_checkpoint(stage)
+            self.assertEqual(result['binary_sha256'],hashlib.sha256(b'fake immutable executable').hexdigest())
+            self.assertEqual(result['report']['status'],'passed')
+            self.assertEqual(result['manifest']['revision'],'fixture')
+            self.assertNotIn('passed',result)
+
+    def test_foreign_report_paths_oversize_and_changed_identity_are_rejected(self):
+        for name in ('../foreign','latest','.'+'a'*32+'.json'):
+            with tempfile.TemporaryDirectory() as root:
+                stage=self.fixture(root,name)
+                with patch.object(lab,'trusted'):
+                    with self.assertRaisesRegex(RuntimeError,'report name'):lab.installed_input_checkpoint(stage)
+        with tempfile.TemporaryDirectory() as root:
+            stage=self.fixture(root);(stage/'latest').write_bytes(b'x'*(lab.OUTPUT_LIMIT+1))
+            with patch.object(lab,'trusted'):
+                with self.assertRaisesRegex(RuntimeError,'quota'):lab.installed_input_checkpoint(stage)
+        with tempfile.TemporaryDirectory() as root:
+            stage=self.fixture(root)
+            with patch.object(lab,'trusted'),patch.object(lab,'identity',return_value=(-1,-1)):
+                with self.assertRaisesRegex(RuntimeError,'identity'):lab.installed_input_checkpoint(stage)
