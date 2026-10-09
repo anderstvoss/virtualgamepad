@@ -1595,3 +1595,29 @@ The immutable installed lab still has its old client payload. Live USB revalidat
 requires a reviewed payload update. Independent audio trials remain queued behind
 the running neutral GUI soak. Historical silence and graph-loss failures are not
 reclassified as passes; all six gates remain open. No dependency was added.
+
+### Independent C ledger reconciliation
+
+The maintained `scripts/analyze-alpha-audio-ledger.py` checks a single C control
+receipt against its callback ledger and per-frame receipt counts. It requires
+complete event/count trailers and exact producer/submission/capture counter
+reconciliation; overflow, overlapping producer ranges and inconsistent counters
+are rejected. Missing marker ranges distinguish incomplete production, negative
+queue-return failures and unexplained loss after successful submission. Capture
+chunk flags are observations, not proof that the graph caused the loss. The
+ledger cannot independently separate graph loss from capture loss, and the tool
+reports that evidence as unavailable. It never changes continuity limits or
+turns a reconciled failing trial into acceptance.
+
+Seven deterministic regressions cover complete evidence, balanced loss/replay,
+production versus queue failure, flagged capture uncertainty, event/counter
+mismatch, marker bounds and truncated/duplicate trailers. They pass without
+starting audio, creating devices or compiling another GUI image. The existing
+GUI soak continues against its frozen executable. The C callback binary is
+unchanged; live comparison and reconciliation are queued after soak teardown.
+
+To analyze a trial, extract its single callback receipt from the runner's
+`trials` array and run `python3 scripts/analyze-alpha-audio-ledger.py --receipt
+<receipt.json> --ledger <report.json.trial-1.ledger.jsonl>`. Keep both inputs and
+the analysis outside tracked source. This supplies diagnostic evidence only;
+all six gate closure requirements remain in force.
