@@ -1948,3 +1948,18 @@ payload deployment and an individually bounded live run are required. Product
 binaries, ordinary-root APIs, queue sizes and dependency policy are unchanged.
 Construction-time worker death and live combined construction/cleanup failure
 remain separate open cells even after this sibling phase eventually passes.
+
+### Forced sibling recovery and autonomous updater increment
+
+The installed `f05058c053423eb78b6e3580e0026d5f91309162` sibling-admission
+phase passed: each audio family underwent an identity-verified worker kill while
+three sibling sessions retained port identity and answered fresh diagnostics.
+Replacement admission, full-capacity rejection, descriptor accounting, follow-up
+normal/repeated/abandoned close and owned restoration passed. Raw receipts remain
+outside tracked source. Construction-time worker death and live combined
+construction/cleanup failure still remain required; this does not close Gate 3.
+
+[Autonomous lab updates](ALPHA_LAB_AUTONOMOUS_UPDATES.md) describes the newly
+authorized one-time bootstrap, fixed-mailbox root code replacement and later
+revocation. Deterministic updater regressions pass; administrator bootstrap and
+live update remain pending. All six release gates remain open.

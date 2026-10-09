@@ -147,3 +147,19 @@ class ProviderPacket(unittest.TestCase):
                 self.assertEqual(lines[1:3],[
                     '#1001 ALL=(root) NOPASSWD: '+str(namespace['HELPER'])+' status',
                     '#1001 ALL=(root) NOPASSWD: '+str(namespace['HELPER'])+' receipt'])
+
+    def test_rollback_attempts_both_files_and_preserves_all_errors(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as directory:
+            namespace=self.installer(Path(directory));calls=[]
+            atomic=namespace['atomic']
+            def fail_restore(destination,data,mode):
+                calls.append(destination)
+                if len(calls)>2:raise OSError('restore '+destination.name)
+                atomic(destination,data,mode)
+            namespace['atomic']=fail_restore
+            with patch.object(packet.os,'geteuid',return_value=0),patch.object(namespace['subprocess'],'run',side_effect=[None,subprocess.CalledProcessError(1,['visudo'])]):
+                with self.assertRaises(RuntimeError) as raised:namespace['main']()
+            self.assertEqual(calls[-2:],[namespace['HELPER'],namespace['POLICY']])
+            self.assertIn('visudo',str(raised.exception))
+            self.assertIn('restore helper',str(raised.exception));self.assertIn('restore policy',str(raised.exception))

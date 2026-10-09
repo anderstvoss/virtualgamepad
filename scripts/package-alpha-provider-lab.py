@@ -187,10 +187,13 @@ def main():
         for destination,data,mode in ((HELPER,images['helper.py'],0o755),(POLICY,policy,0o440)):
             atomic(destination,data,mode)
         subprocess.run(['/usr/sbin/visudo','-c'],check=True,timeout=10)
-    except BaseException:
-        # Keep old exact scoped policy and helper available; do not change services.
-        atomic(HELPER,previous_helper,0o755)
-        atomic(POLICY,previous_policy,0o440)
+    except BaseException as initiating:
+        # Attempt both restorations even if one fails; retain every failure.
+        cleanup=[]
+        for destination,data,mode in ((HELPER,previous_helper,0o755),(POLICY,previous_policy,0o440)):
+            try:atomic(destination,data,mode)
+            except BaseException as error:cleanup.append(str(error))
+        if cleanup:raise RuntimeError({'initiating':str(initiating),'cleanup':cleanup}) from initiating
         raise
     finally:temporary.unlink(missing_ok=True)
     print('Installed immutable named-phase lab. No trials run; no services changed; no broad sudo.')
