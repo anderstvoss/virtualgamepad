@@ -1742,3 +1742,17 @@ windows, delayed startup classification, and repeated handoff timestamps in
 not qualify the host or accept any of the failed live trials. Fresh pinned live
 controls are still required before the 72 product trials. Production APIs,
 queues, GUI code and dependencies are unchanged.
+
+## Idle/wake diagnostic disposition
+
+The [criteria audit's idle/wake comparison](ALPHA_GATE_CRITERIA.md#idlewake-discrimination-at-9202985)
+records new bounded evidence at `9202985173f5c29ddb7fc8c639ca6a06eff94b1f`.
+A pinned quiet three-second experimental audio control delivered every marker
+but failed production rate (3.375 s); adding a bounded ordinary active peer
+passed that short diagnostic (2.997 s, zero loss/duplication/corruption).
+Independent periodic wakeups show the same large improvement with an active
+peer. These are diagnostic variants, not quiet qualification or a product fix.
+All owned processes were reaped; thresholds and shared configuration remain
+unchanged. Require a supported quiet-host correction and fresh pinned sustained
+controls. Do not close Gate 6 using a CPU-burning helper, or infer that the
+other five gates are closed. Raw receipts remain outside tracked source.

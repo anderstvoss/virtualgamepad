@@ -128,3 +128,49 @@ windows, delayed startup classification, and repeated handoff timestamps in
 not qualify the host or accept any of the failed live trials. Fresh pinned live
 controls are still required before the 72 product trials. Production APIs,
 queues, GUI code and dependencies are unchanged.
+
+## Idle/wake discrimination at `9202985`
+
+Bounded external diagnostics use source revision
+`9202985173f5c29ddb7fc8c639ca6a06eff94b1f`. Their experimental C executables
+are outside tracked source and are not maintained-candidate qualification.
+Sharing one client context/core and realtime callback thread still missed 3072
+of 144000 submitted frames; production took 3.521407294 seconds for three
+nominal seconds. Separate client contexts alone do not explain the failure.
+
+A separate owned periodic-wakeup control, without PipeWire or product queues,
+measured 282 absolute 10.667 ms deadlines. Observed p99 lateness was 23.863 ms
+with ordinary scheduling, 23.281 ms with verified round-robin priority 20, and
+29.671 ms with that realtime child pinned to one virtual CPU. Each control
+used about 5 ms of CPU in three seconds. An ordinary-priority active clock
+control pinned to that CPU consumed about three CPU seconds in three wall
+seconds and observed no consecutive clock-read gaps of 1 ms or more.
+
+An ordinary-priority active peer on the same CPU reduced the realtime wakeup
+control's p99 lateness to 0.050 ms. This is a changed measurement condition,
+not a proposed product background workload. The corresponding experimental
+shared-core audio comparison retained the same format, quantum, marker and
+rate assertions:
+
+| Three-second diagnostic | Missing / duplicate / corrupt frames | Production span | Result |
+| --- | --- | --- | --- |
+| Pinned quiet graph/client | 0 / 0 / 0 | 3.375144710 s | Failed the unchanged 1% production-rate envelope |
+| Same pinning with bounded ordinary active peer | 0 / 0 / 0 | 2.997339418 s | Short diagnostic passed; qualification unperformed |
+
+The source callback gap fell from 35.217 ms maximum in the quiet case
+to 10.743 ms with the peer. This supports idle/wake behavior as a causal lead;
+it does not identify the guest-kernel or hypervisor mechanism, prove every
+historical loss has that cause, or establish a quiet-host correction. Realtime
+priority and pinning alone did not meet the required rate. No queue, loss,
+rate or latency requirement changes, and no CPU-burning helper is added to
+production or accepted as a substitute for quiet qualification.
+
+Every owned diagnostic process was reaped; the recorded PID inventory was
+absent after teardown. Shared services and scheduling configuration were
+unchanged. About 18 GiB was available, with no concurrent build, GUI soak or
+Steam trial. Raw source/binary hashes, event ledgers, grants, receipts and the
+comparison remain outside tracked source. Next investigation must discriminate
+idle timer delivery from activation scheduling and demonstrate a supported
+quiet-host correction before three 60-second controls or product acceptance.
+All six gates remain open; this evidence does not invalidate the accepted
+byte-identical neutral GUI soak.
