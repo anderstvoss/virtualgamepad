@@ -4,6 +4,8 @@ Synthetic samples only. This is continuity evidence, not end-to-end latency.
 """
 import argparse
 import array
+import errno
+import stat
 import importlib.util
 import heapq
 import json
@@ -227,7 +229,93 @@ owned_pipewire_device = live.owned_pipewire_device
 reserve_direct_alsa = live.reserve_direct_alsa
 
 
-def trial(profile, seconds, instance, microphone_fill_ms=8):
+def output_cases(family):
+    """Synthetic declared output fields, distinct start/update/stop observations."""
+    if family=='dualsense':
+        cases=[]
+        for index,(right,left) in enumerate(((17,33),(44,66),(0,0),(0,0))):
+            raw=bytearray(47);raw[0:4]=bytes([0xe1,0x97,right,left])
+            raw[5:10]=bytes([64,96,index<<4,index%2,0x10 if index%2 else 0])
+            raw[10:21]=bytes(range(1,12));raw[21:32]=bytes(range(11,0,-1))
+            raw[37]=0xfd;raw[43:47]=bytes([0x15,32+index,64,128])
+            cases.append((2,bytes(raw),True))
+        return cases
+    if family=='dualshock4':
+        cases=[]
+        for index,(right,left) in enumerate(((17,33),(44,66),(0,0))):
+            raw=bytearray(31);raw[0]=3;raw[3:8]=bytes([right,left,32+index,64,128])
+            cases.append((5,bytes(raw),True))
+        return cases
+    if family=='xbox360':
+        # This compiled HID profile implements generic inputs, not xpad outputs.
+        # Its output setter is explicitly unsupported on both USB paths.
+        return [(0,bytes([0,8,0,right,left,0,0,0]),False) for right,left in ((17,33),(44,66),(0,0))]
+    raise ValueError('unknown compiled family')
+
+
+def output_observation(control,generation):
+    message(control,1,2,struct.pack('<Q',generation))
+    version,tag,data=reply(control)
+    if version!=1 or tag!=2 or data[:8]!=struct.pack('<Q',generation):
+        raise ValueError('HID output observation generation differs')
+    return data
+
+
+def hid_outputs(control,generation,device,profile,path):
+    peer=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);peer.settimeout(5)
+    descriptor=None
+    try:
+        peer.connect(path)
+        peer.sendall(json.dumps(dict(generation=generation,device=device)).encode()+b'\n')
+        data,ancillary,flags,_=peer.recvmsg(1,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC)
+        received=[]
+        for level,kind,payload in ancillary:
+            if level==socket.SOL_SOCKET and kind==socket.SCM_RIGHTS:
+                rights=array.array('i');rights.frombytes(payload[:len(payload)//4*4]);received.extend(rights)
+        if data!=b'H' or flags&socket.MSG_CTRUNC or len(received)!=1:
+            for fd in received:os.close(fd)
+            raise ValueError('invalid owned HID descriptor handoff')
+        descriptor=received[0]
+        if not stat.S_ISCHR(os.fstat(descriptor).st_mode):raise ValueError('owned HID descriptor is not a character device')
+        empty=struct.pack('<Q',generation)+b'\0'
+        # Kernel driver initialization outputs are recorded separately. Require
+        # bounded quiescence before beginning the distinct synthetic sequence.
+        startup=[]
+        for _ in range(64):
+            event=output_observation(control,generation)
+            if event==empty:break
+            startup.append(event.hex())
+        else:raise ValueError('kernel HID outputs did not quiesce')
+        results=[]
+        for report_id,raw,supported in output_cases(profile):
+            wire=bytes([report_id])+raw
+            try:
+                written=os.write(descriptor,wire)
+                if not supported:raise ValueError('unsupported Xbox HID output was acknowledged')
+                if written!=len(wire):raise ValueError('partial kernel HID output write')
+            except OSError as error:
+                if supported or error.errno not in (errno.EPIPE,errno.EINVAL,errno.ENOSYS):raise
+                results.append(dict(report_id=report_id,rejected_errno=error.errno))
+                if output_observation(control,generation)!=empty:raise ValueError('rejected HID output emitted an event')
+                continue
+            expected=struct.pack('<Q',generation)+bytes([1,report_id])+raw
+            deadline=time.monotonic()+1
+            while True:
+                observed=output_observation(control,generation)
+                if observed==expected:break
+                if observed!=empty:raise ValueError('kernel HID output differs or is reordered')
+                if time.monotonic()>=deadline:raise TimeoutError('kernel HID output observation missing')
+                time.sleep(.001)
+            if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
+            results.append(dict(report_id=report_id,raw=raw.hex(),written=written,observed_exactly_once=True))
+        peer.sendall(b'D')
+        return dict(startup_outputs=startup,synthetic_outputs=results,passed=True)
+    finally:
+        if descriptor is not None:os.close(descriptor)
+        peer.close()
+
+
+def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None):
     live.compiled_serial(instance, 1)  # Reject invalid expectations before creation.
     broker, generation, device, bus, tag, channels = opened(profile)
     control, playback, microphone = channels
@@ -293,8 +381,10 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
             time.sleep(.01)
         subprocess.run(['udevadm','settle','--timeout=3'],check=True,timeout=4)
         isolation = reserve_direct_alsa(int(cards[0].name[4:]),bus,instance,generation)
+        outputs=hid_outputs(control,generation,device,profile,hid_socket) if hid_socket else None
         for thread in threads: thread.start()
         result = live.run_trial(int(cards[0].name[4:]),profile,seconds)
+        result['kernel_hid_outputs']=outputs
         stop.set()
         for thread in threads:
             thread.join(3)
@@ -335,6 +425,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile',choices=[*live.PROFILES, 'all'],required=True)
     parser.add_argument('--instance', required=True)
+    parser.add_argument('--hid-socket')
     parser.add_argument('--seconds',type=int,default=3)
     parser.add_argument('--trials',type=int,default=1)
     parser.add_argument('--microphone-fill-ms',type=int,default=8,
@@ -348,7 +439,7 @@ def main():
     for profile in profiles:
         for index in range(args.trials):
             print(json.dumps(dict(event='start',profile=profile,trial=index,seconds=args.seconds)),flush=True)
-            result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms)
+            result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms,args.hid_socket)
             result.update(profile=profile,trial=index)
             print(json.dumps(result),flush=True)
             if not result['passed']: raise SystemExit(1)

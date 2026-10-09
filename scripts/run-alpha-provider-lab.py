@@ -285,6 +285,49 @@ def free_port(text, selected):
         raise RuntimeError('selected VHCI port is absent or occupied')
 
 
+
+def owned_hidraw(instance, generation, device, port, status, usb=USB,
+                 hid=Path('/sys/class/hidraw'), nodes=Path('/dev')):
+    """Resolve one leased HID node, never grant an input group or foreign node."""
+    audio_isolation_rule(instance)
+    rows=[line.split() for line in status.splitlines()[1:]]
+    selected=[row for row in rows if len(row)==7 and row[1]==str(port)]
+    if len(selected)!=1:
+        raise RuntimeError('ambiguous owned HID port')
+    row=selected[0]
+    if (row[:1]!=['hs'] or row[2:4]!=['006','003'] or
+            int(row[4],16)!=device or not re.fullmatch(r'[1-9][0-9]*-[1-9][0-9]*',row[6])):
+        raise RuntimeError('owned HID attachment changed')
+    parent=(usb/row[6]).resolve(strict=True)
+    if ('vhci_hcd.0' not in parent.parts or
+            (parent/'serial').read_text().strip()!=f'vg-{instance}-{generation:016x}' or
+            (parent/'manufacturer').read_text().strip()!='Virtualgamepad'):
+        raise RuntimeError('owned HID USB identity differs')
+    matches=[]
+    for entry in hid.iterdir():
+        if not re.fullmatch(r'hidraw[0-9]+',entry.name):continue
+        if (entry/'device').resolve(strict=True).is_relative_to(parent):
+            matches.append(entry)
+    if len(matches)!=1:raise RuntimeError('owned HID node is absent or ambiguous')
+    entry=matches[0]
+    major,minor=map(int,(entry/'dev').read_text().strip().split(':'))
+    return nodes/entry.name,os.makedev(major,minor)
+
+def open_owned_hidraw(instance,generation,device,port,inventory=owned_hidraw):
+    node,rdev=inventory(instance,generation,device,port,VHCI.read_text())
+    descriptor=os.open(node,os.O_RDWR|os.O_NONBLOCK|os.O_CLOEXEC|os.O_NOFOLLOW)
+    try:
+        metadata=os.fstat(descriptor)
+        if not stat.S_ISCHR(metadata.st_mode) or metadata.st_rdev!=rdev:
+            raise RuntimeError('owned HID descriptor identity differs')
+        if inventory(instance,generation,device,port,VHCI.read_text())!=(node,rdev):
+            raise RuntimeError('owned HID identity changed during open')
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
 def require_no_clients(text, pid, journald_pid=None):
     rows = [line.split() for line in text.splitlines()]
     owner = re.compile(r'pid=' + str(pid) + r',fd=(\d+)\)')
@@ -611,6 +654,8 @@ class Host:
             command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
             if self.args.phase in ('provider-worker-death','provider-broker-death','provider-siblings-admission'):
                 self.worker_death(command)
+            elif self.args.phase=='usb-functional':
+                self.hid_output_client(command)
             elif self.args.phase in ('provider-client-exit','provider-client-before-handoff'):
                 for profile in ('dualsense','dualshock4','xbox360'):
                     self.run_client(self.args.client_uid,[*command,'--profile',profile],'client-'+profile)
@@ -718,6 +763,77 @@ class Host:
         remove_owned(record,replacement);remove_owned(backup,expected)
         self.construction_recovery=None
         self.events.append(dict(construction_failure_restoration=dict(identity_checked=True,attachment_removed=True)))
+
+    def hid_output_client(self, command):
+        # Only three authenticated lease identities are accepted. The supervisor
+        # hands off a held owned descriptor; it executes no client-selected data.
+        import array
+        path=self.root/'hid-output.sock'
+        listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        listener.bind(str(path));self.remember(path)
+        os.chown(path,0,pwd.getpwuid(self.args.client_uid).pw_gid)
+        path.chmod(0o660);listener.listen(1);listener.settimeout(.2)
+        cancelled=threading.Event();failures=[]
+        def supervise():
+            try:
+                for _ in range(3):
+                    deadline=time.monotonic()+60
+                    while True:
+                        if cancelled.is_set():return
+                        try:peer,_=listener.accept();break
+                        except socket.timeout:
+                            if time.monotonic()>=deadline:raise TimeoutError('owned HID client did not become ready')
+                    with peer:
+                        peer.settimeout(5)
+                        pid,uid,_=struct.unpack('3i',peer.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+                        client_group=self.run(['systemctl','show',self.instance+'-client.service','-p','ControlGroup','--value']).strip()
+                        if uid!=self.args.client_uid or (Path('/proc')/str(pid)/'cgroup').read_text().splitlines()!=['0::'+client_group]:
+                            raise RuntimeError('HID access request is outside owned client unit')
+                        data=bytearray()
+                        while not data.endswith(b'\n'):
+                            chunk=peer.recv(128)
+                            if not chunk:raise EOFError('HID readiness ended')
+                            data.extend(chunk)
+                            if len(data)>128:raise ValueError('oversized HID access request')
+                        request=json.loads(data)
+                        if (set(request)!={'generation','device'} or
+                                type(request['generation']) is not int or not 0<request['generation']<2**64 or
+                                type(request['device']) is not int or not 0<request['device']<2**32):
+                            raise ValueError('invalid HID lease request')
+                        generation,device=request['generation'],request['device']
+                        record=STATE/(self.instance+'.audio')/f'{generation:016x}'
+                        trusted(record);record_identity=identity(record)
+                        port=journal_port(record.read_bytes(),generation,device,selected_ports(self.args.port,self.args.additional_port))
+                        parent=int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())
+                        group=self.run(['systemctl','show',self.service,'-p','ControlGroup','--value']).strip()
+                        image=identity(self.root/'bin/gr-audio-worker');held=[];descriptor=None
+                        try:
+                            for child in process_children(parent):
+                                try:
+                                    verify=lambda snapshot:validate_worker(snapshot,parent,self.args.worker_uid,image,group,self.instance,generation,device)
+                                    held.append(PinnedWorker(child,verify))
+                                except RuntimeError:continue
+                            if len(held)!=1:raise RuntimeError('owned HID worker is absent or ambiguous')
+                            descriptor=open_owned_hidraw(self.instance,generation,device,port)
+                            if identity(record)!=record_identity:
+                                raise RuntimeError('owned HID journal changed during open')
+                            rights=array.array('i',[descriptor])
+                            if peer.sendmsg([b'H'],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,rights)])!=1:
+                                raise RuntimeError('owned HID descriptor handoff failed')
+                            if peer.recv(1)!=b'D':raise RuntimeError('owned HID client did not finish')
+                            self.events.append(dict(hid_output_access=dict(generation=generation,device=device,descriptor_owned=True)))
+                        finally:
+                            if descriptor is not None:os.close(descriptor)
+                            for worker in held:worker.close()
+            except BaseException as error:failures.append(str(error))
+        thread=threading.Thread(target=supervise);thread.start();initiating=None
+        try:self.run_client(self.args.client_uid,[*command,'--hid-socket',str(path)],'client')
+        except BaseException as error:initiating=str(error)
+        finally:
+            cancelled.set();thread.join(10);listener.close()
+        if thread.is_alive():failures.append('owned HID supervisor did not terminate')
+        if initiating is not None or failures:
+            raise RuntimeError(json.dumps(dict(initiating=initiating,supervisor=failures)))
 
     def worker_death(self, command):
         path = self.root / 'fault.sock'

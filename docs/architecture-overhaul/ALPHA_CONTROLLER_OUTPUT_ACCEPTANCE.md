@@ -59,3 +59,28 @@ compilation, Steam or competing audio trials. Interactive keyboard/accessibility
 live USB outputs, complete isolation/rollback, routing, Steam and sustained audio
 acceptance remain required. No dependencies were added and no loss/latency
 threshold was relaxed.
+
+## Kernel attachment output probe
+
+The maintained `usb-functional` phase now requests one HID descriptor per
+established session from its root supervisor. It does not grant an input group,
+change a node's permissions or expose foreign input devices. The supervisor
+checks peer UID and the owned client unit, the root-held lease journal, live
+worker image/identity, VHCI port/device, exact compiled generation serial and
+HID ancestry. It opens without following symlinks, verifies character-device
+numbers and repeats identity checks before transferring the held descriptor.
+Descriptors close on failures and teardown; the client runs without privileges.
+
+The ordinary client sends the same synthetic rumble start/update/stop and Sony
+indicator/trigger/audio-control reports used by the process validator. It checks
+exact raw worker observations, ordering and no duplicates, separately recording
+bounded kernel initialization events. Xbox's generic HID USB profile must reject
+unsupported outputs rather than fabricate rumble support. This is a kernel-to-
+worker observation check; typed application callbacks and full gate closure still
+require their own evidence. The short ALSA duplex and cleanup checks remain in
+the phase. Tests cover serial/port/generation collisions, ambiguous/foreign nodes,
+symlink and regular-file refusal, identity changes during open, descriptor cleanup,
+partial writes, duplicate/reordered reports and bounded startup draining.
+
+Live results will be recorded only after the committed package is installed and
+the bounded phase terminates with an independently retrieved root receipt.
