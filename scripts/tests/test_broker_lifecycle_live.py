@@ -121,6 +121,22 @@ class LifecycleProbe(unittest.TestCase):
             with self.assertRaises(ValueError): lab.Session('dualsense', '../escape', 0)
         opened.assert_not_called()
 
+    def test_fault_confirmation_and_cleanup_failures_are_both_preserved(self):
+        session = self.session(); session.device = 17
+        session.close = Mock(side_effect=RuntimeError('synthetic cleanup failure'))
+        supervisor = MagicMock(); supervisor.__enter__.return_value = supervisor
+        supervisor.getsockopt.return_value = struct.pack('3i', 42, 0, 0)
+        supervisor.recv.return_value = b'wrong confirmation'
+        with patch.object(lab, 'Session', return_value=session), \
+             patch.object(lab, 'fd_count', return_value=4), \
+             patch.object(lab.socket, 'socket', return_value=supervisor):
+            with self.assertRaises(RuntimeError) as error:
+                lab.worker_death('dualsense', 'lab', 0, Path('/synthetic/socket'))
+        self.assertIn('did not confirm injection', str(error.exception))
+        self.assertIn('synthetic cleanup failure', str(error.exception))
+        self.assertIsInstance(error.exception.__cause__, RuntimeError)
+        session.close.assert_called_once_with(abandon=True)
+
 
 class SiblingAdmission(unittest.TestCase):
     def session(self, generation):
@@ -154,6 +170,77 @@ class SiblingAdmission(unittest.TestCase):
         self.assertIn('synthetic construction', str(error.exception))
         self.assertIn('synthetic cleanup', str(error.exception))
         first.close.assert_called_once()
+
+    def test_forced_worker_failure_keeps_siblings_and_recovers_fourth_slot(self):
+        sessions = [self.session(i) for i in range(1,5)]
+        for index, session in enumerate(sessions):
+            session.port=index; session.ownership=(index+17, 'synthetic-bus')
+        failed = dict(generation=5, cleanup=True)
+        with patch.object(lab, 'Session', side_effect=sessions) as create, \
+             patch.object(lab, 'fd_count', return_value=8), \
+             patch.object(lab, 'worker_death', return_value=failed) as kill, \
+             patch.object(lab, 'capacity_rejection') as reject, \
+             patch.object(lab.Path, 'read_text', return_value='synthetic inventory'), \
+             patch.object(lab, 'resolve_session_port', side_effect=[0,1,2]), \
+             patch.object(lab.audio, 'worker_diagnostics', return_value={'alive':True}) as diagnostics:
+            result=lab.forced_sibling_worker_death('xbox360','lab',[0,1,2,3],Path('/synthetic/socket'))
+        kill.assert_called_once_with('xbox360','lab',[0,1,2,3],Path('/synthetic/socket'))
+        self.assertEqual([r['generation'] for r in result['survivors']],[1,2,3])
+        self.assertEqual(result['replacement_generation'],4)
+        self.assertEqual(create.call_args_list[-1].args,('xbox360','lab',[0,1,2,3]))
+        reject.assert_called_once(); self.assertEqual(diagnostics.call_count,7)
+        for session in sessions: self.assertEqual(session.close.call_count,2)
+
+    def test_forced_failure_retains_injection_and_all_owned_cleanup_errors(self):
+        sessions=[self.session(i) for i in range(1,4)]
+        sessions[0].close.side_effect=RuntimeError('synthetic sibling cleanup')
+        with patch.object(lab, 'Session', side_effect=sessions), \
+             patch.object(lab, 'fd_count', return_value=8), \
+             patch.object(lab, 'worker_death', side_effect=TimeoutError('synthetic fault timeout')), \
+             patch.object(lab, 'capacity_rejection') as reject:
+            with self.assertRaises(RuntimeError) as error:
+                lab.forced_sibling_worker_death('dualsense','lab',[0,1,2,3],Path('/synthetic/socket'))
+        self.assertIn('synthetic fault timeout',str(error.exception))
+        self.assertIn('synthetic sibling cleanup',str(error.exception))
+        reject.assert_not_called()
+        for session in sessions: session.close.assert_called()
+
+    def test_changed_sibling_identity_rejects_before_replacement_and_cleans_owned_sessions(self):
+        sessions=[self.session(i) for i in range(1,4)]
+        for index, session in enumerate(sessions):session.port=index
+        with patch.object(lab, 'Session', side_effect=sessions) as create, \
+             patch.object(lab, 'fd_count', return_value=8), \
+             patch.object(lab, 'worker_death', return_value=dict(generation=5)), \
+             patch.object(lab.Path, 'read_text', return_value='synthetic inventory'), \
+             patch.object(lab, 'resolve_session_port', return_value=3), \
+             patch.object(lab, 'capacity_rejection') as reject:
+            with self.assertRaisesRegex(RuntimeError,'attachment identity changed'):
+                lab.forced_sibling_worker_death('dualsense','lab',[0,1,2,3],Path('/synthetic/socket'))
+        self.assertEqual(create.call_count,3);reject.assert_not_called()
+        for session in sessions:self.assertEqual(session.close.call_count,2)
+
+    def test_forced_sibling_invalid_allowlist_creates_nothing(self):
+        for ports in [(0,), (0,0,1,2), (0,1,2,True)]:
+            with patch.object(lab,'Session') as create:
+                with self.assertRaises(ValueError):
+                    lab.forced_sibling_worker_death('dualsense','lab',ports,Path('/synthetic/socket'))
+            create.assert_not_called()
+
+    def test_replacement_cannot_reuse_failed_identity_or_hide_descriptor_leak(self):
+        for replacement_generation, counts, message in [(5,[8,8],'reused an identity'),
+                                                        (4,[8,9],'descriptors did not return')]:
+            sessions=[self.session(i) for i in [1,2,3,replacement_generation]]
+            for index, session in enumerate(sessions):session.port=index
+            with patch.object(lab,'Session',side_effect=sessions), \
+                 patch.object(lab,'fd_count',side_effect=counts), \
+                 patch.object(lab,'worker_death',return_value=dict(generation=5)), \
+                 patch.object(lab.Path,'read_text',return_value='synthetic inventory'), \
+                 patch.object(lab,'resolve_session_port',side_effect=[0,1,2]), \
+                 patch.object(lab,'capacity_rejection'), \
+                 patch.object(lab.audio,'worker_diagnostics',return_value={'alive':True}):
+                with self.assertRaisesRegex(RuntimeError,message):
+                    lab.forced_sibling_worker_death('dualsense','lab',[0,1,2,3],Path('/synthetic/socket'))
+            for session in sessions:self.assertEqual(session.close.call_count,2)
 
 
 class AttachmentFailureEvidence(unittest.TestCase):

@@ -193,6 +193,7 @@ def exit_before_handoff(instance, port):
 def worker_death(profile, instance, port, fault_socket, broker_death=False):
     before = fd_count()
     session = Session(profile, instance, port)
+    initiating = None
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as supervisor:
             supervisor.settimeout(10); supervisor.connect(str(fault_socket))
@@ -218,8 +219,15 @@ def worker_death(profile, instance, port, fault_socket, broker_death=False):
         for channel in session.channels:
             channel.settimeout(5)
             if channel.recv(1) != b'': raise RuntimeError('worker-death channel remained open')
+    except BaseException as error:
+        initiating = error
+        raise
     finally:
-        session.close(abandon=True)
+        try: session.close(abandon=True)
+        except BaseException as cleanup:
+            if initiating is None: raise
+            raise RuntimeError(json.dumps(dict(initiating=str(initiating),
+                cleanup=[str(cleanup)]))) from initiating
     if fd_count() != before: raise RuntimeError('worker-death descriptor ownership did not return to baseline')
     return dict(profile=profile, generation=session.generation, terminal_error=error.decode(), cleanup=True)
 
@@ -262,6 +270,47 @@ def siblings_and_admission(instance, ports):
     return receipts
 
 
+def forced_sibling_worker_death(profile, instance, ports, fault_socket):
+    """Kill one worker at capacity; prove the three siblings and replacement live."""
+    if len(authorized_ports(ports)) != 4:
+        raise ValueError('four distinct explicitly authorized ports required')
+    before = fd_count(); sessions=[]; cleanup=[]; initiating=None; result=None
+    try:
+        for sibling_profile in audio.live.PROFILES:
+            sessions.append(Session(sibling_profile, instance, ports))
+        # This creates the fourth session, waits for authoritative root injection,
+        # verifies exact terminal replies/EOF and releases only that session.
+        failed = worker_death(profile, instance, ports, fault_socket)
+        survivors = []
+        for session in sessions:
+            actual = resolve_session_port(Path('/sys/devices/platform/vhci_hcd.0/status').read_text(),
+                                          ports, session.ownership)
+            if actual != session.port:
+                raise RuntimeError('surviving sibling attachment identity changed')
+            survivors.append(dict(generation=session.generation,
+                diagnostics=audio.worker_diagnostics(session.channels[0], session.generation)))
+        replacement = Session(profile, instance, ports)
+        sessions.append(replacement)  # Register before any subsequent assertion.
+        generations = [session.generation for session in sessions]
+        if len(set(generations + [failed['generation']])) != 5:
+            raise RuntimeError('forced-failure capacity recovery reused an identity')
+        capacity_rejection()
+        # Recheck siblings after replacement/admission rejection, not just before.
+        for session in sessions:
+            audio.worker_diagnostics(session.channels[0], session.generation)
+        result = dict(profile=profile, failed=failed, survivors=survivors,
+                      replacement_generation=replacement.generation)
+    except BaseException as error: initiating=str(error)
+    finally:
+        for session in reversed(sessions):
+            try: session.close(); session.close()
+            except BaseException as error: cleanup.append(str(error))
+    if fd_count() != before: cleanup.append('forced sibling descriptors did not return to baseline')
+    if initiating is not None or cleanup:
+        raise RuntimeError(json.dumps(dict(initiating=initiating,cleanup=cleanup)))
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--instance', required=True)
@@ -284,7 +333,13 @@ def main():
         return
     if args.scenario == 'siblings-admission':
         if args.ports is None: parser.error('four authorized ports required')
-        print(json.dumps(dict(status='passed',scenario='siblings-admission',sessions=siblings_and_admission(args.instance,args.ports))),flush=True)
+        if args.fault_socket is None or not args.fault_socket.is_absolute():
+            parser.error('immutable supervisor socket is required for forced sibling failure')
+        normal = siblings_and_admission(args.instance,args.ports)
+        forced = [forced_sibling_worker_death(profile,args.instance,args.ports,args.fault_socket)
+                  for profile in audio.live.PROFILES]
+        print(json.dumps(dict(status='passed',scenario='siblings-admission',sessions=normal,
+                             forced_worker_failures=forced)),flush=True)
         return
     if args.scenario == 'client-before-handoff':
         exit_before_handoff(args.instance, args.port)

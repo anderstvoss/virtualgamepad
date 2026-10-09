@@ -1048,3 +1048,29 @@ extended checks, Linux/macOS/Windows CI, CodeQL, Gitleaks, provider-contract and
 SBOM workflows passed at `d4d8864`; all 17 downloaded SBOM identities were
 verified. Privileged CI and dispatch dependency review were skipped. Later
 changes here document receipts and do not change product binaries or APIs.
+
+## Forced sibling failure preparation
+
+The existing `provider-siblings-admission` phase is extended to require the
+owned fault supervisor. After normal four-session admission/removal checks,
+it keeps three audio-family siblings open while an additional worker is killed
+for each target family. It verifies exact terminal errors/EOF, unchanged sibling
+attachment identities, fresh worker diagnostics before and after replacement,
+a fresh replacement generation, renewed admission rejection, descriptor baseline
+and repeated owned cleanup. The finite named sudo actions are unchanged. The
+root supervisor still selects only the journal/instance/generation/device and
+pidfd-verified worker; it never accepts a caller-supplied PID or executable.
+Its bounded initial readiness allowance includes the preliminary four-session
+checks. Missing supervisor setup cannot yield a partial successful phase.
+
+The live client previously allowed cleanup failure to overwrite the initiating
+fault-test error. It now preserves both, with a deterministic combined-failure
+regression. Additional regressions cover sibling survival/capacity recovery,
+changed identities, partial failure with cleanup errors, invalid allowlists,
+reused generations, descriptor leaks and routing through the owned supervisor.
+These are tooling corrections and preparation, not live acceptance. The
+installed `d4d8864` snapshot still runs the earlier phase; updated immutable
+payload deployment and an individually bounded live run are required. Product
+binaries, ordinary-root APIs, queue sizes and dependency policy are unchanged.
+Construction-time worker death and live combined construction/cleanup failure
+remain separate open cells even after this sibling phase eventually passes.

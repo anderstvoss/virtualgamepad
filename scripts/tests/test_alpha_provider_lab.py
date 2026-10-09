@@ -404,6 +404,19 @@ class ReversibleMaintenance(unittest.TestCase):
         for flag in ('--clear-groups', '--bounding-set=-all', '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs'):
             self.assertLess(command.index(flag), command.index('/synthetic/validator'))
 
+    def test_sibling_admission_uses_owned_fault_supervisor_instead_of_unsupervised_client(self):
+        args=Mock(client_uid=1001,phase='provider-siblings-admission',port=0,
+                  additional_port=[1,2,3],probe_directory=Path('/synthetic/images'),
+                  unauthorized_probe=None,restart_empty=False)
+        host=lab.Host(args);host.instance='lab-test'
+        host.worker_death=Mock();host.run_client=Mock()
+        host.execute()
+        host.worker_death.assert_called_once()
+        command=host.worker_death.call_args.args[0]
+        self.assertIn('siblings-admission',command)
+        self.assertEqual(command[-4:],['0','1','2','3'])
+        host.run_client.assert_not_called()
+
     def test_unauthorized_identity_is_distinct_and_registered_before_startup(self):
         args = Mock(client_uid=1001, unauthorized_uid=1003, timeout=30,
                     command=['/synthetic/validator'], unauthorized_probe=Path('/synthetic/probe'), restart_empty=False, phase=None, additional_port=[])

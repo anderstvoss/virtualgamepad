@@ -596,7 +596,7 @@ class Host:
     def execute(self):
         if self.args.phase:
             command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
-            if self.args.phase in ('provider-worker-death','provider-broker-death'):
+            if self.args.phase in ('provider-worker-death','provider-broker-death','provider-siblings-admission'):
                 self.worker_death(command)
             else:
                 self.run_client(self.args.client_uid, command, 'client')
@@ -637,7 +637,9 @@ class Host:
         def supervise():
             try:
                 for _ in range(3):
-                    deadline = time.monotonic() + 20
+                    # Sibling admission first exercises normal replacement, then
+                    # builds four isolated sessions before requesting injection.
+                    deadline = time.monotonic() + (90 if self.args.phase == 'provider-siblings-admission' else 20)
                     while True:
                         if cancelled.is_set(): return
                         try: peer, _ = listener.accept(); break
