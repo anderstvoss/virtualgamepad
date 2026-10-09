@@ -813,6 +813,39 @@ mod worker_outputs {
         }
     }
 
+    fn observer_channels(peer: &UnixStream) -> std::io::Result<[UnixStream; 3]> {
+        let timeout = peer.read_timeout()?;
+        let channels = gr_privileged_broker::audio_fds::receive(peer)?;
+        // Descriptor receipt uses a short deadline; the next phase includes PCM
+        // production and drain, so restore the caller's bounded phase deadline.
+        peer.set_read_timeout(timeout)?;
+        Ok(channels)
+    }
+
+    #[test]
+    fn observer_handoff_restores_phase_deadline_and_preserves_channels() {
+        use std::io::{Read, Write};
+        let (tx, rx) = UnixStream::pair().unwrap();
+        rx.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+        let pairs = [
+            UnixStream::pair().unwrap(),
+            UnixStream::pair().unwrap(),
+            UnixStream::pair().unwrap(),
+        ];
+        let (channels, mut peers): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+        let channels: [UnixStream; 3] = channels.try_into().unwrap();
+        gr_privileged_broker::audio_fds::send(&tx, &channels).unwrap();
+        let mut received = observer_channels(&rx).unwrap();
+        assert_eq!(rx.read_timeout().unwrap(), Some(Duration::from_secs(30)));
+        for (index, channel) in received.iter_mut().enumerate() {
+            let marker = [u8::try_from(index).unwrap()];
+            peers[index].write_all(&marker).unwrap();
+            let mut actual = [0];
+            channel.read_exact(&mut actual).unwrap();
+            assert_eq!(actual, marker);
+        }
+    }
+
     fn live_controller(
         control: Control,
         family: u8,
@@ -906,8 +939,7 @@ mod worker_outputs {
             assert_eq!(metadata[8], family);
             let generation = u64::from_le_bytes(metadata[..8].try_into().unwrap());
             assert_ne!(generation, 0);
-            let [control, playback, microphone] =
-                gr_privileged_broker::audio_fds::receive(&peer).unwrap();
+            let [control, playback, microphone] = observer_channels(&peer).unwrap();
             let control = Control::new(control, generation, family).unwrap();
             let (mut controller, record, count) = live_controller(control, family);
             peer.write_all(b"A").unwrap();

@@ -196,3 +196,11 @@ service and a separate broker cleanup failure, preserving both causes. Public
 signatures and dependencies are unchanged; consumers receive a more accurate
 existing `ProviderError::Read` reason. Live acceptance must be rerun after this
 correction.
+
+The next trial at `119cfe9d9a3de19933c230271f22eb3e0dc28855`
+completed the first family's callback sequence but failed while waiting for the
+PCM phase: the shared descriptor-receive helper had replaced the observer's
+30-second phase deadline with a one-second handoff deadline. Its wrapper now
+restores the caller's bounded deadline after successful descriptor receipt. A
+real three-descriptor socket handoff regression checks the restored deadline.
+Cleanup again reported no errors. This second failure is retained separately.
