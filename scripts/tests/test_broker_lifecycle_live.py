@@ -351,3 +351,11 @@ class SessionPortIdentity(unittest.TestCase):
                 else:
                     with self.assertRaisesRegex(RuntimeError,'restoration'):lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'),True)
             supervisor.sendall.assert_any_call(b'R')
+
+    def test_before_handoff_exit_uses_each_compiled_family_and_closes_socket(self):
+        for profile,tag in [('dualsense',1),('dualshock4',2),('xbox360',3)]:
+            peer=Mock();peer.getsockopt.return_value=struct.pack('3i',42,0,0)
+            with patch.object(lab.socket,'socket',return_value=peer),patch.object(lab.audio,'message') as send:
+                lab.exit_before_handoff('lab',0,profile)
+            send.assert_called_once_with(peer,2,1,bytes([tag,2,1,2,3,4,5]))
+            peer.shutdown.assert_called_once_with(lab.socket.SHUT_RDWR);peer.close.assert_called_once()

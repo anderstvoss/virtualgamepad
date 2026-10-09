@@ -175,19 +175,20 @@ def exercise(profile, instance, port, cycles=2):
     return receipts
 
 
-def exit_before_handoff(instance, port):
+def exit_before_handoff(instance, port, profile='dualsense'):
     audio.live.compiled_serial(instance, 1)
+    tag={'dualsense':1,'dualshock4':2,'xbox360':3}[profile]
     peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         peer.settimeout(2); peer.connect('/run/virtualgamepad/broker.sock')
         _, uid, _ = struct.unpack('3i', peer.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
         if uid != 0: raise RuntimeError('broker is not root')
-        audio.message(peer, 2, 1, bytes([1,2,1,2,3,4,5]))
+        audio.message(peer, 2, 1, bytes([tag,2,1,2,3,4,5]))
         peer.shutdown(socket.SHUT_RDWR)
     finally: peer.close()
     # The server may still be constructing a session. The supervisor waits for
     # bounded attachment/journal cleanup before recreating the positive session.
-    print(json.dumps(dict(event='client-disconnected-before-handoff', port=port)), flush=True)
+    print(json.dumps(dict(event='client-disconnected-before-handoff', profile=profile, port=port)), flush=True)
 
 
 def construction_failure_reply(reply, cleanup_failure=False):
@@ -362,6 +363,7 @@ def main():
     parser.add_argument('--scenario', choices=['normal', 'client-exit', 'client-before-handoff', 'worker-death','broker-death','startup-rejection','siblings-admission'], default='normal')
     parser.add_argument('--fault-socket', type=Path)
     parser.add_argument('--ports', type=int, nargs='+')
+    parser.add_argument('--profile',choices=list(audio.live.PROFILES),default='dualsense')
     args = parser.parse_args()
     if os.geteuid() == 0: parser.error('client must run without root privileges')
     if not 0 <= args.port <= 65535: parser.error('invalid authorized port')
@@ -386,11 +388,11 @@ def main():
                              forced_worker_failures=forced)),flush=True)
         return
     if args.scenario == 'client-before-handoff':
-        exit_before_handoff(args.instance, args.port)
+        exit_before_handoff(args.instance, args.port,args.profile)
         return
     if args.scenario == 'client-exit':
-        session = Session('dualsense', args.instance, ports)
-        print(json.dumps(dict(event='verified-client-exit', generation=session.generation)), flush=True)
+        session = Session(args.profile, args.instance, ports)
+        print(json.dumps(dict(event='verified-client-exit', profile=args.profile, generation=session.generation)), flush=True)
         os._exit(0)  # Deliberately bypass application cleanup after handoff.
     if args.scenario in ('worker-death','broker-death'):
         if args.fault_socket is None or not args.fault_socket.is_absolute(): parser.error('immutable supervisor socket is required')

@@ -611,25 +611,14 @@ class Host:
             command = phase_command(self.args.phase, self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
             if self.args.phase in ('provider-worker-death','provider-broker-death','provider-siblings-admission'):
                 self.worker_death(command)
+            elif self.args.phase in ('provider-client-exit','provider-client-before-handoff'):
+                for profile in ('dualsense','dualshock4','xbox360'):
+                    self.run_client(self.args.client_uid,[*command,'--profile',profile],'client-'+profile)
+                    self.verify_client_cleanup()
+                    followup=phase_command('provider-lifecycle',self.args.probe_directory,self.instance,self.args.port,self.args.additional_port)
+                    self.run_client(self.args.client_uid,followup,'after-client-exit-'+profile)
             else:
-                self.run_client(self.args.client_uid, command, 'client')
-            if self.args.phase in ('provider-client-exit', 'provider-client-before-handoff'):
-                deadline = time.monotonic() + 5
-                while True:
-                    try:
-                        free_port(VHCI.read_text(), self.args.port)
-                        if any((STATE / (self.instance+'.audio')).iterdir()):
-                            raise RuntimeError('owned journal cleanup remains pending')
-                        # A pre-handoff close can race construction. Confirm the
-                        # broker has no worker children, not just a momentary free port.
-                        parent = int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())
-                        if parent and process_children(parent): raise RuntimeError('owned construction is still active')
-                        break
-                    except RuntimeError:
-                        if time.monotonic() >= deadline: raise
-                        time.sleep(.02)
-                command = phase_command('provider-lifecycle', self.args.probe_directory, self.instance, self.args.port, self.args.additional_port)
-                self.run_client(self.args.client_uid, command, 'after-client-exit')
+                self.run_client(self.args.client_uid,command,'client')
         else:
             self.run_client(self.args.client_uid, self.args.command, 'client')
         if self.args.unauthorized_probe:
@@ -638,6 +627,20 @@ class Host:
                             'unauthorized')
         if self.args.restart_empty:
             self.restart_empty_candidate()
+
+    def verify_client_cleanup(self):
+        deadline=time.monotonic()+5
+        while True:
+            try:
+                for port in selected_ports(self.args.port,self.args.additional_port):free_port(VHCI.read_text(),port)
+                if any((STATE/(self.instance+'.audio')).iterdir()):raise RuntimeError('owned journal cleanup remains pending')
+                parent=int(self.run(['systemctl','show',self.service,'-p','MainPID','--value']).strip())
+                if not parent:raise RuntimeError('owned broker startup is still pending')
+                if process_children(parent):raise RuntimeError('owned construction is still active')
+                return
+            except RuntimeError:
+                if time.monotonic()>=deadline:raise
+                time.sleep(.02)
 
     def kill_constructing_worker(self, profile, armed, cleanup_failure=False):
         # Resolve unit identities before arming the client, keeping systemctl

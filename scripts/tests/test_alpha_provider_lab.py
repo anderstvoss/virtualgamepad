@@ -784,3 +784,25 @@ class ConstructionInjection(unittest.TestCase):
                         host.restore_construction_record();self.assertFalse(record.exists());self.assertFalse(backup.exists())
                         self.assertIsNone(host.construction_recovery)
                         with self.assertRaisesRegex(RuntimeError,'no held'):host.restore_construction_record()
+
+    def test_client_exit_phases_cover_each_family_and_verify_cleanup_before_followup(self):
+        from types import SimpleNamespace
+        for phase in ('provider-client-exit','provider-client-before-handoff'):
+            host=lab.Host(SimpleNamespace(phase=phase,probe_directory=Path('/synthetic'),port=0,additional_port=[1,2,3],client_uid=1001,unauthorized_probe=None,restart_empty=False))
+            host.instance='lab';calls=[]
+            host.run_client=Mock(side_effect=lambda uid,command,name:calls.append((name,command)))
+            host.verify_client_cleanup=Mock(side_effect=lambda:calls.append(('cleanup',[])))
+            host.execute()
+            self.assertEqual([name for name,_ in calls],sum(([f'client-{profile}','cleanup',f'after-client-exit-{profile}'] for profile in ('dualsense','dualshock4','xbox360')),[]))
+            for index,profile in enumerate(('dualsense','dualshock4','xbox360')):
+                self.assertEqual(calls[index*3][1][-2:],['--profile',profile])
+
+    def test_pending_broker_startup_does_not_establish_client_cleanup(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            state=Path(directory);(state/'lab.audio').mkdir()
+            host=lab.Host(SimpleNamespace(port=0,additional_port=[]));host.instance='lab';host.service='owned.service'
+            host.run=Mock(side_effect=['0','42'])
+            with patch.object(lab,'STATE',state),patch.object(lab,'VHCI') as vhci,patch.object(lab,'free_port'),patch.object(lab,'process_children',return_value=[]),patch.object(lab.time,'sleep'):
+                host.verify_client_cleanup()
+            self.assertEqual(host.run.call_count,2)

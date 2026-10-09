@@ -1129,3 +1129,22 @@ identities. Changed identity/content, an occupied backup, late handoff or
 missing restoration acknowledgement fail. Three additional deterministic
 regressions cover these boundaries. Live combined-error acceptance is pending.
 Ordinary-root APIs, production binaries and queue/loss limits are unchanged.
+
+### Combined-error live acceptance and all-family exit coverage
+
+Installed `5227dada18b30630cd3cadd1e4967ae788b860f4`, tree
+`aa500df88c889f17da3c7d7c60795b27758cd456`, passed the worker-death phase
+including three pre-handoff kills and three combined worker/journal-cleanup
+failures. Every combined failure preserved the exact initiating SIGKILL and
+cleanup identity error. Three explicit operator restorations verified both held
+journal identities and attachment removal; subsequent normal/repeated/abandoned
+sessions passed. The root-owned receipt reports `passed`, with no initiating
+lab failure. Original broker inactive/socket active state was rechecked.
+
+An audit found the older client-death probes selected only DualSense. Both exit
+phases now exercise all three audio families separately, requiring empty owned
+journals, all authorized ports free and no broker children before a fresh
+positive lifecycle suite. A zero broker PID means pending startup rather than
+cleanup success. Three additional regressions cover family request encoding,
+per-family sequencing and pending startup. Full exact-candidate provider phase
+acceptance remains pending; no whole-gate pass is asserted by this increment.
