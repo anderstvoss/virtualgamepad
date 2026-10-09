@@ -12,7 +12,8 @@ lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
 
 class ProductionOutputValidation(unittest.TestCase):
     def test_sony_fixtures_cover_motors_indicators_triggers_audio_fields_and_stop(self):
-        ds=lab.output_cases('dualsense');self.assertEqual(len(ds),4)
+        all_ds=lab.output_cases('dualsense');self.assertEqual(len(all_ds),6)
+        ds=all_ds[:4]
         self.assertTrue(all(report==2 and len(raw)==47 and supported for report,raw,supported in ds))
         self.assertEqual([raw[2:4] for _,raw,_ in ds],[bytes([17,33]),bytes([44,66]),bytes(2),bytes(2)])
         self.assertEqual([raw[7] for _,raw,_ in ds],[0,16,32,48])
@@ -21,9 +22,14 @@ class ProductionOutputValidation(unittest.TestCase):
             self.assertEqual(raw[5:7],bytes([64,96]))
             self.assertEqual(raw[10:21],bytes(range(1,12)));self.assertEqual(raw[21:32],bytes(range(11,0,-1)))
             self.assertEqual(raw[37]&7,5);self.assertEqual(raw[43],0x15)
+        for (_,raw,supported),flag2 in zip(all_ds[4:],(0,4)):
+            self.assertTrue(supported)
+            self.assertEqual(raw[:2],bytes(2));self.assertEqual(raw[38],flag2)
+            self.assertEqual(raw[2:4],bytes([17,33]))
         ds4=lab.output_cases('dualshock4');self.assertEqual(len(ds4),3)
         self.assertEqual([raw[3:5] for _,raw,_ in ds4],[bytes([17,33]),bytes([44,66]),bytes(2)])
-        self.assertTrue(all(report==5 and len(raw)==31 and supported and raw[0]&2 for report,raw,supported in ds4))
+        self.assertTrue(all(report==5 and len(raw)==31 and supported for report,raw,supported in ds4))
+        self.assertEqual([raw[0]&2 for _,raw,_ in ds4],[2,0,2])
         self.assertEqual(ds4[-1][1][5:8],bytes([34,64,128]))
 
     def test_xbox_generic_hid_profile_requires_explicit_output_rejection(self):

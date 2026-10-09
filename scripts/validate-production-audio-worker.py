@@ -47,11 +47,16 @@ def output_cases(family):
             raw[10:21]=bytes(range(1,12));raw[21:32]=bytes(range(11,0,-1))
             raw[37]=0xfd;raw[43:47]=bytes([0x15,32+index,64,128])
             cases.append((2,bytes(raw),True))
+        # Inactive fields retain their bytes but must not become typed updates;
+        # V2 motors use valid_flag2 alone, independently of valid_flag0.
+        for flag2 in (0,4):
+            raw=bytearray(cases[0][1]);raw[0]=raw[1]=0;raw[38]=flag2
+            cases.append((2,bytes(raw),True))
         return cases
     if family=='dualshock4':
         cases=[]
         for index,(right,left) in enumerate(((17,33),(44,66),(0,0))):
-            raw=bytearray(31);raw[0]=3;raw[3:8]=bytes([right,left,32+index,64,128])
+            raw=bytearray(31);raw[0]=1 if index==1 else 3;raw[3:8]=bytes([right,left,32+index,64,128])
             cases.append((5,bytes(raw),True))
         return cases
     if family=='xbox360':

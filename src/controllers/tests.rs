@@ -601,6 +601,33 @@ mod worker_outputs {
                 },
             ));
         }
+        for flag2 in [0, 4] {
+            let mut raw = outputs[0][2..].to_vec();
+            raw[0] = 0;
+            raw[1] = 0;
+            raw[38] = flag2;
+            outputs.push([vec![1, 2], raw.clone()].concat());
+            expected.push(crate::DualSenseOutputEvent::HidOutput(
+                crate::DualSenseHidOutput::UsbOutput {
+                    raw,
+                    valid_flag0: 0,
+                    valid_flag1: 0,
+                    valid_flag2: flag2,
+                    right_motor: (flag2 == 4).then_some(17),
+                    left_motor: (flag2 == 4).then_some(33),
+                    right_trigger_effect: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                    left_trigger_effect: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+                    mute_button_led: None,
+                    microphone_muted: None,
+                    audio_path: None,
+                    speaker_volume: None,
+                    microphone_volume: None,
+                    speaker_preamp: None,
+                    player_leds: None,
+                    lightbar_rgb: None,
+                },
+            ));
+        }
         (outputs, expected)
     }
     #[test]
@@ -624,7 +651,7 @@ mod worker_outputs {
                 .service(&mut |_| panic!("idle callback replay"))
                 .unwrap();
         }
-        assert_eq!(record.lock().unwrap().retained.reverse_events_drained, 4);
+        assert_eq!(record.lock().unwrap().retained.reverse_events_drained, 6);
         assert_eq!(controller.dropped_output_events(), 0);
         controller.close();
         controller.close();
@@ -639,7 +666,7 @@ mod worker_outputs {
             .into_iter()
             .enumerate()
         {
-            let light = enabled || live;
+            let light = enabled;
             let red = 32
                 + if live {
                     u8::try_from(index).unwrap()
@@ -865,7 +892,7 @@ mod worker_outputs {
                         dualsense_cases(true).1,
                     ),
                     record,
-                    8,
+                    12,
                 )
             }
             2 => {
