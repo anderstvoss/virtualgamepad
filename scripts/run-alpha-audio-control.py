@@ -188,6 +188,8 @@ def main():
         return inside(control, args.seconds, args.ledger, args.topology)
     if args.report is None:
         parser.error('--report is required outside the private child')
+    if args.report.exists():
+        parser.error('--report must be a new file to preserve previous evidence')
     rows = []
     for trial in range(args.trials):
         # Capture each child receipt through a temporary file in the report's
@@ -203,17 +205,21 @@ def main():
                        'import subprocess,sys; f=open(sys.argv[1],"w"); r=subprocess.run(sys.argv[2:],stdout=f); f.close(); sys.exit(r.returncode)',
                        str(receipt), *child]
             try:
-                status = lab.run(command, args.seconds + 30, quantum=args.quantum)
+                diagnostics = args.report.resolve().with_name(args.report.name + f'.trial-{trial+1}.graph.json')
+                status = lab.run(command, args.seconds + 30, quantum=args.quantum,
+                                 diagnostics=diagnostics)
                 row = json.loads(receipt.read_text())
                 row['supervisor_status'] = status
+                row['graph_diagnostics_file'] = str(diagnostics)
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
                 row = dict(accepted=False, error=str(error))
             row['trial'] = trial + 1
             rows.append(row)
             print(json.dumps(row), flush=True)
     qualified = args.seconds == 60 and len(rows) == 3 and all(r.get('accepted') for r in rows)
-    args.report.write_text(json.dumps(dict(qualified=qualified, seconds=args.seconds, trials=rows,
-                                         topology=args.topology, quantum=args.quantum), indent=2) + '\n')
+    with args.report.open('x') as output:
+        output.write(json.dumps(dict(qualified=qualified, seconds=args.seconds, trials=rows,
+                                    topology=args.topology, quantum=args.quantum), indent=2) + '\n')
     return 0 if all(r.get('accepted') for r in rows) else 1
 
 

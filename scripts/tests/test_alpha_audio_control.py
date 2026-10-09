@@ -15,6 +15,34 @@ spec.loader.exec_module(control)
 
 
 class MarkerReceipt(unittest.TestCase):
+    def test_outer_control_requests_owned_graph_thread_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); binary = root / 'control'; binary.touch()
+            report = root / 'result.json'
+            def run(command, timeout, **kwargs):
+                self.assertEqual(kwargs, dict(quantum=256, diagnostics=root / 'result.json.trial-1.graph.json'))
+                Path(command[3]).write_text(json.dumps(dict(accepted=False, missing=512)))
+                return 1
+            with patch.object(control.sys, 'argv', ['control', '--control', str(binary), '--report', str(report),
+                         '--seconds', '3', '--trials', '1', '--topology', 'direct', '--quantum', '256']), \
+                 patch.object(control.lab, 'run', side_effect=run), patch('builtins.print'):
+                self.assertEqual(control.main(), 1)
+            row = json.loads(report.read_text())['trials'][0]
+            self.assertEqual(row['graph_diagnostics_file'], str(root / 'result.json.trial-1.graph.json'))
+            self.assertEqual(row['missing'], 512)
+            self.assertFalse(row['accepted'])
+
+    def test_existing_control_report_is_preserved_before_any_graph_is_started(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); binary = root / 'control'; binary.touch()
+            report = root / 'result.json'; report.write_text('historical synthetic failure')
+            with patch.object(control.sys, 'argv', ['control', '--control', str(binary), '--report', str(report)]), \
+                 patch.object(control.lab, 'run') as run, patch.object(control.sys, 'stderr'):
+                with self.assertRaises(SystemExit) as error: control.main()
+            self.assertEqual(error.exception.code, 2)
+            run.assert_not_called()
+            self.assertEqual(report.read_text(), 'historical synthetic failure')
+
     def direct_graph(self):
         graph = [dict(id=node, type='PipeWire:Interface:Node',
                       info=dict(props={'node.name': name}))
