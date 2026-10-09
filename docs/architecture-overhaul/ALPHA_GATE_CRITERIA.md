@@ -1,7 +1,9 @@
 # Alpha gate criteria audit
 
-Current gate disposition: **Gate 3 passed** at
-`e5402d24c7ca8e0c209260c879feb205a95f8dae`; Gates 1, 2, 4, 5 and 6 remain open.
+Current gate disposition: **Gates 2 and 3 passed**. Gate 2's current
+cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
+Gate 3 remains pinned at `e5402d24c7ca8e0c209260c879feb205a95f8dae` with
+unchanged broker/worker images. Gates 1, 4, 5 and 6 remain open.
 See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.

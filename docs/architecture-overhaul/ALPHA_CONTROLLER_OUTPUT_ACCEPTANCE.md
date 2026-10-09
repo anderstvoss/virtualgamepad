@@ -1,16 +1,18 @@
 # Controller output acceptance ledger
 
-Gate 2 remains open. This ledger separates already inspected/accepted boundaries
-from the process-level USB observations added during the sequential review.
-A process socket fixture is not kernel-consumer or physical output acceptance.
+Gate 2 passes for the implemented, representable transports after the current
+closure audit below. Historical pending statements describe their earlier
+checkpoint; the closure matrix supersedes them. Physical-controller comparisons
+remain post-alpha issue #136, and sustained audio remains separately gated.
+A process socket fixture alone is not kernel-consumer acceptance.
 See the canonical [gate criteria](ALPHA_GATE_CRITERIA.md).
 
-| Family and implemented fields | HID / evdev boundary | USB validation boundary and remaining evidence |
+| Family and implemented fields | HID / evdev disposition | USB disposition |
 | --- | --- | --- |
-| DualSense: native report 2; three validity flags, compatible motors, two 11-byte trigger effects, mute LED, microphone mute, four audio path modes, speaker/microphone volume, speaker preamp, player indicators and RGB | Controlled UHID outputs and typed decoding have prior acceptance; evdev represents conventional rumble, not Sony-native report fields. Audio-control observations do not change PCM or establish physical actuator response. | Production worker process tests now verify both interrupt OUT and SET_REPORT acknowledgements, exact ordered raw observations across start/update/stop and four audio paths, no duplicate events and zero output drops. Typed field decoding remains covered by existing controller tests. Live USB consumer/callback observations and final lifecycle matrix remain required. |
-| DS4: native report 5; motors and validity-gated RGB; unknown bytes retained | Controlled UHID outputs, evdev rumble and two-contact frames/releases have prior acceptance. Associated gamepad/contact nodes preserve ownership. | Same process-level validation verifies both output paths and start/update/stop observations. Live USB output/callback evidence remains required. Partial second-node creation has `second_open_failure_rolls_back_gamepad` deterministic coverage; complete live rollback/isolation disposition remains required. |
-| Switch Pro: raw report 1/0x10 motor words, implemented subcommand/player acknowledgements and protocol state | Prior controlled UHID evidence includes exact player-command success acknowledgement and encoded rumble observations. Compressed amplitude/frequency physical interpretation remains unvalidated. Evdev conventional rumble is separate. | No compiled USB/audio worker profile exists for this family. Do not invent or infer native USB support from HID evidence. Available realization rejection/documentation must remain explicit. |
-| Xbox 360: evdev conventional rumble; generic HID raw observations and host-request/lifecycle representation | Evdev rumble has prior acceptance. The HID realization is a local generic HID identity, not the physical xpad/XInput transport. | The compiled `Xbox360HidEmulated` descriptor implements generic inputs, and its controller output setter is unsupported. Both USB output paths must stall and enqueue no output observation. This is tested with start/update/stop-shaped packets; it is not Xbox USB rumble emulation. |
+| DualSense: validity flags, motors, raw trigger fields, mute/microphone controls, four audio paths, volumes/preamp, player indicators and RGB | Exact live UHID typed outputs and ordered live evdev conventional feedback pass. Generic evdev cannot encode Sony-native fields; target restrictions and their regressions state the reason. | Twelve requests on both endpoint paths pass exact typed callbacks, including disabled validity fields and valid_flag2-only motor enabling. PCM remains separately failed. |
+| DS4: motors, validity-gated RGB and raw retention | Exact live UHID values and live evdev feedback pass. Two owned nodes, contacts/releases, partial second-node rollback and sibling survival pass. Evdev RGB limitation is explicit and tested. | Six requests on both endpoint paths pass exact typed callbacks, including RGB-validity disabled during motor update. |
+| Switch Pro: raw motor words, player/subcommand acknowledgements and protocol state | Exact live encoded reports, player acknowledgement and all six implemented USB-handshake replies pass through UHID; ordered evdev feedback and sibling survival pass. Physical amplitude/frequency interpretation is deferred. | No compiled USB/audio profile exists. Unsupported gadget realizations reject before resources are created; no fabricated attachment or native USB output claim. |
+| Xbox 360: evdev conventional rumble; generic HID raw/host-request/lifecycle representation | Ordered live evdev feedback and sibling survival pass. Standard HID has no output capability; surface/unsupported-operation regressions retain that limitation. | All six generic-HID USB output requests reject with EPIPE and enqueue no callback. This does not implement XInput/xpad outputs. |
 
 ## Confirmed USB interrupt-output defect and correction
 
@@ -250,3 +252,36 @@ changed. Gate 2's remaining realization/lifecycle dispositions, final-image GUI
 acceptance, routing, Steam and sustained continuity remain open. Review the
 shared socket flag ownership/pause protocol, bounded receive deadlines and
 retention of the original terminal error separately from cleanup failures.
+
+## Gate 2 closure audit
+
+The audit was completed at `adf82fd58c77df2c8fa929e3d95ecd58c3b9bd79`.
+It combines independent cells rather than converting failed PCM into success.
+
+| Requirement | Authoritative evidence and disposition |
+| --- | --- |
+| All representable HID outputs and required service replies | Fresh selected UHID tests at `59e5b14ff791522858c417cb79330dd0016c6547`: DualSense exact native fields, DS4 motors/RGB validity, Switch motor reports/player reply and commands 1–6. All return one passed test with exact replies, idle no-replay and repeated cleanup. HID test image `fac45f5f839b2c925e12328e8df19141e653dd1788f602592774e7eadc3ae328` is byte-identical to the earlier accepted image. Declared report success/error and unsupported-operation regressions remain passing. |
+| Ordinary root lifecycle, removal/recreation and sibling isolation | Fresh four-family root UHID lifecycle/sibling test plus identity restoration pass at `59e5b14`. Image `7a1a055ccf2d46e1e3d9e8f0a33acb57fb9b0f72c44ded2f6bc47a8c96993103`. Start callbacks arrive through public service; removal affects only the selected object; a sibling continues service; recreated identities differ; repeated close leaves no owned node or retained error. |
+| Evdev start/update/stop, retained effects, exact ordering and consumer death | At `3be7cb28b65be451f57cbf0cd81fc7bddc74af65`, image `b720e4bb15739bed5cf1b9a0a89c7c9261d989b6155a29dde0be09d5047d8b0f`, both selected live suites pass all four families. Each surviving sibling completes six uploads, three starts, six stop observations and three erases in order after its peer is removed. DS4 removes/preserves both corresponding nodes. Consumer death, repeated cleanup and descriptor physical-identity checks also pass. |
+| Sony contacts, frame splitting and release | The immutable administrator-installed `1e07adf04d1fdd3bcb7451256f7f86fc7f0b8991` archive was independently retrieved during the current rejection phase. Its manifest and report both pin that source; the actual image matches manifest SHA `9c191fe74974f4533f9c838d2fa1bc79db43e9bb88979b78c9b6e168c64a6dbc`; report SHA is `b46a4ea48eea12c7cdcc8acb8bbadc1c54bdb866eccaffef78550c35dbe13c7f`. All six exact input tests pass, including both HID and evdev two-contact paths and exact evdev frames/releases. Each isolation receipt records no initiating/cleanup error and rule removal. Relevant production controller, HID, runtime and provider code is unchanged; the only later DS4 evdev diff is the additional test below. These accepted cells are reused, not represented as new live runs. |
+| DS4 partial second-node failure | The real three-repeat rollback test at `1be7d948e5df6353dda99c832f2d19c25223fa08` removes every observed gamepad after injected contact-open failure. Its deterministic rollback regression remains passing; no contact input is injected. |
+| USB output parity, flags and public callbacks | At `59e5b14`, frozen observer `1e109d87cc773b3037e86a834969f105d93d6cd63971947a514d6c811356bafc` passes twelve DualSense, six DS4 and six rejected Xbox requests, both endpoint paths, exact typed observations, idle no-replay, zero output drops and repeated close. Six production-worker process cells also pass. All family, observer and supervisor cleanup records are empty. The combined phase remains failed solely for its separate PCM assertions. |
+| Technically unavailable realizations/features | Current rejection phase passes with the unchanged candidate images. Gadget operations reject before allocation; Switch has no USB/audio worker profile; Xbox generic HID output rejects explicitly; evdev native Sony output limitations are present in surfaces and deterministic regressions. No unsupported feature is silently promoted. |
+
+The first neutral-run command used a nonexistent Switch handshake test name.
+Its zero-test output was explicitly rejected as acceptance; the correct exact
+name subsequently ran and passed. Both receipts are retained. No child entrypoint
+or full ignored-test set was blanket enabled.
+
+The fixed historical reader has no caller-selected path or command. It checks
+root-owned ancestry, exact report filename shape, bounded reads and held file
+identities; unavailable history stays unknown. It does not execute archived code,
+change privileges, start old services or claim a historical run occurred today.
+Two deterministic regressions cover capture, path traversal, quotas and changed
+identities. Five mandatory checks, forced Rust 1.85 and 351 Python tests pass.
+No dependencies or public API signatures changed. The current broker/worker
+images remain byte-identical to the accepted provider candidate.
+
+This closes Gate 2 only. USB/PipeWire routing, sustained audio, full GUI keyboard
+acceptance/final-image soak and Steam remain required. Microphone PCM failures
+and the old failed probes remain visible; alpha is still not ready.

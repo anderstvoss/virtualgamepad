@@ -1,8 +1,10 @@
 # Independent alpha remediation PR review handoff
 
-Current gate disposition: **Gate 3 passed** at
-`e5402d24c7ca8e0c209260c879feb205a95f8dae`; Gates 1, 2, 4, 5 and 6 remain open.
-See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
+source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
+Gate 3 passed at `e5402d24c7ca8e0c209260c879feb205a95f8dae`; see
+[provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+Gates 1, 4, 5 and 6 remain open.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
 
@@ -1957,3 +1959,24 @@ changed. Gate 2's remaining realization/lifecycle dispositions, final-image GUI
 acceptance, routing, Steam and sustained continuity remain open. Review the
 shared socket flag ownership/pause protocol, bounded receive deadlines and
 retention of the original terminal error separately from cleanup failures.
+
+## Gate 2 closure review
+
+Gate 2 now passes under the implemented/representable transport boundary.
+Review the [closure matrix](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md#gate-2-closure-audit)
+against each pinned receipt; do not use the failed combined USB/PCM status to
+infer either a failed callback cell or successful audio acceptance. Scrutinize
+exact evdev ordering, physical descriptor identity, two-node sibling ownership,
+validity suppression, valid_flag2-only motor enabling, unsupported Xbox rejection,
+public root lifecycle delivery and bounded cleanup.
+
+The installed historical Sony input receipt was independently recovered and its
+source/image hashes checked. Reuse is justified by the unchanged production
+controller/HID/runtime/provider code, not by a previous summary. The new archive
+reader must remain fixed-path, read-only, bounded and fail closed on identity or
+filename changes. Missing archive data must never turn into a passing cell.
+The current neutral root/HID tests and new evdev sibling suites provide separate
+fresh receipts. One incorrect exact-name invocation ran zero tests and was
+rejected; verify that its later correction, rather than its exit zero, supplies
+the handshake pass. Gates 1, 4, 5 and 6 remain open, and no alpha readiness is
+claimed. No dependencies or public signatures changed.
