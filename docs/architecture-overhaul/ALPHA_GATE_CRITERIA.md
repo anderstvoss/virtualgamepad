@@ -148,7 +148,10 @@ seconds and observed no consecutive clock-read gaps of 1 ms or more.
 
 An ordinary-priority active peer on the same CPU reduced the realtime wakeup
 control's p99 lateness to 0.050 ms. This is a changed measurement condition,
-not a proposed product background workload. The corresponding experimental
+not a proposed product background workload. Moving the active peer to a
+separate virtual CPU retained 25.201 ms p99 wakeup lateness. Keeping another
+CPU active was insufficient in that trial; the observed improvement depends
+on the tested wakeup CPU remaining active. The corresponding experimental
 shared-core audio comparison retained the same format, quantum, marker and
 rate assertions:
 
