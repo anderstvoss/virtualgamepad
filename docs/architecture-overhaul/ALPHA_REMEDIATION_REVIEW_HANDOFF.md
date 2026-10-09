@@ -1756,3 +1756,24 @@ All owned processes were reaped; thresholds and shared configuration remain
 unchanged. Require a supported quiet-host correction and fresh pinned sustained
 controls. Do not close Gate 6 using a CPU-burning helper, or infer that the
 other five gates are closed. Raw receipts remain outside tracked source.
+
+## Current installed candidate: three live phases passed
+
+At installed revision `d4d8864a151b167046c38106f2295594569909e7`, the
+USB functional, worker-death-after-readiness and broker-death/restart phases
+all passed individually. DualSense, DS4 and Xbox 360 each delivered 144000
+exact measured microphone frames with zero silence/gaps; playback markers,
+quiescent accounting and shared-default preservation passed. Worker/broker
+failure tests terminated owned resources, rejected hostile journals and
+verified successful subsequent sessions. Original service restoration passed.
+See the [criteria audit](ALPHA_GATE_CRITERIA.md#installed-candidate-functional-and-recovery-passes-at-d4d8864)
+for exact hashes, scope and remaining cells. Raw receipts stay outside Git.
+
+Reviewer: retain the earlier failed USB trial as history. A short functional
+pass is not sustained continuity or routing/ownership acceptance. Worker death
+after readiness is not death during construction. All six full gates remain
+open; the accepted neutral GUI soak is still only one cell. Exact-head local
+extended checks, Linux/macOS/Windows CI, CodeQL, Gitleaks, provider-contract and
+SBOM workflows passed at `d4d8864`; all 17 downloaded SBOM identities were
+verified. Privileged CI and dispatch dependency review were skipped. Later
+changes here document receipts and do not change product binaries or APIs.

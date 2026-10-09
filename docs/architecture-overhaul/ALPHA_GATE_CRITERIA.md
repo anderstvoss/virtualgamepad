@@ -177,3 +177,33 @@ idle timer delivery from activation scheduling and demonstrate a supported
 quiet-host correction before three 60-second controls or product acceptance.
 All six gates remain open; this evidence does not invalidate the accepted
 byte-identical neutral GUI soak.
+
+## Installed candidate functional and recovery passes at `d4d8864`
+
+The administrator installed revision
+`d4d8864a151b167046c38106f2295594569909e7`, tree
+`c061531a2c343dd532ad0670b5fd17861a217f26`, with the same fixed named actions
+and immutable root-owned payloads. Candidate broker/worker hashes were verified
+before each bounded phase. Three individually run phases now pass:
+
+| Phase | Accepted scope | Remaining boundary |
+| --- | --- | --- |
+| USB functional | DualSense, DS4 and Xbox 360 direct ALSA playback/capture; 144000 measured microphone frames per family were exact, with zero silence/gaps, and exact playback markers. Quiescent capture counters reconcile 288000 completed/consumed host frames (warm-up, measurement and edge capture), zero abandoned frames and 384 unconsumed submitted frames. Shared defaults unchanged; initiating/cleanup errors absent. | One three-second measured trial per family, not sustained continuity, route transitions or every ownership mode. |
+| Worker death | Actual staged worker killed after readiness for each audio family; exact terminal worker-death error, broker/PCM EOF, descriptor baseline, attachment cleanup and subsequent normal/repeated/abandoned sessions. | Construction-time worker death, combined initiating/cleanup failure and forced sibling failure remain unaccepted. |
+| Broker death | Actual staged broker killed with an established session for each family; worker termination, connection EOF, hostile pending/truncated/malformed/identity-changed journal rejection and held-identity operator restoration, then successful subsequent sessions. | Fail-closed startup plus owned restoration does not permit automatic cleanup of unprovable records. |
+
+Every phase returned zero and its independently retrieved root-owned receipt
+reports `passed` at the exact installed revision. Cleanup and original service
+restoration commands succeeded; raw client output, counters and receipts remain
+outside tracked source. Broker hash:
+`f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`;
+worker hash:
+`8d698dd974b117ad677f42762aa3e9566be95440411e0a9a74ff4db34542be0c`.
+
+These results supersede the first failed short USB microphone cell for current
+functional evidence, while preserving that historical failure. They do not
+prove why its producer stalled or resolve independent quiet PipeWire controls.
+All six full gates remain open. The installed lab still has eight predefined
+phases; additional construction/failure, routing, input and Steam scenarios
+require reviewed preparation and appropriate immutable deployment. No broad
+sudo or root-code self-replacement has been enabled.
