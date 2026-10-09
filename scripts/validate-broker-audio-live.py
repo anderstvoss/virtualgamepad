@@ -479,6 +479,14 @@ def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None, obs
     return result
 
 
+
+def independent_output_complete(result):
+    """Continue other output cells without converting a PCM failure to success."""
+    outputs=result.get('kernel_hid_outputs') or {}
+    return (outputs.get('passed') is True and outputs.get('typed_root_callbacks') is True
+            and result.get('initiating_error') is None and result.get('cleanup_errors') == [])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--profile',choices=[*live.PROFILES, 'all'],required=True)
@@ -498,6 +506,7 @@ def main():
         parser.error('typed observer requires the fixed all-family HID trial')
     profiles = list(live.PROFILES) if args.profile == 'all' else [args.profile]
     observer=TypedObserver(args.instance) if args.typed_observer else None
+    failed=False
     try:
         for profile in profiles:
             for index in range(args.trials):
@@ -505,7 +514,10 @@ def main():
                 result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms,args.hid_socket,observer)
                 result.update(profile=profile,trial=index)
                 print(json.dumps(result),flush=True)
-                if not result['passed']: raise SystemExit(1)
+                if not result['passed']:
+                    failed=True
+                    if not observer or not independent_output_complete(result):raise SystemExit(1)
+        if failed:raise SystemExit(1)
     finally:
         if observer:observer.close()
 

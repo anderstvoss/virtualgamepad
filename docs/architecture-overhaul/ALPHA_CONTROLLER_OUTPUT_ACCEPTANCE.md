@@ -204,3 +204,14 @@ PCM phase: the shared descriptor-receive helper had replaced the observer's
 restores the caller's bounded deadline after successful descriptor receipt. A
 real three-descriptor socket handoff regression checks the restored deadline.
 Cleanup again reported no errors. This second failure is retained separately.
+
+At `ebbaa6b9df405ef36da406256343fcbcddbdcac2`, all eight DualSense
+kernel output requests reached the typed root callbacks exactly once. The
+independent microphone trial then failed its unchanged marker/silence assertion
+(8928 measured silence frames; producer wake intervals exceeded the 8 ms fill).
+The observer completed the first family cleanly, but the client's fail-fast exit
+prevented other families from running. The runner now continues independent
+output cells only after complete typed observation, no initiating error and
+successful cleanup; the original PCM result stays failed and the process still
+exits nonzero after collecting all families. This is separate cell evidence,
+not permission to call audio or the complete USB phase passed.

@@ -192,3 +192,13 @@ class TypedObserverOwnership(unittest.TestCase):
             self.assertTrue(os.get_blocking(native.fileno()))
         finally:
             native.close();owner.close();server.close()
+
+    def test_completed_output_cells_do_not_hide_failed_pcm_or_cleanup(self):
+        result=dict(passed=False,kernel_hid_outputs=dict(passed=True,typed_root_callbacks=True),
+                    initiating_error=None,cleanup_errors=[])
+        self.assertTrue(client.independent_output_complete(result))
+        for change in (dict(kernel_hid_outputs=None),dict(initiating_error='transport failed'),
+                       dict(cleanup_errors=['owned cleanup failed']),
+                       dict(kernel_hid_outputs=dict(passed=True,typed_root_callbacks=False))):
+            self.assertFalse(client.independent_output_complete(dict(result,**change)))
+        self.assertFalse(result['passed'])
