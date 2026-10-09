@@ -1,8 +1,8 @@
 # Provider security and recovery acceptance
 
 Gate 3 passed on this VM at candidate
-`7ed863a219a343b90fe2171f96aaafde17f4a550`, tree
-`5842d07c47118f500aec6d5d753bb44805eb9a53`, against base
+`e5402d24c7ca8e0c209260c879feb205a95f8dae`, tree
+`6894a9c13cb9a6931b22115e06452ec3ccf03fd1`, against base
 `11284f01c58cb80be0d187efa2fca95641513fbf`.
 This supersedes earlier statements that construction failure, combined errors
 or all-family client-exit coverage remain missing. Historical failures remain
@@ -26,10 +26,11 @@ Every phase exited zero; each separately retrieved root-owned receipt reports
 Broker SHA-256:
 `f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`.
 Worker SHA-256:
-`8d698dd974b117ad677f42762aa3e9566be95440411e0a9a74ff4db34542be0c`.
+`bf3e795fb1d9759c39898884fb6dcc6b7fc92b5d68955c9029c90815076d0c37`.
 The candidate package records compiler, source/tree, lockfile and payload hashes.
-Production binaries and ordinary-root contracts were unchanged by these lab
-extensions. The test clients ran non-root; workers used a separate non-root
+The production worker changed to validate USB interrupt outputs with the
+controller setter policy. All seven phases were rerun on that image.
+Ordinary-root contracts remain unchanged. The test clients ran non-root; workers used a separate non-root
 identity. The unauthorized identity was distinct from both.
 
 The lab retained the real ownership lock, isolated cards before attachment using
@@ -61,10 +62,12 @@ independently held journal identities, startup rejection, all-thread child
 inspection, sibling progress and restoration. Their deterministic regressions
 include changed identities, occupied backups, refusal before arming, combined
 errors, missing restoration acknowledgements and per-family sequencing.
-All 324 Python tooling tests and the five mandatory repository checks passed
+All 329 Python tooling tests and the five mandatory repository checks passed
 for the implementation increment.
 
 Reopen affected acceptance cells when provider code, worker/broker binary hashes,
 protocols, admission, isolation or cleanup behavior changes. Final exact-head CI,
 SBOM and release validation remain separate requirements. Gates 1, 2, 4, 5 and 6
 remain open; this is not an alpha readiness recommendation.
+
+The preceding pass at `7ed863a219a343b90fe2171f96aaafde17f4a550` remains historical evidence. Its worker SHA-256 was `8d698dd974b117ad677f42762aa3e9566be95440411e0a9a74ff4db34542be0c`; that receipt was not reused for the changed worker.

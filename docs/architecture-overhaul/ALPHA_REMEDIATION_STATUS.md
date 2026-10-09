@@ -1,7 +1,7 @@
 # Alpha remediation status
 
 Current gate disposition: **Gate 3 passed** at
-`7ed863a219a343b90fe2171f96aaafde17f4a550`; Gates 1, 2, 4, 5 and 6 remain open.
+`e5402d24c7ca8e0c209260c879feb205a95f8dae`; Gates 1, 2, 4, 5 and 6 remain open.
 See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
@@ -2042,3 +2042,7 @@ on the corrected worker and repeat the final GUI soak; the earlier pinned
 provider and GUI passes must not be promoted to the new images. Other gates
 remain open and alpha remains not ready. Native UHID raw observations and
 ordinary-root/supporting-trait signatures are unchanged. No dependencies added.
+
+## Provider revalidation after USB output correction
+
+All seven provider phases passed again at `e5402d24c7ca8e0c209260c879feb205a95f8dae`, tree `6894a9c13cb9a6931b22115e06452ec3ccf03fd1`, including the changed production worker. Independently retrieved root receipts agree on source and image hashes. The original broker service returned inactive and its socket active. Gate 3 retains its pass for this candidate; the earlier revalidation requirement is fulfilled. The new GUI image still requires its own final two-hour soak. Live controller outputs, routing, Steam and sustained continuity remain open.

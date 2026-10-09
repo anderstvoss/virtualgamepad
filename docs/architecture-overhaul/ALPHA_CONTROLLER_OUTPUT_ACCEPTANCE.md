@@ -47,9 +47,9 @@ These results close only the tested process cells, not the whole gate.
 
 ## Invalidation and remaining gates
 
-The production worker image changed. Gate 3's pass remains pinned to its recorded
-candidate; provider acceptance must be revalidated on the corrected image before
-retaining a whole-gate pass for the newer candidate.
+The production worker image changed. All seven provider phases subsequently
+passed again at `e5402d24c7ca8e0c209260c879feb205a95f8dae`, with matching
+root receipt hashes and restoration. Gate 3 remains passed at that candidate.
 
 The normally built GUI-soak image also changed from its previously accepted
 byte hash because the supporting worker crate changed. Do not reuse the old
