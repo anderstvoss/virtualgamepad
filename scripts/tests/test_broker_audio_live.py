@@ -28,19 +28,24 @@ class BrokerLiveTests(unittest.TestCase):
             with self.assertRaises(ValueError): module.sealed_probe_image(read, bytes(32))
         finally: os.close(read); os.close(write)
 
-    def test_probe_image_is_sealed_and_survives_original_change(self):
+    def test_probe_receiver_never_writes_and_requires_all_seals(self):
         data = b'\x7fELFsynthetic receipt only; never executed'
-        with tempfile.TemporaryFile() as source:
-            source.write(data); source.flush()
-            frozen = module.sealed_probe_image(source.fileno(), hashlib.sha256(data).digest())
+        source = os.memfd_create('fake-probe', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+        try:
+            os.write(source, data)
+            expected = hashlib.sha256(data).digest()
+            with self.assertRaisesRegex(ValueError, 'sender-sealed'): module.sealed_probe_image(source, expected)
+            fcntl.fcntl(source, fcntl.F_ADD_SEALS,
+                        fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+            with patch.object(module.os, 'write', side_effect=AssertionError('receiver must not write')):
+                frozen = module.sealed_probe_image(source, expected)
             try:
-                source.seek(0); source.write(b'changed'); source.flush()
                 self.assertEqual(os.pread(frozen, len(data), 0), data)
-                for operation in (lambda: os.write(frozen, b'x'), lambda: os.ftruncate(frozen, 1)):
+                for operation in (lambda: os.write(source, b'x'), lambda: os.ftruncate(frozen, 1)):
                     with self.assertRaises(OSError): operation()
-                self.assertEqual(fcntl.fcntl(frozen, fcntl.F_GET_SEALS),
-                                 fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+                with self.assertRaisesRegex(ValueError, 'digest'): module.sealed_probe_image(source, bytes(32))
             finally: os.close(frozen)
+        finally: os.close(source)
 
     def test_probe_admission_root_unknown_request_and_zero_tests_cannot_pass(self):
         with patch.object(module.os, 'geteuid', return_value=0):

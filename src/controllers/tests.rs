@@ -1011,7 +1011,7 @@ mod worker_outputs {
         peer.write_all(b"R").unwrap();
         let image = std::fs::File::open("/proc/self/exe").unwrap();
         let mut sender = Command::new("python3")
-            .args(["-I", "-c", "import array,hashlib,os,socket; s=socket.socket(fileno=0); s.settimeout(3); f=os.fdopen(os.dup(1),'rb'); h=hashlib.file_digest(f,'sha256').digest(); assert s.sendmsg([h],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[1]))])==32"])
+            .args(["-I", "-c", "import array,fcntl,hashlib,os,socket; s=socket.socket(fileno=0); s.settimeout(3); f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1); assert 4<=len(data)<=128*1024*1024; image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING); out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500); fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL); assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32"])
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(peer.try_clone().unwrap())))
             .stdout(Stdio::from(image))
             .spawn()

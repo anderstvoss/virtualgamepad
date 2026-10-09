@@ -281,30 +281,22 @@ ROOT_FACTORY_TEST = 'controllers::tests::worker_outputs::live_public_usb_sample_
 
 
 def sealed_probe_image(source, expected):
-    """Freeze an ordinary caller's image; root never imports or executes it."""
+    """Verify a sender-sealed image without writing under the client's FSIZE cap."""
     info = os.fstat(source)
     if not stat.S_ISREG(info.st_mode) or not 4 <= info.st_size <= 128*1024*1024 or len(expected) != 32:
         raise ValueError('bounded regular probe image required')
-    frozen = os.memfd_create('virtualgamepad-public-root-probe', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
-    try:
-        digest = hashlib.sha256(); position = 0
-        while position < info.st_size:
-            chunk = os.pread(source, min(65536, info.st_size-position), position)
-            if not chunk: raise ValueError('probe image changed during capture')
-            if position == 0 and chunk[:4] != b'\x7fELF': raise ValueError('probe image is not ELF')
-            digest.update(chunk); position += len(chunk)
-            view = memoryview(chunk)
-            while view:
-                written = os.write(frozen, view)
-                if written <= 0: raise ValueError('probe image copy stalled')
-                view = view[written:]
-        if digest.digest() != expected: raise ValueError('probe image digest differs')
-        os.fchmod(frozen, 0o500)
-        fcntl.fcntl(frozen, fcntl.F_ADD_SEALS,
-                    fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
-        return frozen
-    except BaseException:
-        os.close(frozen); raise
+    seals = fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+    try: actual = fcntl.fcntl(source, fcntl.F_GET_SEALS)
+    except OSError as error: raise ValueError('sender-sealed probe image required') from error
+    if actual & seals != seals: raise ValueError('sender-sealed probe image required')
+    digest = hashlib.sha256(); position = 0
+    while position < info.st_size:
+        chunk = os.pread(source, min(65536, info.st_size-position), position)
+        if not chunk: raise ValueError('probe image changed during capture')
+        if position == 0 and chunk[:4] != b'\x7fELF': raise ValueError('probe image is not ELF')
+        digest.update(chunk); position += len(chunk)
+    if digest.digest() != expected: raise ValueError('probe image digest differs')
+    return os.dup(source)
 
 
 def public_factory_probe(peer):
