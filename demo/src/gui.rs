@@ -2841,30 +2841,8 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
             }
             if battery_controls_are_visible(supported, exposed) {
                 let mut percentage = battery.level().percent();
-                let slider_changed = ui
-                    .add_enabled_ui(editable, |ui| {
-                        ui.add_sized(
-                            [120.0, NAME_INPUT_HEIGHT],
-                            egui::Slider::new(&mut percentage, 0..=100).show_value(false),
-                        )
-                    })
-                    .inner
-                    .changed();
-                let entry_changed = ui
-                    .add_enabled_ui(editable, |ui| {
-                        ui.add_sized(
-                            [56.0, NAME_INPUT_HEIGHT],
-                            egui::DragValue::new(&mut percentage)
-                                .range(0..=100)
-                                .suffix("%"),
-                        )
-                    })
-                    .inner
-                    .changed();
-                if let Some(level) = BatteryLevel::new(percentage)
-                    .ok()
-                    .filter(|_| slider_changed || entry_changed)
-                {
+                let changed = draw_battery_percentage_controls(ui, &mut percentage, editable);
+                if let Some(level) = BatteryLevel::new(percentage).ok().filter(|_| changed) {
                     let _ = view.set_battery_level(level);
                 }
             } else {
@@ -2876,6 +2854,49 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
             }
         });
     });
+}
+
+fn draw_battery_percentage_controls(
+    ui: &mut egui::Ui,
+    percentage: &mut u8,
+    editable: bool,
+) -> bool {
+    let slider = ui
+        .add_enabled_ui(editable, |ui| {
+            let response = ui.add_sized(
+                [120.0, NAME_INPUT_HEIGHT],
+                egui::Slider::new(percentage, 0..=100).show_value(false),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::slider(
+                    response.enabled(),
+                    f64::from(*percentage),
+                    "Battery level",
+                )
+            });
+            response
+        })
+        .inner;
+    let entry = ui
+        .add_enabled_ui(editable, |ui| {
+            let response = ui.add_sized(
+                [56.0, NAME_INPUT_HEIGHT],
+                // The integral default is 0.25; each arrow step rounds to zero.
+                egui::DragValue::new(percentage)
+                    .speed(1.0)
+                    .range(0..=100)
+                    .suffix("%"),
+            );
+            response.widget_info(|| {
+                let mut info =
+                    egui::WidgetInfo::drag_value(response.enabled(), f64::from(*percentage));
+                info.label = Some("Battery percentage".into());
+                info
+            });
+            response
+        })
+        .inner;
+    slider.changed() || entry.changed()
 }
 
 const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
@@ -4658,6 +4679,86 @@ mod tests {
         assert!(!battery_controls_are_visible(false, true));
         assert!(!battery_controls_are_visible(true, false));
         assert!(battery_controls_are_visible(true, true));
+    }
+
+    #[test]
+    fn battery_percentage_keyboard_controls_are_named_editable_and_disabled_safely() {
+        for editable in [true, false] {
+            let context = egui::Context::default();
+            let mut percentage = 50_u8;
+            let mut labels = std::collections::BTreeSet::new();
+            let mut changes = Vec::new();
+            let mut adjacent = false;
+            let key = |key, pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let frames = [
+                vec![],
+                vec![key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+                vec![key(egui::Key::ArrowRight, true)],
+                vec![key(egui::Key::ArrowRight, false), key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+                vec![key(egui::Key::ArrowUp, true)],
+                vec![key(egui::Key::ArrowUp, false), key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+            ];
+            for keys in frames {
+                let output = context.run(
+                    egui::RawInput {
+                        events: keys,
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            ui.horizontal(|ui| {
+                                changes.push(draw_battery_percentage_controls(
+                                    ui,
+                                    &mut percentage,
+                                    editable,
+                                ));
+                                adjacent |= ui.button("Adjacent control").has_focus();
+                            });
+                        });
+                    },
+                );
+                labels.extend(
+                    output
+                        .platform_output
+                        .events
+                        .iter()
+                        .filter_map(|event| event.widget_info().label.clone()),
+                );
+            }
+            assert!(adjacent, "Tab must leave the battery controls");
+            if editable {
+                assert!(
+                    labels.contains("Battery level"),
+                    "slider name missing: {labels:?}"
+                );
+                assert!(
+                    labels.contains("Battery percentage"),
+                    "entry name missing: {labels:?}"
+                );
+                assert_eq!(
+                    percentage, 52,
+                    "both arrow adjustments must apply exactly once"
+                );
+                assert_eq!(
+                    changes,
+                    [false, false, false, true, false, false, true, false, false]
+                );
+            } else {
+                assert_eq!(percentage, 50);
+                assert!(changes.iter().all(|changed| !changed));
+                assert!(!labels.contains("Battery level"));
+                assert!(!labels.contains("Battery percentage"));
+            }
+        }
     }
 
     #[test]

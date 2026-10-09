@@ -1565,3 +1565,29 @@ zero owned HID nodes after cleanup. This receipt applies to the tested source
 increment and does not prove full interactive accessibility or the final two-hour
 GUI executable soak. No public behavior or dependency changed. All six gates
 remain open; the immutable provider packet still requires installation.
+
+
+### Whole-unit keyboard numeric controls and recovery acceptance
+
+Battery percentage and touch-lockout seconds inherited egui's integral drag-value
+default speed of 0.25. A single arrow step rounded back to the same integer, so
+keyboard adjustment was inert. Both now use whole-unit steps and descriptive
+metadata. The production battery widgets are extracted at their existing layout
+seam; slider/entry traversal tests require exact 50→51→52 changes and disabled
+no-ops. The touch duration regression requires 120→121 and clamps at 1/3600,
+with adjacent traversal and a disabled no-op. Both fail with the former default
+step. Pointer drag sensitivity likewise becomes one integer unit per point; ranges
+and exposure rules are unchanged. No public Rust contract or dependency changes.
+A rapid arrow immediately after Tab can also move focus before the upstream focus
+filter is established. This diagnostic is retained as an unresolved keyboard
+acceptance case; settled-focus tests do not close that case or the full GUI gate.
+
+The installed bbc1e1eb93baffdccf2840ae130d0cb139043a34 broker-death phase now
+passes all three audio families. Each rejects canonical pending, truncated,
+malformed and identity-replaced journals, verifies exact terminal connection/channel
+closure, owned worker exit and attachment removal, and performs held-identity
+operator restoration. The original inactive broker service/active socket state is
+restored. Failed prior receipts remain historical evidence. These recovery cells
+are passed; construction-time worker death, combined construction/cleanup failure
+and remaining provider cells prevent whole Gate 3 closure. Raw receipts stay
+outside tracked source. GUI changes require final executable/soak revalidation.

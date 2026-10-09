@@ -627,6 +627,27 @@ pub(super) fn draw_trigger_stack(
     );
 }
 
+fn draw_touch_lockout_seconds(
+    ui: &mut egui::Ui,
+    seconds: &mut u32,
+    enabled: bool,
+) -> egui::Response {
+    let response = ui.add_enabled(
+        enabled,
+        // Seconds are integral; a fractional default makes arrow steps inert.
+        egui::DragValue::new(seconds)
+            .speed(1.0)
+            .range(1..=3600)
+            .suffix(" seconds"),
+    );
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::drag_value(response.enabled(), f64::from(*seconds));
+        info.label = Some("Touchpad lockout duration in seconds".into());
+        info
+    });
+    response
+}
+
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
 pub(super) fn draw_touchpad(
     ui: &mut egui::Ui,
@@ -704,12 +725,7 @@ pub(super) fn draw_touchpad(
                     &mut timer_enabled,
                     egui::RichText::new("Lockout timer").color(label_color),
                 );
-                ui.add_enabled(
-                    timer_enabled,
-                    egui::DragValue::new(&mut timer_seconds)
-                        .range(1..=3600)
-                        .suffix(" seconds"),
-                );
+                draw_touch_lockout_seconds(ui, &mut timer_seconds, timer_enabled);
             });
             reset_this_frame |=
                 configure_touchpad_lockout(input, state, timer_enabled, timer_seconds, events);
@@ -2760,6 +2776,57 @@ mod tests {
         };
         assert_eq!(axis_release_value((4, -7), range, range, true), (4, -7));
         assert_eq!(axis_release_value((4, -7), range, range, false), (0, 0));
+    }
+
+    #[test]
+    fn touch_lockout_seconds_supports_whole_keyboard_steps_bounds_and_disabled_state() {
+        for (initial, enabled, key, expected) in [
+            (120, true, egui::Key::ArrowUp, 121),
+            (1, true, egui::Key::ArrowDown, 1),
+            (3600, true, egui::Key::ArrowUp, 3600),
+            (120, false, egui::Key::ArrowUp, 120),
+        ] {
+            let context = egui::Context::default();
+            let mut seconds = initial;
+            let mut named = false;
+            let mut adjacent = false;
+            let event = |key, pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let frames = [
+                vec![],
+                vec![event(egui::Key::Tab, true)],
+                vec![event(egui::Key::Tab, false)],
+                vec![event(key, true)],
+                vec![event(key, false), event(egui::Key::Tab, true)],
+                vec![event(egui::Key::Tab, false)],
+            ];
+            for keys in frames {
+                let output = context.run(
+                    egui::RawInput {
+                        events: keys,
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            draw_touch_lockout_seconds(ui, &mut seconds, enabled);
+                            adjacent |= ui.button("Adjacent control").has_focus();
+                        });
+                    },
+                );
+                named |= output.platform_output.events.iter().any(|event| {
+                    event.widget_info().label.as_deref()
+                        == Some("Touchpad lockout duration in seconds")
+                });
+            }
+            assert_eq!(seconds, expected, "whole-second adjustment/bounds");
+            assert_eq!(named, enabled);
+            assert!(adjacent, "Tab must leave the duration field");
+        }
     }
 
     #[test]
