@@ -1011,7 +1011,7 @@ mod worker_outputs {
         peer.write_all(b"R").unwrap();
         let image = std::fs::File::open("/proc/self/exe").unwrap();
         let mut sender = Command::new("python3")
-            .args(["-I", "-c", "import array,fcntl,hashlib,os,socket; s=socket.socket(fileno=0); s.settimeout(3); f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1); assert 4<=len(data)<=128*1024*1024; image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING); out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500); fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL); assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32"])
+            .args(["-I", "-c", "import array,fcntl,hashlib,os,socket; s=socket.socket(fileno=0); f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1); assert 4<=len(data)<=128*1024*1024; image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING); out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500); fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL); assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32"])
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(peer.try_clone().unwrap())))
             .stdout(Stdio::from(image))
             .spawn()
@@ -1034,6 +1034,31 @@ mod worker_outputs {
         let mut result = [0];
         peer.read_exact(&mut result).unwrap();
         assert_eq!(result, [b'F']);
+    }
+
+    #[test]
+    fn ordinary_image_sender_preserves_peer_blocking_and_reaps_receiver() {
+        use std::os::fd::{AsRawFd, OwnedFd};
+        use std::process::{Command, Stdio};
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let descriptor = sender.as_raw_fd();
+        let flags = || {
+            std::fs::read_to_string(format!("/proc/self/fdinfo/{descriptor}"))
+                .unwrap()
+                .lines()
+                .find(|line| line.starts_with("flags:"))
+                .unwrap()
+                .to_owned()
+        };
+        let before = flags();
+        let mut child = Command::new("python3")
+            .args(["-I", "-c", "import array,os,socket; s=socket.socket(fileno=0); assert s.recv(1)==b'R'; data,ancillary,flags,_=s.recvmsg(32,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC); assert len(data)==32 and not flags&(socket.MSG_TRUNC|socket.MSG_CTRUNC) and len(ancillary)==1; fds=array.array('i'); fds.frombytes(ancillary[0][2]); assert len(fds)==1; os.close(fds[0]); s.sendall(b'F')"])
+            .stdin(Stdio::from(OwnedFd::from(receiver)))
+            .spawn()
+            .unwrap();
+        send_public_factory_image(&mut sender);
+        assert!(child.wait().unwrap().success());
+        assert_eq!(flags(), before);
     }
 
     #[test]

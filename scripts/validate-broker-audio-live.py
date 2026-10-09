@@ -332,10 +332,10 @@ def public_factory_probe(peer):
         passed = result.returncode == 0 and '1 passed; 0 failed' in text and all(
             f'public_usb_sample_factory family={family} passed=true' in text
             for family in ('dualsense', 'dualshock4', 'xbox360'))
-        peer.sendall(b'F' if passed else b'E')
         receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
                        exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
         print(json.dumps(dict(public_factory=receipt)), flush=True)
+        peer.sendall(b'F' if passed else b'E')
         if not passed: raise ValueError('public factory probe failed or selected zero tests')
         return receipt
     finally:
