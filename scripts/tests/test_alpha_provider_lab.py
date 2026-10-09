@@ -721,3 +721,38 @@ class InactiveServiceRecovery(unittest.TestCase):
                 with patch.object(lab.time, 'sleep') as waiting:
                     with self.assertRaisesRegex(RuntimeError, 'not stopped'): host.restart_after_rejection()
                 self.assertEqual(host.run.call_count, 1); waiting.assert_not_called(); host.start_candidate.assert_not_called()
+
+class ConstructionInjection(unittest.TestCase):
+    def snapshot(self):
+        return dict(parent=42,uids=['1002']*4,caps=0,nnp='1',groups=[],image=(1,2),
+                    cgroups=['0::/owned'],argv=[b'worker',b'dualsense',b'9',b'7',b'010203040506',b'lab',b'3',b'4',b'5'])
+
+    def test_construction_identity_requires_full_worker_ownership_before_journal(self):
+        snapshot=self.snapshot()
+        self.assertEqual(lab.construction_identity(snapshot,'dualsense',42,1002,(1,2),'/owned','lab'),(7,9))
+        for key,value in [('uids',['0']*4),('image',(9,9)),('cgroups',['0::/foreign']),('parent',99),('caps',1)]:
+            with self.assertRaises(RuntimeError):lab.construction_identity({**snapshot,key:value},'dualsense',42,1002,(1,2),'/owned','lab')
+        for index,value in [(1,b'xbox360'),(2,b'0'),(3,b'18446744073709551616'),(5,b'foreign')]:
+            argv=snapshot['argv'].copy();argv[index]=value
+            with self.assertRaises(RuntimeError):lab.construction_identity({**snapshot,'argv':argv},'dualsense',42,1002,(1,2),'/owned','lab')
+
+    def test_unit_is_resolved_before_arming_and_pidfd_is_released(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);(root/'bin').mkdir();(root/'bin/gr-audio-worker').write_bytes(b'fake')
+            host=lab.Host(SimpleNamespace(worker_uid=1002));host.root=root;host.service='owned.service';host.instance='lab'
+            host.run=Mock(return_value='MainPID=42\nControlGroup=/owned\n');held=Mock(descriptor=77)
+            snapshot=self.snapshot();snapshot['image']=lab.identity(root/'bin/gr-audio-worker')
+            armed=Mock(side_effect=lambda:host.run.assert_called_once())
+            with patch.object(lab,'process_children',side_effect=[[],[99]]),patch.object(lab,'worker_snapshot',return_value=snapshot),patch.object(lab,'PinnedWorker',return_value=held),patch.object(lab.select,'select',return_value=([77],[],[])):
+                result=host.kill_constructing_worker('dualsense',armed)
+            self.assertEqual(result,dict(generation=7,device=9));armed.assert_called_once()
+            held.kill.assert_called_once();held.close.assert_called_once()
+
+    def test_existing_children_refuse_construction_injection_before_arming(self):
+        from types import SimpleNamespace
+        host=lab.Host(SimpleNamespace(worker_uid=1002));host.root=Path('/synthetic');host.service='owned.service';host.instance='lab'
+        host.run=Mock(return_value='MainPID=42\nControlGroup=/owned\n');armed=Mock()
+        with patch.object(lab,'identity',return_value=(1,2)),patch.object(lab,'process_children',return_value=[99]),patch.object(lab,'PinnedWorker') as pin:
+            with self.assertRaisesRegex(RuntimeError,'existing workers'):host.kill_constructing_worker('dualsense',armed)
+        armed.assert_not_called();pin.assert_not_called()

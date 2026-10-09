@@ -308,3 +308,25 @@ class SessionPortIdentity(unittest.TestCase):
             detached.assert_called_once_with(1,(17,'4-2'))
             broker.close.assert_called_once()
             for channel in channels:channel.close.assert_called_once()
+
+    def test_construction_reply_requires_exact_error_and_never_accepts_handoff(self):
+        for body in (b'audio worker exited: signal: 9 (SIGKILL)',b'failed to fill whole buffer'):
+            self.assertEqual(lab.construction_failure_reply((2,0x81,body)),body.decode())
+        for reply in [(2,0x80,b'success'),(1,0x81,b'failed to fill whole buffer'),
+                      (2,0x81,b'USB audio enumeration timed out'),
+                      (2,0x81,b'audio worker exited: signal: 9 (SIGKILL); attachment cleanup: failed')]:
+            with self.assertRaisesRegex(RuntimeError,'exact pre-handoff'):lab.construction_failure_reply(reply)
+
+    def test_construction_fault_cannot_pass_a_late_handoff_or_leak_contexts(self):
+        for response in [(2,0x81,b'failed to fill whole buffer'),(2,0x80,b'late handoff')]:
+            broker=MagicMock();broker.__enter__.return_value=broker
+            supervisor=MagicMock();supervisor.__enter__.return_value=supervisor
+            for peer in (broker,supervisor):peer.getsockopt.return_value=struct.pack('3i',42,0,0)
+            supervisor.recv.side_effect=[b'A',b'{"generation":7,"device":9}\n'];broker.recv.return_value=b''
+            with patch.object(lab.socket,'socket',side_effect=[broker,supervisor]),patch.object(lab.audio,'message'),patch.object(lab.audio,'reply',return_value=response),patch.object(lab,'fd_count',return_value=11):
+                if response[1]==0x81:
+                    result=lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'))
+                    self.assertFalse(result['handoff']);self.assertEqual(result['generation'],7)
+                else:
+                    with self.assertRaises(RuntimeError):lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'))
+            broker.__exit__.assert_called_once();supervisor.__exit__.assert_called_once()

@@ -1818,3 +1818,22 @@ construction/cleanup failure still remain required; this does not close Gate 3.
 authorized one-time bootstrap, fixed-mailbox root code replacement and later
 revocation. Deterministic updater regressions pass; administrator bootstrap and
 live update remain pending. All six release gates remain open.
+
+### Autonomous deployment and pre-handoff worker-failure probe
+
+Administrator bootstrap succeeded. The fixed updater installed candidate
+`37115ff4cb51ca3495c69ed7f7a8d48fd44d8ac6` without trial/service actions.
+The installed candidate's subsequent rejection phase passed and original
+broker service inactive/socket active state was verified. Revocation remains
+available; no general sudo shell was granted.
+
+The worker-death phase now additionally arms a non-root client before its open
+request, pins a staged production worker through executable/parent/UID/cgroup/
+instance/generation identity and a pidfd, and kills it during construction.
+The client must receive an exact pre-handoff error and EOF. A successful open
+is a late-injection failure, never a pass. No fixture worker or production
+readiness delay is substituted. Five new deterministic regressions cover
+identity refusal, arming order, exact replies, late handoff and socket cleanup.
+Live construction-failure acceptance is pending until its bounded run passes.
+Combined initiating/cleanup failure and the other six-gate requirements remain
+open. This supporting lab change preserves ordinary-root APIs and binaries.

@@ -190,6 +190,44 @@ def exit_before_handoff(instance, port):
     print(json.dumps(dict(event='client-disconnected-before-handoff', port=port)), flush=True)
 
 
+def construction_failure_reply(reply):
+    version,operation,body=reply
+    allowed=(b'audio worker exited: signal: 9 (SIGKILL)', b'failed to fill whole buffer')
+    if (version,operation)!=(2,0x81) or body not in allowed:
+        raise RuntimeError('construction did not fail with the exact pre-handoff worker error: '+repr(reply))
+    return body.decode('ascii')
+
+
+def worker_construction_death(profile,instance,ports,fault_socket):
+    audio.live.compiled_serial(instance,1)
+    ports=authorized_ports(ports)
+    tag={'dualsense':1,'dualshock4':2,'xbox360':3}[profile]
+    before=fd_count()
+    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as broker, socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as supervisor:
+        broker.settimeout(10);supervisor.settimeout(10)
+        broker.connect('/run/virtualgamepad/broker.sock');supervisor.connect(str(fault_socket))
+        for peer in (broker,supervisor):
+            _,uid,_=struct.unpack('3i',peer.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+            if uid!=0:raise RuntimeError('construction peers must be root')
+        supervisor.sendall(json.dumps({'construction':profile}).encode()+b'\n')
+        if supervisor.recv(1)!=b'A':raise RuntimeError('construction supervisor did not arm')
+        audio.message(broker,2,1,bytes([tag,2,1,2,3,4,5]))
+        confirmation=bytearray()
+        while not confirmation.endswith(b'\n'):
+            chunk=supervisor.recv(128)
+            if not chunk:raise EOFError('construction injection ended')
+            confirmation.extend(chunk)
+            if len(confirmation)>256:raise ValueError('oversized construction confirmation')
+        identity=json.loads(confirmation)
+        if (set(identity)!={'generation','device'} or type(identity['generation']) is not int or
+                not 0<identity['generation']<2**64 or type(identity['device']) is not int or
+                not 0<identity['device']<2**32):raise ValueError('invalid construction injection identity')
+        error=construction_failure_reply(audio.reply(broker))
+        if broker.recv(1)!=b'':raise RuntimeError('construction error left broker connection open')
+    if fd_count()!=before:raise RuntimeError('construction failure leaked ordinary descriptors')
+    return dict(profile=profile,**identity,error=error,handoff=False)
+
+
 def worker_death(profile, instance, port, fault_socket, broker_death=False):
     before = fd_count()
     session = Session(profile, instance, port)
@@ -351,7 +389,12 @@ def main():
     if args.scenario in ('worker-death','broker-death'):
         if args.fault_socket is None or not args.fault_socket.is_absolute(): parser.error('immutable supervisor socket is required')
         receipts = [worker_death(profile, args.instance, ports, args.fault_socket, args.scenario=='broker-death') for profile in audio.live.PROFILES]
-        print(json.dumps(dict(status='passed', scenario=args.scenario, sessions=receipts)), flush=True)
+        construction=[]
+        if args.scenario=='worker-death':
+            construction=[worker_construction_death(profile,args.instance,ports,args.fault_socket)
+                          for profile in audio.live.PROFILES]
+        print(json.dumps(dict(status='passed', scenario=args.scenario, sessions=receipts,
+                             construction_failures=construction)), flush=True)
         return
     receipts = []
     for profile in audio.live.PROFILES:

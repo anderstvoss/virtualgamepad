@@ -15,6 +15,7 @@ from pathlib import Path
 import pwd
 import re
 import signal
+import select
 import stat
 import socket
 import struct
@@ -356,6 +357,17 @@ def validate_worker(snapshot, parent, uid, image, cgroup, instance, generation, 
         raise RuntimeError('worker process identity is not the owned session')
 
 
+def construction_identity(snapshot,profile,parent,uid,image,cgroup,instance):
+    argv=snapshot['argv']
+    if len(argv)!=9 or argv[1]!=profile.encode():raise RuntimeError('unexpected constructing worker profile')
+    try:
+        device,generation=int(argv[2]),int(argv[3])
+        if not 0<device<2**32 or not 0<generation<2**64:raise ValueError('out of range')
+    except ValueError as error:raise RuntimeError('invalid construction identity') from error
+    validate_worker(snapshot,parent,uid,image,cgroup,instance,generation,device)
+    return generation,device
+
+
 class PinnedWorker:
     """A pidfd capability, acquired only after matching root-owned evidence."""
     def __init__(self, pid, verify):
@@ -626,6 +638,40 @@ class Host:
         if self.args.restart_empty:
             self.restart_empty_candidate()
 
+    def kill_constructing_worker(self, profile, armed):
+        # Resolve unit identities before arming the client, keeping systemctl
+        # out of the short worker-launch/host-enumeration observation window.
+        deadline=time.monotonic()+5
+        while True:
+            properties=dict(line.split('=',1) for line in self.run(
+                ['systemctl','show',self.service,'-p','MainPID','-p','ControlGroup']).splitlines())
+            parent=int(properties['MainPID']);group=properties['ControlGroup']
+            if parent:break
+            if time.monotonic()>=deadline:raise TimeoutError('owned broker did not start')
+            time.sleep(.001)
+        image=identity(self.root/'bin/gr-audio-worker')
+        if process_children(parent):raise RuntimeError('construction injection requires no existing workers')
+        armed()
+        deadline=time.monotonic()+5
+        while True:
+            for pid in process_children(parent):
+                try:
+                    snapshot=worker_snapshot(pid)
+                    generation,device=construction_identity(snapshot,profile,parent,self.args.worker_uid,image,group,self.instance)
+                except (OSError,RuntimeError):continue
+                def verify(observed):
+                    if construction_identity(observed,profile,parent,self.args.worker_uid,image,group,self.instance)!=(generation,device):
+                        raise RuntimeError('constructing worker identity changed')
+                held=PinnedWorker(pid,verify)
+                try:
+                    held.kill()
+                    if not select.select([held.descriptor],[],[],3)[0]:raise TimeoutError('constructing worker did not exit')
+                finally:held.close()
+                self.events.append(dict(injected_construction_worker_death=dict(profile=profile,generation=generation,device=device,pidfd=True)))
+                return dict(generation=generation,device=device)
+            if time.monotonic()>=deadline:raise TimeoutError('owned constructing worker was not observed')
+            time.sleep(.001)
+
     def worker_death(self, command):
         path = self.root / 'fault.sock'
         listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -636,7 +682,7 @@ class Host:
         failures = []
         def supervise():
             try:
-                for _ in range(3):
+                for _ in range(6 if self.args.phase=='provider-worker-death' else 3):
                     # Sibling admission first exercises normal replacement, then
                     # builds four isolated sessions before requesting injection.
                     deadline = time.monotonic() + (90 if self.args.phase == 'provider-siblings-admission' else 20)
@@ -658,6 +704,12 @@ class Host:
                             data.extend(chunk)
                             if len(data)>256: raise ValueError('oversized fault readiness')
                         request = json.loads(data)
+                        if self.args.phase=='provider-worker-death' and set(request)=={'construction'}:
+                            profile=request['construction']
+                            if profile not in ('dualsense','dualshock4','xbox360'):raise ValueError('invalid construction profile')
+                            result=self.kill_constructing_worker(profile,lambda:peer.sendall(b'A'))
+                            peer.sendall(json.dumps(result).encode()+b'\n')
+                            continue
                         if (set(request) != {'generation', 'device'} or
                                 type(request['generation']) is not int or not 0 < request['generation'] < 2**64 or
                                 type(request['device']) is not int or not 0 < request['device'] < 2**32):
