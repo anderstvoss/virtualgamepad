@@ -1625,3 +1625,30 @@ To analyze a trial, extract its single callback receipt from the runner's
 <receipt.json> --ledger <report.json.trial-1.ledger.jsonl>`. Keep both inputs and
 the analysis outside tracked source. This supplies diagnostic evidence only;
 all six gate closure requirements remain in force.
+
+## Rust graph marker-accounting correction
+
+The criteria audit's 128-frame-block alias is corrected in the graph-driven Rust
+control and all graph-driven PipeWire matrix cells. Stereo frames carry a
+base-32767 index; four-channel frames also verify complementary rear channels.
+Mono carries a sign-tagged two-frame index pair, whose state is retained across
+buffer boundaries. Unique observations are kept in preallocated storage; measured
+replay/out-of-order arrivals, malformed pairs and channel corruption fail instead
+of canceling missing frames in block totals. A mono pair proves its two-frame
+encoding, not independent identification of two identical-valued scalar samples.
+
+Five new deterministic regressions cover balanced loss/replay in all layouts,
+every frame-boundary split, partial pairs/corrupt channels/reordering, startup
+replay and silent drain, and index-base rollover/bounds. Previous producer,
+partial-frame and coalesced-buffer regressions remain. The focused test binary
+passes 15 deterministic tests; 19 host-dependent tests remain ignored by that
+invocation. Source/capture callbacks allocate no new marker storage and perform
+no logging or blocking I/O. Production library APIs, queues and GUI code do not
+change. The historical pipe-driven latency examples retain their old encoding;
+they are not the graph-driven 72-cell acceptance matrix.
+
+This correction needs fresh live graph/control/product evidence. It does not
+resolve observed graph loss, qualify the host, or fix the separate measured
+production duration/rate verification gap. Preserve failed receipts and the
+zero-loss and p99 thresholds. All six gates remain open; the accepted byte-identical
+neutral GUI soak is unaffected.

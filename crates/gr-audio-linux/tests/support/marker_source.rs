@@ -3,7 +3,7 @@ use pipewire::{self as pw, properties::properties, spa};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
@@ -179,7 +179,35 @@ impl Drop for Source {
     }
 }
 
-// Counts only non-silent marker frames actually submitted by the producer.
+// Multichannel frames carry a base-32767 index with complementary rear channels.
+// Mono uses a sign-tagged two-frame pair; preserve its decoder across buffers.
+fn frame_samples(position: usize, channels: usize, out: &mut [i16; 4]) {
+    let index = if channels == 1 {
+        position / 2
+    } else {
+        position
+    };
+    let high = i16::try_from(index / 32767 + 1).unwrap();
+    let low = i16::try_from(index % 32767 + 1).unwrap();
+    *out = match channels {
+        1 => [if position % 2 == 0 { high } else { -low }, 0, 0, 0],
+        2 => [high, low, 0, 0],
+        4 => [high, low, -high, -low],
+        _ => panic!("unsupported marker channel count"),
+    };
+}
+
+pub fn block_samples(block: usize, channels: usize) -> Vec<i16> {
+    let mut result = Vec::with_capacity(128 * channels);
+    for position in block * 128..(block + 1) * 128 {
+        let mut frame = [0; 4];
+        frame_samples(position, channels, &mut frame);
+        result.extend_from_slice(&frame[..channels]);
+    }
+    result
+}
+
+// Counts generated non-silent frames, not bytes written to a client pipe.
 fn fill_markers(
     bytes: &mut [u8],
     channels: usize,
@@ -190,17 +218,16 @@ fn fill_markers(
     let mut generated = 0;
     for frame in bytes.chunks_exact_mut(channels * 2) {
         let block = *position / 128;
-        let marker = if block < stamps.len() {
+        let mut samples = [0; 4];
+        if block < stamps.len() {
             if *position % 128 == 0 {
                 stamps[block].store(now, Ordering::Release);
             }
+            frame_samples(*position, channels, &mut samples);
             generated += 1;
-            i16::try_from(block + 1).unwrap()
-        } else {
-            0
-        };
-        for sample in frame.chunks_exact_mut(2) {
-            sample.copy_from_slice(&marker.to_le_bytes());
+        }
+        for (sample, value) in frame.chunks_exact_mut(2).zip(samples) {
+            sample.copy_from_slice(&value.to_le_bytes());
         }
         *position += 1;
     }
@@ -216,7 +243,10 @@ fn producer_accounting_distinguishes_generated_markers_from_silent_drain() {
     assert_eq!(position, 260);
     assert_eq!(stamps.map(|stamp| stamp.load(Ordering::Acquire)), [37, 37]);
     assert!(bytes[256 * 4..].iter().all(|byte| *byte == 0));
-    assert_eq!(i16::from_le_bytes([bytes[128 * 4], bytes[128 * 4 + 1]]), 2);
+    assert_eq!(
+        i16::from_le_bytes([bytes[128 * 4 + 2], bytes[128 * 4 + 3]]),
+        129
+    );
 }
 
 fn format_bytes(channels: usize) -> Vec<u8> {
@@ -258,6 +288,9 @@ fn format_bytes(channels: usize) -> Vec<u8> {
 pub struct Observations {
     pub counts: Vec<AtomicU64>,
     latencies: Vec<AtomicU64>,
+    seen: Vec<AtomicU64>,
+    mono_high: AtomicI32,
+    last_index: AtomicU64,
     invalid: AtomicU64,
     buffers: AtomicU64,
     coalesced_callbacks: AtomicU64,
@@ -267,6 +300,9 @@ impl Observations {
         Arc::new(Self {
             counts: (0..blocks).map(|_| AtomicU64::new(0)).collect(),
             latencies: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
+            seen: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
+            mono_high: AtomicI32::new(0),
+            last_index: AtomicU64::new(0),
             invalid: AtomicU64::new(0),
             buffers: AtomicU64::new(0),
             coalesced_callbacks: AtomicU64::new(0),
@@ -280,56 +316,210 @@ impl Observations {
     }
     pub fn snapshot(&self, stamps: &[AtomicU64]) -> (Vec<u64>, Vec<usize>, usize) {
         let mut times = Vec::new();
-        let counts: Vec<_> = self
+        let counts = self
             .counts
             .iter()
             .map(|n| usize::try_from(n.load(Ordering::Acquire)).unwrap())
             .collect();
         for (block, stamp) in stamps.iter().enumerate() {
             if stamp.load(Ordering::Acquire) > 2_000_000_000 {
-                times.extend(
-                    self.latencies[block * 128..block * 128 + counts[block].min(128)]
-                        .iter()
-                        .map(|v| v.load(Ordering::Acquire)),
-                );
+                for index in block * 128..(block + 1) * 128 {
+                    if self.seen[index].load(Ordering::Acquire) != 0 {
+                        times.push(self.latencies[index].load(Ordering::Acquire));
+                    }
+                }
             }
         }
         (
             times,
             counts,
-            usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap(),
+            usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap()
+                + usize::from(self.mono_high.load(Ordering::Acquire) != 0),
         )
     }
-    pub fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
-        if channels == 0 || bytes.len() % (channels * 2) != 0 {
-            self.invalid.fetch_add(1, Ordering::Relaxed);
+    fn bad(&self) {
+        self.invalid.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_frame(&self, frame: &[i16], stamps: &[AtomicU64], now: u64) {
+        if frame.iter().all(|value| *value == 0) {
+            if self.mono_high.swap(0, Ordering::Relaxed) != 0 {
+                self.bad();
+            }
             return;
         }
-        for frame in bytes.chunks_exact(channels * 2) {
-            if frame.iter().all(|v| *v == 0) {
-                continue;
+        let (high, low, width) = match frame {
+            [value] if *value > 0 => {
+                if self.mono_high.swap(i32::from(*value), Ordering::Relaxed) != 0 {
+                    self.bad();
+                }
+                return;
             }
-            let value = i16::from_le_bytes([frame[0], frame[1]]);
-            let marker = usize::try_from(value).unwrap_or(0);
-            if !(1..=stamps.len()).contains(&marker)
-                || frame.chunks_exact(2).any(|v| v != &frame[..2])
+            [value] if *value < 0 => {
+                let high = self.mono_high.swap(0, Ordering::Relaxed);
+                (high, -i32::from(*value), 2)
+            }
+            [high, low] => (i32::from(*high), i32::from(*low), 1),
+            [high, low, rear_high, rear_low]
+                if i32::from(*rear_high) == -i32::from(*high)
+                    && i32::from(*rear_low) == -i32::from(*low) =>
             {
-                self.invalid.fetch_add(1, Ordering::Relaxed);
-                continue;
+                (i32::from(*high), i32::from(*low), 1)
             }
-            let stamp = stamps[marker - 1].load(Ordering::Acquire);
-            if stamp == 0 || stamp - 1 > now {
-                self.invalid.fetch_add(1, Ordering::Relaxed);
-                continue;
+            _ => {
+                self.bad();
+                return;
             }
-            let count = usize::try_from(self.counts[marker - 1].load(Ordering::Relaxed)).unwrap();
-            if count < 128 {
-                self.latencies[(marker - 1) * 128 + count]
-                    .store(now - (stamp - 1), Ordering::Relaxed);
+        };
+        if !(1..=32767).contains(&high) || !(1..=32767).contains(&low) {
+            self.bad();
+            return;
+        }
+        let index = usize::try_from((high - 1) * 32767 + low - 1).unwrap() * width;
+        let Some(stamp) = stamps.get(index / 128).map(|s| s.load(Ordering::Acquire)) else {
+            self.bad();
+            return;
+        };
+        if stamp == 0 || stamp - 1 > now {
+            self.bad();
+            return;
+        }
+        let measured = stamp > 2_000_000_000;
+        let previous = self
+            .last_index
+            .swap((index + width) as u64, Ordering::Relaxed);
+        if measured && previous > index as u64 {
+            self.bad();
+        }
+        for position in index..index + width {
+            let old = self.seen[position].fetch_add(1, Ordering::Relaxed);
+            if measured && old != 0 {
+                self.bad();
             }
-            self.counts[marker - 1].store(u64::try_from(count + 1).unwrap(), Ordering::Release);
+            if old == 0 {
+                self.latencies[position].store(now - (stamp - 1), Ordering::Relaxed);
+            }
+        }
+        self.counts[index / 128].fetch_add(width as u64, Ordering::Release);
+    }
+    pub fn record_samples(&self, samples: &[i16], channels: usize, stamps: &[AtomicU64], now: u64) {
+        if ![1, 2, 4].contains(&channels) || samples.len() % channels != 0 {
+            self.bad();
+            return;
+        }
+        for frame in samples.chunks_exact(channels) {
+            self.record_frame(frame, stamps, now);
         }
     }
+    pub fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
+        if ![1, 2, 4].contains(&channels) || bytes.len() % (channels * 2) != 0 {
+            self.bad();
+            return;
+        }
+        for bytes in bytes.chunks_exact(channels * 2) {
+            let mut frame = [0; 4];
+            for (sample, value) in bytes.chunks_exact(2).zip(frame.iter_mut()) {
+                *value = i16::from_le_bytes([sample[0], sample[1]]);
+            }
+            self.record_frame(&frame[..channels], stamps, now);
+        }
+    }
+}
+
+#[test]
+fn indexed_markers_detect_balanced_loss_and_replay_in_every_layout() {
+    for channels in [1, 2, 4] {
+        let samples = block_samples(0, channels);
+        let width = if channels == 1 { 2 } else { 1 };
+        let mut replay = samples.clone();
+        replay.drain(10 * width * channels..11 * width * channels);
+        replay.extend_from_slice(&samples[20 * width * channels..21 * width * channels]);
+        assert_eq!(replay.len(), samples.len());
+        let observations = Observations::new(1);
+        observations.record_samples(
+            &replay,
+            channels,
+            &[AtomicU64::new(3_000_000_001)],
+            3_000_000_010,
+        );
+        let (times, counts, invalid) = observations.snapshot(&[AtomicU64::new(3_000_000_001)]);
+        assert_eq!(counts, [128]); // Aggregate accounting alone would accept this.
+        assert_eq!(times.len(), 128 - width);
+        assert!(
+            invalid >= width,
+            "lost/replayed marker must fail for {channels} channels"
+        );
+    }
+}
+
+#[test]
+fn indexed_markers_keep_mono_pair_state_across_every_buffer_split() {
+    for channels in [1, 2, 4] {
+        let samples = block_samples(0, channels);
+        for split in 0..=128 {
+            let observations = Observations::new(1);
+            let stamps = [AtomicU64::new(3_000_000_001)];
+            observations.record_samples(
+                &samples[..split * channels],
+                channels,
+                &stamps,
+                3_000_000_010,
+            );
+            observations.record_samples(
+                &samples[split * channels..],
+                channels,
+                &stamps,
+                3_000_000_020,
+            );
+            let (times, counts, invalid) = observations.snapshot(&stamps);
+            assert_eq!((times.len(), counts, invalid), (128, vec![128], 0));
+        }
+    }
+}
+
+#[test]
+fn indexed_markers_reject_partial_pairs_corrupt_channels_and_reordering() {
+    let stamps = [AtomicU64::new(3_000_000_001)];
+    for samples in [vec![1], vec![-1], vec![1, 1, -1], vec![1, i16::MIN]] {
+        let observations = Observations::new(1);
+        observations.record_samples(&samples, 1, &stamps, 3_000_000_010);
+        assert!(observations.snapshot(&stamps).2 > 0);
+    }
+    let observations = Observations::new(1);
+    observations.record_samples(&[1, 2, -1, -3], 4, &stamps, 3_000_000_010);
+    observations.record(&[1, 0, 1], 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 2);
+    let observations = Observations::new(1);
+    observations.record_samples(&[1, 2, 1, 1], 2, &stamps, 3_000_000_010);
+    assert!(observations.snapshot(&stamps).2 > 0);
+}
+
+#[test]
+fn indexed_markers_exclude_startup_replay_and_silent_drain() {
+    for channels in [1, 2, 4] {
+        let observations = Observations::new(1);
+        let stamps = [AtomicU64::new(1)];
+        let samples = block_samples(0, channels);
+        observations.record_samples(&samples, channels, &stamps, 2);
+        observations.record_samples(&samples, channels, &stamps, 3);
+        observations.record_samples(&vec![0; 3 * channels], channels, &stamps, 4);
+        let (times, counts, invalid) = observations.snapshot(&stamps);
+        assert_eq!((times.len(), counts, invalid), (0, vec![256], 0));
+    }
+}
+
+#[test]
+fn indexed_markers_preserve_base_rollover_and_bound_observations() {
+    let stamps: Vec<_> = (0..300).map(|_| AtomicU64::new(3_000_000_001)).collect();
+    let observations = Observations::new(300);
+    let samples = block_samples(255, 2);
+    assert!(samples.chunks_exact(2).any(|frame| frame == [2, 1]));
+    observations.record_samples(&samples, 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 0);
+    assert_eq!(observations.counts[255].load(Ordering::Acquire), 128);
+    observations.record_samples(&[32767, 32767], 2, &stamps, 3_000_000_010);
+    observations.record_samples(&[0, 1], 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 2);
 }
 
 // Same RAII thread owner as Source; capture writes only to preallocated storage.
@@ -497,12 +687,14 @@ fn direct_control_has_an_owned_sink_and_normal_capture_keeps_its_exact_target() 
 fn capture_observations_preserve_duplicates_and_reject_channel_corruption() {
     let stamps = [AtomicU64::new(2_000_000_001)];
     let observed = Observations::new(1);
-    observed.record(&[1, 0, 1, 0].repeat(129), 2, &stamps, 2_000_000_100);
+    let mut samples = block_samples(0, 2);
+    samples.extend_from_slice(&[1, 1]);
+    observed.record_samples(&samples, 2, &stamps, 2_000_000_100);
     observed.record(&[1, 0, 0, 0], 2, &stamps, 2_000_000_100);
     let (times, counts, invalid) = observed.snapshot(&stamps);
     assert_eq!(times, vec![100; 128]);
     assert_eq!(counts, [129]);
-    assert_eq!(invalid, 1);
+    assert_eq!(invalid, 3); // Replay, out-of-order arrival and corrupt channel.
 }
 
 #[test]
@@ -543,9 +735,15 @@ fn one_notification_drains_all_ready_markers_and_returns_invalid_buffers() {
     }
     let returned = Arc::new(AtomicUsize::new(0));
     let mut ready: VecDeque<_> = [
-        1_i16.to_le_bytes().repeat(64 * 2),
+        block_samples(0, 2)[..128]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect(),
         vec![1, 0, 1],
-        1_i16.to_le_bytes().repeat(64 * 2),
+        block_samples(0, 2)[128..]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect(),
     ]
     .into_iter()
     .map(|bytes| Buffer {

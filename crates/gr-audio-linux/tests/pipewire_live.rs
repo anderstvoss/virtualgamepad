@@ -1019,14 +1019,14 @@ fn latency_graph_source_to_library_samples() {
         started,
         channels,
     );
-    let mut counts = vec![0; blocks];
-    let mut latencies = Vec::new();
-    let mut invalid = 0;
+    let observations = marker_source::Observations::new(blocks);
     let mut buffer = [0; 4096];
     let mut queue_gaps = 0_u64;
     let mut expected_position = None;
     let mut position_gaps = 0_u64;
-    while started.elapsed() < Duration::from_secs(seconds + 5) && counts[blocks - 1] < 128 {
+    while started.elapsed() < Duration::from_secs(seconds + 5)
+        && observations.counts[blocks - 1].load(Ordering::Acquire) < 128
+    {
         let read = session.read_playback(&mut buffer).unwrap();
         if read.frames > 0 {
             queue_gaps += u64::from(read.discontinuity);
@@ -1036,30 +1036,10 @@ fn latency_graph_source_to_library_samples() {
             expected_position = Some(read.first_frame + read.frames as u64);
         }
         let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
-        for frame in buffer[..read.frames * channels].chunks_exact(channels) {
-            if frame.iter().all(|v| *v == 0) {
-                continue;
-            }
-            let Ok(marker) = usize::try_from(frame[0]) else {
-                invalid += 1;
-                continue;
-            };
-            if !(1..=blocks).contains(&marker) || frame.iter().any(|v| *v != frame[0]) {
-                invalid += 1;
-                continue;
-            }
-            counts[marker - 1] += 1;
-            let stamp = stamps[marker - 1].load(Ordering::Acquire);
-            if stamp == 0 || stamp - 1 > now {
-                invalid += 1;
-                continue;
-            }
-            if stamp > 2_000_000_000 {
-                latencies.push(now - (stamp - 1));
-            }
-        }
+        observations.record_samples(&buffer[..read.frames * channels], channels, &stamps, now);
         std::thread::sleep(Duration::from_micros(500));
     }
+    let (mut latencies, counts, invalid) = observations.snapshot(&stamps);
     let missing: Vec<_> = counts
         .iter()
         .enumerate()
@@ -1335,7 +1315,7 @@ fn latency_graph_library_microphone() {
         observations.clone(),
     );
     stamps[0].store(1, Ordering::Release);
-    let priming = vec![1; 128 * channels];
+    let priming = marker_source::block_samples(0, channels);
     while observations.counts[0].load(Ordering::Acquire) < 1024 {
         assert!(
             started.elapsed() < Duration::from_secs(5),
@@ -1362,7 +1342,7 @@ fn latency_graph_library_microphone() {
             );
             std::thread::sleep(Duration::from_micros(250));
         }
-        let samples = vec![i16::try_from(block + 1).unwrap(); 128 * channels];
+        let samples = marker_source::block_samples(block, channels);
         stamps[block].store(
             u64::try_from(started.elapsed().as_nanos()).unwrap() + 1,
             Ordering::Release,
@@ -1472,7 +1452,7 @@ fn latency_graph_duplex() {
     assert!([128, 256, 512].contains(&quantum));
     let mut block = 1;
     let mut microphone_generated = 0;
-    let priming = vec![1; 128 * mch];
+    let priming = marker_source::block_samples(0, mch);
     let mut buffer = vec![0; 4096 * pch];
     while started.elapsed() < Duration::from_secs(seconds + 8) {
         if playback_access == AudioAccess::Samples {
@@ -1496,7 +1476,7 @@ fn latency_graph_duplex() {
                 mstamps[0].store(1, Ordering::Release);
                 assert_eq!(session.write_microphone(&priming).unwrap(), 128);
             } else {
-                let samples = vec![i16::try_from(block + 1).unwrap(); 128 * mch];
+                let samples = marker_source::block_samples(block, mch);
                 mstamps[block].store(
                     u64::try_from(started.elapsed().as_nanos()).unwrap() + 1,
                     Ordering::Release,
