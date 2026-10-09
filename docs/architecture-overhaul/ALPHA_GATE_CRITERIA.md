@@ -98,3 +98,33 @@ resolve observed graph loss, qualify the host, or fix the separate measured
 production duration/rate verification gap. Preserve failed receipts and the
 zero-loss and p99 thresholds. All six gates remain open; the accepted byte-identical
 neutral GUI soak is unaffected.
+
+## Fixed measured production window
+
+The graph-driven Rust control and all graph-driven matrix cells now select
+measurement by planned marker position: the first 750 blocks (96000 frames) are
+warm-up; the remaining 22500 blocks at the 62-second setting are exactly
+2880000 measured frames. Session/discovery/startup delay cannot change which
+markers are included. Repeated priming, startup and silent drain remain separate.
+The capture decoder uses that same boundary for replay/order checks and latency
+samples. Historical pipe-driven examples retain their original behavior and are
+not the sustained graph matrix.
+
+Before percentile processing, the shared graph assertion checks every planned
+block timestamp is present, measured timestamps are monotonic, and the observed
+measured production span falls within the unchanged 1% rate envelope. The span
+uses first/last block handoff timestamps plus one nominal final-block duration;
+it is block-resolution producer evidence, not a new converter or native-host
+latency measurement. The existing exact generated-frame assertions, indexed
+marker checks, missing/duplicate/corrupt rejection, bounded drain and application-
+to-application p99 <20 ms remain. Callback gap diagnostics use the fixed marker
+boundary rather than time since session creation.
+
+Four new regressions cover exactly 60 nominal measured seconds and incomplete
+planned timestamps, inclusive rate bounds and just-outside/reversed/malformed
+windows, delayed startup classification, and repeated handoff timestamps in
+128/256/512-frame buffers. The focused binary passes 19 deterministic tests with
+19 host-dependent tests ignored. This repairs the duration verifier gap; it does
+not qualify the host or accept any of the failed live trials. Fresh pinned live
+controls are still required before the 72 product trials. Production APIs,
+queues, GUI code and dependencies are unchanged.

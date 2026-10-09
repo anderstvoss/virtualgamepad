@@ -99,7 +99,7 @@ impl Source {
                     let gap = process_gap(
                         &mut previous_process,
                         now,
-                        now > 2_000_000_000 && position < stamps.len() * 128,
+                        position >= WARMUP_BLOCKS * 128 && position < stamps.len() * 128,
                     );
                     worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                     let Some(mut buffer) = stream.dequeue_buffer() else {
@@ -285,11 +285,72 @@ fn format_bytes(channels: usize) -> Vec<u8> {
     .into_inner()
 }
 
+// Fixed nominal two-second marker warm-up, independent of session startup delay.
+pub const WARMUP_BLOCKS: usize = 48_000 * 2 / 128;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TrialWindow {
+    pub frames: usize,
+    pub producer_ns: u64,
+    pub missing: usize,
+    pub duplicate: usize,
+}
+
+pub fn trial_window(stamps: &[AtomicU64], counts: &[usize]) -> Result<TrialWindow, &'static str> {
+    if stamps.len() != counts.len() || !(WARMUP_BLOCKS + 1..=23_250).contains(&stamps.len()) {
+        return Err("invalid planned marker window");
+    }
+    // Production must complete even for markers excluded as warm-up. An expected
+    // count derived only from timestamps already present could hide an early stop.
+    if stamps
+        .iter()
+        .any(|stamp| stamp.load(Ordering::Acquire) == 0)
+    {
+        return Err("incomplete production");
+    }
+    let first = stamps[WARMUP_BLOCKS].load(Ordering::Acquire);
+    let mut previous = first;
+    for stamp in &stamps[WARMUP_BLOCKS + 1..] {
+        let current = stamp.load(Ordering::Acquire);
+        if current < previous {
+            return Err("producer clock reversal");
+        }
+        previous = current;
+    }
+    let frames = (stamps.len() - WARMUP_BLOCKS) * 128;
+    // Timestamps are taken at block handoff. Include the last block's nominal
+    // duration; repeated timestamps within one graph buffer are valid.
+    let producer_ns = previous
+        .checked_sub(first)
+        .and_then(|span| span.checked_add(128 * 1_000_000_000 / 48_000))
+        .ok_or("producer duration overflow")?;
+    let nominal_ns = u64::try_from(frames).unwrap() * 1_000_000_000 / 48_000;
+    if producer_ns < nominal_ns * 99 / 100 || producer_ns > nominal_ns * 101 / 100 {
+        return Err("measured production outside 1% rate envelope");
+    }
+    let (missing, duplicate) =
+        counts[WARMUP_BLOCKS..]
+            .iter()
+            .fold((0, 0), |(missing, duplicate), count| {
+                (
+                    missing + 128_usize.saturating_sub(*count),
+                    duplicate + count.saturating_sub(128),
+                )
+            });
+    Ok(TrialWindow {
+        frames,
+        producer_ns,
+        missing,
+        duplicate,
+    })
+}
+
 pub struct Observations {
     pub counts: Vec<AtomicU64>,
     latencies: Vec<AtomicU64>,
     seen: Vec<AtomicU64>,
     mono_high: AtomicI32,
+    measured_start: Option<usize>,
     last_index: AtomicU64,
     invalid: AtomicU64,
     buffers: AtomicU64,
@@ -302,11 +363,30 @@ impl Observations {
             latencies: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
             seen: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
             mono_high: AtomicI32::new(0),
+            measured_start: None,
             last_index: AtomicU64::new(0),
             invalid: AtomicU64::new(0),
             buffers: AtomicU64::new(0),
             coalesced_callbacks: AtomicU64::new(0),
         })
+    }
+    pub fn for_trial(blocks: usize) -> Arc<Self> {
+        assert!(blocks > WARMUP_BLOCKS);
+        let mut result = Self::new(blocks);
+        Arc::get_mut(&mut result).unwrap().measured_start = Some(WARMUP_BLOCKS);
+        result
+    }
+    fn measured(&self, block: usize, stamp: u64) -> bool {
+        self.measured_start
+            .map_or(stamp > 2_000_000_000, |start| block >= start)
+    }
+    fn measured_progress(&self, now: u64) -> bool {
+        self.measured_start.map_or(now > 2_000_000_000, |start| {
+            self.last_index.load(Ordering::Acquire) >= (start * 128) as u64
+        }) && self
+            .counts
+            .last()
+            .is_some_and(|n| n.load(Ordering::Acquire) < 128)
     }
     pub fn ready_buffers(&self) -> (u64, u64) {
         (
@@ -322,7 +402,7 @@ impl Observations {
             .map(|n| usize::try_from(n.load(Ordering::Acquire)).unwrap())
             .collect();
         for (block, stamp) in stamps.iter().enumerate() {
-            if stamp.load(Ordering::Acquire) > 2_000_000_000 {
+            if self.measured(block, stamp.load(Ordering::Acquire)) {
                 for index in block * 128..(block + 1) * 128 {
                     if self.seen[index].load(Ordering::Acquire) != 0 {
                         times.push(self.latencies[index].load(Ordering::Acquire));
@@ -384,7 +464,7 @@ impl Observations {
             self.bad();
             return;
         }
-        let measured = stamp > 2_000_000_000;
+        let measured = self.measured(index / 128, stamp);
         let previous = self
             .last_index
             .swap((index + width) as u64, Ordering::Relaxed);
@@ -522,6 +602,109 @@ fn indexed_markers_preserve_base_rollover_and_bound_observations() {
     assert_eq!(observations.snapshot(&stamps).2, 2);
 }
 
+#[test]
+fn trial_window_requires_complete_production_and_fixed_sixty_seconds() {
+    let stamps: Vec<_> = (0..23_250)
+        .map(|i| AtomicU64::new(5_000_000_001 + i * 128 * 1_000_000_000 / 48_000))
+        .collect();
+    let mut counts = vec![128; stamps.len()];
+    counts[0] = 4096; // Repeated priming is outside the measured frame window.
+    let window = trial_window(&stamps, &counts).unwrap();
+    assert_eq!(
+        (window.frames, window.missing, window.duplicate),
+        (2_880_000, 0, 0)
+    );
+    assert_eq!(window.producer_ns, 59_999_999_999);
+    for position in [0, WARMUP_BLOCKS, stamps.len() - 1] {
+        let previous = stamps[position].swap(0, Ordering::Relaxed);
+        assert_eq!(trial_window(&stamps, &counts), Err("incomplete production"));
+        stamps[position].store(previous, Ordering::Relaxed);
+    }
+    counts[WARMUP_BLOCKS] -= 1;
+    counts[WARMUP_BLOCKS + 1] += 1;
+    let window = trial_window(&stamps, &counts).unwrap();
+    assert_eq!((window.missing, window.duplicate), (1, 1));
+}
+
+#[test]
+fn trial_window_rate_boundaries_reject_fast_slow_reversed_and_incomplete_windows() {
+    const BLOCK_NS: u64 = 128 * 1_000_000_000 / 48_000;
+    let nominal: u64 = 60_000_000_000;
+    for (elapsed, accepted) in [
+        (nominal * 99 / 100, true),
+        (nominal * 101 / 100, true),
+        (nominal * 99 / 100 - 1, false),
+        (nominal * 101 / 100 + 1, false),
+    ] {
+        let stamps: Vec<_> = (0..23_250)
+            .map(|i| {
+                AtomicU64::new(if i < WARMUP_BLOCKS {
+                    1
+                } else {
+                    5_000_000_001 + (i - WARMUP_BLOCKS) as u64 * (elapsed - BLOCK_NS) / 22_499
+                })
+            })
+            .collect();
+        assert_eq!(
+            trial_window(&stamps, &vec![128; stamps.len()]).is_ok(),
+            accepted
+        );
+    }
+    let stamps: Vec<_> = (0..23_250)
+        .map(|i| AtomicU64::new(5_000_000_001 + i * 128 * 1_000_000_000 / 48_000))
+        .collect();
+    stamps[WARMUP_BLOCKS + 2].store(1, Ordering::Relaxed);
+    assert_eq!(
+        trial_window(&stamps, &vec![128; stamps.len()]),
+        Err("producer clock reversal")
+    );
+    assert_eq!(trial_window(&[], &[]), Err("invalid planned marker window"));
+    assert_eq!(
+        trial_window(&stamps, &[128]),
+        Err("invalid planned marker window")
+    );
+}
+
+#[test]
+fn trial_window_accepts_coalesced_block_timestamps_without_including_drain() {
+    for quantum in [128_u64, 256, 512] {
+        let stamps: Vec<_> = (0..23_250)
+            .map(|i| {
+                AtomicU64::new(
+                    5_000_000_001 + (i * 128 / quantum) * quantum * 1_000_000_000 / 48_000,
+                )
+            })
+            .collect();
+        let window = trial_window(&stamps, &vec![128; stamps.len()]).unwrap();
+        assert_eq!(window.frames, 2_880_000);
+        assert!((59_400_000_000..=60_600_000_000).contains(&window.producer_ns));
+    }
+}
+
+#[test]
+fn graph_observations_exclude_fixed_warmup_even_when_session_start_is_delayed() {
+    let stamps: Vec<_> = (0..752).map(|_| AtomicU64::new(1)).collect();
+    let observed = Observations::for_trial(stamps.len());
+    assert!(!observed.measured_progress(5_000_000_001));
+    // Classification is by planned frame index, not the session's wall clock.
+    let priming = block_samples(WARMUP_BLOCKS - 1, 2);
+    observed.record_samples(&priming, 2, &stamps, 5_000_000_001);
+    observed.record_samples(&priming, 2, &stamps, 5_000_000_001);
+    observed.record_samples(&block_samples(WARMUP_BLOCKS, 2), 2, &stamps, 5_000_000_001);
+    let (times, counts, invalid) = observed.snapshot(&stamps);
+    assert_eq!((times.len(), invalid), (128, 0));
+    assert_eq!(counts[WARMUP_BLOCKS - 1], 256);
+    assert_eq!(counts[WARMUP_BLOCKS], 128);
+    assert!(observed.measured_progress(5_000_000_001));
+    observed.record_samples(
+        &block_samples(WARMUP_BLOCKS + 1, 2),
+        2,
+        &stamps,
+        5_000_000_001,
+    );
+    assert!(!observed.measured_progress(5_000_000_001));
+}
+
 // Same RAII thread owner as Source; capture writes only to preallocated storage.
 pub fn capture(
     target: String,
@@ -570,11 +753,7 @@ fn capture_inner(
             .process(move |stream, ()| {
                 let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
                 worker_stats.calls.fetch_add(1, Ordering::Relaxed);
-                let measured = now > 2_000_000_000
-                    && observations
-                        .counts
-                        .last()
-                        .is_some_and(|n| n.load(Ordering::Acquire) < 128);
+                let measured = observations.measured_progress(now);
                 let gap = process_gap(&mut previous_process, now, measured);
                 worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                 let drained = drain_ready(

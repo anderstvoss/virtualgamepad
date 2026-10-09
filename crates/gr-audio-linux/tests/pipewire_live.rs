@@ -1019,7 +1019,7 @@ fn latency_graph_source_to_library_samples() {
         started,
         channels,
     );
-    let observations = marker_source::Observations::new(blocks);
+    let observations = marker_source::Observations::for_trial(blocks);
     let mut buffer = [0; 4096];
     let mut queue_gaps = 0_u64;
     let mut expected_position = None;
@@ -1064,13 +1064,13 @@ fn latency_graph_source_to_library_samples() {
         (blocks * 128) as u64,
         "producer did not submit every planned marker"
     );
-    assert_direction_latency(
+    assert_graph_trial_latency(
         "graph_source_to_library",
         &mut latencies,
         invalid,
         Some(session.dropped_playback_frames()),
-        measured_marker_frames(&stamps),
-        marker_frame_errors(&counts, &stamps),
+        &stamps,
+        &counts,
     );
 }
 
@@ -1081,7 +1081,7 @@ fn latency_graph_direct_control() {
     use std::sync::{Arc, atomic::AtomicU64};
     let blocks = usize::try_from(trial_seconds() * 48_000 / 128).unwrap();
     let stamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
-    let observations = marker_source::Observations::new(blocks);
+    let observations = marker_source::Observations::for_trial(blocks);
     let started = Instant::now();
     let target = format!("virtualgamepad.direct-control.{}", std::process::id());
     let sink = marker_source::direct_sink(
@@ -1123,13 +1123,13 @@ fn latency_graph_direct_control() {
         &deficits[..deficits.len().min(16)]
     );
     assert_eq!(generated, (blocks * 128) as u64);
-    assert_direction_latency(
+    assert_graph_trial_latency(
         "direct_graph_control",
         &mut latencies,
         invalid,
         None,
-        measured_marker_frames(&stamps),
-        marker_frame_errors(&counts, &stamps),
+        &stamps,
+        &counts,
     );
 }
 
@@ -1176,7 +1176,7 @@ fn native_graph_latency(direction: SampleDirection) {
         )
     };
     let stamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
-    let observations = marker_source::Observations::new(blocks);
+    let observations = marker_source::Observations::for_trial(blocks);
     let started = Instant::now();
     let capture = marker_source::capture(
         capture_node,
@@ -1213,7 +1213,7 @@ fn native_graph_latency(direction: SampleDirection) {
     session.close();
     assert!(session.error().is_none());
     assert!(!session.failed());
-    assert_direction_latency(
+    assert_graph_trial_latency(
         if direction == SampleDirection::HostToController {
             "graph_native_playback"
         } else {
@@ -1222,8 +1222,8 @@ fn native_graph_latency(direction: SampleDirection) {
         &mut latencies,
         invalid,
         Some(session.dropped_playback_frames()),
-        measured_marker_frames(&stamps),
-        marker_frame_errors(&counts, &stamps),
+        &stamps,
+        &counts,
     );
 }
 
@@ -1267,6 +1267,30 @@ fn pipewire_close_during_processing_retains_clocks_and_recreates() {
     assert!(!sibling.failed());
 }
 
+fn assert_graph_trial_latency(
+    label: &str,
+    latencies: &mut [u64],
+    invalid: usize,
+    dropped: Option<u64>,
+    stamps: &[std::sync::atomic::AtomicU64],
+    counts: &[usize],
+) {
+    let window =
+        marker_source::trial_window(stamps, counts).expect("complete steady production window");
+    eprintln!(
+        "{label} warmup_frames=96000 measured_frames={} producer_ns={} drain_excluded=true",
+        window.frames, window.producer_ns
+    );
+    assert_direction_latency(
+        label,
+        latencies,
+        invalid,
+        dropped,
+        window.frames,
+        (window.missing, window.duplicate),
+    );
+}
+
 fn trial_seconds() -> u64 {
     let seconds = std::env::var("VIRTUALGAMEPAD_AUDIO_TRIAL_SECONDS")
         .ok()
@@ -1305,7 +1329,7 @@ fn latency_graph_library_microphone() {
     .unwrap();
     let channels = session.endpoints()[1].format.channels().len();
     let stamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
-    let observations = marker_source::Observations::new(blocks);
+    let observations = marker_source::Observations::for_trial(blocks);
     let started = Instant::now();
     let capture = marker_source::capture(
         session.endpoints()[1].host_node.clone(),
@@ -1381,13 +1405,13 @@ fn latency_graph_library_microphone() {
     session.close();
     assert!(session.error().is_none());
     assert!(!session.failed());
-    assert_direction_latency(
+    assert_graph_trial_latency(
         "graph_library_microphone",
         &mut latencies,
         invalid,
         None,
-        measured_marker_frames(&stamps),
-        marker_frame_errors(&counts, &stamps),
+        &stamps,
+        &counts,
     );
     assert!(
         streaming_elapsed <= Duration::from_millis(seconds * 1_100),
@@ -1428,8 +1452,8 @@ fn latency_graph_duplex() {
     let mch = microphone.format.channels().len();
     let pstamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
     let mstamps: Arc<Vec<AtomicU64>> = Arc::new((0..blocks).map(|_| AtomicU64::new(0)).collect());
-    let pobs = marker_source::Observations::new(blocks);
-    let mobs = marker_source::Observations::new(blocks);
+    let pobs = marker_source::Observations::for_trial(blocks);
+    let mobs = marker_source::Observations::for_trial(blocks);
     let started = Instant::now();
     let pcapture = playback
         .caller_node
@@ -1520,20 +1544,20 @@ fn latency_graph_duplex() {
     } else {
         assert_eq!(microphone_generated, (blocks - 1) * 128);
     }
-    assert_direction_latency(
+    assert_graph_trial_latency(
         "duplex_playback",
         &mut ptimes,
         pinvalid,
         Some(session.dropped_playback_frames()),
-        measured_marker_frames(&pstamps),
-        marker_frame_errors(&pcounts, &pstamps),
+        &pstamps,
+        &pcounts,
     );
-    assert_direction_latency(
+    assert_graph_trial_latency(
         "duplex_microphone",
         &mut mtimes,
         minvalid,
         None,
-        measured_marker_frames(&mstamps),
-        marker_frame_errors(&mcounts, &mstamps),
+        &mstamps,
+        &mcounts,
     );
 }
