@@ -1644,3 +1644,22 @@ establish whole-candidate acceptance. Physical comparisons and native-host timin
 remain the separately deferred post-alpha issues. Self-replacement is not enabled:
 allowing replacement of root-running code changes the earlier immutable-lab trust
 boundary and requires an explicit choice of update scope.
+
+
+### Quiescent USB microphone accounting regression
+
+The diagnostic client now collects final microphone host time, consumed markers,
+silence, completion and abandonment after ALSA and producer termination. It
+requires two identical observations within three attempts and validates
+host = consumed + silence and host = completed + abandoned. Moving, foreign or
+inconsistent observations fail explicitly. The last producer credit remains a
+separate historical sample; it is not substituted for final consumption. This
+uses existing worker operations 3/5/6/7 and changes no worker protocol or ordinary
+root API, producer pacing, queue capacity or acceptance threshold.
+
+Five focused regressions cover stable final credit, bounded retries, unreconciled
+counts, abandoned capture and exact credit replies. All 275 Python tooling tests
+pass. This is a diagnostic correction, not live acceptance: the installed immutable
+snapshot still contains the prior client. A reviewed payload update is needed
+before rerunning the failed USB cell. The production failure and all six gates
+remain open. No dependency was added.

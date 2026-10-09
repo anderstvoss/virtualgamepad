@@ -93,6 +93,51 @@ def functional_worker_evidence(counters, expected_frames):
             and counters['microphone_queue_dropped_frames'] == 0)
 
 
+def microphone_credit(control, generation):
+    message(control, 1, 5, struct.pack('<Q', generation))
+    version, operation, data = reply(control)
+    if ((version, operation, len(data)) != (1, 5, 16)
+            or data[:8] != struct.pack('<Q', generation)):
+        raise ValueError('invalid microphone credit')
+    return struct.unpack('<Q', data[8:])[0]
+
+
+def final_microphone_accounting(control, generation, submitted):
+    """Bounded quiescent observation, never an atomic in-flight snapshot.
+
+    Called only after ALSA clients and the producer have stopped. Two identical
+    snapshots plus conservation are required; moving counters are unavailable
+    evidence, not evidence of unexplained loss.
+    """
+    previous = None
+    for _ in range(3):
+        message(control, 1, 7, struct.pack('<Q', generation))
+        version, operation, data = reply(control)
+        if ((version, operation, len(data)) != (1, 7, 24)
+                or data[:8] != struct.pack('<Q', generation)):
+            raise ValueError('invalid microphone host accounting')
+        host, silence = struct.unpack('<QQ', data[8:])
+        consumed = microphone_credit(control, generation)
+        counters = worker_diagnostics(control, generation)
+        current = (host, silence, consumed, counters)
+        if current == previous:
+            if consumed > submitted or host != consumed + silence:
+                raise ValueError('microphone accounting does not reconcile')
+            if silence != counters['microphone_silence_frames']:
+                raise ValueError('microphone silence snapshots disagree')
+            completed = counters['capture_frames']
+            abandoned = counters['abandoned_capture_frames']
+            if host != completed + abandoned:
+                raise ValueError('microphone capture remains unaccounted')
+            return dict(host_frames=host, consumed_frames=consumed,
+                        silence_frames=silence, submitted_frames=submitted,
+                        unconsumed_frames=submitted-consumed,
+                        completed_frames=completed, abandoned_frames=abandoned,
+                        quiescent=True), counters
+        previous = current
+    raise ValueError('microphone accounting did not become quiescent')
+
+
 def close_broker_session(broker, channels, generation):
     """Retain required channels until broker close; preserve all cleanup errors."""
     errors = []
@@ -213,11 +258,7 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
         try:
             while not stop.is_set():
                 started = time.monotonic_ns()
-                message(control,1,5,struct.pack('<Q',generation))
-                version, operation, data = reply(control)
-                if (version,operation,len(data)) != (1,5,16): raise ValueError('invalid microphone credit')
-                if data[:8] != struct.pack('<Q',generation): raise ValueError('foreign microphone credit')
-                consumed, = struct.unpack('<Q',data[8:])
+                consumed = microphone_credit(control,generation)
                 if consumed > submitted: raise ValueError('microphone credit exceeds submitted frames')
                 delays.record(started,time.monotonic_ns(),consumed)
                 totals['microphone_consumed'] = consumed
@@ -257,7 +298,12 @@ def trial(profile, seconds, instance, microphone_fill_ms=8):
         after = reserve_direct_alsa(int(cards[0].name[4:]),bus,instance,generation)
         result['shared_defaults_unchanged'] = after['shared_defaults'] == isolation['shared_defaults']
         result['passed'] &= result['shared_defaults_unchanged']
-        result['worker_diagnostics'] = worker_diagnostics(control,generation)
+        if any(thread.is_alive() for thread in threads):
+            raise ValueError('PCM clients still active during final accounting')
+        accounting, counters = final_microphone_accounting(
+            control, generation, totals['microphone_submitted'])
+        result['microphone_final_accounting'] = accounting
+        result['worker_diagnostics'] = counters
         result['worker_functional_evidence'] = functional_worker_evidence(result['worker_diagnostics'], (seconds+2)*48000)
         result['passed'] &= result['worker_functional_evidence']
         result.update(totals)

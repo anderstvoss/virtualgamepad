@@ -14,6 +14,86 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_final_accounting_uses_quiescent_credit_not_last_producer_poll(self):
+        counters = dict(capture_frames=240096, abandoned_capture_frames=0,
+                        microphone_silence_frames=11760)
+        control = Mock()
+        response = (1, 7, struct.pack('<QQQ', 7, 240096, 11760))
+        with patch.object(module, 'message') as send, \
+             patch.object(module, 'reply', return_value=response), \
+             patch.object(module, 'microphone_credit', return_value=228336), \
+             patch.object(module, 'worker_diagnostics', return_value=counters):
+            result, observed = module.final_microphone_accounting(control, 7, 228720)
+        self.assertEqual(result, dict(host_frames=240096, consumed_frames=228336,
+                                     silence_frames=11760, submitted_frames=228720,
+                                     unconsumed_frames=384, completed_frames=240096,
+                                     abandoned_frames=0, quiescent=True))
+        self.assertEqual(observed, counters)
+        self.assertEqual(send.call_count, 2)
+        send.assert_called_with(control, 1, 7, struct.pack('<Q', 7))
+
+    def test_final_accounting_retries_motion_but_rejects_unbounded_drain(self):
+        for counts, succeeds in [([48, 96, 96], True), ([48, 96, 144], False)]:
+            with self.subTest(counts=counts):
+                replies = [(1, 7, struct.pack('<QQQ', 7, frames, 0)) for frames in counts]
+                counters = [dict(capture_frames=frames, abandoned_capture_frames=0,
+                                 microphone_silence_frames=0) for frames in counts]
+                with patch.object(module, 'message'), \
+                     patch.object(module, 'reply', side_effect=replies) as receive, \
+                     patch.object(module, 'microphone_credit', side_effect=counts), \
+                     patch.object(module, 'worker_diagnostics', side_effect=counters):
+                    if succeeds:
+                        result, _ = module.final_microphone_accounting(Mock(), 7, 144)
+                        self.assertEqual(result['consumed_frames'], 96)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'quiescent'):
+                            module.final_microphone_accounting(Mock(), 7, 144)
+                    self.assertEqual(receive.call_count, 3)
+
+    def test_final_accounting_rejects_inconsistent_and_foreign_snapshots(self):
+        baseline = dict(capture_frames=96, abandoned_capture_frames=0,
+                        microphone_silence_frames=0)
+        cases = [(7, 96, 0, 97, 144, baseline),  # consumed beyond host
+                 (7, 96, 0, 96, 95, baseline),   # consumed beyond production
+                 (7, 96, 1, 95, 144, baseline),  # disagreeing silence samples
+                 (7, 96, 0, 96, 144, {**baseline, 'capture_frames': 48}),
+                 (8, 96, 0, 96, 144, baseline)]
+        for generation, host, silence, consumed, submitted, counters in cases:
+            with self.subTest(case=(generation, host, silence, consumed, submitted, counters)), \
+                 patch.object(module, 'message'), \
+                 patch.object(module, 'reply', return_value=(1, 7, struct.pack('<QQQ', generation, host, silence))), \
+                 patch.object(module, 'microphone_credit', return_value=consumed), \
+                 patch.object(module, 'worker_diagnostics', return_value=counters):
+                with self.assertRaises(ValueError):
+                    module.final_microphone_accounting(Mock(), 7, submitted)
+
+    def test_final_accounting_retains_abandoned_capture_separately(self):
+        counters = dict(capture_frames=48, abandoned_capture_frames=48,
+                        microphone_silence_frames=0)
+        with patch.object(module, 'message'), \
+             patch.object(module, 'reply', return_value=(1, 7, struct.pack('<QQQ', 7, 96, 0))), \
+             patch.object(module, 'microphone_credit', return_value=96), \
+             patch.object(module, 'worker_diagnostics', return_value=counters):
+            result, _ = module.final_microphone_accounting(Mock(), 7, 144)
+        self.assertEqual(result['abandoned_frames'], 48)
+        self.assertEqual(result['completed_frames'], 48)
+
+    def test_microphone_credit_checks_exact_reply_and_generation(self):
+        for version, operation, data in [(1, 5, struct.pack('<QQ', 7, 96)),
+                                         (1, 5, struct.pack('<QQ', 8, 96)),
+                                         (2, 5, struct.pack('<QQ', 7, 96)),
+                                         (1, 7, struct.pack('<QQ', 7, 96)),
+                                         (1, 5, bytes(8))]:
+            with self.subTest(response=(version, operation, data)), \
+                 patch.object(module, 'message') as send, \
+                 patch.object(module, 'reply', return_value=(version, operation, data)):
+                peer = Mock()
+                if (version, operation, data) == (1, 5, struct.pack('<QQ', 7, 96)):
+                    self.assertEqual(module.microphone_credit(peer, 7), 96)
+                else:
+                    with self.assertRaises(ValueError): module.microphone_credit(peer, 7)
+                send.assert_called_once_with(peer, 1, 5, struct.pack('<Q', 7))
+
     def test_invalid_ancillary_metadata_closes_all_delivered_fds(self):
         for malformed in ('unexpected', 'truncated', 'marker', 'count', 'partial'):
             with self.subTest(malformed=malformed):
