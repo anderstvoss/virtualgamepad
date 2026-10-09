@@ -918,6 +918,7 @@ mod worker_outputs {
                 controller.observe(sequence);
                 peer.write_all(b"O").unwrap();
             }
+            peer.write_all(b"P").unwrap();
             // PCM checks run in the owner while this observer makes no IPC calls.
             let mut command = [0];
             peer.read_exact(&mut command).unwrap();

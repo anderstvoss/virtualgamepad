@@ -175,3 +175,24 @@ cleanup identities, preserves failures and requires all three families plus both
 root-phase and observer success. No new sudo action, phase name or administrator
 provisioning is required. Live callback results remain pending until that
 coordinated run terminates and its root receipt is retrieved.
+
+## Typed-observer handoff failure and correction
+
+The coordinated trial at `bd1da3ba6d1bdb4e6717cf78126c6b89400039f7`
+failed before callback acceptance; restoration reported no cleanup errors.
+Python's timeout-mode socket shared its nonblocking file-description flag with
+Rust after descriptor transfer. The Rust control client expects blocking I/O.
+The harness now grants exclusive blocking control access to the observer, waits
+for its explicit pause before restoring Python's timeout mode for PCM accounting,
+and grants blocking access again only after production and drain have finished.
+A socket-pair regression checks the actual shared descriptor flags at each step.
+This failed trial remains historical evidence, not a successful acceptance cell.
+
+The failure also exposed a root error-retention defect: output service after a
+terminal diagnostic failure could overwrite the initiating cause with a later
+broken-pipe error. The root bridge now returns the retained terminal cause without
+another request or event-count increment. Its regression covers repeated output
+service and a separate broker cleanup failure, preserving both causes. Public
+signatures and dependencies are unchanged; consumers receive a more accurate
+existing `ProviderError::Read` reason. Live acceptance must be rerun after this
+correction.

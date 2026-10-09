@@ -36,6 +36,13 @@ pub(crate) fn worker_output(
     control: &mut Control,
     retained: &mut ProviderDiagnostics,
 ) -> Result<Option<RawReverseEvent>, ProviderError> {
+    if control.is_closed() && retained.state == ProviderState::Failed {
+        if let Some(reason) = &retained.last_error {
+            return Err(ProviderError::Read {
+                reason: reason.clone(),
+            });
+        }
+    }
     control
         .output()
         .inspect(|event| {
@@ -522,6 +529,59 @@ pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_diagnostic_failure_survives_output_service_and_cleanup() {
+        use std::{io::Read, os::unix::net::UnixStream, thread};
+        let (client, mut server) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let (tag, generation) = gr_privileged_broker::read_message(&mut server).unwrap();
+            assert_eq!(tag, 3);
+            assert_eq!(generation, 7_u64.to_le_bytes());
+            let mut wrong_generation = 8_u64.to_le_bytes().to_vec();
+            wrong_generation.extend([0; 72]);
+            gr_privileged_broker::write_message(&mut server, 3, &wrong_generation).unwrap();
+            assert_eq!(
+                server.read(&mut [0]).unwrap(),
+                0,
+                "terminal client must not send another request"
+            );
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let initiating = control.diagnostics().unwrap_err().to_string();
+        assert_eq!(initiating, "stale or invalid worker acknowledgement");
+        let mut retained = ProviderDiagnostics {
+            state: ProviderState::Failed,
+            frames_sent: 2,
+            reverse_events_drained: 3,
+            write_failures: 0,
+            lifecycle_events: 0,
+            last_error: Some(initiating.clone()),
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                worker_output(&mut control, &mut retained),
+                Err(ProviderError::Read {
+                    reason: initiating.clone()
+                })
+            );
+            assert_eq!(retained.last_error.as_deref(), Some(initiating.as_str()));
+            assert_eq!(retained.reverse_events_drained, 3);
+        }
+        finish_close(
+            &mut retained,
+            control.close(),
+            Err(io::Error::other("broker cleanup failure")),
+        )
+        .unwrap_err();
+        assert_eq!(
+            retained.last_error.as_deref(),
+            Some(
+                "stale or invalid worker acknowledgement; cleanup failed: broker: broker cleanup failure"
+            )
+        );
+        task.join().unwrap();
+    }
 
     #[test]
     fn closure_retains_original_and_each_cleanup_failure() {

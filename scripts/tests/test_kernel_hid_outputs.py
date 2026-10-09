@@ -163,7 +163,7 @@ class TypedObserverOwnership(unittest.TestCase):
         self.assertEqual(observer.sequence,0)
 
     def test_missing_callback_or_finish_ack_is_failure(self):
-        observer=object.__new__(client.TypedObserver);observer.peer=Mock();observer.sequence=0
+        observer=object.__new__(client.TypedObserver);observer.peer=Mock();observer.control=Mock();observer.sequence=0
         with patch.object(client,'exact',return_value=b'!'):
             with self.assertRaises(ValueError):observer.next()
             with self.assertRaises(ValueError):observer.finish()
@@ -174,3 +174,21 @@ class TypedObserverOwnership(unittest.TestCase):
     def test_incomplete_channel_handoff_is_not_callback_acceptance(self):
         observer=object.__new__(client.TypedObserver);observer.peer=Mock();observer.peer.sendmsg.return_value=0
         with self.assertRaisesRegex(ValueError,'incomplete observer'):observer.begin([Mock(fileno=Mock(return_value=10)),Mock(fileno=Mock(return_value=11)),Mock(fileno=Mock(return_value=12))],7,'dualsense')
+
+    def test_shared_descriptor_flags_follow_exclusive_control_owner(self):
+        owner,server=socket.socketpair()
+        native=socket.socket(fileno=os.dup(owner.fileno()))
+        try:
+            owner.settimeout(2)
+            observer=object.__new__(client.TypedObserver);observer.peer=Mock()
+            observer.peer.sendmsg.return_value=1
+            with patch.object(client,'exact',return_value=b'A'):
+                observer.begin([owner,server,native],7,'dualsense')
+            self.assertTrue(os.get_blocking(native.fileno()))
+            with patch.object(client,'exact',return_value=b'P'):observer.pause()
+            self.assertFalse(os.get_blocking(native.fileno()))
+            self.assertEqual(owner.gettimeout(),2)
+            with patch.object(client,'exact',return_value=b'X'):observer.finish()
+            self.assertTrue(os.get_blocking(native.fileno()))
+        finally:
+            native.close();owner.close();server.close()

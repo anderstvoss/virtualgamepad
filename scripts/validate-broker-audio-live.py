@@ -286,6 +286,8 @@ class TypedObserver:
             self.close();raise
     def begin(self,channels,generation,profile):
         family={'dualsense':1,'dualshock4':2,'xbox360':3}[profile]
+        self.control=channels[0];self.owner_timeout=self.control.gettimeout()
+        self.control.setblocking(True)
         self.peer.sendall(struct.pack('<QB',generation,family))
         rights=array.array('i',[channel.fileno() for channel in channels])
         if self.peer.sendmsg([b'\xa2'],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,rights)])!=1:
@@ -296,7 +298,12 @@ class TypedObserver:
         self.peer.sendall(b'N')
         if exact(self.peer,1)!=b'O':raise ValueError('typed root callback did not match')
         self.sequence+=1
+    def pause(self):
+        if exact(self.peer,1)!=b'P':raise ValueError('typed observer did not relinquish control I/O')
+        self.control.settimeout(self.owner_timeout)
     def finish(self):
+        # The owner's producer is stopped and final accounting has completed.
+        self.control.setblocking(True)
         self.peer.sendall(b'D')
         if exact(self.peer,1)!=b'X':raise ValueError('typed observer did not finish cleanly')
     def close(self):
@@ -357,6 +364,7 @@ def hid_outputs(control,generation,device,profile,path,observer=None,channels=No
                         time.sleep(.001)
                     if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
                 results.append(dict(operation=operation,report_id=report_id,raw=raw.hex(),written=written,observed_exactly_once=True))
+        if observer:observer.pause()
         peer.sendall(b'D')
         return dict(startup_outputs=startup,synthetic_outputs=results,typed_root_callbacks=bool(observer),passed=True)
     finally:
