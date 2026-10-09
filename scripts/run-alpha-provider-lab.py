@@ -827,7 +827,7 @@ class Host:
                             for worker in held:worker.close()
             except BaseException as error:failures.append(str(error))
         thread=threading.Thread(target=supervise);thread.start();initiating=None
-        try:self.run_client(self.args.client_uid,[*command,'--hid-socket',str(path)],'client')
+        try:self.run_client(self.args.client_uid,[*command,'--hid-socket',str(path),'--typed-observer'],'client')
         except BaseException as error:initiating=str(error)
         finally:
             cancelled.set();thread.join(10);listener.close()

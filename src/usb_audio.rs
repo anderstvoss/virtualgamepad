@@ -30,6 +30,28 @@ pub(crate) struct Session<S> {
     _state: PhantomData<S>,
 }
 
+/// One root-bridge observation: protocol errors terminate the client and retain
+/// the initiating error; only delivered events increment observation accounting.
+pub(crate) fn worker_output(
+    control: &mut Control,
+    retained: &mut ProviderDiagnostics,
+) -> Result<Option<RawReverseEvent>, ProviderError> {
+    control
+        .output()
+        .inspect(|event| {
+            if event.is_some() {
+                retained.reverse_events_drained += 1;
+            }
+        })
+        .map_err(|error| {
+            retained.state = ProviderState::Failed;
+            retained.last_error = Some(error.to_string());
+            ProviderError::Read {
+                reason: error.to_string(),
+            }
+        })
+}
+
 impl<S: Send> WorkerBridge<S> for Session<S> {
     fn update(&mut self, state: &S) -> Result<(), ProviderError> {
         let mut control = self
@@ -50,22 +72,13 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
         Ok(())
     }
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
-        self.control
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .output()
-            .inspect(|event| {
-                if event.is_some() {
-                    self.retained.reverse_events_drained += 1;
-                }
-            })
-            .map_err(|error| {
-                self.retained.state = ProviderState::Failed;
-                self.retained.last_error = Some(error.to_string());
-                ProviderError::Read {
-                    reason: error.to_string(),
-                }
-            })
+        worker_output(
+            &mut self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            &mut self.retained,
+        )
     }
     fn diagnostics(&mut self) -> ProviderDiagnostics {
         if self.retained.state == ProviderState::Open {

@@ -137,3 +137,41 @@ rollback owns the descriptor. The original deterministic
 live test passed within its 25-second bound; no other ignored tests were enabled.
 
 The separately pinned live rollback receipt is source `1be7d948e5df6353dda99c832f2d19c25223fa08`, tree `6bbb2381af63c171b67c3c777c37d1da0aee2976`, with unit-test executable SHA-256 `5e97b256bca48cde97fcf3ca6863116c40f6408e8ec6e3415d15eedefcfb0759`. The exact selected test returned zero after all three rollback attempts. Rebuilt production worker and broker images remain byte-identical to the accepted provider candidate, so this test-only increment does not invalidate that functional evidence.
+
+## Root callback pipeline and native observer
+
+The root USB bridge delegates its unchanged one-observation operation to a
+private `worker_output` helper. Three deterministic regressions exercise actual
+worker IPC framing, this production bookkeeping and the ordinary root handles'
+`service()` callbacks: exact DualSense fields across all four audio paths;
+DS4 start/update/stop with validity-gated RGB; and rejected/malformed Xbox replies.
+They verify order, five idle service cycles without replay, retained observation
+counts, terminal errors and repeated close. Ordinary-root signatures are unchanged.
+
+The selected opt-in root unit test can also receive the three unprivileged data
+channels from the existing ordinary lab client. The owner remains responsible
+for attachment, PCM checks and broker cleanup; the observer drives the actual
+root callback pipeline on those live control replies. No privileged device FD
+or root execution capability crosses that observer seam. A bounded abstract
+socket admits only the matching non-root UID, metadata pins generation/family,
+and the existing safe three-descriptor receiver validates handoff. Both Sony
+output paths must produce exact typed events; rejected Xbox writes must produce
+none. Worker loss diagnostics and post-event idle service are checked. This is
+output-pipeline evidence, not new application creation or audio-owner acceptance.
+
+The portable ordinary-user coordinator defaults to a read-only plan:
+
+```sh
+python3 scripts/run-alpha-usb-output-acceptance.py
+python3 scripts/run-alpha-usb-output-acceptance.py --apply --report /exclusive/external/report
+```
+
+Before applying, install the matching committed lab through the scoped updater.
+The coordinator requires clean, matching source, prebuilds and freezes the exact
+root test executable, then starts only `usb-functional` and the exact selected
+observer test. Its separate user unit has a 512 MiB cap and 120-second deadline.
+It records executable/source receipts, pins the unit invocation, refuses changed
+cleanup identities, preserves failures and requires all three families plus both
+root-phase and observer success. No new sudo action, phase name or administrator
+provisioning is required. Live callback results remain pending until that
+coordinated run terminates and its root receipt is retrieved.

@@ -270,7 +270,41 @@ def submit_hid_output(descriptor,wire,operation):
     raise ValueError('unknown fixed HID output operation')
 
 
-def hid_outputs(control,generation,device,profile,path):
+class TypedObserver:
+    """Ordinary-user peer: only unprivileged session data sockets cross this seam."""
+    def __init__(self, instance):
+        live.compiled_serial(instance,1)
+        self.listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        self.peer=None
+        try:
+            self.listener.bind('\0vga-'+instance)
+            self.listener.listen(1);self.listener.settimeout(15)
+            self.peer,_=self.listener.accept();self.peer.settimeout(3)
+            _,uid,_=struct.unpack('3i',self.peer.getsockopt(socket.SOL_SOCKET,socket.SO_PEERCRED,12))
+            if uid!=os.getuid() or uid==0:raise ValueError('typed observer is not the ordinary client identity')
+        except BaseException:
+            self.close();raise
+    def begin(self,channels,generation,profile):
+        family={'dualsense':1,'dualshock4':2,'xbox360':3}[profile]
+        self.peer.sendall(struct.pack('<QB',generation,family))
+        rights=array.array('i',[channel.fileno() for channel in channels])
+        if self.peer.sendmsg([b'\xa2'],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,rights)])!=1:
+            raise ValueError('incomplete observer data-channel handoff')
+        if exact(self.peer,1)!=b'A':raise ValueError('typed observer did not acknowledge generation')
+        self.sequence=0
+    def next(self):
+        self.peer.sendall(b'N')
+        if exact(self.peer,1)!=b'O':raise ValueError('typed root callback did not match')
+        self.sequence+=1
+    def finish(self):
+        self.peer.sendall(b'D')
+        if exact(self.peer,1)!=b'X':raise ValueError('typed observer did not finish cleanly')
+    def close(self):
+        if self.peer is not None:self.peer.close();self.peer=None
+        self.listener.close()
+
+
+def hid_outputs(control,generation,device,profile,path,observer=None,channels=None):
     peer=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM);peer.settimeout(5)
     descriptor=None
     try:
@@ -295,6 +329,7 @@ def hid_outputs(control,generation,device,profile,path):
             if event==empty:break
             startup.append(event.hex())
         else:raise ValueError('kernel HID outputs did not quiesce')
+        if observer:observer.begin(channels,generation,profile)
         results=[]
         for report_id,raw,supported in output_cases(profile):
             for operation in ('interrupt','set-report'):
@@ -306,26 +341,30 @@ def hid_outputs(control,generation,device,profile,path):
                 except OSError as error:
                     if supported or error.errno not in (errno.EPIPE,errno.EINVAL,errno.ENOSYS):raise
                     results.append(dict(operation=operation,report_id=report_id,rejected_errno=error.errno))
-                    if output_observation(control,generation)!=empty:raise ValueError('rejected HID output emitted an event')
+                    if observer:observer.next()
+                    elif output_observation(control,generation)!=empty:raise ValueError('rejected HID output emitted an event')
                     continue
-                expected=struct.pack('<Q',generation)+bytes([1,report_id])+raw
-                deadline=time.monotonic()+1
-                while True:
-                    observed=output_observation(control,generation)
-                    if observed==expected:break
-                    if observed!=empty:raise ValueError('kernel HID output differs or is reordered')
-                    if time.monotonic()>=deadline:raise TimeoutError('kernel HID output observation missing')
-                    time.sleep(.001)
-                if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
+                if observer:
+                    observer.next()
+                else:
+                    expected=struct.pack('<Q',generation)+bytes([1,report_id])+raw
+                    deadline=time.monotonic()+1
+                    while True:
+                        observed=output_observation(control,generation)
+                        if observed==expected:break
+                        if observed!=empty:raise ValueError('kernel HID output differs or is reordered')
+                        if time.monotonic()>=deadline:raise TimeoutError('kernel HID output observation missing')
+                        time.sleep(.001)
+                    if output_observation(control,generation)!=empty:raise ValueError('kernel HID output duplicated')
                 results.append(dict(operation=operation,report_id=report_id,raw=raw.hex(),written=written,observed_exactly_once=True))
         peer.sendall(b'D')
-        return dict(startup_outputs=startup,synthetic_outputs=results,passed=True)
+        return dict(startup_outputs=startup,synthetic_outputs=results,typed_root_callbacks=bool(observer),passed=True)
     finally:
         if descriptor is not None:os.close(descriptor)
         peer.close()
 
 
-def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None):
+def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None, observer=None):
     live.compiled_serial(instance, 1)  # Reject invalid expectations before creation.
     broker, generation, device, bus, tag, channels = opened(profile)
     control, playback, microphone = channels
@@ -391,7 +430,7 @@ def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None):
             time.sleep(.01)
         subprocess.run(['udevadm','settle','--timeout=3'],check=True,timeout=4)
         isolation = reserve_direct_alsa(int(cards[0].name[4:]),bus,instance,generation)
-        outputs=hid_outputs(control,generation,device,profile,hid_socket) if hid_socket else None
+        outputs=hid_outputs(control,generation,device,profile,hid_socket,observer,channels) if hid_socket else None
         for thread in threads: thread.start()
         result = live.run_trial(int(cards[0].name[4:]),profile,seconds)
         result['kernel_hid_outputs']=outputs
@@ -415,6 +454,7 @@ def trial(profile, seconds, instance, microphone_fill_ms=8, hid_socket=None):
         result['microphone_refill_largest_delays'] = delays.summary()
         result['microphone_fill_ms'] = microphone_fill_ms
         result['passed'] &= not errors and totals['playback_invalid'] == totals['playback_gaps'] == 0 and totals['playback_frames'] == (seconds+3)*48000
+        if observer:observer.finish()
     except Exception as error:
         initiating = str(error)
     finally:
@@ -436,6 +476,7 @@ def main():
     parser.add_argument('--profile',choices=[*live.PROFILES, 'all'],required=True)
     parser.add_argument('--instance', required=True)
     parser.add_argument('--hid-socket')
+    parser.add_argument('--typed-observer',action='store_true')
     parser.add_argument('--seconds',type=int,default=3)
     parser.add_argument('--trials',type=int,default=1)
     parser.add_argument('--microphone-fill-ms',type=int,default=8,
@@ -445,14 +486,20 @@ def main():
     if not 1 <= args.trials <= 3: parser.error('trials must be 1..3')
     try: microphone_fill_frames(args.microphone_fill_ms)
     except ValueError as error: parser.error(str(error))
+    if args.typed_observer and (args.profile!='all' or args.trials!=1 or not args.hid_socket):
+        parser.error('typed observer requires the fixed all-family HID trial')
     profiles = list(live.PROFILES) if args.profile == 'all' else [args.profile]
-    for profile in profiles:
-        for index in range(args.trials):
-            print(json.dumps(dict(event='start',profile=profile,trial=index,seconds=args.seconds)),flush=True)
-            result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms,args.hid_socket)
-            result.update(profile=profile,trial=index)
-            print(json.dumps(result),flush=True)
-            if not result['passed']: raise SystemExit(1)
+    observer=TypedObserver(args.instance) if args.typed_observer else None
+    try:
+        for profile in profiles:
+            for index in range(args.trials):
+                print(json.dumps(dict(event='start',profile=profile,trial=index,seconds=args.seconds)),flush=True)
+                result = trial(profile,args.seconds,args.instance,args.microphone_fill_ms,args.hid_socket,observer)
+                result.update(profile=profile,trial=index)
+                print(json.dumps(result),flush=True)
+                if not result['passed']: raise SystemExit(1)
+    finally:
+        if observer:observer.close()
 
 
 

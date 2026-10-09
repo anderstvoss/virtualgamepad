@@ -420,3 +420,525 @@ fn mixed_audio_and_no_audio_root_consumers_service_independently() {
     xbox.close();
     switch.close();
 }
+
+#[cfg(all(target_os = "linux", feature = "audio-usbip"))]
+mod worker_outputs {
+    use super::*;
+    use gr_audio_worker::client::Control;
+    use gr_curated_controllers::WorkerBridge;
+    use std::{marker::PhantomData, os::unix::net::UnixStream, thread, time::Duration};
+
+    struct WireRecord {
+        control: Control,
+        retained: ProviderDiagnostics,
+        closes: usize,
+        live: bool,
+        dropped: u64,
+    }
+    struct WireBridge<S>(Arc<Mutex<WireRecord>>, PhantomData<S>);
+    impl<S: Send> WorkerBridge<S> for WireBridge<S> {
+        fn update(&mut self, _: &S) -> Result<(), ProviderError> {
+            panic!("output service must not synthesize an input update")
+        }
+        fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
+            let mut record = self.0.lock().unwrap();
+            let WireRecord {
+                control, retained, ..
+            } = &mut *record;
+            crate::usb_audio::worker_output(control, retained)
+        }
+        fn diagnostics(&mut self) -> ProviderDiagnostics {
+            let mut record = self.0.lock().unwrap();
+            if record.live && record.retained.state == ProviderState::Open {
+                match record.control.diagnostics() {
+                    Ok(counters) => record.dropped = counters[0],
+                    Err(error) => {
+                        record.retained.state = ProviderState::Failed;
+                        record.retained.last_error = Some(error.to_string());
+                    }
+                }
+            }
+            record.retained.clone()
+        }
+        fn dropped_output_events(&self) -> u64 {
+            self.0.lock().unwrap().dropped
+        }
+        fn close(&mut self) -> Result<(), ProviderError> {
+            let mut record = self.0.lock().unwrap();
+            if record.retained.state == ProviderState::Closed {
+                return Ok(());
+            }
+            record.closes += 1;
+            let result = record.control.close();
+            record.retained.state = ProviderState::Closed;
+            result.map_err(|error| {
+                let reason = error.to_string();
+                record.retained.last_error = Some(match record.retained.last_error.take() {
+                    Some(original) => format!("{original}; worker cleanup: {reason}"),
+                    None => reason.clone(),
+                });
+                ProviderError::Write { reason }
+            })
+        }
+    }
+
+    type WireFixture<S> = (
+        Box<dyn WorkerBridge<S>>,
+        Arc<Mutex<WireRecord>>,
+        thread::JoinHandle<()>,
+    );
+    fn wire<S: Send + 'static>(family: u8, outputs: Vec<Vec<u8>>) -> WireFixture<S> {
+        let (client, mut server) = UnixStream::pair().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        let mut outputs = VecDeque::from(outputs);
+        let task = thread::spawn(move || {
+            loop {
+                let (tag, generation) = match gr_privileged_broker::read_message(&mut server) {
+                    Ok(value) => value,
+                    Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
+                    Err(error) => panic!("unexpected worker request failure: {error}"),
+                };
+                assert_eq!(generation, 7_u64.to_le_bytes());
+                let mut response = generation;
+                match tag {
+                    2 => response.extend(outputs.pop_front().unwrap_or_else(|| vec![0])),
+                    4 => {}
+                    _ => panic!("unexpected worker operation {tag}"),
+                }
+                gr_privileged_broker::write_message(&mut server, tag, &response).unwrap();
+                if tag == 4 {
+                    assert!(outputs.is_empty(), "closed before pending output delivery");
+                    break;
+                }
+            }
+        });
+        let record = Arc::new(Mutex::new(WireRecord {
+            control: Control::new(client, 7, family).unwrap(),
+            retained: ProviderDiagnostics {
+                state: ProviderState::Open,
+                frames_sent: 0,
+                reverse_events_drained: 0,
+                write_failures: 0,
+                lifecycle_events: 0,
+                last_error: None,
+            },
+            closes: 0,
+            live: false,
+            dropped: 0,
+        }));
+        (
+            Box::new(WireBridge(record.clone(), PhantomData)),
+            record,
+            task,
+        )
+    }
+    fn association(
+        inner: &gr_curated_controllers::ControllerAssociation,
+        surface: &'static crate::ControllerSurface,
+    ) -> ControllerAssociation {
+        ControllerAssociation::single(
+            ControllerId::new("test.usb.outputs"),
+            gr_curated_controllers::CreationOptions {
+                target: RealizationId::LINUX_USBIP_USB_AUDIO,
+                session: RealizationSessionId(7),
+            },
+            inner,
+            surface,
+        )
+    }
+
+    fn dualsense_cases(live: bool) -> (Vec<Vec<u8>>, Vec<crate::DualSenseOutputEvent>) {
+        let routes = [
+            crate::DualSenseAudioPath::HeadphonesStereo,
+            crate::DualSenseAudioPath::HeadphonesDualMono,
+            crate::DualSenseAudioPath::HeadphonesLeftSpeakerRight,
+            crate::DualSenseAudioPath::SpeakerRightOnly,
+        ];
+        let mut outputs = Vec::new();
+        let mut expected = Vec::new();
+        for (index, route) in routes.into_iter().enumerate() {
+            let (right, left) = [(17, 33), (44, 66), (0, 0), (0, 0)][index];
+            let mut raw = vec![0; 47];
+            raw[..4].copy_from_slice(&[0xe1, 0x97, right, left]);
+            raw[5..10].copy_from_slice(&[
+                64,
+                96,
+                u8::try_from(index).unwrap() << 4,
+                u8::from((index % 2 == 0) != live),
+                if index % 2 == 1 { 0x10 } else { 0 },
+            ]);
+            raw[10..21].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+            raw[21..32].copy_from_slice(&[11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+            raw[37] = 0xfd;
+            let red = 32
+                + if live {
+                    u8::try_from(index).unwrap()
+                } else {
+                    0
+                };
+            raw[43..47].copy_from_slice(&[0x15, red, 64, 128]);
+            outputs.push([vec![1, 2], raw.clone()].concat());
+            expected.push(crate::DualSenseOutputEvent::HidOutput(
+                crate::DualSenseHidOutput::UsbOutput {
+                    raw,
+                    valid_flag0: 0xe1,
+                    valid_flag1: 0x97,
+                    valid_flag2: 0,
+                    right_motor: Some(right),
+                    left_motor: Some(left),
+                    right_trigger_effect: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+                    left_trigger_effect: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
+                    mute_button_led: Some((index % 2 == 0) != live),
+                    microphone_muted: Some(index % 2 == 1),
+                    audio_path: Some(route),
+                    speaker_volume: Some(64),
+                    microphone_volume: Some(96),
+                    speaker_preamp: Some(5),
+                    player_leds: Some(0x15),
+                    lightbar_rgb: Some([red, 64, 128]),
+                },
+            ));
+        }
+        (outputs, expected)
+    }
+    #[test]
+    fn dualsense_worker_wire_reaches_root_typed_callbacks_in_order_without_idle_replay() {
+        let (outputs, expected) = dualsense_cases(false);
+        let (bridge, record, task) = wire(1, outputs);
+        let inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
+        let mut controller = DualSenseController {
+            association: association(inner.association(), inner.surface().common()),
+            inner,
+            audio: None,
+            identity: None,
+        };
+        let mut observed = Vec::new();
+        controller
+            .service(&mut |event| observed.push(event))
+            .unwrap();
+        assert_eq!(observed, expected);
+        for _ in 0..5 {
+            controller
+                .service(&mut |_| panic!("idle callback replay"))
+                .unwrap();
+        }
+        assert_eq!(record.lock().unwrap().retained.reverse_events_drained, 4);
+        assert_eq!(controller.dropped_output_events(), 0);
+        controller.close();
+        controller.close();
+        assert_eq!(record.lock().unwrap().closes, 1);
+        task.join().unwrap();
+    }
+
+    fn ds4_cases(live: bool) -> (Vec<Vec<u8>>, Vec<crate::DualShock4OutputEvent>) {
+        let mut outputs = Vec::new();
+        let mut expected = Vec::new();
+        for (index, (right, left, enabled)) in [(17, 33, true), (44, 66, false), (0, 0, true)]
+            .into_iter()
+            .enumerate()
+        {
+            let light = enabled || live;
+            let red = 32
+                + if live {
+                    u8::try_from(index).unwrap()
+                } else {
+                    0
+                };
+            let mut raw = vec![0; 31];
+            raw[0] = if light { 3 } else { 1 };
+            raw[3..8].copy_from_slice(&[right, left, red, 64, 128]);
+            outputs.push([vec![1, 5], raw.clone()].concat());
+            expected.push(crate::DualShock4OutputEvent::HidOutput(
+                crate::DualShock4HidOutput::UsbOutput {
+                    raw,
+                    right_motor: right,
+                    left_motor: left,
+                    lightbar_rgb: light.then_some([red, 64, 128]),
+                },
+            ));
+        }
+        (outputs, expected)
+    }
+    #[test]
+    fn ds4_worker_wire_preserves_start_update_stop_and_lightbar_validity() {
+        let (outputs, expected) = ds4_cases(false);
+        let (bridge, record, task) = wire(2, outputs);
+        let inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
+        let mut controller = DualShock4Controller {
+            association: association(inner.association(), inner.surface().common()),
+            inner,
+            audio: None,
+            identity: None,
+        };
+        let mut observed = Vec::new();
+        controller
+            .service(&mut |event| observed.push(event))
+            .unwrap();
+        assert_eq!(observed, expected);
+        for _ in 0..5 {
+            controller
+                .service(&mut |_| panic!("idle callback replay"))
+                .unwrap();
+        }
+        assert_eq!(record.lock().unwrap().retained.reverse_events_drained, 3);
+        controller.close();
+        controller.close();
+        assert_eq!(record.lock().unwrap().closes, 1);
+        task.join().unwrap();
+    }
+
+    #[test]
+    fn rejected_worker_output_produces_no_root_callback_and_malformed_reply_closes_once() {
+        for response in [vec![0], vec![0, 9], vec![2, 5]] {
+            let malformed = response.len() != 1;
+            let (bridge, record, task) = wire(3, vec![response]);
+            let inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
+            let mut controller = Xbox360Controller {
+                association: association(inner.association(), inner.surface().common()),
+                inner,
+                audio: None,
+            };
+            let result =
+                controller.service(&mut |_| panic!("rejected output reached root callback"));
+            assert_eq!(result.is_err(), malformed);
+            if malformed {
+                assert!(
+                    record
+                        .lock()
+                        .unwrap()
+                        .retained
+                        .last_error
+                        .as_ref()
+                        .unwrap()
+                        .contains("invalid worker output")
+                );
+                assert!(
+                    controller
+                        .service(&mut |_| panic!("closed callback"))
+                        .is_err()
+                );
+            } else {
+                for _ in 0..5 {
+                    controller
+                        .service(&mut |_| panic!("idle callback"))
+                        .unwrap();
+                }
+            }
+            assert_eq!(record.lock().unwrap().retained.reverse_events_drained, 0);
+            controller.close();
+            controller.close();
+            assert_eq!(record.lock().unwrap().closes, 1);
+            task.join().unwrap();
+        }
+    }
+
+    fn live_bridge<S: Send + 'static>(
+        control: Control,
+    ) -> (Box<dyn WorkerBridge<S>>, Arc<Mutex<WireRecord>>) {
+        let record = Arc::new(Mutex::new(WireRecord {
+            control,
+            retained: ProviderDiagnostics {
+                state: ProviderState::Open,
+                frames_sent: 0,
+                reverse_events_drained: 0,
+                write_failures: 0,
+                lifecycle_events: 0,
+                last_error: None,
+            },
+            closes: 0,
+            live: true,
+            dropped: 0,
+        }));
+        (Box::new(WireBridge(record.clone(), PhantomData)), record)
+    }
+
+    enum LiveController {
+        DualSense(DualSenseController, Vec<crate::DualSenseOutputEvent>),
+        Ds4(DualShock4Controller, Vec<crate::DualShock4OutputEvent>),
+        Xbox(Xbox360Controller),
+    }
+    impl LiveController {
+        fn observe(&mut self, sequence: usize) {
+            macro_rules! check {
+                ($controller:expr, $expected:expr) => {{
+                    let mut observed = Vec::new();
+                    let deadline = std::time::Instant::now() + Duration::from_secs(1);
+                    while observed.is_empty() && std::time::Instant::now() < deadline {
+                        $controller
+                            .service(&mut |event| observed.push(event))
+                            .unwrap();
+                        if observed.is_empty() {
+                            thread::sleep(Duration::from_millis(1));
+                        }
+                    }
+                    assert_eq!(observed, vec![$expected[sequence / 2].clone()]);
+                    for _ in 0..5 {
+                        $controller
+                            .service(&mut |_| panic!("live typed callback replay"))
+                            .unwrap();
+                    }
+                    assert_eq!($controller.dropped_output_events(), 0);
+                }};
+            }
+            match self {
+                Self::DualSense(controller, expected) => check!(controller, expected),
+                Self::Ds4(controller, expected) => check!(controller, expected),
+                Self::Xbox(controller) => {
+                    for _ in 0..5 {
+                        controller
+                            .service(&mut |_| panic!("unsupported output became a callback"))
+                            .unwrap();
+                    }
+                    assert_eq!(controller.dropped_output_events(), 0);
+                }
+            }
+        }
+        fn close(&mut self) {
+            match self {
+                Self::DualSense(controller, _) => {
+                    controller.close();
+                    controller.close();
+                }
+                Self::Ds4(controller, _) => {
+                    controller.close();
+                    controller.close();
+                }
+                Self::Xbox(controller) => {
+                    controller.close();
+                    controller.close();
+                }
+            }
+        }
+    }
+
+    fn live_controller(
+        control: Control,
+        family: u8,
+    ) -> (LiveController, Arc<Mutex<WireRecord>>, usize) {
+        match family {
+            1 => {
+                let (bridge, record) = live_bridge(control);
+                let inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
+                (
+                    LiveController::DualSense(
+                        DualSenseController {
+                            association: association(inner.association(), inner.surface().common()),
+                            inner,
+                            audio: None,
+                            identity: None,
+                        },
+                        dualsense_cases(true).1,
+                    ),
+                    record,
+                    8,
+                )
+            }
+            2 => {
+                let (bridge, record) = live_bridge(control);
+                let inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
+                (
+                    LiveController::Ds4(
+                        DualShock4Controller {
+                            association: association(inner.association(), inner.surface().common()),
+                            inner,
+                            audio: None,
+                            identity: None,
+                        },
+                        ds4_cases(true).1,
+                    ),
+                    record,
+                    6,
+                )
+            }
+            3 => {
+                let (bridge, record) = live_bridge(control);
+                let inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
+                (
+                    LiveController::Xbox(Xbox360Controller {
+                        association: association(inner.association(), inner.surface().common()),
+                        inner,
+                        audio: None,
+                    }),
+                    record,
+                    6,
+                )
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    #[ignore = "requires the bounded USB lab and an ordinary-user observer; no kernel input injection"]
+    fn live_kernel_worker_outputs_reach_root_callbacks() {
+        use std::io::{Read, Write};
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::net::SocketAddr;
+        let instance =
+            std::env::var("VIRTUALGAMEPAD_TYPED_OUTPUT_INSTANCE").expect("explicit lab instance");
+        assert!(
+            instance.starts_with("virtualgamepad-alpha-")
+                && instance.len() <= 32
+                && instance
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        );
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        assert!(
+            status
+                .lines()
+                .find(|line| line.starts_with("Uid:"))
+                .unwrap()
+                .split_whitespace()
+                .skip(1)
+                .all(|uid| uid != "0")
+        );
+        let address = SocketAddr::from_abstract_name(format!("vga-{instance}")).unwrap();
+        let mut peer = UnixStream::connect_addr(&address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(30)))
+            .unwrap();
+        peer.set_write_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        for family in 1..=3 {
+            let mut metadata = [0; 9];
+            peer.read_exact(&mut metadata).unwrap();
+            assert_eq!(metadata[8], family);
+            let generation = u64::from_le_bytes(metadata[..8].try_into().unwrap());
+            assert_ne!(generation, 0);
+            let [control, playback, microphone] =
+                gr_privileged_broker::audio_fds::receive(&peer).unwrap();
+            let control = Control::new(control, generation, family).unwrap();
+            let (mut controller, record, count) = live_controller(control, family);
+            peer.write_all(b"A").unwrap();
+            for sequence in 0..count {
+                let mut command = [0];
+                peer.read_exact(&mut command).unwrap();
+                assert_eq!(command, b"N"[..]);
+                controller.observe(sequence);
+                peer.write_all(b"O").unwrap();
+            }
+            // PCM checks run in the owner while this observer makes no IPC calls.
+            let mut command = [0];
+            peer.read_exact(&mut command).unwrap();
+            assert_eq!(command, b"D"[..]);
+            assert_eq!(
+                record.lock().unwrap().retained.reverse_events_drained,
+                if family == 3 {
+                    0
+                } else {
+                    u64::try_from(count).unwrap()
+                }
+            );
+            assert_eq!(record.lock().unwrap().dropped, 0);
+            controller.close();
+            assert_eq!(record.lock().unwrap().closes, 1);
+            assert!(record.lock().unwrap().retained.last_error.is_none());
+            drop((controller, record, playback, microphone));
+            peer.write_all(b"X").unwrap();
+            println!(
+                "typed_output_observer family={family} generation={generation} requests={count} passed=true"
+            );
+        }
+    }
+}

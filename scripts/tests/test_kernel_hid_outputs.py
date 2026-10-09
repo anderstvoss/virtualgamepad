@@ -122,3 +122,55 @@ class KernelReportOperation(unittest.TestCase):
             self.assertEqual(client.submit_hid_output(9,wire,'interrupt'),3)
             write.assert_called_once_with(9,wire)
         with self.assertRaises(ValueError):client.submit_hid_output(9,wire,'arbitrary')
+
+
+class TypedObserverOwnership(unittest.TestCase):
+    def construct(self, uid, failure=None):
+        listener=Mock();peer=Mock()
+        listener.accept.return_value=(peer,None)
+        if failure:listener.accept.side_effect=failure
+        peer.getsockopt.return_value=struct.pack('3i',123,uid,1000)
+        return listener,peer
+
+    def test_only_matching_nonroot_uid_can_receive_session_channels(self):
+        for uid in (0,65534):
+            listener,peer=self.construct(uid)
+            with patch.object(client.socket,'socket',return_value=listener),patch.object(client.os,'getuid',return_value=1000):
+                with self.assertRaisesRegex(ValueError,'ordinary client identity'):client.TypedObserver('lab-test')
+            peer.close.assert_called_once();listener.close.assert_called_once()
+        listener,peer=self.construct(1000)
+        with patch.object(client.socket,'socket',return_value=listener),patch.object(client.os,'getuid',return_value=1000):
+            observer=client.TypedObserver('lab-test')
+        listener.bind.assert_called_once_with('\0vga-lab-test')
+        observer.close();observer.close()
+        peer.close.assert_called_once()
+
+    def test_timeout_closes_only_owned_listener(self):
+        listener,peer=self.construct(1000,TimeoutError('bounded wait'))
+        with patch.object(client.socket,'socket',return_value=listener):
+            with self.assertRaises(TimeoutError):client.TypedObserver('lab-test')
+        listener.close.assert_called_once();peer.close.assert_not_called()
+
+    def test_begin_metadata_and_three_data_descriptors_use_existing_wire_carrier(self):
+        observer=object.__new__(client.TypedObserver);observer.peer=Mock()
+        observer.peer.sendmsg.return_value=1
+        channels=[Mock(),Mock(),Mock()]
+        for channel,fd in zip(channels,(10,11,12)):channel.fileno.return_value=fd
+        with patch.object(client,'exact',return_value=b'A'):
+            observer.begin(channels,7,'dualshock4')
+        observer.peer.sendall.assert_called_once_with(struct.pack('<QB',7,2))
+        observer.peer.sendmsg.assert_called_once_with([b'\xa2'],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[10,11,12]))])
+        self.assertEqual(observer.sequence,0)
+
+    def test_missing_callback_or_finish_ack_is_failure(self):
+        observer=object.__new__(client.TypedObserver);observer.peer=Mock();observer.sequence=0
+        with patch.object(client,'exact',return_value=b'!'):
+            with self.assertRaises(ValueError):observer.next()
+            with self.assertRaises(ValueError):observer.finish()
+        self.assertEqual(observer.sequence,0)
+        with patch.object(client,'exact',return_value=b'O'):observer.next()
+        self.assertEqual(observer.sequence,1)
+
+    def test_incomplete_channel_handoff_is_not_callback_acceptance(self):
+        observer=object.__new__(client.TypedObserver);observer.peer=Mock();observer.peer.sendmsg.return_value=0
+        with self.assertRaisesRegex(ValueError,'incomplete observer'):observer.begin([Mock(fileno=Mock(return_value=10)),Mock(fileno=Mock(return_value=11)),Mock(fileno=Mock(return_value=12))],7,'dualsense')
