@@ -82,8 +82,8 @@ the phase. Tests cover serial/port/generation collisions, ambiguous/foreign node
 symlink and regular-file refusal, identity changes during open, descriptor cleanup,
 partial writes, duplicate/reordered reports and bounded startup draining.
 
-Live results will be recorded only after the committed package is installed and
-the bounded phase terminates with an independently retrieved root receipt.
+The bounded interrupt and control-path results are recorded below from
+committed packages and independently retrieved root receipts.
 
 ## Live interrupt output acceptance
 
@@ -110,3 +110,28 @@ path through the same held descriptor. It uses only the same fixed synthetic
 reports, checks exact returned length and one ordered worker observation, and
 requires explicit rejection for unsupported Xbox outputs. Its results remain
 pending until the new immutable package completes a bounded live run.
+
+## Live USB control-path acceptance
+
+At `e47da258977e58e014d3121eac3d9e3205c6454d`, tree
+`56a6fd72ecbb50bac7a529315e46d6ed578587cb`, `usb-functional` passed again.
+The worker hash is unchanged from the preceding live interrupt receipt. Each
+DualSense report was written on interrupt OUT and HIDIOCSOUTPUT with exact
+length 48; each DS4 report returned length 32 on both paths. Every request
+produced exactly one matching ordered observation. All six Xbox requests
+rejected with EPIPE and no event. Short duplex markers and final ownership
+cleanup passed for all three families. This fulfills the previously pending
+live USB raw-output paths; it does not claim typed application callback or
+sustained audio acceptance.
+
+## Real DS4 partial-construction regression
+
+`live_second_open_failure_removes_observed_gamepad` creates a real Linux uinput
+gamepad using the production provider, records its kernel-observed object and
+verifies its exact compound label, then injects failure of the second/contact
+open. Three repeated attempts each remove the observed first node. The test
+runs non-root, requires explicit opt-in, sends no input frames and never creates
+a contact node. It removes no device by remembered name; production compound
+rollback owns the descriptor. The original deterministic
+`second_open_failure_rolls_back_gamepad` regression remains. The new selected
+live test passed within its 25-second bound; no other ignored tests were enabled.

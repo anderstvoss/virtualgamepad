@@ -2046,3 +2046,24 @@ ordinary-root/supporting-trait signatures are unchanged. No dependencies added.
 ## Provider revalidation after USB output correction
 
 All seven provider phases passed again at `e5402d24c7ca8e0c209260c879feb205a95f8dae`, tree `6894a9c13cb9a6931b22115e06452ec3ccf03fd1`, including the changed production worker. Independently retrieved root receipts agree on source and image hashes. The original broker service returned inactive and its socket active. Gate 3 retains its pass for this candidate; the earlier revalidation requirement is fulfilled. The new GUI image still requires its own final two-hour soak. Live controller outputs, routing, Steam and sustained continuity remain open.
+
+## Live USB output and DS4 rollback increment
+
+Live `usb-functional` passed at `e47da258977e58e014d3121eac3d9e3205c6454d`:
+DualSense and DS4 synthetic outputs traverse both kernel interrupt OUT and
+control SET_REPORT paths with exact lengths and one ordered worker observation.
+Xbox's generic HID profile rejects every tested output with EPIPE and no event.
+The short duplex and final cleanup checks pass for all three families. A preceding
+probe failure caused by zero-padded VHCI ports is preserved; its correction has
+an exact-format regression. The probe transfers only an identity-verified owned
+HID descriptor to a non-root client, with no input-group or node-permission changes.
+
+The new opt-in `live_second_open_failure_removes_observed_gamepad` regression
+also passes: three real DS4 gamepad creations followed by injected contact-node
+open failure each remove the kernel-observed gamepad through production rollback.
+No touch node or input frame is produced. Review the exact object/label checks,
+fail-closed descriptor handoff, ordered observations and descriptor cleanup.
+These close specific Gate 2 cells; typed USB application callbacks and remaining
+complete isolation/lifecycle dispositions are still required. Gates 1, 2, 4, 5
+and 6 remain open. All five required repository checks, forced Rust 1.85 workspace
+check and 337 Python tests pass for this increment. No dependencies were added.

@@ -591,6 +591,93 @@ mod tests {
         assert_eq!(record.lock().unwrap().closes, vec![0]);
     }
     #[test]
+    #[ignore = "requires prepared ordinary-user uinput access; creates only a neutral gamepad"]
+    fn live_second_open_failure_removes_observed_gamepad() {
+        use gr_provider_linux_uinput::LinuxUinputProvider;
+        use std::path::PathBuf;
+        struct FailContact {
+            opened: Mutex<usize>,
+            observed: Mutex<Vec<PathBuf>>,
+        }
+        impl NativeProviderFactory for FailContact {
+            fn capabilities(&self) -> ProviderCapabilities {
+                LinuxUinputProvider.capabilities()
+            }
+            fn preflight(
+                &self,
+                request: &ProviderOpenRequest,
+            ) -> Result<(), ProviderPreflightError> {
+                LinuxUinputProvider.preflight(request)
+            }
+            fn open(
+                &self,
+                request: ProviderOpenRequest,
+            ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+                let mut opened = self.opened.lock().unwrap();
+                *opened += 1;
+                if *opened % 2 == 0 {
+                    return Err(ProviderError::Open {
+                        reason: "injected second-node construction failure".into(),
+                    });
+                }
+                let NativeControllerRealization::Evdev(spec) = &request.realization else {
+                    panic!("DS4 evdev request")
+                };
+                let physical = spec.physical_path.clone().expect("owned component label");
+                let session = LinuxUinputProvider.open(request)?;
+                let host =
+                    PathBuf::from(session.host_path().expect("kernel-observed uinput object"));
+                assert!(host.starts_with("/sys/devices/virtual/input"));
+                assert_eq!(
+                    std::fs::read_to_string(host.join("phys")).unwrap().trim(),
+                    physical
+                );
+                self.observed.lock().unwrap().push(host);
+                // No input frame is sent and no contact node is created.
+                Ok(session)
+            }
+        }
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_OUTPUT_LAB").as_deref(),
+            Ok("1")
+        );
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let uids = status
+            .lines()
+            .find(|line| line.starts_with("Uid:"))
+            .unwrap();
+        assert!(uids.split_whitespace().skip(1).all(|uid| uid != "0"));
+        let factory = Arc::new(FailContact {
+            opened: Mutex::new(0),
+            observed: Mutex::new(Vec::new()),
+        });
+        for _ in 0..3 {
+            let error = match open(request(), factory.clone()) {
+                Ok(mut unexpected) => {
+                    unexpected.close().unwrap();
+                    panic!("second construction unexpectedly succeeded")
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error
+                    .to_string()
+                    .contains("injected second-node construction failure")
+            );
+            assert!(
+                factory
+                    .observed
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|host| !host.exists())
+            );
+        }
+        assert_eq!(*factory.opened.lock().unwrap(), 6);
+        assert_eq!(factory.observed.lock().unwrap().len(), 3);
+    }
+
+    #[test]
     fn full_snapshot_retry_and_feedback_routing_close_both_nodes_once() {
         let record = Arc::new(Mutex::new(Record {
             block_touch: true,
