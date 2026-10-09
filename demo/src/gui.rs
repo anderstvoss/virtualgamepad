@@ -2867,6 +2867,10 @@ fn draw_battery_percentage_controls(
                 [120.0, NAME_INPUT_HEIGHT],
                 egui::Slider::new(percentage, 0..=100).show_value(false),
             );
+            if response.gained_focus() {
+                ui.ctx()
+                    .request_discard("establish numeric keyboard focus filter");
+            }
             response.widget_info(|| {
                 egui::WidgetInfo::slider(
                     response.enabled(),
@@ -2887,6 +2891,10 @@ fn draw_battery_percentage_controls(
                     .range(0..=100)
                     .suffix("%"),
             );
+            if response.gained_focus() {
+                ui.ctx()
+                    .request_discard("establish numeric keyboard focus filter");
+            }
             response.widget_info(|| {
                 let mut info =
                     egui::WidgetInfo::drag_value(response.enabled(), f64::from(*percentage));
@@ -4708,6 +4716,7 @@ mod tests {
                 vec![key(egui::Key::Tab, false)],
             ];
             for keys in frames {
+                let mut did_edit = false;
                 let output = context.run(
                     egui::RawInput {
                         events: keys,
@@ -4716,16 +4725,14 @@ mod tests {
                     |context| {
                         egui::CentralPanel::default().show(context, |ui| {
                             ui.horizontal(|ui| {
-                                changes.push(draw_battery_percentage_controls(
-                                    ui,
-                                    &mut percentage,
-                                    editable,
-                                ));
+                                did_edit |=
+                                    draw_battery_percentage_controls(ui, &mut percentage, editable);
                                 adjacent |= ui.button("Adjacent control").has_focus();
                             });
                         });
                     },
                 );
+                changes.push(did_edit);
                 labels.extend(
                     output
                         .platform_output
@@ -4754,11 +4761,66 @@ mod tests {
                 );
             } else {
                 assert_eq!(percentage, 50);
-                assert!(changes.iter().all(|changed| !changed));
+                assert!(changes.iter().all(|did_edit| !did_edit));
                 assert!(!labels.contains("Battery level"));
                 assert!(!labels.contains("Battery percentage"));
             }
         }
+    }
+
+    #[test]
+    fn numeric_focus_handles_arrows_on_the_first_frame_after_tab() {
+        let context = egui::Context::default();
+        let mut percentage = 50_u8;
+        let mut values = Vec::new();
+        let mut adjacent = false;
+        let event = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frames = [
+            vec![],
+            vec![event(egui::Key::Tab, true)],
+            vec![
+                event(egui::Key::Tab, false),
+                event(egui::Key::ArrowRight, true),
+            ],
+            vec![
+                event(egui::Key::ArrowRight, false),
+                event(egui::Key::Tab, true),
+            ],
+            vec![
+                event(egui::Key::Tab, false),
+                event(egui::Key::ArrowUp, true),
+            ],
+            vec![
+                event(egui::Key::ArrowUp, false),
+                event(egui::Key::Tab, true),
+            ],
+            vec![event(egui::Key::Tab, false)],
+        ];
+        for keys in frames {
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            draw_battery_percentage_controls(ui, &mut percentage, true);
+                            adjacent |= ui.button("Adjacent control").has_focus();
+                        });
+                    });
+                },
+            );
+            values.push(percentage);
+        }
+        assert_eq!(values, [50, 50, 51, 51, 52, 52, 52]);
+        assert!(adjacent);
     }
 
     #[test]

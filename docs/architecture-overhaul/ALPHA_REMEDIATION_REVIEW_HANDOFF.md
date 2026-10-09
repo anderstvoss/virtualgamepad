@@ -1446,3 +1446,17 @@ restored. Failed prior receipts remain historical evidence. These recovery cells
 are passed; construction-time worker death, combined construction/cleanup failure
 and remaining provider cells prevent whole Gate 3 closure. Raw receipts stay
 outside tracked source. GUI changes require final executable/soak revalidation.
+
+
+### Rapid numeric focus initialization correction
+
+The first-frame Tab→arrow diagnostic now has an explicit regression using the
+original sequence without an intervening idle frame. The battery numeric widgets
+request an extra egui pass when focus is gained, establishing the upstream focus
+filter before the following frame. It fails without that request and passes with
+exact per-input-frame values 50,50,51,51,52,52,52 and subsequent Tab traversal.
+The settled-focus/disabled tests are preserved; changed flags are aggregated per
+external input frame rather than counting internal layout passes. This resolves
+the recorded rapid battery-focus case, not every possible numeric control or
+whole native accessibility acceptance. Final rendered-image/soak checks remain
+required; no ordinary-root API or dependency changes.
