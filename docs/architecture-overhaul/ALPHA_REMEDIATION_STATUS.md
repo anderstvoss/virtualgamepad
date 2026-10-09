@@ -2067,3 +2067,38 @@ These close specific Gate 2 cells; typed USB application callbacks and remaining
 complete isolation/lifecycle dispositions are still required. Gates 1, 2, 4, 5
 and 6 remain open. All five required repository checks, forced Rust 1.85 workspace
 check and 337 Python tests pass for this increment. No dependencies were added.
+
+## Typed USB output cell acceptance and separate PCM failure
+
+At source `9e5731e72818fe722b6c55d04b44c0f51a4b3865`, tree
+`15f4c9e4e0bc8d23fa1929cad8842da8afe5d9d0`, the independently frozen
+ordinary observer SHA-256 was
+`06643664ea4f9ea93a35386b3c118828f45ebc5fbc19e051abeeb64e6b05e21f`.
+Its selected live test passed all three families: eight exact ordered DualSense
+callbacks, six exact ordered DS4 callbacks and six Xbox EPIPE rejections with
+no callback. Both kernel endpoint paths, five idle service cycles after each
+request, zero dropped outputs and repeated close were checked. The root client
+receipt independently records typed callback completion for each family.
+
+These Gate 2 output cells pass; the combined `usb-functional` phase and
+coordinator deliberately remain **failed**. The separate unchanged PCM marker
+assertions measured 7936/9376/10672 silence frames for DualSense/DS4/Xbox,
+respectively. Producer wake intervals reached approximately 10 ms against the
+8 ms operating fill. Playback delivered all 288000 markers per family with
+zero gaps/corruption; microphone conservation reconciled without queue drops.
+This narrows the microphone failure to producer refill starvation evidence,
+not a demonstrated correction or permission to increase queues/relax limits.
+
+Every family reports no initiating exception and no cleanup error. The root
+supervisor and ordinary unit cleanup also report no errors; original broker
+service inactive/socket active state was rechecked. Observer peak memory was
+1.7 MiB, with roughly 18 GiB host memory available and zero measured memory
+pressure. Broker and worker hashes remain identical to the accepted Gate 3
+images. Raw failures and full receipts remain outside tracked source.
+
+The five mandatory checks, forced Rust 1.85 workspace/all-target/all-feature
+check and 349 Python tests pass. No dependencies or ordinary-root signatures
+changed. Gate 2's remaining realization/lifecycle dispositions, final-image GUI
+acceptance, routing, Steam and sustained continuity remain open. Review the
+shared socket flag ownership/pause protocol, bounded receive deadlines and
+retention of the original terminal error separately from cleanup failures.
