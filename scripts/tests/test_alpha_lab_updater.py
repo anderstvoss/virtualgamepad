@@ -140,6 +140,7 @@ class UpdaterTests(unittest.TestCase):
             namespace.update(STATE=state,HELPER=helper,POLICY=policy,__file__=str(root/'updater'),trusted=lambda *_:None,
                              sys=types.SimpleNamespace(flags=types.SimpleNamespace(isolated=True),argv=['updater','update']))
             namespace['CONFIG']['mailbox']=str(mailbox)
+            namespace['validate_mailbox']=lambda _:None  # Synthetic account differs from test process UID.
             # The production installer has its own transaction/rollback tests.
             # Here verify the root updater hands it only captured immutable bytes.
             namespace['INSTALLER']="CONFIG=__CONFIG__\nfrom pathlib import Path\ndef main():\n p=Path(__file__).parent\n assert p.parent.name=='state'\n assert not (p/'install.py').exists()\n assert (p/'gr-audio-worker').read_bytes()==b'synthetic'\n"
@@ -160,3 +161,11 @@ class UpdaterTests(unittest.TestCase):
                 namespace['main']()
             self.assertEqual((state/'current-helper-sha256').read_text().strip(),hashlib.sha256(images['helper.py']).hexdigest())
             self.assertFalse(list(state.glob('alpha-update-*')))
+
+    def test_mailbox_requires_fixed_owner_and_private_write_access(self):
+        import types
+        _,_,namespace=self.fixture()
+        namespace['validate_mailbox'](types.SimpleNamespace(st_uid=1001,st_mode=0o700))
+        for uid,mode in [(0,0o700),(1002,0o700),(1001,0o720),(1001,0o702)]:
+            with self.assertRaisesRegex(ValueError,'private client-owned'):
+                namespace['validate_mailbox'](types.SimpleNamespace(st_uid=uid,st_mode=mode))

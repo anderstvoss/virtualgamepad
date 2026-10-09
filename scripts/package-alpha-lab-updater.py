@@ -41,6 +41,8 @@ def capture(directory,name,limit):
         data=stream.read(limit+1)
     if len(data)>limit:raise ValueError('oversized payload')
     return data
+def validate_mailbox(info):
+    if info.st_uid!=CONFIG['client_uid'] or info.st_mode&0o022:raise ValueError('private client-owned mailbox required')
 def helper_config(data):
     assignments=[node for node in ast.parse(data).body if isinstance(node,ast.Assign)
                  and any(isinstance(target,ast.Name) and target.id=='CONFIG' for target in node.targets)]
@@ -108,8 +110,7 @@ def main():
                 print('Autonomous update access revoked. Lab and receipts preserved.');return
             directory=os.open(CONFIG['mailbox'],os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
             try:
-                info=os.fstat(directory)
-                if info.st_uid!=CONFIG['client_uid'] or info.st_mode&0o022:raise ValueError('private client-owned mailbox required')
+                validate_mailbox(os.fstat(directory))
                 manifest=json.loads(capture(directory,'manifest.json',65536))
                 images={name:capture(directory,name,128*1024*1024) for name in (*FILES,'gr-privileged-broker','gr-audio-worker','helper.py')}
             finally:os.close(directory)
