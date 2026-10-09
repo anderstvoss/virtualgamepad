@@ -15,6 +15,84 @@ spec.loader.exec_module(control)
 
 
 class MarkerReceipt(unittest.TestCase):
+    def direct_graph(self):
+        graph = [dict(id=node, type='PipeWire:Interface:Node',
+                      info=dict(props={'node.name': name}))
+                 for node, name in [(10, 'alpha-independent-producer'),
+                                    (20, 'alpha-independent-receiver')]]
+        for node, role, first in [(10, 'out', 30), (20, 'in', 40)]:
+            for offset, channel in enumerate(('FL', 'FR')):
+                graph.append(dict(id=first+offset, type='PipeWire:Interface:Port',
+                                  info=dict(props={'node.id': node, 'port.direction': role,
+                                                   'audio.channel': channel})))
+        return graph
+
+    def test_direct_links_require_exact_owned_nodes_channels_and_directions(self):
+        graph = self.direct_graph()
+        self.assertEqual(control.direct_ports(graph), [(30, 40), (31, 41)])
+        self.assertIsNone(control.direct_ports(graph[:-1]))
+        wrong = self.direct_graph()
+        wrong[-1]['info']['props']['node.id'] = 99
+        self.assertIsNone(control.direct_ports(wrong))
+        wrong[-1]['info']['props']['node.id'] = 20
+        wrong[-1]['info']['props']['port.direction'] = 'out'
+        self.assertIsNone(control.direct_ports(wrong))
+        for duplicate in (graph[0], graph[-1]):
+            with self.assertRaisesRegex(ValueError, 'ambiguous'):
+                control.direct_ports(graph + [duplicate])
+
+    def test_direct_port_readiness_timeout_terminates_and_reaps_control(self):
+        child = Mock()
+        child.poll.return_value = None
+        with patch.object(control.subprocess, 'Popen', return_value=child), \
+             patch.object(control.subprocess, 'run'), \
+             patch.object(control.lab, 'decode_graph', return_value=[]), \
+             patch.object(control.time, 'monotonic', side_effect=[0, 6]):
+            with self.assertRaisesRegex(TimeoutError, 'ports'):
+                control.run_direct(Path('/synthetic/control'), 2, None)
+        child.terminate.assert_called_once()
+        child.wait.assert_called_once_with(timeout=2)
+
+    def test_direct_link_failure_kills_stalled_owned_child_and_preserves_error(self):
+        child = Mock()
+        child.poll.return_value = None
+        child.wait.side_effect = [subprocess.TimeoutExpired('control', 2), 0]
+        def commands(command, **kwargs):
+            if command[0] == 'pw-link':
+                raise subprocess.CalledProcessError(1, command)
+        with patch.object(control.subprocess, 'Popen', return_value=child), \
+             patch.object(control.subprocess, 'run', side_effect=commands), \
+             patch.object(control.lab, 'decode_graph', return_value=self.direct_graph()):
+            with self.assertRaises(subprocess.CalledProcessError):
+                control.run_direct(Path('/synthetic/control'), 2, None)
+        child.terminate.assert_called_once()
+        child.kill.assert_called_once()
+        self.assertEqual(child.wait.call_count, 2)
+
+    def test_direct_trial_keeps_same_acceptance_and_does_not_spawn_loopback(self):
+        with tempfile.TemporaryDirectory(prefix='virtualgamepad-pw-lab-') as directory:
+            for missing in (0, 128):
+                row = self.receipt(); row['missing'] = missing
+                response = subprocess.CompletedProcess('fake', 0, stdout=json.dumps(row))
+                with patch.dict(os.environ, PIPEWIRE_RUNTIME_DIR=directory,
+                                XDG_RUNTIME_DIR=directory, PIPEWIRE_REMOTE='pipewire-0'), \
+                     patch.object(control, 'run_direct', return_value=response), \
+                     patch.object(control.subprocess, 'Popen') as spawn, \
+                     patch('builtins.print') as output:
+                    self.assertEqual(control.inside(Path('/synthetic/control'), 60,
+                                                    topology='direct'), int(bool(missing)))
+                    self.assertEqual(json.loads(output.call_args.args[0])['topology'], 'direct')
+                    spawn.assert_not_called()
+
+    def test_direct_control_retains_initiating_and_cleanup_failures(self):
+        child = Mock()
+        child.poll.return_value = None
+        child.terminate.side_effect = OSError('synthetic cleanup failure')
+        with patch.object(control.subprocess, 'Popen', return_value=child), \
+             patch.object(control.subprocess, 'run', side_effect=RuntimeError('synthetic graph failure')):
+            with self.assertRaisesRegex(RuntimeError, 'synthetic graph failure; cleanup failed: synthetic cleanup failure'):
+                control.run_direct(Path('/synthetic/control'), 2, None)
+
     def test_cli_helper_import_leaves_fresh_checkout_clean_without_local_excludes(self):
         for script in ('run-alpha-acceptance.py', 'run-alpha-audio-control.py'):
             with self.subTest(script=script), tempfile.TemporaryDirectory() as directory:

@@ -342,6 +342,8 @@ int main(int argc, char **argv) {
     char *end;
     if (argc != 4 && argc != 5) { fprintf(stderr, "usage: CONTROL SECONDS SINK SOURCE [LEDGER]\n"); return 2; }
     const char *ledger_path = argc == 5 ? argv[4] : NULL;
+    bool direct = strcmp(argv[2], "-") == 0 && strcmp(argv[3], "-") == 0;
+    if ((strcmp(argv[2], "-") == 0) != (strcmp(argv[3], "-") == 0)) return 2;
     errno = 0;
     long seconds = strtol(argv[1], &end, 10);
     if (errno || *end || seconds < 1 || seconds > 60) return 2;
@@ -355,12 +357,23 @@ int main(int argc, char **argv) {
     c.loop = pw_main_loop_new(NULL);
     if (!c.loop) { free(c.counts); free(c.ledger); return 2; }
     struct pw_loop *loop = pw_main_loop_get_loop(c.loop);
-    c.source = pw_stream_new_simple(loop, "alpha-independent-producer",
-        pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Playback",
-            PW_KEY_TARGET_OBJECT, argv[2], "node.autoconnect", "true", NULL), &source_events, &c);
-    c.sink = pw_stream_new_simple(loop, "alpha-independent-receiver",
-        pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio", PW_KEY_MEDIA_CATEGORY, "Capture",
-            PW_KEY_TARGET_OBJECT, argv[3], "node.autoconnect", "true", NULL), &sink_events, &c);
+    struct pw_properties *source_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
+        PW_KEY_MEDIA_CATEGORY, "Playback", PW_KEY_NODE_NAME, "alpha-independent-producer",
+        "node.autoconnect", direct ? "false" : "true", NULL);
+    struct pw_properties *sink_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
+        PW_KEY_MEDIA_CATEGORY, "Capture", PW_KEY_NODE_NAME, "alpha-independent-receiver",
+        "node.autoconnect", direct ? "false" : "true", NULL);
+    if (!source_props || !sink_props) {
+        if (source_props) pw_properties_free(source_props);
+        if (sink_props) pw_properties_free(sink_props);
+        pw_main_loop_destroy(c.loop); pw_deinit(); free(c.counts); free(c.ledger); return 2;
+    }
+    if (!direct) {
+        pw_properties_set(source_props, PW_KEY_TARGET_OBJECT, argv[2]);
+        pw_properties_set(sink_props, PW_KEY_TARGET_OBJECT, argv[3]);
+    }
+    c.source = pw_stream_new_simple(loop, "alpha-independent-producer", source_props, &source_events, &c);
+    c.sink = pw_stream_new_simple(loop, "alpha-independent-receiver", sink_props, &sink_events, &c);
     int status = 2;
     if (!c.source || !c.sink) goto out;
     uint8_t buffer[1024];
@@ -370,6 +383,7 @@ int main(int argc, char **argv) {
             .rate = 48000, .channels = 2, .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR})) };
     /* Callbacks run on the main loop: counters have no cross-thread races. */
     enum pw_stream_flags flags = PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS;
+    if (direct) flags = PW_STREAM_FLAG_MAP_BUFFERS;
     if (pw_stream_connect(c.sink, PW_DIRECTION_INPUT, PW_ID_ANY, flags, params, 1) < 0 ||
         pw_stream_connect(c.source, PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1) < 0) goto out;
     struct spa_source *timer = pw_loop_add_timer(loop, tick, &c);

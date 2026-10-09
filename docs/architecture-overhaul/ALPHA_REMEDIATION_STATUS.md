@@ -1663,3 +1663,35 @@ pass. This is a diagnostic correction, not live acceptance: the installed immuta
 snapshot still contains the prior client. A reviewed payload update is needed
 before rerunning the failed USB cell. The production failure and all six gates
 remain open. No dependency was added.
+
+
+### Direct C graph comparison preparation
+
+The maintained independent C control now supports a direct producer-to-capture
+connection as well as the existing loopback topology. The runner accepts only
+`--topology loopback|direct` and supported quanta 128/256/512. Direct connections
+resolve exactly the private control nodes and their FL/FR ports, reject ambiguity,
+and create only those two links. Readiness and completion are bounded; timeout,
+link failure and combined initiating/cleanup errors retain owned-process cleanup.
+No product queue or marker/loss acceptance limit changes. Reports identify the
+chosen topology and quantum; direct success alone cannot replace qualification
+of the existing control or any product acceptance cell.
+
+Five focused deterministic tests cover link identities/directions, readiness
+failure, forced termination/reaping, unchanged loss rejection and independent
+error preservation. The actual C self-test compiles with warnings denied. Live
+comparison remains unperformed while the image-pinned neutral GUI soak is running;
+audio experiments must not overlap it. Once it ends, prebuild the control and run
+at most two short diagnostic trials per changed topology/quantum before deciding
+whether new causal evidence warrants correction or qualification.
+
+Portable reproduction (reports and binaries must remain outside tracked source):
+
+```sh
+cc -Wall -Wextra -Werror scripts/alpha-audio-control.c -o /tmp/alpha-audio-control $(pkg-config --cflags --libs libpipewire-0.3)
+python3 scripts/run-alpha-audio-control.py --control /tmp/alpha-audio-control --seconds 3 --trials 1 --topology direct --quantum 512 --report /tmp/alpha-direct-control.json
+```
+
+Use a fresh report/ledger destination for each repetition. A three-second result
+is diagnostic evidence, never a sustained qualification receipt. All six gates
+remain open. No dependency or ordinary-root API changed.
