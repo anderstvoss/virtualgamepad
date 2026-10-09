@@ -1,4 +1,7 @@
 import importlib.util
+import hashlib
+import fcntl
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 import socket
@@ -14,6 +17,75 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_probe_image_capture_rejects_corruption_non_elf_and_non_regular(self):
+        for data, expected in ((b'not ELF', hashlib.sha256(b'not ELF').digest()),
+                               (b'\x7fELFsynthetic', bytes(32))):
+            with tempfile.TemporaryFile() as source:
+                source.write(data); source.flush()
+                with self.assertRaises(ValueError): module.sealed_probe_image(source.fileno(), expected)
+        read, write = os.pipe()
+        try:
+            with self.assertRaises(ValueError): module.sealed_probe_image(read, bytes(32))
+        finally: os.close(read); os.close(write)
+
+    def test_probe_image_is_sealed_and_survives_original_change(self):
+        data = b'\x7fELFsynthetic receipt only; never executed'
+        with tempfile.TemporaryFile() as source:
+            source.write(data); source.flush()
+            frozen = module.sealed_probe_image(source.fileno(), hashlib.sha256(data).digest())
+            try:
+                source.seek(0); source.write(b'changed'); source.flush()
+                self.assertEqual(os.pread(frozen, len(data), 0), data)
+                for operation in (lambda: os.write(frozen, b'x'), lambda: os.ftruncate(frozen, 1)):
+                    with self.assertRaises(OSError): operation()
+                self.assertEqual(fcntl.fcntl(frozen, fcntl.F_GET_SEALS),
+                                 fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+            finally: os.close(frozen)
+
+    def test_probe_admission_root_unknown_request_and_zero_tests_cannot_pass(self):
+        with patch.object(module.os, 'geteuid', return_value=0):
+            with self.assertRaisesRegex(ValueError, 'without root'): module.public_factory_probe(Mock())
+        peer = Mock(); peer.recv.return_value = b'bad'
+        with patch.object(module.os, 'geteuid', return_value=1000):
+            with self.assertRaisesRegex(ValueError, 'unknown'): module.public_factory_probe(peer)
+            peer.recv.return_value = b''
+            self.assertEqual(module.public_factory_probe(peer), dict(status='not-requested'))
+        with tempfile.TemporaryFile() as source:
+            source.write(b'\x7fELFfake'); source.flush()
+            descriptor = os.dup(source.fileno())
+            peer.recv.return_value = b'R'
+            peer.recvmsg.return_value = (bytes(32), [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                                                     array.array('i', [descriptor]).tobytes())], 0, None)
+            frozen = os.dup(source.fileno())
+            with patch.object(module.os, 'geteuid', return_value=1000), \
+                 patch.object(module, 'sealed_probe_image', return_value=frozen), \
+                 patch.object(module.subprocess, 'run', return_value=Mock(returncode=0)), \
+                 patch('builtins.print'):
+                with self.assertRaisesRegex(ValueError, 'selected zero'): module.public_factory_probe(peer)
+            peer.sendall.assert_called_with(b'E')
+            for closed in (descriptor, frozen):
+                with self.assertRaises(OSError): os.fstat(closed)
+
+    def test_probe_timeout_and_malformed_rights_close_every_owned_descriptor(self):
+        with tempfile.TemporaryFile() as source:
+            source.write(b'\x7fELFfake'); source.flush()
+            for timeout in (False, True):
+                descriptor = os.dup(source.fileno()); frozen = os.dup(source.fileno())
+                peer = Mock(); peer.recv.return_value = b'R'
+                ancillary = [(socket.SOL_SOCKET, socket.SCM_RIGHTS, array.array('i', [descriptor]).tobytes())]
+                if not timeout: ancillary.insert(0, (123, 456, b'bad'))
+                peer.recvmsg.return_value = (bytes(32), ancillary, 0, None)
+                with patch.object(module.os, 'geteuid', return_value=1000), \
+                     patch.object(module, 'sealed_probe_image', return_value=frozen) as capture, \
+                     patch.object(module.subprocess, 'run', side_effect=module.subprocess.TimeoutExpired('probe', 45)):
+                    with self.assertRaises((ValueError, module.subprocess.TimeoutExpired)):
+                        module.public_factory_probe(peer)
+                with self.assertRaises(OSError): os.fstat(descriptor)
+                if timeout:
+                    with self.assertRaises(OSError): os.fstat(frozen)
+                else:
+                    capture.assert_not_called(); os.close(frozen)
+
     def test_final_accounting_uses_quiescent_credit_not_last_producer_poll(self):
         counters = dict(capture_frames=240096, abandoned_capture_frames=0,
                         microphone_silence_frames=11760)

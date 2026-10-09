@@ -9,6 +9,7 @@ import fcntl
 import stat
 import importlib.util
 import heapq
+import hashlib
 import json
 import os
 import re
@@ -18,6 +19,7 @@ import struct
 import subprocess
 import threading
 import time
+import tempfile
 
 spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('validate-usb-audio-live.py'))
 live = importlib.util.module_from_spec(spec)
@@ -275,6 +277,80 @@ def submit_hid_output(descriptor,wire,operation):
     raise ValueError('unknown fixed HID output operation')
 
 
+ROOT_FACTORY_TEST = 'controllers::tests::worker_outputs::live_public_usb_sample_factory'
+
+
+def sealed_probe_image(source, expected):
+    """Freeze an ordinary caller's image; root never imports or executes it."""
+    info = os.fstat(source)
+    if not stat.S_ISREG(info.st_mode) or not 4 <= info.st_size <= 128*1024*1024 or len(expected) != 32:
+        raise ValueError('bounded regular probe image required')
+    frozen = os.memfd_create('virtualgamepad-public-root-probe', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+    try:
+        digest = hashlib.sha256(); position = 0
+        while position < info.st_size:
+            chunk = os.pread(source, min(65536, info.st_size-position), position)
+            if not chunk: raise ValueError('probe image changed during capture')
+            if position == 0 and chunk[:4] != b'\x7fELF': raise ValueError('probe image is not ELF')
+            digest.update(chunk); position += len(chunk)
+            view = memoryview(chunk)
+            while view:
+                written = os.write(frozen, view)
+                if written <= 0: raise ValueError('probe image copy stalled')
+                view = view[written:]
+        if digest.digest() != expected: raise ValueError('probe image digest differs')
+        os.fchmod(frozen, 0o500)
+        fcntl.fcntl(frozen, fcntl.F_ADD_SEALS,
+                    fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+        return frozen
+    except BaseException:
+        os.close(frozen); raise
+
+
+def public_factory_probe(peer):
+    # This function runs only after setpriv in the prepared ordinary client unit.
+    # The peer can supply one immutable ELF image, never root commands or paths.
+    if os.geteuid() == 0: raise ValueError('public factory probe must run without root')
+    peer.settimeout(5)
+    command = peer.recv(1)
+    if not command: return dict(status='not-requested')
+    if command != b'R': raise ValueError('unknown public factory probe request')
+    data, ancillary, flags, _ = peer.recvmsg(32, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
+    descriptors = []
+    frozen = None
+    try:
+        malformed = False
+        for level, kind, raw in ancillary:
+            if level != socket.SOL_SOCKET or kind != socket.SCM_RIGHTS:
+                malformed = True; continue
+            malformed |= len(raw) % 4 != 0
+            values = array.array('i'); values.frombytes(raw[:len(raw)//4*4]); descriptors.extend(values)
+        if malformed or flags & (socket.MSG_TRUNC | socket.MSG_CTRUNC) or len(descriptors) != 1 or not data:
+            raise ValueError('exactly one probe image required')
+        expected = data + exact(peer, 32-len(data))
+        frozen = sealed_probe_image(descriptors[0], expected)
+        environment = dict(os.environ, VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB='1')
+        with tempfile.TemporaryFile() as output:
+            result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
+                                     '--ignored', '--nocapture'], pass_fds=(frozen,),
+                                    env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=45)
+            output.seek(0); text = output.read(65537)
+        if len(text) > 65536: raise ValueError('oversized public factory probe receipt')
+        text = text.decode('utf-8', errors='strict')
+        passed = result.returncode == 0 and '1 passed; 0 failed' in text and all(
+            f'public_usb_sample_factory family={family} passed=true' in text
+            for family in ('dualsense', 'dualshock4', 'xbox360'))
+        peer.sendall(b'F' if passed else b'E')
+        receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
+                       exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
+        print(json.dumps(dict(public_factory=receipt)), flush=True)
+        if not passed: raise ValueError('public factory probe failed or selected zero tests')
+        return receipt
+    finally:
+        for descriptor in descriptors: os.close(descriptor)
+        if frozen is not None: os.close(frozen)
+
+
 class TypedObserver:
     """Ordinary-user peer: only unprivileged session data sockets cross this seam."""
     def __init__(self, instance):
@@ -522,6 +598,7 @@ def main():
                 if not result['passed']:
                     failed=True
                     if not observer or not independent_output_complete(result):raise SystemExit(1)
+        if observer:public_factory_probe(observer.peer)
         if failed:raise SystemExit(1)
     finally:
         if observer:observer.close()

@@ -1000,5 +1000,111 @@ mod worker_outputs {
                 "typed_output_observer family={family} generation={generation} requests={count} passed=true"
             );
         }
+        if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
+            send_public_factory_image(&mut peer);
+        }
+    }
+
+    fn send_public_factory_image(peer: &mut UnixStream) {
+        use std::io::{Read, Write};
+        use std::process::{Command, Stdio};
+        peer.write_all(b"R").unwrap();
+        let image = std::fs::File::open("/proc/self/exe").unwrap();
+        let mut sender = Command::new("python3")
+            .args(["-I", "-c", "import array,hashlib,os,socket; s=socket.socket(fileno=0); s.settimeout(3); f=os.fdopen(os.dup(1),'rb'); h=hashlib.file_digest(f,'sha256').digest(); assert s.sendmsg([h],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[1]))])==32"])
+            .stdin(Stdio::from(std::os::fd::OwnedFd::from(peer.try_clone().unwrap())))
+            .stdout(Stdio::from(image))
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let status = loop {
+            if let Some(status) = sender.try_wait().unwrap() {
+                break status;
+            }
+            if std::time::Instant::now() >= deadline {
+                sender.kill().unwrap();
+                sender.wait().unwrap();
+                panic!("ordinary image sender timed out");
+            }
+            thread::sleep(Duration::from_millis(10));
+        };
+        assert!(status.success());
+        peer.set_read_timeout(Some(Duration::from_secs(50)))
+            .unwrap();
+        let mut result = [0];
+        peer.read_exact(&mut result).unwrap();
+        assert_eq!(result, [b'F']);
+    }
+
+    #[test]
+    #[ignore = "requires the prepared ordinary client mount and explicit sample factory lab opt-in"]
+    fn live_public_usb_sample_factory() {
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB").as_deref(),
+            Ok("1")
+        );
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        assert!(
+            status
+                .lines()
+                .find(|line| line.starts_with("Uid:"))
+                .unwrap()
+                .split_whitespace()
+                .skip(1)
+                .all(|uid| uid != "0")
+        );
+        let options = crate::CreationOptions::new(crate::RealizationId::LINUX_USBIP_USB_AUDIO)
+            .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+        macro_rules! exercise {
+            ($factory:ident, $family:literal, $playback:literal, $microphone:literal) => {{
+                let mut controller = crate::$factory(options).unwrap();
+                controller.service(&mut |_| {}).unwrap();
+                controller.neutralize().unwrap();
+                controller.commit().unwrap();
+                let audio = controller.audio().unwrap();
+                assert_eq!(audio.endpoints().len(), 2);
+                for endpoint in audio.endpoints() {
+                    assert_eq!(endpoint.access(), crate::AudioAccess::Samples);
+                    assert_eq!(endpoint.format().sample_rate_hz(), 48_000);
+                    assert!(endpoint.host().alsa_pcm().is_some());
+                    assert!(endpoint.caller().is_none());
+                }
+                let mut invalid = [0; $playback - 1];
+                assert_eq!(
+                    audio.read_playback(&mut invalid),
+                    Err(crate::AudioError::InvalidSampleBuffer)
+                );
+                if $microphone > 1 {
+                    assert_eq!(
+                        audio.write_microphone(&[0]),
+                        Err(crate::AudioError::InvalidSampleBuffer)
+                    );
+                }
+                let mut playback = [0; $playback * 16];
+                assert_eq!(audio.read_playback(&mut playback).unwrap().frames, 0);
+                assert_eq!(audio.write_microphone(&[0; $microphone * 16]).unwrap(), 16);
+                audio.flush_playback().unwrap();
+                audio.flush_microphone().unwrap();
+                assert!(audio.last_error().is_none());
+                controller.close();
+                controller.close();
+                let audio = controller.audio().unwrap();
+                assert!(audio.is_closed());
+                assert!(audio.last_error().is_none());
+                assert_eq!(
+                    audio.read_playback(&mut playback),
+                    Err(crate::AudioError::Closed)
+                );
+                assert_eq!(
+                    audio.write_microphone(&[0; $microphone]),
+                    Err(crate::AudioError::Closed)
+                );
+                assert!(controller.diagnostics().last_error().is_none());
+                println!("public_usb_sample_factory family={} passed=true", $family);
+            }};
+        }
+        exercise!(create_dualsense, "dualsense", 4, 2);
+        exercise!(create_dualshock4, "dualshock4", 2, 1);
+        exercise!(create_xbox360, "xbox360", 2, 1);
     }
 }
