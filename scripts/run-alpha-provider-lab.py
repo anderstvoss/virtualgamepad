@@ -439,6 +439,7 @@ class Host:
         self.original_images = {}
         self.events = []
         self.audio_isolation = None
+        self.construction_recovery = None
 
     def run(self, argv, timeout=15):
         # Regular-file spooling plus inherited/unit quotas prevent a verbose
@@ -638,7 +639,7 @@ class Host:
         if self.args.restart_empty:
             self.restart_empty_candidate()
 
-    def kill_constructing_worker(self, profile, armed):
+    def kill_constructing_worker(self, profile, armed, cleanup_failure=False):
         # Resolve unit identities before arming the client, keeping systemctl
         # out of the short worker-launch/host-enumeration observation window.
         deadline=time.monotonic()+5
@@ -664,6 +665,7 @@ class Host:
                         raise RuntimeError('constructing worker identity changed')
                 held=PinnedWorker(pid,verify)
                 try:
+                    if cleanup_failure:self.replace_construction_record(generation,device)
                     held.kill()
                     if not select.select([held.descriptor],[],[],3)[0]:raise TimeoutError('constructing worker did not exit')
                 finally:held.close()
@@ -671,6 +673,48 @@ class Host:
                 return dict(generation=generation,device=device)
             if time.monotonic()>=deadline:raise TimeoutError('owned constructing worker was not observed')
             time.sleep(.001)
+
+    def replace_construction_record(self,generation,device):
+        if self.construction_recovery is not None:raise RuntimeError('construction recovery is already pending')
+        record=STATE/(self.instance+'.audio')/f'{generation:016x}'
+        deadline=time.monotonic()+1
+        while True:
+            try:
+                trusted(record);expected=identity(record);data=record.read_bytes()
+                journal_port(data,generation,device,selected_ports(self.args.port,self.args.additional_port))
+                if identity(record)!=expected:raise RuntimeError('construction journal identity changed')
+                break
+            except (FileNotFoundError,RuntimeError):
+                if time.monotonic()>=deadline:raise RuntimeError('complete owned construction journal was not observed')
+                time.sleep(.001)
+        backup=record.parent.parent/('.'+self.instance+'-construction-'+str(generation))
+        if backup.exists() or backup.is_symlink():raise RuntimeError('construction journal backup is occupied')
+        self.owned.append((backup,expected,False))
+        record.rename(backup)
+        descriptor=os.open(record,os.O_CREAT|os.O_EXCL|os.O_WRONLY|os.O_NOFOLLOW,0o600)
+        info=os.fstat(descriptor);replacement=(info.st_dev,info.st_ino)
+        self.owned.append((record,replacement,False))
+        with os.fdopen(descriptor,'wb') as output:output.write(data);output.flush();os.fsync(output.fileno())
+        self.construction_recovery=(record,replacement,backup,expected,data)
+
+    def restore_construction_record(self):
+        if self.construction_recovery is None:raise RuntimeError('no held construction journal identity')
+        record,replacement,backup,expected,data=self.construction_recovery
+        for path,inode in ((record,replacement),(backup,expected)):
+            if identity(path)!=inode or path.read_bytes()!=data:raise RuntimeError('held construction journal changed; restoration refused')
+        deadline=time.monotonic()+5
+        while True:
+            try:
+                for port in selected_ports(self.args.port,self.args.additional_port):free_port(VHCI.read_text(),port)
+                break
+            except RuntimeError:
+                if time.monotonic()>=deadline:raise RuntimeError('construction attachment removal was not verified')
+                time.sleep(.02)
+        # The client has observed terminal error and EOF, and the held worker
+        # exited. Remove only these independently registered fixture identities.
+        remove_owned(record,replacement);remove_owned(backup,expected)
+        self.construction_recovery=None
+        self.events.append(dict(construction_failure_restoration=dict(identity_checked=True,attachment_removed=True)))
 
     def worker_death(self, command):
         path = self.root / 'fault.sock'
@@ -682,7 +726,7 @@ class Host:
         failures = []
         def supervise():
             try:
-                for _ in range(6 if self.args.phase=='provider-worker-death' else 3):
+                for _ in range(9 if self.args.phase=='provider-worker-death' else 3):
                     # Sibling admission first exercises normal replacement, then
                     # builds four isolated sessions before requesting injection.
                     deadline = time.monotonic() + (90 if self.args.phase == 'provider-siblings-admission' else 20)
@@ -704,11 +748,17 @@ class Host:
                             data.extend(chunk)
                             if len(data)>256: raise ValueError('oversized fault readiness')
                         request = json.loads(data)
-                        if self.args.phase=='provider-worker-death' and set(request)=={'construction'}:
+                        if self.args.phase=='provider-worker-death' and set(request) in ({'construction'},{'construction','cleanup'}):
                             profile=request['construction']
                             if profile not in ('dualsense','dualshock4','xbox360'):raise ValueError('invalid construction profile')
-                            result=self.kill_constructing_worker(profile,lambda:peer.sendall(b'A'))
+                            cleanup_failure='cleanup' in request
+                            if cleanup_failure and request['cleanup'] is not True:raise ValueError('invalid fixed cleanup injection')
+                            result=self.kill_constructing_worker(profile,lambda:peer.sendall(b'A'),cleanup_failure)
                             peer.sendall(json.dumps(result).encode()+b'\n')
+                            if cleanup_failure:
+                                if peer.recv(1)!=b'R':raise RuntimeError('construction error was not confirmed')
+                                self.restore_construction_record()
+                                peer.sendall(b'B')
                             continue
                         if (set(request) != {'generation', 'device'} or
                                 type(request['generation']) is not int or not 0 < request['generation'] < 2**64 or

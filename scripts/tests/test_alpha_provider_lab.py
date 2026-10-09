@@ -756,3 +756,31 @@ class ConstructionInjection(unittest.TestCase):
         with patch.object(lab,'identity',return_value=(1,2)),patch.object(lab,'process_children',return_value=[99]),patch.object(lab,'PinnedWorker') as pin:
             with self.assertRaisesRegex(RuntimeError,'existing workers'):host.kill_constructing_worker('dualsense',armed)
         armed.assert_not_called();pin.assert_not_called()
+
+    def test_construction_journal_replacement_and_restoration_use_held_identities(self):
+        from types import SimpleNamespace
+        for changed in (None,'contents','inode','occupied'):
+            with self.subTest(changed=changed),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);state=root/'state';state.mkdir();records=state/'lab.audio';records.mkdir()
+                record=records/'0000000000000007';record.write_bytes(b'1 7 9 0\n');original=lab.identity(record)
+                host=lab.Host(SimpleNamespace(port=0,additional_port=[1,2,3]));host.instance='lab'
+                backup=state/'.lab-construction-7'
+                if changed=='occupied':backup.write_bytes(b'foreign fixture')
+                vhci=root/'status';vhci.write_text('hub port sta spd dev sockfd local_busid\n'+''.join(f'hs {port} 004 000 0 0 0-0\n' for port in range(4)))
+                with patch.object(lab,'STATE',state),patch.object(lab,'trusted'),patch.object(lab,'VHCI',vhci):
+                    if changed=='occupied':
+                        with self.assertRaisesRegex(RuntimeError,'occupied'):host.replace_construction_record(7,9)
+                        self.assertEqual(backup.read_bytes(),b'foreign fixture');self.assertEqual(lab.identity(record),original)
+                        continue
+                    host.replace_construction_record(7,9)
+                    self.assertNotEqual(lab.identity(record),original);self.assertEqual(lab.identity(backup),original)
+                    if changed=='contents':record.write_bytes(b'changed fixture')
+                    elif changed=='inode':record.rename(root/'held-replacement');record.write_bytes(b'1 7 9 0\n')
+                    if changed is not None:
+                        before=record.read_bytes()
+                        with self.assertRaisesRegex(RuntimeError,'restoration refused'):host.restore_construction_record()
+                        self.assertEqual(record.read_bytes(),before);self.assertTrue(backup.exists())
+                    else:
+                        host.restore_construction_record();self.assertFalse(record.exists());self.assertFalse(backup.exists())
+                        self.assertIsNone(host.construction_recovery)
+                        with self.assertRaisesRegex(RuntimeError,'no held'):host.restore_construction_record()

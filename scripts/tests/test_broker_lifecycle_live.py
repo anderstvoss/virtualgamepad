@@ -330,3 +330,24 @@ class SessionPortIdentity(unittest.TestCase):
                 else:
                     with self.assertRaises(RuntimeError):lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'))
             broker.__exit__.assert_called_once();supervisor.__exit__.assert_called_once()
+
+    def test_combined_construction_error_preserves_both_exact_causes(self):
+        expected=b'audio worker exited: signal: 9 (SIGKILL); attachment cleanup: audio ownership record changed; retained'
+        self.assertEqual(lab.construction_failure_reply((2,0x81,expected),True),expected.decode())
+        for body in (b'audio worker exited: signal: 9 (SIGKILL)',b'audio ownership record changed; retained',b'failed to fill whole buffer'):
+            with self.assertRaises(RuntimeError):lab.construction_failure_reply((2,0x81,body),True)
+
+    def test_combined_construction_failure_requires_operator_restoration_ack(self):
+        error=b'audio worker exited: signal: 9 (SIGKILL); attachment cleanup: audio ownership record changed; retained'
+        for confirmation in (b'B',b'wrong'):
+            broker=MagicMock();broker.__enter__.return_value=broker
+            supervisor=MagicMock();supervisor.__enter__.return_value=supervisor
+            for peer in (broker,supervisor):peer.getsockopt.return_value=struct.pack('3i',42,0,0)
+            supervisor.recv.side_effect=[b'A',b'{"generation":7,"device":9}\n',confirmation];broker.recv.return_value=b''
+            with patch.object(lab.socket,'socket',side_effect=[broker,supervisor]),patch.object(lab.audio,'message'),patch.object(lab.audio,'reply',return_value=(2,0x81,error)),patch.object(lab,'fd_count',return_value=11):
+                if confirmation==b'B':
+                    result=lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'),True)
+                    self.assertTrue(result['cleanup_failure'])
+                else:
+                    with self.assertRaisesRegex(RuntimeError,'restoration'):lab.worker_construction_death('dualsense','lab',[0,1,2,3],Path('/synthetic/fault'),True)
+            supervisor.sendall.assert_any_call(b'R')

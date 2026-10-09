@@ -1982,3 +1982,24 @@ identity refusal, arming order, exact replies, late handoff and socket cleanup.
 Live construction-failure acceptance is pending until its bounded run passes.
 Combined initiating/cleanup failure and the other six-gate requirements remain
 open. This supporting lab change preserves ordinary-root APIs and binaries.
+
+### Construction-failure acceptance and combined-error extension
+
+Candidate `b8a76a3a4ae9c4f17d573ff121e8458c787f69a3`, tree
+`90ef4ed1e8a6f87147f6a1d78993d6ed899276f8`, passed the expanded
+worker-death phase. Production workers were killed through validated pidfds
+before client handoff for all three audio families. DualSense and DS4 returned
+exact startup EOF errors; Xbox 360 returned the exact SIGKILL worker error
+during factory construction. Each broker connection terminated, no descriptor
+handoff occurred, and subsequent normal/repeated/abandoned sessions passed.
+The independently retrieved root-owned receipt reports `passed`; cleanup and
+original service restoration completed. Raw receipts remain outside Git.
+
+The next extension deliberately replaces a held, test-owned post-readiness
+journal inode before killing the worker. It requires the exact initiating
+SIGKILL error plus `attachment cleanup: audio ownership record changed; retained`,
+then proves attachment removal and restores only independently held fixture
+identities. Changed identity/content, an occupied backup, late handoff or
+missing restoration acknowledgement fail. Three additional deterministic
+regressions cover these boundaries. Live combined-error acceptance is pending.
+Ordinary-root APIs, production binaries and queue/loss limits are unchanged.
