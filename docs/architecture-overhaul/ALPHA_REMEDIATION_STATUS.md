@@ -2028,3 +2028,17 @@ positive lifecycle suite. A zero broker PID means pending startup rather than
 cleanup success. Three additional regressions cover family request encoding,
 per-family sequencing and pending startup. Full exact-candidate provider phase
 acceptance remains pending; no whole-gate pass is asserted by this increment.
+
+### USB output policy correction and acceptance invalidation
+
+See [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md) for
+the confirmed interrupt/SET_REPORT validation mismatch, controller field ledger,
+correction and regression map. Six production-worker process cells and three
+USB protocol-fixture cells pass; all 329 Python tests, the mandatory checks and
+forced Rust 1.85 check pass. Kernel-consumer output evidence remains separate.
+
+Production worker and GUI-soak binary identities changed. Revalidate Gate 3
+on the corrected worker and repeat the final GUI soak; the earlier pinned
+provider and GUI passes must not be promoted to the new images. Other gates
+remain open and alpha remains not ready. Native UHID raw observations and
+ordinary-root/supporting-trait signatures are unchanged. No dependencies added.

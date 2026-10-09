@@ -111,12 +111,15 @@ where
         let Ok(report) = Report::from_wire(ReportType::Output, self.numbered, bytes) else {
             return false;
         };
-        match self.protocol.output(report, now) {
-            Ok(event) => {
-                self.event(event);
-                true
-            }
-            Err(_) => false,
+        // USB interrupt OUT has a completion status, just like SET_REPORT.
+        // Reuse the controller-owned setter policy instead of the permissive
+        // native HID observation hook, which also preserves unknown reports.
+        let (reply, event) = self.protocol.request(&RequestKind::Set(report), now);
+        if matches!(reply, Reply::Set(Ok(()))) {
+            self.event(event);
+            true
+        } else {
+            false
         }
     }
 }
@@ -506,6 +509,82 @@ mod tests {
         b.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         (a, b)
     }
+    fn check_output_policy<P: Protocol<Output = RawReverseEvent>>(
+        protocol: P,
+        state: NativeState,
+        numbered: bool,
+        id: Option<u8>,
+        valid: Option<Vec<u8>>,
+    ) {
+        let (_, updates) = mpsc::sync_channel(1);
+        let (acknowledgements, _) = mpsc::sync_channel(1);
+        let (events, observed) = mpsc::sync_channel(8);
+        let mut handler = Handler {
+            protocol,
+            state: Transactions::new(7, state).unwrap(),
+            extract: |_: &NativeState| None::<P::State>,
+            numbered,
+            updates,
+            acknowledgements,
+            events,
+            lost: Arc::new(AtomicU64::new(0)),
+        };
+        for bytes in [
+            vec![],
+            vec![id.unwrap_or(0)],
+            vec![id.unwrap_or(0), 0],
+            vec![0x7f; 64],
+        ] {
+            assert!(!handler.output(&bytes, 0));
+            assert!(matches!(
+                observed.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+        }
+        if let Some(payload) = valid {
+            let report = Report::new(ReportType::Output, id, payload.clone()).unwrap();
+            let expected = RawReverseEvent::HidOutput {
+                report_id: id,
+                bytes: payload,
+            };
+            assert!(handler.output(&report.wire(), 1));
+            assert_eq!(observed.try_recv().unwrap(), expected);
+            assert!(matches!(
+                observed.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            let reply = handler.request(&RequestKind::Set(report), 2);
+            assert_eq!(reply, Reply::Set(Ok(())));
+            assert_eq!(observed.try_recv().unwrap(), expected);
+        }
+        assert_eq!(handler.lost.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn interrupt_outputs_follow_controller_set_policy_and_emit_once() {
+        check_output_policy(
+            usb_personality::dualsense([0; 6]),
+            NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
+            true,
+            Some(2),
+            Some(vec![0; 47]),
+        );
+        check_output_policy(
+            usb_personality::dualshock4([0; 6]),
+            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+            true,
+            Some(5),
+            Some(vec![0; 31]),
+        );
+        check_output_policy(
+            usb_personality::xbox360(),
+            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+            false,
+            None,
+            None,
+        );
+    }
+
     #[test]
     fn invalid_instance_rejects_before_readiness_and_closes_all_channels() {
         let (usb, mut host) = pair();

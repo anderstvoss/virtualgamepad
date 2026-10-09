@@ -74,6 +74,12 @@ def trial(worker, family, channels, microphones):
             status, actual, _, _ = transfer(peer,7,0,0,2,
                 bytes([0x21,9,report_id,3,3,0,2,0]),bytes([report_id,0]))
             assert status == (1 << 32)-32 and actual == 0
+            # Interrupt OUT must use the same controller-owned report policy.
+            assert transfer(peer,102,4,0,2,payload=bytes([report_id,0]))[:2] == (0xffffffe0,0)
+            wire=(bytes([2])+bytes(47) if family=='dualsense' else
+                  bytes([5])+bytes(31) if family=='dualshock4' else bytes(8))
+            expected=(0,len(wire)) if family!='xbox360' else (0xffffffe0,0)
+            assert transfer(peer,103,4,0,len(wire),payload=wire)[:2] == expected
             payload = struct.pack('<'+'h'*channels, *range(1,channels+1))*48*8
             status, actual, _, iso = transfer(peer,8,1,0,len(payload),payload=payload,packets=8)
             assert status == 0 and actual == len(payload)
@@ -97,6 +103,8 @@ def trial(worker, family, channels, microphones):
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError('validation requires Python assertions; optimization is unsupported')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker', type=Path, required=True)
     args = parser.parse_args()

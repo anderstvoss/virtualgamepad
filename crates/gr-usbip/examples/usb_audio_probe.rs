@@ -37,8 +37,12 @@ mod probe {
                 .next()
         }
         fn output(&mut self, bytes: &[u8], now: u64) -> bool {
-            Report::from_wire(ReportType::Output, self.numbered, bytes)
-                .is_ok_and(|report| self.protocol.output(report, now).is_ok())
+            Report::from_wire(ReportType::Output, self.numbered, bytes).is_ok_and(|report| {
+                matches!(
+                    self.protocol.request(&RequestKind::Set(report), now).0,
+                    Reply::Set(Ok(()))
+                )
+            })
         }
     }
     pub fn main() -> Result<(), Box<dyn std::error::Error>> {
