@@ -27,6 +27,12 @@ const PLAYBACK_CAPACITY_FRAMES: usize = 4096;
 const MICROPHONE_CAPACITY_FRAMES: usize = 1024;
 const BLOCK_FRAMES: usize = 128;
 
+struct PumpExit {
+    result: io::Result<()>,
+    // Preserve channel ownership until coordinated worker shutdown is acknowledged.
+    channels: (Receiver, Sender),
+}
+
 /// Separate from the worker control client and kernel-facing attachment owner.
 /// The application thread never needs to poll these anonymous IPC sockets.
 pub struct SampleStreams {
@@ -35,7 +41,7 @@ pub struct SampleStreams {
     playback_loss: PcmObserver,
     stop: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
-    pump: Option<JoinHandle<io::Result<()>>>,
+    pump: Option<JoinHandle<PumpExit>>,
 }
 impl SampleStreams {
     pub fn new(
@@ -57,11 +63,11 @@ impl SampleStreams {
         let (microphone_writer, microphone_reader) =
             pcm_queue(microphone_format, MICROPHONE_CAPACITY_FRAMES).map_err(io::Error::other)?;
         let playback_loss = playback_writer.observer();
-        let playback_socket = Receiver::new(
+        let mut playback_socket = Receiver::new(
             playback,
             Format::new(profile, Direction::Playback, generation)?,
         )?;
-        let microphone_socket = Sender::new(
+        let mut microphone_socket = Sender::new(
             microphone,
             Format::new(profile, Direction::Microphone, generation)?,
         )?;
@@ -75,8 +81,8 @@ impl SampleStreams {
             .name("controller-audio-client".into())
             .spawn(move || {
                 let result = run_pump(
-                    playback_socket,
-                    microphone_socket,
+                    &mut playback_socket,
+                    &mut microphone_socket,
                     playback_writer,
                     microphone_reader,
                     playback_channels,
@@ -89,7 +95,10 @@ impl SampleStreams {
                         .unwrap_or_else(std::sync::PoisonError::into_inner) =
                         Some(error.to_string());
                 }
-                result
+                PumpExit {
+                    result,
+                    channels: (playback_socket, microphone_socket),
+                }
             })?;
         Ok(Self {
             playback: playback_reader,
@@ -134,23 +143,42 @@ impl SampleStreams {
         self.stop.load(Ordering::Acquire) || self.pump.as_ref().is_none_or(JoinHandle::is_finished)
     }
     pub fn close(&mut self) -> io::Result<()> {
+        self.close_with(|| Ok(()))
+    }
+    /// Stop local sample production, acknowledge worker shutdown, then release
+    /// the PCM channels. The callback runs once, after the pump has joined, even
+    /// if the pump failed. Both initiating and acknowledgement errors survive.
+    /// This prevents a normal controller close from appearing as worker IPC loss.
+    pub fn close_with(&mut self, close_worker: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+        let Some(pump) = self.pump.take() else {
+            return Ok(());
+        };
         self.stop.store(true, Ordering::Release);
-        if let Some(pump) = &self.pump {
-            pump.thread().unpark();
-        }
-        let result = self.pump.take().map_or(Ok(()), |handle| {
-            handle
-                .join()
-                .map_err(|_| io::Error::other("PCM client pump panicked"))?
-        });
+        pump.thread().unpark();
+        let exit = pump
+            .join()
+            .map_err(|_| io::Error::other("PCM client pump panicked"));
         self.playback.close();
         self.microphone.close();
-        result
+        let worker = close_worker();
+        let local = match exit {
+            Ok(PumpExit { result, channels }) => {
+                drop(channels);
+                result
+            }
+            Err(error) => Err(error),
+        };
+        match (local, worker) {
+            (Ok(()), outcome) | (outcome, Ok(())) => outcome,
+            (Err(local), Err(worker)) => Err(io::Error::other(format!(
+                "PCM client pump: {local}; worker close: {worker}"
+            ))),
+        }
     }
 }
 fn run_pump(
-    mut playback_socket: Receiver,
-    mut microphone_socket: Sender,
+    playback_socket: &mut Receiver,
+    microphone_socket: &mut Sender,
     mut playback_writer: PcmProducer,
     mut microphone_reader: PcmConsumer,
     playback_channels: usize,
@@ -212,6 +240,98 @@ impl Drop for SampleStreams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn drain_until_blocked(peer: &mut UnixStream) {
+        use std::io::Read;
+        peer.set_nonblocking(true).unwrap();
+        for _ in 0..64 {
+            match peer.read(&mut [0; 4096]) {
+                Ok(0) => panic!("PCM channel ended before worker acknowledgement"),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
+                Err(error) => panic!("unexpected PCM channel state: {error}"),
+            }
+        }
+        panic!("unbounded queued PCM during shutdown");
+    }
+
+    #[test]
+    fn coordinated_close_keeps_channels_until_acknowledgement_and_is_idempotent() {
+        use std::io::Read;
+        for profile in [
+            ProfileId::DualSenseEmulated,
+            ProfileId::DualShock4Emulated,
+            ProfileId::Xbox360HidEmulated,
+        ] {
+            for worker_failure in [false, true] {
+                let (mut playback, client_playback) = UnixStream::pair().unwrap();
+                let (mut microphone, client_microphone) = UnixStream::pair().unwrap();
+                let mut client =
+                    SampleStreams::new(profile, 7, client_playback, client_microphone).unwrap();
+                let mut acknowledgements = 0;
+                let result = client.close_with(|| {
+                    drain_until_blocked(&mut playback);
+                    drain_until_blocked(&mut microphone);
+                    acknowledgements += 1;
+                    if worker_failure {
+                        Err(io::Error::other("worker close failure"))
+                    } else {
+                        Ok(())
+                    }
+                });
+                assert_eq!(result.is_err(), worker_failure);
+                if let Err(error) = result {
+                    assert_eq!(error.to_string(), "worker close failure");
+                }
+                assert_eq!(acknowledgements, 1);
+                assert_eq!(playback.read(&mut [0]).unwrap(), 0);
+                assert_eq!(microphone.read(&mut [0]).unwrap(), 0);
+                assert!(client.is_closed());
+                client
+                    .close_with(|| {
+                        panic!("repeated close must not request another acknowledgement")
+                    })
+                    .unwrap();
+                client.close().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn coordinated_close_retains_initiating_pump_and_worker_cleanup_failures() {
+        let (playback, client_playback) = UnixStream::pair().unwrap();
+        let (_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let mut client = SampleStreams::new(
+            ProfileId::DualShock4Emulated,
+            9,
+            client_playback,
+            client_microphone,
+        )
+        .unwrap();
+        drop(playback);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !client.is_closed() {
+            assert!(
+                Instant::now() < deadline,
+                "pump must terminate after peer loss"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        let initiating = client.last_error().unwrap();
+        let mut called = false;
+        let error = client
+            .close_with(|| {
+                called = true;
+                Err(io::Error::other("worker close failure"))
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(called);
+        assert!(error.contains(&initiating));
+        assert!(error.contains("worker close failure"));
+        assert_eq!(client.last_error().as_deref(), Some(initiating.as_str()));
+        client.close_with(|| panic!("already closed")).unwrap();
+    }
 
     #[test]
     fn all_compiled_profiles_transfer_both_directions_and_close_terminally() {

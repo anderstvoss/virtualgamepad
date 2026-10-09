@@ -238,7 +238,12 @@ impl Pcm {
                 let cleanup = streams
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .close()
+                    .close_with(|| {
+                        control
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .close()
+                    })
                     .err()
                     .map(|error| AudioError::Backend {
                         reason: error.to_string(),
@@ -412,7 +417,12 @@ impl crate::audio::backend::Backend for Pcm {
             bridge.close();
             cleanup.extend(bridge.error());
         }
-        if let Err(error) = self.lock().close() {
+        if let Err(error) = self.lock().close_with(|| {
+            self.control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .close()
+        }) {
             cleanup.push(AudioError::Backend {
                 reason: error.to_string(),
             });
@@ -529,6 +539,80 @@ pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pcm_close_acknowledges_worker_before_channels_end_and_repeats_safely() {
+        use crate::audio::backend::Backend;
+        use std::{io::Read, os::unix::net::UnixStream, thread};
+        for (id, family, profile) in [
+            (
+                ProfileId::DualSenseEmulated,
+                1,
+                gr_curated_controllers::audio::dualsense(crate::AudioExposure::Emulated).unwrap(),
+            ),
+            (
+                ProfileId::DualShock4Emulated,
+                2,
+                gr_curated_controllers::audio::dualshock4(crate::AudioExposure::Emulated).unwrap(),
+            ),
+            (
+                ProfileId::Xbox360HidEmulated,
+                3,
+                gr_curated_controllers::audio::xbox360(crate::AudioExposure::Emulated).unwrap(),
+            ),
+        ] {
+            let (socket, mut worker) = UnixStream::pair().unwrap();
+            let (playback, mut worker_playback) = UnixStream::pair().unwrap();
+            let (microphone, mut worker_microphone) = UnixStream::pair().unwrap();
+            let control = Arc::new(Mutex::new(Control::new(socket, 7, family).unwrap()));
+            let streams = SampleStreams::new(id, 7, playback, microphone).unwrap();
+            let task = thread::spawn(move || {
+                worker
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                assert_eq!(
+                    gr_privileged_broker::read_message(&mut worker).unwrap(),
+                    (4, 7_u64.to_le_bytes().to_vec())
+                );
+                for channel in [&mut worker_playback, &mut worker_microphone] {
+                    channel.set_nonblocking(true).unwrap();
+                    let mut bounded = false;
+                    for _ in 0..64 {
+                        match channel.read(&mut [0; 4096]) {
+                            Ok(0) => panic!("client ended PCM before graceful worker close"),
+                            Ok(_) => {}
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                bounded = true;
+                                break;
+                            }
+                            Err(error) => panic!("unexpected PCM state: {error}"),
+                        }
+                    }
+                    assert!(bounded);
+                }
+                gr_privileged_broker::write_message(&mut worker, 4, &7_u64.to_le_bytes()).unwrap();
+                assert_eq!(worker.read(&mut [0]).unwrap(), 0);
+            });
+            let options = AudioOptions::new(crate::AudioExposure::Emulated);
+            let (mut pcm, nodes) = Pcm::new(
+                streams,
+                options,
+                &profile,
+                7,
+                Arc::new(AtomicU64::new(0)),
+                control.clone(),
+            )
+            .unwrap();
+            assert_eq!(nodes, [None, None]);
+            pcm.close();
+            pcm.close();
+            assert!(pcm.is_closed());
+            assert!(pcm.error().is_none());
+            assert!(control.lock().unwrap().is_closed());
+            control.lock().unwrap().close().unwrap();
+            task.join().unwrap();
+        }
+    }
 
     #[test]
     fn terminal_diagnostic_failure_survives_output_service_and_cleanup() {
