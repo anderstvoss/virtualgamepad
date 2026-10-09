@@ -1061,13 +1061,7 @@ mod worker_outputs {
         assert_eq!(flags(), before);
     }
 
-    #[test]
-    #[ignore = "requires the prepared ordinary client mount and explicit sample factory lab opt-in"]
-    fn live_public_usb_sample_factory() {
-        assert_eq!(
-            std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB").as_deref(),
-            Ok("1")
-        );
+    fn assert_ordinary_test_process() {
         let status = std::fs::read_to_string("/proc/self/status").unwrap();
         assert!(
             status
@@ -1078,46 +1072,117 @@ mod worker_outputs {
                 .skip(1)
                 .all(|uid| uid != "0")
         );
-        let options = crate::CreationOptions::new(crate::RealizationId::LINUX_USBIP_USB_AUDIO)
-            .with_audio(crate::AudioOptions::new(crate::AudioExposure::Emulated));
+    }
+
+    fn check_public_audio_ownership(
+        audio: &mut crate::ControllerAudio,
+        playback_channels: usize,
+        microphone_channels: usize,
+        playback_access: crate::AudioAccess,
+        microphone_access: crate::AudioAccess,
+    ) {
+        assert_eq!(audio.endpoints().len(), 2);
+        for endpoint in audio.endpoints() {
+            let (access, channels) = match endpoint.direction() {
+                crate::SampleDirection::HostToController => (playback_access, playback_channels),
+                crate::SampleDirection::ControllerToHost => {
+                    (microphone_access, microphone_channels)
+                }
+                direction => panic!("unexpected compiled endpoint direction: {direction:?}"),
+            };
+            assert_eq!(endpoint.access(), access);
+            assert_eq!(endpoint.format().sample_rate_hz(), 48_000);
+            assert_eq!(endpoint.format().channels().len(), channels);
+            assert!(endpoint.host().alsa_pcm().is_some());
+            if access == crate::AudioAccess::NativeClient {
+                assert!(
+                    endpoint
+                        .caller()
+                        .and_then(crate::AudioEndpointSelector::pipewire_node)
+                        .is_some()
+                );
+            } else {
+                assert!(endpoint.caller().is_none());
+            }
+        }
+        if playback_access == crate::AudioAccess::Samples {
+            assert_eq!(
+                audio.read_playback(&mut vec![0; playback_channels - 1]),
+                Err(crate::AudioError::InvalidSampleBuffer)
+            );
+            assert_eq!(
+                audio
+                    .read_playback(&mut vec![0; playback_channels * 16])
+                    .unwrap()
+                    .frames,
+                0
+            );
+            audio.flush_playback().unwrap();
+        } else {
+            assert_eq!(
+                audio.read_playback(&mut vec![0; playback_channels]),
+                Err(crate::AudioError::OwnershipMismatch)
+            );
+            assert_eq!(
+                audio.flush_playback(),
+                Err(crate::AudioError::OwnershipMismatch)
+            );
+        }
+        if microphone_access == crate::AudioAccess::Samples {
+            if microphone_channels > 1 {
+                assert_eq!(
+                    audio.write_microphone(&[0]),
+                    Err(crate::AudioError::InvalidSampleBuffer)
+                );
+            }
+            assert_eq!(
+                audio
+                    .write_microphone(&vec![0; microphone_channels * 16])
+                    .unwrap(),
+                16
+            );
+            audio.flush_microphone().unwrap();
+        } else {
+            assert_eq!(
+                audio.write_microphone(&vec![0; microphone_channels]),
+                Err(crate::AudioError::OwnershipMismatch)
+            );
+            assert_eq!(
+                audio.flush_microphone(),
+                Err(crate::AudioError::OwnershipMismatch)
+            );
+        }
+        assert!(audio.last_error().is_none());
+    }
+
+    #[test]
+    #[ignore = "requires the prepared ordinary client mount and explicit sample factory lab opt-in"]
+    fn live_public_usb_sample_factory() {
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB").as_deref(),
+            Ok("1")
+        );
+        assert_ordinary_test_process();
         macro_rules! exercise {
-            ($factory:ident, $family:literal, $playback:literal, $microphone:literal) => {{
-                let mut controller = crate::$factory(options).unwrap();
+            ($factory:ident, $family:literal, $playback:literal, $microphone:literal, $options:expr, $playback_access:expr, $microphone_access:expr) => {{
+                let mut controller = crate::$factory($options).unwrap();
                 controller.service(&mut |_| {}).unwrap();
                 controller.neutralize().unwrap();
                 controller.commit().unwrap();
-                let audio = controller.audio().unwrap();
-                assert_eq!(audio.endpoints().len(), 2);
-                for endpoint in audio.endpoints() {
-                    assert_eq!(endpoint.access(), crate::AudioAccess::Samples);
-                    assert_eq!(endpoint.format().sample_rate_hz(), 48_000);
-                    assert!(endpoint.host().alsa_pcm().is_some());
-                    assert!(endpoint.caller().is_none());
-                }
-                let mut invalid = [0; $playback - 1];
-                assert_eq!(
-                    audio.read_playback(&mut invalid),
-                    Err(crate::AudioError::InvalidSampleBuffer)
+                check_public_audio_ownership(
+                    controller.audio().unwrap(),
+                    $playback,
+                    $microphone,
+                    $playback_access,
+                    $microphone_access,
                 );
-                if $microphone > 1 {
-                    assert_eq!(
-                        audio.write_microphone(&[0]),
-                        Err(crate::AudioError::InvalidSampleBuffer)
-                    );
-                }
-                let mut playback = [0; $playback * 16];
-                assert_eq!(audio.read_playback(&mut playback).unwrap().frames, 0);
-                assert_eq!(audio.write_microphone(&[0; $microphone * 16]).unwrap(), 16);
-                audio.flush_playback().unwrap();
-                audio.flush_microphone().unwrap();
-                assert!(audio.last_error().is_none());
                 controller.close();
                 controller.close();
                 let audio = controller.audio().unwrap();
                 assert!(audio.is_closed());
                 assert!(audio.last_error().is_none());
                 assert_eq!(
-                    audio.read_playback(&mut playback),
+                    audio.read_playback(&mut [0; $playback]),
                     Err(crate::AudioError::Closed)
                 );
                 assert_eq!(
@@ -1130,11 +1195,63 @@ mod worker_outputs {
                     "family={} diagnostics={diagnostics:?}",
                     $family
                 );
-                println!("public_usb_sample_factory family={} passed=true", $family);
+                println!(
+                    "public_usb_sample_factory family={} playback={:?} microphone={:?} passed=true",
+                    $family, $playback_access, $microphone_access
+                );
             }};
         }
-        exercise!(create_dualsense, "dualsense", 4, 2);
-        exercise!(create_dualshock4, "dualshock4", 2, 1);
-        exercise!(create_xbox360, "xbox360", 2, 1);
+        let native =
+            std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB").as_deref() == Ok("1");
+        for playback in [
+            crate::AudioAccess::Samples,
+            crate::AudioAccess::NativeClient,
+        ] {
+            for microphone in [
+                crate::AudioAccess::Samples,
+                crate::AudioAccess::NativeClient,
+            ] {
+                if !native
+                    && (playback != crate::AudioAccess::Samples
+                        || microphone != crate::AudioAccess::Samples)
+                {
+                    continue;
+                }
+                let options =
+                    crate::CreationOptions::new(crate::RealizationId::LINUX_USBIP_USB_AUDIO)
+                        .with_audio(
+                            crate::AudioOptions::new(crate::AudioExposure::Emulated)
+                                .with_playback_access(playback)
+                                .with_microphone_access(microphone),
+                        );
+                exercise!(
+                    create_dualsense,
+                    "dualsense",
+                    4,
+                    2,
+                    options,
+                    playback,
+                    microphone
+                );
+                exercise!(
+                    create_dualshock4,
+                    "dualshock4",
+                    2,
+                    1,
+                    options,
+                    playback,
+                    microphone
+                );
+                exercise!(
+                    create_xbox360,
+                    "xbox360",
+                    2,
+                    1,
+                    options,
+                    playback,
+                    microphone
+                );
+            }
+        }
     }
 }

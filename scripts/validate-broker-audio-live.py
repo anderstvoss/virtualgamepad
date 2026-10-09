@@ -3,6 +3,7 @@
 Synthetic samples only. This is continuity evidence, not end-to-end latency.
 """
 import argparse
+import contextlib
 import array
 import errno
 import fcntl
@@ -13,6 +14,8 @@ import hashlib
 import json
 import os
 import re
+import signal
+import shutil
 from pathlib import Path
 import socket
 import struct
@@ -299,6 +302,91 @@ def sealed_probe_image(source, expected):
     return os.dup(source)
 
 
+def private_graph_nodes(environment):
+    with tempfile.TemporaryFile() as output:
+        subprocess.run(['pw-dump'], env=environment, check=True, timeout=3,
+                       stdout=output, stderr=subprocess.DEVNULL)
+        output.seek(0); raw = output.read(1048577)
+    if len(raw) > 1048576: raise ValueError('private graph receipt exceeds quota')
+    graph = json.loads(raw)
+    if not isinstance(graph, list): raise ValueError('invalid private graph receipt')
+    nodes = []
+    for item in graph:
+        if not isinstance(item, dict): raise ValueError('invalid private graph object')
+        props = item.get('info', {}).get('props', {})
+        if props.get('device.api') == 'alsa': raise ValueError('hardware monitor entered private graph')
+        name = props.get('node.name')
+        if isinstance(name, str): nodes.append(name)
+    return sorted(nodes)
+
+
+def stop_private_child(child):
+    if child.poll() is not None: return
+    try: os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError: pass
+    try: child.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        if child.poll() is None:
+            try: os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+        child.wait(timeout=3)
+
+
+@contextlib.contextmanager
+def private_probe_graph():
+    """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
+    root = Path(tempfile.mkdtemp(prefix='virtualgamepad-root-graph-'))
+    identity = (root.stat().st_dev, root.stat().st_ino)
+    children = []; initiating = None; cleanup = []
+    try:
+        for name in ('config', 'state', 'cache'): (root/name).mkdir(mode=0o700)
+        environment = dict(os.environ)
+        for name in ('PIPEWIRE_CONFIG_DIR', 'PIPEWIRE_CONFIG_PREFIX', 'PIPEWIRE_CONFIG_NAME',
+                     'WIREPLUMBER_CONFIG_DIR', 'PIPEWIRE_QUANTUM', 'PIPEWIRE_LATENCY', 'PIPEWIRE_RATE'):
+            environment.pop(name, None)
+        environment.update(PIPEWIRE_RUNTIME_DIR=str(root), PIPEWIRE_REMOTE='pipewire-0',
+                           XDG_RUNTIME_DIR=str(root), XDG_CONFIG_HOME=str(root/'config'),
+                           XDG_STATE_HOME=str(root/'state'), XDG_CACHE_HOME=str(root/'cache'))
+        with tempfile.TemporaryFile() as log:
+            daemon = subprocess.Popen(['pipewire'], env=environment, stdout=log,
+                                      stderr=subprocess.STDOUT, start_new_session=True)
+            children.append(daemon)
+            deadline = time.monotonic()+5
+            while not (root/'pipewire-0').exists():
+                if daemon.poll() is not None or time.monotonic() >= deadline:
+                    raise RuntimeError('private ownership graph did not start')
+                time.sleep(.02)
+            if not stat.S_ISSOCK((root/'pipewire-0').lstat().st_mode):
+                raise ValueError('private ownership graph endpoint is not a socket')
+            children.append(subprocess.Popen(['wireplumber', '-p', 'policy'], env=environment,
+                                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
+            startup = private_graph_nodes(environment)
+            yield environment
+            deadline = time.monotonic()+2
+            while True:
+                final = private_graph_nodes(environment)
+                if not any(name.startswith('virtualgamepad.') for name in final): break
+                if time.monotonic() >= deadline: raise ValueError('owned bridge nodes survived controller close')
+                time.sleep(.02)
+            print(json.dumps(dict(private_graph=dict(startup_nodes=startup, final_nodes=final))), flush=True)
+    except BaseException as error:
+        initiating = error; raise
+    finally:
+        for child in reversed(children):
+            try: stop_private_child(child)
+            except BaseException as error: cleanup.append(str(error))
+        if not cleanup:
+            try:
+                info = root.lstat()
+                if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != identity:
+                    raise ValueError('private graph directory identity changed; refuse removal')
+                shutil.rmtree(root)
+            except BaseException as error: cleanup.append(str(error))
+        if cleanup:
+            raise RuntimeError(dict(initiating=str(initiating) if initiating else None, cleanup=cleanup,
+                                    retained_runtime=str(root))) from initiating
+
+
 def public_factory_probe(peer):
     # This function runs only after setpriv in the prepared ordinary client unit.
     # The peer can supply one immutable ELF image, never root commands or paths.
@@ -321,17 +409,20 @@ def public_factory_probe(peer):
             raise ValueError('exactly one probe image required')
         expected = data + exact(peer, 32-len(data))
         frozen = sealed_probe_image(descriptors[0], expected)
-        environment = dict(os.environ, VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB='1')
-        with tempfile.TemporaryFile() as output:
-            result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
-                                     '--ignored', '--nocapture'], pass_fds=(frozen,),
-                                    env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=45)
-            output.seek(0); text = output.read(65537)
+        with private_probe_graph() as environment:
+            environment.update(VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB='1',
+                               VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB='1')
+            with tempfile.TemporaryFile() as output:
+                result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
+                                         '--ignored', '--nocapture'], pass_fds=(frozen,),
+                                        env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=45)
+                output.seek(0); text = output.read(65537)
         if len(text) > 65536: raise ValueError('oversized public factory probe receipt')
         text = text.decode('utf-8', errors='strict')
         passed = result.returncode == 0 and '1 passed; 0 failed' in text and all(
-            f'public_usb_sample_factory family={family} passed=true' in text
-            for family in ('dualsense', 'dualshock4', 'xbox360'))
+            f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true' in text
+            for family in ('dualsense', 'dualshock4', 'xbox360')
+            for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
         receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
                        exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
         print(json.dumps(dict(public_factory=receipt)), flush=True)

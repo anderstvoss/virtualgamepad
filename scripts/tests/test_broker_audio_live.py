@@ -1,4 +1,5 @@
 import importlib.util
+import contextlib
 import hashlib
 import fcntl
 import tempfile
@@ -69,6 +70,7 @@ class BrokerLiveTests(unittest.TestCase):
             frozen = os.dup(source.fileno())
             with patch.object(module.os, 'geteuid', return_value=1000), \
                  patch.object(module, 'sealed_probe_image', return_value=frozen), \
+                 patch.object(module, 'private_probe_graph', return_value=contextlib.nullcontext({})), \
                  patch.object(module.subprocess, 'run', return_value=Mock(returncode=0)), \
                  patch('builtins.print'):
                 with self.assertRaisesRegex(ValueError, 'selected zero'): module.public_factory_probe(peer)
@@ -87,6 +89,7 @@ class BrokerLiveTests(unittest.TestCase):
                 peer.recvmsg.return_value = (bytes(32), ancillary, 0, None)
                 with patch.object(module.os, 'geteuid', return_value=1000), \
                      patch.object(module, 'sealed_probe_image', return_value=frozen) as capture, \
+                     patch.object(module, 'private_probe_graph', return_value=contextlib.nullcontext({})), \
                      patch.object(module.subprocess, 'run', side_effect=module.subprocess.TimeoutExpired('probe', 45)):
                     with self.assertRaises((ValueError, module.subprocess.TimeoutExpired)):
                         module.public_factory_probe(peer)
@@ -95,6 +98,49 @@ class BrokerLiveTests(unittest.TestCase):
                     with self.assertRaises(OSError): os.fstat(frozen)
                 else:
                     capture.assert_not_called(); os.close(frozen)
+
+    def test_private_graph_partial_startup_reaps_owned_child_and_strips_shared_config(self):
+        sockets = []; environments = []
+        daemon = Mock(pid=987654); daemon.poll.return_value = None
+        def start(command, **options):
+            environments.append(options['env'])
+            if command == ['wireplumber', '-p', 'policy']: raise RuntimeError('policy startup failed')
+            peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            peer.bind(str(Path(options['env']['PIPEWIRE_RUNTIME_DIR'])/'pipewire-0'))
+            sockets.append(peer); return daemon
+        try:
+            with patch.object(module.subprocess, 'Popen', side_effect=start), \
+                 patch.object(module.os, 'killpg') as kill, \
+                 patch.dict(os.environ, {'PIPEWIRE_CONFIG_DIR': '/fake/shared', 'PIPEWIRE_REMOTE': 'shared'}):
+                with self.assertRaisesRegex(RuntimeError, 'policy startup failed'):
+                    with module.private_probe_graph(): self.fail('failed startup cannot yield')
+            kill.assert_called_once_with(daemon.pid, module.signal.SIGTERM)
+            daemon.wait.assert_called_once_with(timeout=3)
+            self.assertNotIn('PIPEWIRE_CONFIG_DIR', environments[0])
+            self.assertEqual(environments[0]['PIPEWIRE_REMOTE'], 'pipewire-0')
+            self.assertFalse(Path(environments[0]['PIPEWIRE_RUNTIME_DIR']).exists())
+        finally:
+            for peer in sockets: peer.close()
+
+    def test_private_graph_preserves_initiating_and_cleanup_errors_and_runtime(self):
+        sockets = []; runtime = []
+        daemon = Mock(pid=987654); daemon.poll.return_value = None
+        def start(command, **options):
+            if command == ['wireplumber', '-p', 'policy']: raise RuntimeError('policy startup failed')
+            root = Path(options['env']['PIPEWIRE_RUNTIME_DIR']); runtime.append(root)
+            peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); peer.bind(str(root/'pipewire-0'))
+            sockets.append(peer); return daemon
+        try:
+            with patch.object(module.subprocess, 'Popen', side_effect=start), \
+                 patch.object(module, 'stop_private_child', side_effect=RuntimeError('owned child stop failed')):
+                with self.assertRaises(RuntimeError) as error:
+                    with module.private_probe_graph(): self.fail('partial startup must not yield')
+            self.assertIn('policy startup failed', str(error.exception))
+            self.assertIn('owned child stop failed', str(error.exception))
+            self.assertTrue(runtime[0].is_dir())
+        finally:
+            for peer in sockets: peer.close()
+            for root in runtime: module.shutil.rmtree(root)
 
     def test_final_accounting_uses_quiescent_credit_not_last_producer_poll(self):
         counters = dict(capture_frames=240096, abandoned_capture_frames=0,
