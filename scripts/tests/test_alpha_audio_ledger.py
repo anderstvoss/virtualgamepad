@@ -13,6 +13,8 @@ class Reconciliation(unittest.TestCase):
     def event(self, first, last, status=0, capture=False):
         return dict(capture=capture, buffer_dequeued=True, measured_frames=last-first+1,
                     first_marker=first, last_marker=last, queue_result=status,
+                    producer_begin=96000+first-1, producer_end=96000+last,
+                    frames=last-first+1,
                     stamp_ns=100, graph_ticks=200, chunk_flags=0)
 
     def receipt(self, generated=6, submitted=6, received=6, missing=0, duplicate=0):
@@ -64,8 +66,28 @@ class Reconciliation(unittest.TestCase):
                 ledger.reconcile(self.receipt(), [self.event(1, 6), self.event(1, 6, capture=True)], counts)
         event = self.event(1, 6); event['measured_frames'] = 5
         receipt = self.receipt(); receipt['ledger_events'] = 1
-        with self.assertRaisesRegex(ValueError, 'producer marker range'):
+        with self.assertRaisesRegex(ValueError, 'producer cursor'):
             ledger.reconcile(receipt, [event], [1]*6)
+
+    def test_cursor_offsets_and_buffer_lengths_cannot_fabricate_marker_evidence(self):
+        for field, value in [('producer_begin', 95999), ('producer_end', 96005),
+                             ('first_marker', 2), ('frames', 5)]:
+            event = self.event(1, 6); event[field] = value
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                ledger.reconcile(self.receipt(), [event, self.event(1, 6, capture=True)], [1]*6)
+        event = self.event(1, 6, capture=True); event['frames'] = 5
+        with self.assertRaisesRegex(ValueError, 'buffer frames'):
+            ledger.reconcile(self.receipt(), [self.event(1, 6), event], [1]*6)
+
+    def test_buffers_crossing_startup_and_trailing_zeroes_reconcile(self):
+        first = self.event(1, 3)
+        first.update(producer_begin=95998, producer_end=96003, frames=5)
+        last = self.event(4, 6)
+        last.update(producer_end=96009, frames=6)
+        receipt = self.receipt(); receipt['ledger_events'] = 3
+        result = ledger.reconcile(receipt, [first, last, self.event(1, 6, capture=True)], [1]*6)
+        self.assertEqual(result['counters']['generated'], 6)
+        self.assertEqual(result['missing_ranges'], [])
 
     def test_truncated_duplicate_trailer_and_events_after_trailer_reject(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1609,9 +1609,9 @@ ledger cannot independently separate graph loss from capture loss, and the tool
 reports that evidence as unavailable. It never changes continuity limits or
 turns a reconciled failing trial into acceptance.
 
-Seven deterministic regressions cover complete evidence, balanced loss/replay,
+Nine deterministic regressions cover complete evidence, balanced loss/replay,
 production versus queue failure, flagged capture uncertainty, event/counter
-mismatch, marker bounds and truncated/duplicate trailers. They pass without
+mismatch, cursor/buffer bounds, startup/trailing-zero crossings and truncated/duplicate trailers. They pass without
 starting audio, creating devices or compiling another GUI image. The existing
 GUI soak continues against its frozen executable. The C callback binary is
 unchanged; live comparison and reconciliation are queued after soak teardown.

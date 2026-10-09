@@ -34,6 +34,11 @@ def reconcile(receipt, events, counts):
         if type(event['capture']) is not bool or type(event['buffer_dequeued']) is not bool:
             raise ValueError('invalid callback role')
         measured = integer(event['measured_frames'], maximum=planned)
+        begin = integer(event['producer_begin'])
+        end = integer(event['producer_end'], begin)
+        frames = integer(event['frames'], maximum=2**32-1)
+        if measured > frames:
+            raise ValueError('more markers than buffer frames')
         integer(event['stamp_ns'])
         integer(event['graph_ticks'])
         flags = integer(event['chunk_flags'], maximum=2**32-1)
@@ -46,11 +51,15 @@ def reconcile(receipt, events, counts):
                 capture_discontinuities.append(dict(event=index, chunk_flags=flags,
                     first_marker=event['first_marker'], last_marker=event['last_marker']))
             continue
+        expected_first = max(begin, 96000)-96000+1
+        expected_last = min(end, 96000+planned)-96000
+        if measured != max(0, expected_last-expected_first+1) or end-begin > frames:
+            raise ValueError('producer cursor does not reconcile with markers')
         if not measured:
             continue
         first = integer(event['first_marker'], 1, planned)
         last = integer(event['last_marker'], first, planned)
-        if last-first+1 != measured:
+        if last-first+1 != measured or (first, last) != (expected_first, expected_last):
             raise ValueError('incomplete producer marker range')
         if any(states[first-1:last]):
             raise ValueError('overlapping producer ranges')
