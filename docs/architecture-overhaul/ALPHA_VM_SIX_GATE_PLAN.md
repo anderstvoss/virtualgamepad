@@ -954,3 +954,32 @@ supervisors returned terminal failures after cleanup. No shared scheduling/servi
 configuration, queues, loss thresholds or latency limits were changed. No 60-second
 qualification or product matrix is accepted by these results. Raw binary, grant,
 clock, requested-buffer and ledger receipts remain outside tracked source.
+
+## Callback cost and separate profiler evidence
+
+A separate external C diagnostic at `4e830bb` still missed 3072 of 144000
+submitted frames. Measured source entry-to-ledger CPU/wall maxima were
+119959/120583 ns, and capture maxima were 142125/142709 ns; callback gaps
+reached about 40 ms. The measured callback bodies are much shorter than the
+512-frame period (about 10.67 ms). These observations do not time arbitrary
+PipeWire/kernel work outside those boundaries.
+
+A separately identified profiler-perturbed trial missed 11264 frames. Its complete
+raw JSON snapshots expose follower counters: within the source's measured wall
+bounds, the producer xrun counter progressed from 49 to 147, while the receiver
+stayed at 8 and the dummy driver's counter stayed at 0. Those are distinct node
+counters, not a fabricated aggregate `graph_xruns` value. PipeWire 1.4.2's
+[`node_ready` implementation](https://raw.githubusercontent.com/PipeWire/pipewire/1.4.2/src/pipewire/impl-node.c)
+increments a follower counter when its previous activation remains triggered or
+awake at the next cycle. This supplies concrete producer activation/recovery
+evidence in the profiled trial, without proving why completion was late or
+assigning every lost marker to an individual xrun. Profiling changed the
+measurement condition; it cannot substitute for quiet qualification.
+
+The profiler output includes repeated cycle snapshots; do not count snapshots
+as distinct cycles or sum cumulative xrun counters. Clock position/time steps
+and per-node counter changes need separate interpretation. All profiled graph,
+client and profiler processes were reaped. Quiet-trial xrun totals remain
+unavailable unless separately measured. The next causal boundary is the producer
+activation/wakeup/completion path, rather than enlarging queues or removing
+continuity assertions. All six gates remain open.
