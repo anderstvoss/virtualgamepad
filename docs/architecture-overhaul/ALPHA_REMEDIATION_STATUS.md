@@ -2,8 +2,8 @@
 
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2's current
 cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 remains pinned at `e5402d24c7ca8e0c209260c879feb205a95f8dae` with
-unchanged broker/worker images. Gates 1, 4, 5 and 6 remain open.
+Gate 3 was revalidated at `6576c4732d301683195ff66cc3b57836abfbcc24`
+against the rebuilt worker after the public USB audio close correction. Gates 1, 4, 5 and 6 remain open.
 See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
@@ -2104,3 +2104,17 @@ changed. Gate 2's remaining realization/lifecycle dispositions, final-image GUI
 acceptance, routing, Steam and sustained continuity remain open. Review the
 shared socket flag ownership/pause protocol, bounded receive deadlines and
 retention of the original terminal error separately from cleanup failures.
+
+## Public USB audio shutdown correction and exact-image revalidation
+
+See [public-root USB audio acceptance](ALPHA_USB_AUDIO_ROOT_ACCEPTANCE.md).
+The public sample factories now pass creation/service/normal and repeated close
+for all three audio families. Deterministic regressions preserve channel ownership
+until worker acknowledgement and retain genuine initiating/cleanup failures.
+All seven provider phases passed again at `6576c4732d301683195ff66cc3b57836abfbcc24`;
+its changed worker image is covered. The independent microphone marker cells
+still fail and Gate 4 remains open. Gates 1, 5 and 6 also remain open.
+
+Exact-head CI, CodeQL, full-history Gitleaks, Provider Tier B and all 17 SBOM
+identities passed at `c6ff0259baa52d18a5694bdbd6e983e7eeeae582`. Those are
+previous-head results; final-source CI and artifacts must be revalidated.

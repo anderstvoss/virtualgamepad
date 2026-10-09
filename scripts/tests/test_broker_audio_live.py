@@ -20,9 +20,14 @@ class BrokerLiveTests(unittest.TestCase):
     def test_probe_image_capture_rejects_corruption_non_elf_and_non_regular(self):
         for data, expected in ((b'not ELF', hashlib.sha256(b'not ELF').digest()),
                                (b'\x7fELFsynthetic', bytes(32))):
-            with tempfile.TemporaryFile() as source:
-                source.write(data); source.flush()
-                with self.assertRaises(ValueError): module.sealed_probe_image(source.fileno(), expected)
+            source = os.memfd_create('fake-invalid-probe', os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
+            try:
+                os.write(source, data)
+                fcntl.fcntl(source, fcntl.F_ADD_SEALS,
+                            fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL)
+                reason = 'not ELF' if data == b'not ELF' else 'digest differs'
+                with self.assertRaisesRegex(ValueError, reason): module.sealed_probe_image(source, expected)
+            finally: os.close(source)
         read, write = os.pipe()
         try:
             with self.assertRaises(ValueError): module.sealed_probe_image(read, bytes(32))

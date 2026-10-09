@@ -2,7 +2,7 @@
 
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 passed at `e5402d24c7ca8e0c209260c879feb205a95f8dae`; see
+Gate 3 was revalidated at `6576c4732d301683195ff66cc3b57836abfbcc24`; see
 [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 Gates 1, 4, 5 and 6 remain open.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
@@ -1980,3 +1980,22 @@ fresh receipts. One incorrect exact-name invocation ran zero tests and was
 rejected; verify that its later correction, rather than its exit zero, supplies
 the handshake pass. Gates 1, 4, 5 and 6 remain open, and no alpha readiness is
 claimed. No dependencies or public signatures changed.
+
+## Public USB audio close defect: required reviewer scrutiny
+
+The real public factory exposed normal shutdown as a retained worker EOF failure.
+[The pinned before/after evidence](ALPHA_USB_AUDIO_ROOT_ACCEPTANCE.md) describes
+the correction, all three deterministic regressions and the ordinary sealed-image
+probe. Verify that stopped PCM channels remain owned until control acknowledgement,
+that native bridges stop first, and that pump errors and acknowledgement failures
+both survive. Review failed bridge construction and repeated cleanup as well.
+`SampleStreams::close_with` is a supporting API addition; root signatures and
+queue/continuity thresholds are unchanged. The ordinary receiver must verify all
+image seals and its hash; root must never execute the supplied image.
+
+Do not turn the successful public factory subtest into a whole USB/audio pass.
+The same combined phase retained failed microphone markers for all three profiles.
+All seven provider phases subsequently passed with the new worker image at
+`6576c4732d301683195ff66cc3b57836abfbcc24`, tree
+`d5d18ef35a7d4a3d4db0837aa81068b72e2f546c`. Final native ownership/routing,
+GUI interactive/soak, Steam and sustained continuity evidence remains required.

@@ -1,8 +1,8 @@
 # Provider security and recovery acceptance
 
-Gate 3 passed on this VM at candidate
-`e5402d24c7ca8e0c209260c879feb205a95f8dae`, tree
-`6894a9c13cb9a6931b22115e06452ec3ccf03fd1`, against base
+Gate 3 passed on this VM and was revalidated at candidate
+`6576c4732d301683195ff66cc3b57836abfbcc24`, tree
+`d5d18ef35a7d4a3d4db0837aa81068b72e2f546c`, against base
 `11284f01c58cb80be0d187efa2fca95641513fbf`.
 This supersedes earlier statements that construction failure, combined errors
 or all-family client-exit coverage remain missing. Historical failures remain
@@ -71,3 +71,15 @@ SBOM and release validation remain separate requirements. Gates 1, 2, 4, 5 and 6
 remain open; this is not an alpha readiness recommendation.
 
 The preceding pass at `7ed863a219a343b90fe2171f96aaafde17f4a550` remains historical evidence. Its worker SHA-256 was `8d698dd974b117ad677f42762aa3e9566be95440411e0a9a74ff4db34542be0c`; that receipt was not reused for the changed worker.
+
+## Revalidation after coordinated application PCM shutdown
+
+The worker image changed after the root public factory close defect was corrected.
+All seven named phases ran again individually and sequentially at the candidate
+above; each process and independently retrieved root receipt passed and agreed on
+worker hash `68f4e6c04be85446ce1741f656976fe7d6829a8c89df4f2d3b43ee54a2425b9f`.
+The broker hash remains `f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`.
+No phase had a retained restoration error. The installed broker returned inactive
+and its socket active. Previous receipts and failures remain historical evidence.
+See [the separate public-factory correction](ALPHA_USB_AUDIO_ROOT_ACCEPTANCE.md);
+normal broker-worker cleanup alone did not exercise application PCM shutdown order.
