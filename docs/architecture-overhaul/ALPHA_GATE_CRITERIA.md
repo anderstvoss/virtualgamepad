@@ -189,7 +189,7 @@ before each bounded phase. Three individually run phases now pass:
 | Phase | Accepted scope | Remaining boundary |
 | --- | --- | --- |
 | USB functional | DualSense, DS4 and Xbox 360 direct ALSA playback/capture; 144000 measured microphone frames per family were exact, with zero silence/gaps, and exact playback markers. Quiescent capture counters reconcile 288000 completed/consumed host frames (warm-up, measurement and edge capture), zero abandoned frames and 384 unconsumed submitted frames. Shared defaults unchanged; initiating/cleanup errors absent. | One three-second measured trial per family, not sustained continuity, route transitions or every ownership mode. |
-| Worker death | Actual staged worker killed after readiness for each audio family; exact terminal worker-death error, broker/PCM EOF, descriptor baseline, attachment cleanup and subsequent normal/repeated/abandoned sessions. | Construction-time worker death, combined initiating/cleanup failure and forced sibling failure remain unaccepted. |
+| Worker death | Actual staged worker killed after readiness for each audio family; exact terminal worker-death error, broker/PCM EOF, descriptor baseline, attachment cleanup and subsequent normal/repeated/abandoned sessions. | Construction-time worker death and combined initiating/cleanup failure remain unaccepted. Forced sibling failure was subsequently accepted at the exact revision below. |
 | Broker death | Actual staged broker killed with an established session for each family; worker termination, connection EOF, hostile pending/truncated/malformed/identity-changed journal rejection and held-identity operator restoration, then successful subsequent sessions. | Fail-closed startup plus owned restoration does not permit automatic cleanup of unprovable records. |
 
 Every phase returned zero and its independently retrieved root-owned receipt
@@ -206,4 +206,27 @@ prove why its producer stalled or resolve independent quiet PipeWire controls.
 All six full gates remain open. The installed lab still has eight predefined
 phases; additional construction/failure, routing, input and Steam scenarios
 require reviewed preparation and appropriate immutable deployment. No broad
-sudo or root-code self-replacement has been enabled.
+sudo has been enabled. A revocable fixed-mailbox root lab-code updater has been
+authorized and prepared; administrator bootstrap and live update acceptance are
+still pending. See [updater scope and revocation](ALPHA_LAB_AUTONOMOUS_UPDATES.md).
+
+## Forced sibling recovery acceptance
+
+The installed candidate `f05058c053423eb78b6e3580e0026d5f91309162`, tree
+`38cc53e8bb7a014e0165e6687055c5ce50f4811e`, passed the expanded
+`provider-siblings-admission` phase. Its broker and worker hashes match the
+preceding table. For each audio family, the lab killed one ready worker while
+three live sibling sessions retained their attachment identities and answered
+fresh diagnostics. The failed session reported the exact SIGKILL terminal error
+and connection EOF; descriptor accounting and owned cleanup passed.
+
+A replacement occupied the recovered fourth slot; a fifth request received the
+exact admission-limit rejection. All surviving and replacement sessions answered
+fresh diagnostics, then closed normally and repeatedly. The subsequent normal,
+repeated and abandoned sessions passed. The phase exited zero, the separately
+retrieved root-owned receipt reports `passed`, and original service/socket state
+was restored. Raw receipts remain outside tracked source.
+
+This closes the forced-worker sibling survival and capacity-recovery cells only.
+It does not establish construction-time failure, combined initiating/cleanup
+failure, sustained audio or another release gate. All six gates remain open.
