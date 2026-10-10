@@ -1999,3 +1999,34 @@ All seven provider phases subsequently passed with the new worker image at
 `6576c4732d301683195ff66cc3b57836abfbcc24`, tree
 `d5d18ef35a7d4a3d4db0837aa81068b72e2f546c`. Final native ownership/routing,
 GUI interactive/soak, Steam and sustained continuity evidence remains required.
+
+## Ownership evidence checkpoint at `9ffa522`
+
+The public-root USB audio ownership matrix passed all twelve cases (three audio
+families × four sample/native combinations) at source
+`9ffa522ef434f3714363175ee223356607a80242`. Each of twelve native endpoint
+instances was observed exactly once in the private graph while alive. Short
+three-second direct-ALSA duplex markers passed all three profiles; observing
+parent, selected child and combined phase returned zero with owned restoration
+complete. See [the root acceptance receipt](ALPHA_USB_AUDIO_ROOT_ACCEPTANCE.md)
+for the exact image, scope and retained historical failures.
+
+Gate 4 remains open: this does not establish route A/B/disconnect/reconnect,
+endpoint/client failure or sustained qualification. Earlier intermittent USB
+enumeration failures also remain unresolved; post-close snapshots demonstrate
+asynchronous removal without proving its role in those failures. Do not classify
+a successful short matrix as complete repeated-creation reliability.
+
+The rebuilt neutral GUI soak was started separately at that source with image
+`2e130b8de1bec47ce582959c12c2e9054033a7d9f9a47e22610c01c4962d1c67` and
+7200-second duration. It is **running, not accepted** at this checkpoint. The
+first 30-second sample had 124380 KiB RSS, 16 descriptors, 23 threads and no
+children; host memory pressure was zero. Final duration, growth and owned cleanup
+must be verified from its terminal receipt before closing that Gate 1 cell.
+No compilation, Steam or audio trial may overlap this soak.
+
+Gates 2 and 3 retain their supported dispositions; Gates 1, 4, 5 and 6 remain
+open. Review native node membership, bounded observer failure, asynchronous USB
+teardown and whether the final GUI executable remains byte-identical to the
+accepted soak image. This checkpoint changes tests/evidence, not public APIs,
+product behavior, dependencies or acceptance limits.
