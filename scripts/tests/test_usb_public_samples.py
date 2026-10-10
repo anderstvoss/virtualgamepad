@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+import os
+from unittest.mock import Mock, patch
 from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
@@ -21,6 +23,25 @@ class PublicSampleIdentity(unittest.TestCase):
         card = sound/'card1';card.mkdir();(card/'device').symlink_to(interface)
         (card/'id').write_text('sanitized_card')
         return sound, device, card
+
+    def test_compiled_entrypoint_checks_isolation_before_and_after_exchange(self):
+        with tempfile.TemporaryDirectory(prefix='virtualgamepad-root-graph-') as directory:
+            root = Path(directory)
+            sound, device, _ = self.fixture(root)
+            isolation = Mock(return_value={'serial': 'vg-test-lab-0000000000000001', 'shared_defaults': []})
+            trial = Mock(return_value={'passed': True})
+            original_lookup = namespace['public_card']
+            lookup = lambda *args: original_lookup(*args, sound=sound)
+            with patch.dict(os.environ, PIPEWIRE_RUNTIME_DIR=directory, XDG_RUNTIME_DIR=directory), \
+                 patch.object(os, 'geteuid', return_value=1000), \
+                 patch('sys.argv', ['fixture', '--family', 'dualsense', '--card-id', 'sanitized_card', '--instance', 'test-lab']), \
+                 patch.dict(namespace, public_card=lookup, reserve_direct_alsa=isolation, run_trial=trial), \
+                 patch('builtins.print') as output:
+                self.assertEqual(namespace['public_samples_main'](), 0)
+                self.assertEqual(isolation.call_count, 2)
+                isolation.assert_called_with(1, device.name, 'test-lab', 1)
+                trial.assert_called_once_with(1, 'dualsense', 3)
+                self.assertEqual(output.call_args_list[0].args, ('R',))
 
     def test_exact_card_and_session_identity_excludes_root_hub_serial(self):
         with tempfile.TemporaryDirectory() as directory:

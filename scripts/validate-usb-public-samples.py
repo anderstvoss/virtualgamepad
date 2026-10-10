@@ -7,6 +7,9 @@ It imports no agent-writable sibling source at runtime. Not a standalone CLI.
 """
 
 
+import os
+
+
 def public_card(card_id, family, instance, sound=Path('/sys/class/sound')):
     compiled_serial(instance, 1)
     if not re.fullmatch(r'[A-Za-z0-9_-]{1,64}', card_id):
@@ -50,13 +53,13 @@ def public_samples_main():
     card, device, serial = public_card(args.card_id, args.family, args.instance)
     metadata = device.stat()
     generation = int(serial.rsplit('-', 1)[1], 16)
-    isolation = verify_owned_isolation(card, device.name, args.instance, generation)
+    isolation = reserve_direct_alsa(card, device.name, args.instance, generation)
     print('R', end='', flush=True)
     result = run_trial(card, args.family, 3)
     again = public_card(args.card_id, args.family, args.instance)
     if again != (card, device, serial) or (device.stat().st_dev, device.stat().st_ino) != (metadata.st_dev, metadata.st_ino):
         raise ValueError('owned USB card identity changed during sample exchange')
-    after = verify_owned_isolation(card, device.name, args.instance, generation)
+    after = reserve_direct_alsa(card, device.name, args.instance, generation)
     if after != isolation:
         raise ValueError('isolation or private graph defaults changed during sample exchange')
     result.update(scope='public sample API plus direct ALSA; three-second functional window',
