@@ -1061,7 +1061,8 @@ mod worker_outputs {
         assert_eq!(flags(), before);
     }
 
-    fn report_public_factory_failure(family: &str, error: &crate::ControllerError) -> ! {
+    fn public_factory_host_snapshot(stage: &str) {
+        eprintln!("public_usb_factory_host_stage={stage}");
         for path in [
             "/proc/asound/cards",
             "/sys/devices/platform/vhci_hcd.0/status",
@@ -1076,6 +1077,22 @@ mod worker_outputs {
                 }
             }
         }
+        for entry in std::fs::read_dir("/sys/bus/usb/devices").unwrap() {
+            let entry = entry.unwrap();
+            if let Ok(serial) = std::fs::read_to_string(entry.path().join("serial")) {
+                if serial.starts_with("vg-virtualgamepad-alpha-") {
+                    eprintln!(
+                        "public_usb_factory_owned_usb_node={} serial={}",
+                        entry.file_name().to_string_lossy(),
+                        serial.trim()
+                    );
+                }
+            }
+        }
+    }
+
+    fn report_public_factory_failure(family: &str, error: &crate::ControllerError) -> ! {
+        public_factory_host_snapshot("factory failure");
         panic!("public USB factory {family}: {error}");
     }
 
@@ -1214,6 +1231,7 @@ mod worker_outputs {
                     "family={} diagnostics={diagnostics:?}",
                     $family
                 );
+                public_factory_host_snapshot($family);
                 println!(
                     "public_usb_sample_factory family={} playback={:?} microphone={:?} passed=true",
                     $family, $playback_access, $microphone_access

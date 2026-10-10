@@ -368,7 +368,16 @@ def private_probe_graph():
                 if not any(name.startswith('virtualgamepad.') for name in final): break
                 if time.monotonic() >= deadline: raise ValueError('owned bridge nodes survived controller close')
                 time.sleep(.02)
-            print(json.dumps(dict(private_graph=dict(startup_nodes=startup, final_nodes=final))), flush=True)
+            sound_handles = []
+            for child in children:
+                if child.poll() is not None: continue
+                for descriptor in (Path('/proc')/str(child.pid)/'fd').iterdir():
+                    try: target = os.readlink(descriptor)
+                    except FileNotFoundError: continue
+                    if target.startswith('/dev/snd/'):
+                        sound_handles.append(dict(pid=child.pid, descriptor=descriptor.name, target=target))
+            print(json.dumps(dict(private_graph=dict(startup_nodes=startup, final_nodes=final,
+                                                     owned_child_sound_handles=sound_handles))), flush=True)
     except BaseException as error:
         initiating = error; raise
     finally:
