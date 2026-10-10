@@ -1364,6 +1364,34 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert_eq!(public_microphone_credit(288_000, 89_680, 198_320), 384);
     }
 
+    fn public_sample_microphone_counter(
+        native: bool,
+        read: impl FnOnce() -> Result<Option<u64>, crate::AudioError>,
+    ) -> Result<Option<u64>, crate::AudioError> {
+        if native {
+            // Sample counters cannot observe a native-owned microphone.
+            Ok(None)
+        } else {
+            read()
+        }
+    }
+
+    #[test]
+    fn public_usb_native_accounting_never_reads_sample_only_counters() {
+        assert_eq!(
+            public_sample_microphone_counter(true, || panic!("sample counter on native endpoint")),
+            Ok(None)
+        );
+        assert_eq!(
+            public_sample_microphone_counter(false, || Ok(Some(96))),
+            Ok(Some(96))
+        );
+        assert_eq!(
+            public_sample_microphone_counter(false, || Err(crate::AudioError::OwnershipMismatch)),
+            Err(crate::AudioError::OwnershipMismatch)
+        );
+    }
+
     fn spawn_public_host(mut command: std::process::Command) -> std::process::Child {
         // Consume the configuration so its parent copy of child stdout closes
         // immediately after spawning. Retaining it prevents socket EOF.
@@ -1563,8 +1591,16 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert!(receipt.len() <= 8192);
         let receipt = String::from_utf8(receipt).unwrap();
         let audio = controller.sample_audio();
-        let microphone_consumed = audio.microphone_consumed_frames().unwrap();
-        let microphone_dropped = audio.dropped_microphone_frames().unwrap();
+        let microphone_consumed =
+            public_sample_microphone_counter(native_microphone.is_some(), || {
+                audio.microphone_consumed_frames()
+            })
+            .unwrap();
+        let microphone_dropped =
+            public_sample_microphone_counter(native_microphone.is_some(), || {
+                audio.dropped_microphone_frames()
+            })
+            .unwrap();
         println!(
             "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={maximum_read_us} largest_cycle_delays_interval_service_credit_consumed_produced_silence_sleep_write={largest_delays:?}",
             audio.underrun_frames(),
