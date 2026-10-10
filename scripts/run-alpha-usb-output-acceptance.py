@@ -48,20 +48,27 @@ def built_test(output):
     return found[0]
 
 
-def accepted(root_receipt, revision, observer_status, observer_text):
+def accepted(root_receipt, revision, observer_status, observer_text, factory_digest=None):
     if (root_receipt.get('status')!='passed' or root_receipt.get('revision')!=revision or
             observer_status!=0 or '1 passed; 0 failed' not in observer_text):
         raise RuntimeError('root phase and exact-source observer do not both pass')
     families=[]
+    factories=[]
     for client in root_receipt.get('clients',[]):
         for line in client['stdout'].splitlines():
             item=json.loads(line)
+            if 'public_factory' in item:factories.append(item['public_factory'])
             if 'kernel_hid_outputs' in item:
                 if not item.get('passed') or not item['kernel_hid_outputs'].get('typed_root_callbacks'):
                     raise RuntimeError('missing typed callback or functional acceptance')
                 families.append(item['profile'])
     if families!=['dualsense','dualshock4','xbox360']:
         raise RuntimeError('incomplete or duplicated output family coverage')
+    if factory_digest is not None:
+        if (len(factories)!=1 or factories[0].get('status')!='passed' or
+                factories[0].get('exit_status')!=0 or
+                factories[0].get('binary_sha256')!=factory_digest):
+            raise RuntimeError('public factory receipt is absent, failed or from a different image')
 
 
 def observer_identity(properties, frozen, expected=None):
@@ -122,6 +129,8 @@ def run(args):
                      '--property=MemorySwapMax=0','--property=KillMode=control-group','--property=TimeoutStopSec=10',
                      '--property=RuntimeMaxSec=120','--setenv=VIRTUALGAMEPAD_TYPED_OUTPUT_INSTANCE='+instance,
                      '--',str(frozen),TEST,'--exact','--ignored','--nocapture']
+            if args.public_samples:
+                command.insert(command.index('--'), '--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=1')
             receipt['command']=command
             observer=subprocess.Popen(command,stdout=observer_log,stderr=subprocess.STDOUT)
             deadline=time.monotonic()+3
@@ -136,7 +145,8 @@ def run(args):
         receipt['observer_exit']=observer.returncode;receipt['phase_exit']=phase.returncode
         raw=subprocess.check_output(['sudo','-n','-k',HELPER,'receipt'],text=True,timeout=10)
         (root/'root-receipt.json').write_text(raw)
-        accepted(json.loads(raw),revision,observer.returncode,(root/'observer.log').read_text())
+        accepted(json.loads(raw),revision,observer.returncode,(root/'observer.log').read_text(),
+                 digest if args.public_samples else None)
         if phase.returncode!=0:raise RuntimeError('root maintenance phase failed')
         if hashlib.sha256(frozen.read_bytes()).hexdigest()!=digest:raise RuntimeError('observer image changed')
         receipt['status']='passed'
@@ -171,6 +181,8 @@ def run(args):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true');parser.add_argument('--report',type=Path)
+    parser.add_argument('--public-samples',action='store_true',
+                        help='require the sealed public USB ownership, lifecycle and marker fixture')
     args=parser.parse_args()
     if not args.apply:
         print(json.dumps(dict(actions=['verify exact installed source','prebuild and freeze ordinary observer',

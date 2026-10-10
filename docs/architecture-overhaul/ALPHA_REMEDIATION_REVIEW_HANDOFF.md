@@ -2224,3 +2224,90 @@ passed for the earlier `125043d2e6836e235b3aba1031083787a8404627` checkpoint,
 including all 17 downloaded workspace SBOM identities. Remote privileged provider
 validation was skipped and remains separately supported by local lab receipts.
 That CI checkpoint does not validate later native-client tooling changes.
+
+
+## Mixed native microphone investigation and harness corrections
+
+The mixed native-microphone/sample-playback acceptance extension at
+`47d1d04391fe92572ef7568199bd1c9cb99e6de3` requires three additional
+family-specific marker receipts. Ownership, node presence and lifecycle receipts
+alone cannot satisfy those cells. The public fixture deadline became 70 seconds
+and the enclosing observer deadline 75 seconds to accommodate the additional
+six-second streams. Each stream retains two seconds of warm-up, three measured
+seconds, one bounded drain second and the existing zero-loss assertions.
+Native producer stdin writes are explicitly not graph-submission evidence.
+
+Three independent harness defects were demonstrated and corrected:
+
+- `3f86cd554e6cad3a8e5935ea4a70492814cb0f50`: retaining the parent
+  `Command` kept its copy of the stdout socket open after child exit. Consume
+  the command at spawn; a real child regression requires receipt EOF after exit.
+- `f6046a04582748ca51fc6bee5765ce5cf3e32aa3`: one 128-frame refill per
+  wake-up under-produced audio, while treating underrun silence as consumed source
+  inflated refill credit. Refill the existing 384-frame operating fill using
+  actual source consumption. No queue capacity or acceptance assertion changed.
+  The regression covers delayed wake-up and silence-adjusted credit.
+- `c785548460434406d76a1dddaa1a569c70a993ca`: final accounting requested
+  sample-only microphone counters on a native-owned endpoint. Do not perform
+  those reads; report unavailable values and use the separate native diagnostics.
+  A deterministic regression rejects accidental invocation on native ownership
+  and preserves errors on sample ownership.
+
+Historical failures remain: the first pacing receipt produced 205488 frames,
+reported 89680 underrun frames and discarded 5136 microphone frames. After the
+credit correction, discarded frames fell to the 16-frame pretrial flush, but
+19360 underrun frames remained and the measured capture contained 9136 silent
+frames. These results do not close sample continuity or establish its cause.
+
+At `9dae92f7c0dfba9cfa914d958c09430424a90256`, the native-first
+fixture reached streaming but then encountered the ownership-accounting defect.
+Original resources were restored with an empty cleanup-error list. The actual
+caller thread reported ordinary scheduling; its timer-slack file was unavailable.
+New diagnostics record sleep/wakeup intervals and generation/write time without
+claiming that resumption delay is exclusively kernel sleep time. The missing
+native cells execute before known sample failures, while every required assertion
+remains enabled. This changes evidence collection order, not acceptance scope.
+
+The five mandatory validation commands passed for both diagnostic and ownership
+corrections. Provider and ordinary-root production APIs are unchanged; no new
+dependencies were added. Reviewers must check parent/child descriptor ownership,
+sample/native counter boundaries, silence-adjusted source credit, exact marker
+accounting, unavailable graph-submission evidence and complete owned restoration.
+Gates 2/3 retain their accepted scope; Gates 1/4/5/6 remain open.
+
+
+### Exact-image mixed-native result at `c785548`
+
+An initial retry copied an older executable from a fixed target filename. Its
+hash matched the earlier diagnostic image, so that receipt cannot validate the
+ownership correction even though the orchestration reported the new source SHA.
+The failed artifact remains visible. The maintained USB acceptance runner now
+supports `--public-samples`, obtains the root test image from Cargo JSON, freezes
+it and requires the sealed factory receipt's hash to match. Regression tests reject
+missing, duplicate, failed and mismatched-image factory receipts.
+
+The subsequent exact-image run at
+`c785548460434406d76a1dddaa1a569c70a993ca`, tree
+`a2de9dc5a1db4d6367d87c36501d2dc43efde791`, used frozen image
+`2124d286defb330af1b7d438f47349dbe5da2ced3770b7b48947871707e1eab1`.
+The new counter regression was verified in that image before the trial.
+DualSense and DS4 each received 144000 valid microphone frames, no silence and no
+pattern gaps in the three-second measured capture window. Their root sample
+playback also delivered all 144000 indexed frames without loss, duplication or
+corruption. Xbox 360 playback passed, but its measured microphone window contained
+143920 valid frames and 80 silent frames, so the required fixture failed.
+
+Startup/drain accounting remains separate: cumulative microphone underruns were
+2000/2000/2032 frames for DualSense/DS4/Xbox 360 respectively. All three native
+graphs reported 1024 dropped frames and a final 1920-frame queue; source graph
+submission counts remain unavailable. These totals still require reconciliation
+before sustained or complete-production acceptance. Short measured success is
+not a claim that every produced frame reached the graph or final drain.
+The native source supplied 288000 frames through stdin in each case; this is not
+graph-submission proof. Xbox's capture had 1952 startup silence frames plus 80
+measured silence frames, consistent with its reported 2032 underrun frames.
+
+The enclosing phase and observer failed as required. Original resources were
+restored with empty cleanup-error lists. No repeated green run substitutes for
+this failure. Gate 4 remains open and Gate 6 is unqualified; next evidence must
+locate native graph drops and the Xbox underrun rather than weaken assertions.

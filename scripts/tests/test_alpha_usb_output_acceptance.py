@@ -52,3 +52,21 @@ class TypedOutputRunner(unittest.TestCase):
         self.assertIsNone(lab.observer_identity('LoadState=not-found',Path('/fake/observer'),'a'*32))
         for value in (properties.replace('a'*32,'b'*32),properties.replace('/fake/observer','/foreign/program')):
             with self.assertRaises(RuntimeError):lab.observer_identity(value,Path('/fake/observer'),'a'*32)
+
+
+    def test_public_factory_requires_exact_frozen_image_and_success(self):
+        digest='a'*64
+        receipt=self.receipt()
+        factory=dict(status='passed',exit_status=0,binary_sha256=digest)
+        receipt['clients'][0]['stdout']+='\n'+json.dumps(dict(public_factory=factory))
+        lab.accepted(receipt,'candidate',0,'1 passed; 0 failed',digest)
+        for changes in (dict(status='failed'),dict(exit_status=1),dict(binary_sha256='b'*64)):
+            invalid=self.receipt()
+            invalid['clients'][0]['stdout']+='\n'+json.dumps(dict(public_factory=dict(factory,**changes)))
+            with self.assertRaises(RuntimeError):
+                lab.accepted(invalid,'candidate',0,'1 passed; 0 failed',digest)
+        for count in (0,2):
+            invalid=self.receipt()
+            invalid['clients'][0]['stdout']+=('\n'+json.dumps(dict(public_factory=factory)))*count
+            with self.assertRaises(RuntimeError):
+                lab.accepted(invalid,'candidate',0,'1 passed; 0 failed',digest)
