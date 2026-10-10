@@ -137,6 +137,29 @@ impl NativeMicCredit {
         self.submitted += frames as u64;
     }
 }
+fn refill_native_microphone(
+    credit: &mut NativeMicCredit,
+    mut transfer: impl FnMut(usize) -> Result<usize, AudioError>,
+) -> Result<(), AudioError> {
+    // One delayed wake-up may represent several wire packets. Refill only the
+    // existing operating fill, with a finite per-cycle budget and no busy wait.
+    for _ in 0..NativeMicCredit::FILL.div_ceil(128) {
+        let available = credit.available();
+        if available == 0 {
+            break;
+        }
+        let accepted = transfer(available)?;
+        if accepted > available {
+            return Err(AudioError::InvalidRequirement);
+        }
+        if accepted == 0 {
+            break;
+        }
+        credit.accepted(accepted);
+    }
+    Ok(())
+}
+
 fn spawn_host_clock_poller(
     control: Arc<Mutex<Control>>,
     microphone_silence: Arc<AtomicU64>,
@@ -470,13 +493,15 @@ fn run(
                 session.activate_inputs();
             }
             credit.update_host(host);
-            let available = credit.available();
-            if available > 0 && microphone_pending.0 == microphone_pending.1 {
-                let block = session
-                    .read_playback(&mut microphone[..FRAMES * config.microphone_channels])?;
-                microphone_pending = (0, block.frames);
-            }
-            if available > 0 && microphone_pending.0 < microphone_pending.1 {
+            refill_native_microphone(&mut credit, |available| {
+                if microphone_pending.0 == microphone_pending.1 {
+                    let block = session
+                        .read_playback(&mut microphone[..FRAMES * config.microphone_channels])?;
+                    microphone_pending = (0, block.frames);
+                }
+                if microphone_pending.0 == microphone_pending.1 {
+                    return Ok(0);
+                }
                 let offset = microphone_pending.0 * config.microphone_channels;
                 let end = (microphone_pending.0 + available).min(microphone_pending.1)
                     * config.microphone_channels;
@@ -485,8 +510,8 @@ fn run(
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .write_microphone(&microphone[offset..end])?;
                 microphone_pending.0 += accepted;
-                credit.accepted(accepted);
-            }
+                Ok(accepted)
+            })?;
         }
         if last_timing.elapsed() >= Duration::from_millis(100) {
             metrics.capture(session);
@@ -553,6 +578,75 @@ mod tests {
         assert_eq!(credit.submitted, 960);
         assert_eq!(credit.available(), 128);
     }
+    #[test]
+    fn native_microphone_refill_restores_existing_fill_after_delayed_host_progress() {
+        let mut credit = NativeMicCredit {
+            host: 0,
+            submitted: 0,
+            started: false,
+        };
+        refill_native_microphone(&mut credit, |_| panic!("capture has not started")).unwrap();
+        credit.update_host(48);
+        let mut packets = Vec::new();
+        refill_native_microphone(&mut credit, |available| {
+            packets.push(available);
+            Ok(available)
+        })
+        .unwrap();
+        assert_eq!(packets, [128, 128, 128, 128, 128, 32]);
+        assert_eq!(credit.submitted, 48 + NativeMicCredit::FILL);
+        // Six milliseconds pass while the bridge is asleep. One packet cannot
+        // replace the 288 frames consumed; catch up without expanding the fill.
+        credit.update_host(48 + 288);
+        packets.clear();
+        refill_native_microphone(&mut credit, |available| {
+            packets.push(available);
+            Ok(available)
+        })
+        .unwrap();
+        assert_eq!(packets, [128, 128, 32]);
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted, credit.host + NativeMicCredit::FILL);
+    }
+
+    #[test]
+    fn native_microphone_refill_bounds_partial_progress_and_preserves_backpressure_errors() {
+        let mut credit = NativeMicCredit {
+            host: 48,
+            submitted: 48,
+            started: true,
+        };
+        let mut attempts = 0;
+        refill_native_microphone(&mut credit, |_| {
+            attempts += 1;
+            Ok(0)
+        })
+        .unwrap();
+        assert_eq!(attempts, 1);
+        assert_eq!(credit.submitted, 48);
+        attempts = 0;
+        refill_native_microphone(&mut credit, |_| {
+            attempts += 1;
+            Ok(1)
+        })
+        .unwrap();
+        assert_eq!(attempts, 6);
+        assert_eq!(credit.submitted, 54);
+        let error = AudioError::Backend {
+            reason: "synthetic transfer failure".into(),
+        };
+        assert_eq!(
+            refill_native_microphone(&mut credit, |_| Err(error.clone())),
+            Err(error)
+        );
+        assert_eq!(credit.submitted, 54);
+        assert_eq!(
+            refill_native_microphone(&mut credit, |available| Ok(available + 1)),
+            Err(AudioError::InvalidRequirement)
+        );
+        assert_eq!(credit.submitted, 54);
+    }
+
     #[test]
     fn graph_diagnostics_remain_readable_after_bridge_closure() {
         let timing = crate::audio::AudioStreamTiming {
