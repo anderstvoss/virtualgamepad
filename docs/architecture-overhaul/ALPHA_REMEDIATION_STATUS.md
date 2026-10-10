@@ -2319,3 +2319,29 @@ Gitleaks passed, and all 17 downloaded workspace SBOM identities validated.
 The privileged remote provider job was skipped; the separately recorded local
 provider acceptance remains its evidence. These receipts do not accept the
 subsequent GUI correction or any remaining live gate.
+
+
+## Maintained demo routing transition fixture
+
+The ignored `live_private_pipewire_route_switch_disconnect_and_reconnect`
+fixture exercises the production `AudioRouter` and host subprocess ports inside
+the maintained private PipeWire runner. It admits only an explicit ordinary-user
+lab opt-in, a private runtime directory and a graph without ALSA monitors.
+Two owned stereo loopbacks expose distinct source/sink targets. Route A forwards
+an exact signed stereo marker; route B forwards a different marker. Disconnect
+removes all router ports and rejects forwarding; reconnect forwards a third
+marker. Final router teardown joins/reaps host subprocesses, and both owned
+loopback children are verified absent. The first bounded trial passed all four
+stages and complete private-graph teardown; final source/image receipts are
+kept outside tracked source.
+
+This closes the demo host-routing transition cell, not the USB/IP transport,
+endpoint/worker failures, all-family/native ownership exchange or sustained
+continuity cells. No root contract or production behavior changes in this fixture.
+
+Prebuild the demo all-feature test executable, then run that exact executable
+in `scripts/run-pipewire-audio-lab.py` with a 40-second deadline, explicit
+`VIRTUALGAMEPAD_DEMO_ROUTE_LAB=1`, `--exact --ignored --nocapture`, and the full
+test name `gui::audio_lab::tests::live_private_pipewire_route_switch_disconnect_and_reconnect`.
+Do not blanket-enable ignored tests or replace transport acceptance with this
+virtual-node fixture.

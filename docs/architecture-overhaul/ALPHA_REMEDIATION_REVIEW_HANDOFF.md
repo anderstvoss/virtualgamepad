@@ -2113,3 +2113,14 @@ This correction changes the production GUI executable and invalidates reuse of
 the preceding image's two-hour soak for the final candidate. Retain that receipt
 as historical evidence and require a new final-image soak after GUI fixes are
 settled. Do not close Gate 1 using the old byte-identity proof.
+
+
+### Demo host-routing functional receipt
+
+Reproduce `gui::audio_lab::tests::live_private_pipewire_route_switch_disconnect_and_reconnect`
+using a prebuilt all-feature demo test image in the maintained private PipeWire
+runner, explicit `VIRTUALGAMEPAD_DEMO_ROUTE_LAB=1`, and a 40-second deadline.
+Require exact stereo-pattern observations for A, B and reconnect, empty router
+ports during disconnect, and owned loopback/subprocess teardown. This is a
+functional routing receipt only: reject any claim that it proves USB/IP marker
+exchange, worker/endpoint failure isolation or sustained zero-loss audio.

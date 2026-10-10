@@ -1795,6 +1795,174 @@ fn input_channel_label<'a>(route: &InputRoute, channel: usize, labels: &'a [Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires the explicit private PipeWire lab; ordinary user, owned virtual nodes only"]
+    #[allow(clippy::too_many_lines)] // One fixture retains ownership through every routing transition.
+    fn live_private_pipewire_route_switch_disconnect_and_reconnect() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Child, Command, Stdio};
+        use std::time::{Duration, Instant};
+        struct OwnedLoopback(Child);
+        impl Drop for OwnedLoopback {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                self.0.wait().expect("owned loopback must be reaped");
+            }
+        }
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_DEMO_ROUTE_LAB").as_deref(),
+            Ok("1")
+        );
+        let runtime = std::env::var("PIPEWIRE_RUNTIME_DIR").unwrap();
+        assert_eq!(std::env::var("XDG_RUNTIME_DIR").unwrap(), runtime);
+        assert!(
+            std::path::Path::new(&runtime)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("virtualgamepad-pw-lab-")
+        );
+        assert_eq!(
+            std::fs::metadata(&runtime).unwrap().permissions().mode() & 0o77,
+            0
+        );
+        assert!(
+            std::fs::read_to_string("/proc/self/status")
+                .unwrap()
+                .lines()
+                .find(|line| line.starts_with("Uid:"))
+                .unwrap()
+                .split_whitespace()
+                .skip(1)
+                .all(|uid| uid != "0")
+        );
+
+        let names: Vec<_> = ['a', 'b']
+            .into_iter()
+            .map(|side| format!("virtualgamepad-route-{}-{side}", std::process::id()))
+            .collect();
+        let mut loops = Vec::new();
+        for name in &names {
+            loops.push(OwnedLoopback(Command::new("pw-loopback").args([
+                "-n", name, "-c", "2", "-m", "[ FL FR ]", "-i",
+                &format!("{{ node.name = \"{name}.sink\" media.class = \"Audio/Sink\" node.virtual = true node.autoconnect = false }}"),
+                "-o", &format!("{{ node.name = \"{name}.source\" media.class = \"Audio/Source\" node.virtual = true node.autoconnect = false }}"),
+            ]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()));
+        }
+        let ready = Command::new("python3")
+            .args([
+                "-I",
+                "-c",
+                r"import json,subprocess,sys,tempfile,time
+expected={name+suffix for name in sys.argv[1:] for suffix in ('.sink','.source')}
+deadline=time.monotonic()+5
+while True:
+ with tempfile.TemporaryFile() as output:
+  subprocess.run(['pw-dump'],stdout=output,check=True,timeout=2)
+  output.seek(0);raw=output.read(1048577)
+ assert len(raw)<=1048576
+ graph=json.loads(raw)
+ assert not any(item.get('info',{}).get('props',{}).get('device.api')=='alsa' for item in graph)
+ names={item.get('info',{}).get('props',{}).get('node.name') for item in graph}
+ if expected<=names:break
+ assert time.monotonic()<deadline,'owned routing nodes did not appear'
+ time.sleep(.02)
+",
+                &names[0],
+                &names[1],
+            ])
+            .status()
+            .unwrap();
+        assert!(ready.success());
+        let mut routing = RoutingState {
+            backend: HostBackend::PipeWire,
+            jack_connector: None,
+            jack_connected: false,
+            jack_device: JackDevice::Headset,
+            outputs: vec![OutputRoute {
+                id: "test-output".into(),
+                label: "Owned output".into(),
+                channels: 2,
+                enabled: true,
+                channel_device_ids: vec![String::new(); 2],
+                manual_channel_control: false,
+                source_channels: vec![Some(0), Some(1)],
+                peak: vec![0; 2],
+            }],
+            inputs: vec![InputRoute {
+                id: "test-input".into(),
+                label: "Owned input".into(),
+                connected: true,
+                enabled: true,
+                channel_device_ids: vec![String::new(); 2],
+                manual_channel_control: false,
+                source_channels: 2,
+                target_channels: vec![Some(0), Some(1)],
+                peak: vec![0; 2],
+            }],
+        };
+        let mut router = AudioRouter::default();
+        let transfer = |router: &AudioRouter, marker: i16| {
+            let samples: Vec<_> = (0..480).flat_map(|_| [marker, -marker]).collect();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                assert!(
+                    router.output("test-output", &samples, 2),
+                    "owned output rejected a packet: {:?}",
+                    router.error()
+                );
+                if router.input("test-input", 2).is_some_and(|samples| {
+                    samples
+                        .chunks_exact(2)
+                        .any(|frame| frame == [marker, -marker])
+                }) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "owned route did not deliver marker {marker}; {:?}",
+                    router.error()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        for (index, marker) in [(0, 1100), (1, 2200)] {
+            routing.outputs[0].channel_device_ids = vec![format!("{}.sink", names[index]); 2];
+            routing.inputs[0].channel_device_ids = vec![format!("{}.source", names[index]); 2];
+            assert_eq!(router.configure(&routing, true, true), None);
+            transfer(&router, marker);
+            println!(
+                "demo_route stage={} marker={marker} stereo_pattern_verified=true",
+                names[index]
+            );
+        }
+        routing.outputs[0].enabled = false;
+        routing.inputs[0].connected = false;
+        assert_eq!(router.configure(&routing, true, true), None);
+        assert!(router.outputs.is_empty() && router.inputs.is_empty());
+        assert!(!router.output("test-output", &[1, -1], 2));
+        assert!(router.input("test-input", 2).is_none());
+        println!("demo_route stage=disconnected ports=0");
+        routing.outputs[0].enabled = true;
+        routing.inputs[0].connected = true;
+        assert_eq!(router.configure(&routing, true, true), None);
+        transfer(&router, 3300);
+        println!("demo_route stage=reconnected marker=3300 stereo_pattern_verified=true");
+        routing.outputs[0].enabled = false;
+        routing.inputs[0].connected = false;
+        assert_eq!(router.configure(&routing, true, true), None);
+        assert!(router.outputs.is_empty() && router.inputs.is_empty());
+        let pids: Vec<_> = loops.iter().map(|owned| owned.0.id()).collect();
+        drop(router);
+        drop(loops);
+        for pid in pids {
+            assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        }
+        println!(
+            "demo_route owned_loopbacks_reaped=true; functional_only=true; no_USB_or_sustained_claim=true"
+        );
+    }
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use virtualgamepad::AudioChannel;
