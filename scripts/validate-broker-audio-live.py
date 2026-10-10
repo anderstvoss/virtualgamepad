@@ -428,7 +428,7 @@ def public_factory_probe(peer, instance=None):
             with tempfile.TemporaryFile() as output:
                 result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
                                          '--ignored', '--nocapture'], pass_fds=(frozen,),
-                                        env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=45)
+                                        env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=70)
                 output.seek(0); text = output.read(65537)
         if len(text) > 65536: raise ValueError('oversized public factory probe receipt')
         text = text.decode('utf-8', errors='strict')
@@ -438,6 +438,8 @@ def public_factory_probe(peer, instance=None):
             for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
         if instance is not None:
             passed &= all(f'public_usb_sample_exchange family={family} passed=true' in text
+                          for family in ('dualsense', 'dualshock4', 'xbox360'))
+            passed &= all(f'public_usb_native_microphone_exchange family={family} passed=true' in text
                           for family in ('dualsense', 'dualshock4', 'xbox360'))
             native_nodes = [line.removeprefix('public_usb_native_node_verified=') for line in text.splitlines()
                             if line.startswith('public_usb_native_node_verified=')]

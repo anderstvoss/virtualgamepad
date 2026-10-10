@@ -1029,7 +1029,7 @@ mod worker_outputs {
             thread::sleep(Duration::from_millis(10));
         };
         assert!(status.success());
-        peer.set_read_timeout(Some(Duration::from_secs(50)))
+        peer.set_read_timeout(Some(Duration::from_secs(75)))
             .unwrap();
         let mut result = [0];
         peer.read_exact(&mut result).unwrap();
@@ -1373,6 +1373,10 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let audio = controller.sample_audio();
         let card = audio.endpoints()[0].host().alsa_pcm().unwrap().0.to_owned();
         let instance = std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE").unwrap();
+        let native_microphone = audio.endpoints()[1]
+            .caller()
+            .and_then(crate::AudioEndpointSelector::pipewire_node)
+            .map(str::to_owned);
         let script = concat!(
             "__name__='captured_validator'\n",
             include_str!("../../scripts/validate-usb-audio-live.py"),
@@ -1383,18 +1387,22 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         output
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
-        let child = Command::new("python3")
-            .args([
-                "-I",
-                "-c",
-                script,
-                "--family",
-                family,
-                "--card-id",
-                &card,
-                "--instance",
-                &instance,
-            ])
+        let mut command = Command::new("python3");
+        command.args([
+            "-I",
+            "-c",
+            script,
+            "--family",
+            family,
+            "--card-id",
+            &card,
+            "--instance",
+            &instance,
+        ]);
+        if let Some(node) = &native_microphone {
+            command.args(["--microphone-node", node]);
+        }
+        let child = command
             .stdin(Stdio::null())
             .stdout(Stdio::from(OwnedFd::from(child_output)))
             .process_group(0)
@@ -1438,7 +1446,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     invalid += 1;
                 }
             }
-            if status.is_none() {
+            if status.is_none() && native_microphone.is_none() {
                 let credit_begin = std::time::Instant::now();
                 let consumed =
                     usize::try_from(audio.microphone_consumed_frames().unwrap().unwrap()).unwrap();
@@ -1464,6 +1472,8 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                         .collect();
                     microphone_produced += audio.write_microphone(&samples).unwrap();
                 }
+            }
+            if status.is_none() {
                 if let Some(finished) = host.child.try_wait().unwrap() {
                     host.reaped = true;
                     status = Some(finished);
@@ -1493,6 +1503,17 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             audio.underrun_frames(),
             audio.dropped_playback_frames()
         );
+        #[cfg(feature = "experimental")]
+        if native_microphone.is_some() {
+            let instrumentation = crate::experimental::audio_instrumentation(audio);
+            println!(
+                "public_usb_native_microphone_counters family={family} graph_dropped={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
+                instrumentation.native_microphone_dropped_frames(),
+                instrumentation.native_microphone_queue_frames(),
+                instrumentation.native_bridge_scheduling_us(),
+                instrumentation.stream_timings()
+            );
+        }
         println!("public_usb_sample_capture family={family} receipt={receipt}");
         let (missing, duplicate) = seen.iter().fold((0, 0), |(missing, duplicate), count| {
             (
@@ -1508,12 +1529,18 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             "public sample host capture failed"
         );
         assert_eq!((missing, duplicate, invalid), (0, 0, 0));
-        assert!(
-            microphone_produced >= 240_000,
-            "incomplete measured microphone production"
-        );
+        if native_microphone.is_none() {
+            assert!(
+                microphone_produced >= 240_000,
+                "incomplete measured microphone production"
+            );
+        }
         assert!(controller.sample_audio().last_error().is_none());
-        println!("public_usb_sample_exchange family={family} passed=true");
+        if native_microphone.is_some() {
+            println!("public_usb_native_microphone_exchange family={family} passed=true");
+        } else {
+            println!("public_usb_sample_exchange family={family} passed=true");
+        }
     }
 
     #[test]
@@ -1541,7 +1568,6 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 );
                 controller.service(&mut |_| {}).unwrap();
                 if $playback_access == crate::AudioAccess::Samples
-                    && $microphone_access == crate::AudioAccess::Samples
                     && std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
                         == Ok("1")
                 {

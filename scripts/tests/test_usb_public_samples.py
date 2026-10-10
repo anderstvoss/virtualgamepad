@@ -43,6 +43,47 @@ class PublicSampleIdentity(unittest.TestCase):
                 trial.assert_called_once_with(1, 'dualsense', 3)
                 self.assertEqual(output.call_args_list[0].args, ('R',))
 
+    def test_native_microphone_requires_exact_capture_and_successful_source(self):
+        for scenario in ('complete', 'balanced-loss-replay', 'incomplete', 'source-failed'):
+            with self.subTest(scenario=scenario):
+                captured = bytearray(namespace['marker_pcm'](288000, 1))
+                if scenario == 'balanced-loss-replay':
+                    # Replace a complete, individually valid mono pair with its predecessor.
+                    captured[240000:240004] = captured[239996:240000]
+                if scenario == 'incomplete':
+                    captured = captured[:-2]
+                def run(command, **options):
+                    if command[0] == 'arecord':
+                        self.assertEqual(command[-2:], ['-d', '6'])
+                        return Mock(returncode=0, stdout=bytes(captured), stderr=b'')
+                    channels = 1 if command[0] == 'pw-cat' else 2
+                    self.assertEqual(len(options['input']), 288000 * channels * 2)
+                    self.assertEqual(options['timeout'], 14)
+                    status = 1 if scenario == 'source-failed' and command[0] == 'pw-cat' else 0
+                    return Mock(returncode=status, stdout=b'', stderr=b'')
+                identity = Mock(return_value=(1, 11))
+                with patch.dict(namespace, native_microphone_identity=identity), \
+                     patch.object(namespace['subprocess'], 'run', side_effect=run):
+                    result = namespace['run_native_microphone_trial'](1, 'dualshock4', 'virtualgamepad.12.1.microphone')
+                self.assertEqual(result['passed'], scenario == 'complete')
+                self.assertIsNone(result['native_source_graph_submissions'])
+                self.assertEqual(result['native_source_stdin_frames'], 288000)
+                if scenario == 'balanced-loss-replay':
+                    self.assertEqual(result['exact_pattern'], 144000)
+                    self.assertGreater(result['pattern_gaps'], 0)
+
+    def test_native_microphone_admission_rejects_foreign_or_ambiguous_nodes(self):
+        node = 'virtualgamepad.12.1.microphone'
+        target = dict(id=1, type='PipeWire:Interface:Node', info=dict(props={
+            'node.name':node, 'object.serial':11}))
+        with patch.dict(namespace, shared_graph=Mock(return_value=[target])):
+            self.assertEqual(namespace['native_microphone_identity'](node), (1,11))
+            for invalid in ('default', '../node', 'virtualgamepad.12.1.playback'):
+                with self.assertRaises(ValueError):namespace['native_microphone_identity'](invalid)
+        for objects in ([], [target,target], [target,dict(info=dict(props={'device.api':'alsa'}))]):
+            with patch.dict(namespace, shared_graph=Mock(return_value=objects)):
+                with self.assertRaises(ValueError):namespace['native_microphone_identity'](node)
+
     def test_exact_card_and_session_identity_excludes_root_hub_serial(self):
         with tempfile.TemporaryDirectory() as directory:
             sound, device, _ = self.fixture(Path(directory))
