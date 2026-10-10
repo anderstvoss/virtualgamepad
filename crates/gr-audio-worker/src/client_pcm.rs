@@ -207,27 +207,55 @@ fn run_pump(
             }
             next_playback = block.first_frame + block.frames as u64;
         }
-        microphone_socket.pump(now)?;
-        if pending.is_none() {
-            let read = microphone_reader
-                .read(&mut microphone_samples[..BLOCK_FRAMES * microphone_channels])
-                .map_err(io::Error::other)?;
-            if read.frames != 0 {
-                pending = Some(read);
-            }
-        }
-        if let Some(read) = pending {
-            let accepted = microphone_socket.send(
-                &microphone_samples[..read.frames * microphone_channels],
-                read.first_frame,
-                read.discontinuity,
-                now,
-            )?;
-            if accepted == read.frames {
-                pending = None;
-            }
-        }
+        pump_microphone(
+            microphone_socket,
+            &mut microphone_reader,
+            &mut microphone_samples,
+            microphone_channels,
+            &mut pending,
+            now,
+        )?;
         thread::park_timeout(Duration::from_micros(500));
+    }
+    Ok(())
+}
+// Bound catch-up by the existing local queue capacity. A wake-up may represent
+// several coalesced writes; sleeping after one packet leaves accepted audio
+// stranded in the queue even when the socket has room. Keep playback and stop
+// checks responsive, and retain the pending packet under socket backpressure.
+fn pump_microphone(
+    socket: &mut Sender,
+    reader: &mut PcmConsumer,
+    samples: &mut [i16],
+    channels: usize,
+    pending: &mut Option<PcmRead>,
+    now: u64,
+) -> io::Result<()> {
+    socket.pump(now)?;
+    for _ in 0..MICROPHONE_CAPACITY_FRAMES.div_ceil(BLOCK_FRAMES) {
+        if pending.is_none() {
+            let read = reader
+                .read(&mut samples[..BLOCK_FRAMES * channels])
+                .map_err(io::Error::other)?;
+            if read.frames == 0 {
+                break;
+            }
+            *pending = Some(read);
+        }
+        let read = pending.expect("pending microphone packet");
+        let accepted = socket.send(
+            &samples[..read.frames * channels],
+            read.first_frame,
+            read.discontinuity,
+            now,
+        )?;
+        if accepted == 0 {
+            break;
+        }
+        if accepted != read.frames {
+            return Err(io::Error::other("partial microphone packet acceptance"));
+        }
+        *pending = None;
     }
     Ok(())
 }
@@ -240,6 +268,130 @@ impl Drop for SampleStreams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microphone_pump_drains_coalesced_writes_within_existing_capacity() {
+        for profile in [
+            ProfileId::DualSenseEmulated,
+            ProfileId::DualShock4Emulated,
+            ProfileId::Xbox360HidEmulated,
+        ] {
+            let format = Format::new(profile, Direction::Microphone, 7).unwrap();
+            let channels = format.channels();
+            let definition = match profile {
+                ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
+                ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
+                ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+            }
+            .unwrap();
+            let (mut writer, mut reader) =
+                pcm_queue(definition.streams()[1].format(), MICROPHONE_CAPACITY_FRAMES).unwrap();
+            let samples: Vec<i16> = (0..MICROPHONE_CAPACITY_FRAMES * channels)
+                .map(|i| i16::try_from(i).unwrap())
+                .collect();
+            assert_eq!(writer.push(&samples).unwrap(), MICROPHONE_CAPACITY_FRAMES);
+            let (client, worker) = UnixStream::pair().unwrap();
+            let mut sender = Sender::new(client, format).unwrap();
+            let mut receiver = Receiver::new(worker, format).unwrap();
+            let mut block = [0_i16; BLOCK_FRAMES * 4];
+            let mut pending = None;
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0,
+            )
+            .unwrap();
+            assert!(pending.is_none());
+            assert_eq!(
+                reader
+                    .read(&mut block[..BLOCK_FRAMES * channels])
+                    .unwrap()
+                    .frames,
+                0
+            );
+            for offset in (0..MICROPHONE_CAPACITY_FRAMES).step_by(BLOCK_FRAMES) {
+                let packet = receiver
+                    .receive(&mut block, 0)
+                    .unwrap()
+                    .expect("queued packet");
+                assert_eq!(packet.first_frame, offset as u64);
+                assert_eq!(packet.frames, BLOCK_FRAMES);
+                assert!(!packet.discontinuity);
+                assert_eq!(
+                    &block[..BLOCK_FRAMES * channels],
+                    &samples[offset * channels..(offset + BLOCK_FRAMES) * channels]
+                );
+            }
+            assert!(receiver.receive(&mut block, 0).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn microphone_pump_retains_packet_on_backpressure_and_terminal_error() {
+        let profile = ProfileId::Xbox360HidEmulated;
+        let format = Format::new(profile, Direction::Microphone, 7).unwrap();
+        let channels = format.channels();
+        let definition = match profile {
+            ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
+            ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
+            ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+        }
+        .unwrap();
+        let (mut writer, mut reader) =
+            pcm_queue(definition.streams()[1].format(), MICROPHONE_CAPACITY_FRAMES).unwrap();
+        let (client, worker) = UnixStream::pair().unwrap();
+        let mut sender = Sender::new(client, format).unwrap();
+        let samples = vec![17_i16; BLOCK_FRAMES * channels];
+        let mut blocked = false;
+        for i in 0..4096 {
+            if sender
+                .send(&samples, i * BLOCK_FRAMES as u64, false, 0)
+                .unwrap()
+                == 0
+            {
+                blocked = true;
+                break;
+            }
+        }
+        assert!(blocked, "socket did not reach bounded backpressure");
+        assert_eq!(writer.push(&samples).unwrap(), BLOCK_FRAMES);
+        let mut block = [0_i16; BLOCK_FRAMES * 4];
+        let mut pending = None;
+        for _ in 0..2 {
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0,
+            )
+            .unwrap();
+            assert_eq!(pending.unwrap().first_frame, 0);
+            assert_eq!(pending.unwrap().frames, BLOCK_FRAMES);
+            assert_eq!(&block[..samples.len()], samples);
+        }
+        assert_eq!(
+            reader.read(&mut [0_i16; BLOCK_FRAMES * 4]).unwrap().frames,
+            0
+        );
+        drop(worker);
+        assert!(
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0
+            )
+            .is_err()
+        );
+        assert_eq!(pending.unwrap().frames, BLOCK_FRAMES);
+    }
 
     fn drain_until_blocked(peer: &mut UnixStream) {
         use std::io::Read;

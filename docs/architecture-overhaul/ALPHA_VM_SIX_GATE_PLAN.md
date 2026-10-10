@@ -1441,3 +1441,16 @@ Next diagnostic evidence must locate EMPTY buffers and USB silence in media time
 and reconcile actual graph receipt/submission with worker consumption. Do not
 infer queue overflow, enlarge queues or weaken zero-loss acceptance from these
 results. Gates 1/4/5/6 remain open; alpha is not ready and PR #133 stays draft.
+
+
+### Current execution phase after native refill investigation
+
+Gates 1/4/5/6 remain open. Gate 1 awaits complete owned-display interaction
+receipts and a final-image two-hour soak. Gate 4 is in native/mixed audio defect
+correction: `538aaa5` passed short native microphone tests for DualSense and DS4,
+but Xbox retained 128 measured silent frames. The bounded client-pump catch-up
+requires fresh exact-image acceptance. Remaining ownership, routing and failure
+cells must also be exercised. Gate 5 awaits the separately scoped input helper
+and actual isolated Steam controller acceptance; login visibility is preparation.
+Gate 6 remains causal diagnosis before independent qualification and the full
+sustained matrix. Do not overlap builds, Steam, GUI soak or audio qualification.

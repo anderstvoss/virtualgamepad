@@ -2630,3 +2630,48 @@ Next diagnostic evidence must locate EMPTY buffers and USB silence in media time
 and reconcile actual graph receipt/submission with worker consumption. Do not
 infer queue overflow, enlarge queues or weaken zero-loss acceptance from these
 results. Gates 1/4/5/6 remain open; alpha is not ready and PR #133 stays draft.
+
+
+### Native microphone pacing investigation after `82d1ca5`
+
+`3b9442d` adds a bounded, preallocated PipeWire loss-event ledger. Each event
+records the input media offset, rejected frame count and available raw graph
+clock ticks; it does not claim producer marker identity or latency. The ledger
+retains 64 events, counts omitted events and exports outside callbacks.
+`02b4a1b` exposes experimental USB microphone progress: serviced host frames,
+silence, source consumption, completed/abandoned capture, source drops and
+maximum worker lateness. These are sequential observations, not an atomic
+snapshot. Ordinary-root signatures remain unchanged; no dependency was added.
+
+Live evidence at `02b4a1b` reconciles 288000 serviced/completed DualSense frames
+with 286256 consumed source frames and 1744 silence frames. There were no
+abandoned captures or source queue drops. The graph ledger recorded only a
+startup EMPTY range at media offset zero (1024 frames), but 32 measured capture
+frames were silent. Graph receipt includes padding; stdin byte counts are not
+actual graph submission evidence. These results narrow the investigation without
+qualifying continuity.
+
+`538aaa567c1ddcc9be30f92c1f3eb4009ea827a3` (tree
+`6b0c5d29309ead25adb6b97bed4103c7ebbc2cf0`) corrects the native bridge's one-packet
+refill after delayed host progress. Catch-up is bounded to six packets within the
+unchanged 672-frame operating fill. Regression tests cover delayed progress,
+partial progress, backpressure, errors and impossible acceptance counts.
+The exact-candidate short native-microphone trial passed DualSense and DS4, but
+Xbox 360 failed: 143872 exact measured frames plus 128 silent frames out of
+144000. Xbox completed 288000 total capture frames, consumed 286592 source
+frames, inserted 1408 total silence frames (1280 warm-up), and reported zero
+abandoned frames/source drops. Restoration completed with no cleanup errors.
+This is a short functional result, not sustained acceptance; Gate 4 stays open.
+
+The next client-pump correction drains at most eight packets per wake-up, bounded
+by the existing 1024-frame local queue. Previously a coalesced wake-up sent only
+one packet before sleeping despite socket capacity. Deterministic regressions
+verify full queued delivery for all three profiles, exact frame ordering and
+samples, bounded backpressure with retained pending data, and terminal errors.
+A live rerun is required; this correction does not by itself close Gates 4 or 6.
+
+The client-pump increment passed fmt, locked workspace all-target/all-feature
+check and Clippy, locked all-feature workspace tests, Gitleaks and forced
+Rust 1.85 all-target/all-feature check. Both privileged binaries were rebuilt.
+Initial Clippy findings in new test code (checked numeric conversion and similar
+local names) were corrected; assertions and existing regressions were retained.

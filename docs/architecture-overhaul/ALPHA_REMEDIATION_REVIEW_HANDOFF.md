@@ -2390,3 +2390,21 @@ Next diagnostic evidence must locate EMPTY buffers and USB silence in media time
 and reconcile actual graph receipt/submission with worker consumption. Do not
 infer queue overflow, enlarge queues or weaken zero-loss acceptance from these
 results. Gates 1/4/5/6 remain open; alpha is not ready and PR #133 stays draft.
+
+
+### Additional native microphone review focus
+
+Inspect the bounded graph loss ledger (`3b9442d`), sequential USB worker progress
+(`02b4a1b`), native refill (`538aaa5`) and client PCM pump catch-up. Verify that
+callback instrumentation is preallocated, media offsets are not represented as
+producer markers, omitted events are visible, and actual graph submission is
+not inferred from stdin writes. Inspect the immutable publication/read ordering.
+
+Both refill paths must preserve existing queue/fill capacities, bound work,
+retain unaccepted audio under backpressure, and propagate initiating errors.
+Review the all-profile client-pump regressions against real framed IPC. Do not
+accept short DualSense/DS4 passes as closure: Xbox still had 128 measured silent
+frames at `538aaa5`, and independent sustained controls remain unqualified.
+See the status document for counts and the distinction between warm-up and
+measurement. Revalidate affected provider and output scenarios when worker images
+change; preserve the original restoration identities and shared defaults.
