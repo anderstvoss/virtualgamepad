@@ -1342,6 +1342,35 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert_eq!(seen, [1, 2, 0, 1, 1]);
     }
 
+    fn spawn_public_host(mut command: std::process::Command) -> std::process::Child {
+        // Consume the configuration so its parent copy of child stdout closes
+        // immediately after spawning. Retaining it prevents socket EOF.
+        command
+            .spawn()
+            .expect("owned public sample helper must start")
+    }
+
+    #[test]
+    fn public_usb_host_receipt_reaches_eof_after_child_exit() {
+        use std::io::Read;
+        use std::os::fd::OwnedFd;
+        use std::process::{Command, Stdio};
+        let (mut output, writer) = UnixStream::pair().unwrap();
+        output
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        let mut command = Command::new("python3");
+        command
+            .args(["-I", "-c", "print('R',end='',flush=True)"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(OwnedFd::from(writer)));
+        let mut child = spawn_public_host(command);
+        assert!(child.wait().unwrap().success());
+        let mut receipt = Vec::new();
+        output.read_to_end(&mut receipt).unwrap();
+        assert_eq!(receipt, b"R");
+    }
+
     #[allow(clippy::too_many_lines)] // Retain the owned ALSA child and controller through bounded drain.
     fn public_sample_exchange(
         controller: &mut impl PublicSampleController,
@@ -1402,12 +1431,11 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         if let Some(node) = &native_microphone {
             command.args(["--microphone-node", node]);
         }
-        let child = command
+        command
             .stdin(Stdio::null())
             .stdout(Stdio::from(OwnedFd::from(child_output)))
-            .process_group(0)
-            .spawn()
-            .unwrap();
+            .process_group(0);
+        let child = spawn_public_host(command);
         let mut host = OwnedHost {
             child,
             reaped: false,
