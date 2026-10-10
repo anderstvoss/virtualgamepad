@@ -2196,3 +2196,42 @@ workspace source checks are deferred until the active two-hour GUI soak finishes
 no Rust source, dependency or GUI executable changed in this increment.
 The final Steam trial still requires all four families and available realizations,
 actual consumer behavior, profile isolation and complete owned cleanup.
+
+## Final-image GUI soak and four-family consumer preparation
+
+The neutral production GUI soak completed 7,200.875 measured seconds with exit
+status zero, no reported error and an empty cleanup-error list. Its source was
+`9ffa522ef434f3714363175ee223356607a80242`, tree
+`983963a88f653f1ff2c11c1f9b07c97f8cf0245a`. After completion, rebuilding the
+current GUI example produced the same SHA-256 image:
+`2e130b8de1bec47ce582959c12c2e9054033a7d9f9a47e22610c01c4962d1c67`.
+The owned process, display and HID devices were absent after teardown.
+
+This workload continuously serviced two neutral DualSense controllers and
+replaced one every minute. External descriptor count remained 16; the final
+sample had 23 threads and no child processes. RSS rose from approximately
+124,380 KiB after warm-up to 144,488 KiB, including a step near minute 57,
+then remained within approximately 36 KiB of that plateau for the remaining
+hour. This is bounded growth in this workload, not proof for arbitrary inputs,
+all families or audio-enabled operation. Gate 1 still requires the complete
+interactive control inventory. No native timing or physical fidelity is claimed.
+
+The new ordinary-root `steam_consumer_probe` example creates all four families
+and remains neutral until an explicit private-socket `arm` command. Only arm
+it after verifying the isolated controller-test screen. Its bounded pulse cycle,
+per-controller removal, service scheduling, output accounting and repeated
+cleanup are preparation tooling; producer success alone is not Steam acceptance.
+It records control-directory and socket identities for external cleanup
+coordination and rejects changed identities rather than removing replacements.
+
+The first neutral four-family namespace check failed opening a raw HID node.
+Its producer was terminated and its HID devices disappeared, but its control
+socket directory remained: this failed receipt is preserved, not accepted as
+complete cleanup. A follow-up ordinary-user diagnostic proved the same raw HID
+access failure outside the namespace: one owned node was root-owned mode 0600,
+while the other twelve event/raw nodes opened read/write successfully. That
+follow-up used the producer's stop command, exited zero and removed its control
+directory. No input was armed and no Steam consumer acceptance is claimed.
+Temporary access and desktop isolation must be established for all owned nodes
+before the full consumer trial; do not omit the inaccessible node or grant
+access to foreign devices. Raw receipts remain outside tracked source.

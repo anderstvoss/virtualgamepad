@@ -2077,3 +2077,23 @@ workspace source checks are deferred until the active two-hour GUI soak finishes
 no Rust source, dependency or GUI executable changed in this increment.
 The final Steam trial still requires all four families and available realizations,
 actual consumer behavior, profile isolation and complete owned cleanup.
+
+
+### Final-image soak and consumer preparation follow-up
+
+Verify the completed 7,200.875-second neutral GUI receipt and matching rebuilt
+image SHA-256 `2e130b8de1bec47ce582959c12c2e9054033a7d9f9a47e22610c01c4962d1c67`.
+This closes only the two-controller neutral lifecycle soak cell. Complete
+interactive keyboard and isolated Steam acceptance remain open.
+
+Review `examples/steam_consumer_probe.rs` as acceptance preparation: default
+preview must create no resources, application input must remain neutral before
+explicit arming, service deadlines must continue to progress, and removal must
+preserve siblings. Check malformed/oversized control messages, idempotent close,
+changed directory/socket identities, output truncation and partial construction.
+The preserved first four-family namespace receipt failed a raw HID permission
+check and retained its socket directory after forced termination. Do not count
+that as successful cleanup. The subsequent neutral diagnostic isolated the same
+permission failure to host node access and completed normal owned cleanup.
+Require test-owned access/isolation and actual consumer observations before
+closing Gate 5; producer logs or namespace access alone are insufficient.
