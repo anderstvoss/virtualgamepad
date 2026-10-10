@@ -75,6 +75,11 @@ def observer_identity(properties, frozen, expected=None):
     fields=dict(line.split('=',1) for line in properties.splitlines() if '=' in line)
     if fields.get('LoadState')=='not-found':return None
     invocation=fields.get('InvocationID','')
+    if expected is None and invocation in ('','0'*32):
+        # systemd-run may not yet have assigned its invocation. This is a
+        # bounded startup wait, never permission to stop an unidentified unit.
+        executable=fields.get('ExecStart','')
+        if not executable or str(frozen) in executable:return None
     if (str(frozen) not in fields.get('ExecStart','') or not re.fullmatch(r'[0-9a-f]{32}',invocation) or
             expected is not None and invocation!=expected):
         raise RuntimeError('owned observer unit identity changed; refuse stop')

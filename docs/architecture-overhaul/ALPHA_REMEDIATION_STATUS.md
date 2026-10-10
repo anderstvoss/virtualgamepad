@@ -2551,3 +2551,35 @@ The enclosing phase and observer failed as required. Original resources were
 restored with empty cleanup-error lists. No repeated green run substitutes for
 this failure. Gate 4 remains open and Gate 6 is unqualified; next evidence must
 locate native graph drops and the Xbox underrun rather than weaken assertions.
+
+
+### Native drop baseline at `8ea4550`
+
+At `8ea455069070ce15803db09e0b784c565c4af866`, tree
+`3627707d5ca6b0e32b1b0049ae4ed58e24b4879e`, image
+`b0953ece1a94104113f3816cc15702982fd830474571dc6f2c2ec0345cdcf60b`,
+the cached pretrial graph-drop counter was zero for all three families and rose
+to 1024 during each marker trial. Prior lifecycle clients therefore do not explain
+these counts. The metrics update every 100 ms: this narrows their scope but does
+not locate individual dropped graph buffers. DualSense/DS4 measured windows passed;
+Xbox received 143968 valid frames plus 32 silence frames and failed. Its 1280
+startup silence frames plus 32 measured silence frames reconcile to the 1312
+reported cumulative underruns. All three playback marker windows passed.
+No third unchanged diagnostic repetition is justified by these results.
+
+The maintained launcher also encountered a startup race: it inspected the owned
+unit before systemd assigned an invocation identity and treated that pending
+state as a changed identity. The runner correction waits within the existing
+startup deadline for an initially empty/all-zero invocation only when the
+executable is absent or matches the frozen image. It still refuses foreign
+executables and refuses cleanup without an established matching identity.
+Regression tests cover pending startup, foreign paths and expected-identity
+mismatch. The original failed orchestration receipt retains its cleanup-observation
+errors. Subsequent inspection confirmed the observer was collected (MainPID zero,
+unit not found), and the separately retrieved root receipt records restoration
+with no root cleanup errors. Do not relabel that failed coordinator as passed.
+
+Next causal instrumentation must distinguish graph EMPTY/CORRUPTED-buffer
+accounting from PCM queue overflow and locate the Xbox underrun in media time.
+The cumulative graph-drop counter alone cannot identify the mechanism. All
+existing assertions remain in force; Gates 1/4/5/6 remain open.

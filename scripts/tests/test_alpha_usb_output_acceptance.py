@@ -70,3 +70,14 @@ class TypedOutputRunner(unittest.TestCase):
             invalid['clients'][0]['stdout']+=('\n'+json.dumps(dict(public_factory=factory)))*count
             with self.assertRaises(RuntimeError):
                 lab.accepted(invalid,'candidate',0,'1 passed; 0 failed',digest)
+
+
+    def test_unassigned_startup_identity_waits_without_authorizing_cleanup(self):
+        for invocation in ('','0'*32):
+            properties='LoadState=loaded\nInvocationID='+invocation+'\nExecStart='
+            self.assertIsNone(lab.observer_identity(properties,Path('/fake/observer')))
+            self.assertIsNone(lab.observer_identity(properties+'/fake/observer',Path('/fake/observer')))
+            with self.assertRaises(RuntimeError):
+                lab.observer_identity(properties+'/foreign/program',Path('/fake/observer'))
+            with self.assertRaises(RuntimeError):
+                lab.observer_identity(properties,Path('/fake/observer'),'a'*32)
