@@ -32,8 +32,18 @@ struct Metrics {
     graph_input_peak: AtomicU64,
     maximum_credit_request_us: AtomicU64,
     maximum_pump_gap_us: AtomicU64,
+    maximum_host_poll_gap_us: AtomicU64,
+    maximum_host_advance_frames: AtomicU64,
 }
 impl Metrics {
+    fn observe_host_clock(&self, gap: Duration, previous: u64, host: u64) {
+        self.maximum_host_poll_gap_us.fetch_max(
+            u64::try_from(gap.as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        self.maximum_host_advance_frames
+            .fetch_max(host.saturating_sub(previous), Ordering::Relaxed);
+    }
     fn capture(&self, session: &gr_audio_linux::Session) {
         self.source_underruns
             .store(session.underrun_frames(), Ordering::Release);
@@ -169,6 +179,8 @@ fn spawn_host_clock_poller(
     metrics: Arc<Metrics>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
+        let mut previous_completion = Instant::now();
+        let mut previous_host = 0;
         while !poll_stop.load(Ordering::Acquire) {
             let started = Instant::now();
             let result = control
@@ -181,6 +193,14 @@ fn spawn_host_clock_poller(
             );
             match result {
                 Ok((host, silence)) => {
+                    let completed = Instant::now();
+                    metrics.observe_host_clock(
+                        completed.duration_since(previous_completion),
+                        previous_host,
+                        host,
+                    );
+                    previous_completion = completed;
+                    previous_host = host;
                     host_frames.store(host, Ordering::Release);
                     microphone_silence.store(silence, Ordering::Release);
                 }
@@ -370,6 +390,16 @@ impl Bridge {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+    pub(crate) fn host_clock_progress(&self) -> (u64, u64) {
+        (
+            self.metrics
+                .maximum_host_poll_gap_us
+                .load(Ordering::Acquire),
+            self.metrics
+                .maximum_host_advance_frames
+                .load(Ordering::Acquire),
+        )
     }
     pub(crate) fn scheduling_us(&self) -> (u64, u64) {
         (
@@ -683,6 +713,8 @@ mod tests {
                 graph_input_peak: AtomicU64::new(512),
                 maximum_credit_request_us: AtomicU64::new(1_500),
                 maximum_pump_gap_us: AtomicU64::new(3_000),
+                maximum_host_poll_gap_us: AtomicU64::new(9_000),
+                maximum_host_advance_frames: AtomicU64::new(432),
             }),
             thread: None,
         };
@@ -698,7 +730,24 @@ mod tests {
         assert_eq!(trace[0].omitted_events, 3);
         assert_eq!(bridge.graph_input_queue_frames(), (128, 512));
         assert_eq!(bridge.scheduling_us(), (1_500, 3_000));
+        assert_eq!(bridge.host_clock_progress(), (9_000, 432));
     }
+    #[test]
+    fn host_clock_observations_include_poll_sleep_and_preserve_maxima() {
+        let metrics = Metrics::default();
+        metrics.observe_host_clock(Duration::from_millis(15), 100, 820);
+        metrics.observe_host_clock(Duration::from_millis(2), 820, 916);
+        metrics.observe_host_clock(Duration::from_millis(3), 916, 900);
+        assert_eq!(
+            metrics.maximum_host_poll_gap_us.load(Ordering::Acquire),
+            15_000
+        );
+        assert_eq!(
+            metrics.maximum_host_advance_frames.load(Ordering::Acquire),
+            720
+        );
+    }
+
     #[test]
     fn mirror_preserves_group_formats_and_reverses_only_native_directions() {
         for profile in [

@@ -653,6 +653,14 @@ impl<'a> AudioInstrumentation<'a> {
     pub fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         self.audio.session.native_microphone_queue_frames()
     }
+    /// Maximum interval between successful native microphone host-clock replies
+    /// (microseconds), and largest host-frame advance between replies. Includes
+    /// poll sleep, lock contention and request time; not audio latency. The
+    /// maxima are independently observed and need not belong to the same poll.
+    #[must_use]
+    pub fn native_microphone_host_clock_progress(&self) -> Option<(u64, u64)> {
+        self.audio.session.native_microphone_host_clock_progress()
+    }
     /// Maximum observed credit-request and bridge-loop intervals in
     /// microseconds. These scheduling observations are not audio latency.
     #[must_use]

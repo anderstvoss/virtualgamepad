@@ -2408,3 +2408,10 @@ frames at `538aaa5`, and independent sustained controls remain unqualified.
 See the status document for counts and the distinction between warm-up and
 measurement. Revalidate affected provider and output scenarios when worker images
 change; preserve the original restoration identities and shared defaults.
+
+
+The `8ca53ed` rerun failed DualSense with 16 measured silent frames despite no
+source queue drops or abandoned captures. Require the new host-clock reply
+interval evidence before assigning the remaining silence to scheduling. Request
+latency and bridge-loop latency do not include all poll sleeps/lock waits.
+Independent interval/frame-advance maxima are not necessarily one event.

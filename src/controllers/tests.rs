@@ -1633,6 +1633,10 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 instrumentation.usb_microphone_progress()
             );
             println!(
+                "public_usb_native_host_clock_progress family={family} interval_us_host_frames={:?}",
+                instrumentation.native_microphone_host_clock_progress()
+            );
+            println!(
                 "public_usb_native_graph_loss_trace family={family} trace={:?}",
                 instrumentation.native_microphone_graph_loss_trace()
             );

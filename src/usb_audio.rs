@@ -407,6 +407,13 @@ impl crate::audio::backend::Backend for Pcm {
         }
         None
     }
+    fn native_microphone_host_clock_progress(&self) -> Option<(u64, u64)> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.host_clock_progress());
+        }
+        None
+    }
     fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {

@@ -2675,3 +2675,29 @@ check and Clippy, locked all-feature workspace tests, Gitleaks and forced
 Rust 1.85 all-target/all-feature check. Both privileged binaries were rebuilt.
 Initial Clippy findings in new test code (checked numeric conversion and similar
 local names) were corrected; assertions and existing regressions were retained.
+
+
+The exact-image rerun at `8ca53edd7d245ca6d80c3896d594f1ef3df6c281`
+(tree `b196b597352c825fd3bc743766d6c110052ee133`, root test image
+`a5235cb5c6e7dfad374822226018954d0b2b06725b769badd81f926efbf99678`)
+still failed the first DualSense native microphone cell: 143984 exact frames and
+16 silent measured frames. Worker progress reconciled 288000 completed host
+frames, 286400 consumed source frames and 1600 total silence frames; zero
+abandoned captures and source queue drops. The graph recorded only startup
+EMPTY (1024 frames at media offset zero). Later families were not reached.
+Owned restoration reported no cleanup errors; memory pressure averages were
+zero. Retain this failure: the bounded pump correction is not a continuity fix.
+
+The next instrumentation records the maximum interval between successful host
+clock replies (including poll sleep, lock contention and IPC duration) and the
+largest host-frame advance between replies. Request duration alone omitted these
+intervals. The new experimental accessor returns independent maxima; they need
+not originate from the same poll and are not audio latency or physical-delivery
+evidence. Defaults remain unavailable on unsupported backends. Deterministic
+regressions verify delayed intervals, maximum retention, regressing frame-counter
+arithmetic and readability after repeated bridge close. Ordinary-root signatures
+and all queue/fill capacities remain unchanged.
+
+The host-clock instrumentation passed mandatory fmt/check/Clippy/test/Gitleaks,
+forced Rust 1.85 all-target/all-feature check, strict root rustdoc and the
+110-item ordinary-root API snapshot check. No dependencies were added.

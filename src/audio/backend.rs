@@ -31,6 +31,9 @@ pub(crate) trait Backend: Send + Sync {
     fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         None
     }
+    fn native_microphone_host_clock_progress(&self) -> Option<(u64, u64)> {
+        None
+    }
     fn native_bridge_scheduling_us(&self) -> Option<(u64, u64)> {
         None
     }
