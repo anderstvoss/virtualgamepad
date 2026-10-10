@@ -43,17 +43,26 @@ def labels(pid):
     return f'/p{pid:x}-i', f'seat-vg-alpha-p{pid:x}'
 
 
-def rule(pid):
+def rule(pid, raw_uid=None):
     prefix, seat = labels(pid)
     # Sony's HID driver leaves input phys empty. Match its HID parent's
     # complete uevent line instead; uinput retains its own physical label.
     settings = ('ENV{ID_SEAT}="' + seat + '", ENV{LIBINPUT_IGNORE_DEVICE}="1"\n')
-    return ('SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/*' + prefix +
+    text = ('SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/*' + prefix +
             '*", ' + settings +
             'SUBSYSTEM=="input", ATTRS{phys}=="virtualgamepad/p' + f'{pid:x}' +
             '/*/c*", ' + settings +
             'SUBSYSTEM=="input", SUBSYSTEMS=="hid", ATTRS{uevent}=="*HID_PHYS=virtualgamepad/*' +
             prefix + '*", ' + settings)
+    if raw_uid is not None:
+        if type(raw_uid) is not int or not 0 < raw_uid < 2**32 - 1:
+            raise ValueError('raw access requires one non-root numeric UID')
+        # Match the complete process-owned HID identity, never a vendor/product
+        # pair. The temporary rule applies only to newly created owned nodes.
+        text += ('SUBSYSTEM=="hidraw", SUBSYSTEMS=="hid", '
+                 'ATTRS{uevent}=="*HID_PHYS=virtualgamepad/*' + prefix +
+                 '*", OWNER:="' + str(raw_uid) + '", MODE:="0600"\n')
+    return text
 
 
 def owned_physical(physical, pid):
@@ -89,6 +98,11 @@ def owned_inputs(pid, root=INPUT):
                   if re.fullmatch(r'event[0-9]+', entry.name) and input_is_owned(entry, pid))
 
 
+def owned_nodes(pid, raw_root=Path('/sys/class/hidraw')):
+    return owned_inputs(pid) + sorted(entry.name for entry in raw_root.iterdir()
+        if re.fullmatch(r'hidraw[0-9]+', entry.name) and input_is_owned(entry, pid))
+
+
 def trusted(path, directory=False):
     meta = path.lstat()
     if (meta.st_uid != 0 or meta.st_mode & 0o022 or not
@@ -109,7 +123,7 @@ def creation_group():
     return group if group != 0 else grp.getgrnam('input').gr_gid
 
 
-def restore_rule(path, expected, pid, inventory=owned_inputs):
+def restore_rule(path, expected, pid, inventory=owned_nodes):
     if inventory(pid):
         raise RuntimeError('owned input devices remain; isolation rule retained')
     if not path.exists() and not path.is_symlink():
@@ -187,7 +201,7 @@ def run(args):
             descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o644)
             expected = identity(path)
             with os.fdopen(descriptor, 'w') as destination:
-                destination.write(rule(process.pid))
+                destination.write(rule(process.pid, args.uid if getattr(args, 'owned_hidraw_access', False) else None))
             subprocess.run(['udevadm', 'verify', str(path)], check=True, timeout=10)
             subprocess.run(['udevadm', 'control', '--reload'], check=True, timeout=10)
             os.write(write_fd, b'G'); os.close(write_fd); write_fd = -1
@@ -216,7 +230,7 @@ def run(args):
             try:
                 terminate_group(process.pid)
                 deadline = time.monotonic() + 5
-                while owned_inputs(process.pid) and time.monotonic() < deadline:
+                while owned_nodes(process.pid) and time.monotonic() < deadline:
                     time.sleep(.05)
                 if expected is not None:
                     restore_rule(path, expected, process.pid)
@@ -251,6 +265,8 @@ def main():
     parser.add_argument('--input-gid', type=int, required=True)
     parser.add_argument('--command-hash', required=True)
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--owned-hidraw-access', action='store_true',
+                        help='temporary owner-only raw access for the gated child HID identities')
     parser.add_argument('--env', action='append', default=[])
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()

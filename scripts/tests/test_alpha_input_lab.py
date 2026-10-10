@@ -48,6 +48,30 @@ class InputIsolation(unittest.TestCase):
                 (device / 'phys').write_text(physical)
             self.assertEqual(lab.owned_inputs(42, root), ['event0', 'event1'])
 
+    def test_raw_access_is_explicit_and_matches_only_the_gated_child(self):
+        text = lab.rule(42, 1001)
+        raw = [line for line in text.splitlines() if 'SUBSYSTEM=="hidraw"' in line]
+        self.assertEqual(len(raw), 1)
+        self.assertIn('HID_PHYS=virtualgamepad/*/p2a-i*', raw[0])
+        self.assertIn('OWNER:="1001", MODE:="0600"', raw[0])
+        self.assertNotIn('OWNER', lab.rule(42))
+        for uid in (0, -1, True, '1001', 2**32 - 1):
+            with self.assertRaises(ValueError):lab.rule(42, uid)
+
+    def test_raw_nodes_are_accounted_for_before_rule_restoration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, physical in [('hidraw0','virtualgamepad/uhid/xbox360/p2a-i0'),
+                                   ('hidraw1','virtualgamepad/uhid/xbox360/p2aa-i0')]:
+                device=root/name/'device';device.mkdir(parents=True)
+                (device/'phys').write_text(physical)
+            with patch.object(lab, 'owned_inputs', return_value=[]):
+                self.assertEqual(lab.owned_nodes(42, root), ['hidraw0'])
+            path=root/'owned.rules';path.write_text('sanitized rule')
+            with self.assertRaisesRegex(RuntimeError, 'devices remain'):
+                lab.restore_rule(path,lab.identity(path),42,lambda pid:['hidraw0'])
+            self.assertTrue(path.exists())
+
     def test_compound_labels_keep_exact_process_and_full_creation_identity(self):
         creation = '0123456789abcdef0123456789abcdef'
         self.assertTrue(lab.owned_physical(f'virtualgamepad/p2a/{creation}/c0000', 42))

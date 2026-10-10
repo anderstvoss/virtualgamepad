@@ -2235,3 +2235,46 @@ directory. No input was armed and no Steam consumer acceptance is claimed.
 Temporary access and desktop isolation must be established for all owned nodes
 before the full consumer trial; do not omit the inaccessible node or grant
 access to foreign devices. Raw receipts remain outside tracked source.
+
+
+## Maintained C control: quiet versus active CPU diagnostic
+
+At `ff4b2978bcc423df93a98f0248074504dd9a494d`, one bounded comparison used
+the unchanged maintained C control source and recorded compiler/binary receipts.
+Both trials pinned their owned daemon/client tasks to the same CPU and verified
+realtime priority 20. The quiet three-second trial generated/submitted all
+144000 frames but received 120448, losing 23552 frames across 36 ranges; its
+production took 3.684 seconds. The ledger shows successful queue returns,
+callback gaps and graph-clock steps at the affected window. Loss localization
+is still graph/callback delivery, not a product PCM queue.
+
+Adding a bounded ordinary-priority active process on the same CPU delivered all
+144000 frames in 2.997 seconds with no missing, duplicate or corrupt markers.
+A subsequent 60-second diagnostic delivered all 2880000 measured frames in
+59.999981445 seconds, with zero loss/duplication/corruption/partial frames,
+zero ledger overflow and complete owned-process teardown. A live peer sample
+confirmed ordinary execution and approximately 46.85 CPU seconds during its
+first 47 wall seconds. The direct C trial measures continuity, not latency.
+
+This strengthens the idle/wakeup scheduling hypothesis but does **not** close
+Gate 6 or replace quiet-host qualification. A CPU-burning helper is not a
+product fix. The initial wrapper also failed because it expected a separate
+client data-loop thread; maintained C callbacks execute on the main loop.
+That failed setup receipt is retained, and the corrected diagnostic grants the
+actual main callback thread and observed daemon loop threads. No loss, rate,
+latency or queue-size threshold was changed. A supported quiet correction and
+all required controls/product trials remain necessary.
+
+## Owned raw input preparation extension
+
+The input-isolation runner now supports an explicit optional raw-HID access
+rule for one validated non-root UID. Its default still changes no raw-node
+permissions. The opt-in rule matches the gated child PID in complete HID
+physical identity, sets owner-only access for newly created matching nodes and
+never selects by vendor/product alone. Restoration now accounts for both event
+and raw HID nodes before removing its identity-pinned temporary rule.
+Two added deterministic regressions cover explicit admission, malformed/root
+UID rejection, foreign process-prefix exclusion and retention while raw nodes
+remain. All 363 Python tooling tests and an ordinary-user udev syntax check
+passed. This source extension is not installed or accepted live yet; the existing
+autonomous updater deliberately rejects changes to its fixed phase/payload scope.
