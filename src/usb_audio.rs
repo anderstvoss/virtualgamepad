@@ -356,6 +356,13 @@ impl crate::audio::backend::Backend for Pcm {
         }
         None
     }
+    fn native_microphone_graph_loss_trace(&self) -> Option<Vec<crate::audio::AudioInputLossTrace>> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.graph_input_loss_trace());
+        }
+        None
+    }
     fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {

@@ -8,7 +8,7 @@ use pw::{properties::properties, spa};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
     thread,
@@ -33,7 +33,7 @@ pub struct Endpoint {
 pub struct Session {
     endpoints: Vec<Endpoint>,
     clocks: Vec<(String, Arc<timing::Shared>)>,
-    input_losses: Vec<Arc<InputLoss>>,
+    input_losses: Vec<(String, Arc<InputLoss>)>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
@@ -108,7 +108,11 @@ impl Session {
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))
             .collect();
-        let input_losses = specs.iter().map(|spec| spec.input_loss.clone()).collect();
+        let input_losses = specs
+            .iter()
+            .filter(|spec| matches!(&spec.io, Io::Sink(_)))
+            .map(|spec| (spec.name.clone(), spec.input_loss.clone()))
+            .collect();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let worker_stop = stop.clone();
         let worker_failed = failed.clone();
@@ -243,14 +247,26 @@ impl Session {
     /// Independent atomic observations are diagnostic, not a transactional snapshot.
     #[must_use]
     pub fn input_loss_frames(&self) -> (u64, u64, u64) {
-        self.input_losses.iter().fold((0, 0, 0), |totals, loss| {
-            let observed = loss.frames();
-            (
-                totals.0 + observed.0,
-                totals.1 + observed.1,
-                totals.2 + observed.2,
-            )
-        })
+        self.input_losses
+            .iter()
+            .fold((0, 0, 0), |totals, (_, loss)| {
+                let observed = loss.frames();
+                (
+                    totals.0 + observed.0,
+                    totals.1 + observed.1,
+                    totals.2 + observed.2,
+                )
+            })
+    }
+
+    /// Bounded per-input loss events. Export allocates only on the observer thread.
+    /// Counters and events are independent observations, not a transactional snapshot.
+    #[must_use]
+    pub fn input_loss_trace(&self) -> Vec<InputLossTrace> {
+        self.input_losses
+            .iter()
+            .map(|(endpoint, loss)| loss.trace(endpoint.clone()))
+            .collect()
     }
 
     pub fn activate_inputs(&self) {
@@ -312,13 +328,115 @@ enum Io {
     Sink(PcmProducer),
     Source(PcmConsumer),
 }
+/// Reason for rejecting graph input frames before queue admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputLossReason {
+    Empty,
+    Corrupted,
+    QueueOverflow,
+}
+/// One immutable entry in a preallocated, append-only callback loss ledger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputLossEvent {
+    pub reason: InputLossReason,
+    /// Input media position, including earlier rejected buffers; not producer identity.
+    pub first_frame: u64,
+    pub frames: u64,
+    /// Raw graph clock observation, unavailable when the stream clock could not be read.
+    pub graph_ticks: Option<u64>,
+}
+/// The first 64 rejected ranges for an input, with explicit subsequent event omission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InputLossTrace {
+    pub endpoint: String,
+    pub received_frames: u64,
+    pub events: Vec<InputLossEvent>,
+    pub omitted_events: u64,
+}
+const LOSS_EVENTS: usize = 64;
 #[derive(Default)]
+struct LossSlot {
+    reason: AtomicU64,
+    first_frame: AtomicU64,
+    frames: AtomicU64,
+    graph_ticks: AtomicU64,
+    clock_available: AtomicBool,
+}
 struct InputLoss {
     empty: AtomicU64,
     corrupted: AtomicU64,
     overflow: AtomicU64,
+    received: AtomicU64,
+    published: AtomicUsize,
+    omitted: AtomicU64,
+    events: [LossSlot; LOSS_EVENTS],
+}
+impl Default for InputLoss {
+    fn default() -> Self {
+        Self {
+            empty: AtomicU64::new(0),
+            corrupted: AtomicU64::new(0),
+            overflow: AtomicU64::new(0),
+            received: AtomicU64::new(0),
+            published: AtomicUsize::new(0),
+            omitted: AtomicU64::new(0),
+            events: std::array::from_fn(|_| LossSlot::default()),
+        }
+    }
 }
 impl InputLoss {
+    // One process callback owns each endpoint. Slots are never rewritten, and
+    // release publication makes their immutable fields visible to observers.
+    fn record(&self, reason: InputLossReason, first_frame: u64, frames: u64, ticks: Option<u64>) {
+        if frames == 0 {
+            return;
+        }
+        let index = self.published.load(Ordering::Relaxed);
+        let Some(slot) = self.events.get(index) else {
+            self.omitted.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        let code = match reason {
+            InputLossReason::Empty => 1,
+            InputLossReason::Corrupted => 2,
+            InputLossReason::QueueOverflow => 3,
+        };
+        slot.reason.store(code, Ordering::Relaxed);
+        slot.first_frame.store(first_frame, Ordering::Relaxed);
+        slot.frames.store(frames, Ordering::Relaxed);
+        slot.graph_ticks
+            .store(ticks.unwrap_or(0), Ordering::Relaxed);
+        slot.clock_available
+            .store(ticks.is_some(), Ordering::Relaxed);
+        self.published.store(index + 1, Ordering::Release);
+    }
+    fn trace(&self, endpoint: String) -> InputLossTrace {
+        let count = self.published.load(Ordering::Acquire);
+        let events = self.events[..count]
+            .iter()
+            .map(|slot| InputLossEvent {
+                reason: match slot.reason.load(Ordering::Relaxed) {
+                    1 => InputLossReason::Empty,
+                    2 => InputLossReason::Corrupted,
+                    3 => InputLossReason::QueueOverflow,
+                    _ => unreachable!("published loss reason"),
+                },
+                first_frame: slot.first_frame.load(Ordering::Relaxed),
+                frames: slot.frames.load(Ordering::Relaxed),
+                graph_ticks: slot
+                    .clock_available
+                    .load(Ordering::Relaxed)
+                    .then(|| slot.graph_ticks.load(Ordering::Relaxed)),
+            })
+            .collect();
+        InputLossTrace {
+            endpoint,
+            received_frames: self.received.load(Ordering::Relaxed),
+            events,
+            omitted_events: self.omitted.load(Ordering::Relaxed),
+        }
+    }
+
     fn frames(&self) -> (u64, u64, u64) {
         (
             self.empty.load(Ordering::Relaxed),
@@ -630,6 +748,7 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
                 bytes,
                 flags,
                 &data.input_loss,
+                clock_time.as_ref().map(pw::stream::Time::ticks),
             );
             if result.is_err() {
                 data.failed.store(true, Ordering::Release);
@@ -719,14 +838,22 @@ fn ingest(
     bytes: &[u8],
     flags: i32,
     loss: &InputLoss,
+    graph_ticks: Option<u64>,
 ) -> Result<(), AudioError> {
     if bytes.len() % (channels * 2) != 0 {
         return Err(AudioError::InvalidRequirement);
     }
+    let frames = u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?;
+    let first_frame = loss.received.load(Ordering::Relaxed);
+    let end = first_frame
+        .checked_add(frames)
+        .ok_or(AudioError::InvalidRequirement)?;
+    loss.received.store(end, Ordering::Relaxed);
     if flags & spa::buffer::ChunkFlags::CORRUPTED.bits() != 0 {
         let frames = u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?;
         tx.discard(frames)?;
         loss.corrupted.fetch_add(frames, Ordering::Relaxed);
+        loss.record(InputLossReason::Corrupted, first_frame, frames, graph_ticks);
         return Ok(());
     }
     // EMPTY means the host supplied no sample content. Account for its media
@@ -737,8 +864,10 @@ fn ingest(
         let frames = u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?;
         tx.discard(frames)?;
         loss.empty.fetch_add(frames, Ordering::Relaxed);
+        loss.record(InputLossReason::Empty, first_frame, frames, graph_ticks);
         return Ok(());
     }
+    let mut position = first_frame;
     for packet in bytes.chunks(scratch.len() / channels * channels * 2) {
         let count = packet.len() / 2;
         for (sample, pair) in scratch[..count].iter_mut().zip(packet.chunks_exact(2)) {
@@ -748,6 +877,13 @@ fn ingest(
         let discarded = u64::try_from(count / channels - n).map_err(backend)?;
         tx.discard(discarded)?;
         loss.overflow.fetch_add(discarded, Ordering::Relaxed);
+        loss.record(
+            InputLossReason::QueueOverflow,
+            position + n as u64,
+            discarded,
+            graph_ticks,
+        );
+        position += (count / channels) as u64;
     }
     Ok(())
 }
@@ -1107,6 +1243,7 @@ mod tests {
             &[1, 0, 2, 0],
             spa::buffer::ChunkFlags::CORRUPTED.bits(),
             &loss,
+            None,
         )
         .unwrap();
         ingest(
@@ -1116,9 +1253,10 @@ mod tests {
             &[99, 99, 99, 99],
             SPA_CHUNK_FLAG_EMPTY,
             &loss,
+            None,
         )
         .unwrap();
-        ingest(&mut tx, &mut scratch, 2, &[3, 0, 4, 0], 0, &loss).unwrap();
+        ingest(&mut tx, &mut scratch, 2, &[3, 0, 4, 0], 0, &loss, None).unwrap();
         let mut samples = [42; 2];
         let read = rx.read(&mut samples).unwrap();
         assert_eq!(samples, [3, 4]);
@@ -1126,7 +1264,7 @@ mod tests {
         assert!(read.discontinuity);
         assert_eq!(rx.discarded_frames(), 2);
         assert_eq!(loss.frames(), (1, 1, 0));
-        assert!(ingest(&mut tx, &mut scratch, 2, &[0; 3], 0, &loss).is_err());
+        assert!(ingest(&mut tx, &mut scratch, 2, &[0; 3], 0, &loss, None).is_err());
     }
     #[test]
     fn input_loss_reasons_reconcile_without_double_counting_flags_or_overflow() {
@@ -1134,7 +1272,7 @@ mod tests {
         let (mut tx, rx) = pcm_queue(&format, 4).unwrap();
         let loss = InputLoss::default();
         let mut scratch = [0; 16];
-        ingest(&mut tx, &mut scratch, 1, &[1; 12], 0, &loss).unwrap();
+        ingest(&mut tx, &mut scratch, 1, &[1; 12], 0, &loss, None).unwrap();
         ingest(
             &mut tx,
             &mut scratch,
@@ -1142,6 +1280,7 @@ mod tests {
             &[0; 4],
             SPA_CHUNK_FLAG_EMPTY | spa::buffer::ChunkFlags::CORRUPTED.bits(),
             &loss,
+            None,
         )
         .unwrap();
         ingest(
@@ -1151,12 +1290,138 @@ mod tests {
             &[0; 6],
             SPA_CHUNK_FLAG_EMPTY,
             &loss,
+            None,
         )
         .unwrap();
         assert_eq!(loss.frames(), (3, 2, 2));
         assert_eq!(rx.discarded_frames(), 7);
-        assert!(ingest(&mut tx, &mut scratch, 1, &[0; 3], 0, &loss).is_err());
+        assert!(ingest(&mut tx, &mut scratch, 1, &[0; 3], 0, &loss, None).is_err());
         assert_eq!(loss.frames(), (3, 2, 2));
+    }
+
+    #[test]
+    fn input_loss_ledger_tracks_media_positions_and_unknown_clocks() {
+        let format = PcmFormat::new(48_000, &[C::Microphone]).unwrap();
+        let (mut tx, rx) = pcm_queue(&format, 4).unwrap();
+        let loss = InputLoss::default();
+        let mut scratch = [0; 32];
+        ingest(&mut tx, &mut scratch, 1, &[1; 4], 0, &loss, Some(10)).unwrap();
+        ingest(
+            &mut tx,
+            &mut scratch,
+            1,
+            &[0; 6],
+            SPA_CHUNK_FLAG_EMPTY,
+            &loss,
+            None,
+        )
+        .unwrap();
+        ingest(
+            &mut tx,
+            &mut scratch,
+            1,
+            &[0; 2],
+            spa::buffer::ChunkFlags::CORRUPTED.bits(),
+            &loss,
+            Some(15),
+        )
+        .unwrap();
+        ingest(&mut tx, &mut scratch, 1, &[1; 20], 0, &loss, Some(16)).unwrap();
+        let trace = loss.trace("synthetic.input".into());
+        assert_eq!(trace.received_frames, 16);
+        assert_eq!(trace.omitted_events, 0);
+        assert_eq!(
+            trace.events,
+            vec![
+                InputLossEvent {
+                    reason: InputLossReason::Empty,
+                    first_frame: 2,
+                    frames: 3,
+                    graph_ticks: None
+                },
+                InputLossEvent {
+                    reason: InputLossReason::Corrupted,
+                    first_frame: 5,
+                    frames: 1,
+                    graph_ticks: Some(15)
+                },
+                InputLossEvent {
+                    reason: InputLossReason::QueueOverflow,
+                    first_frame: 8,
+                    frames: 8,
+                    graph_ticks: Some(16)
+                },
+            ]
+        );
+        assert_eq!(loss.frames(), (3, 1, 8));
+        assert_eq!(rx.discarded_frames(), 12);
+        assert!(ingest(&mut tx, &mut scratch, 1, &[0; 3], 0, &loss, None).is_err());
+        assert_eq!(loss.trace("synthetic.input".into()), trace);
+    }
+
+    #[test]
+    fn input_loss_ledger_is_bounded_and_preserves_omitted_counts() {
+        let format = PcmFormat::new(48_000, &[C::Microphone]).unwrap();
+        let (mut tx, rx) = pcm_queue(&format, 4).unwrap();
+        let loss = InputLoss::default();
+        let mut scratch = [0; 16];
+        for frame in 0..70 {
+            ingest(
+                &mut tx,
+                &mut scratch,
+                1,
+                &[0; 2],
+                SPA_CHUNK_FLAG_EMPTY,
+                &loss,
+                Some(frame),
+            )
+            .unwrap();
+        }
+        let trace = loss.trace("synthetic.input".into());
+        assert_eq!(trace.events.len(), LOSS_EVENTS);
+        assert_eq!(trace.received_frames, 70);
+        assert_eq!(trace.omitted_events, 6);
+        assert_eq!(trace.events.last().unwrap().first_frame, 63);
+        assert_eq!(rx.discarded_frames(), 70);
+        loss.received.store(u64::MAX, Ordering::Relaxed);
+        assert!(
+            ingest(
+                &mut tx,
+                &mut scratch,
+                1,
+                &[0; 2],
+                SPA_CHUNK_FLAG_EMPTY,
+                &loss,
+                None
+            )
+            .is_err()
+        );
+        assert_eq!(loss.trace("synthetic.input".into()).omitted_events, 6);
+    }
+
+    #[test]
+    fn input_loss_publication_never_exposes_partial_or_rewritten_entries() {
+        let loss = Arc::new(InputLoss::default());
+        let writer = loss.clone();
+        let task = thread::spawn(move || {
+            for frame in 0..1000 {
+                writer.record(InputLossReason::Empty, frame, 1, Some(frame + 10));
+            }
+        });
+        while !task.is_finished() {
+            let trace = loss.trace("synthetic.input".into());
+            for (index, event) in trace.events.iter().enumerate() {
+                assert_eq!(event.first_frame, index as u64);
+                assert_eq!(event.frames, 1);
+                assert_eq!(event.graph_ticks, Some(index as u64 + 10));
+                assert_eq!(event.reason, InputLossReason::Empty);
+            }
+        }
+        task.join().unwrap();
+        let trace = loss.trace("synthetic.input".into());
+        assert_eq!(trace.events.len(), LOSS_EVENTS);
+        assert_eq!(trace.omitted_events, 936);
+        assert_eq!(trace.events[0].first_frame, 0);
     }
 
     #[test]

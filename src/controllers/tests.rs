@@ -1629,6 +1629,10 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         if native_microphone.is_some() {
             let instrumentation = crate::experimental::audio_instrumentation(audio);
             println!(
+                "public_usb_native_graph_loss_trace family={family} trace={:?}",
+                instrumentation.native_microphone_graph_loss_trace()
+            );
+            println!(
                 "public_usb_native_microphone_counters family={family} graph_dropped={:?} cached_graph_dropped_before={graph_dropped_before:?} cached_trial_graph_drop_delta={:?} graph_loss_empty_corrupted_overflow={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
                 instrumentation.native_microphone_dropped_frames(),
                 public_counter_delta(

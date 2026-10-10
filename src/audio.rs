@@ -159,6 +159,45 @@ pub struct AudioStreamTiming {
     pub missed_graph_frames: u64,
 }
 
+/// Experimental classification of graph input frames rejected before queue admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+// Constructed by the optional Linux USB/PipeWire bridge; still available in
+// the experimental diagnostic surface when that backend is not compiled.
+#[cfg_attr(
+    not(all(
+        target_os = "linux",
+        feature = "audio-usbip",
+        feature = "audio-pipewire"
+    )),
+    allow(dead_code)
+)]
+pub enum AudioInputLossReason {
+    Empty,
+    Corrupted,
+    QueueOverflow,
+}
+/// A rejected input range. Media position includes earlier rejected buffers and
+/// is not a producer marker identity. Graph ticks are raw observed clock units.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioInputLossEvent {
+    pub reason: AudioInputLossReason,
+    pub first_frame: u64,
+    pub frames: u64,
+    pub graph_ticks: Option<u64>,
+}
+/// Bounded first-event ledger for one graph input. Later events are explicitly
+/// counted as omitted. Cached diagnostics are not a transactional snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioInputLossTrace {
+    pub endpoint: String,
+    pub received_frames: u64,
+    pub events: Vec<AudioInputLossEvent>,
+    pub omitted_events: u64,
+}
+
 /// Audio is borrowed from a controller, never independently reopened or detached.
 /// Endpoint association distinguishes `PipeWire` companions from USB composite
 /// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
@@ -575,6 +614,13 @@ impl<'a> AudioInstrumentation<'a> {
     #[must_use]
     pub fn native_microphone_graph_loss_frames(&self) -> Option<(u64, u64, u64)> {
         self.audio.session.native_microphone_graph_loss_frames()
+    }
+    /// First 64 rejected ranges per native graph input, including explicit
+    /// ledger overflow. Callback recording is preallocated; export is cached
+    /// every 100 ms. `None` means the backend does not provide this evidence.
+    #[must_use]
+    pub fn native_microphone_graph_loss_trace(&self) -> Option<Vec<AudioInputLossTrace>> {
+        self.audio.session.native_microphone_graph_loss_trace()
     }
     /// Current and peak native microphone graph queue fill, in frames. Queue
     /// capacity is spare room for scheduling stalls, not a desired latency.

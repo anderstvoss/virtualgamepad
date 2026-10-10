@@ -42,7 +42,10 @@ pub use gr_realization_api::{
 };
 
 // Root-handle instrumentation is explicitly outside the alpha application contract.
-pub use crate::audio::{AudioInstrumentation, AudioStreamTiming};
+pub use crate::audio::{
+    AudioInputLossEvent, AudioInputLossReason, AudioInputLossTrace, AudioInstrumentation,
+    AudioStreamTiming,
+};
 #[must_use]
 pub fn audio_instrumentation(audio: &crate::ControllerAudio) -> AudioInstrumentation<'_> {
     AudioInstrumentation::new(audio)

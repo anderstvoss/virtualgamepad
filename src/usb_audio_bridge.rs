@@ -22,6 +22,7 @@ pub(crate) struct Bridge {
 #[derive(Default)]
 struct Metrics {
     timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
+    loss_trace: Mutex<Vec<crate::audio::AudioInputLossTrace>>,
     source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
     graph_input_empty: AtomicU64,
@@ -38,6 +39,38 @@ impl Metrics {
             .store(session.underrun_frames(), Ordering::Release);
         self.graph_input_dropped
             .store(session.dropped_playback_frames(), Ordering::Release);
+        *self
+            .loss_trace
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session
+            .input_loss_trace()
+            .into_iter()
+            .map(|trace| crate::audio::AudioInputLossTrace {
+                endpoint: trace.endpoint,
+                received_frames: trace.received_frames,
+                omitted_events: trace.omitted_events,
+                events: trace
+                    .events
+                    .into_iter()
+                    .map(|event| crate::audio::AudioInputLossEvent {
+                        first_frame: event.first_frame,
+                        frames: event.frames,
+                        graph_ticks: event.graph_ticks,
+                        reason: match event.reason {
+                            gr_audio_linux::InputLossReason::Empty => {
+                                crate::audio::AudioInputLossReason::Empty
+                            }
+                            gr_audio_linux::InputLossReason::Corrupted => {
+                                crate::audio::AudioInputLossReason::Corrupted
+                            }
+                            gr_audio_linux::InputLossReason::QueueOverflow => {
+                                crate::audio::AudioInputLossReason::QueueOverflow
+                            }
+                        },
+                    })
+                    .collect(),
+            })
+            .collect();
         let (empty, corrupted, overflow) = session.input_loss_frames();
         self.graph_input_empty.store(empty, Ordering::Release);
         self.graph_input_corrupted
@@ -308,6 +341,13 @@ impl Bridge {
             self.metrics.graph_input_overflow.load(Ordering::Acquire),
         )
     }
+    pub(crate) fn graph_input_loss_trace(&self) -> Vec<crate::audio::AudioInputLossTrace> {
+        self.metrics
+            .loss_trace
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
     pub(crate) fn scheduling_us(&self) -> (u64, u64) {
         (
             self.metrics
@@ -529,6 +569,17 @@ mod tests {
             error: Arc::new(Mutex::new(None)),
             metrics: Arc::new(Metrics {
                 timings: Mutex::new(vec![timing.clone()]),
+                loss_trace: Mutex::new(vec![crate::audio::AudioInputLossTrace {
+                    endpoint: "synthetic.native".into(),
+                    received_frames: 256,
+                    events: vec![crate::audio::AudioInputLossEvent {
+                        reason: crate::audio::AudioInputLossReason::Empty,
+                        first_frame: 0,
+                        frames: 8,
+                        graph_ticks: Some(42),
+                    }],
+                    omitted_events: 3,
+                }]),
                 source_underruns: AtomicU64::new(512),
                 graph_input_dropped: AtomicU64::new(24),
                 graph_input_empty: AtomicU64::new(8),
@@ -547,6 +598,10 @@ mod tests {
         assert_eq!(bridge.source_underrun_frames(), 512);
         assert_eq!(bridge.graph_input_dropped_frames(), 24);
         assert_eq!(bridge.graph_input_loss_frames(), (8, 4, 12));
+        let trace = bridge.graph_input_loss_trace();
+        assert_eq!(trace[0].received_frames, 256);
+        assert_eq!(trace[0].events[0].frames, 8);
+        assert_eq!(trace[0].omitted_events, 3);
         assert_eq!(bridge.graph_input_queue_frames(), (128, 512));
         assert_eq!(bridge.scheduling_us(), (1_500, 3_000));
     }
