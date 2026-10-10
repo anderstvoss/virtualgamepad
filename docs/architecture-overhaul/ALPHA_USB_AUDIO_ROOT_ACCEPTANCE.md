@@ -1,8 +1,44 @@
 # Public-root USB audio lifecycle acceptance
 
 Gate 4 remains open. This receipt closes public sample-factory creation and normal
-shutdown for the three implemented audio profiles; it does not establish routing,
-native ownership, sustained continuity or latency.
+shutdown for the three implemented audio profiles. The later trial below also
+passes all four sample/native ownership combinations. It does not establish
+route transitions, sustained continuity or latency.
+
+
+## Subsequent ownership and teardown investigation
+
+At source `0b34470e854e06cffe101b1d1ff5ee67e181636e`, tree
+`e96574fa0f5618c16605b205c752e37dad11242d`, the ordinary test image
+`dadbc873077c898d08c91bb74fd3bf8b9763cea0887243a24891239b0c4aaa22`
+passed all twelve public factory cases: DualSense, DS4 and Xbox 360, each with
+sample/sample, sample/native, native/sample and native/native ownership.
+The selected child test, observing parent and combined privileged phase all
+returned zero. Each case checks endpoint formats, ownership errors, neutral
+service, normal and repeated close, terminal closed state and absence of retained
+cleanup errors. Native cases use a private graph; its startup and final nodes were
+only Dummy-Driver and Freewheel-Driver, and owned graph children retained no sound
+device handles at the final snapshot. This does not prove native endpoint node
+membership during each case; that receipt remains required.
+
+The same phase passed short direct-ALSA duplex markers for all three profiles:
+144,000 measured capture frames per profile with no missing patterns or silence,
+and 288,000 playback frames with no gaps. Shared defaults remained unchanged.
+These three-second functional trials do not satisfy sustained qualification.
+
+Historical repeated-enumeration failures at `a27492c` and `064afbe` remain visible:
+they failed before ownership setup, despite earlier cells passing. Read-only
+snapshots added in this candidate caught a DS4 USB node and busy VHCI state after
+successful close; another snapshot caught an Xbox USB node after VHCI became free.
+The combined phase ultimately restored resources without cleanup errors. The
+snapshots demonstrate asynchronous removal, not a proven cause of those earlier
+timeouts. Do not mark repeated-creation reliability closed from one successful
+matrix, or add arbitrary sleeps or relaxed deadlines as a correction.
+
+All five mandatory source checks, forced Rust 1.85 workspace checks and all 357
+Python tooling tests passed before this live trial. Production broker and worker
+hashes remain the values recorded above. No product behavior or acceptance limit
+changed in this diagnostic increment.
 
 ## Exact candidate and observed correction
 
