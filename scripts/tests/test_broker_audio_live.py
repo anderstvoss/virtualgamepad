@@ -78,6 +78,40 @@ class BrokerLiveTests(unittest.TestCase):
             for closed in (descriptor, frozen):
                 with self.assertRaises(OSError): os.fstat(closed)
 
+    def test_marker_probe_requires_exchange_receipts_in_addition_to_ownership(self):
+        ownership = '\n'.join(
+            f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true'
+            for family in ('dualsense', 'dualshock4', 'xbox360')
+            for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
+        for markers in (False, True):
+            with self.subTest(markers=markers), tempfile.TemporaryFile() as source:
+                source.write(b'\x7fELFfake'); source.flush()
+                descriptor = os.dup(source.fileno()); frozen = os.dup(source.fileno())
+                peer = Mock(); peer.recv.return_value = b'R'
+                peer.recvmsg.return_value = (bytes(32), [(socket.SOL_SOCKET, socket.SCM_RIGHTS,
+                    array.array('i', [descriptor]).tobytes())], 0, None)
+                def run(command, **options):
+                    self.assertEqual(options['env']['VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE'], 'fixture')
+                    self.assertEqual(options['env']['VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB'], '1')
+                    text = ownership + '\n1 passed; 0 failed\n'
+                    if markers:
+                        text += '\n'.join(f'public_usb_sample_exchange family={family} passed=true'
+                            for family in ('dualsense', 'dualshock4', 'xbox360'))
+                    options['stdout'].write(text.encode())
+                    return Mock(returncode=0)
+                with patch.object(module.os, 'geteuid', return_value=1000), \
+                     patch.object(module, 'sealed_probe_image', return_value=frozen), \
+                     patch.object(module, 'private_probe_graph', return_value=contextlib.nullcontext({})), \
+                     patch.object(module.subprocess, 'run', side_effect=run), patch('builtins.print'):
+                    if markers:
+                        self.assertEqual(module.public_factory_probe(peer, 'fixture')['status'], 'passed')
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'failed or selected zero'):
+                            module.public_factory_probe(peer, 'fixture')
+                peer.sendall.assert_called_with(b'F' if markers else b'E')
+                for closed in (descriptor, frozen):
+                    with self.assertRaises(OSError): os.fstat(closed)
+
     def test_probe_timeout_and_malformed_rights_close_every_owned_descriptor(self):
         with tempfile.TemporaryFile() as source:
             source.write(b'\x7fELFfake'); source.flush()

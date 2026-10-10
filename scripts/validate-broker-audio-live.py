@@ -396,7 +396,7 @@ def private_probe_graph():
                                     retained_runtime=str(root))) from initiating
 
 
-def public_factory_probe(peer):
+def public_factory_probe(peer, instance=None):
     # This function runs only after setpriv in the prepared ordinary client unit.
     # The peer can supply one immutable ELF image, never root commands or paths.
     if os.geteuid() == 0: raise ValueError('public factory probe must run without root')
@@ -421,6 +421,10 @@ def public_factory_probe(peer):
         with private_probe_graph() as environment:
             environment.update(VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB='1',
                                VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB='1')
+            if instance is not None:
+                live.compiled_serial(instance, 1)
+                environment.update(VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB='1',
+                                   VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE=instance)
             with tempfile.TemporaryFile() as output:
                 result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
                                          '--ignored', '--nocapture'], pass_fds=(frozen,),
@@ -432,6 +436,9 @@ def public_factory_probe(peer):
             f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true' in text
             for family in ('dualsense', 'dualshock4', 'xbox360')
             for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
+        if instance is not None:
+            passed &= all(f'public_usb_sample_exchange family={family} passed=true' in text
+                          for family in ('dualsense', 'dualshock4', 'xbox360'))
         receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
                        exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
         print(json.dumps(dict(public_factory=receipt)), flush=True)
@@ -690,7 +697,7 @@ def main():
                 if not result['passed']:
                     failed=True
                     if not observer or not independent_output_complete(result):raise SystemExit(1)
-        if observer:public_factory_probe(observer.peer)
+        if observer:public_factory_probe(observer.peer, args.instance)
         if failed:raise SystemExit(1)
     finally:
         if observer:observer.close()

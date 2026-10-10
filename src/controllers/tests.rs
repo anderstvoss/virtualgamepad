@@ -1216,8 +1216,246 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert!(audio.last_error().is_none());
     }
 
+    trait PublicSampleController {
+        fn service_input(&mut self);
+        fn sample_audio(&mut self) -> &mut crate::ControllerAudio;
+    }
+
+    macro_rules! public_sample_controller {
+        ($kind:ty) => {
+            impl PublicSampleController for $kind {
+                fn service_input(&mut self) {
+                    self.service(&mut |_| {}).unwrap();
+                }
+                fn sample_audio(&mut self) -> &mut crate::ControllerAudio {
+                    self.audio().unwrap()
+                }
+            }
+        };
+    }
+    public_sample_controller!(DualSenseController);
+    public_sample_controller!(DualShock4Controller);
+    public_sample_controller!(Xbox360Controller);
+
+    fn public_marker(frame: usize, channels: usize) -> Vec<i16> {
+        let index = if channels == 1 { frame / 2 } else { frame };
+        let high = i16::try_from(index / 32_767 + 1).unwrap();
+        let low = i16::try_from(index % 32_767 + 1).unwrap();
+        match channels {
+            1 => vec![if frame % 2 == 0 { high } else { -low }],
+            2 => vec![high, low],
+            4 => vec![high, low, -high, -low],
+            _ => panic!("unsupported compiled marker layout"),
+        }
+    }
+
+    fn public_marker_index(frame: &[i16]) -> Option<usize> {
+        if !matches!(frame.len(), 2 | 4) || frame[0] <= 0 || frame[1] <= 0 {
+            return None;
+        }
+        if frame.len() == 4 && (frame[2] != -frame[0] || frame[3] != -frame[1]) {
+            return None;
+        }
+        Some(
+            usize::try_from(frame[0] - 1).unwrap() * 32_767
+                + usize::try_from(frame[1] - 1).unwrap(),
+        )
+    }
+
+    #[test]
+    fn public_usb_markers_retain_channel_integrity_and_distinct_frame_indices() {
+        for channels in [2, 4] {
+            for index in [0, 1, 32_766, 32_767, 96_000, 240_000] {
+                assert_eq!(
+                    public_marker_index(&public_marker(index, channels)),
+                    Some(index)
+                );
+            }
+        }
+        assert_eq!(public_marker(0, 1), [1]);
+        assert_eq!(public_marker(1, 1), [-1]);
+        assert_eq!(public_marker(65_534, 1), [2]);
+        assert_eq!(public_marker_index(&[0, 1]), None);
+        assert_eq!(public_marker_index(&[1, 1, -2, -1]), None);
+    }
+
+    fn record_public_playback(seen: &mut [u8], frame: &[i16], begin: usize) -> bool {
+        if let Some(index) = public_marker_index(frame) {
+            if let Some(offset) = index.checked_sub(begin) {
+                if let Some(count) = seen.get_mut(offset) {
+                    *count = count.saturating_add(1);
+                }
+            }
+            true
+        } else {
+            frame.iter().all(|sample| *sample == 0)
+        }
+    }
+
+    #[test]
+    fn public_usb_accounting_rejects_loss_balanced_by_replay_and_corruption() {
+        let mut seen = [0; 5];
+        for index in [96_000, 96_001, 96_001, 96_003, 96_004] {
+            assert!(record_public_playback(
+                &mut seen,
+                &public_marker(index, 4),
+                96_000
+            ));
+        }
+        assert_eq!(seen, [1, 2, 0, 1, 1]);
+        assert!(record_public_playback(&mut seen, &[0; 4], 96_000));
+        assert!(!record_public_playback(&mut seen, &[1, 1, -2, -1], 96_000));
+        assert!(record_public_playback(
+            &mut seen,
+            &public_marker(95_999, 4),
+            96_000
+        ));
+        assert_eq!(seen, [1, 2, 0, 1, 1]);
+    }
+
+    #[allow(clippy::too_many_lines)] // Retain the owned ALSA child and controller through bounded drain.
+    fn public_sample_exchange(
+        controller: &mut impl PublicSampleController,
+        family: &str,
+        playback_channels: usize,
+        microphone_channels: usize,
+    ) {
+        use std::io::Read;
+        use std::os::fd::OwnedFd;
+        use std::os::unix::process::CommandExt;
+        use std::process::{Child, Command, Stdio};
+        struct OwnedHost {
+            child: Child,
+            reaped: bool,
+        }
+        impl Drop for OwnedHost {
+            fn drop(&mut self) {
+                if !self.reaped {
+                    // The unreaped group leader reserves this process identity.
+                    // ALSA grandchildren inherit the dedicated process group.
+                    let _ = Command::new("/usr/bin/kill")
+                        .args(["-KILL", "--", &format!("-{}", self.child.id())])
+                        .status();
+                    let _ = self.child.kill();
+                    self.child.wait().expect("owned ALSA helper must be reaped");
+                }
+            }
+        }
+        let audio = controller.sample_audio();
+        let card = audio.endpoints()[0].host().alsa_pcm().unwrap().0.to_owned();
+        let instance = std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE").unwrap();
+        let script = concat!(
+            "__name__='captured_validator'\n",
+            include_str!("../../scripts/validate-usb-audio-live.py"),
+            "\n__name__='__main__'\n",
+            include_str!("../../scripts/validate-usb-public-samples.py")
+        );
+        let (mut output, child_output) = UnixStream::pair().unwrap();
+        output
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let child = Command::new("python3")
+            .args([
+                "-I",
+                "-c",
+                script,
+                "--family",
+                family,
+                "--card-id",
+                &card,
+                "--instance",
+                &instance,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(OwnedFd::from(child_output)))
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut host = OwnedHost {
+            child,
+            reaped: false,
+        };
+        let mut ready = [0];
+        output.read_exact(&mut ready).unwrap();
+        assert_eq!(ready, [b'R']);
+        let mut playback = vec![0; 256 * playback_channels];
+        let mut seen = vec![0_u8; 144_000];
+        let mut microphone_produced = 0;
+        let mut invalid = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(14);
+        let mut status = None;
+        let mut drain_until = None;
+        loop {
+            controller.service_input();
+            let audio = controller.sample_audio();
+            let observation = audio.read_playback(&mut playback).unwrap();
+            for frame in
+                playback[..observation.frames * playback_channels].chunks_exact(playback_channels)
+            {
+                if !record_public_playback(&mut seen, frame, 96_000) {
+                    invalid += 1;
+                }
+            }
+            if status.is_none() {
+                let consumed =
+                    usize::try_from(audio.microphone_consumed_frames().unwrap().unwrap()).unwrap();
+                let available = consumed
+                    .saturating_add(384)
+                    .saturating_sub(microphone_produced)
+                    .min(128);
+                if available > 0 {
+                    let samples: Vec<_> = (microphone_produced..microphone_produced + available)
+                        .flat_map(|frame| public_marker(frame, microphone_channels))
+                        .collect();
+                    microphone_produced += audio.write_microphone(&samples).unwrap();
+                }
+                if let Some(finished) = host.child.try_wait().unwrap() {
+                    host.reaped = true;
+                    status = Some(finished);
+                    drain_until = Some(std::time::Instant::now() + Duration::from_secs(2));
+                }
+            } else if seen.iter().all(|count| *count == 1) {
+                break;
+            }
+            if drain_until.is_some_and(|until| std::time::Instant::now() >= until) {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "public sample exchange exceeded its deadline"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        let mut receipt = Vec::new();
+        output.take(8193).read_to_end(&mut receipt).unwrap();
+        assert!(receipt.len() <= 8192);
+        let receipt = String::from_utf8(receipt).unwrap();
+        println!("public_usb_sample_capture family={family} receipt={receipt}");
+        let (missing, duplicate) = seen.iter().fold((0, 0), |(missing, duplicate), count| {
+            (
+                missing + usize::from(*count == 0),
+                duplicate + usize::from(*count > 1),
+            )
+        });
+        println!(
+            "public_usb_sample_playback family={family} measured_frames=144000 missing={missing} duplicate={duplicate} invalid={invalid} microphone_produced={microphone_produced}"
+        );
+        assert!(
+            status.unwrap().success(),
+            "public sample host capture failed"
+        );
+        assert_eq!((missing, duplicate, invalid), (0, 0, 0));
+        assert!(
+            microphone_produced >= 240_000,
+            "incomplete measured microphone production"
+        );
+        assert!(controller.sample_audio().last_error().is_none());
+        println!("public_usb_sample_exchange family={family} passed=true");
+    }
+
     #[test]
     #[ignore = "requires the prepared ordinary client mount and explicit sample factory lab opt-in"]
+    #[allow(clippy::too_many_lines)] // Keep ownership cases and their marker exchange in one fixture.
     fn live_public_usb_sample_factory() {
         assert_eq!(
             std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB").as_deref(),
@@ -1238,6 +1476,13 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     $playback_access,
                     $microphone_access,
                 );
+                if $playback_access == crate::AudioAccess::Samples
+                    && $microphone_access == crate::AudioAccess::Samples
+                    && std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
+                        == Ok("1")
+                {
+                    public_sample_exchange(&mut controller, $family, $playback, $microphone);
+                }
                 controller.close();
                 controller.close();
                 let audio = controller.audio().unwrap();
