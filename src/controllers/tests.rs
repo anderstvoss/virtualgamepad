@@ -1061,6 +1061,24 @@ mod worker_outputs {
         assert_eq!(flags(), before);
     }
 
+    fn report_public_factory_failure(family: &str, error: &crate::ControllerError) -> ! {
+        for path in [
+            "/proc/asound/cards",
+            "/sys/devices/platform/vhci_hcd.0/status",
+        ] {
+            match std::fs::read_to_string(path) {
+                Ok(snapshot) => eprintln!(
+                    "public_usb_factory_host_state {path}={:?}",
+                    snapshot.chars().take(4096).collect::<String>()
+                ),
+                Err(read_error) => {
+                    eprintln!("public_usb_factory_host_state {path} unavailable={read_error}");
+                }
+            }
+        }
+        panic!("public USB factory {family}: {error}");
+    }
+
     fn assert_ordinary_test_process() {
         let status = std::fs::read_to_string("/proc/self/status").unwrap();
         assert!(
@@ -1165,7 +1183,8 @@ mod worker_outputs {
         assert_ordinary_test_process();
         macro_rules! exercise {
             ($factory:ident, $family:literal, $playback:literal, $microphone:literal, $options:expr, $playback_access:expr, $microphone_access:expr) => {{
-                let mut controller = crate::$factory($options).unwrap();
+                let mut controller = crate::$factory($options)
+                    .unwrap_or_else(|error| report_public_factory_failure($family, &error));
                 controller.service(&mut |_| {}).unwrap();
                 controller.neutralize().unwrap();
                 controller.commit().unwrap();
@@ -1204,8 +1223,8 @@ mod worker_outputs {
         let native =
             std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB").as_deref() == Ok("1");
         for playback in [
-            crate::AudioAccess::Samples,
             crate::AudioAccess::NativeClient,
+            crate::AudioAccess::Samples,
         ] {
             for microphone in [
                 crate::AudioAccess::Samples,
