@@ -1193,3 +1193,40 @@ These close specific Gate 2 cells; typed USB application callbacks and remaining
 complete isolation/lifecycle dispositions are still required. Gates 1, 2, 4, 5
 and 6 remain open. All five required repository checks, forced Rust 1.85 workspace
 check and 337 Python tests pass for this increment. No dependencies were added.
+
+
+## Public sample duplex acceptance at `4301161`
+
+The bounded instrumented repeat passed at
+`430116165de5a967d3d70c202dc2b992fe9a9a83`, tree
+`c91fdfe6c26f9935f0d648fc79164d4909f9c6e8`; frozen root test image SHA-256
+`a0616ded3e820ed4dc3e2baf30c3db2afe2565c3ac67e413f34e0662377416a4`.
+DualSense, DS4 and Xbox 360 each delivered all 144000 measured playback indices
+without missing, duplicate or corrupt markers, and all 144000 measured microphone
+frames without silence or pattern gaps. Each microphone capture also separately
+verified 96000 warm-up and 48000 drain frames. The public caller produced 288384
+frames against 288000 host-consumed frames; the 384-frame operating fill is
+unconsumed tail, not measured loss. Each reported 16 discarded microphone frames
+from the fixture's explicit pretrial flush of sixteen synthetic zero frames,
+zero microphone underrun and zero discarded playback frames.
+
+The largest observed caller cycle intervals were 4071 microseconds (DualSense),
+2758 (DS4) and 2821 (Xbox 360), below the unchanged eight-millisecond operating
+fill. These passing-run timings cannot establish the cause of the earlier
+112-frame DS4 silence; its failed receipt remains unresolved evidence for later
+continuity investigation. No repeated trial was used to erase that failure.
+
+The complete enclosing phase and typed observer exited zero. All twelve ownership
+cells and twelve native caller-node observations remain required and passed.
+The parent lab retained the original desktop defaults and restored its owned
+resources without reported cleanup errors. The installed broker service returned
+inactive and its socket active; only the pre-existing host ALSA card remained.
+
+This establishes short public sample/sample duplex functionality for the three
+audio families, with explicit marker accounting. It does not establish native or
+mixed-ownership marker exchange, transport routing/failure scenarios, latency,
+sustained continuity, or whole Gate 4 closure. The candidate changes only tests,
+validation tooling and review documentation; provider/root production images and
+ordinary-root signatures are unchanged. All five mandatory validation commands
+passed for this instrumented candidate. Gates 2/3 retain their prior dispositions;
+Gates 1/4/5/6 remain open.
