@@ -1130,12 +1130,38 @@ mod worker_outputs {
             assert_eq!(endpoint.format().channels().len(), channels);
             assert!(endpoint.host().alsa_pcm().is_some());
             if access == crate::AudioAccess::NativeClient {
+                let node = endpoint
+                    .caller()
+                    .and_then(crate::AudioEndpointSelector::pipewire_node)
+                    .expect("native caller must expose a graph node");
+                // Observe the actual caller node while its controller is alive.
+                // The prepared client owns a private graph, not the desktop graph.
+                let observed = std::process::Command::new("/usr/bin/python3")
+                    .args([
+                        "-I",
+                        "-c",
+                        r"import json,os,subprocess,sys,tempfile
+assert os.getuid()!=0
+assert os.environ.get('PIPEWIRE_RUNTIME_DIR')==os.environ.get('XDG_RUNTIME_DIR')
+with tempfile.TemporaryFile() as output:
+ subprocess.run(['pw-dump'],check=True,timeout=3,stdout=output,stderr=subprocess.DEVNULL)
+ output.seek(0); raw=output.read(1048577)
+assert len(raw)<=1048576
+objects=json.loads(raw)
+assert isinstance(objects,list)
+props=[item.get('info',{}).get('props',{}) for item in objects]
+assert not any(item.get('device.api')=='alsa' for item in props)
+assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
+",
+                        node,
+                    ])
+                    .status()
+                    .expect("private graph observer must start");
                 assert!(
-                    endpoint
-                        .caller()
-                        .and_then(crate::AudioEndpointSelector::pipewire_node)
-                        .is_some()
+                    observed.success(),
+                    "native endpoint missing from private graph: {node}"
                 );
+                println!("public_usb_native_node_verified={node}");
             } else {
                 assert!(endpoint.caller().is_none());
             }
