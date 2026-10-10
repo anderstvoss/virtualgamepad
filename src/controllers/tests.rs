@@ -1109,6 +1109,7 @@ mod worker_outputs {
         );
     }
 
+    #[allow(clippy::too_many_lines)] // Keep caller ownership, graph identity and consumer lifecycle checks together.
     fn check_public_audio_ownership(
         audio: &mut crate::ControllerAudio,
         playback_channels: usize,
@@ -1161,6 +1162,34 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     observed.success(),
                     "native endpoint missing from private graph: {node}"
                 );
+                if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
+                    == Ok("1")
+                {
+                    let mode = if endpoint.direction() == crate::SampleDirection::HostToController {
+                        "record"
+                    } else {
+                        "playback"
+                    };
+                    let lifecycle = std::process::Command::new("/usr/bin/python3")
+                        .args([
+                            "-I",
+                            "-c",
+                            include_str!("../../scripts/validate-usb-native-client.py"),
+                            "--target",
+                            node,
+                            "--channels",
+                            &channels.to_string(),
+                            "--mode",
+                            mode,
+                        ])
+                        .status()
+                        .expect("owned native client helper must start");
+                    assert!(
+                        lifecycle.success(),
+                        "native caller reconnect failed: {node}"
+                    );
+                    println!("public_usb_native_client_lifecycle_verified={node}");
+                }
                 println!("public_usb_native_node_verified={node}");
             } else {
                 assert!(endpoint.caller().is_none());

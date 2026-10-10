@@ -439,6 +439,11 @@ def public_factory_probe(peer, instance=None):
         if instance is not None:
             passed &= all(f'public_usb_sample_exchange family={family} passed=true' in text
                           for family in ('dualsense', 'dualshock4', 'xbox360'))
+            native_nodes = [line.removeprefix('public_usb_native_node_verified=') for line in text.splitlines()
+                            if line.startswith('public_usb_native_node_verified=')]
+            connected = [line.removeprefix('public_usb_native_client_lifecycle_verified=') for line in text.splitlines()
+                         if line.startswith('public_usb_native_client_lifecycle_verified=')]
+            passed &= len(native_nodes) == len(set(native_nodes)) == 12 and sorted(connected) == sorted(native_nodes)
         receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
                        exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
         print(json.dumps(dict(public_factory=receipt)), flush=True)

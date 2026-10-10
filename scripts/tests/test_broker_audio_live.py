@@ -83,8 +83,8 @@ class BrokerLiveTests(unittest.TestCase):
             f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true'
             for family in ('dualsense', 'dualshock4', 'xbox360')
             for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
-        for markers in (False, True):
-            with self.subTest(markers=markers), tempfile.TemporaryFile() as source:
+        for markers, lifecycle in ((False, False), (True, False), (True, True)):
+            with self.subTest(markers=markers, lifecycle=lifecycle), tempfile.TemporaryFile() as source:
                 source.write(b'\x7fELFfake'); source.flush()
                 descriptor = os.dup(source.fileno()); frozen = os.dup(source.fileno())
                 peer = Mock(); peer.recv.return_value = b'R'
@@ -97,18 +97,22 @@ class BrokerLiveTests(unittest.TestCase):
                     if markers:
                         text += '\n'.join(f'public_usb_sample_exchange family={family} passed=true'
                             for family in ('dualsense', 'dualshock4', 'xbox360'))
+                        text += '\n' + '\n'.join(
+                            f'public_usb_native_node_verified=fixture.{index}\n' +
+                            (f'public_usb_native_client_lifecycle_verified=fixture.{index}' if lifecycle else '')
+                            for index in range(12))
                     options['stdout'].write(text.encode())
                     return Mock(returncode=0)
                 with patch.object(module.os, 'geteuid', return_value=1000), \
                      patch.object(module, 'sealed_probe_image', return_value=frozen), \
                      patch.object(module, 'private_probe_graph', return_value=contextlib.nullcontext({})), \
                      patch.object(module.subprocess, 'run', side_effect=run), patch('builtins.print'):
-                    if markers:
+                    if markers and lifecycle:
                         self.assertEqual(module.public_factory_probe(peer, 'fixture')['status'], 'passed')
                     else:
                         with self.assertRaisesRegex(ValueError, 'failed or selected zero'):
                             module.public_factory_probe(peer, 'fixture')
-                peer.sendall.assert_called_with(b'F' if markers else b'E')
+                peer.sendall.assert_called_with(b'F' if markers and lifecycle else b'E')
                 for closed in (descriptor, frozen):
                     with self.assertRaises(OSError): os.fstat(closed)
 
