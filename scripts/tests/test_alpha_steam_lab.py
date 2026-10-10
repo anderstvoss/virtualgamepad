@@ -9,6 +9,97 @@ spec.loader.exec_module(lab)
 
 
 class SteamNamespace(unittest.TestCase):
+    def test_input_owner_identity_rejects_foreign_dead_and_reused_processes(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            proc = Path(directory); owner = proc/'42'; owner.mkdir()
+            (owner/'status').write_text('Uid: '+(' '.join([str(os.getuid())]*4))+'\n')
+            fields = ['S']+['0']*18+['123']
+            (owner/'stat').write_text('42 (synthetic name) '+ ' '.join(fields))
+            self.assertEqual(lab.input_owner_identity(42,proc),(42,123))
+            (owner/'stat').write_text('42 (synthetic name) Z '+ ' '.join(fields[1:]))
+            with self.assertRaisesRegex(ValueError,'not live'):lab.input_owner_identity(42,proc)
+            (owner/'status').write_text('Uid: 0 0 0 0\n')
+            with patch.object(lab.os,'getuid',return_value=42):
+                with self.assertRaisesRegex(ValueError,'another identity'):lab.input_owner_identity(42,proc)
+            for pid in [0,1,True,'42']:
+                with self.assertRaises(ValueError):lab.input_owner_identity(pid,proc)
+
+    def test_consumer_inventory_selects_only_exact_owned_character_nodes_and_pins_identity(self):
+        import os,stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); inputs=root/'input';inputs.mkdir();hidraw=root/'hidraw';hidraw.mkdir()
+            devices=root/'dev';(devices/'input').mkdir(parents=True)
+            for number,physical in [(0,'virtualgamepad/uhid/dualsense/p2a-i0'),
+                                    (1,'virtualgamepad/uhid/dualsense/p2b-i0')]:
+                entry=inputs/f'event{number}';(entry/'device').mkdir(parents=True)
+                (entry/'device/phys').write_text(physical);(entry/'dev').write_text(f'13:{64+number}')
+                (devices/'input'/entry.name).write_text('synthetic node')
+            original=Path.lstat
+            def metadata(path):
+                if path.parent==devices/'input':
+                    return SimpleNamespace(st_mode=stat.S_IFCHR|0o660,st_dev=7,st_ino=8,st_rdev=os.makedev(13,64))
+                return original(path)
+            with patch.object(lab,'input_owner_identity',return_value=(42,123)),patch.object(Path,'lstat',metadata):
+                identity,selected=lab.consumer_devices(42,inputs,hidraw,devices)
+                self.assertEqual(identity,(42,123));self.assertEqual(len(selected),1)
+                self.assertEqual(selected[0]['target'],'/dev/input/event0')
+                settings=lab.consumer_device_settings(selected)
+                self.assertIn(str(devices/'input/event0'),settings)
+                self.assertEqual(settings[settings.index('--dev-bind')+1:settings.index('--dev-bind')+3],[str(devices/'input/event0'),'/dev/input/event0'])
+                self.assertNotIn(str(devices/'input/event1'),settings)
+                with self.assertRaisesRegex(ValueError,'duplicate'):lab.consumer_device_settings(selected*2)
+                with self.assertRaisesRegex(ValueError,'changed'):
+                    lab.consumer_device_settings([{**selected[0],'inode':99}])
+                with self.assertRaisesRegex(ValueError,'invalid'):
+                    lab.consumer_device_settings([{**selected[0],'target':'/dev/input/../foreign'}])
+            with patch.object(lab,'input_owner_identity',return_value=(42,123)):
+                with self.assertRaisesRegex(ValueError,'character device'):lab.consumer_devices(42,inputs,hidraw,devices)
+            with patch.object(lab,'input_owner_identity',side_effect=[(42,123),(42,124)]),patch.object(Path,'lstat',metadata):
+                with self.assertRaisesRegex(ValueError,'identity changed'):lab.consumer_devices(42,inputs,hidraw,devices)
+
+    def test_consumer_revalidation_allows_removal_but_rejects_replacement_and_owner_exit(self):
+        import os,stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        device=dict(source='/synthetic/dev/input/event0',target='/dev/input/event0',device=7,inode=8,rdev=os.makedev(13,64))
+        same=SimpleNamespace(st_mode=stat.S_IFCHR|0o660,st_dev=7,st_ino=8,st_rdev=device['rdev'])
+        with patch.object(lab,'input_owner_identity',return_value=(42,123)):
+            with patch.object(Path,'lstat',return_value=same):self.assertEqual(lab.revalidate_consumer_devices((42,123),[device]),[])
+            with patch.object(Path,'lstat',side_effect=FileNotFoundError):
+                self.assertEqual(lab.revalidate_consumer_devices((42,123),[device]),['/dev/input/event0'])
+            with patch.object(Path,'lstat',return_value=SimpleNamespace(**{**vars(same),'st_ino':9})):
+                with self.assertRaisesRegex(ValueError,'device identity changed'):lab.revalidate_consumer_devices((42,123),[device])
+        with patch.object(lab,'input_owner_identity',return_value=(42,124)):
+            with self.assertRaisesRegex(ValueError,'owner identity changed'):lab.revalidate_consumer_devices((42,123),[device])
+        with patch.object(lab,'input_owner_identity',side_effect=FileNotFoundError):
+            with self.assertRaises(FileNotFoundError):lab.revalidate_consumer_devices((42,123),[device])
+
+    def test_namespace_proof_opens_exact_owned_devices_and_closes_changed_handles(self):
+        import os,stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        device=dict(source='/synthetic/source',target='/dev/input/event0',device=7,inode=8,rdev=os.makedev(13,64))
+        same=SimpleNamespace(st_mode=stat.S_IFCHR|0o660,st_dev=7,st_ino=8,st_rdev=device['rdev'])
+        def inventory(path,pattern):return [Path(device['target'])] if path==Path('/dev/input') else []
+        with patch.object(Path,'glob',inventory),patch.object(Path,'lstat',return_value=same),patch.object(lab.os,'open',return_value=73) as opened,patch.object(lab.os,'close') as closed:
+            with patch.object(lab.os,'fstat',return_value=same):
+                self.assertEqual(lab.verify_consumer_namespace([device]),['/dev/input/event0'])
+                opened.assert_called_once_with('/dev/input/event0',os.O_RDWR|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+                closed.assert_called_once_with(73)
+            closed.reset_mock()
+            with patch.object(lab.os,'fstat',return_value=SimpleNamespace(**{**vars(same),'st_ino':9})):
+                with self.assertRaisesRegex(ValueError,'opened consumer identity changed'):lab.verify_consumer_namespace([device])
+                closed.assert_called_once_with(73)
+            opened.reset_mock()
+            with patch.object(Path,'glob',return_value=[Path('/dev/input/event99')]):
+                with self.assertRaisesRegex(ValueError,'foreign or missing'):lab.verify_consumer_namespace([device])
+                opened.assert_not_called()
+            with self.assertRaisesRegex(ValueError,'invalid namespace'):lab.verify_consumer_namespace([device]*2)
+
     def test_rootfs_workspace_rejects_memory_backed_storage_and_low_disk(self):
         lab.require_disk('ext4', 8*1024**3)
         for filesystem, available in [('tmpfs', 8*1024**3), ('ramfs', 8*1024**3), ('ext4', 1024**3)]:

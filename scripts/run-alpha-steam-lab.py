@@ -10,6 +10,9 @@ proves controller recognition or replaces interactive acceptance.
 """
 import argparse
 import fcntl
+import importlib.util
+import inspect
+import re
 import json
 import os
 from pathlib import Path
@@ -25,7 +28,30 @@ import threading
 import subprocess
 import tempfile
 
-SENTINEL = '''import json, os, pathlib, pwd, sys
+def verify_consumer_namespace(devices):
+    """Check the mounted identity and open permissions without reading or writing input."""
+    expected = {item['target'] for item in devices}
+    if len(expected) != len(devices) or len(devices) > 128 or any(
+            re.fullmatch(r'/dev/(input/event[0-9]+|hidraw[0-9]+)', target) is None for target in expected):
+        raise ValueError('invalid namespace consumer inventory')
+    actual = {str(path) for directory, pattern in [('/dev/input','event*'),('/dev','hidraw*')]
+              for path in Path(directory).glob(pattern)}
+    if actual != expected: raise ValueError('foreign or missing consumer nodes')
+    for item in devices:
+        info = Path(item['target']).lstat()
+        identity = item['device'],item['inode'],item['rdev']
+        if not stat.S_ISCHR(info.st_mode) or (info.st_dev,info.st_ino,info.st_rdev) != identity:
+            raise ValueError('mounted consumer identity changed')
+        descriptor = os.open(item['target'],os.O_RDWR|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+        try:
+            opened = os.fstat(descriptor)
+            if not stat.S_ISCHR(opened.st_mode) or (opened.st_dev,opened.st_ino,opened.st_rdev) != identity:
+                raise ValueError('opened consumer identity changed')
+        finally: os.close(descriptor)
+    return sorted(expected)
+
+
+SENTINEL = '''import json, os, pathlib, pwd, stat, sys
 home = pathlib.Path(pwd.getpwuid(os.getuid()).pw_dir)
 assert os.getuid() != 0, "consumer must remain non-root"
 assert home == pathlib.Path(os.environ["HOME"])
@@ -35,9 +61,12 @@ assert not pathlib.Path("/run/host").exists()
 status = pathlib.Path("/proc/self/status").read_text()
 assert next(line for line in status.splitlines() if line.startswith("CapEff:")).split()[1] == "0000000000000000"
 assert not pathlib.Path("/proc/1/root").resolve().joinpath("home", home.name, sys.argv[1]).exists()
+devices = json.loads(os.environ.get("VIRTUALGAMEPAD_OWNED_CONSUMER_DEVICES", "[]"))
+expected = verify_consumer_namespace(devices)
 print(json.dumps(dict(scope="namespace-isolation-only", uid=os.getuid(), real_home_hidden=True,
-    passwd_home_hidden=True, capabilities_dropped=True, private_proc=True, private_dev=True)))
+    passwd_home_hidden=True, capabilities_dropped=True, private_proc=True, private_dev=True, owned_consumer_devices=sorted(expected), consumer_device_opens_verified=len(expected))))
 '''
+SENTINEL = 'import os, re, stat\nfrom pathlib import Path\n' + inspect.getsource(verify_consumer_namespace) + SENTINEL
 
 
 def memory_sample(meminfo=Path('/proc/meminfo'), pressure=Path('/proc/pressure/memory')):
@@ -86,7 +115,77 @@ def termination_reason(code, output):
     return 'normal-exit' if code == 0 else 'nonzero-exit'
 
 
-def command(workspace, home, uid, gid, sentinel, marker, profile=None):
+def input_owner_identity(pid, proc=Path('/proc')):
+    """Ordinary caller-owned live process, pinned against PID reuse."""
+    if type(pid) is not int or pid <= 1 or os.getuid() == 0: raise ValueError('invalid input owner PID or privileged caller')
+    status = (proc/str(pid)/'status').read_text()
+    if len(status) > 65536: raise ValueError('oversized input owner status')
+    uid = next(line.split()[1:] for line in status.splitlines() if line.startswith('Uid:'))
+    if uid != [str(os.getuid())]*4: raise ValueError('input owner belongs to another identity')
+    fields = (proc/str(pid)/'stat').read_text().rpartition(') ')[2].split()
+    if len(fields) < 20 or fields[0] in ('Z', 'X'): raise ValueError('input owner is not live')
+    start = int(fields[19])
+    if start <= 0: raise ValueError('invalid input owner start time')
+    return pid, start
+
+
+def consumer_devices(pid, input_root=Path('/sys/class/input'),
+                     hidraw_root=Path('/sys/class/hidraw'), dev_root=Path('/dev')):
+    """Read-only inventory. No arbitrary device path or vendor-only matching."""
+    before = input_owner_identity(pid)
+    spec = importlib.util.spec_from_file_location(
+        'input_ownership', Path(__file__).with_name('run-alpha-input-lab.py'))
+    ownership = importlib.util.module_from_spec(spec); spec.loader.exec_module(ownership)
+    devices = []
+    for root, pattern, prefix in [(input_root, r'event[0-9]+', 'input'),
+                                  (hidraw_root, r'hidraw[0-9]+', '')]:
+        for entry in root.iterdir():
+            if not re.fullmatch(pattern, entry.name) or not ownership.input_is_owned(entry, pid): continue
+            source = dev_root/prefix/entry.name
+            info = source.lstat()
+            if not stat.S_ISCHR(info.st_mode): raise ValueError('owned consumer node is not a character device')
+            major, minor = map(int, (entry/'dev').read_text().strip().split(':'))
+            if info.st_rdev != os.makedev(major, minor): raise ValueError('owned consumer device identity changed')
+            devices.append(dict(source=str(source), target='/dev/'+(prefix+'/' if prefix else '')+entry.name,
+                                device=info.st_dev, inode=info.st_ino, rdev=info.st_rdev))
+            if len(devices) > 128: raise ValueError('owned consumer device quota exceeded')
+    if input_owner_identity(pid) != before: raise ValueError('input owner identity changed')
+    if not devices: raise ValueError('input owner has no representable consumer devices')
+    return before, sorted(devices, key=lambda item: item['target'])
+
+
+def revalidate_consumer_devices(owner, devices):
+    if input_owner_identity(owner[0]) != owner: raise ValueError('input owner identity changed')
+    removed = []
+    for device in devices:
+        try: info = Path(device['source']).lstat()
+        except FileNotFoundError:
+            removed.append(device['target']); continue
+        if not stat.S_ISCHR(info.st_mode) or (info.st_dev,info.st_ino,info.st_rdev) != (
+                device['device'],device['inode'],device['rdev']):
+            raise ValueError('consumer device identity changed; stop owned consumer')
+    return removed
+
+
+def consumer_device_settings(devices):
+    settings = ['--dir', '/dev/input'] if devices else []
+    targets = set()
+    for device in devices:
+        target = device['target']
+        if (not re.fullmatch(r'/dev/(input/event[0-9]+|hidraw[0-9]+)', target) or target in targets):
+            raise ValueError('invalid or duplicate owned consumer target')
+        targets.add(target)
+        source = Path(device['source'])
+        info = source.lstat()
+        if not stat.S_ISCHR(info.st_mode) or (info.st_dev, info.st_ino, info.st_rdev) != (
+                device['device'], device['inode'], device['rdev']):
+            raise ValueError('owned consumer node changed before namespace preparation')
+        settings += ['--dev-bind', str(source), target]
+    settings += ['--setenv', 'VIRTUALGAMEPAD_OWNED_CONSUMER_DEVICES', json.dumps(devices)]
+    return settings
+
+
+def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=()):
     if (type(uid) is not int or type(gid) is not int or uid <= 0 or gid <= 0 or
             not home.is_absolute() or home in (Path('/'), Path('/home')) or
             not workspace.is_absolute() or not sentinel.startswith('.vg-alpha-sentinel-') or
@@ -105,7 +204,8 @@ def command(workspace, home, uid, gid, sentinel, marker, profile=None):
              '--setenv', 'HOME', str(home), '--setenv', 'PATH', '/usr/bin:/bin',
              '--setenv', 'LANG', 'C', '--setenv', 'XDG_RUNTIME_DIR', f'/run/user/{uid}',
              '--chdir', str(home), '--', '/usr/bin/python3', '-I', '/sentinel.py', sentinel, marker]
-    return args
+    boundary = args.index('--')
+    return args[:boundary] + consumer_device_settings(devices) + args[boundary:]
 
 
 def remove_sentinel(path, expected):
@@ -127,10 +227,10 @@ exec /usr/bin/dbus-run-session -- "$SNAP/usr/bin/FEXBash" -c "$SNAP/usr/bin/stea
 '''
 
 
-def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds, profile=None):
+def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds, profile=None, devices=()):
     if type(display) is not int or not 200 <= display <= 299 or type(seconds) is not int or not 30 <= seconds <= 900:
         raise ValueError('invalid owned display or bounded deadline')
-    args = command(workspace, home, uid, gid, sentinel, marker, profile)
+    args = command(workspace, home, uid, gid, sentinel, marker, profile, devices)
     temporary = args.index("--tmpfs")
     args[temporary:temporary+2] = ["--bind", str(workspace / "tmp"), "/tmp"]
     boundary = args.index('--')
@@ -183,7 +283,7 @@ def display_command(server, display, auth, visible=False):
     return command + ['-nolisten', 'tcp', '-auth', str(auth), '-noreset']
 
 
-def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False, profile=None):
+def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False, profile=None, devices=(), input_owner=None):
     if not xvfb.is_absolute() or not xvfb.is_file():
         raise RuntimeError('an explicit available Xvfb binary is required')
     display = next((number for number in range(200, 300)
@@ -226,7 +326,8 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
             if daemon.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError('owned display startup failed')
             time.sleep(.02)
-        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds, profile)
+        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds, profile, devices)
+        if input_owner is not None: revalidate_consumer_devices(input_owner, devices)
         require_memory(memory_sample(), starting=True)
         launcher = subprocess.Popen(bootstrap_unit_command(unit, client, seconds, budget),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -239,6 +340,8 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
         while launcher.poll() is None:
             if time.monotonic() >= next_sample:
                 sample = memory_sample()
+                if input_owner is not None:
+                    sample["removed_owned_consumer_devices"] = revalidate_consumer_devices(input_owner, devices)
                 samples.append(sample)
                 require_memory(sample)
                 next_sample = time.monotonic() + 1
@@ -346,11 +449,12 @@ def lock_profile(profile):
     return descriptor
 
 
-def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False, profile_directory=None):
+def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False, profile_directory=None, input_owner_pid=None):
     if os.geteuid() == 0:
         raise RuntimeError('Steam lab must run as an ordinary user')
     if shutil.which('bwrap') is None:
         raise RuntimeError('bubblewrap is unavailable; no bootstrap attempted')
+    input_owner, devices = consumer_devices(input_owner_pid) if input_owner_pid is not None else (None, [])
     account = pwd.getpwuid(os.getuid())
     home = Path(account.pw_dir)
     marker = secrets.token_hex(16)
@@ -375,7 +479,8 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
                 marker_path = Path(output.name)
             marker_path.replace(profile / 'private-home-marker')
             (workspace / 'sentinel.py').write_text(SENTINEL)
-            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile),
+            if input_owner is not None: revalidate_consumer_devices(input_owner, devices)
+            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile, devices),
                                        capture_output=True, text=True, timeout=20, env={'PATH':'/usr/bin:/bin'})
             if completed.returncode:
                 raise RuntimeError('namespace sentinel failed: ' + completed.stderr[:4096])
@@ -385,7 +490,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
             receipt.update(test_profile_retained=profile_directory is not None, test_profile_reused=reused)
             if bootstrap:
                 if captures is not None: captures.mkdir(mode=0o700, exist_ok=False)
-                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile)
+                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile, devices, input_owner)
                 receipt["bootstrap"] = result
                 if result["initiating"] or result["cleanup"]:
                     raise RuntimeError("isolated Steam bootstrap did not complete")
@@ -405,6 +510,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--input-owner-pid', type=int, help='expose only event/hidraw devices of this live same-user test producer; never arbitrary device paths')
     parser.add_argument('--bootstrap', action='store_true', help='bounded isolated Steam/FEX bootstrap, not consumer acceptance')
     display = parser.add_mutually_exclusive_group()
     display.add_argument('--xvfb', type=Path, help='ordinary-user hidden display server binary')
@@ -414,13 +520,15 @@ def main():
     parser.add_argument('--captures', type=Path, help='exclusive external directory for owned-display snapshots')
     parser.add_argument('--seconds', type=int, choices=range(30, 901), default=120)
     args = parser.parse_args()
+    if args.input_owner_pid is not None and args.input_owner_pid <= 1:
+        parser.error('--input-owner-pid requires a positive live process PID greater than one')
     if not args.apply:
         print(json.dumps(dict(apply=False, phases=['private namespace', 'synthetic isolation sentinel'],
                               steam_launched=False, copies_existing_profile=False)))
         return 0
     server = args.xephyr if args.xephyr is not None else args.xvfb
     if args.bootstrap and server is None: parser.error('--bootstrap requires --xvfb or --xephyr')
-    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory)
+    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory, args.input_owner_pid)
 
 
 if __name__ == '__main__':
