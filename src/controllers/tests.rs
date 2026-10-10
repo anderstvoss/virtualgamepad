@@ -1392,6 +1392,19 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         );
     }
 
+    fn public_counter_delta(before: Option<u64>, after: Option<u64>) -> Option<u64> {
+        after?.checked_sub(before?)
+    }
+
+    #[test]
+    fn public_usb_counter_delta_preserves_unavailable_and_rejects_regression() {
+        assert_eq!(public_counter_delta(Some(1024), Some(1024)), Some(0));
+        assert_eq!(public_counter_delta(Some(1024), Some(1104)), Some(80));
+        assert_eq!(public_counter_delta(None, Some(80)), None);
+        assert_eq!(public_counter_delta(Some(80), None), None);
+        assert_eq!(public_counter_delta(Some(80), Some(79)), None);
+    }
+
     fn spawn_public_host(mut command: std::process::Command) -> std::process::Child {
         // Consume the configuration so its parent copy of child stdout closes
         // immediately after spawning. Retaining it prevents socket EOF.
@@ -1452,6 +1465,12 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let audio = controller.sample_audio();
         let card = audio.endpoints()[0].host().alsa_pcm().unwrap().0.to_owned();
         let instance = std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE").unwrap();
+        // Bridge metrics are cached at 100 ms intervals. Record the pretrial
+        // snapshot separately: prior lifecycle clients must not be mistaken
+        // for marker-trial graph loss.
+        #[cfg(feature = "experimental")]
+        let graph_dropped_before =
+            crate::experimental::audio_instrumentation(audio).native_microphone_dropped_frames();
         let native_microphone = audio.endpoints()[1]
             .caller()
             .and_then(crate::AudioEndpointSelector::pipewire_node)
@@ -1610,8 +1629,12 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         if native_microphone.is_some() {
             let instrumentation = crate::experimental::audio_instrumentation(audio);
             println!(
-                "public_usb_native_microphone_counters family={family} graph_dropped={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
+                "public_usb_native_microphone_counters family={family} graph_dropped={:?} cached_graph_dropped_before={graph_dropped_before:?} cached_trial_graph_drop_delta={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
                 instrumentation.native_microphone_dropped_frames(),
+                public_counter_delta(
+                    graph_dropped_before,
+                    instrumentation.native_microphone_dropped_frames(),
+                ),
                 instrumentation.native_microphone_queue_frames(),
                 instrumentation.native_bridge_scheduling_us(),
                 instrumentation.stream_timings()
