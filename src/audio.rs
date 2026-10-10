@@ -198,6 +198,21 @@ pub struct AudioInputLossTrace {
     pub omitted_events: u64,
 }
 
+/// USB microphone progress observations from bounded worker queries. These
+/// counters are read sequentially and are not a transactional snapshot. Host
+/// media includes silence and canceled requests; completion is a separate count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioUsbMicrophoneProgress {
+    pub host_frames: u64,
+    pub silence_frames: u64,
+    pub consumed_source_frames: u64,
+    pub completed_capture_frames: u64,
+    pub abandoned_capture_frames: u64,
+    pub dropped_source_frames: u64,
+    pub maximum_lateness_us: u64,
+}
+
 /// Audio is borrowed from a controller, never independently reopened or detached.
 /// Endpoint association distinguishes `PipeWire` companions from USB composite
 /// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
@@ -621,6 +636,16 @@ impl<'a> AudioInstrumentation<'a> {
     #[must_use]
     pub fn native_microphone_graph_loss_trace(&self) -> Option<Vec<AudioInputLossTrace>> {
         self.audio.session.native_microphone_graph_loss_trace()
+    }
+    /// Bounded USB worker progress queries for sample or native ownership.
+    /// `None` means unavailable (including after close). This does not prove
+    /// that an accepted or completed virtual transfer reached a physical device.
+    /// # Errors
+    /// Returns a terminal worker protocol or transport failure.
+    pub fn usb_microphone_progress(
+        &self,
+    ) -> Result<Option<AudioUsbMicrophoneProgress>, AudioError> {
+        self.audio.session.usb_microphone_progress()
     }
     /// Current and peak native microphone graph queue fill, in frames. Queue
     /// capacity is spare room for scheduling stalls, not a desired latency.

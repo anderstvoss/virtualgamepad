@@ -292,6 +292,23 @@ impl Pcm {
         self.error.get().is_some()
     }
 }
+fn read_usb_microphone_progress(
+    control: &mut Control,
+) -> io::Result<crate::audio::AudioUsbMicrophoneProgress> {
+    let diagnostics = control.diagnostics()?;
+    let consumed_source_frames = control.microphone_consumed_frames()?;
+    let (host_frames, silence_frames) = control.microphone_host_frames()?;
+    Ok(crate::audio::AudioUsbMicrophoneProgress {
+        host_frames,
+        silence_frames,
+        consumed_source_frames,
+        completed_capture_frames: diagnostics[5],
+        abandoned_capture_frames: diagnostics[6],
+        maximum_lateness_us: diagnostics[7],
+        dropped_source_frames: diagnostics[8],
+    })
+}
+
 impl crate::audio::backend::Backend for Pcm {
     fn timings(&self) -> Vec<crate::audio::AudioStreamTiming> {
         #[cfg(feature = "audio-pipewire")]
@@ -362,6 +379,26 @@ impl crate::audio::backend::Backend for Pcm {
             return Some(bridge.graph_input_loss_trace());
         }
         None
+    }
+    fn usb_microphone_progress(
+        &self,
+    ) -> Result<Option<crate::audio::AudioUsbMicrophoneProgress>, AudioError> {
+        if self.closed {
+            return Ok(None);
+        }
+        let result = read_usb_microphone_progress(
+            &mut self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+        .map_err(|error| AudioError::Backend {
+            reason: error.to_string(),
+        });
+        if let Err(error) = &result {
+            let _ = self.error.set(error.clone());
+        }
+        result.map(Some)
     }
     fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         #[cfg(feature = "audio-pipewire")]
@@ -553,6 +590,53 @@ pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_progress_preserves_source_host_completion_and_loss_domains() {
+        let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let task = std::thread::spawn(move || {
+            let counters = [0_u64, 1, 6, 0, 96, 96, 4, 1200, 3];
+            for (tag, values) in [(3, counters.to_vec()), (5, vec![90]), (7, vec![96, 6])] {
+                let (actual, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!(actual, tag);
+                assert_eq!(body, 7_u64.to_le_bytes());
+                for value in values {
+                    body.extend(value.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+            }
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let progress = read_usb_microphone_progress(&mut control).unwrap();
+        assert_eq!(
+            progress,
+            crate::audio::AudioUsbMicrophoneProgress {
+                host_frames: 96,
+                silence_frames: 6,
+                consumed_source_frames: 90,
+                completed_capture_frames: 96,
+                abandoned_capture_frames: 4,
+                dropped_source_frames: 3,
+                maximum_lateness_us: 1200,
+            }
+        );
+        task.join().unwrap();
+    }
+
+    #[test]
+    fn malformed_worker_progress_fails_without_fabricated_counters() {
+        let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let task = std::thread::spawn(move || {
+            let (tag, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+            assert_eq!(tag, 3);
+            body.extend([0; 8]);
+            gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        assert!(read_usb_microphone_progress(&mut control).is_err());
+        assert!(control.is_closed());
+        task.join().unwrap();
+    }
 
     #[test]
     fn pcm_close_acknowledges_worker_before_channels_end_and_repeats_safely() {

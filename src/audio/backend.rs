@@ -23,6 +23,11 @@ pub(crate) trait Backend: Send + Sync {
     fn native_microphone_graph_loss_trace(&self) -> Option<Vec<super::AudioInputLossTrace>> {
         None
     }
+    fn usb_microphone_progress(
+        &self,
+    ) -> Result<Option<super::AudioUsbMicrophoneProgress>, AudioError> {
+        Ok(None)
+    }
     fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         None
     }
