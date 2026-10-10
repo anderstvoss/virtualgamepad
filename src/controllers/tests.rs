@@ -1629,12 +1629,13 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         if native_microphone.is_some() {
             let instrumentation = crate::experimental::audio_instrumentation(audio);
             println!(
-                "public_usb_native_microphone_counters family={family} graph_dropped={:?} cached_graph_dropped_before={graph_dropped_before:?} cached_trial_graph_drop_delta={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
+                "public_usb_native_microphone_counters family={family} graph_dropped={:?} cached_graph_dropped_before={graph_dropped_before:?} cached_trial_graph_drop_delta={:?} graph_loss_empty_corrupted_overflow={:?} queue_frames={:?} bridge_schedule_us={:?} stream_timings={:?}",
                 instrumentation.native_microphone_dropped_frames(),
                 public_counter_delta(
                     graph_dropped_before,
                     instrumentation.native_microphone_dropped_frames(),
                 ),
+                instrumentation.native_microphone_graph_loss_frames(),
                 instrumentation.native_microphone_queue_frames(),
                 instrumentation.native_bridge_scheduling_us(),
                 instrumentation.stream_timings()

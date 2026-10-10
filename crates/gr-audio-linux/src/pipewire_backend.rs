@@ -33,6 +33,7 @@ pub struct Endpoint {
 pub struct Session {
     endpoints: Vec<Endpoint>,
     clocks: Vec<(String, Arc<timing::Shared>)>,
+    input_losses: Vec<Arc<InputLoss>>,
     playback: Option<PcmConsumer>,
     playback_observer: Option<PcmObserver>,
     microphone: Option<PcmProducer>,
@@ -107,6 +108,7 @@ impl Session {
             .iter()
             .map(|s| (s.name.clone(), s.clock.clone()))
             .collect();
+        let input_losses = specs.iter().map(|spec| spec.input_loss.clone()).collect();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let worker_stop = stop.clone();
         let worker_failed = failed.clone();
@@ -132,6 +134,7 @@ impl Session {
         let mut session = Self {
             endpoints,
             clocks,
+            input_losses,
             playback,
             playback_observer,
             microphone,
@@ -236,6 +239,20 @@ impl Session {
     pub fn queued_playback_frames(&self) -> Option<usize> {
         self.playback.as_ref().map(PcmConsumer::queued_frames)
     }
+    /// Cumulative input frames rejected as EMPTY, CORRUPTED or queue overflow.
+    /// Independent atomic observations are diagnostic, not a transactional snapshot.
+    #[must_use]
+    pub fn input_loss_frames(&self) -> (u64, u64, u64) {
+        self.input_losses.iter().fold((0, 0, 0), |totals, loss| {
+            let observed = loss.frames();
+            (
+                totals.0 + observed.0,
+                totals.1 + observed.1,
+                totals.2 + observed.2,
+            )
+        })
+    }
+
     pub fn activate_inputs(&self) {
         self.activate_input.store(true, Ordering::Release);
     }
@@ -295,7 +312,24 @@ enum Io {
     Sink(PcmProducer),
     Source(PcmConsumer),
 }
+#[derive(Default)]
+struct InputLoss {
+    empty: AtomicU64,
+    corrupted: AtomicU64,
+    overflow: AtomicU64,
+}
+impl InputLoss {
+    fn frames(&self) -> (u64, u64, u64) {
+        (
+            self.empty.load(Ordering::Relaxed),
+            self.corrupted.load(Ordering::Relaxed),
+            self.overflow.load(Ordering::Relaxed),
+        )
+    }
+}
+
 struct Spec {
+    input_loss: Arc<InputLoss>,
     clock: Arc<timing::Shared>,
     name: String,
     format: PcmFormat,
@@ -308,6 +342,7 @@ struct ControlCallback {
     failed: Arc<AtomicBool>,
 }
 struct Callback {
+    input_loss: Arc<InputLoss>,
     generation: Arc<AtomicU64>,
     seen_generation: u64,
     clock: Arc<timing::Shared>,
@@ -320,6 +355,15 @@ struct Callback {
     underruns: Arc<AtomicU64>,
     source_preroll: usize,
     source_started: bool,
+}
+impl Callback {
+    fn refresh_generation(&mut self) {
+        let generation = self.generation.load(Ordering::Acquire);
+        if generation != self.seen_generation {
+            self.tracker.restart();
+            self.seen_generation = generation;
+        }
+    }
 }
 // Each listener owns separate userdata: the binding creates &mut callback
 // state even before dispatching an event. Only process state crosses onto the
@@ -350,6 +394,7 @@ impl ManagedStream {
         .map_err(backend)?;
         let generation = Arc::new(AtomicU64::new(0));
         let cb = Callback {
+            input_loss: spec.input_loss,
             generation: generation.clone(),
             seen_generation: 0,
             clock: spec.clock.clone(),
@@ -554,11 +599,7 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
     let Some(mut buffer) = stream.dequeue_buffer() else {
         return;
     };
-    let generation = data.generation.load(Ordering::Acquire);
-    if generation != data.seen_generation {
-        data.tracker.restart();
-        data.seen_generation = generation;
-    }
+    data.refresh_generation();
     let clock_time = stream.time().ok();
     let requested = usize::try_from(buffer.requested()).unwrap_or(0);
     let Some(block) = buffer.datas_mut().first_mut() else {
@@ -582,7 +623,15 @@ fn process(stream: &pw::stream::Stream, data: &mut Callback) {
                 return;
             };
             transferred = bytes.len() / (channels * 2);
-            if ingest(tx, &mut data.scratch, channels, bytes, flags).is_err() {
+            let result = ingest(
+                tx,
+                &mut data.scratch,
+                channels,
+                bytes,
+                flags,
+                &data.input_loss,
+            );
+            if result.is_err() {
                 data.failed.store(true, Ordering::Release);
             }
         }
@@ -669,19 +718,26 @@ fn ingest(
     channels: usize,
     bytes: &[u8],
     flags: i32,
+    loss: &InputLoss,
 ) -> Result<(), AudioError> {
     if bytes.len() % (channels * 2) != 0 {
         return Err(AudioError::InvalidRequirement);
     }
     if flags & spa::buffer::ChunkFlags::CORRUPTED.bits() != 0 {
-        return tx.discard(u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?);
+        let frames = u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?;
+        tx.discard(frames)?;
+        loss.corrupted.fetch_add(frames, Ordering::Relaxed);
+        return Ok(());
     }
     // EMPTY means the host supplied no sample content. Account for its media
     // time as loss, so callers observe a gap instead of fabricated silence that
     // looks like accepted controller audio.
     let empty = flags & SPA_CHUNK_FLAG_EMPTY != 0;
     if empty {
-        return tx.discard(u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?);
+        let frames = u64::try_from(bytes.len() / (channels * 2)).map_err(backend)?;
+        tx.discard(frames)?;
+        loss.empty.fetch_add(frames, Ordering::Relaxed);
+        return Ok(());
     }
     for packet in bytes.chunks(scratch.len() / channels * channels * 2) {
         let count = packet.len() / 2;
@@ -689,7 +745,9 @@ fn ingest(
             *sample = i16::from_le_bytes([pair[0], pair[1]]);
         }
         let n = tx.push(&scratch[..count])?;
-        tx.discard(u64::try_from(count / channels - n).map_err(backend)?)?;
+        let discarded = u64::try_from(count / channels - n).map_err(backend)?;
+        tx.discard(discarded)?;
+        loss.overflow.fetch_add(discarded, Ordering::Relaxed);
     }
     Ok(())
 }
@@ -734,6 +792,7 @@ fn prepare(
                 playback_observer = Some(tx.observer());
                 specs.push(Spec {
                     clock: Arc::default(),
+                    input_loss: Arc::default(),
                     name: host_node.clone(),
                     format: format.clone(),
                     io: Io::Sink(tx),
@@ -742,6 +801,7 @@ fn prepare(
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
                         clock: Arc::default(),
+                        input_loss: Arc::default(),
                         name: name.clone(),
                         format: format.clone(),
                         io: Io::Source(rx),
@@ -754,6 +814,7 @@ fn prepare(
             SampleDirection::ControllerToHost => {
                 specs.push(Spec {
                     clock: Arc::default(),
+                    input_loss: Arc::default(),
                     name: host_node.clone(),
                     format: format.clone(),
                     io: Io::Source(rx),
@@ -762,6 +823,7 @@ fn prepare(
                 if let Some(name) = &caller_node {
                     specs.push(Spec {
                         clock: Arc::default(),
+                        input_loss: Arc::default(),
                         name: name.clone(),
                         format: format.clone(),
                         io: Io::Sink(tx),
@@ -1037,12 +1099,14 @@ mod tests {
         let format = PcmFormat::new(48_000, &[C::AudibleLeft, C::AudibleRight]).unwrap();
         let (mut tx, mut rx) = pcm_queue(&format, 4).unwrap();
         let mut scratch = [0; 16];
+        let loss = InputLoss::default();
         ingest(
             &mut tx,
             &mut scratch,
             2,
             &[1, 0, 2, 0],
             spa::buffer::ChunkFlags::CORRUPTED.bits(),
+            &loss,
         )
         .unwrap();
         ingest(
@@ -1051,17 +1115,50 @@ mod tests {
             2,
             &[99, 99, 99, 99],
             SPA_CHUNK_FLAG_EMPTY,
+            &loss,
         )
         .unwrap();
-        ingest(&mut tx, &mut scratch, 2, &[3, 0, 4, 0], 0).unwrap();
+        ingest(&mut tx, &mut scratch, 2, &[3, 0, 4, 0], 0, &loss).unwrap();
         let mut samples = [42; 2];
         let read = rx.read(&mut samples).unwrap();
         assert_eq!(samples, [3, 4]);
         assert_eq!(read.first_frame, 2);
         assert!(read.discontinuity);
         assert_eq!(rx.discarded_frames(), 2);
-        assert!(ingest(&mut tx, &mut scratch, 2, &[0; 3], 0).is_err());
+        assert_eq!(loss.frames(), (1, 1, 0));
+        assert!(ingest(&mut tx, &mut scratch, 2, &[0; 3], 0, &loss).is_err());
     }
+    #[test]
+    fn input_loss_reasons_reconcile_without_double_counting_flags_or_overflow() {
+        let format = PcmFormat::new(48_000, &[C::Microphone]).unwrap();
+        let (mut tx, rx) = pcm_queue(&format, 4).unwrap();
+        let loss = InputLoss::default();
+        let mut scratch = [0; 16];
+        ingest(&mut tx, &mut scratch, 1, &[1; 12], 0, &loss).unwrap();
+        ingest(
+            &mut tx,
+            &mut scratch,
+            1,
+            &[0; 4],
+            SPA_CHUNK_FLAG_EMPTY | spa::buffer::ChunkFlags::CORRUPTED.bits(),
+            &loss,
+        )
+        .unwrap();
+        ingest(
+            &mut tx,
+            &mut scratch,
+            1,
+            &[0; 6],
+            SPA_CHUNK_FLAG_EMPTY,
+            &loss,
+        )
+        .unwrap();
+        assert_eq!(loss.frames(), (3, 2, 2));
+        assert_eq!(rx.discarded_frames(), 7);
+        assert!(ingest(&mut tx, &mut scratch, 1, &[0; 3], 0, &loss).is_err());
+        assert_eq!(loss.frames(), (3, 2, 2));
+    }
+
     #[test]
     fn duplicate_directions_fail_before_pipewire_access() {
         let stream = AudioStreamDescription::new(

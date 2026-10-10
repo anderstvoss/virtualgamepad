@@ -24,6 +24,9 @@ struct Metrics {
     timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
     source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
+    graph_input_empty: AtomicU64,
+    graph_input_corrupted: AtomicU64,
+    graph_input_overflow: AtomicU64,
     graph_input_fill: AtomicU64,
     graph_input_peak: AtomicU64,
     maximum_credit_request_us: AtomicU64,
@@ -35,6 +38,11 @@ impl Metrics {
             .store(session.underrun_frames(), Ordering::Release);
         self.graph_input_dropped
             .store(session.dropped_playback_frames(), Ordering::Release);
+        let (empty, corrupted, overflow) = session.input_loss_frames();
+        self.graph_input_empty.store(empty, Ordering::Release);
+        self.graph_input_corrupted
+            .store(corrupted, Ordering::Release);
+        self.graph_input_overflow.store(overflow, Ordering::Release);
         if let Some(fill) = session.queued_playback_frames() {
             self.graph_input_fill.store(fill as u64, Ordering::Release);
             self.graph_input_peak
@@ -293,6 +301,13 @@ impl Bridge {
             self.metrics.graph_input_peak.load(Ordering::Acquire),
         )
     }
+    pub(crate) fn graph_input_loss_frames(&self) -> (u64, u64, u64) {
+        (
+            self.metrics.graph_input_empty.load(Ordering::Acquire),
+            self.metrics.graph_input_corrupted.load(Ordering::Acquire),
+            self.metrics.graph_input_overflow.load(Ordering::Acquire),
+        )
+    }
     pub(crate) fn scheduling_us(&self) -> (u64, u64) {
         (
             self.metrics
@@ -516,6 +531,9 @@ mod tests {
                 timings: Mutex::new(vec![timing.clone()]),
                 source_underruns: AtomicU64::new(512),
                 graph_input_dropped: AtomicU64::new(24),
+                graph_input_empty: AtomicU64::new(8),
+                graph_input_corrupted: AtomicU64::new(4),
+                graph_input_overflow: AtomicU64::new(12),
                 graph_input_fill: AtomicU64::new(128),
                 graph_input_peak: AtomicU64::new(512),
                 maximum_credit_request_us: AtomicU64::new(1_500),
@@ -528,6 +546,7 @@ mod tests {
         assert_eq!(bridge.timings(), vec![timing]);
         assert_eq!(bridge.source_underrun_frames(), 512);
         assert_eq!(bridge.graph_input_dropped_frames(), 24);
+        assert_eq!(bridge.graph_input_loss_frames(), (8, 4, 12));
         assert_eq!(bridge.graph_input_queue_frames(), (128, 512));
         assert_eq!(bridge.scheduling_us(), (1_500, 3_000));
     }

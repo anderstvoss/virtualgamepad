@@ -569,6 +569,13 @@ impl<'a> AudioInstrumentation<'a> {
     pub fn native_microphone_dropped_frames(&self) -> Option<u64> {
         self.audio.session.native_microphone_dropped_frames()
     }
+    /// Native microphone input frames rejected as EMPTY, CORRUPTED or queue
+    /// overflow, respectively. Cached every 100 ms; separate atomic reads are
+    /// not a transactional snapshot. `None` means unavailable instrumentation.
+    #[must_use]
+    pub fn native_microphone_graph_loss_frames(&self) -> Option<(u64, u64, u64)> {
+        self.audio.session.native_microphone_graph_loss_frames()
+    }
     /// Current and peak native microphone graph queue fill, in frames. Queue
     /// capacity is spare room for scheduling stalls, not a desired latency.
     #[must_use]
