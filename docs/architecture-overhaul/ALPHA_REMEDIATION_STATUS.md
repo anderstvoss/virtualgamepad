@@ -2149,3 +2149,50 @@ open. Review native node membership, bounded observer failure, asynchronous USB
 teardown and whether the final GUI executable remains byte-identical to the
 accepted soak image. This checkpoint changes tests/evidence, not public APIs,
 product behavior, dependencies or acceptance limits.
+
+## Isolated Steam device preparation at `ebc5273`
+
+Gate 5 remains open. The prior Steam bootstrap deliberately constructed a private
+`/dev` with no controller devices, so bootstrap/home-screen evidence could not
+establish controller recognition. The maintained ordinary-user runner now accepts
+`--input-owner-pid` and derives a bounded event/hidraw allowlist from that live
+same-user producer's process-owned kernel labels. It pins process start time,
+checks sysfs device numbers and character-node inode identities, exposes only
+individual device nodes and validates the resulting namespace inventory before
+Steam starts. The parent stops the consumer on producer identity changes or node
+replacement; expected removal is recorded separately. No arbitrary device-path
+argument, host permission modification or new sudo action was added.
+
+An initial metadata-only namespace probe passed but a strengthened open probe
+failed with permission denied. Ordinary host opens succeeded. Installed
+bubblewrap documents `--dev-bind` as permitting device access; ordinary readonly
+binds were inappropriate for these character nodes. Individual device-enabled
+binds corrected this demonstrated harness defect. The sentinel now verifies both
+mounted/opened identities and read/write open permissions without consuming
+input or sending output, and closes every opened descriptor.
+
+At source `ebc5273aacef565dfe144cbe7b58c366f99bf76d`, tree
+`b5f27ed48255c4210b488f6a2147d6a070d038da`, the non-Steam namespace proof
+passed for eight owned nodes of the live neutral two-DualSense GUI workload.
+Real/passwd home remained hidden, capabilities were dropped, no unrelated
+consumer nodes were exposed, all eight opens passed and cleanup was empty.
+Steam was not launched and neither retained login state nor controller input
+was read. This closes preparation for that device set, not the four-family
+recognition/input/output/removal/sibling acceptance matrix.
+
+Reproduce with a live ordinary test-owned controller producer (not an arbitrary
+user process):
+
+```bash
+python3 scripts/run-alpha-steam-lab.py --apply --input-owner-pid "$REVIEW_PRODUCER_PID"
+```
+
+Regressions reject foreign/dead/reused producer identities, non-character nodes,
+duplicate/invalid bindings, changed device numbers/inodes, unexpected namespace
+nodes and replacement during open. Removal remains distinct from replacement;
+failed open/identity checks cannot leak descriptors or start Steam. All 361 Python
+tooling tests, format and whitespace checks passed. Rust compilation and full
+workspace source checks are deferred until the active two-hour GUI soak finishes;
+no Rust source, dependency or GUI executable changed in this increment.
+The final Steam trial still requires all four families and available realizations,
+actual consumer behavior, profile isolation and complete owned cleanup.
