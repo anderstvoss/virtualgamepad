@@ -40,6 +40,21 @@ Python tooling tests passed before this live trial. Production broker and worker
 hashes remain the values recorded above. No product behavior or acceptance limit
 changed in this diagnostic increment.
 
+## Native graph membership receipt
+
+Source `9ffa522ef434f3714363175ee223356607a80242`, tree
+`983963a88f653f1ff2c11c1f9b07c97f8cf0245a`, ordinary test image
+`bbd4d1fad1dd0d4cd4b56e8c7e6bc6c5ba21d6e2c4351586f393867ab21bfbb0`:
+all twelve ownership cases passed again. Each of the twelve native endpoint
+instances was observed exactly once by its caller-provided node name in the
+private graph while its controller was alive. The bounded graph observer also
+rejected ALSA hardware monitors. This supplies the during-lifetime membership
+receipt missing above; startup and teardown snapshots alone are insufficient.
+All three short direct-ALSA marker cases passed, the observing parent and combined
+phase returned zero, and owned restoration reported no errors. No product source
+or acceptance thresholds changed. Prior intermittent enumeration failures remain
+unresolved, and routing transitions and sustained qualification remain open.
+
 ## Exact candidate and observed correction
 
 Source `6576c4732d301683195ff66cc3b57836abfbcc24`, tree
