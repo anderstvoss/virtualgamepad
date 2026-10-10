@@ -1473,9 +1473,17 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let mut status = None;
         let mut drain_until = None;
         let mut previous_cycle = std::time::Instant::now();
-        let mut largest_delays = [[0_u64; 6]; 8];
+        let mut largest_delays = [[0_u64; 8]; 8];
         let mut maximum_service_us = 0;
         let mut maximum_read_us = 0;
+        let mut previous_sleep_us = 0;
+        let mut previous_write_us = 0;
+        let timer_slack = std::fs::read_to_string("/proc/thread-self/timerslack_ns");
+        let scheduling = std::fs::read_to_string("/proc/thread-self/sched")
+            .map(|text| text.chars().take(2048).collect::<String>());
+        println!(
+            "public_usb_caller_scheduling family={family} timer_slack={timer_slack:?} sched={scheduling:?}"
+        );
         loop {
             let cycle = std::time::Instant::now();
             let interval_us =
@@ -1509,6 +1517,8 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                         u64::try_from(consumed).unwrap(),
                         u64::try_from(microphone_produced).unwrap(),
                         audio.underrun_frames(),
+                        previous_sleep_us,
+                        previous_write_us,
                     ];
                     largest_delays.sort_unstable_by_key(|entry| entry[0]);
                 }
@@ -1518,10 +1528,14 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     microphone_produced,
                 );
                 if available > 0 {
+                    let write_begin = std::time::Instant::now();
                     let samples: Vec<_> = (microphone_produced..microphone_produced + available)
                         .flat_map(|frame| public_marker(frame, microphone_channels))
                         .collect();
                     microphone_produced += audio.write_microphone(&samples).unwrap();
+                    previous_write_us = u64::try_from(write_begin.elapsed().as_micros()).unwrap();
+                } else {
+                    previous_write_us = 0;
                 }
             }
             if status.is_none() {
@@ -1540,7 +1554,9 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 std::time::Instant::now() < deadline,
                 "public sample exchange exceeded its deadline"
             );
+            let sleep_begin = std::time::Instant::now();
             thread::sleep(Duration::from_millis(1));
+            previous_sleep_us = u64::try_from(sleep_begin.elapsed().as_micros()).unwrap();
         }
         let mut receipt = Vec::new();
         output.take(8193).read_to_end(&mut receipt).unwrap();
@@ -1550,7 +1566,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let microphone_consumed = audio.microphone_consumed_frames().unwrap();
         let microphone_dropped = audio.dropped_microphone_frames().unwrap();
         println!(
-            "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={maximum_read_us} largest_cycle_delays_interval_service_credit_consumed_produced_silence={largest_delays:?}",
+            "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={maximum_read_us} largest_cycle_delays_interval_service_credit_consumed_produced_silence_sleep_write={largest_delays:?}",
             audio.underrun_frames(),
             audio.dropped_playback_frames()
         );
@@ -1652,13 +1668,15 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         }
         let native =
             std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB").as_deref() == Ok("1");
+        // Execute outstanding mixed microphone cells first; a later sample
+        // failure must not prevent their independent evidence from being collected.
         for playback in [
-            crate::AudioAccess::NativeClient,
             crate::AudioAccess::Samples,
+            crate::AudioAccess::NativeClient,
         ] {
             for microphone in [
-                crate::AudioAccess::Samples,
                 crate::AudioAccess::NativeClient,
+                crate::AudioAccess::Samples,
             ] {
                 if !native
                     && (playback != crate::AudioAccess::Samples
