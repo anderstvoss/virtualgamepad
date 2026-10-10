@@ -1385,10 +1385,23 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let deadline = std::time::Instant::now() + Duration::from_secs(14);
         let mut status = None;
         let mut drain_until = None;
+        let mut previous_cycle = std::time::Instant::now();
+        let mut largest_delays = [[0_u64; 6]; 8];
+        let mut maximum_service_us = 0;
+        let mut maximum_read_us = 0;
         loop {
+            let cycle = std::time::Instant::now();
+            let interval_us =
+                u64::try_from(cycle.duration_since(previous_cycle).as_micros()).unwrap();
+            previous_cycle = cycle;
             controller.service_input();
+            let service_us = u64::try_from(cycle.elapsed().as_micros()).unwrap();
+            maximum_service_us = maximum_service_us.max(service_us);
             let audio = controller.sample_audio();
+            let read_begin = std::time::Instant::now();
             let observation = audio.read_playback(&mut playback).unwrap();
+            maximum_read_us =
+                maximum_read_us.max(u64::try_from(read_begin.elapsed().as_micros()).unwrap());
             for frame in
                 playback[..observation.frames * playback_channels].chunks_exact(playback_channels)
             {
@@ -1397,8 +1410,21 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 }
             }
             if status.is_none() {
+                let credit_begin = std::time::Instant::now();
                 let consumed =
                     usize::try_from(audio.microphone_consumed_frames().unwrap().unwrap()).unwrap();
+                let credit_us = u64::try_from(credit_begin.elapsed().as_micros()).unwrap();
+                if interval_us > largest_delays[0][0] {
+                    largest_delays[0] = [
+                        interval_us,
+                        service_us,
+                        credit_us,
+                        u64::try_from(consumed).unwrap(),
+                        u64::try_from(microphone_produced).unwrap(),
+                        audio.underrun_frames(),
+                    ];
+                    largest_delays.sort_unstable_by_key(|entry| entry[0]);
+                }
                 let available = consumed
                     .saturating_add(384)
                     .saturating_sub(microphone_produced)
@@ -1430,6 +1456,14 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         output.take(8193).read_to_end(&mut receipt).unwrap();
         assert!(receipt.len() <= 8192);
         let receipt = String::from_utf8(receipt).unwrap();
+        let audio = controller.sample_audio();
+        let microphone_consumed = audio.microphone_consumed_frames().unwrap();
+        let microphone_dropped = audio.dropped_microphone_frames().unwrap();
+        println!(
+            "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={maximum_read_us} largest_cycle_delays_interval_service_credit_consumed_produced_silence={largest_delays:?}",
+            audio.underrun_frames(),
+            audio.dropped_playback_frames()
+        );
         println!("public_usb_sample_capture family={family} receipt={receipt}");
         let (missing, duplicate) = seen.iter().fold((0, 0), |(missing, duplicate), count| {
             (

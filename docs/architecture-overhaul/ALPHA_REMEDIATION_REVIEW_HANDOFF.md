@@ -2124,3 +2124,23 @@ Require exact stereo-pattern observations for A, B and reconnect, empty router
 ports during disconnect, and owned loopback/subprocess teardown. This is a
 functional routing receipt only: reject any claim that it proves USB/IP marker
 exchange, worker/endpoint failure isolation or sustained zero-loss audio.
+
+
+## Public USB marker exchange review checkpoint
+
+Review `live_public_usb_sample_factory` together with the embedded
+`validate-usb-public-samples.py` and the maintained ALSA validator. Require the
+outer ordinary-user verifier to reject twelve successful ownership receipts
+without all three exact exchange receipts. Check independent per-index playback
+accounting, rear-channel integrity, microphone warm-up/drain, finite child
+termination and ancestry/serial checks. The executable is supplied as a sealed
+ELF descriptor; root orchestration never imports the embedded client source.
+
+The first helper setup failure and corrected `ff1cd9d` live failure are retained.
+DualSense exact duplex markers passed; DS4 playback passed but its microphone
+had 112 silent measured frames. Xbox exchange was not reached. Do not promote
+these partial receipts into Gate 4 or sustained Gate 6 acceptance. Examine the
+new caller refill timing and queue counters before assigning the DS4 failure to
+the library or making queue-size changes. Both parent restorations reported no
+cleanup errors. Public/root production interfaces and provider images are
+unchanged by this test/tool increment.

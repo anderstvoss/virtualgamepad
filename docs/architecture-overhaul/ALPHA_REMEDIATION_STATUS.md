@@ -2345,3 +2345,42 @@ in `scripts/run-pipewire-audio-lab.py` with a 40-second deadline, explicit
 test name `gui::audio_lab::tests::live_private_pipewire_route_switch_disconnect_and_reconnect`.
 Do not blanket-enable ignored tests or replace transport acceptance with this
 virtual-node fixture.
+
+
+## Public USB sample exchange: exact markers and first failure
+
+At `3f369bb0fc74f59b3849f65eee5668af287e03fb`, the public-root USB factory
+fixture was extended beyond ownership and native-node creation. Its frozen
+ordinary-user test image embeds the maintained ALSA marker validator, verifies
+the creation-scoped ALSA card's serial and VHCI ancestry, checks pre-attachment
+exclusion, and exchanges synthetic duplex samples through the public audio API.
+Playback counts each measured index separately; duplicated frames cannot mask
+missing frames. Microphone capture retains the maintained two-second warm-up,
+three-second measured window and bounded drain. No queue or acceptance limit
+was enlarged. All twelve existing ownership cells remain required, and the
+outer verifier now additionally requires all three family exchange receipts.
+
+The first live run failed before streaming because the embedded helper lacked
+an import and named a nonexistent isolation function. The corrected helper at
+`ff1cd9d753e88264a4bb8f638f5ee6baba0cfe06` adds an entrypoint regression that
+runs the captured scripts together and verifies both isolation checks. Four
+Python helper tests, 22 broker-validator tests, two Rust marker regressions,
+the complete Python suite and all five mandatory Rust/Gitleaks checks pass.
+The ignored factory test is executed only through the prepared ordinary client.
+
+The corrected live run passed DualSense duplex sample exchange: 144000 measured
+microphone frames with exact markers and no silence/gaps, plus 144000 playback
+indices with no missing, duplicated or corrupt frames. DS4 playback also had
+zero missing/duplicate/corrupt measured frames, but microphone capture contained
+112 silent measured frames and therefore failed. Xbox public sample exchange
+was not reached. The separate direct ALSA/worker subtrials passed for all three
+families. Both failed aggregate receipts remain preserved outside tracked source;
+both root restorations reported empty cleanup-error lists. No product fix or
+whole Gate 4 pass follows from these results.
+
+The next bounded diagnostic records the public caller's largest refill-cycle
+delays, service/read/credit durations and retained queue/underrun counters before
+any assertion. It changes test instrumentation only. Distinguish incomplete or
+late application production from worker loss before changing production code.
+The private graph check is client-scoped; shared desktop defaults and foreign
+resource isolation are independently guarded by the parent prepared lab.
