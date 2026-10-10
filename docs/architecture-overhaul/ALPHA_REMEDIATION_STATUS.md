@@ -2421,3 +2421,46 @@ validation tooling and review documentation; provider/root production images and
 ordinary-root signatures are unchanged. All five mandatory validation commands
 passed for this instrumented candidate. Gates 2/3 retain their prior dispositions;
 Gates 1/4/5/6 remain open.
+
+
+## Native USB caller disconnect/reconnect at `0d09b13`
+
+The public factory's sealed ordinary-user fixture passed at
+`0d09b13fd0b88b683865aab7ca1c7c10f75a7a9d`, tree
+`3b74389be1898370556bbee870955e464078a9bd`, frozen test image
+`50e6d89b6e28b02f277d718a78bda62e42de4ca0b8d9d4063087ee936873df65`.
+All twelve native caller endpoints across the three families and supported
+ownership combinations completed two connect/disconnect cycles. A bounded
+`pw-cat` client connected to the exact caller node; its original graph links
+were recorded by object ID and serial. After terminating and reaping that
+owned client, the fixture required both client-node absence and original-link
+absence while preserving the controller endpoint's ID and serial. Reconnection
+used a new owned client; final root service, health, removal and repeated close
+checks remained successful. An earlier node-removal-only checkpoint at
+`d303e027143cc831d962b23ceec0042a41370845` also passed, but the current
+receipt includes stronger explicit link-removal evidence.
+
+The same enclosing fixture retained all twelve ownership cases and repeated
+exact public sample/sample duplex exchange for DualSense, DS4 and Xbox 360;
+all measured marker assertions passed. Its ordinary factory subtest completed
+in 29.04 seconds, inside the unchanged 45-second deadline. The parent phase
+and typed observer exited zero; both report empty cleanup-error lists and
+restoration to original broker/socket states. No foreign graph/card/default
+was changed. Seven deterministic native-helper regressions cover exact links,
+reused identities, early client death, failure reaping, initiating plus cleanup
+errors, dangling links and unavailable link identity. The outer verifier rejects
+missing or incomplete native lifecycle receipts even when ownership and marker
+receipts pass. All 375 Python tests, mandatory fmt/check/Clippy/test/Gitleaks
+checks, and forced Rust 1.85 workspace/all-target/all-feature checking pass.
+
+These checks establish consumer connection/removal/reconnection and endpoint
+preservation, not native or mixed-ownership audio marker delivery, endpoint or
+required-worker failure, transport routing transitions, sustained continuity,
+or whole Gate 4 closure. The earlier DS4 microphone-silence failure remains
+visible and unexplained; these later successes do not erase it.
+
+Exact-head platform CI, CodeQL, Gitleaks, provider contract and SBOM workflows
+passed for the earlier `125043d2e6836e235b3aba1031083787a8404627` checkpoint,
+including all 17 downloaded workspace SBOM identities. Remote privileged provider
+validation was skipped and remains separately supported by local lab receipts.
+That CI checkpoint does not validate later native-client tooling changes.
