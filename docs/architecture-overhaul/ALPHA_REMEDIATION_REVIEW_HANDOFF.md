@@ -2343,3 +2343,50 @@ Next causal instrumentation must distinguish graph EMPTY/CORRUPTED-buffer
 accounting from PCM queue overflow and locate the Xbox underrun in media time.
 The cumulative graph-drop counter alone cannot identify the mechanism. All
 existing assertions remain in force; Gates 1/4/5/6 remain open.
+
+
+## Native graph rejection reasons at `82d1ca5`
+
+At `82d1ca5ba5d4b39ec869e70b00386ac10f664281`, tree
+`430bf27c0275a4d8bc99266cf223051ca70699b9`, frozen public test image
+`8390946f2ce27ab8589db54e88046ff873fa8fad3aa17301170a39226ace707e`,
+the first DualSense native-microphone cell reported 1024 EMPTY graph frames,
+zero CORRUPTED frames and zero queue-overflow frames. The total graph-discard
+counter was 1024 and the cached baseline zero. This identifies the rejection
+mechanism for that receipt; it does not locate the EMPTY frames in media time.
+
+Its measured capture contained 143968 valid frames and 32 silence frames.
+Startup silence was 1344 frames; the total reconciles with 1376 USB microphone
+underrun frames. Sample playback delivered all 144000 indexed measured frames
+without missing, duplicate or corrupt markers. The mandatory fixture failed at
+DualSense, so later families were not reached. This demonstrates that the
+intermittent steady-state microphone underrun is not Xbox-specific. Earlier
+DualSense/DS4 short passes remain narrow historical observations, not unconditional
+continuity acceptance. The EMPTY count alone cannot explain the 32-frame underrun.
+
+The enclosing phase and observer failed; owned restoration completed with empty
+root and coordinator cleanup-error lists. The corrected observer-startup guard
+recorded a matching invocation before waiting and cleanup. Approximately 17 GiB
+remained available and measured memory pressure averages were zero.
+
+Implementation adds preallocated atomic per-endpoint loss-reason counters to the
+PipeWire callback and preserves existing PCM discard semantics. Combined EMPTY
+and CORRUPTED flags count once as corruption. Accepted sample data and queue sizes
+are unchanged. No callback allocation, blocking I/O or callback logging was added.
+Supporting `gr_audio_linux::Session::input_loss_frames` and experimental
+`AudioInstrumentation::native_microphone_graph_loss_frames` are additive; ordinary
+root signatures remain frozen. Observations are independent atomic reads, cached
+by the native bridge every 100 ms, not a transactional snapshot. Unavailable
+backends return `None` through the existing instrumentation seam.
+
+Regressions verify separate reasons, combined-flag precedence, invalid partial
+frames, queue overflow, total-discard reconciliation and readability after repeated
+bridge close. Mandatory fmt/check/Clippy/test/Gitleaks, forced Rust 1.85, strict
+root rustdoc, API snapshot (110 items) and inventory checks passed. An initial
+API-check command used the wrong rustdoc root and failed; the corrected command
+uses `--doc-root target/doc/virtualgamepad` and passes. No dependency was added.
+
+Next diagnostic evidence must locate EMPTY buffers and USB silence in media time
+and reconcile actual graph receipt/submission with worker consumption. Do not
+infer queue overflow, enlarge queues or weaken zero-loss acceptance from these
+results. Gates 1/4/5/6 remain open; alpha is not ready and PR #133 stays draft.
