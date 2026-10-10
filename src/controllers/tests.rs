@@ -1342,6 +1342,28 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert_eq!(seen, [1, 2, 0, 1, 1]);
     }
 
+    fn public_microphone_credit(host: usize, silence: usize, produced: usize) -> usize {
+        let consumed = host
+            .checked_sub(silence)
+            .expect("silence cannot exceed host frames");
+        consumed
+            .saturating_add(384)
+            .saturating_sub(produced)
+            .min(384)
+    }
+
+    #[test]
+    fn public_usb_refill_catches_up_within_existing_fill_without_counting_silence() {
+        assert_eq!(public_microphone_credit(0, 0, 0), 384);
+        // A four-millisecond wake-up consumes 192 frames, exceeding a single
+        // wire packet. Refill the operating fill rather than only one packet.
+        assert_eq!(public_microphone_credit(192, 0, 384), 192);
+        assert_eq!(public_microphone_credit(480, 96, 384), 384);
+        assert_eq!(public_microphone_credit(480, 96, 768), 0);
+        assert_eq!(public_microphone_credit(480, 0, 768), 96);
+        assert_eq!(public_microphone_credit(288_000, 89_680, 198_320), 384);
+    }
+
     fn spawn_public_host(mut command: std::process::Command) -> std::process::Child {
         // Consume the configuration so its parent copy of child stdout closes
         // immediately after spawning. Retaining it prevents socket EOF.
@@ -1490,10 +1512,11 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     ];
                     largest_delays.sort_unstable_by_key(|entry| entry[0]);
                 }
-                let available = consumed
-                    .saturating_add(384)
-                    .saturating_sub(microphone_produced)
-                    .min(128);
+                let available = public_microphone_credit(
+                    consumed,
+                    usize::try_from(audio.underrun_frames()).unwrap(),
+                    microphone_produced,
+                );
                 if available > 0 {
                     let samples: Vec<_> = (microphone_produced..microphone_produced + available)
                         .flat_map(|frame| public_marker(frame, microphone_channels))
