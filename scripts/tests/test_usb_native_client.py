@@ -53,4 +53,22 @@ class NativeClientTests(unittest.TestCase):
         child.stdin.close.assert_called_once()
 
 
+    def test_node_absence_does_not_hide_an_owned_dangling_link(self):
+        stale = dict(id=8, type='PipeWire:Interface:Link', info={
+            'output-node-id':1, 'input-node-id':2, 'props': {'object.serial':88}})
+        with patch.object(module, 'graph', return_value=[node(1,'target',11), stale]), \
+             patch.object(module.time, 'monotonic', side_effect=[0,3]):
+            with self.assertRaises(TimeoutError):
+                module.wait_graph('target', (1,11), 'client', False, removed_links=[(8,88)])
+        stale['info']['props']['object.serial']=99
+        with patch.object(module, 'graph', return_value=[node(1,'target',11), stale]):
+            self.assertIsNone(module.wait_graph('target', (1,11), 'client', False, removed_links=[(8,88)]))
+
+    def test_link_identity_must_be_observable(self):
+        incomplete = dict(id=8, type='PipeWire:Interface:Link', info={
+            'output-node-id':1, 'input-node-id':2})
+        with self.assertRaisesRegex(ValueError, 'identity unavailable'):
+            module.link_identities([incomplete], {1,2})
+
+
 if __name__ == '__main__':unittest.main()

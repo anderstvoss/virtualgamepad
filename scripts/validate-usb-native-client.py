@@ -5,14 +5,17 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import subprocess
 import tempfile
 import time
 
 
 def graph():
+    def quota():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1048576, 1048576))
     with tempfile.TemporaryFile() as output:
-        subprocess.run(['pw-dump'], stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=3)
+        subprocess.run(['pw-dump'], stdout=output, stderr=subprocess.DEVNULL, check=True, timeout=3, preexec_fn=quota)
         output.seek(0)
         raw = output.read(1048577)
     if len(raw) > 1048576:
@@ -45,15 +48,32 @@ def linked(objects, target, client):
                for item in objects)
 
 
-def wait_graph(target_name, identity, client_name, present, process=None):
+def link_identities(objects, pair=None):
+    identities = []
+    for item in objects:
+        if item.get('type') != 'PipeWire:Interface:Link':
+            continue
+        info = item.get('info', {})
+        if pair is not None and {info.get('output-node-id'), info.get('input-node-id')} != pair:
+            continue
+        serial = info.get('props', {}).get('object.serial')
+        if serial is None or 'id' not in item:
+            raise ValueError('private graph link identity unavailable')
+        identities.append((item['id'], serial))
+    return identities
+
+
+def wait_graph(target_name, identity, client_name, present, process=None, removed_links=()):
     deadline = time.monotonic() + 2
     while True:
         objects = graph()
         if node_identity(objects, target_name) != identity:
             raise ValueError('controller endpoint identity changed')
         client = node_identity(objects, client_name)
-        if (present and linked(objects, identity, client)) or (not present and client is None):
-            return
+        if present and linked(objects, identity, client):
+            return link_identities(objects, {identity[0], client[0]})
+        if not present and client is None and not set(removed_links).intersection(link_identities(objects)):
+            return None
         if process is not None and process.poll() is not None:
             raise ValueError('native client exited before connecting')
         if time.monotonic() >= deadline:
@@ -76,13 +96,14 @@ def exercise(target, channels, mode):
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         initiating = None
         cleanup = []
+        removed_links = []
         try:
             if mode == 'playback':
                 os.set_blocking(child.stdin.fileno(), False)
                 written = os.write(child.stdin.fileno(), bytes(256 * channels * 2))
                 if written != 256 * channels * 2:
                     raise ValueError('incomplete bounded client seed')
-            wait_graph(target, identity, name, True, child)
+            removed_links = wait_graph(target, identity, name, True, child)
         except BaseException as error:
             initiating = str(error)
         finally:
@@ -101,7 +122,7 @@ def exercise(target, channels, mode):
             except BaseException as error:
                 cleanup.append(str(error))
             try:
-                wait_graph(target, identity, name, False)
+                wait_graph(target, identity, name, False, removed_links=removed_links)
             except BaseException as error:
                 cleanup.append(str(error))
         if initiating is not None or cleanup:

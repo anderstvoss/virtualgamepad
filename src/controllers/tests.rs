@@ -1539,6 +1539,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     $playback_access,
                     $microphone_access,
                 );
+                controller.service(&mut |_| {}).unwrap();
                 if $playback_access == crate::AudioAccess::Samples
                     && $microphone_access == crate::AudioAccess::Samples
                     && std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
