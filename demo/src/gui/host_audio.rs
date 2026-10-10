@@ -470,8 +470,55 @@ impl Drop for OutputPort {
     }
 }
 
+struct CaptureQueue {
+    blocks: VecDeque<Vec<i16>>,
+    channels: usize,
+    dropped_frames: u64,
+}
+
+impl CaptureQueue {
+    fn new(channels: usize) -> Self {
+        Self {
+            blocks: VecDeque::with_capacity(8),
+            channels,
+            dropped_frames: 0,
+        }
+    }
+
+    fn discarded(&mut self, samples: usize) {
+        self.dropped_frames = self
+            .dropped_frames
+            .saturating_add(u64::try_from(samples / self.channels).unwrap_or(u64::MAX));
+    }
+
+    fn push(&mut self, samples: Vec<i16>) {
+        if self.blocks.len() == 8 {
+            if let Some(oldest) = self.blocks.pop_front() {
+                self.discarded(oldest.len());
+            }
+        }
+        self.blocks.push_back(samples);
+    }
+
+    fn read_newest(&mut self) -> Option<Vec<i16>> {
+        let newest = self.blocks.pop_back()?;
+        while let Some(stale) = self.blocks.pop_front() {
+            self.discarded(stale.len());
+        }
+        Some(newest)
+    }
+}
+
+fn capture_error(error: Option<String>, dropped_frames: u64) -> Option<String> {
+    if dropped_frames == 0 {
+        return error;
+    }
+    let loss = format!("host capture discarded {dropped_frames} frames to retain newest audio");
+    Some(error.map_or_else(|| loss.clone(), |error| format!("{error}; {loss}")))
+}
+
 pub(super) struct InputPort {
-    ring: Arc<Mutex<VecDeque<Vec<i16>>>>,
+    ring: Arc<Mutex<CaptureQueue>>,
     child: Arc<Mutex<Child>>,
     error: Arc<Mutex<Option<String>>>,
     thread: Option<JoinHandle<()>>,
@@ -482,9 +529,13 @@ impl InputPort {
         if channels == 0 || channels > STREAM_CHANNELS_MAX {
             return Err("unsupported host capture channel count".into());
         }
-        let mut child = build_capture_command(backend, device, channels)
+        let child = build_capture_command(backend, device, channels)
             .spawn()
             .map_err(|error| error.to_string())?;
+        Self::from_child(child, channels)
+    }
+
+    fn from_child(mut child: Child, channels: usize) -> Result<Self, String> {
         let mut stdout = child
             .stdout
             .take()
@@ -493,7 +544,7 @@ impl InputPort {
         let thread_control = Arc::clone(&control);
         let error = Arc::new(Mutex::new(None));
         let thread_error = Arc::clone(&error);
-        let ring = Arc::new(Mutex::new(VecDeque::<Vec<i16>>::with_capacity(8)));
+        let ring = Arc::new(Mutex::new(CaptureQueue::new(channels)));
         let thread_ring = Arc::clone(&ring);
         let thread = thread::Builder::new()
             .name("controller-audio-input".into())
@@ -513,10 +564,7 @@ impl InputPort {
                     // Keep capture bounded and prefer the freshest audio over
                     // queueing stale microphone frames after a service delay.
                     if let Ok(mut blocks) = thread_ring.lock() {
-                        if blocks.len() == 8 {
-                            blocks.pop_front();
-                        }
-                        blocks.push_back(samples);
+                        blocks.push(samples);
                     }
                     if thread_control
                         .lock()
@@ -539,12 +587,14 @@ impl InputPort {
         })
     }
 
-    pub fn read(&self) -> Option<Vec<i16>> {
-        self.ring.lock().ok()?.pop_front()
+    pub fn read_newest(&self) -> Option<Vec<i16>> {
+        self.ring.lock().ok()?.read_newest()
     }
 
     pub fn error(&self) -> Option<String> {
-        self.error.lock().ok().and_then(|error| error.clone())
+        let error = self.error.lock().ok().and_then(|error| error.clone());
+        let dropped = self.ring.lock().ok().map_or(0, |ring| ring.dropped_frames);
+        capture_error(error, dropped)
     }
 }
 
@@ -563,6 +613,102 @@ impl Drop for InputPort {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_overflow_and_stale_reads_account_for_exact_frames_and_recover() {
+        let mut queue = CaptureQueue::new(2);
+        for marker in 0_u8..8 {
+            queue.push(vec![i16::from(marker); 2 * (usize::from(marker) + 1)]);
+        }
+        assert_eq!(queue.blocks.len(), 8);
+        assert_eq!(queue.dropped_frames, 0);
+        queue.push(vec![99; 2 * 9]);
+        assert_eq!(queue.blocks.len(), 8);
+        assert_eq!(queue.dropped_frames, 1);
+        assert_eq!(queue.read_newest(), Some(vec![99; 18]));
+        assert_eq!(queue.dropped_frames, 36);
+        assert!(queue.read_newest().is_none());
+        assert_eq!(queue.dropped_frames, 36);
+        queue.push(vec![100; 2 * 3]);
+        assert_eq!(queue.read_newest(), Some(vec![100; 6]));
+        assert_eq!(queue.dropped_frames, 36);
+    }
+
+    #[test]
+    fn capture_stale_discard_is_counted_without_queue_overflow() {
+        let mut queue = CaptureQueue::new(4);
+        queue.push(vec![1; 4 * 7]);
+        queue.push(vec![2; 4 * 11]);
+        assert_eq!(queue.read_newest(), Some(vec![2; 44]));
+        assert_eq!(queue.dropped_frames, 7);
+        assert!(queue.blocks.is_empty());
+    }
+
+    #[test]
+    fn real_capture_pipe_counts_stalled_reads_and_reaps_its_owned_child() {
+        let child = Command::new("python3")
+            .args(["-I", "-c", "import os,struct,time; [os.write(1,struct.pack('<h',i+1)*512) for i in range(10)]; time.sleep(30)"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let input = InputPort::from_child(child, 2).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while input.ring.lock().unwrap().dropped_frames < 512 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "owned capture pipe did not progress"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(input.read_newest(), Some(vec![10; 512]));
+        assert_eq!(input.ring.lock().unwrap().dropped_frames, 9 * 256);
+        assert!(input.error().unwrap().contains("discarded 2304 frames"));
+        drop(input);
+        assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+    }
+
+    #[test]
+    fn partial_capture_pipe_frame_is_rejected_without_queue_admission() {
+        let child = Command::new("python3")
+            .args(["-I", "-c", "import os; os.write(1,b'\\x01'*1023)"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let input = InputPort::from_child(child, 2).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while input.error().is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "partial capture pipe did not terminate"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert!(input.read_newest().is_none());
+        assert_eq!(input.ring.lock().unwrap().dropped_frames, 0);
+        assert!(input.error().unwrap().contains("capture stream stopped"));
+    }
+
+    #[test]
+    fn capture_loss_is_observable_without_hiding_process_failure() {
+        assert_eq!(capture_error(None, 0), None);
+        assert_eq!(
+            capture_error(Some("worker stopped".into()), 0),
+            Some("worker stopped".into())
+        );
+        assert_eq!(
+            capture_error(None, 7),
+            Some("host capture discarded 7 frames to retain newest audio".into())
+        );
+        assert_eq!(
+            capture_error(Some("worker stopped".into()), 7),
+            Some("worker stopped; host capture discarded 7 frames to retain newest audio".into())
+        );
+    }
 
     #[test]
     fn discovery_timeout_cancels_descendants_and_bounds_output() {

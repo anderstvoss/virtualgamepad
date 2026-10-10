@@ -256,11 +256,7 @@ impl AudioRouter {
         let ports = self.inputs.get(id)?;
         let mut blocks = Vec::with_capacity(ports.len());
         for route in ports {
-            let mut newest = route.port.read();
-            while let Some(next) = route.port.read() {
-                newest = Some(next);
-            }
-            if let Some(samples) = newest {
+            if let Some(samples) = route.port.read_newest() {
                 blocks.push((route.device_channels.clone(), samples));
             }
         }

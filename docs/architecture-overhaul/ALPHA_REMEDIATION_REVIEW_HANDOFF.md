@@ -2097,3 +2097,19 @@ that as successful cleanup. The subsequent neutral diagnostic isolated the same
 permission failure to host node access and completed normal owned cleanup.
 Require test-owned access/isolation and actual consumer observations before
 closing Gate 5; producer logs or namespace access alone are insufficient.
+
+
+### Demo capture loss and required final-image soak
+
+Inspect `host_audio::CaptureQueue` and `AudioRouter::input`. Every frame discarded
+through queue overflow or newest-packet selection must contribute exactly once
+to the same per-port counter, with channel counts converted to frames correctly.
+Check the five regressions, including the real pipe's ten stereo packets and
+2304-frame reconciliation, partial-frame rejection and owned child reaping.
+Loss reporting must preserve an existing subprocess error and remain visible
+while subsequent capture delivery recovers. No root/public contract changed.
+
+This correction changes the production GUI executable and invalidates reuse of
+the preceding image's two-hour soak for the final candidate. Retain that receipt
+as historical evidence and require a new final-image soak after GUI fixes are
+settled. Do not close Gate 1 using the old byte-identity proof.

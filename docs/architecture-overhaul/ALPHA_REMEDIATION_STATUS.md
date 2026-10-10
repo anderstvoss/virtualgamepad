@@ -2278,3 +2278,44 @@ UID rejection, foreign process-prefix exclusion and retention while raw nodes
 remain. All 363 Python tooling tests and an ordinary-user udev syntax check
 passed. This source extension is not installed or accepted live yet; the existing
 autonomous updater deliberately rejects changes to its fixed phase/payload scope.
+
+
+## Demo capture-loss accounting correction
+
+Inspection of the implemented demo routing path found two silent microphone
+loss boundaries: its eight-packet host queue evicted old packets without
+accounting, and `AudioRouter::input` repeatedly drained packets to keep the
+newest one without accounting for the discarded frames. Both behaviors were
+bounded but could conceal loss during slow-consumer/routing acceptance.
+
+The private capture queue now counts complete discarded frames at both
+boundaries and atomically returns its newest packet. Routing no longer performs
+an unaccounted repeated drain. Existing host-routing error displays report the
+cumulative discarded-frame count alongside any subprocess failure, preserving
+both observations. The queue remains eight packets; frames, formats, root API,
+latency and continuity limits are unchanged. Fresh input delivery resumes after
+a stall while its historical loss remains visible.
+
+Five new regressions cover exact overflow plus stale-read reconciliation,
+no-overflow stale discard, combined loss/process error reporting, real bounded
+subprocess-pipe stalls and child reaping, and rejection of a partial input frame
+before queue admission. The real pipe sends ten stereo packets; two overflow
+and seven stale discards account for exactly 2304 frames, with the newest packet
+retained. No hardware or private data is used.
+
+The mandatory fmt/check/Clippy/test/Gitleaks suite passed after correcting a
+signed conversion in the initial regression fixture. This changes production
+GUI code. The previous completed soak remains passing historical evidence for
+its exact image; the final GUI image must receive a fresh independent two-hour
+soak. Wait until interactive fixes are settled before starting that repeat.
+Gates 2 and 3 remain passed because their controller/provider implementations
+are unaffected. Gates 1, 4, 5 and 6 remain open.
+
+Before this GUI correction, the `b09bb3d0645a98cf71061a1a8632e844526817d0`
+checkpoint passed forced Rust 1.85.0 all-target/all-feature workspace checking.
+Exact-head CI included successful Linux/macOS/Windows build-and-test jobs,
+MSRV, lint, corpus, supply-chain and policy jobs. CodeQL and full-history
+Gitleaks passed, and all 17 downloaded workspace SBOM identities validated.
+The privileged remote provider job was skipped; the separately recorded local
+provider acceptance remains its evidence. These receipts do not accept the
+subsequent GUI correction or any remaining live gate.
