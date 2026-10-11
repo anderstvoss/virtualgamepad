@@ -3370,3 +3370,28 @@ All mandatory local fmt/check/Clippy/workspace tests/Gitleaks checks and the
 Python tooling suite passed before the live run. Independent Rust qualification
 and the neutral GUI soak remain valid for their byte-identical images. The four
 remaining gates remain open; no release readiness or PR readiness is claimed.
+
+### Bounded topology discrimination after realtime correction
+
+A three-second ordinary-scheduler diagnostic of the committed C control retained
+144000 generated/submitted frames, 1536 missing, zero corrupt/duplicate frames
+and 3.644887877 seconds of measured production. `pw-top` recorded the owned
+Dummy-Driver at 512 frames/48000 Hz, with zero reported errors in its sampled
+instant; this sampled zero is not a complete xrun history. Node inventory confirms
+the two streams share that driver. The same source/sink callback graph-clock
+steps can exceed one quantum while source buffers remain exactly 512 frames.
+
+Two uncommitted, bounded diagnostics tested separate source/capture contexts and
+a virtual `Audio/Sink` capture node independently. Separate contexts retained
+5632 missing frames and 3.718003544 seconds production; the virtual sink retained
+1536 missing frames and 3.735354419 seconds. Both had complete 144000-frame
+production, zero duplicates/corruption and verified owned cleanup. These tests
+used ordinary scheduling, so they do not establish behavior under the scoped
+realtime grant or replace qualification. Experimental sources, hashes and raw
+receipts remain outside Git; neither speculative topology change was adopted.
+
+The qualified Rust control should now be rechecked in the current environment
+before treating all skipped C cycles as a harness-specific defect. Original Rust
+qualification remains historical evidence; a current failure would require
+investigating the prepared graph/VM before product qualification. No failed audio
+trial is converted to acceptance and no queues or assertions change.
