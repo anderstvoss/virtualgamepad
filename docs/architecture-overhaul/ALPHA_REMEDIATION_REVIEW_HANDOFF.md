@@ -2789,3 +2789,26 @@ historical evidence. No loss/rate/latency limit or audio queue changed.
 All five exact-candidate workflows passed; all 17 downloaded SBOM identities
 were verified. The local Python suite passed 410 tests. Privileged remote and
 dependency-review skips do not count as additional acceptance.
+
+### C control neutral-buffer correction
+
+A maintained direct C diagnostic at `ad419cb96ec7c1157612c4fca6865d936f36264f`
+(three measured seconds, quantum 512, ordinary ungranted scheduling) failed:
+144000 generated/submitted frames, 122624 received, 21376 missing, 1536 invalid,
+3.609881669 seconds of production. The full callback ledger reconciles; it cannot
+separate graph from capture loss after successful submission. This is diagnostic
+evidence, not sustained qualification or a comparison under the Rust grant.
+
+Inspection of the installed PipeWire 1.4.2 SPA header establishes that EMPTY
+chunks represent neutral audio regardless of mapped bytes. The C harness was
+decoding those bytes, allowing stale memory to appear as markers or corruption.
+Its capture decoder now records EMPTY buffer metadata without decoding stale
+payload. CORRUPTED chunks and malformed/partial framing still fail; absence of
+measured markers still fails the unchanged exact marker requirements. Refilled
+producer chunks explicitly clear prior flags. No product library changes.
+
+Deterministic C self-tests cover stale nonzero and null EMPTY data, normal wrapped
+frames, reused producer flags, corrupted EMPTY chunks, partial frames and malformed
+chunk sizes. The previous marker/ledger regressions remain. All 17 control-tooling
+tests passed. A fresh diagnostic is required; this correction alone does not
+resolve lost frames, production pacing, C qualification or Gate 6.

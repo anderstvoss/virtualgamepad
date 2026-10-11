@@ -139,6 +139,41 @@ static void observe(struct control *c, uint16_t left, uint16_t right) {
     }
 }
 
+static void publish_chunk(struct spa_chunk *chunk, uint32_t frames) {
+    chunk->offset = 0;
+    chunk->stride = 4;
+    chunk->size = frames * 4;
+    chunk->flags = SPA_CHUNK_FLAG_NONE;
+}
+
+static void capture_data(struct control *c, const struct spa_data *d, struct event *event) {
+    if (!d->chunk || d->chunk->size > d->maxsize || d->chunk->offset > d->maxsize) {
+        c->errors++; return;
+    }
+    event->frames = d->chunk->size / 4;
+    event->flags = d->chunk->flags;
+    c->partial += d->chunk->size % 4;
+    if (d->chunk->flags & SPA_CHUNK_FLAG_CORRUPTED) { c->errors++; return; }
+    /* EMPTY represents neutral audio; mapped bytes need not contain silence.
+     * Do not decode stale memory. Missing measured markers still fail below. */
+    if (d->chunk->flags & SPA_CHUNK_FLAG_EMPTY) return;
+    if (!d->data) { c->errors++; return; }
+    const uint8_t *bytes = d->data;
+    for (uint32_t i = 0; i + 3 < d->chunk->size; i += 4) {
+        uint32_t off = d->chunk->offset + i;
+        uint16_t l = bytes[off % d->maxsize] |
+            ((uint16_t)bytes[(off + 1) % d->maxsize] << 8);
+        uint16_t r = bytes[(off + 2) % d->maxsize] |
+            ((uint16_t)bytes[(off + 3) % d->maxsize] << 8);
+        if (l || r) {
+            if (!event->first) event->first = frame_marker(l, r);
+            event->last = frame_marker(l, r);
+            event->measured++;
+        }
+        observe(c, l, r);
+    }
+}
+
 static void source_state(void *data, enum pw_stream_state old,
                          enum pw_stream_state state, const char *error) {
     struct control *c = data;
@@ -218,9 +253,7 @@ static void produce(void *data) {
         }
         if (ready) c->cursor++;
     }
-    d->chunk->offset = 0;
-    d->chunk->stride = 4;
-    d->chunk->size = frames * 4;
+    publish_chunk(d->chunk, frames);
     b->size = frames;
     event.end = c->cursor;
     event.measured = (uint32_t)markers;
@@ -253,28 +286,7 @@ static void consume(void *data) {
         if (header) { event.header_present = true; event.sequence = header->seq; }
         if (!b->buffer->n_datas) { c->errors++; pw_stream_queue_buffer(c->sink, b); continue; }
         struct spa_data *d = &b->buffer->datas[0];
-        if (!d->data || !d->chunk || d->chunk->size > d->maxsize ||
-            d->chunk->offset > d->maxsize) c->errors++;
-        else {
-            event.frames = d->chunk->size / 4;
-            event.flags = d->chunk->flags;
-            c->partial += d->chunk->size % 4;
-            const uint8_t *bytes = d->data;
-            for (uint32_t i = 0; i + 3 < d->chunk->size; i += 4) {
-                uint32_t off = d->chunk->offset + i;
-                /* Decode little endian explicitly, including wrapped chunks. */
-                uint16_t l = bytes[off % d->maxsize] |
-                    ((uint16_t)bytes[(off + 1) % d->maxsize] << 8);
-                uint16_t r = bytes[(off + 2) % d->maxsize] |
-                    ((uint16_t)bytes[(off + 3) % d->maxsize] << 8);
-                if (l || r) {
-                    if (!event.first) event.first = frame_marker(l, r);
-                    event.last = frame_marker(l, r);
-                    event.measured++;
-                }
-                observe(c, l, r);
-            }
-        }
+        capture_data(c, d, &event);
         event.queue_result = pw_stream_queue_buffer(c->sink, b);
         if (event.queue_result < 0) c->errors++;
         record_event(c, event);
@@ -300,6 +312,40 @@ static const struct pw_stream_events sink_events = {
 
 int main(int argc, char **argv) {
     if ((argc == 2 || argc == 3) && !strcmp(argv[1], "--self-test")) {
+        struct spa_chunk chunk = {.offset = 2, .size = 4, .stride = 8,
+                                  .flags = SPA_CHUNK_FLAG_EMPTY | SPA_CHUNK_FLAG_CORRUPTED};
+        publish_chunk(&chunk, 1);
+        if (chunk.offset || chunk.size != 4 || chunk.stride != 4 || chunk.flags) return 1;
+        uint8_t stale[] = {1, 0, 1, 0};
+        uint32_t capture_counts[128] = {0};
+        struct control capture_test = {.blocks = 1, .counts = capture_counts};
+        struct spa_data captured = {.data = stale, .chunk = &chunk, .maxsize = sizeof(stale)};
+        struct event capture_event = {.capture = true, .buffer_dequeued = true};
+        chunk.flags = SPA_CHUNK_FLAG_EMPTY;
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.received || capture_test.invalid || capture_test.errors ||
+            capture_counts[0] || capture_event.measured || capture_event.first ||
+            capture_event.frames != 1 || capture_event.flags != SPA_CHUNK_FLAG_EMPTY) return 1;
+        /* Neutral buffers may have no data; neither case supplies a marker. */
+        captured.data = NULL;
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.received || capture_test.errors) return 1;
+        captured.data = stale;
+        chunk.flags = SPA_CHUNK_FLAG_NONE;
+        chunk.offset = 2; /* A valid frame wraps the mapped memory boundary. */
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.received != 1 || capture_counts[0] != 1 || capture_test.invalid ||
+            capture_event.measured != 1 || capture_event.first != 1 || capture_event.last != 1) return 1;
+        chunk.flags = SPA_CHUNK_FLAG_EMPTY | SPA_CHUNK_FLAG_CORRUPTED;
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.errors != 1 || capture_test.received != 1) return 1;
+        chunk.flags = SPA_CHUNK_FLAG_EMPTY;
+        chunk.size = 3;
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.partial != 3 || capture_test.received != 1) return 1;
+        chunk.size = 5;
+        capture_data(&capture_test, &captured, &capture_event);
+        if (capture_test.errors != 2 || capture_test.received != 1) return 1;
         struct clock_observation clock = {0};
         observe_clock(&clock, 9000000, 1, 48000, 1, false);
         observe_clock(&clock, 0, 1, 48000, 100, true);
