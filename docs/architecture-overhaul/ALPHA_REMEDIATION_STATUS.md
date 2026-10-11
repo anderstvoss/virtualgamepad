@@ -3711,3 +3711,42 @@ mono phase across blocks and trial restarts. The two earlier regressions remain.
 This fixes a demonstrable harness incompatibility; it does not explain the
 recorded live microphone gaps or qualify VM continuity. No new positive audio
 acceptance is claimed; Gates 4 and 6 remain open.
+
+### Native USB playback marker coverage preparation
+
+The ordinary public-factory fixture previously exercised native playback only
+through node/connection/removal checks. Its marker exchange now covers all twelve
+family/ownership cells, including six native-playback cells. A bounded `pw-cat`
+record client receives ALSA-injected indexed playback markers; a simultaneous
+ALSA capture independently audits microphone markers from sample or native
+ownership. Each receipt keeps two startup seconds, three measured seconds and
+one edge second separate. Playback success cannot hide microphone failure.
+Caller sample APIs are not invoked for native playback; unavailable root-read
+metrics are reported as unavailable rather than invented zero observations.
+
+The native collector bounds stdout bytes, stderr file size, capture duration and
+termination/reaping. Unexpected client exit, truncated production, changed
+endpoint identity and malformed PCM reject the cell. Matrix verification now
+requires twelve distinct typed marker verdicts in addition to twelve ownership
+verdicts. The factory orchestration deadline is 360 seconds (peer 365 seconds)
+for the expanded suite, within the existing 600-second lab bound; measured
+windows, loss assertions, queues and latency requirements are unchanged.
+
+Five Python regressions cover native marker corruption/duplication/incomplete
+production/host failures, caller admission, complete/truncated/stalled child
+cleanup, nonzero exits hidden by complete stdout, and independent microphone/
+partial-frame rejection. A matrix regression rejects missing, duplicate, failed,
+malformed and connection-only receipts. A Rust regression requires host marker
+success, complete sample production where applicable and backend health.
+These are deterministic preparation results; the expanded live matrix has not
+run yet and cannot close Gates 4 or 6. Production library behavior, ordinary-root
+API and dependencies are unchanged. Keep the previous failed microphone cells.
+
+### Remote validation at the USB example checkpoint
+
+All five exact-head workflows passed for `60dee107c0fef2ef29ebc41f683339c94e793f44`:
+CI run 38184285692, CodeQL 38184287620, Gitleaks 38184289413, Provider Tier B
+38184291136 and SBOM 38184293015. Downloaded SBOM verification checked all
+17 workspace identities including the root. Dependency review and privileged
+provider jobs remain skipped; they supply no live acceptance. This remote
+checkpoint does not cover later native-playback probe changes.

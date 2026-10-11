@@ -32,6 +32,7 @@ spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('
 live = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(live)
 PUBLIC_FACTORY_RECEIPT_LIMIT = 256 * 1024
+PUBLIC_FACTORY_TIMEOUT = 360
 
 
 class RefillDelays:
@@ -780,14 +781,22 @@ def private_probe_graph(*, quantum=None, quiet=False):
 
 
 def factory_ownership_complete(text):
+    return factory_matrix_complete(text, 'public_usb_sample_factory')
+
+
+def factory_markers_complete(text):
+    return factory_matrix_complete(text, 'public_usb_marker_exchange')
+
+
+def factory_matrix_complete(text, prefix):
     expected = {(family, playback, microphone)
                 for family in ('dualsense', 'dualshock4', 'xbox360')
                 for playback in ('Samples', 'NativeClient')
                 for microphone in ('Samples', 'NativeClient')}
     found = set()
     for line in text.splitlines():
-        if not line.startswith('public_usb_sample_factory '): continue
-        match = re.fullmatch(r'public_usb_sample_factory family=(dualsense|dualshock4|xbox360) '
+        if not line.startswith(prefix+' '): continue
+        match = re.fullmatch(re.escape(prefix)+r' family=(dualsense|dualshock4|xbox360) '
                              r'playback=(Samples|NativeClient) microphone=(Samples|NativeClient) '
                              r'passed=true', line)
         if match is None or match.groups() in found: return False
@@ -947,12 +956,13 @@ def public_factory_probe(peer, instance=None):
             with tempfile.TemporaryFile() as output:
                 result = subprocess.run(['/proc/self/fd/'+str(frozen), '--exact', ROOT_FACTORY_TEST,
                                          '--ignored', '--nocapture'], pass_fds=(frozen,),
-                                        env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=70)
+                                        env=environment, stdout=output, stderr=subprocess.STDOUT, timeout=PUBLIC_FACTORY_TIMEOUT)
                 output.seek(0); text = output.read(PUBLIC_FACTORY_RECEIPT_LIMIT+1)
         if len(text) > PUBLIC_FACTORY_RECEIPT_LIMIT: raise ValueError('oversized public factory probe receipt')
         text = text.decode('utf-8', errors='strict')
         passed = result.returncode == 0 and '1 passed; 0 failed' in text and factory_ownership_complete(text)
         if instance is not None:
+            passed &= factory_markers_complete(text)
             passed &= all(f'public_usb_sample_exchange family={family} passed=true' in text
                           for family in ('dualsense', 'dualshock4', 'xbox360'))
             passed &= all(f'public_usb_native_microphone_exchange family={family} passed=true' in text

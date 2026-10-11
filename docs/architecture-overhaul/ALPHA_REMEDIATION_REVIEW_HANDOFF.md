@@ -3177,3 +3177,17 @@ rejection of duplication hiding loss and channel corruption. Identity must be
 validated before controller creation and verified against the actual isolated
 USB attachment before streaming. Example tests are harness evidence only;
 recorded live USB microphone loss and VM qualification failures remain open.
+
+### Native USB playback evidence requirements
+
+Review `scripts/validate-usb-public-samples.py`, its focused tests,
+`public_sample_exchange` and `public_native_playback_passed` in
+`src/controllers/tests.rs`, and `factory_markers_complete` in the broker audio
+validator. Require native playback AND microphone receipts, exact measured marker
+counts, per-channel integrity, fail-closed partial frames and complete child
+cleanup. A complete stdout buffer must not hide a failed client. Root sample
+read metrics are unavailable for native ownership. Inspect all twelve unique
+marker verdicts; connection-only or duplicate receipts must fail collection.
+The longer factory/peer deadline accommodates additional bounded cells and must
+not alter measurement duration, loss thresholds, queue sizes or latency limits.
+The expanded live matrix and final-candidate remote validation remain required.

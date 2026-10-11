@@ -1117,7 +1117,7 @@ if sys.argv[1]=='C':
         } else if request == b'D' {
             425
         } else {
-            75
+            365
         })))
         .unwrap();
         let mut result = [0];
@@ -1693,6 +1693,29 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             && backend_healthy
     }
 
+    fn public_native_playback_passed(
+        host_markers_passed: bool,
+        microphone_produced: usize,
+        native_microphone: bool,
+        backend_healthy: bool,
+    ) -> bool {
+        // Host status includes both native playback receipt and ALSA microphone
+        // receipt. Never replace missing native marker evidence with zero errors.
+        host_markers_passed
+            && (native_microphone || microphone_produced >= 240_000)
+            && backend_healthy
+    }
+
+    #[test]
+    fn native_playback_requires_both_host_markers_source_and_backend_health() {
+        assert!(public_native_playback_passed(true, 240_000, false, true));
+        assert!(public_native_playback_passed(true, 0, true, true));
+        assert!(!public_native_playback_passed(false, 240_000, false, true));
+        assert!(!public_native_playback_passed(false, 0, true, true));
+        assert!(!public_native_playback_passed(true, 239_999, false, true));
+        assert!(!public_native_playback_passed(true, 240_000, false, false));
+    }
+
     #[test]
     fn public_usb_exchange_collection_retains_every_acceptance_failure() {
         assert!(public_exchange_passed(
@@ -1766,6 +1789,10 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         #[cfg(feature = "experimental")]
         let graph_dropped_before =
             crate::experimental::audio_instrumentation(audio).native_microphone_dropped_frames();
+        let native_playback = audio.endpoints()[0]
+            .caller()
+            .and_then(crate::AudioEndpointSelector::pipewire_node)
+            .map(str::to_owned);
         let native_microphone = audio.endpoints()[1]
             .caller()
             .and_then(crate::AudioEndpointSelector::pipewire_node)
@@ -1792,6 +1819,9 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             "--instance",
             &instance,
         ]);
+        if let Some(node) = &native_playback {
+            command.args(["--playback-node", node]);
+        }
         if let Some(node) = &native_microphone {
             command.args(["--microphone-node", node]);
         }
@@ -1811,7 +1841,8 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         let mut seen = vec![0_u8; 144_000];
         let mut microphone_produced = 0;
         let mut invalid = 0;
-        let deadline = std::time::Instant::now() + Duration::from_secs(14);
+        let deadline = std::time::Instant::now()
+            + Duration::from_secs(if native_playback.is_some() { 24 } else { 14 });
         let mut status = None;
         let mut drain_until = None;
         let mut previous_cycle = std::time::Instant::now();
@@ -1835,15 +1866,17 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             let service_us = u64::try_from(cycle.elapsed().as_micros()).unwrap();
             maximum_service_us = maximum_service_us.max(service_us);
             let audio = controller.sample_audio();
-            let read_begin = std::time::Instant::now();
-            let observation = audio.read_playback(&mut playback).unwrap();
-            maximum_read_us =
-                maximum_read_us.max(u64::try_from(read_begin.elapsed().as_micros()).unwrap());
-            for frame in
-                playback[..observation.frames * playback_channels].chunks_exact(playback_channels)
-            {
-                if !record_public_playback(&mut seen, frame, 96_000) {
-                    invalid += 1;
+            if native_playback.is_none() {
+                let read_begin = std::time::Instant::now();
+                let observation = audio.read_playback(&mut playback).unwrap();
+                maximum_read_us =
+                    maximum_read_us.max(u64::try_from(read_begin.elapsed().as_micros()).unwrap());
+                for frame in playback[..observation.frames * playback_channels]
+                    .chunks_exact(playback_channels)
+                {
+                    if !record_public_playback(&mut seen, frame, 96_000) {
+                        invalid += 1;
+                    }
                 }
             }
             if status.is_none() && native_microphone.is_none() {
@@ -1886,7 +1919,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     status = Some(finished);
                     drain_until = Some(std::time::Instant::now() + Duration::from_secs(2));
                 }
-            } else if seen.iter().all(|count| *count == 1) {
+            } else if native_playback.is_some() || seen.iter().all(|count| *count == 1) {
                 break;
             }
             if drain_until.is_some_and(|until| std::time::Instant::now() >= until) {
@@ -1916,9 +1949,10 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             })
             .unwrap();
         println!(
-            "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={maximum_read_us} largest_cycle_delays_interval_service_credit_consumed_produced_silence_sleep_write={largest_delays:?}",
+            "public_usb_sample_counters family={family} microphone_consumed={microphone_consumed:?} microphone_dropped={microphone_dropped:?} underrun={} playback_dropped={} maximum_service_us={maximum_service_us} maximum_read_us={:?} largest_cycle_delays_interval_service_credit_consumed_produced_silence_sleep_write={largest_delays:?}",
             audio.underrun_frames(),
-            audio.dropped_playback_frames()
+            audio.dropped_playback_frames(),
+            native_playback.is_none().then_some(maximum_read_us)
         );
         #[cfg(feature = "experimental")]
         if native_microphone.is_some() {
@@ -1959,16 +1993,28 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 duplicate + usize::from(*count > 1),
             )
         });
-        println!(
-            "public_usb_sample_playback family={family} measured_frames=144000 missing={missing} duplicate={duplicate} invalid={invalid} microphone_produced={microphone_produced}"
-        );
-        let passed = public_exchange_passed(
-            status.unwrap().success(),
-            (missing, duplicate, invalid),
-            microphone_produced,
-            native_microphone.is_some(),
-            controller.sample_audio().last_error().is_none(),
-        );
+        let passed = if native_playback.is_some() {
+            println!(
+                "public_usb_native_playback_marker_scope family={family} measured_frames=144000 receipt=owned_host_capture"
+            );
+            public_native_playback_passed(
+                status.unwrap().success(),
+                microphone_produced,
+                native_microphone.is_some(),
+                controller.sample_audio().last_error().is_none(),
+            )
+        } else {
+            println!(
+                "public_usb_sample_playback family={family} measured_frames=144000 missing={missing} duplicate={duplicate} invalid={invalid} microphone_produced={microphone_produced}"
+            );
+            public_exchange_passed(
+                status.unwrap().success(),
+                (missing, duplicate, invalid),
+                microphone_produced,
+                native_microphone.is_some(),
+                controller.sample_audio().last_error().is_none(),
+            )
+        };
         if native_microphone.is_some() {
             println!("public_usb_native_microphone_exchange family={family} passed={passed}");
         } else {
@@ -2002,12 +2048,15 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     $microphone_access,
                 );
                 controller.service(&mut |_| {}).unwrap();
-                let exchange_passed = if $playback_access == crate::AudioAccess::Samples
-                    && std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
+                let exchange_passed = if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
                         == Ok("1")
                 {
                     public_sample_exchange(&mut controller, $family, $playback, $microphone)
                 } else { true };
+                if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref() == Ok("1") {
+                    println!("public_usb_marker_exchange family={} playback={:?} microphone={:?} passed={exchange_passed}",
+                             $family, $playback_access, $microphone_access);
+                }
                 controller.close();
                 controller.close();
                 let audio = controller.audio().unwrap();

@@ -72,6 +72,96 @@ class PublicSampleIdentity(unittest.TestCase):
                     self.assertEqual(result['exact_pattern'], 144000)
                     self.assertGreater(result['pattern_gaps'], 0)
 
+
+    def test_native_playback_checks_exact_markers_and_all_channels(self):
+        for scenario in ('complete', 'balanced-loss-replay', 'rear-corrupt', 'incomplete', 'host-failed'):
+            with self.subTest(scenario=scenario):
+                data = bytearray(namespace['marker_pcm'](288000, 4))
+                if scenario == 'balanced-loss-replay': data[800000:800008] = data[799992:800000]
+                if scenario == 'rear-corrupt': data[800006:800008] = b'\x01\x00'
+                if scenario == 'incomplete': data = data[:-8]
+                def run(command, **options):
+                    if command[0] == 'arecord':
+                        return Mock(returncode=0, stdout=namespace['marker_pcm'](288000, 2), stderr=b'')
+                    self.assertEqual(command[0], 'aplay')
+                    self.assertEqual(len(options['input']), 288000 * 8)
+                    return Mock(returncode=1 if scenario == 'host-failed' else 0, stderr=b'')
+                with patch.dict(namespace, native_playback_identity=Mock(return_value=(1, 11)),
+                                bounded_native_capture=Mock(return_value=(bytes(data), b''))), \
+                     patch.object(namespace['subprocess'], 'run', side_effect=run):
+                    result = namespace['run_native_playback_trial'](1, 'dualsense', 'virtualgamepad.12.1.playback')
+                self.assertEqual(result['passed'], scenario == 'complete')
+                if scenario == 'balanced-loss-replay':
+                    self.assertEqual(result['exact_pattern'], 144000)
+                    self.assertGreater(result['pattern_gaps'], 0)
+
+
+    def test_native_playback_cannot_hide_failed_microphone_or_partial_frames(self):
+        for scenario in ('complete', 'microphone-silence', 'microphone-extra-byte', 'playback-extra-byte', 'native-source-failed'):
+            with self.subTest(scenario=scenario):
+                captured = namespace['marker_pcm'](288000, 2)
+                if scenario == 'playback-extra-byte': captured += b'\x01'
+                def run(command, **options):
+                    if command[0] == 'arecord':
+                        microphone = bytearray(namespace['marker_pcm'](288000, 1))
+                        if scenario == 'microphone-silence': microphone[200000:200004] = bytes(4)
+                        if scenario == 'microphone-extra-byte': microphone += b'\x01'
+                        return Mock(returncode=0, stdout=bytes(microphone), stderr=b'')
+                    return Mock(returncode=1 if scenario == 'native-source-failed' and command[0]=='pw-cat' else 0, stderr=b'')
+                with patch.dict(namespace, native_playback_identity=Mock(return_value=(1, 11)),
+                                native_microphone_identity=Mock(return_value=(2, 12)),
+                                bounded_native_capture=Mock(return_value=(captured, b''))), \
+                     patch.object(namespace['subprocess'], 'run', side_effect=run):
+                    if scenario in ('microphone-extra-byte', 'playback-extra-byte'):
+                        with self.assertRaisesRegex(ValueError, 'partial captured PCM frame'):
+                            namespace['run_native_playback_trial'](1, 'dualshock4', 'virtualgamepad.12.1.playback', 'virtualgamepad.12.1.microphone')
+                        continue
+                    result = namespace['run_native_playback_trial'](1, 'dualshock4', 'virtualgamepad.12.1.playback', 'virtualgamepad.12.1.microphone')
+                self.assertEqual(result['passed'], scenario == 'complete')
+                if scenario == 'microphone-silence': self.assertFalse(result['microphone']['passed'])
+    def test_native_playback_identity_rejects_foreign_ambiguous_and_hardware_nodes(self):
+        node = 'virtualgamepad.12.1.playback'
+        target = dict(id=1, type='PipeWire:Interface:Node', info=dict(props={'node.name':node, 'object.serial':11}))
+        with patch.dict(namespace, shared_graph=Mock(return_value=[target])):
+            self.assertEqual(namespace['native_playback_identity'](node), (1, 11))
+            for invalid in ('default', '../node', 'virtualgamepad.12.1.microphone'):
+                with self.assertRaises(ValueError): namespace['native_playback_identity'](invalid)
+        for objects in ([], [target, target], [target, dict(info=dict(props={'device.api':'alsa'}))]):
+            with patch.dict(namespace, shared_graph=Mock(return_value=objects)):
+                with self.assertRaises(ValueError): namespace['native_playback_identity'](node)
+
+    def test_bounded_native_capture_reaps_complete_truncated_and_stalled_children(self):
+        import sys
+        command = [sys.executable, '-I', '-c', "import os;os.write(1,b'sanitized')"]
+        self.assertEqual(namespace['bounded_native_capture'](command, 9), (b'sanitized', b''))
+        with self.assertRaisesRegex(RuntimeError, 'before complete production'):
+            namespace['bounded_native_capture'](command, 10)
+        stalled = [sys.executable, '-I', '-c', 'import time;time.sleep(30)']
+        children = []
+        original = namespace['subprocess'].Popen
+        def spawn(*args, **kwargs):
+            child = original(*args, **kwargs); children.append(child); return child
+        with patch.dict(namespace, time=Mock(monotonic=Mock(side_effect=[0, 15]))), \
+             patch.object(namespace['subprocess'], 'Popen', side_effect=spawn), \
+             self.assertRaisesRegex(RuntimeError, 'deadline exceeded'):
+            namespace['bounded_native_capture'](stalled, 9)
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].returncode)
+        self.assertTrue(children[0].stdout.closed)
+        for invalid in (0, -1, True, namespace['MAX_CAPTURE_FRAMES'] * 8 + 1):
+            with self.assertRaises(ValueError): namespace['bounded_native_capture'](command, invalid)
+
+    def test_complete_stdout_cannot_hide_nonzero_native_client_exit(self):
+        read, write = os.pipe()
+        os.write(write, b'sanitized'); os.close(write)
+        child = Mock(stdout=os.fdopen(read, 'rb'), returncode=3)
+        child.poll.return_value = 3
+        with patch.object(namespace['subprocess'], 'Popen', return_value=child), \
+             self.assertRaisesRegex(RuntimeError, 'native capture child failed'):
+            namespace['bounded_native_capture'](['sanitized-command'], 9)
+        child.terminate.assert_not_called()
+        child.wait.assert_called_once_with(timeout=3)
+        self.assertTrue(child.stdout.closed)
     def test_native_microphone_admission_rejects_foreign_or_ambiguous_nodes(self):
         node = 'virtualgamepad.12.1.microphone'
         target = dict(id=1, type='PipeWire:Interface:Node', info=dict(props={

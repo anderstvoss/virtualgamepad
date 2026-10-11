@@ -284,6 +284,16 @@ class BrokerLiveTests(unittest.TestCase):
         self.assertFalse(module.factory_ownership_complete(complete+'\n'+cells[0].replace('passed=true','passed=false')))
         self.assertFalse(module.factory_ownership_complete(complete.replace('passed=true','passed=true-extra',1)))
 
+    def test_marker_matrix_requires_all_twelve_distinct_successful_receipts(self):
+        cells=[f'public_usb_marker_exchange family={family} playback={playback} microphone={microphone} passed=true'
+               for family in ('dualsense','dualshock4','xbox360')
+               for playback in ('Samples','NativeClient') for microphone in ('Samples','NativeClient')]
+        complete='\n'.join(cells)
+        self.assertTrue(module.factory_markers_complete(complete))
+        for incomplete in ('\n'.join(cells[:-1]), complete+'\n'+cells[0], complete.replace('passed=true','passed=false',1),
+                           complete.replace('passed=true','passed=true-extra',1), complete.replace('marker_exchange','sample_factory')):
+            self.assertFalse(module.factory_markers_complete(incomplete))
+
     def test_probe_image_capture_rejects_corruption_non_elf_and_non_regular(self):
         for data, expected in ((b'not ELF', hashlib.sha256(b'not ELF').digest()),
                                (b'\x7fELFsynthetic', bytes(32))):
@@ -349,8 +359,8 @@ class BrokerLiveTests(unittest.TestCase):
             f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true'
             for family in ('dualsense', 'dualshock4', 'xbox360')
             for playback in ('Samples', 'NativeClient') for microphone in ('Samples', 'NativeClient'))
-        for markers, lifecycle, native_microphone in ((False, False, False), (True, False, True), (True, True, False), (True, True, True)):
-            with self.subTest(markers=markers, lifecycle=lifecycle, native_microphone=native_microphone), tempfile.TemporaryFile() as source:
+        for markers, lifecycle, native_microphone, full_matrix in ((False, False, False, False), (True, False, True, True), (True, True, False, True), (True, True, True, False), (True, True, True, True)):
+            with self.subTest(markers=markers, lifecycle=lifecycle, native_microphone=native_microphone, full_matrix=full_matrix), tempfile.TemporaryFile() as source:
                 source.write(b'\x7fELFfake'); source.flush()
                 descriptor = os.dup(source.fileno()); frozen = os.dup(source.fileno())
                 peer = Mock(); peer.recv.return_value = b'R'
@@ -360,6 +370,9 @@ class BrokerLiveTests(unittest.TestCase):
                     self.assertEqual(options['env']['VIRTUALGAMEPAD_PUBLIC_USB_MARKER_INSTANCE'], 'fixture')
                     self.assertEqual(options['env']['VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB'], '1')
                     text = ownership + '\n1 passed; 0 failed\n'
+                    self.assertEqual(options['timeout'], module.PUBLIC_FACTORY_TIMEOUT)
+                    if full_matrix:
+                        text += ownership.replace('public_usb_sample_factory', 'public_usb_marker_exchange') + '\n'
                     if markers:
                         text += '\n'.join(f'public_usb_sample_exchange family={family} passed=true'
                             for family in ('dualsense', 'dualshock4', 'xbox360'))
@@ -376,12 +389,12 @@ class BrokerLiveTests(unittest.TestCase):
                      patch.object(module, 'sealed_probe_image', return_value=frozen), \
                      patch.object(module, 'private_probe_graph', return_value=contextlib.nullcontext({})), \
                      patch.object(module.subprocess, 'run', side_effect=run), patch('builtins.print'):
-                    if markers and lifecycle and native_microphone:
+                    if markers and lifecycle and native_microphone and full_matrix:
                         self.assertEqual(module.public_factory_probe(peer, 'fixture')['status'], 'passed')
                     else:
                         with self.assertRaisesRegex(ValueError, 'failed or selected zero'):
                             module.public_factory_probe(peer, 'fixture')
-                peer.sendall.assert_called_with(b'F' if markers and lifecycle and native_microphone else b'E')
+                peer.sendall.assert_called_with(b'F' if markers and lifecycle and native_microphone and full_matrix else b'E')
                 for closed in (descriptor, frozen):
                     with self.assertRaises(OSError): os.fstat(closed)
 
