@@ -3131,3 +3131,16 @@ endurance after remaining GUI work settles. Remote CI/SBOM evidence applies only
 to `20c4e39ab5e6606458a37d92b9810f0115c18d3f`; revalidate affected changes.
 Do not repurpose an authorized provider phase to bypass updater scope checks
 for the missing input capability. Gates 1/4/5/6 remain open.
+
+### Batched field and read-only status regression map
+
+Check the [batched GUI corrections](ALPHA_REMEDIATION_STATUS.md#batched-gui-field-and-read-only-detail-corrections)
+and tests `name_and_count_fields_identify_their_purpose_on_keyboard_focus`,
+`named_name_field_preserves_keyboard_edit_metadata`,
+`long_diagnostic_is_readable_on_keyboard_focus_and_tab_moves_on`, and
+`output_indicator_status_is_readable_from_keyboard_focus`. Require full text
+bounds, not merely the presence of a string in a clipped galley, for diagnostic
+readability. Verify count/name editing is unchanged, gap period is a measurement
+window, and focus inspection sends no controller commands. Native accessibility
+support remains explicitly unavailable. Require owned-display checks and a final
+byte-pinned soak separately; deterministic success cannot close the whole gate.

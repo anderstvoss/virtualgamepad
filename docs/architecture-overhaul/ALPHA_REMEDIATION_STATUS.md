@@ -3620,3 +3620,31 @@ install the separate missing Steam input helper; do not circumvent these guards
 by repurposing an unrelated provider phase. Input capability expansion still
 requires administrator provisioning. Gate 1 remains in implementation/interactive
 verification; Gates 4/5/6 remain open.
+
+### Batched GUI field and read-only detail corrections
+
+The remaining text/numeric field audit reproduced missing keyboard-focus names
+for optional creation name, controller rename, creation count and gap measurement
+period. Small production render helpers now attach purpose labels while preserving
+current/previous edit text, hint metadata, numeric values and existing layouts.
+The period controls the displayed service-gap measurement window; it is not a
+service scheduling interval. Count bounds, arrow focus and clear-name behavior
+retain their previous regressions.
+
+Long diagnostic entries now accept read-only keyboard focus and reveal their
+complete message outside the fixed log viewport. The regression checks the
+whole rendered text rectangle fits its clipping bounds, named focus, traversal
+and dismissal after focus loss. Output status indicators likewise expose their
+existing status text on focus as well as hover. A motor-status regression
+reproduced the pointer-only gap and verifies named focus, status text and adjacent
+Tab traversal after correction. Neither operation activates controller inputs
+or outputs, modifies the retained log, or enables native screen-reader support.
+
+Four new regressions cover field names/traversal/value retention, edited name
+metadata, clipped diagnostic readability/dismissal and read-only output status.
+They accompany the existing selector and input lifecycle regressions. These are
+deterministic UI receipts, not complete owned-display or controller acceptance.
+The four existing host-dependent demo tests remain individually gated; no ignored
+suite was blanket-enabled. Gate 1 stays open pending complete display/isolation
+checks and final-image endurance. Finish the GUI batch before restarting the soak;
+no earlier image's endurance receipt certifies this implementation.

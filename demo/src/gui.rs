@@ -484,6 +484,101 @@ fn show_information<R>(
     }
 }
 
+fn draw_name_field(
+    ui: &mut egui::Ui,
+    draft: &mut String,
+    size: [f32; 2],
+    hint: Option<&str>,
+) -> egui::Response {
+    let previous = draft.clone();
+    let mut edit = egui::TextEdit::singleline(draft).vertical_align(egui::Align::Center);
+    if let Some(hint) = hint {
+        edit = edit
+            .hint_text(hint)
+            .desired_width(size[0])
+            .margin(egui::Margin {
+                left: 4,
+                right: 22,
+                top: 2,
+                bottom: 2,
+            });
+    }
+    let response = ui.add_sized(size, edit);
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::text_edit(
+            response.enabled(),
+            &previous,
+            draft.as_str(),
+            hint.unwrap_or_default(),
+        );
+        info.label = Some(
+            if hint.is_some() {
+                "Optional controller name"
+            } else {
+                "Controller name"
+            }
+            .into(),
+        );
+        info
+    });
+    response
+}
+
+fn draw_gap_period(ui: &mut egui::Ui, seconds: &mut u32) -> egui::Response {
+    let response = ui
+        .add_sized(
+            [38.0, NAME_INPUT_HEIGHT],
+            egui::DragValue::new(seconds).speed(1.0).suffix("s"),
+        )
+        .on_hover_text(format!(
+            "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
+        ));
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::new(egui::WidgetType::DragValue);
+        info.enabled = response.enabled();
+        info.value = Some(f64::from(*seconds));
+        info.label = Some("Gap measurement period (seconds)".into());
+        info
+    });
+    response
+}
+
+fn show_readonly_details(ui: &egui::Ui, response: &egui::Response, label: &str, message: &str) {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, response.enabled(), label)
+    });
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            0.0,
+            response.ctx.style().visuals.selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+        egui::Tooltip::always_open(
+            response.ctx.clone(),
+            response.layer_id,
+            response.id,
+            response.rect,
+        )
+        .show(|ui| {
+            ui.label(message);
+        });
+    } else if response.hovered() {
+        egui::Tooltip::for_widget(response).at_pointer().show(|ui| {
+            ui.label(message);
+        });
+    }
+}
+
+fn draw_diagnostic_entry(ui: &mut egui::Ui, message: &str, color: Color32) -> egui::Response {
+    let response = ui.add(
+        egui::Label::new(egui::RichText::new(message).color(color))
+            .sense(Sense::focusable_noninteractive()),
+    );
+    show_readonly_details(ui, &response, "Diagnostic details", message);
+    response
+}
+
 fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
     let response = egui::ComboBox::from_id_salt("controller_type")
         .selected_text(kind.label())
@@ -638,6 +733,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
         data.get_temp::<String>(id)
             .unwrap_or_else(|| value.to_string())
     });
+    let previous_text = text.clone();
     let text_response = ui.add_sized(
         [CREATE_COUNT_SPINBOX_WIDTH, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
@@ -652,6 +748,12 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
             })
             .id(id),
     );
+    text_response.widget_info(|| {
+        let mut info =
+            egui::WidgetInfo::text_edit(text_response.enabled(), &previous_text, &text, "");
+        info.label = Some("Controller count".into());
+        info
+    });
     if text_response.changed() {
         if let Ok(parsed) = text.trim().parse::<u32>() {
             *value = parsed.max(1);
@@ -1943,20 +2045,12 @@ impl eframe::App for App {
                                 } else {
                                     ui.available_width()
                                 };
-                                let name_response = ui
-                            .add_sized(
-                                [edit_width, NAME_INPUT_HEIGHT],
-                                egui::TextEdit::singleline(&mut self.name_draft)
-                                    .hint_text(default_name)
-                                    .desired_width(edit_width)
-                                    .vertical_align(egui::Align::Center)
-                                    .margin(egui::Margin {
-                                        left: 4,
-                                        right: 22,
-                                        top: 2,
-                                        bottom: 2,
-                                    }),
-                            )
+                                let name_response = draw_name_field(
+                                    ui,
+                                    &mut self.name_draft,
+                                    [edit_width, NAME_INPUT_HEIGHT],
+                                    Some(&default_name),
+                                )
                             .on_hover_text(
                                 "Optional name. Leave empty for the automatic controller name.",
                             );
@@ -2218,13 +2312,14 @@ impl eframe::App for App {
                                         ui.weak("Warnings and error codes will appear here");
                                     }
                                     for entry in &self.diagnostic_log {
-                                        ui.colored_label(
+                                        draw_diagnostic_entry(
+                                            ui,
+                                            &entry.message,
                                             if entry.success {
                                                 SUCCESS_LOG_COLOR
                                             } else {
                                                 footer_ui.visuals().error_fg_color
                                             },
-                                            &entry.message,
                                         );
                                     }
                                 });
@@ -2546,10 +2641,11 @@ fn draw_controller_state(
             .show(ui, |ui| {
                 ui.label("Name");
                 ui.horizontal(|ui| {
-                    ui.add_sized(
+                    draw_name_field(
+                        ui,
+                        &mut controller.name_draft,
                         [180.0, NAME_INPUT_HEIGHT],
-                        egui::TextEdit::singleline(&mut controller.name_draft)
-                            .vertical_align(egui::Align::Center),
+                        None,
                     );
                     if ui.button("Apply").clicked() {
                         apply_controller_name(controller);
@@ -2677,15 +2773,7 @@ fn draw_controller_metrics(
             );
             ui.horizontal(|ui| {
                 ui.label("Polling period:");
-                ui.add_sized(
-                    [38.0, NAME_INPUT_HEIGHT],
-                    egui::DragValue::new(polling_period_seconds)
-                        .speed(1.0)
-                        .suffix("s"),
-                )
-                .on_hover_text(format!(
-                    "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
-                ));
+                draw_gap_period(ui, polling_period_seconds);
                 for (label, gap) in [
                     ("10%:", gaps.map(|gaps| gaps[0])),
                     ("1%:", gaps.map(|gaps| gaps[1])),
@@ -2834,9 +2922,10 @@ fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
 
 fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, tooltip: &str) {
     ui.label(format!("{label}:"));
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::splat(14.0), Sense::focusable_noninteractive());
     ui.painter().circle_filled(rect.center(), 5.0, color);
-    response.on_hover_text(tooltip);
+    show_readonly_details(ui, &response, &format!("{label} status"), tooltip);
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
@@ -4577,6 +4666,222 @@ mod tests {
         let constrained = sidebar_layout_budget(90.0, 50.0, 74.0, 3.0);
         assert!((constrained.diagnostic_log - 74.0).abs() < 0.001);
         assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
+    }
+
+    #[test]
+    fn name_and_count_fields_identify_their_purpose_on_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut name = String::new();
+        let mut rename = "Existing controller".to_owned();
+        let mut count = 1;
+        let mut period = 0;
+        let mut labels = std::collections::BTreeSet::new();
+        for frame in 0..21 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_name_field(ui, &mut name, [180.0, 22.0], Some("Automatic name"));
+                        draw_name_field(ui, &mut rename, [180.0, 22.0], None);
+                        create_count_spinbox(ui, &mut count);
+                        draw_gap_period(ui, &mut period);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        for label in [
+            "Optional controller name",
+            "Controller name",
+            "Controller count",
+            "Gap measurement period (seconds)",
+            "Adjacent control",
+        ] {
+            assert!(labels.contains(label), "missing {label}: {labels:?}");
+        }
+        assert!(name.is_empty());
+        assert_eq!(rename, "Existing controller");
+        assert_eq!(count, 1);
+        assert_eq!(period, 0);
+    }
+
+    #[test]
+    fn named_name_field_preserves_keyboard_edit_metadata() {
+        let context = egui::Context::default();
+        let mut draft = String::new();
+        let mut edited = false;
+        for frame in 0..5 {
+            let events = match frame {
+                1 | 2 => vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed: frame == 1,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                3 => vec![egui::Event::Text("Example controller".into())],
+                _ => vec![],
+            };
+            let output = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_name_field(ui, &mut draft, [180.0, 22.0], Some("Automatic name"));
+                    });
+                },
+            );
+            edited |= output.platform_output.events.iter().any(|event| {
+                let info = event.widget_info();
+                info.label.as_deref() == Some("Optional controller name")
+                    && info.current_text_value.as_deref() == Some("Example controller")
+                    && info.prev_text_value.as_deref() == Some("")
+                    && info.hint_text.as_deref() == Some("Automatic name")
+            });
+        }
+        assert_eq!(draft, "Example controller");
+        assert!(
+            edited,
+            "purpose labels must preserve edit value/history/hint metadata"
+        );
+    }
+
+    #[test]
+    fn output_indicator_status_is_readable_from_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut visible = false;
+        let mut named = false;
+        let mut adjacent = false;
+        for frame in 0..9 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_feedback_indicator(ui, "Motors", Color32::DARK_GRAY, "Rumble unknown");
+                        adjacent |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+            visible |= output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => text.galley.job.text == "Rumble unknown",
+                _ => false,
+            });
+            named |= output
+                .platform_output
+                .events
+                .iter()
+                .any(|event| event.widget_info().label.as_deref() == Some("Motors status"));
+        }
+        assert!(named, "read-only output must identify the focused status");
+        assert!(visible, "status text must not require pointer hover");
+        assert!(adjacent, "reading output must not trap Tab");
+    }
+
+    #[test]
+    fn long_diagnostic_is_readable_on_keyboard_focus_and_tab_moves_on() {
+        let context = egui::Context::default();
+        let message =
+            "Complete diagnostic with a technical reason and cleanup outcome. ".repeat(12);
+        let mut explained = false;
+        let mut named = false;
+        let mut adjacent = false;
+        for frame in 0..13 {
+            let mut adjacent_this_frame = false;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000.0, 800.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.set_width(200.0);
+                        egui::ScrollArea::vertical()
+                            .max_height(70.0)
+                            .show(ui, |ui| {
+                                draw_diagnostic_entry(ui, &message, Color32::RED);
+                            });
+                        adjacent_this_frame = ui.button("Adjacent control").has_focus();
+                        adjacent |= adjacent_this_frame;
+                    });
+                },
+            );
+            named |=
+                output.platform_output.events.iter().any(|event| {
+                    event.widget_info().label.as_deref() == Some("Diagnostic details")
+                });
+            let fully_visible = output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => {
+                    text.galley.job.text == message
+                        && text.galley.rect.height() > 70.0
+                        && shape
+                            .clip_rect
+                            .contains_rect(text.galley.rect.translate(text.pos.to_vec2()))
+                }
+                _ => false,
+            });
+            explained |= fully_visible;
+            if adjacent_this_frame {
+                assert!(
+                    !fully_visible,
+                    "diagnostic popup must dismiss after focus moves on"
+                );
+            }
+        }
+        assert!(named, "log entry must be a named keyboard focus target");
+        assert!(
+            explained,
+            "complete message must escape the clipped log viewport"
+        );
+        assert!(adjacent, "read-only diagnostic must not trap Tab");
     }
 
     #[test]
