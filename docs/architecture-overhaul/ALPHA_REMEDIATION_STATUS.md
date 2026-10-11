@@ -3395,3 +3395,28 @@ before treating all skipped C cycles as a harness-specific defect. Original Rust
 qualification remains historical evidence; a current failure would require
 investigating the prepared graph/VM before product qualification. No failed audio
 trial is converted to acceptance and no queues or assertions change.
+
+### Current Rust control contradicts unconditional graph qualification
+
+At `e6ac82c78710fc54d071df8d2c229d49fe2529d0`, tree
+`2ede501a2c9ce4da0c34d686a2e464a2b04e8861`, all three independently prepared
+Rust direct controls failed the unchanged production-rate requirement. The image
+is byte-identical to the earlier passing control:
+`cb47f76b0c30cc11365b69814e39bc556391d83f435a1d93e6a4f36ad955bc4b`.
+Each generated all 2976000 planned frames (including warm-up); total observed
+frames were 2914560, 2923520 and 2910464. These totals include warm-up and must
+not be relabeled exact measured-window loss. Source process maximum gaps were
+45.926042, 43.149167 and 59.401459 ms; capture gaps were 46.296333,
+43.329375 and 60.405541 ms. The test rejected the measured production span
+before latency qualification. Both client and private daemon data loops retained
+FIFO priority 88. All 24 typed outputs passed independently. Cleanup succeeded
+and the original broker service inactive/socket active state was restored.
+
+The previously passing Rust trials remain historical evidence, not a current
+unconditional host qualification. Both independent implementations now fail in
+this prepared VM. Product qualification remains stopped; investigate current
+clock/scheduling/environment behavior before additional harness-only corrections.
+The guest exposes eight CPUs, approximately 23.4 GiB usable memory, no observed
+memory pressure, and the arch_sys_counter clocksource. Guest CPU steal counters
+are zero; that does not prove the hypervisor never pauses the guest. No physical
+or native-host timing claim is made. No loss or rate assertion is relaxed.
