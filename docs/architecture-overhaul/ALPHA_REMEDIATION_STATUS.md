@@ -78,6 +78,15 @@ loaded its earlier verifier, so its terminal receipt must also undergo this new
 workload check before acceptance. Final resource trends and owned cleanup remain
 required. No production behavior, GUI image, public API or dependency changed.
 
+The `9f0b6a1bf3a7959a9328cd0e5b23e10e0f21fdef` CI run exposed a
+policy failure: the escaped-tab regular expression looked like a UNC path to
+the unchanged local-path blocker. The parser now decodes the quoted RSS value
+and validates its three fields. Additional malformed-memory cases retain the
+seven passing soak regressions. The exact repository path-blocking expression
+passes over all tracked text; the complete local pre-commit runner is unavailable
+(`pre_commit` is not installed), so a new exact-head CI run must verify all hooks.
+The earlier CI failure remains evidence and is not relabeled a pass.
+
 ### Shared-driver audio diagnostic and keyboard pad correction
 
 At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of

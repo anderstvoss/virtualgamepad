@@ -33,6 +33,8 @@ class GuiSoak(unittest.TestCase):
                      valid + '\ngui_soak completed seconds=59', valid + '\n' + self.cycle(120),
                      self.cycle(60) + '\n' + valid,
                      self.cycle(120) + '\n' + valid,
+                     valid.replace('VmRSS:', 'Foreign:'), valid.replace('123456 kB', 'unknown kB'),
+                     valid.replace('kB', 'bytes'), valid.replace('123456', '123456 789'),
                      valid.replace('threads=23', 'threads=23-extra')):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 lab.workload_receipt(text, 60)

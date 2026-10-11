@@ -55,9 +55,14 @@ def workload_receipt(text, seconds):
     completed = []
     for line in text.splitlines():
         if line.startswith('gui_soak seconds='):
-            match = re.fullmatch(r'gui_soak seconds=(\d+) rss="VmRSS:\\t\s+\d+ kB" fds=(\d+) threads=(\d+)', line)
-            if match is None or completed or int(match[2]) == 0 or int(match[3]) == 0:
+            match = re.fullmatch(r'gui_soak seconds=(\d+) rss=("[^"]+") fds=(\d+) threads=(\d+)', line)
+            if match is None or completed or int(match[3]) == 0 or int(match[4]) == 0:
                 raise ValueError('malformed GUI workload cycle')
+            # Rust's debug string escapes its tab. Decode the quoted value before
+            # checking fields instead of embedding a drive-path-shaped regex.
+            rss = json.loads(match[2]).split()
+            if len(rss) != 3 or rss[0] != 'VmRSS:' or not rss[1].isdigit() or rss[2] != 'kB':
+                raise ValueError('malformed GUI workload memory sample')
             cycles.append(int(match[1]))
         elif line.startswith('gui_soak completed'):
             match = re.fullmatch(r'gui_soak completed seconds=(\d+)', line)
