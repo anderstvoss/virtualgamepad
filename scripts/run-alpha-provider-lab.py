@@ -35,6 +35,15 @@ RULES = Path('/run/udev/rules.d')
 USB = Path('/sys/bus/usb/devices')
 
 
+def client_scheduling(phase, uid, client_uid):
+    # One fixed diagnostic grant; never applies to the broker, worker, admission
+    # probes or foreign processes. Restored by owned unit teardown.
+    if phase == 'usb-functional' and uid == client_uid:
+        return (['--property=LimitRTPRIO=88', '--property=LimitRTTIME=200ms'],
+                ['/usr/bin/chrt', '--rr', '20'])
+    return ([], [])
+
+
 def trusted(path, directory=False):
     meta = path.lstat()
     if (meta.st_uid != 0 or meta.st_mode & 0o022 or
@@ -1074,8 +1083,10 @@ class Host:
         self.client_attempted = True
         unit = self.instance + '-' + suffix + '.service'
         self.client_units.append(unit)  # Register before a partial systemd-run failure.
+        scheduling_limits, scheduling_command = client_scheduling(self.args.phase, uid, self.args.client_uid)
         output = self.run(['systemd-run', '--wait', '--pipe', '--collect', '--unit=' + unit,
                   '--setenv=XDG_RUNTIME_DIR=/run/user/' + str(account.pw_uid),
+                  *scheduling_limits,
                   '--property=NoNewPrivileges=yes', '--property=MemoryHigh=384M',
                   '--property=MemoryMax=512M', '--property=MemorySwapMax=0',
                   '--property=CapabilityBoundingSet=CAP_SETUID CAP_SETGID CAP_SETPCAP',
@@ -1086,8 +1097,8 @@ class Host:
                   '--', '/usr/bin/setpriv', '--reuid=' + str(account.pw_uid),
                   '--regid=' + str(account.pw_gid), '--clear-groups', '--bounding-set=-all',
                   '--inh-caps=-all', '--ambient-caps=-all', '--no-new-privs', '--',
-                  *command], timeout=self.args.timeout + 20)
-        self.client_receipts.append(dict(uid=uid, unit=unit, stdout=output))
+                  *scheduling_command, *command], timeout=self.args.timeout + 20)
+        self.client_receipts.append(dict(uid=uid, unit=unit, stdout=output, scheduling_limits=scheduling_limits, scheduling_command=scheduling_command))
 
     def stop_candidate(self):
         errors = []

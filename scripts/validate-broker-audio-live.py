@@ -13,6 +13,7 @@ import heapq
 import hashlib
 import json
 import os
+import resource
 import re
 import signal
 import shutil
@@ -447,7 +448,12 @@ def public_factory_probe(peer, instance=None):
                          if line.startswith('public_usb_native_client_lifecycle_verified=')]
             passed &= len(native_nodes) == len(set(native_nodes)) == 12 and sorted(connected) == sorted(native_nodes)
         receipt = dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
-                       exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid())
+                       exit_status=result.returncode, stdout=text, ordinary_uid=os.geteuid(),
+                       parent_scheduling=dict(policy=os.sched_getscheduler(0),
+                                              priority=os.sched_getparam(0).sched_priority,
+                                              rtprio=resource.getrlimit(resource.RLIMIT_RTPRIO),
+                                              rttime=resource.getrlimit(resource.RLIMIT_RTTIME),
+                                              scope='ordinary lab parent; graph data-loop scheduling unverified'))
         print(json.dumps(dict(public_factory=receipt)), flush=True)
         peer.sendall(b'F' if passed else b'E')
         if not passed: raise ValueError('public factory probe failed or selected zero tests')

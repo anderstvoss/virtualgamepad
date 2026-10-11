@@ -13,6 +13,17 @@ lab = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lab)
 
 
+class ClientScheduling(unittest.TestCase):
+    def test_only_authorized_usb_client_has_fixed_bounded_grant(self):
+        self.assertEqual(lab.client_scheduling('usb-functional', 1001, 1001), (
+            ['--property=LimitRTPRIO=88', '--property=LimitRTTIME=200ms'],
+            ['/usr/bin/chrt', '--rr', '20']))
+        for phase in lab.PHASES:
+            self.assertEqual(lab.client_scheduling(phase, 1003, 1001), ([], []))
+            if phase != 'usb-functional':
+                self.assertEqual(lab.client_scheduling(phase, 1001, 1001), ([], []))
+
+
 class BrokerConfiguration(unittest.TestCase):
     def test_one_and_four_ports_have_exactly_one_identity_and_worker_pair(self):
         for ports in ((0,), (0, 1, 2, 3)):

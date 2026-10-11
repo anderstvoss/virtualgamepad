@@ -2732,3 +2732,22 @@ source queue drops. The graph again recorded only startup EMPTY (1024 frames).
 Later families were not reached. Both runs reported empty coordinator cleanup
 errors. The evidence supports a scheduling/clock-delivery lead, not proof of the
 cause of each silent range. Do not enlarge queues or close either audio gate.
+
+
+### Bounded scheduling comparison preparation
+
+The USB functional lab's authorized ordinary client now receives the same
+reviewed temporary scheduling bounds used by the independent-control lab:
+`LimitRTPRIO=88`, `LimitRTTIME=200ms`, and fixed round-robin priority 20. The grant
+is limited to the predefined USB functional phase and authorized client identity;
+other phases, unauthorized clients, broker and worker retain their prior policy.
+Unit teardown removes the temporary grant. No persistent scheduling or service
+configuration changes. A regression covers every phase and the unauthorized
+identity. Factory receipts report actual ordinary-parent scheduling and limits;
+graph data-loop thread scheduling remains explicitly unverified.
+
+This is a diagnostic comparison against the recorded ordinary-scheduling
+failures, not a product behavior correction or continuity qualification. Queue
+sizes, operating fill, marker checks and loss/latency limits remain unchanged.
+If it passes, require event correlation, actual data-loop scheduling evidence and
+ordinary-user deployment implications before closing either audio gate.
