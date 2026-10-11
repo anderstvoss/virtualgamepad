@@ -3501,3 +3501,24 @@ and CPU identity are checked. This separates eight-thread wake traffic from a
 single-thread timer baseline; it does not force guest-wide affinity, disable
 services, burn CPU, or change persistent scheduling. Top-level boolean scheduler
 values are also rejected by the receipt validator regression.
+
+### Single-CPU realtime timer comparison
+
+At `1e9478b21a9289fec22d15ddb716fc7a64313eca`, tree
+`7f002e6ae8d2984fc471993cd7cee717b1ba30ce`, the same native timer image/hash
+ran on the first allowed CPU (0), with one FIFO-priority-88 thread and unchanged
+finite runtime limits. All 2000 sleeps completed without errors. Maximum wake
+lateness was 29.899962 ms; 317 wakes exceeded 10 ms and 38 exceeded 20 ms.
+Restricting the owned child to one CPU did not eliminate the delays, so the
+previous eight-thread timer workload is not a sufficient explanation. This is
+aggregate diagnostic evidence, not identification of a specific hypervisor or
+kernel mechanism and not native-host timing acceptance.
+
+The typed observer and timer request completed successfully; the overall USB
+phase still failed its functional audio checks. Cleanup errors were empty and
+broker service inactive/socket active state restored. Memory pressure remained
+zero. Both current independent audio controls remain failed. Host-side Mac,
+Parallels, resource/power and memory-pressure evidence has been requested because
+those settings and observations are inaccessible from this guest. Do not infer
+host memory health from the guest's free-memory/pressure counters. More audio
+qualification is inappropriate before a new environment or causal correction.
