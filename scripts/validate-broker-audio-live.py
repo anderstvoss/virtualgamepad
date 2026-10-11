@@ -410,6 +410,18 @@ class ActiveGraphScheduling:
                     scope='owned daemon/policy snapshots during factory execution; not exact underrun policies')
 
 
+def owned_graph_log(log):
+    """Only the private child log, bounded independently of daemon verbosity."""
+    try:
+        size = os.fstat(log.fileno()).st_size
+        excerpt = os.pread(log.fileno(), 8192, max(0, size-8192))
+    except OSError:
+        return dict(available=False, reason='owned graph log unavailable')
+    return dict(available=True, total_bytes=size, truncated=size>8192,
+                tail=excerpt.decode('utf-8', errors='replace'),
+                scope='owned private graph diagnostics; absent xrun messages do not prove zero xruns')
+
+
 @contextlib.contextmanager
 def private_probe_graph():
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
@@ -446,7 +458,8 @@ def private_probe_graph():
                 yield environment
             finally:
                 active.close()
-                print(json.dumps(dict(private_graph_active_scheduling=active.receipt())), flush=True)
+                print(json.dumps(dict(private_graph_active_scheduling=active.receipt(),
+                                      private_graph_log=owned_graph_log(log))), flush=True)
             deadline = time.monotonic()+2
             while True:
                 final = private_graph_nodes(environment)

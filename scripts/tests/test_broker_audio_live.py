@@ -408,6 +408,19 @@ class BrokerLiveTests(unittest.TestCase):
 
 
 class OwnedThreadScheduling(unittest.TestCase):
+    def test_private_graph_log_is_bounded_and_preserves_unknown_instrumentation(self):
+        with tempfile.TemporaryFile() as log:
+            log.write(b'synthetic-old-message'+b'x'*9000+b'\xffowned-scheduling-error')
+            log.flush()
+            receipt=module.owned_graph_log(log)
+        self.assertTrue(receipt['available']);self.assertTrue(receipt['truncated'])
+        self.assertEqual(len(receipt['tail']),8192)
+        self.assertNotIn('synthetic-old-message',receipt['tail'])
+        self.assertTrue(receipt['tail'].endswith('owned-scheduling-error'))
+        self.assertIn('do not prove zero xruns',receipt['scope'])
+        with patch.object(module.os,'fstat',side_effect=OSError('synthetic unavailable')):
+            self.assertFalse(module.owned_graph_log(Mock())['available'])
+
     def test_active_observation_failure_is_unavailable_evidence_and_stops(self):
         observer=module.ActiveGraphScheduling([Mock()])
         with patch.object(module,'owned_thread_scheduling',side_effect=RuntimeError('synthetic snapshot failure')):

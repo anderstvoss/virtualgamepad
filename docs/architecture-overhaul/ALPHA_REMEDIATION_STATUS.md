@@ -2931,3 +2931,13 @@ the parent grant propagated to graph processing. Loss assertions remain unchange
 All mandatory checks, forced Rust 1.85, strict root rustdoc, API checks,
 root feature/offline consumers, 391 Python tests and production worker validation
 passed before the trial. Audio gates remain open; PR stays draft.
+
+
+Private graph diagnostics now retain only the final 8192 bytes from the owned
+PipeWire/policy log, with original size, truncation and unavailable-state metadata.
+Export occurs after factory execution, outside callbacks; absence of xrun messages
+is not a zero-xrun measurement. Sanitized regressions cover bounded truncation,
+invalid UTF-8 and unavailable descriptors. Mandatory checks, Rust 1.85,
+strict rustdoc, API checks, downstream feature/offline consumers and all 392
+Python tests passed. The next isolated trial must inspect these messages before
+assigning a cause to the observed ordinary graph-loop scheduling.
