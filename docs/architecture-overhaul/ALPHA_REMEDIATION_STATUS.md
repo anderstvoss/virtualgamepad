@@ -2701,3 +2701,34 @@ and all queue/fill capacities remain unchanged.
 The host-clock instrumentation passed mandatory fmt/check/Clippy/test/Gitleaks,
 forced Rust 1.85 all-target/all-feature check, strict root rustdoc and the
 110-item ordinary-root API snapshot check. No dependencies were added.
+
+
+### Host-clock interval evidence and provider revalidation
+
+All seven immutable provider phases passed again at `8ca53ed`, including the
+rebuilt client-pump worker image
+`44fd5d4f4997a96fa962a30a0ab197659474ef5dfdb8bdc75508da7cc3b4f0e0`.
+Source receipts agree on the candidate and broker/worker identities. The following
+host-clock-only change does not alter those privileged binaries.
+
+At `53f25e61c7c51a250a90775d1febecc80cbde69c` (tree
+`d0fa231f8aadc2c17730433e5a41275f409ad5b8`), the initial short trial passed
+DualSense but failed DS4 with 48 measured silent frames. Largest host-clock reply
+intervals were 12463 and 13028 microseconds; largest host-frame advances were
+624. This run is not quiet-host evidence: requesting consumer-tool help
+unexpectedly executed consumer builds while the coordinator was active. The
+checker previously ignored command-line arguments; it now parses them before
+building. Regressions require help and unknown arguments to perform no builds,
+while the default invocation still runs the complete matrix.
+
+The separate quiet repeat at the same source failed DualSense with 160 silent
+measured frames (143840 exact out of 144000). Its maximum successful host-clock
+reply interval was 15515 microseconds, exceeding the unchanged 14 ms operating
+fill. Largest host-frame advance was 624, maximum bridge loop gap 7656
+microseconds and maximum credit request 4336 microseconds. Maxima are not a
+correlated event ledger. Worker progress reconciled 288000 completed frames,
+286288 source frames and 1712 total silence frames; no abandoned captures or
+source queue drops. The graph again recorded only startup EMPTY (1024 frames).
+Later families were not reached. Both runs reported empty coordinator cleanup
+errors. The evidence supports a scheduling/clock-delivery lead, not proof of the
+cause of each silent range. Do not enlarge queues or close either audio gate.

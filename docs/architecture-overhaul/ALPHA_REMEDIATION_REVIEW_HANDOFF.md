@@ -2415,3 +2415,13 @@ source queue drops or abandoned captures. Require the new host-clock reply
 interval evidence before assigning the remaining silence to scheduling. Request
 latency and bridge-loop latency do not include all poll sleeps/lock waits.
 Independent interval/frame-advance maxima are not necessarily one event.
+
+
+At `53f25e6`, distinguish the non-quiet initial trial from the quiet repeat. The
+quiet repeat retained 160 measured silent DualSense frames and a 15.515 ms
+successful host-clock reply gap against the 14 ms fill. This supports the pacing
+lead, but independent maxima cannot locate individual lost ranges. Require
+actual thread scheduling and event correlation before declaring a correction.
+The consumer checker now rejects unknown arguments and implements build-free
+help; inspect its new CLI regressions to prevent unexpected compilation during
+live acceptance. All seven provider phases passed with the `8ca53ed` worker.

@@ -4,6 +4,7 @@
 Uses cached dependencies and a disposable source-path consumer; does not create
 controllers. Exact Git release consumption is a later release gate.
 """
+import argparse
 import os
 from itertools import combinations
 from pathlib import Path
@@ -48,5 +49,10 @@ def main():
         print('Root-only feature matrix and cached offline rebuild passed.')
 
 
-if __name__ == '__main__':
+def cli(argv=None):
+    argparse.ArgumentParser(description=__doc__).parse_args(argv)
     main()
+
+
+if __name__ == '__main__':
+    cli()
