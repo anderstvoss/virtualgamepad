@@ -2523,3 +2523,26 @@ Regressions verify bounded collection/omissions, unavailable observations, finit
 join failures, interruption ordering, never-started and repeated close. Acceptance
 requires a fresh active-stream receipt, then causal correction and independent
 controls before sustained product qualification. Gates 1/4/5/6 remain open.
+
+
+The active-scheduling trial at `7ef64a545ae5f101e908b8c7d156bb9006c3c56d`,
+tree `87e4eca5d88dce4345e3cb7eb13ceafc7e5f78a5`, retained eight one-second
+snapshots spanning the seven-second factory execution, with zero omitted samples
+and no observer error. The owned PipeWire data-loop thread used policy 0/kernel
+priority 120 in every observed sample, including measured streaming. The policy
+daemon's data-loop also used policy 0 when present. These actual observations
+cannot be replaced by the ordinary parent's realtime grant. They identify a
+scheduling difference, not causation or policy at every underrun instant.
+
+DualSense still failed with 143376 exact measured frames and 624 silent frames
+out of 144000. Worker counters reconciled 288144 completed host frames, 285184
+consumed source frames and 2960 total silence frames, zero abandoned capture
+frames and zero dropped source frames. Maximum host reply interval was 18398
+microseconds, USB lateness 7429 microseconds and PCM pump lateness 137329
+microseconds. Later families were not reached. Coordinator cleanup errors were
+empty. This evidence changes the next experiment: inspect owned daemon scheduling
+diagnostics and compare a verified temporary streaming policy, rather than assume
+the parent grant propagated to graph processing. Loss assertions remain unchanged.
+All mandatory checks, forced Rust 1.85, strict root rustdoc, API checks,
+root feature/offline consumers, 391 Python tests and production worker validation
+passed before the trial. Audio gates remain open; PR stays draft.
