@@ -3089,3 +3089,18 @@ empty cleanup lists, and the owned processes/display sockets were independently
 absent. Signal-driven teardown does not establish normal window-close behavior.
 No controllers or streams were created; Gate 1 remains open. The GUI hash is
 unchanged, preserving the scope of the accepted neutral soak.
+
+### Audio selector focus names
+
+The shared audio selector now reports its purpose and value on keyboard focus,
+for example `Playback: Samples` versus `Microphone: Samples`. Before correction,
+a real Tab-event regression observed an empty widget label for both selectors;
+only the adjacent button had a name. The regression now verifies both names,
+unchanged ownership values and traversal to the adjacent control. This is widget
+metadata, not native screen-reader acceptance or proof of ownership selection.
+No root API, transport, PCM queue or dependency changes are involved.
+
+This changes GUI implementation; rebuild and compare the production/soak images
+before reusing any final-image endurance claim. If their bytes differ, repeat
+the two-hour soak separately. The earlier accepted soak remains historical
+image-specific evidence, and Gate 1 remains open.

@@ -621,10 +621,18 @@ fn draw_labeled_combo_box(
 ) {
     ui.label(label);
     ui.add_enabled_ui(enabled, |ui| {
-        egui::ComboBox::from_id_salt(id)
+        let response = egui::ComboBox::from_id_salt(id)
             .selected_text(selected_text)
             .width(ui.available_width())
-            .show_ui(ui, add_options);
+            .show_ui(ui, add_options)
+            .response;
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::ComboBox,
+                response.enabled(),
+                format!("{label}: {selected_text}"),
+            )
+        });
     });
 }
 
@@ -2588,6 +2596,73 @@ while True:
             JackDevice::Headset.label_for_connector(JackConnector::Mm35),
             "TRRS headset"
         );
+    }
+
+    #[test]
+    fn creation_audio_selectors_identify_their_purpose_on_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut config = CreationAudio {
+            enabled: true,
+            ..CreationAudio::default()
+        };
+        // This checks the enabled supporting surface without opening a device.
+        // The selector helper is also shared by routing controls.
+        for frame in 0..17 {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(240.0, 600.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        for (name, id, access) in [
+                            ("Playback", "test_playback", &mut config.playback),
+                            ("Microphone", "test_microphone", &mut config.microphone),
+                        ] {
+                            draw_labeled_combo_box(ui, name, id, "Samples", true, |ui| {
+                                ui.selectable_value(access, AudioAccess::Samples, "Samples");
+                                ui.selectable_value(
+                                    access,
+                                    AudioAccess::NativeClient,
+                                    "Native client",
+                                );
+                            });
+                        }
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        assert!(labels.contains("Playback: Samples"), "{labels:?}");
+        assert!(labels.contains("Microphone: Samples"), "{labels:?}");
+        assert!(
+            labels.contains("Adjacent control"),
+            "Tab traversal trapped: {labels:?}"
+        );
+        assert_eq!(config.playback, AudioAccess::Samples);
+        assert_eq!(config.microphone, AudioAccess::Samples);
     }
 
     #[test]
