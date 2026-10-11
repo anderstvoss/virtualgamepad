@@ -3750,3 +3750,34 @@ CI run 38184285692, CodeQL 38184287620, Gitleaks 38184289413, Provider Tier B
 17 workspace identities including the root. Dependency review and privileged
 provider jobs remain skipped; they supply no live acceptance. This remote
 checkpoint does not cover later native-playback probe changes.
+
+### Expanded USB trial interrupted by terminal service failure
+
+At `9d096c1b2d9fdf34fa483fb07e4dd991dfa44f05` (tree
+`abcc6695af3b25e9ad69ebe2e271dbea6ce80377`), the autonomous updater installed
+the unchanged eight-phase scope. Broker and worker hashes matched their accepted
+production images. The bounded output observer image was
+`f32c6b027ecc0ab6dddadb829b12c805f31e45492307d4e322bc4f1e178e0e9e`.
+All 24 typed outputs passed, independently of failed audio. DualSense sample
+playback had zero missing/duplicate/invalid measured markers; its native
+microphone had 1040 silent measured frames and two marker gaps. The next DS4
+session returned terminal `Read { reason: "broken pipe" }` during service. The
+fixture's unwrap stopped collection before native-playback cells were reached.
+Those cells remain unrun, not accepted. The cause of the terminal worker/control
+failure is unresolved and must not be attributed to scheduling without evidence.
+
+The root command receipt retains failed client stdout/stderr and the initiating
+error separately from empty cleanup errors. Candidate service/socket/client units
+were independently not found/inactive, owned cgroup processes and USB serials
+were absent and authorized VHCI ports were free. The original broker service
+returned inactive/socket active. Observer memory peak was 83.4 MiB; about 17 GiB
+remained available with zero observed memory-pressure averages. No GUI, Steam,
+compilation or competing audio trial overlapped the live run.
+
+The collector now treats a cell panic as failure after its owned child guard
+unwinds, closes the controller twice, records retained terminal diagnostics and
+continues the independent cells. Terminal diagnostics force a false verdict;
+closure and closed-API checks remain required. A synthetic broken-pipe service
+regression verifies owned-case cleanup before the next receipt and preservation
+of ordinary false verdicts. This is a harness collection correction, not a fix
+for the terminal service failure or audio loss. A fresh full matrix is required.

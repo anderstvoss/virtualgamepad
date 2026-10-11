@@ -3191,3 +3191,14 @@ marker verdicts; connection-only or duplicate receipts must fail collection.
 The longer factory/peer deadline accommodates additional bounded cells and must
 not alter measurement duration, loss thresholds, queue sizes or latency limits.
 The expanded live matrix and final-candidate remote validation remain required.
+
+### Terminal USB cell collection
+
+Preserve the failed `9d096c1` receipt. Its native-playback cells were never reached.
+Review `collect_public_marker_case` and
+`terminal_service_failure_cleans_owned_case_and_preserves_next_receipt`. A
+captured cell panic must produce a failed verdict, unwind the owned host guard,
+close the controller, retain audio/controller errors and permit independent
+receipts. Teardown health must affect marker verdicts before they are printed;
+closed-state assertions remain mandatory. Do not interpret continued collection
+as remediation of the observed DS4 broken pipe or grant alpha acceptance.

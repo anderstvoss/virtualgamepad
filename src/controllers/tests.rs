@@ -2023,6 +2023,45 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         passed
     }
 
+    fn collect_public_marker_case(run: impl FnOnce() -> bool) -> bool {
+        // An acceptance-cell panic is a failed receipt, never permission to
+        // skip cleanup or to omit independent cells from the matrix.
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).unwrap_or(false)
+    }
+
+    #[test]
+    fn terminal_service_failure_cleans_owned_case_and_preserves_next_receipt() {
+        use std::cell::RefCell;
+        struct OwnedCase<'a>(&'a RefCell<Vec<&'static str>>);
+        impl OwnedCase<'_> {
+            fn service(&self) -> Result<(), crate::ControllerError> {
+                self.0.borrow_mut().push("service");
+                Err(crate::ControllerError::Read {
+                    reason: "synthetic broken pipe".into(),
+                })
+            }
+        }
+        impl Drop for OwnedCase<'_> {
+            fn drop(&mut self) {
+                self.0.borrow_mut().push("close-owned-case");
+            }
+        }
+        let events = RefCell::new(Vec::new());
+        assert!(!collect_public_marker_case(|| {
+            let owned = OwnedCase(&events);
+            events.borrow_mut().push("create");
+            owned.service().unwrap();
+            true
+        }));
+        assert_eq!(*events.borrow(), ["create", "service", "close-owned-case"]);
+        assert!(collect_public_marker_case(|| {
+            events.borrow_mut().push("next-case");
+            true
+        }));
+        assert!(!collect_public_marker_case(|| false));
+        assert_eq!(events.borrow().last(), Some(&"next-case"));
+    }
+
     #[test]
     #[ignore = "requires the prepared ordinary client mount and explicit sample factory lab opt-in"]
     #[allow(clippy::too_many_lines)] // Keep ownership cases and their marker exchange in one fixture.
@@ -2048,20 +2087,19 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     $microphone_access,
                 );
                 controller.service(&mut |_| {}).unwrap();
-                let exchange_passed = if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
+                let mut exchange_passed = if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
                         == Ok("1")
                 {
-                    public_sample_exchange(&mut controller, $family, $playback, $microphone)
+                    collect_public_marker_case(|| public_sample_exchange(&mut controller, $family, $playback, $microphone))
                 } else { true };
-                if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref() == Ok("1") {
-                    println!("public_usb_marker_exchange family={} playback={:?} microphone={:?} passed={exchange_passed}",
-                             $family, $playback_access, $microphone_access);
-                }
                 controller.close();
                 controller.close();
                 let audio = controller.audio().unwrap();
                 assert!(audio.is_closed());
-                assert!(audio.last_error().is_none());
+                if audio.last_error().is_some() {
+                    eprintln!("public_usb_terminal_audio family={} retained={:?}", $family, audio.last_error());
+                    exchange_passed = false;
+                }
                 assert_eq!(
                     audio.read_playback(&mut [0; $playback]),
                     Err(crate::AudioError::Closed)
@@ -2071,11 +2109,15 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     Err(crate::AudioError::Closed)
                 );
                 let diagnostics = controller.diagnostics();
-                assert!(
-                    diagnostics.last_error().is_none(),
-                    "family={} diagnostics={diagnostics:?}",
-                    $family
-                );
+                if diagnostics.last_error().is_some() {
+                    eprintln!("public_usb_terminal_controller family={} diagnostics={diagnostics:?}", $family);
+                    exchange_passed = false;
+                }
+                if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref() == Ok("1") {
+                    println!("public_usb_marker_exchange family={} playback={:?} microphone={:?} passed={exchange_passed}",
+                             $family, $playback_access, $microphone_access);
+                }
+
                 public_factory_host_snapshot($family);
                 println!(
                     "public_usb_sample_factory family={} playback={:?} microphone={:?} passed={exchange_passed}",
