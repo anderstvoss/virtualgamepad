@@ -2941,3 +2941,18 @@ invalid UTF-8 and unavailable descriptors. Mandatory checks, Rust 1.85,
 strict rustdoc, API checks, downstream feature/offline consumers and all 392
 Python tests passed. The next isolated trial must inspect these messages before
 assigning a cause to the observed ordinary graph-loop scheduling.
+
+
+The diagnostic-log trial at `da26f9b265761704c0fdf4e7910e044dc1e418d8`,
+tree `88c5da5c11a696edf390ec82d57a833e90edbec6`, failed DualSense with
+143568 exact measured frames, 432 silent frames and three pattern gaps out of
+144000. The native graph diagnostic recorded 2304 dropped frames; do not infer
+zero graph loss from earlier trials. Owned PipeWire/policy logs were retained
+without truncation (2026 bytes) and report failed session-bus connections in the
+realtime fallback and optional portal components. The measured thread snapshots
+remain the authority for effective policy; bus failures alone do not prove the
+cause of loss or explain direct realtime setup failure. The next discriminating
+experiment must inspect direct realtime setup and any verified isolated override,
+without using the shared user bus or persistent host configuration. Coordinator
+cleanup errors were empty, and VM memory-pressure averages remained zero. No
+acceptance assertion was relaxed; Gates 4/6 remain open.
