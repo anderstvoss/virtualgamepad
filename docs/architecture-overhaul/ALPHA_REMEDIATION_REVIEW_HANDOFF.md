@@ -2,7 +2,7 @@
 
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `6576c4732d301683195ff66cc3b57836abfbcc24`; see
+Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`; see
 [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 Gates 1, 4, 5 and 6 remain open.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
@@ -11,6 +11,38 @@ cells after relevant code/binary changes. Alpha remains not ready.
 Current closure criteria and verifier gaps are in
 [the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
 entries below retain their original scope and may be superseded by that audit.
+
+
+Latest current-worker revalidation: all seven provider phases passed at
+`4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`, tree
+`8c128314964d43dd9cd8d002c95437e8dd9d647f`. Broker SHA-256:
+`f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`;
+worker SHA-256: `b1d7339ac23d74de018915e5a3e041bb28b7ba860e8495442dc28eb9921acb7f`.
+The original broker service returned inactive and its socket active. USB output
+callbacks passed all 24 current requests independently of the failed audio suite.
+
+The complete short functional matrix at that revision is:
+
+| Family | Sample playback: missing/duplicate/corrupt | Native microphone: silent frames / pattern gaps | Sample microphone: silent frames / pattern gaps |
+| --- | --- | --- | --- |
+| DualSense | 0 / 0 / 0 | 96 / 0 | 6912 / 0 |
+| DualShock 4 | 0 / 0 / 0 | 416 / 2 | 4384 / 0 |
+| Xbox 360 | 0 / 0 / 0 | 240 / 4 | 5424 / 0 |
+
+Each cell has 144000 measured frames (three seconds), with separately recorded
+warm-up and edge capture. All six microphone cells failed. The six remaining
+native-playback ownership combinations passed construction/connection/closure
+checks only; native playback marker exchange is still missing. The aggregate
+correctly returned failure, retained all 12 ownership verdicts and six marker
+receipts, and recorded no coordinator cleanup errors. Factory diagnostic output
+was 80854 bytes, confirming why the previous 64 KiB cap was insufficient.
+Actual sample pacing counters include host silence per the frozen public API;
+they must not be confused with the supporting worker's source-consumed counter.
+All prior failures remain historical evidence, not overwritten passes.
+
+Gates 1/4/5/6 stay open: full display verification/final-image soak, remaining
+routing/native-playback/failure cells, scoped Steam input provisioning/consumer
+checks, and independent continuity qualification followed by sustained matrices.
 
 ### Shared-driver audio diagnostic and keyboard pad correction
 

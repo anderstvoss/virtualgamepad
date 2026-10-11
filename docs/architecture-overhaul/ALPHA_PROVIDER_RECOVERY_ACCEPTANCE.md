@@ -1,5 +1,16 @@
 # Provider security and recovery acceptance
 
+Current-image refresh: all seven fixed provider phases passed at
+`4c3b6132d1fdede6dd384bf9dcf70cc9a406c523` (tree
+`8c128314964d43dd9cd8d002c95437e8dd9d647f`), including the rebuilt worker
+SHA-256 `b1d7339ac23d74de018915e5a3e041bb28b7ba860e8495442dc28eb9921acb7f`.
+Phases: rejection, lifecycle, client exit, client-before-handoff, worker death,
+broker death and sibling/admission recovery. Independently retrieved root receipts
+agree on revision and broker/worker identities. All phase exits and receipt statuses
+were zero/passed; original service/socket state was restored. Historical receipts
+below remain pinned evidence. Relevant binary changes still require revalidation.
+
+
 Gate 3 passed on this VM and was revalidated at candidate
 `6576c4732d301683195ff66cc3b57836abfbcc24`, tree
 `d5d18ef35a7d4a3d4db0837aa81068b72e2f546c`, against base
