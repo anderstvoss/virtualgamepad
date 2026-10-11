@@ -198,6 +198,41 @@ pub struct AudioInputLossTrace {
     pub omitted_events: u64,
 }
 
+/// Latest bridge state sampled after refill. Counts from different queues are
+/// independent observations; this is not the state at a worker underrun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneBridgeSample {
+    pub age_us: u64,
+    pub credit_host_frames: u64,
+    pub credit_submitted_frames: u64,
+    pub accepted_source_frames: u64,
+    pub graph_queue_frames: Option<u64>,
+    pub client_queue_frames: u64,
+    pub pending_frames: u64,
+}
+/// A worker silence increase observed between two host-clock replies. Host
+/// bounds are media counters, not producer marker offsets. `bridge` is unavailable
+/// until a bridge sample exists; its sample may precede or follow the underrun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneSilenceEvent {
+    pub previous_host_frames: u64,
+    pub host_frames: u64,
+    pub previous_silence_frames: u64,
+    pub silence_frames: u64,
+    pub reply_interval_us: u64,
+    pub bridge: Option<AudioNativeMicrophoneBridgeSample>,
+}
+/// First 64 observed silence increases; further increases are explicitly counted
+/// as omitted. Samples from the worker and bridge are not transactional.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneSilenceTrace {
+    pub events: Vec<AudioNativeMicrophoneSilenceEvent>,
+    pub omitted_events: u64,
+}
+
 /// USB microphone progress observations from bounded worker queries. These
 /// counters are read sequentially and are not a transactional snapshot. Host
 /// media includes silence and canceled requests; completion is a separate count.
@@ -636,6 +671,13 @@ impl<'a> AudioInstrumentation<'a> {
     #[must_use]
     pub fn native_microphone_graph_loss_trace(&self) -> Option<Vec<AudioInputLossTrace>> {
         self.audio.session.native_microphone_graph_loss_trace()
+    }
+    /// Bounded observed silence increases with host reply bounds and latest
+    /// bridge queue/credit samples. These are diagnostic observations, not exact
+    /// underrun positions. `None` means the backend does not expose this evidence.
+    #[must_use]
+    pub fn native_microphone_silence_trace(&self) -> Option<AudioNativeMicrophoneSilenceTrace> {
+        self.audio.session.native_microphone_silence_trace()
     }
     /// Bounded USB worker progress queries for sample or native ownership.
     /// `None` means unavailable (including after close). This does not prove

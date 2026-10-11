@@ -124,6 +124,13 @@ impl SampleStreams {
     pub fn flush_playback(&mut self) -> Result<(), AudioError> {
         self.playback.flush()
     }
+    /// Local accepted microphone frames not yet consumed by the IPC pump. This
+    /// snapshot excludes a pending framed socket packet and the worker queue.
+    #[must_use]
+    pub fn queued_microphone_frames(&self) -> usize {
+        self.microphone.queued_frames()
+    }
+
     pub fn flush_microphone(&mut self) -> Result<(), AudioError> {
         self.microphone.flush()
     }

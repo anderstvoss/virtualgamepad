@@ -2790,3 +2790,32 @@ identities. At this recording, exact-head CI and CodeQL were still in progress;
 SBOM, Gitleaks history and Provider Tier B workflow conclusions were successful.
 A successful Provider workflow does not establish execution of a skipped
 privileged job; preserve the separately recorded live provider receipts.
+
+
+### Bounded native microphone silence correlation
+
+The experimental instrumentation now exports the first 64 observed worker
+silence increases. Each event retains the two host-clock reply counters, silence
+counters, reply interval and optional latest bridge sample: sample age, credited
+host/submitted positions, actual accepted source frames, optional graph queue,
+local client queue and unsent bridge suffix. Credited positions can include
+startup/underrun adjustments and must not be confused with accepted source frames.
+Local client fill excludes its pending framed socket packet and the worker queue.
+Host counters include virtual request media; they are not producer marker IDs.
+
+The ledger is preallocated during bridge setup and records only on the ordinary
+host-clock polling thread. Export allocation occurs outside callbacks. It counts
+omitted events without growing its storage. A bridge sample may precede or follow
+the underlying underrun; missing or future-dated samples remain unavailable.
+Independent queue reads are not a transactional pipeline snapshot. The worker
+protocol is unchanged; the supporting `SampleStreams::queued_microphone_frames`
+accessor and experimental diagnostic types/method are additive. Ordinary-root
+signatures remain frozen. No dependency was added.
+
+Regressions cover no-increase/regressing counters, reply/media bounds, unavailable
+samples, distinct credited/accepted positions, bounded overflow without capacity
+growth, coherent concurrent publication and retained evidence after repeated
+bridge close. Required fmt/check/Clippy/test/Gitleaks, forced Rust 1.85,
+strict root rustdoc, API snapshot/inventory and all root feature consumers with
+warnings denied plus offline rebuild passed. Both privileged binaries were rebuilt.
+Live correlation remains required; this instrumentation does not close a gate.

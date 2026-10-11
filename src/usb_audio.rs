@@ -380,6 +380,15 @@ impl crate::audio::backend::Backend for Pcm {
         }
         None
     }
+    fn native_microphone_silence_trace(
+        &self,
+    ) -> Option<crate::audio::AudioNativeMicrophoneSilenceTrace> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.silence_trace());
+        }
+        None
+    }
     fn usb_microphone_progress(
         &self,
     ) -> Result<Option<crate::audio::AudioUsbMicrophoneProgress>, AudioError> {

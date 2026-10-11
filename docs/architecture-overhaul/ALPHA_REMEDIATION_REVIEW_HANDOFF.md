@@ -2435,3 +2435,21 @@ queue/host-silence evidence and preserve both ordinary and scheduled failures.
 The grant applies only to the authorized ordinary USB functional client, never
 unauthorized peers, broker, worker or other phases; inspect the phase/identity
 regression and owned-unit restoration. All loss assertions remain unchanged.
+
+
+### Native silence correlation ledger
+
+Inspect the new bounded experimental native microphone silence trace and its
+regressions. Worker reply windows do not identify exact producer marker offsets.
+Credited positions include adjustments, while accepted source frames count only
+accepted writes. Local client fill excludes its pending socket packet and the
+worker queue. Missing samples must remain unavailable, and optional graph queue
+reads must not be fabricated as zero. The latest bridge sample may precede or
+follow an underrun; a coherent bridge sample is not a transactional pipeline
+snapshot. Require raw live evidence before interpreting queue state causally.
+
+Confirm 64-event preallocation, explicit omitted counts, no callback allocation
+or logging, bounded export and preservation after repeated cleanup. Check the
+ordinary-root API snapshot and downstream feature matrix after the additive
+supporting accessor/experimental types. All historical silent-frame failures
+remain release blockers; instrumentation alone is not acceptance.
