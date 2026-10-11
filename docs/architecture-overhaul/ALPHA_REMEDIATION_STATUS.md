@@ -3669,3 +3669,27 @@ window-close, active controller operation or full Gate 1 acceptance. Raw logs,
 actions and captures remain outside tracked source. The full workspace tests and
 mandatory checks passed after correcting an initial Clippy needless-borrow
 failure; no warning suppression or dependency changes were introduced.
+
+### Portable isolated input fixture packaging
+
+The maintained `scripts/package-alpha-input-lab.py` defaults to a non-mutating
+preview. Applying it requires a clean committed candidate, builds the producer
+with the locked dependency set and two build jobs, and records source/tree,
+compiler, lockfile and payload hashes outside tracked source. The administrator
+installer exposes only `run steam-hid` and `run steam-evdev` through a separate
+helper; it does not change the provider or autonomous-updater policy. Both
+scenarios reuse PID-bound isolation, fixed non-root identities and a 900-second
+limit. A retained control directory prevents reuse rather than being removed
+without evidence. The generated revoker checks matching helper/policy identities,
+requires an idle lock and empty workspace, removes only those two access files,
+and retains the immutable snapshot.
+
+Deterministic tests cover scenario rejection, exact non-root command arguments,
+changed payloads, symlinks/FIFOs/oversized files, exclusive packet creation,
+real sudoers parsing, initial/final policy-validation failures, partial workspace
+ownership failure, stale control resources and revocation refusal. A failure
+before the workspace ownership change initially left an unregistered directory;
+registering each newly created resource before its next fallible operation fixes
+that rollback defect. No privileged installer or trial has run for this package.
+This is preparation for Gate 5, not consumer acceptance. It does not yet provide
+GUI-owned input isolation and cannot close Gate 1. Gates 1/4/5/6 remain open.

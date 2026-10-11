@@ -3154,3 +3154,15 @@ Inspect actual focused/dismissed captures rather than trusting filenames. The
 receipt is creation/error presentation only, with zero device creation and
 verified owned cleanup. It cannot replace isolated active-input acceptance or
 final-image endurance. Gates 1/4/5/6 remain open.
+
+### Isolated input package review
+
+Review `scripts/package-alpha-input-lab.py` and
+`scripts/tests/test_alpha_input_package.py`. Run the default preview and the
+focused input tooling suite. Inspect generated helper/installer/revoker source,
+not just manifest claims. Require real separate sudoers entries, immutable
+payload validation before mutation, registration before fallible ownership
+changes, fixed identities/deadlines, refusal of occupied resources and retention
+of ambiguous cleanup. The package only covers Steam HID/evdev fixtures; reject
+claims that it isolates the production GUI or proves Steam acceptance. Do not
+expand the existing provider updater policy as an implicit workaround.
