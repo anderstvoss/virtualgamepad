@@ -3077,3 +3077,15 @@ Parallels, resource/power and memory-pressure evidence has been requested becaus
 those settings and observations are inaccessible from this guest. Do not infer
 host memory health from the guest's free-memory/pressure counters. More audio
 qualification is inappropriate before a new environment or causal correction.
+
+### Owned-display creation keyboard checkpoint
+
+Review the [creation keyboard checkpoint](ALPHA_REMEDIATION_STATUS.md#owned-display-creation-keyboard-checkpoint)
+at source `6ab55e879e17ee508ba77b6c010cb457ccaff238`. Compare actual rendered
+states against recorded actions: artifact filenames alone are not proof of the
+focused or selected control. In particular, do not accept native-client ownership
+selection from a popup that still shows Samples. Both completed batches had
+empty cleanup lists, and the owned processes/display sockets were independently
+absent. Signal-driven teardown does not establish normal window-close behavior.
+No controllers or streams were created; Gate 1 remains open. The GUI hash is
+unchanged, preserving the scope of the accepted neutral soak.

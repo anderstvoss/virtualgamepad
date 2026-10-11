@@ -3522,3 +3522,37 @@ Parallels, resource/power and memory-pressure evidence has been requested becaus
 those settings and observations are inaccessible from this guest. Do not infer
 host memory health from the guest's free-memory/pressure counters. More audio
 qualification is inappropriate before a new environment or causal correction.
+
+### Owned-display creation keyboard checkpoint
+
+At source `6ab55e879e17ee508ba77b6c010cb457ccaff238`, the production GUI
+image SHA-256 was
+`167d8fd238f194aa91c87337ce6a4a332f2f102186dd42cc0a55e2da2469abf5`,
+matching the accepted neutral soak image. Private displays and temporary homes
+were used; actual XTest key events targeted a window whose process identity was
+checked before each action. No controllers, active touch, audio streams or Steam
+sessions were created.
+
+Reviewed screenshots verify family selection to DualSense, optional-name edit
+and clear, count increment/decrement (1 -> 2 -> 1), visible focus, unavailable
+`dummy_hcd` help, keyboard activation of Create with explicit rejection and an
+empty controller list, and expansion of advanced options. The advanced follow-up
+also verifies keyboard-visible audio information and backend selection from
+PipeWire to ALSA. Ownership popups opened, but the intended native-client
+selection was not established by the captured state; retain that cell as open.
+The long creation error is clipped in the fixed log viewport; complete diagnostic
+access still requires verification rather than a claim that the full text was
+visible. Backend health remained a separate service-health indication.
+
+The two completed batches contained 27 and 19 recorded actions, respectively.
+Both ended with null runner errors and empty cleanup lists. Their GUI/display
+processes were absent and their display sockets removed on independent recheck.
+Teardown used signals to owned processes; it does not prove normal window-close
+behavior. Raw actions, images and receipts remain outside tracked source.
+Earlier harness failures (focus before mapping, an overlong Unix socket path,
+and an interaction deadline) remain preserved and are not accepted runs.
+
+This closes only the listed creation/display cells. Full controller controls,
+active-touch isolation, ownership selection, diagnostic access, routing and
+assistive-technology acceptance remain required. Gate 1 stays open; no GUI code
+or executable changed, so this checkpoint does not invalidate the neutral soak.
