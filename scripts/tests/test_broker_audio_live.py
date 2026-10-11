@@ -18,6 +18,49 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_private_graph_rejects_root_and_invalid_options_before_resource_creation(self):
+        cases = [(0, {}), (1000, {'quantum': True}), (1000, {'quantum': 1024}),
+                 (1000, {'quantum': '128'}), (1000, {'quiet': 'yes'})]
+        for uid, options in cases:
+            with self.subTest(uid=uid, options=options), \
+                 patch.object(module.os, 'geteuid', return_value=uid), \
+                 patch.object(module.tempfile, 'mkdtemp') as allocate:
+                with self.assertRaises(ValueError):
+                    with module.private_probe_graph(**options): self.fail('invalid graph yielded')
+                allocate.assert_not_called()
+
+    def test_quiet_quantum_setup_is_private_bounded_and_reaped_on_metadata_failure(self):
+        for quantum in (128, 256, 512):
+            sockets=[]; roots=[]; commands=[]
+            daemon=Mock(pid=987654);daemon.poll.return_value=None
+            def start(command, **options):
+                self.assertEqual(command, ['pipewire'])
+                self.assertEqual(options['env']['PIPEWIRE_DEBUG'], '0')
+                root=Path(options['env']['PIPEWIRE_RUNTIME_DIR']);roots.append(root)
+                peer=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+                peer.bind(str(root/'pipewire-0'));sockets.append(peer)
+                return daemon
+            def metadata(command, **options):
+                commands.append(command)
+                self.assertEqual(options['timeout'], 2)
+                self.assertTrue(options['check'])
+                self.assertEqual(options['env']['PIPEWIRE_RUNTIME_DIR'],str(roots[0]))
+                if len(commands)==2:raise module.subprocess.TimeoutExpired(command,2)
+            try:
+                with patch.object(module,'direct_realtime_probe',return_value={'available':False}), \
+                     patch.object(module.subprocess,'Popen',side_effect=start), \
+                     patch.object(module.subprocess,'run',side_effect=metadata), \
+                     patch.object(module,'stop_private_child') as stop:
+                    with self.assertRaises(module.subprocess.TimeoutExpired):
+                        with module.private_probe_graph(quiet=True,quantum=quantum):
+                            self.fail('failed metadata setup yielded')
+                    stop.assert_called_once_with(daemon)
+                self.assertEqual(commands,[['pw-metadata','-n','settings','0',key,str(quantum)]
+                                           for key in ('clock.min-quantum','clock.quantum')])
+                self.assertFalse(roots[0].exists())
+            finally:
+                for peer in sockets:peer.close()
+
     def test_factory_ownership_rejects_failed_duplicate_and_malformed_cells(self):
         cells=[f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true'
                for family in ('dualsense','dualshock4','xbox360')

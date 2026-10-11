@@ -87,6 +87,18 @@ passes over all tracked text; the complete local pre-commit runner is unavailabl
 (`pre_commit` is not installed), so a new exact-head CI run must verify all hooks.
 The earlier CI failure remains evidence and is not relabeled a pass.
 
+Independent-control preparation now supports explicitly quiet daemon logging
+and fixed quantum requests of 128, 256 or 512 in the owned ordinary-user graph.
+Root invocation and malformed options reject before allocating resources. Quantum
+metadata commands target only that graph, have two-second deadlines and must
+succeed before policy/client startup. A metadata timeout reaps the owned daemon
+and restores its directory. Existing factory defaults remain unchanged. All 37
+broker-audio tooling regressions pass, including each quantum's partial-startup
+cleanup. Requested quantum is recorded separately; it does not prove negotiated
+rate/quantum or effective scheduling. No independent control has run through
+this new option yet, and it cannot qualify Gate 6. The GUI soak continues alone;
+there are no overlapping audio trials or local builds.
+
 ### Shared-driver audio diagnostic and keyboard pad correction
 
 At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of

@@ -475,8 +475,13 @@ def configure_private_realtime(config):
 
 
 @contextlib.contextmanager
-def private_probe_graph():
+def private_probe_graph(*, quantum=None, quiet=False):
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
+    if os.geteuid() == 0:
+        raise ValueError('private graph must run without root')
+    if (quantum is not None and (type(quantum) is not int or quantum not in (128, 256, 512))
+            or type(quiet) is not bool):
+        raise ValueError('invalid bounded private graph options')
     root = Path(tempfile.mkdtemp(prefix='virtualgamepad-root-graph-'))
     identity = (root.stat().st_dev, root.stat().st_ino)
     children = []; initiating = None; cleanup = []; active = None
@@ -492,7 +497,7 @@ def private_probe_graph():
                            XDG_STATE_HOME=str(root/'state'), XDG_CACHE_HOME=str(root/'cache'))
         direct_realtime = direct_realtime_probe()
         with tempfile.TemporaryFile() as log:
-            daemon_environment = dict(environment, PIPEWIRE_DEBUG='3')
+            daemon_environment = dict(environment, PIPEWIRE_DEBUG='0' if quiet else '3')
             daemon = subprocess.Popen(['pipewire'], env=daemon_environment, stdout=log,
                                       stderr=subprocess.STDOUT, start_new_session=True)
             children.append(daemon)
@@ -503,6 +508,11 @@ def private_probe_graph():
                 time.sleep(.02)
             if not stat.S_ISSOCK((root/'pipewire-0').lstat().st_mode):
                 raise ValueError('private ownership graph endpoint is not a socket')
+            if quantum is not None:
+                for key in ('clock.min-quantum', 'clock.quantum'):
+                    subprocess.run(['pw-metadata', '-n', 'settings', '0', key, str(quantum)],
+                                   env=environment, stdout=log, stderr=subprocess.STDOUT,
+                                   check=True, timeout=2)
             children.append(subprocess.Popen(['wireplumber', '-p', 'policy'], env=environment,
                                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
             startup = private_graph_nodes(environment)
@@ -518,7 +528,9 @@ def private_probe_graph():
                                       private_graph_log=owned_graph_log(log),
                                       private_graph_startup_log=startup_log,
                                       direct_realtime_probe=direct_realtime,
-                                      private_realtime_configuration=private_realtime)), flush=True)
+                                      private_realtime_configuration=private_realtime,
+                                      requested_quantum=quantum,
+                                      daemon_diagnostic_verbosity=0 if quiet else 3)), flush=True)
             deadline = time.monotonic()+2
             while True:
                 final = private_graph_nodes(environment)
