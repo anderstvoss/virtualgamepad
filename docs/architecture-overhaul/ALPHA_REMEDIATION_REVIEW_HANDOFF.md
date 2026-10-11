@@ -2607,3 +2607,29 @@ regression verifies that early initialization evidence survives alongside final
 messages. No graph policy or production audio behavior changed in this step.
 The daemon's initialization decision remains to be inspected before choosing
 any temporary configuration correction.
+
+
+### Private direct-realtime configuration experiment
+
+Installed Debian PipeWire source `1.4.2-1` confirms that module-rt can select
+RTKit after a failed negative nice adjustment even when its direct realtime
+privilege check succeeds (`src/modules/module-rt.c`, initialization near lines
+1128..1140). The b2db1b9 startup log reports fallback clamping to priority 20;
+the separate ordinary child proved direct FIFO priority 88 was permitted. This
+is evidence for a specific private lab setup correction, not proof of the cause
+of marker loss. That trial still failed with 143952 exact measured frames and
+48 silence frames; cleanup errors were empty.
+
+Only the temporary private XDG daemon/client configuration now sets nice level
+zero, realtime priority 88, finite soft/hard RTTIME 200000 microseconds, direct
+rlimits enabled and portal/RTKit fallbacks disabled. Existing scoped grants are
+unchanged. These files are created within the owned graph directory and removed
+with its verified teardown; no shared graph, user configuration or scheduling
+policy is changed. Effective active graph thread policy must still be recorded,
+and this diagnostic configuration does not qualify the host or product alone.
+
+Regression checks cover all three daemon/client configuration files, finite
+limits, disabled fallbacks, private path scope and refusal to overwrite existing
+configuration. Interrupted/partial startup and cleanup regressions remain.
+Mandatory workspace validation and all 395 Python tests passed before deployment.
+No dependency, public API, buffer capacity or acceptance limit changed.

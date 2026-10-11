@@ -450,6 +450,29 @@ def direct_realtime_probe():
     return dict(receipt, available=True, scheduling=state)
 
 
+def configure_private_realtime(config):
+    # PipeWire 1.4.2 selects RTKit if its negative nice adjustment fails, even
+    # when direct realtime permission succeeds. Keep nice unchanged and use only
+    # this lab's existing finite limits; never depend on the shared system bus.
+    text = ('module.rt.args = {\n'
+            '    nice.level = 0\n'
+            '    rt.prio = 88\n'
+            '    rt.time.soft = 200000\n'
+            '    rt.time.hard = 200000\n'
+            '    rlimits.enabled = true\n'
+            '    rtportal.enabled = false\n'
+            '    rtkit.enabled = false\n'
+            '}\n')
+    for name in ('pipewire.conf.d', 'client.conf.d', 'client-rt.conf.d'):
+        directory = config/'pipewire'/name
+        directory.mkdir(mode=0o700, parents=True)
+        with (directory/'99-alpha-private-rt.conf').open('x') as file:
+            file.write(text)
+    return dict(nice_level=0, realtime_priority=88, realtime_cpu_limit_us=200000,
+                portal_fallback=False, rtkit_fallback=False,
+                scope='temporary private XDG configuration; actual thread policy still required')
+
+
 @contextlib.contextmanager
 def private_probe_graph():
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
@@ -458,6 +481,7 @@ def private_probe_graph():
     children = []; initiating = None; cleanup = []; active = None
     try:
         for name in ('config', 'state', 'cache'): (root/name).mkdir(mode=0o700)
+        private_realtime = configure_private_realtime(root/'config')
         environment = dict(os.environ)
         for name in ('PIPEWIRE_CONFIG_DIR', 'PIPEWIRE_CONFIG_PREFIX', 'PIPEWIRE_CONFIG_NAME',
                      'WIREPLUMBER_CONFIG_DIR', 'PIPEWIRE_QUANTUM', 'PIPEWIRE_LATENCY', 'PIPEWIRE_RATE'):
@@ -492,7 +516,8 @@ def private_probe_graph():
                 print(json.dumps(dict(private_graph_active_scheduling=active.receipt(),
                                       private_graph_log=owned_graph_log(log),
                                       private_graph_startup_log=startup_log,
-                                      direct_realtime_probe=direct_realtime)), flush=True)
+                                      direct_realtime_probe=direct_realtime,
+                                      private_realtime_configuration=private_realtime)), flush=True)
             deadline = time.monotonic()+2
             while True:
                 final = private_graph_nodes(environment)

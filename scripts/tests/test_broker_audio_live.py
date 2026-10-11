@@ -410,6 +410,25 @@ class BrokerLiveTests(unittest.TestCase):
 
 
 class OwnedThreadScheduling(unittest.TestCase):
+    def test_private_realtime_configuration_is_finite_and_never_uses_shared_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config=Path(directory)/'private-config';config.mkdir()
+            receipt=module.configure_private_realtime(config)
+            self.assertEqual(receipt['realtime_cpu_limit_us'],200000)
+            self.assertEqual(receipt['realtime_priority'],88)
+            self.assertEqual(receipt['nice_level'],0)
+            self.assertFalse(receipt['portal_fallback']);self.assertFalse(receipt['rtkit_fallback'])
+            paths=list(config.rglob('*.conf'))
+            self.assertEqual(len(paths),3)
+            for path in paths:
+                text=path.read_text()
+                for setting in ['nice.level = 0','rt.prio = 88','rt.time.soft = 200000',
+                                'rt.time.hard = 200000','rlimits.enabled = true',
+                                'rtportal.enabled = false','rtkit.enabled = false']:
+                    self.assertIn(setting,text)
+                self.assertTrue(path.is_relative_to(config))
+            with self.assertRaises(FileExistsError):module.configure_private_realtime(config)
+
     def test_direct_probe_is_an_ordinary_bounded_child_and_requires_actual_fifo(self):
         state=b'{"policy":1,"priority":88,"rtprio":[88,88],"rttime":[200000,200000]}'
         for status, output, expected in [(0,state,True),(1,b'',False),
