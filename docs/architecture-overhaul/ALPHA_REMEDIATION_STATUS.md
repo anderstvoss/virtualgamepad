@@ -3587,3 +3587,36 @@ resource accounting and owned cleanup before crediting it. No audio/Steam trial
 or compilation overlapped startup. The five mandatory local checks passed for
 the selector correction, and its focused regression failed before and passed
 after correction. No dependency changes. Gates 1/4/5/6 remain open.
+
+### Creation selector names and interrupted endurance run
+
+The family and target selectors had the same missing focus metadata as the audio
+selectors. A real Tab-event regression reproduced empty names before correction.
+The production family selector is extracted as a small render helper; both
+selectors now report their purpose and value. The regression verifies family
+and target names across all four targets, traversal to an adjacent button, and
+unchanged selections. This does not introduce screen-reader support or alter
+controller creation semantics.
+
+The `df4c5e3` replacement soak was deliberately interrupted after 596.577 seconds
+to finish the remaining GUI audit before committing to another final-image run.
+Its receipt has `completed=false`, signal-15 interruption and empty cleanup.
+The owned GUI/display processes and display socket were independently absent.
+It is not two-hour acceptance; the previously accepted image-specific soak stays
+historical. Do not restart final endurance until the remaining control work is
+settled and the final executables are pinned.
+
+Remote infrastructure evidence at `20c4e39ab5e6606458a37d92b9810f0115c18d3f`:
+CI, Rust CodeQL, full-history Gitleaks, Provider Tier B and SBOM all passed.
+Linux/macOS/Windows build/test, MSRV, policy, corpus, lint and supply-chain jobs
+passed. Dependency review and privileged provider jobs were skipped and remain
+missing evidence in their respective scopes. All 17 downloaded SBOM component
+identities, including the root package, validated. This evidence applies to that
+revision; the subsequent GUI correction requires affected revalidation.
+
+The installed autonomous updater enforces exactly eight provider phase names,
+fixed identities/ports, payload names and an exact helper template. It cannot
+install the separate missing Steam input helper; do not circumvent these guards
+by repurposing an unrelated provider phase. Input capability expansion still
+requires administrator provisioning. Gate 1 remains in implementation/interactive
+verification; Gates 4/5/6 remain open.

@@ -484,6 +484,26 @@ fn show_information<R>(
     }
 }
 
+fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
+    let response = egui::ComboBox::from_id_salt("controller_type")
+        .selected_text(kind.label())
+        .width(ui.available_width())
+        .show_ui(ui, |ui| {
+            for option in Kind::ALL {
+                ui.selectable_value(kind, option, option.label());
+            }
+        })
+        .response;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ComboBox,
+            response.enabled(),
+            format!("Controller family: {}", kind.label()),
+        )
+    });
+    response
+}
+
 fn draw_target_selector(
     ui: &mut egui::Ui,
     target: &mut RealizationId,
@@ -502,7 +522,7 @@ fn draw_target_selector(
                 egui::vec2(combo_width, combo_height),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    egui::ComboBox::from_id_salt("controller_target")
+                    let response = egui::ComboBox::from_id_salt("controller_target")
                         .selected_text(target_label(*target))
                         .truncate()
                         .width(combo_width)
@@ -515,7 +535,15 @@ fn draw_target_selector(
                             ] {
                                 ui.selectable_value(target, option, target_label(option));
                             }
-                        });
+                        })
+                        .response;
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::ComboBox,
+                            response.enabled(),
+                            format!("Controller target: {}", target_label(*target)),
+                        )
+                    });
                 },
             );
             if let Some(help) = help {
@@ -1884,19 +1912,8 @@ impl eframe::App for App {
                                 .spacing([6.0, 4.0])
                                 .show(ui, |ui| {
                                     ui.label("Type");
-                                    let type_selector = egui::ComboBox::from_id_salt("controller_type")
-                                        .selected_text(self.kind.label())
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            for kind in Kind::ALL {
-                                                ui.selectable_value(
-                                                    &mut self.kind,
-                                                    kind,
-                                                    kind.label(),
-                                                );
-                                            }
-                                        });
-                                    let target_row_width = type_selector.response.rect.width();
+                                    let type_selector = draw_kind_selector(ui, &mut self.kind);
+                                    let target_row_width = type_selector.rect.width();
                                     ui.end_row();
                                     ui.label("Target");
                                     let _ = draw_target_selector(
@@ -3785,6 +3802,68 @@ mod tests {
             ),
             "234-USB-SWITCHPRO"
         );
+    }
+
+    #[test]
+    fn creation_selectors_name_family_and_target_on_keyboard_focus() {
+        for original_target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_USBIP_USB_AUDIO,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let context = egui::Context::default();
+            let mut kind = Kind::Xbox360;
+            let mut target = original_target;
+            let mut labels = std::collections::BTreeSet::new();
+            for frame in 0..17 {
+                let output = context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(240.0, 600.0),
+                        )),
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Tab,
+                                physical_key: None,
+                                pressed: frame % 2 == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            let family = draw_kind_selector(ui, &mut kind);
+                            draw_target_selector(ui, &mut target, family.rect.width());
+                            let _ = ui.button("Adjacent control");
+                        });
+                    },
+                );
+                labels.extend(
+                    output
+                        .platform_output
+                        .events
+                        .iter()
+                        .filter_map(|event| event.widget_info().label.clone()),
+                );
+            }
+            assert!(labels.contains("Controller family: Xbox 360"), "{labels:?}");
+            assert!(
+                labels.contains(&format!(
+                    "Controller target: {}",
+                    target_label(original_target)
+                )),
+                "{labels:?}"
+            );
+            assert!(labels.contains("Adjacent control"), "{labels:?}");
+            assert!(matches!(kind, Kind::Xbox360));
+            assert_eq!(target, original_target);
+        }
     }
 
     #[test]

@@ -3120,3 +3120,14 @@ resource accounting and owned cleanup before crediting it. No audio/Steam trial
 or compilation overlapped startup. The five mandatory local checks passed for
 the selector correction, and its focused regression failed before and passed
 after correction. No dependency changes. Gates 1/4/5/6 remain open.
+
+### Creation selector names and interrupted endurance run
+
+See the [creation selector and endurance checkpoint](ALPHA_REMEDIATION_STATUS.md#creation-selector-names-and-interrupted-endurance-run).
+Verify the empty-name regression before correction and descriptive family/target
+names afterward across all targets. Preserve the signal-15 interrupted soak as
+incomplete, with independently verified owned cleanup. Require final-image
+endurance after remaining GUI work settles. Remote CI/SBOM evidence applies only
+to `20c4e39ab5e6606458a37d92b9810f0115c18d3f`; revalidate affected changes.
+Do not repurpose an authorized provider phase to bypass updater scope checks
+for the missing input capability. Gates 1/4/5/6 remain open.
