@@ -209,6 +209,9 @@ pub struct AudioNativeMicrophoneBridgeSample {
     pub accepted_source_frames: u64,
     pub graph_queue_frames: Option<u64>,
     pub client_queue_frames: u64,
+    pub client_pump_maximum_interval_us: u64,
+    pub client_pump_policy: Option<u32>,
+    pub client_pump_kernel_priority: Option<i32>,
     pub pending_frames: u64,
 }
 /// A worker silence increase observed between two host-clock replies. Host
@@ -246,6 +249,7 @@ pub struct AudioUsbMicrophoneProgress {
     pub abandoned_capture_frames: u64,
     pub dropped_source_frames: u64,
     pub maximum_lateness_us: u64,
+    pub maximum_pcm_pump_lateness_us: u64,
 }
 
 /// Audio is borrowed from a controller, never independently reopened or detached.

@@ -2819,3 +2819,33 @@ bridge close. Required fmt/check/Clippy/test/Gitleaks, forced Rust 1.85,
 strict root rustdoc, API snapshot/inventory and all root feature consumers with
 warnings denied plus offline rebuild passed. Both privileged binaries were rebuilt.
 Live correlation remains required; this instrumentation does not close a gate.
+
+
+The first ledger trial at `254e413c6b2ae13a29532b7fb40fce7d58468c05`
+(tree `acfceb1b1a2d8c0538ab85a9f8c7c795d67df945`) failed DualSense with 256
+measured silent frames (143744 exact of 144000). Worker progress reconciled
+288000 completed host frames, 285984 consumed source frames and 2016 total
+silence frames; no abandoned captures/source drops. Nineteen silence events
+were retained, none omitted. For the reply window 179424..179520, silence rose
+1744..1824 and the latest bridge sample was 2249 microseconds old, with 256
+local client frames queued. Later snapshots also retained local queued or
+pending source data. These are post-observation samples, not exact underrun
+occupancy. Coordinator cleanup errors were empty; later families were not reached.
+
+Client-pump diagnostics now record actual pump-thread startup policy and Linux
+kernel priority from owned `/proc/thread-self/sched`, plus the largest iteration
+interval including park. File reads occur once before the ordinary pump loop,
+never in PipeWire callbacks. Unavailable scheduling stays `None`. The existing
+worker Op 6 reports PCM pump lateness and is included in experimental progress;
+there is no new worker wire operation. Owned private graph thread policies are
+captured at setup and teardown with a 64-thread bound; these are snapshots, not
+policies correlated to individual loss events. Exited children are not inspected
+through remembered PIDs. Missing/malformed task metadata remains unavailable.
+
+Regressions verify strict unique scheduling fields, unavailable metadata,
+retained client interval maxima, owned-child exit, bounded task enumeration,
+exact Op 6 replies and terminal rejection of truncated/oversized timing replies.
+Mandatory workspace checks, Rust 1.85, strict rustdoc, API snapshot/inventory,
+root feature matrix with warnings denied/offline rebuild and Python tests passed.
+No dependency or ordinary-root signature changed. Live timing correlation remains
+required; the audio gates stay open.

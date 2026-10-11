@@ -27,6 +27,9 @@ struct BridgeSnapshot {
     accepted_source_frames: u64,
     graph_queue_frames: Option<u64>,
     client_queue_frames: u64,
+    client_pump_maximum_interval_us: u64,
+    client_pump_policy: Option<u32>,
+    client_pump_kernel_priority: Option<i32>,
     pending_frames: u64,
 }
 struct SilenceLedger {
@@ -69,6 +72,42 @@ struct Metrics {
     maximum_host_advance_frames: AtomicU64,
 }
 impl Metrics {
+    fn capture_bridge_state(
+        &self,
+        session: &gr_audio_linux::Session,
+        streams: &Arc<Mutex<SampleStreams>>,
+        credit: &NativeMicCredit,
+        accepted_source_frames: u64,
+        pending_frames: usize,
+    ) {
+        let (client_queue_frames, client_pump_maximum_interval_us, client_pump_scheduling) = {
+            let streams = streams
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                streams.queued_microphone_frames() as u64,
+                streams.maximum_pump_interval_us(),
+                streams.pump_scheduling(),
+            )
+        };
+        let graph_queue_frames = session.queued_playback_frames().map(|frames| frames as u64);
+        *self
+            .bridge_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = BridgeSnapshot {
+            sampled_at: Some(Instant::now()),
+            credit_host_frames: credit.host,
+            credit_submitted_frames: credit.submitted,
+            accepted_source_frames,
+            graph_queue_frames,
+            client_queue_frames,
+            client_pump_maximum_interval_us,
+            client_pump_policy: client_pump_scheduling.map(|scheduling| scheduling.policy),
+            client_pump_kernel_priority: client_pump_scheduling
+                .map(|scheduling| scheduling.kernel_priority),
+            pending_frames: pending_frames as u64,
+        };
+    }
     fn observe_silence(
         &self,
         previous_host: u64,
@@ -101,6 +140,9 @@ impl Metrics {
                     accepted_source_frames: state.accepted_source_frames,
                     graph_queue_frames: state.graph_queue_frames,
                     client_queue_frames: state.client_queue_frames,
+                    client_pump_maximum_interval_us: state.client_pump_maximum_interval_us,
+                    client_pump_policy: state.client_pump_policy,
+                    client_pump_kernel_priority: state.client_pump_kernel_priority,
                     pending_frames: state.pending_frames,
                 }),
         };
@@ -637,23 +679,13 @@ fn run(
                 accepted_source_frames = accepted_source_frames.saturating_add(accepted as u64);
                 Ok(accepted)
             })?;
-            let client_queue_frames = streams
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .queued_microphone_frames() as u64;
-            let graph_queue_frames = session.queued_playback_frames().map(|frames| frames as u64);
-            *metrics
-                .bridge_snapshot
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = BridgeSnapshot {
-                sampled_at: Some(Instant::now()),
-                credit_host_frames: credit.host,
-                credit_submitted_frames: credit.submitted,
+            metrics.capture_bridge_state(
+                session,
+                streams,
+                &credit,
                 accepted_source_frames,
-                graph_queue_frames,
-                client_queue_frames,
-                pending_frames: (microphone_pending.1 - microphone_pending.0) as u64,
-            };
+                microphone_pending.1 - microphone_pending.0,
+            );
         }
         if last_timing.elapsed() >= Duration::from_millis(100) {
             metrics.capture(session);
@@ -879,6 +911,9 @@ mod tests {
             graph_queue_frames: Some(256),
             client_queue_frames: 128,
             pending_frames: 32,
+            client_pump_maximum_interval_us: 2_000,
+            client_pump_policy: Some(2),
+            client_pump_kernel_priority: Some(79),
         };
         metrics.observe_silence(96, 144, 16, 24, Duration::from_millis(3));
         let sample = metrics.silence_ledger.lock().unwrap().events[1]
@@ -942,6 +977,7 @@ mod tests {
                     graph_queue_frames: Some(value),
                     client_queue_frames: value,
                     pending_frames: value,
+                    ..BridgeSnapshot::default()
                 };
             }
         });

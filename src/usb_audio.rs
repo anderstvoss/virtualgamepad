@@ -298,6 +298,7 @@ fn read_usb_microphone_progress(
     let diagnostics = control.diagnostics()?;
     let consumed_source_frames = control.microphone_consumed_frames()?;
     let (host_frames, silence_frames) = control.microphone_host_frames()?;
+    let maximum_pcm_pump_lateness_us = control.maximum_pcm_pump_lateness_us()?;
     Ok(crate::audio::AudioUsbMicrophoneProgress {
         host_frames,
         silence_frames,
@@ -305,6 +306,7 @@ fn read_usb_microphone_progress(
         completed_capture_frames: diagnostics[5],
         abandoned_capture_frames: diagnostics[6],
         maximum_lateness_us: diagnostics[7],
+        maximum_pcm_pump_lateness_us,
         dropped_source_frames: diagnostics[8],
     })
 }
@@ -612,7 +614,12 @@ mod tests {
         let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
         let task = std::thread::spawn(move || {
             let counters = [0_u64, 1, 6, 0, 96, 96, 4, 1200, 3];
-            for (tag, values) in [(3, counters.to_vec()), (5, vec![90]), (7, vec![96, 6])] {
+            for (tag, values) in [
+                (3, counters.to_vec()),
+                (5, vec![90]),
+                (7, vec![96, 6]),
+                (6, vec![2_000]),
+            ] {
                 let (actual, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
                 assert_eq!(actual, tag);
                 assert_eq!(body, 7_u64.to_le_bytes());
@@ -634,6 +641,7 @@ mod tests {
                 abandoned_capture_frames: 4,
                 dropped_source_frames: 3,
                 maximum_lateness_us: 1200,
+                maximum_pcm_pump_lateness_us: 2_000,
             }
         );
         task.join().unwrap();
@@ -724,6 +732,34 @@ mod tests {
             assert!(pcm.error().is_none());
             assert!(control.lock().unwrap().is_closed());
             control.lock().unwrap().close().unwrap();
+            task.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn malformed_worker_pcm_timing_progress_is_terminal_after_valid_counters() {
+        for length in [0, 7, 9] {
+            let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+            let task = std::thread::spawn(move || {
+                for (tag, values) in [(3, vec![0_u64; 9]), (5, vec![0]), (7, vec![0, 0])] {
+                    let (actual, mut body) =
+                        gr_privileged_broker::read_message(&mut server).unwrap();
+                    assert_eq!(actual, tag);
+                    assert_eq!(body, 7_u64.to_le_bytes());
+                    for value in values {
+                        body.extend(value.to_le_bytes());
+                    }
+                    gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+                }
+                let (tag, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!(tag, 6);
+                assert_eq!(body, 7_u64.to_le_bytes());
+                body.extend(vec![0; length]);
+                gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+            });
+            let mut control = Control::new(client, 7, 1).unwrap();
+            assert!(read_usb_microphone_progress(&mut control).is_err());
+            assert!(control.is_closed());
             task.join().unwrap();
         }
     }

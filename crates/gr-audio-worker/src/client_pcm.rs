@@ -14,8 +14,8 @@ use std::{
     io,
     os::unix::net::UnixStream,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -33,12 +33,57 @@ struct PumpExit {
     channels: (Receiver, Sender),
 }
 
+/// Effective scheduling read on the client pump thread at startup. Kernel
+/// priority is the Linux /proc value, not the requested realtime priority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientPumpScheduling {
+    pub policy: u32,
+    pub kernel_priority: i32,
+}
+fn parse_pump_scheduling(text: &str) -> Option<ClientPumpScheduling> {
+    let mut policy = None;
+    let mut priority = None;
+    for line in text.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim() {
+            "policy" if policy.is_none() => policy = Some(value.trim().parse().ok()?),
+            "prio" if priority.is_none() => priority = Some(value.trim().parse().ok()?),
+            "policy" | "prio" => return None,
+            _ => {}
+        }
+    }
+    Some(ClientPumpScheduling {
+        policy: policy?,
+        kernel_priority: priority?,
+    })
+}
+#[derive(Default)]
+struct PumpTiming {
+    maximum_interval_us: AtomicU64,
+    scheduling: OnceLock<Option<ClientPumpScheduling>>,
+}
+impl PumpTiming {
+    fn observe_interval(&self, interval: Duration) {
+        self.maximum_interval_us.fetch_max(
+            u64::try_from(interval.as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+}
+struct PumpControl<'a> {
+    stop: &'a AtomicBool,
+    timing: &'a PumpTiming,
+}
+
 /// Separate from the worker control client and kernel-facing attachment owner.
 /// The application thread never needs to poll these anonymous IPC sockets.
 pub struct SampleStreams {
     playback: PcmConsumer,
     microphone: PcmProducer,
     playback_loss: PcmObserver,
+    timing: Arc<PumpTiming>,
     stop: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
     pump: Option<JoinHandle<PumpExit>>,
@@ -75,6 +120,8 @@ impl SampleStreams {
         let failure = Arc::new(Mutex::new(None));
         let thread_stop = stop.clone();
         let thread_failure = failure.clone();
+        let timing = Arc::new(PumpTiming::default());
+        let thread_timing = timing.clone();
         let playback_channels = playback_format.channels().len();
         let microphone_channels = microphone_format.channels().len();
         let pump = thread::Builder::new()
@@ -87,7 +134,10 @@ impl SampleStreams {
                     microphone_reader,
                     playback_channels,
                     microphone_channels,
-                    &thread_stop,
+                    &PumpControl {
+                        stop: &thread_stop,
+                        timing: &thread_timing,
+                    },
                 );
                 if let Err(error) = &result {
                     *thread_failure
@@ -104,6 +154,7 @@ impl SampleStreams {
             playback: playback_reader,
             microphone: microphone_writer,
             playback_loss,
+            timing,
             stop,
             failure,
             pump: Some(pump),
@@ -129,6 +180,19 @@ impl SampleStreams {
     #[must_use]
     pub fn queued_microphone_frames(&self) -> usize {
         self.microphone.queued_frames()
+    }
+
+    /// Maximum interval between client PCM pump iterations, including its
+    /// intended park. A scheduling observation, not an audio latency measurement.
+    #[must_use]
+    pub fn maximum_pump_interval_us(&self) -> u64 {
+        self.timing.maximum_interval_us.load(Ordering::Acquire)
+    }
+    /// Effective client-pump thread scheduling captured before the pump loop.
+    /// Unreadable /proc or an unstarted pump returns None.
+    #[must_use]
+    pub fn pump_scheduling(&self) -> Option<ClientPumpScheduling> {
+        self.timing.scheduling.get().copied().flatten()
     }
 
     pub fn flush_microphone(&mut self) -> Result<(), AudioError> {
@@ -190,15 +254,27 @@ fn run_pump(
     mut microphone_reader: PcmConsumer,
     playback_channels: usize,
     microphone_channels: usize,
-    stop: &AtomicBool,
+    control: &PumpControl<'_>,
 ) -> io::Result<()> {
+    // Ordinary-thread startup only: never read /proc in an audio callback.
+    let scheduling = std::fs::read_to_string("/proc/thread-self/sched")
+        .ok()
+        .and_then(|text| parse_pump_scheduling(&text));
+    let _ = control.timing.scheduling.set(scheduling);
     let started = Instant::now();
+    let mut previous = started;
     let mut playback_samples = [0_i16; BLOCK_FRAMES * 4];
     let mut microphone_samples = [0_i16; BLOCK_FRAMES * 4];
     let mut pending = None::<PcmRead>;
     let mut next_playback = 0_u64;
-    while !stop.load(Ordering::Acquire) {
-        let now = u64::try_from(started.elapsed().as_micros()).map_err(io::Error::other)?;
+    while !control.stop.load(Ordering::Acquire) {
+        let observed = Instant::now();
+        control
+            .timing
+            .observe_interval(observed.duration_since(previous));
+        previous = observed;
+        let now = u64::try_from(observed.duration_since(started).as_micros())
+            .map_err(io::Error::other)?;
         if let Some(block) = playback_socket.receive(&mut playback_samples, now)? {
             if block.first_frame > next_playback {
                 playback_writer
@@ -398,6 +474,41 @@ mod tests {
             .is_err()
         );
         assert_eq!(pending.unwrap().frames, BLOCK_FRAMES);
+    }
+
+    #[test]
+    fn pump_scheduling_parser_requires_unique_actual_policy_and_kernel_priority() {
+        assert_eq!(
+            parse_pump_scheduling("owned-client-task\npolicy : 2\nprio : 79\nse.exec_start : 10"),
+            Some(ClientPumpScheduling {
+                policy: 2,
+                kernel_priority: 79
+            })
+        );
+        for text in [
+            "",
+            "policy: 2",
+            "prio: 79",
+            "policy: bad\nprio: 79",
+            "policy: -1\nprio: 79",
+            "policy: 2\nprio: bad",
+            "policy: 2\npolicy: 2\nprio: 79",
+            "policy: 2\nprio: 79\nprio: 79",
+        ] {
+            assert_eq!(parse_pump_scheduling(text), None);
+        }
+    }
+
+    #[test]
+    fn client_pump_interval_preserves_maximum_and_unavailable_scheduling() {
+        let timing = PumpTiming::default();
+        assert_eq!(timing.scheduling.get(), None);
+        for micros in [0, 500, 15_300, 600] {
+            timing.observe_interval(Duration::from_micros(micros));
+        }
+        assert_eq!(timing.maximum_interval_us.load(Ordering::Acquire), 15_300);
+        timing.scheduling.set(None).unwrap();
+        assert_eq!(timing.scheduling.get(), Some(&None));
     }
 
     fn drain_until_blocked(peer: &mut UnixStream) {

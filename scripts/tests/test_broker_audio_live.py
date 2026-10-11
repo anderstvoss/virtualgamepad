@@ -405,3 +405,35 @@ class BrokerLiveTests(unittest.TestCase):
                 a.sendall(data); a.shutdown(socket.SHUT_WR)
                 with self.assertRaises((ValueError,EOFError)):
                     module.reply(b)
+
+
+class OwnedThreadScheduling(unittest.TestCase):
+    def test_actual_policy_and_kernel_priority_are_unique_and_required(self):
+        self.assertEqual(module.parse_thread_scheduling('owned-data-loop\n policy : 2\n prio : 79'),
+                         dict(policy=2, kernel_priority=79))
+        for text in ['', 'policy: 2', 'prio: 79', 'policy: bad\nprio: 79',
+                     'policy: -1\nprio: 79', 'policy: 2\nprio: bad',
+                     'policy: 2\npolicy: 2\nprio: 79', 'policy: 2\nprio: 79\nprio: 79']:
+            self.assertIsNone(module.parse_thread_scheduling(text))
+
+    def test_exited_owned_child_does_not_read_remembered_pid(self):
+        child = Mock(pid=123);child.poll.return_value=0
+        with patch.object(Path,'iterdir',side_effect=AssertionError('must not inspect old PID')):
+            self.assertFalse(module.owned_thread_scheduling(child)['available'])
+
+    def test_owned_task_snapshots_are_bounded_and_missing_state_is_unavailable(self):
+        child = Mock(pid=123);child.poll.return_value=None
+        with tempfile.TemporaryDirectory() as directory:
+            proc=Path(directory);tasks=proc/'123'/'task';tasks.mkdir(parents=True)
+            self.assertFalse(module.owned_thread_scheduling(child,proc)['available'])
+            for tid in range(65):
+                path=tasks/str(tid+123);path.mkdir()
+                (path/'comm').write_text('owned-data-loop\n')
+                (path/'sched').write_text('policy: 2\nprio: 79\n')
+            receipt=module.owned_thread_scheduling(child,proc)
+            self.assertTrue(receipt['available']);self.assertTrue(receipt['truncated'])
+            self.assertEqual(len(receipt['threads']),64)
+            self.assertTrue(all(task['scheduling']==dict(policy=2,kernel_priority=79) for task in receipt['threads']))
+            for path in tasks.iterdir():(path/'sched').unlink()
+            receipt=module.owned_thread_scheduling(child,proc)
+            self.assertTrue(all(not task['available'] and task['scheduling'] is None for task in receipt['threads']))

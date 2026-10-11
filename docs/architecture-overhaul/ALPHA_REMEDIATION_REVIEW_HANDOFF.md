@@ -2453,3 +2453,14 @@ or logging, bounded export and preservation after repeated cleanup. Check the
 ordinary-root API snapshot and downstream feature matrix after the additive
 supporting accessor/experimental types. All historical silent-frame failures
 remain release blockers; instrumentation alone is not acceptance.
+
+
+The `254e413` ledger trial retained 19 events without overflow and still failed
+DualSense with 256 measured silent frames. Some latest samples showed client
+queued data; do not equate them with occupancy at the worker underrun. New client
+interval/startup-policy diagnostics and existing worker Op 6 separate forwarding
+from USB service lateness. Graph policies are owned-thread setup/teardown
+snapshots. Require evidence rather than inferring any thread policy from its
+parent. Inspect strict parsing, missing metadata, PID lifetime guards and bounded
+thread enumeration; proc reads must remain outside audio callbacks. Retain all
+failed trial receipts and exact source/worker image distinctions.

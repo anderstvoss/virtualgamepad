@@ -10,6 +10,7 @@ import fcntl
 import stat
 import importlib.util
 import heapq
+from itertools import islice
 import hashlib
 import json
 import os
@@ -333,6 +334,40 @@ def stop_private_child(child):
         child.wait(timeout=3)
 
 
+def parse_thread_scheduling(text):
+    fields = {}
+    for line in text.splitlines():
+        name, separator, value = line.partition(':')
+        name = name.strip()
+        if separator and name in ('policy', 'prio'):
+            if name in fields: return None
+            try: fields[name] = int(value.strip())
+            except ValueError: return None
+    if set(fields) != {'policy', 'prio'} or fields['policy'] < 0: return None
+    return dict(policy=fields['policy'], kernel_priority=fields['prio'])
+
+
+def owned_thread_scheduling(child, proc=Path('/proc')):
+    # Never inspect a remembered PID after its owned child has exited/reaped.
+    if child.poll() is not None:
+        return dict(available=False, reason='owned child exited before snapshot')
+    tasks = proc/str(child.pid)/'task'
+    entries = []
+    try: paths = list(islice(tasks.iterdir(), 65))
+    except OSError: return dict(available=False, reason='owned task directory unavailable')
+    for path in sorted(paths[:64], key=lambda path: path.name):
+        try:
+            name = (path/'comm').read_text().strip()
+            scheduling = parse_thread_scheduling((path/'sched').read_text())
+        except OSError:
+            entries.append(dict(tid=path.name, available=False, scheduling=None))
+            continue
+        entries.append(dict(tid=path.name, name=name, available=scheduling is not None,
+                            scheduling=scheduling))
+    return dict(available=any(entry["available"] for entry in entries), pid=child.pid, threads=entries,
+                truncated=len(paths)>64, scope='owned graph thread snapshot; not an underrun timestamp')
+
+
 @contextlib.contextmanager
 def private_probe_graph():
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
@@ -362,6 +397,7 @@ def private_probe_graph():
             children.append(subprocess.Popen(['wireplumber', '-p', 'policy'], env=environment,
                                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
             startup = private_graph_nodes(environment)
+            startup_scheduling = [owned_thread_scheduling(child) for child in children]
             yield environment
             deadline = time.monotonic()+2
             while True:
@@ -378,7 +414,9 @@ def private_probe_graph():
                     if target.startswith('/dev/snd/'):
                         sound_handles.append(dict(pid=child.pid, descriptor=descriptor.name, target=target))
             print(json.dumps(dict(private_graph=dict(startup_nodes=startup, final_nodes=final,
-                                                     owned_child_sound_handles=sound_handles))), flush=True)
+                                                     owned_child_sound_handles=sound_handles,
+                                                     startup_thread_scheduling=startup_scheduling,
+                                                     final_thread_scheduling=[owned_thread_scheduling(child) for child in children]))), flush=True)
     except BaseException as error:
         initiating = error; raise
     finally:
