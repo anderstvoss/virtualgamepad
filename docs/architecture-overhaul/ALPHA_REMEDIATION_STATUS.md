@@ -3342,3 +3342,31 @@ mutation and repeated empty teardown, preserving previous marker/framing tests.
 No product audio queues, loss/rate/latency assertions, public API or dependencies
 change. Live qualification remains outstanding; this corrects the harness's
 callback model but does not yet demonstrate that it explains all recorded loss.
+
+### Realtime C trials: partial correction, qualification still failed
+
+At `39257d38cf95a1d9aa9edfd3426c7587ac221d0e`, tree
+`29f556ad0d5640c892ad1bceb9432f40b95dce73`, all three direct C trials
+completed production/submission of 2880000 measured frames. Missing counts were
+71680, 74240 and 63488; duplicated, invalid, partial, processing errors and
+ledger overflow were zero. Production spans were 70.150250742, 69.870111116
+and 69.855782450 seconds, outside the unchanged 1% envelope. The C image was
+`deb79aeee238f47744e1c1ad5956a13e28f3c1f943a4e4fb8903a8747ce88f0d`.
+Actual client snapshots show the shared data loop at FIFO priority 88 and main
+loop at RR priority 88. All ledgers reconciled. Root/observer correctly failed;
+cleanup errors were empty, original broker service/socket state restored and
+memory pressure remained zero. All 24 typed controller outputs passed separately.
+
+This corrected corruption and reduced measured loss but did not qualify C or
+Gate 6. In trial 1, source callbacks submitted 512 frames each, but graph-clock
+steps frequently exceeded 512 ticks (812 steps of 1024 and 88 of 1536 among
+measured callbacks). Same-tick source-to-capture dispatch had median 0.034125 ms
+and maximum 0.38025 ms. These observations direct investigation toward skipped
+process cycles and graph topology/activation, without proving graph-versus-capture
+loss or justifying larger queues. No further repeated qualification is warranted
+until a new discriminating observation or correction changes that hypothesis.
+
+All mandatory local fmt/check/Clippy/workspace tests/Gitleaks checks and the
+Python tooling suite passed before the live run. Independent Rust qualification
+and the neutral GUI soak remain valid for their byte-identical images. The four
+remaining gates remain open; no release readiness or PR readiness is claimed.
