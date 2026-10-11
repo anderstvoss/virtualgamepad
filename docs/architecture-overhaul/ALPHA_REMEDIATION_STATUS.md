@@ -3420,3 +3420,24 @@ The guest exposes eight CPUs, approximately 23.4 GiB usable memory, no observed
 memory pressure, and the arch_sys_counter clocksource. Guest CPU steal counters
 are zero; that does not prove the hypervisor never pauses the guest. No physical
 or native-host timing claim is made. No loss or rate assertion is relaxed.
+
+### PipeWire-independent ordinary timer diagnostic
+
+A native C timer diagnostic at `c56cce5` ran ten seconds without PipeWire,
+compilation, GUI or competing audio. Eight owned pthreads were pinned one per
+available guest CPU. Each performed 2000 absolute CLOCK_MONOTONIC sleeps at
+5 ms intervals, retaining target/wake, CLOCK_MONOTONIC_RAW and thread CPU time
+in preallocated storage; export occurred after joining. All affinity/sleep
+operations succeeded. Per-CPU maximum lateness in ms was 26.683962, 27.096462,
+27.490630, 30.312084, 27.565084, 27.371794, 26.214376 and 28.843336.
+There were 142 wakes over 20 ms across the eight threads. Each thread consumed
+approximately 18–21 ms CPU time over the ten-second run. Source/binary hashes,
+compiler flags and every raw sample remain outside tracked source.
+
+This ordinary-scheduler result demonstrates wake-up delays outside the product
+and PipeWire. It neither proves a hypervisor pause nor characterizes bounded
+realtime scheduling. It cannot close native-host timing, qualify the VM, or
+explain every audio loss. Next compare the same native timer under the existing
+finite realtime grant, recording actual policy and preserving owned cleanup;
+do not replace audio controls with timer success. Product qualification remains
+stopped until the required independent audio controls pass in the current lab.
