@@ -5,6 +5,7 @@
  */
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <pipewire/pipewire.h>
 #include <spa/param/audio/format-utils.h>
 #include <spa/buffer/meta.h>
@@ -91,7 +93,17 @@ static void record_event(struct control *c, struct event event) {
 
 static int export_ledger(const struct control *c, const char *path) {
     if (!path) return 0;
-    FILE *output = fopen(path, "wx"); /* Never replace another trial's evidence. */
+    FILE *output;
+    if (!strncmp(path, "fd:", 3)) {
+        char *end;
+        errno = 0;
+        long descriptor = strtol(path + 3, &end, 10);
+        if (errno || end == path + 3 || *end || descriptor < 3 || descriptor > INT_MAX) return -1;
+        int copy = dup((int)descriptor);
+        if (copy < 0) return -1;
+        output = fdopen(copy, "w");
+        if (!output) close(copy);
+    } else output = fopen(path, "wx"); /* Never replace another trial's evidence. */
     if (!output) return -1;
     for (unsigned i = 0; i < c->ledger_length; i++) {
         const struct event *e = &c->ledger[i];
@@ -474,6 +486,9 @@ out:
     if (c.source) pw_stream_destroy(c.source);
     pw_main_loop_destroy(c.loop);
     pw_deinit();
+    /* Diagnostic export is outside streaming and its finite realtime budget. */
+    if (ledger_path && sched_getscheduler(0) != SCHED_OTHER &&
+        sched_setscheduler(0, SCHED_OTHER, &(struct sched_param){.sched_priority = 0}) < 0) status = 2;
     if (export_ledger(&c, ledger_path) < 0) status = 2;
     free(c.ledger);
     free(c.counts);

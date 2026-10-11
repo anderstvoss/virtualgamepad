@@ -1008,6 +1008,12 @@ mod worker_outputs {
             let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
                 .expect("frozen ordinary control image");
             send_probe_image(&mut peer, b'D', std::path::Path::new(&path));
+        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
+            == Ok("direct-c")
+        {
+            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
+                .expect("frozen ordinary C control image");
+            send_probe_image(&mut peer, b'C', std::path::Path::new(&path));
         }
     }
 
@@ -1018,16 +1024,46 @@ mod worker_outputs {
     fn send_probe_image(peer: &mut UnixStream, request: u8, path: &std::path::Path) {
         use std::io::{Read, Write};
         use std::process::{Command, Stdio};
-        assert!(matches!(request, b'R' | b'D'));
+        assert!(matches!(request, b'R' | b'D' | b'C'));
         peer.write_all(&[request]).unwrap();
         let image = std::fs::File::open(path).unwrap();
         let mut sender = Command::new("python3")
-            .args(["-I", "-c", "import array,fcntl,hashlib,os,socket; s=socket.socket(fileno=0); f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1); assert 4<=len(data)<=128*1024*1024; image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING); out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500); fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL); assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32"])
+            .args(["-I", "-c", r"import array,fcntl,hashlib,os,socket,struct,sys
+s=socket.socket(fileno=0)
+f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1)
+assert 4<=len(data)<=128*1024*1024
+image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING)
+out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500)
+fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL)
+assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32
+if sys.argv[1]=='C':
+    def exact(size):
+        parts=bytearray()
+        while len(parts)<size:
+            chunk=s.recv(size-len(parts))
+            if not chunk:raise ValueError('truncated C ledger transport')
+            parts.extend(chunk)
+        return bytes(parts)
+    s.settimeout(425)
+    try:
+        for trial in range(1,4):
+            assert exact(1)==b'G'
+            size=struct.unpack('!I',exact(4))[0]; assert 0<size<=1024*1024
+            digest=exact(32); payload=exact(size)
+            assert hashlib.sha256(payload).digest()==digest
+            name=os.path.join(sys.argv[2],f'c-control.trial-{trial}.ledger.jsonl.gz')
+            descriptor=os.open(name,os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_WRONLY,0o600)
+            with os.fdopen(descriptor,'wb') as artifact:artifact.write(payload)
+    finally:s.setblocking(True)
+"])
+            .arg(char::from(request).to_string())
+            .arg(path.parent().expect("probe image parent"))
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(peer.try_clone().unwrap())))
             .stdout(Stdio::from(image))
             .spawn()
             .unwrap();
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let deadline =
+            std::time::Instant::now() + Duration::from_secs(if request == b'C' { 425 } else { 5 });
         let status = loop {
             if let Some(status) = sender.try_wait().unwrap() {
                 break status;
@@ -1040,7 +1076,9 @@ mod worker_outputs {
             thread::sleep(Duration::from_millis(10));
         };
         assert!(status.success());
-        peer.set_read_timeout(Some(Duration::from_secs(if request == b'D' {
+        peer.set_read_timeout(Some(Duration::from_secs(if request == b'C' {
+            5
+        } else if request == b'D' {
             425
         } else {
             75
@@ -1088,6 +1126,149 @@ mod worker_outputs {
             .unwrap();
         send_probe_image(&mut sender, b'D', std::path::Path::new("/proc/self/exe"));
         assert!(child.wait().unwrap().success());
+    }
+
+    #[test]
+    fn c_image_sender_preserves_three_bounded_ledgers_and_peer_blocking() {
+        use std::os::fd::{AsRawFd, OwnedFd};
+        use std::process::{Command, Stdio};
+        struct Artifacts(std::path::PathBuf);
+        impl Drop for Artifacts {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(self.0.join("control"));
+                for trial in 1..=3 {
+                    let _ = std::fs::remove_file(
+                        self.0
+                            .join(format!("c-control.trial-{trial}.ledger.jsonl.gz")),
+                    );
+                }
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+        let name = format!(
+            "virtualgamepad-c-sender-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let artifacts = Artifacts(std::env::temp_dir().join(name));
+        std::fs::create_dir(&artifacts.0).unwrap();
+        let image = artifacts.0.join("control");
+        // Transport-only synthetic image; execution acceptance is separate.
+        std::fs::write(&image, b"\x7fELFsynthetic-control-transport").unwrap();
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let descriptor = sender.as_raw_fd();
+        let flags = || {
+            std::fs::read_to_string(format!("/proc/self/fdinfo/{descriptor}"))
+                .unwrap()
+                .lines()
+                .find(|line| line.starts_with("flags:"))
+                .unwrap()
+                .to_owned()
+        };
+        let before = flags();
+        let mut child = Command::new("python3")
+            .args([
+                "-I",
+                "-c",
+                r"import array,fcntl,gzip,hashlib,os,socket,struct
+s=socket.socket(fileno=0); assert s.recv(1)==b'C'
+data,ancillary,flags,_=s.recvmsg(32,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC)
+assert len(data)==32 and not flags&(socket.MSG_TRUNC|socket.MSG_CTRUNC) and len(ancillary)==1
+fds=array.array('i'); fds.frombytes(ancillary[0][2]); assert len(fds)==1
+expected=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
+assert fcntl.fcntl(fds[0],fcntl.F_GET_SEALS)&expected==expected; os.close(fds[0])
+for trial in range(1,4):
+    payload=gzip.compress(f'synthetic-ledger-{trial}\n'.encode(),mtime=0)
+    s.sendall(b'G'+struct.pack('!I',len(payload))+hashlib.sha256(payload).digest()+payload)
+s.sendall(b'F')
+",
+            ])
+            .stdin(Stdio::from(OwnedFd::from(receiver)))
+            .spawn()
+            .unwrap();
+        send_probe_image(&mut sender, b'C', &image);
+        assert!(child.wait().unwrap().success());
+        assert_eq!(flags(), before);
+        for trial in 1..=3 {
+            let data = std::fs::read(
+                artifacts
+                    .0
+                    .join(format!("c-control.trial-{trial}.ledger.jsonl.gz")),
+            )
+            .unwrap();
+            assert!(data.starts_with(&[0x1f, 0x8b]));
+            assert!(data.len() < 1024 * 1024);
+        }
+    }
+
+    #[test]
+    fn c_image_sender_rejects_damaged_ledgers_and_preserves_existing_evidence() {
+        use std::os::fd::OwnedFd;
+        use std::process::{Command, Stdio};
+        struct Artifacts(std::path::PathBuf);
+        impl Drop for Artifacts {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(self.0.join("control"));
+                let _ = std::fs::remove_file(self.0.join("c-control.trial-1.ledger.jsonl.gz"));
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+        for mode in ["oversized", "truncated", "digest", "existing"] {
+            let name = format!(
+                "virtualgamepad-c-reject-{}-{}-{}",
+                std::process::id(),
+                mode,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+            let artifacts = Artifacts(std::env::temp_dir().join(name));
+            std::fs::create_dir(&artifacts.0).unwrap();
+            let image = artifacts.0.join("control");
+            std::fs::write(&image, b"\x7fELFsynthetic-control-transport").unwrap();
+            let first = artifacts.0.join("c-control.trial-1.ledger.jsonl.gz");
+            if mode == "existing" {
+                std::fs::write(&first, b"retained synthetic failure").unwrap();
+            }
+            let (mut sender, receiver) = UnixStream::pair().unwrap();
+            let mut child = Command::new("python3")
+                .args([
+                    "-I",
+                    "-c",
+                    r"import array,hashlib,os,socket,struct,sys
+s=socket.socket(fileno=0); assert s.recv(1)==b'C'
+data,ancillary,flags,_=s.recvmsg(32,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC)
+assert len(data)==32 and len(ancillary)==1
+fds=array.array('i'); fds.frombytes(ancillary[0][2]); assert len(fds)==1; os.close(fds[0])
+payload=b'synthetic'; digest=hashlib.sha256(payload).digest(); size=len(payload)
+if sys.argv[1]=='oversized':size=1024*1024+1; payload=b''
+if sys.argv[1]=='truncated':payload=payload[:1]
+if sys.argv[1]=='digest':digest=bytes(32)
+s.sendall(b'G'+struct.pack('!I',size)+digest+payload)
+",
+                ])
+                .arg(mode)
+                .stdin(Stdio::from(OwnedFd::from(receiver)))
+                .spawn()
+                .unwrap();
+            let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                send_probe_image(&mut sender, b'C', &image);
+            }));
+            assert!(rejected.is_err(), "damaged ledger must reject: {mode}");
+            assert!(child.wait().unwrap().success());
+            if mode == "existing" {
+                assert_eq!(
+                    std::fs::read(&first).unwrap(),
+                    b"retained synthetic failure"
+                );
+            } else {
+                assert!(!first.exists());
+            }
+        }
     }
 
     fn public_factory_host_snapshot(stage: &str) {

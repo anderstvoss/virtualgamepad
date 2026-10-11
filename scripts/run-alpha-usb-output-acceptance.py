@@ -6,6 +6,7 @@ The installed lab and current clean source must have the same revision.
 """
 import argparse
 import hashlib
+import gzip
 import importlib.util
 import json
 import os
@@ -22,6 +23,8 @@ TEST='controllers::tests::worker_outputs::live_kernel_worker_outputs_reach_root_
 REPOSITORY=Path(__file__).resolve().parent.parent
 spec=importlib.util.spec_from_file_location('audio_probe',Path(__file__).with_name('validate-broker-audio-live.py'))
 audio_probe=importlib.util.module_from_spec(spec);spec.loader.exec_module(audio_probe)
+spec=importlib.util.spec_from_file_location('c_ledger',Path(__file__).with_name('analyze-alpha-audio-ledger.py'))
+c_ledger=importlib.util.module_from_spec(spec);spec.loader.exec_module(c_ledger)
 
 
 def observer_instance(paths):
@@ -51,7 +54,7 @@ def built_test(output, target='virtualgamepad'):
     return found[0]
 
 
-def accepted(root_receipt, revision, observer_status, observer_text, factory_digest=None, control_digest=None):
+def accepted(root_receipt, revision, observer_status, observer_text, factory_digest=None, control_digest=None, control_kind='rust'):
     if (root_receipt.get('status')!='passed' or root_receipt.get('revision')!=revision or
             observer_status!=0 or '1 passed; 0 failed' not in observer_text):
         raise RuntimeError('root phase and exact-source observer do not both pass')
@@ -62,7 +65,8 @@ def accepted(root_receipt, revision, observer_status, observer_text, factory_dig
         for line in client['stdout'].splitlines():
             item=json.loads(line)
             if 'public_factory' in item:factories.append(item['public_factory'])
-            if 'independent_rust_control' in item:controls.append(item['independent_rust_control'])
+            if 'independent_rust_control' in item:controls.append(('rust',item['independent_rust_control']))
+            if 'independent_c_control' in item:controls.append(('c',item['independent_c_control']))
             if 'kernel_hid_outputs' in item:
                 if not item.get('passed') or not item['kernel_hid_outputs'].get('typed_root_callbacks'):
                     raise RuntimeError('missing typed callback or functional acceptance')
@@ -75,15 +79,20 @@ def accepted(root_receipt, revision, observer_status, observer_text, factory_dig
                 factories[0].get('binary_sha256')!=factory_digest):
             raise RuntimeError('public factory receipt is absent, failed or from a different image')
     if control_digest is not None:
-        if len(controls)!=1:
+        if len(controls)!=1 or controls[0][0]!=control_kind:
             raise RuntimeError('independent control inventory is absent or duplicated')
-        control=controls[0];trials=control.get('trials',[])
+        control=controls[0][1];trials=control.get('trials',[])
+        valid_trials=(all(trial.get('accepted') is True and audio_probe.c_control_accepted(
+                        trial.get('receipt',{}),trial.get('exit_status')) for trial in trials)
+                      if control_kind=='c' else all(trial.get('accepted') is True and audio_probe.rust_control_accepted(
+                        trial.get('stdout',''),trial.get('exit_status')) for trial in trials))
         if (control.get('status')!='passed' or control.get('binary_sha256')!=control_digest
                 or control.get('ordinary_uid')!=os.getuid() or control.get('measured_seconds')!=60
                 or len(trials)!=3 or [trial.get('trial') for trial in trials]!=[1,2,3]
-                or not all(trial.get('accepted') is True and audio_probe.rust_control_accepted(
-                    trial.get('stdout',''),trial.get('exit_status')) for trial in trials)):
-            raise RuntimeError('independent Rust control did not supply three exact-image passing trials')
+                or any(type(trial.get('trial')) is not int for trial in trials)
+                or control_kind=='c' and control.get('topology')!='direct'
+                or not valid_trials):
+            raise RuntimeError('independent control did not supply three exact-image passing trials')
 
 
 def control_evidence(root_receipt):
@@ -100,8 +109,32 @@ def control_evidence(root_receipt):
             except json.JSONDecodeError:continue
             if isinstance(item,dict) and 'independent_rust_control' in item:
                 controls.append(item['independent_rust_control'])
+            if isinstance(item,dict) and 'independent_c_control' in item:
+                controls.append(item['independent_c_control'])
     return dict(revision=root_receipt.get('revision'),root_phase_status=root_receipt.get('status'),
                 controls=controls,scope='diagnostics only; does not accept the root phase or qualify C/product audio')
+
+
+def verify_c_ledgers(root, evidence):
+    if len(evidence['controls'])!=1:raise ValueError('missing or duplicated C control receipt')
+    trials=evidence['controls'][0]['trials']
+    if [row['trial'] for row in trials]!=[1,2,3] or any(type(row['trial']) is not int for row in trials):
+        raise ValueError('incomplete C ledger inventory')
+    verified=[]
+    for row in trials:
+        artifact=root/f"c-control.trial-{row['trial']}.ledger.jsonl.gz"
+        with artifact.open('rb') as source:data=source.read(audio_probe.C_COMPRESSED_LEDGER_LIMIT+1)
+        if (not 0<len(data)<=audio_probe.C_COMPRESSED_LEDGER_LIMIT or len(data)!=row['ledger_bytes']
+                or hashlib.sha256(data).hexdigest()!=row['ledger_sha256']):
+            raise ValueError('C ledger image identity differs')
+        with gzip.open(artifact,'rb') as source:raw=source.read(c_ledger.MAX_BYTES+1)
+        if len(raw)>c_ledger.MAX_BYTES or len(raw)!=row['ledger_raw_bytes']:
+            raise ValueError('C ledger uncompressed quota or identity differs')
+        path=root/f"c-control.trial-{row['trial']}.ledger.jsonl"
+        with path.open('xb') as output:output.write(raw)
+        reconciled=c_ledger.reconcile(row['receipt'],*c_ledger.load_ledger(path))
+        verified.append(dict(trial=row['trial'],**reconciled))
+    return verified
 
 
 def observer_identity(properties, frozen, expected=None):
@@ -138,6 +171,7 @@ def run(args):
     frozen=root/'typed-observer';shutil.copyfile(binary,frozen);frozen.chmod(0o500)
     digest=hashlib.sha256(frozen.read_bytes()).hexdigest()
     control_digest=None
+    control_kind='c' if args.independent_c_control else 'rust'
     if args.independent_rust_control:
         control_build=['cargo','test','--locked','-p','gr-audio-linux','--features','pipewire',
                        '--test','pipewire_live','--no-run','--message-format=json']
@@ -147,6 +181,15 @@ def run(args):
         control_image=root/'independent-rust-control'
         shutil.copyfile(built_test(built.stdout,'pipewire_live'),control_image);control_image.chmod(0o500)
         control_digest=hashlib.sha256(control_image.read_bytes()).hexdigest()
+    if args.independent_c_control:
+        control_image=root/'independent-c-control'
+        flags=subprocess.check_output(['pkg-config','--cflags','--libs','libpipewire-0.3'],text=True,timeout=5).split()
+        control_build=['cc','-Wall','-Wextra','-Werror',str(REPOSITORY/'scripts/alpha-audio-control.c'),
+                       '-o',str(control_image),*flags]
+        built=subprocess.run(control_build,cwd=REPOSITORY,capture_output=True,text=True,timeout=60)
+        (root/'control-build.log').write_text(built.stdout+built.stderr);built.check_returncode()
+        subprocess.run([str(control_image),'--self-test'],check=True,timeout=5)
+        control_image.chmod(0o500);control_digest=hashlib.sha256(control_image.read_bytes()).hexdigest()
     if (subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPOSITORY,text=True).strip()!=revision or
             subprocess.check_output(['git','status','--porcelain'],cwd=REPOSITORY)):
         raise RuntimeError('source changed while building')
@@ -155,8 +198,11 @@ def run(args):
                  binary_sha256=digest,build=build,compiler=subprocess.check_output(['rustc','--version'],text=True).strip(),
                  observer_unit=unit,status='failed')
     if control_digest is not None:
-        receipt['independent_rust_control']=dict(binary_sha256=control_digest,build=control_build,
-                                                scope='independent Rust control; C and product acceptance remain required')
+        receipt['independent_'+control_kind+'_control']=dict(binary_sha256=control_digest,build=control_build,
+                                                scope='one independent control; other controls and product acceptance remain required')
+        if control_kind=='c':
+            receipt['independent_c_control']['compiler']=subprocess.check_output(['cc','--version'],text=True).splitlines()[0]
+            receipt['independent_c_control']['source_sha256']=hashlib.sha256((REPOSITORY/'scripts/alpha-audio-control.c').read_bytes()).hexdigest()
     phase=None;observer=None;invocation=None
     try:
         with (root/'phase.log').open('w') as phase_log,(root/'observer.log').open('w') as observer_log:
@@ -184,7 +230,7 @@ def run(args):
             if args.public_samples:
                 command.insert(command.index('--'), '--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=1')
             if control_digest is not None:
-                command.insert(command.index('--'),'--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=direct-rust')
+                command.insert(command.index('--'),'--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=direct-'+control_kind)
                 command.insert(command.index('--'),'--setenv=VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE='+str(control_image))
             receipt['command']=command
             observer=subprocess.Popen(command,stdout=observer_log,stderr=subprocess.STDOUT)
@@ -202,9 +248,12 @@ def run(args):
         (root/'root-receipt.json').write_text(raw)
         root_receipt=json.loads(raw)
         if control_digest is not None:
-            (root/'independent-control-evidence.json').write_text(json.dumps(control_evidence(root_receipt),indent=2)+'\n')
+            evidence=control_evidence(root_receipt)
+            (root/'independent-control-evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
+            if control_kind=='c':
+                (root/'c-ledger-reconciliation.json').write_text(json.dumps(verify_c_ledgers(root,evidence),indent=2)+'\n')
         accepted(root_receipt,revision,observer.returncode,(root/'observer.log').read_text(),
-                 digest if args.public_samples else None, control_digest)
+                 digest if args.public_samples else None, control_digest, control_kind)
         if phase.returncode!=0:raise RuntimeError('root maintenance phase failed')
         if hashlib.sha256(frozen.read_bytes()).hexdigest()!=digest:raise RuntimeError('observer image changed')
         if control_digest is not None and hashlib.sha256(control_image.read_bytes()).hexdigest()!=control_digest:
@@ -246,12 +295,14 @@ def main():
                         help='require the sealed public USB ownership, lifecycle and marker fixture')
     probes.add_argument('--independent-rust-control',action='store_true',
                         help='run three quiet 60-second measured Rust direct controls through the existing ordinary lab grant')
+    probes.add_argument('--independent-c-control',action='store_true',
+                        help='run three C direct controls with bounded ledger export through the existing ordinary lab grant')
     args=parser.parse_args()
     if not args.apply:
         print(json.dumps(dict(actions=['verify exact installed source','prebuild and freeze ordinary observer',
             'run fixed usb-functional phase','observe typed callbacks in bounded user unit','retrieve root receipt and restore owned resources'],
-            probe='independent-rust' if args.independent_rust_control else 'public-samples' if args.public_samples else 'typed-outputs',
-            independent_trials=3 if args.independent_rust_control else 0)))
+            probe='independent-c' if args.independent_c_control else 'independent-rust' if args.independent_rust_control else 'public-samples' if args.public_samples else 'typed-outputs',
+            independent_trials=3 if args.independent_rust_control or args.independent_c_control else 0)))
         return
     if args.report is None:parser.error('--apply requires an exclusive report directory')
     run(args)

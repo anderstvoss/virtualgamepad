@@ -25,6 +25,8 @@ import subprocess
 import threading
 import time
 import tempfile
+import zlib
+import select
 
 spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('validate-usb-audio-live.py'))
 live = importlib.util.module_from_spec(spec)
@@ -285,6 +287,141 @@ def submit_hid_output(descriptor,wire,operation):
 
 ROOT_FACTORY_TEST = 'controllers::tests::worker_outputs::live_public_usb_sample_factory'
 RUST_DIRECT_CONTROL_TEST = 'latency_graph_direct_control'
+C_LEDGER_LIMIT = 64 * 1024 * 1024
+C_COMPRESSED_LEDGER_LIMIT = 1024 * 1024
+
+
+def c_control_accepted(receipt, exit_status):
+    if type(exit_status) is not int or exit_status != 0: return False
+    elapsed=receipt.get('producer_elapsed_ns')
+    if type(elapsed) is not int or not 59_400_000_000 <= elapsed <= 60_600_000_000: return False
+    required=dict(planned=2_880_000,generated=2_880_000,graph_submitted=2_880_000,
+                  graph_received=2_880_000,missing=0,duplicate=0,invalid=0,partial_bytes=0,
+                  errors=0,ledger_overflow=0,out_of_order=0,source_rate=48000,sink_rate=48000,
+                  source_channels=2,sink_channels=2)
+    return all(type(receipt.get(key)) is int and receipt[key]==value for key,value in required.items())
+
+
+def compress_c_ledger(descriptor, result, errors, cancelled=None):
+    """Read post-stream export through a pipe; retain bounded compressed bytes."""
+    try:
+        with os.fdopen(descriptor,'rb',buffering=0) as source:
+            compressor=zlib.compressobj(level=1,wbits=31)
+            output=bytearray();raw_size=0
+            while True:
+                if cancelled is not None and cancelled.is_set():raise InterruptedError('C ledger export cancelled')
+                if not select.select([descriptor],[],[],.2)[0]:continue
+                chunk=source.read(65536)
+                if not chunk:break
+                raw_size+=len(chunk)
+                if raw_size>C_LEDGER_LIMIT:raise ValueError('oversized C callback ledger')
+                output.extend(compressor.compress(chunk))
+                if len(output)>C_COMPRESSED_LEDGER_LIMIT:raise ValueError('oversized compressed C ledger')
+        output.extend(compressor.flush())
+        if not raw_size or len(output)>C_COMPRESSED_LEDGER_LIMIT:raise ValueError('empty or oversized compressed C ledger')
+        result.update(data=bytes(output),raw_bytes=raw_size)
+    except BaseException as error:errors.append(str(error))
+
+
+def c_direct_ports(graph):
+    if not isinstance(graph,list) or any(not isinstance(item,dict) for item in graph):
+        raise ValueError('invalid C graph inventory')
+    if any(item.get('info',{}).get('props',{}).get('device.api')=='alsa' for item in graph):
+        raise ValueError('hardware monitor entered C graph')
+    ports={}
+    for role,name in (('out','alpha-independent-producer'),('in','alpha-independent-receiver')):
+        matches=[item['id'] for item in graph if item.get('type')=='PipeWire:Interface:Node'
+                 and item.get('info',{}).get('props',{}).get('node.name')==name]
+        if len(matches)>1:raise ValueError('ambiguous C control node')
+        if not matches:return None
+        node=matches[0]
+        for channel in ('FL','FR'):
+            matches=[item['id'] for item in graph if item.get('type')=='PipeWire:Interface:Port'
+                     and item.get('info',{}).get('props',{}).get('node.id')==node
+                     and item['info']['props'].get('port.direction')==role
+                     and item['info']['props'].get('audio.channel')==channel]
+            if len(matches)>1:raise ValueError('ambiguous C control port')
+            if not matches:return None
+            if type(matches[0]) is not int or matches[0]<0:raise ValueError('invalid C control port')
+            ports[role,channel]=matches[0]
+    return [(ports['out',channel],ports['in',channel]) for channel in ('FL','FR')]
+
+
+def independent_c_probe(frozen, expected, peer):
+    if os.geteuid()==0:raise ValueError('independent C control must run without root')
+    trials=[]
+    for trial in range(1,4):
+        compressed={};reader_errors=[];initiating=None;child=None;reader=None
+        cancelled=threading.Event()
+        read_fd,write_fd=os.pipe()
+        try:
+            reader=threading.Thread(target=compress_c_ledger,args=(read_fd,compressed,reader_errors,cancelled),
+                                    name='owned-c-ledger')
+            reader.start();read_fd=None
+            with private_probe_graph(quiet=True,quantum=512) as environment:
+                with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as diagnostics:
+                    command=['/usr/bin/chrt','--rr','20','/proc/self/fd/'+str(frozen),'60','-','-',
+                             'fd:'+str(write_fd)]
+                    child=subprocess.Popen(command,env=environment,pass_fds=(frozen,write_fd),
+                                           stdout=output,stderr=diagnostics,start_new_session=True)
+                    os.close(write_fd);write_fd=None
+                    deadline=time.monotonic()+90;startup=time.monotonic()+5
+                    while True:
+                        raw=subprocess.check_output(['pw-dump'],env=environment,timeout=2)
+                        if len(raw)>PUBLIC_FACTORY_RECEIPT_LIMIT:raise ValueError('oversized C graph inventory')
+                        ports=c_direct_ports(json.loads(raw))
+                        if ports is not None:break
+                        if child.poll() is not None or time.monotonic()>=startup:
+                            raise TimeoutError('C control ports did not become ready')
+                        time.sleep(.02)
+                    for source,sink in ports:
+                        subprocess.run(['pw-link',str(source),str(sink)],env=environment,check=True,timeout=2)
+                    try:child.wait(timeout=3)
+                    except subprocess.TimeoutExpired:pass
+                    scheduling=owned_thread_scheduling(child)
+                    remaining=deadline-time.monotonic()
+                    if remaining<=0:raise subprocess.TimeoutExpired(command,90)
+                    child.wait(timeout=remaining)
+                    reader.join(5)
+                    if reader.is_alive() or reader_errors:
+                        raise RuntimeError(dict(ledger_reader=reader_errors,still_running=reader.is_alive()))
+                    output.seek(0);raw=output.read(16385)
+                    if len(raw)>16384:raise ValueError('oversized C control receipt')
+                    diagnostics.seek(0);diagnostic=diagnostics.read(8193)
+                    stderr=diagnostic[:8192].decode('utf-8',errors='replace')
+                    try:result=json.loads(raw)
+                    except (ValueError,UnicodeDecodeError) as error:
+                        raise ValueError(dict(control_exit=child.returncode,stderr=stderr,
+                                              reason='invalid C JSON receipt')) from error
+                    if not isinstance(result,dict):raise ValueError('C receipt must be an object')
+                    trials.append(dict(trial=trial,exit_status=child.returncode,receipt=result,
+                                       stderr=stderr,stderr_truncated=len(diagnostic)>8192,
+                                       client_thread_scheduling=scheduling,
+                                       accepted=c_control_accepted(result,child.returncode),
+                                       ledger_sha256=hashlib.sha256(compressed['data']).hexdigest(),
+                                       ledger_bytes=len(compressed['data']),ledger_raw_bytes=compressed['raw_bytes']))
+        except BaseException as error:initiating=error;raise
+        finally:
+            cleanup=[]
+            if read_fd is not None:os.close(read_fd)
+            if write_fd is not None:os.close(write_fd)
+            if child is not None:
+                try:stop_private_child(child)
+                except BaseException as error:cleanup.append(str(error))
+            if reader is not None:
+                cancelled.set()
+                reader.join(5)
+                if reader.is_alive():cleanup.append('C ledger reader did not terminate')
+            if cleanup:raise RuntimeError(dict(initiating=str(initiating),cleanup=cleanup)) from initiating
+        payload=compressed['data']
+        print(json.dumps(dict(independent_c_trial=trials[-1])),flush=True)
+        peer.sendall(b'G'+struct.pack('!I',len(payload))+hashlib.sha256(payload).digest()+payload)
+    passed=all(row['accepted'] for row in trials)
+    receipt=dict(status='passed' if passed else 'failed',binary_sha256=expected.hex(),ordinary_uid=os.geteuid(),
+                 measured_seconds=60,topology='direct',trials=trials,
+                 scope='independent C direct control; loopback and product acceptance remain required')
+    print(json.dumps(dict(independent_c_control=receipt)),flush=True)
+    return receipt
 
 
 def rust_control_accepted(text, exit_status):
@@ -665,7 +802,7 @@ def public_factory_probe(peer, instance=None):
     peer.settimeout(5)
     command = peer.recv(1)
     if not command: return dict(status='not-requested')
-    if command not in (b'R', b'D'): raise ValueError('unknown public factory probe request')
+    if command not in (b'R', b'D', b'C'): raise ValueError('unknown public factory probe request')
     data, ancillary, flags, _ = peer.recvmsg(32, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
     descriptors = []
     frozen = None
@@ -680,6 +817,12 @@ def public_factory_probe(peer, instance=None):
             raise ValueError('exactly one probe image required')
         expected = data + exact(peer, 32-len(data))
         frozen = sealed_probe_image(descriptors[0], expected)
+        if command == b'C':
+            receipt=independent_c_probe(frozen,expected,peer)
+            passed=receipt['status']=='passed'
+            peer.sendall(b'F' if passed else b'E')
+            if not passed:raise ValueError('independent C control failed')
+            return receipt
         if command == b'D':
             receipt = independent_rust_probe(frozen, expected)
             passed = receipt['status'] == 'passed'

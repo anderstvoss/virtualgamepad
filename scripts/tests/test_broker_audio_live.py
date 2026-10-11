@@ -11,6 +11,8 @@ import os
 import struct
 import threading
 import unittest
+import json
+import gzip
 
 spec = importlib.util.spec_from_file_location('broker_live',Path(__file__).parents[1]/'validate-broker-audio-live.py')
 module = importlib.util.module_from_spec(spec)
@@ -18,6 +20,129 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def c_receipt(self):
+        return dict(planned=2880000,generated=2880000,graph_submitted=2880000,graph_received=2880000,
+                    missing=0,duplicate=0,invalid=0,partial_bytes=0,errors=0,ledger_overflow=0,out_of_order=0,
+                    source_rate=48000,sink_rate=48000,source_channels=2,sink_channels=2,producer_elapsed_ns=60000000000)
+
+    def test_c_acceptance_never_offsets_marker_loss_or_ignores_rate_format_and_exit(self):
+        row=self.c_receipt();self.assertTrue(module.c_control_accepted(row,0))
+        for changes in (dict(missing=128,duplicate=128),dict(graph_submitted=2879999),dict(invalid=1),
+                        dict(errors=1),dict(ledger_overflow=1),dict(out_of_order=1),dict(partial_bytes=1),
+                        dict(source_channels=4),dict(sink_rate=44100),dict(generated=True),
+                        dict(producer_elapsed_ns=60600000001),dict(producer_elapsed_ns=59399999999)):
+            self.assertFalse(module.c_control_accepted(dict(row,**changes),0))
+        for status in (True,False,1,-9,None):self.assertFalse(module.c_control_accepted(row,status))
+
+    def test_c_ledger_pipe_is_bounded_and_closed_on_success_overflow_and_empty_export(self):
+        for payload,raw_cap,zip_cap,success in ((b'synthetic ledger\n',100,100,True),
+                                                (b'12345',4,100,False),(b'12345',100,1,False),
+                                                (b'',100,100,False)):
+            read_fd,write_fd=os.pipe();os.write(write_fd,payload);os.close(write_fd)
+            result={};errors=[]
+            with patch.object(module,'C_LEDGER_LIMIT',raw_cap),patch.object(module,'C_COMPRESSED_LEDGER_LIMIT',zip_cap):
+                module.compress_c_ledger(read_fd,result,errors)
+            with self.assertRaises(OSError):os.fstat(read_fd)
+            self.assertEqual(not errors,success)
+            if success:
+                self.assertEqual(gzip.decompress(result['data']),payload)
+                self.assertEqual(result['raw_bytes'],len(payload))
+
+    def c_graph(self):
+        rows=[]
+        for node,role,name,base in ((10,'out','alpha-independent-producer',30),
+                                  (20,'in','alpha-independent-receiver',40)):
+            rows.append(dict(id=node,type='PipeWire:Interface:Node',info=dict(props={'node.name':name})))
+            for offset,channel in enumerate(('FL','FR')):
+                rows.append(dict(id=base+offset,type='PipeWire:Interface:Port',info=dict(props={
+                    'node.id':node,'port.direction':role,'audio.channel':channel})))
+        return rows
+
+    def test_c_ledger_reader_cancels_a_stalled_export_without_leaking_its_descriptor(self):
+        read_fd,write_fd=os.pipe();cancelled=threading.Event();cancelled.set();result={};errors=[]
+        try:
+            module.compress_c_ledger(read_fd,result,errors,cancelled)
+            self.assertFalse(result);self.assertIn('cancelled',errors[0])
+            with self.assertRaises(OSError):os.fstat(read_fd)
+        finally:os.close(write_fd)
+
+    def test_c_direct_links_reject_hardware_ambiguity_and_wrong_ports(self):
+        graph=self.c_graph();self.assertEqual(module.c_direct_ports(graph),[(30,40),(31,41)])
+        self.assertIsNone(module.c_direct_ports(graph[:-1]))
+        for wrong in (graph+[graph[0]],graph+[graph[1]],['foreign'],{},
+                      graph+[dict(info=dict(props={'device.api':'alsa'}))]):
+            with self.assertRaises(ValueError):module.c_direct_ports(wrong)
+        graph[-1]['id']=True
+        with self.assertRaises(ValueError):module.c_direct_ports(graph)
+
+    def test_c_probe_collects_three_trials_and_streams_ledgers_after_each_owned_graph_closes(self):
+        children=[];graphs=[];peer=Mock()
+        @contextlib.contextmanager
+        def graph(**options):
+            self.assertEqual(options,dict(quiet=True,quantum=512));graphs.append('entered')
+            try:yield {}
+            finally:graphs.append('closed')
+        def spawn(command,**kwargs):
+            self.assertEqual(command[:4],['/usr/bin/chrt','--rr','20','/proc/self/fd/42'])
+            descriptor=os.dup(kwargs['pass_fds'][1]);self.assertEqual(command[-1],'fd:'+str(kwargs['pass_fds'][1]))
+            row=self.c_receipt()
+            if len(children)==1:row['missing']=128
+            kwargs['stdout'].write(json.dumps(row).encode());kwargs['stdout'].flush()
+            child=Mock(returncode=0);children.append(child);written=False
+            def wait(**options):
+                nonlocal written
+                if not written:
+                    os.write(descriptor,b'synthetic post-stream ledger\n');os.close(descriptor);written=True
+                return 0
+            child.wait.side_effect=wait;return child
+        def send(frame):
+            self.assertEqual(graphs[-1],'closed')
+            self.assertEqual(frame[:1],b'G');length=struct.unpack('!I',frame[1:5])[0]
+            self.assertEqual(length,len(frame)-37);self.assertEqual(hashlib.sha256(frame[37:]).digest(),frame[5:37])
+            self.assertEqual(gzip.decompress(frame[37:]),b'synthetic post-stream ledger\n')
+        peer.sendall.side_effect=send
+        with patch.object(module.os,'geteuid',return_value=1000),patch.object(module,'private_probe_graph',side_effect=graph), \
+             patch.object(module.subprocess,'Popen',side_effect=spawn),patch.object(module.subprocess,'check_output',return_value=json.dumps(self.c_graph()).encode()), \
+             patch.object(module.subprocess,'run'),patch.object(module,'owned_thread_scheduling',return_value={'available':False}), \
+             patch.object(module,'stop_private_child') as stop,patch('builtins.print'):
+            receipt=module.independent_c_probe(42,bytes(32),peer)
+        self.assertEqual([row['accepted'] for row in receipt['trials']],[True,False,True])
+        self.assertEqual(receipt['status'],'failed');self.assertEqual(peer.sendall.call_count,3)
+        self.assertEqual(stop.call_count,3);self.assertEqual(graphs,['entered','closed']*3)
+
+    def test_c_probe_timeout_reaps_owned_child_and_joins_export_reader(self):
+        descriptor=None;child=Mock()
+        def spawn(command,**kwargs):
+            nonlocal descriptor
+            descriptor=os.dup(kwargs['pass_fds'][1]);return child
+        def stop(owned):
+            self.assertIs(owned,child);os.close(descriptor)
+        with patch.object(module.os,'geteuid',return_value=1000), \
+             patch.object(module,'private_probe_graph',return_value=contextlib.nullcontext({})), \
+             patch.object(module.subprocess,'Popen',side_effect=spawn), \
+             patch.object(module.subprocess,'check_output',side_effect=module.subprocess.TimeoutExpired('owned graph',2)), \
+             patch.object(module,'stop_private_child',side_effect=stop) as cleanup:
+            with self.assertRaises(module.subprocess.TimeoutExpired):module.independent_c_probe(42,bytes(32),Mock())
+        cleanup.assert_called_once();self.assertFalse(any(t.name=='owned-c-ledger' for t in threading.enumerate()))
+
+    def test_c_request_uses_sealed_fd_ownership_and_exact_success_or_error_reply(self):
+        for passed in (False,True):
+            with self.subTest(passed=passed),tempfile.TemporaryFile() as source:
+                descriptor=os.dup(source.fileno());frozen=os.dup(source.fileno())
+                peer=Mock();peer.recv.return_value=b'C'
+                peer.recvmsg.return_value=(bytes(32),[(socket.SOL_SOCKET,socket.SCM_RIGHTS,
+                    array.array('i',[descriptor]).tobytes())],0,None)
+                receipt=dict(status='passed' if passed else 'failed')
+                with patch.object(module.os,'geteuid',return_value=1000), \
+                     patch.object(module,'sealed_probe_image',return_value=frozen), \
+                     patch.object(module,'independent_c_probe',return_value=receipt) as control:
+                    if passed:self.assertEqual(module.public_factory_probe(peer),receipt)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'independent C'):module.public_factory_probe(peer)
+                    control.assert_called_once_with(frozen,bytes(32),peer)
+                peer.sendall.assert_called_once_with(b'F' if passed else b'E')
+                for fd in (descriptor,frozen):
+                    with self.assertRaises(OSError):os.fstat(fd)
     def direct_control_receipt(self):
         return ('direct_control producer_frames=2976000 planned_frames=2976000 consumer_frames=2976000 queue=absent\n'
                 'direct_graph_control warmup_frames=96000 measured_frames=2880000 producer_ns=60000000000 drain_excluded=true\n'

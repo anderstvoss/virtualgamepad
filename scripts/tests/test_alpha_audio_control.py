@@ -201,6 +201,20 @@ class MarkerReceipt(unittest.TestCase):
             before = ledger.read_bytes()
             self.assertNotEqual(subprocess.run([binary, '--self-test', str(ledger)], timeout=5).returncode, 0)
             self.assertEqual(ledger.read_bytes(), before)
+            read_fd, write_fd = os.pipe()
+            try:
+                subprocess.run([binary, '--self-test', 'fd:'+str(write_fd)],
+                               pass_fds=(write_fd,), check=True, timeout=5)
+                os.close(write_fd); write_fd = None
+                with os.fdopen(read_fd, 'rb') as source:
+                    streamed=source.read()
+                read_fd = None
+                self.assertEqual(streamed, before)
+            finally:
+                for descriptor in (read_fd, write_fd):
+                    if descriptor is not None: os.close(descriptor)
+            for malformed in ('fd:', 'fd:bad', 'fd:-1', 'fd:1', 'fd:2147483648', 'fd:999999'):
+                self.assertNotEqual(subprocess.run([binary,'--self-test',malformed],timeout=5).returncode,0)
 
     def test_callback_gap_diagnostics_never_excuse_marker_loss(self):
         row = self.receipt()

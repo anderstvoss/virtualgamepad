@@ -2812,3 +2812,39 @@ frames, reused producer flags, corrupted EMPTY chunks, partial frames and malfor
 chunk sizes. The previous marker/ledger regressions remain. All 17 control-tooling
 tests passed. A fresh diagnostic is required; this correction alone does not
 resolve lost frames, production pacing, C qualification or Gate 6.
+
+### Bounded C-control grant and evidence transport
+
+The C control now has a separate sealed-image request (`C`), distinct from the
+Rust (`D`) and public SDK (`R`) requests. It runs only in the existing ordinary
+client of the fixed USB functional phase. Root actions, worker policy, ownership
+lock, maintenance/restoration boundaries and the three allowed action categories
+are unchanged. The C callback main loop requests the existing RR priority 20;
+the private daemon retains its finite direct-realtime configuration. Actual owned
+thread scheduling is recorded. Each of three fresh direct graphs uses quantum
+512 and 60 measured seconds, with a 90-second per-child deadline.
+
+The preallocated C ledger exports after stream teardown through one inherited
+pipe descriptor, then normal scheduling is restored for serialization. The
+ordinary collector bounds raw evidence at 64 MiB and compressed evidence at
+1 MiB per trial. A cancelled/stalled reader terminates and closes its descriptor.
+Three length/digest-framed compressed artifacts go to the ordinary observer;
+root's existing 1 MiB file/output quota is unchanged. No audio queue or acceptance
+limit changes. The observer refuses truncation, oversized data, digest mismatch
+and existing artifact replacement, and restores the peer's blocking mode.
+
+The coordinator verifies the exact retained compressed bytes, bounds expansion,
+reconciles every producer/submission/capture/marker counter, and independently
+requires all three C trials to meet the existing zero-loss, format and 1% rate
+requirements. Rust latency receipts cannot substitute for C evidence. A failed
+root phase cannot become accepted through a passing control. C direct qualification
+does not replace loopback qualification or the product matrices.
+
+Regressions cover exact F/E replies and sealed FD ownership; bounded pipe export
+and cancellation; graph/node/channel isolation; failed middle-trial retention;
+timeout cleanup; positive sealed-image transport and damaged ledger rejection;
+exact artifact/counter reconciliation and evidence preservation. C self-tests also
+exercise inherited-descriptor export and malformed descriptors. Full validation
+and live installed-candidate trials remain required before claiming qualification.
+This changes validation tooling and test-only Rust support, not ordinary-root APIs,
+production provider/audio behavior, GUI controls or dependencies.

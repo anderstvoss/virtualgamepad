@@ -3,6 +3,10 @@ import json
 from pathlib import Path
 import stat
 import os
+import tempfile
+import gzip
+import hashlib
+import copy
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
@@ -12,6 +16,63 @@ lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
 
 
 class TypedOutputRunner(unittest.TestCase):
+    def c_receipt(self):
+        return dict(planned=2880000,generated=2880000,graph_submitted=2880000,graph_received=2880000,
+                    missing=0,duplicate=0,invalid=0,partial_bytes=0,errors=0,ledger_overflow=0,out_of_order=0,
+                    source_rate=48000,sink_rate=48000,source_channels=2,sink_channels=2,producer_elapsed_ns=60000000000)
+
+    def test_c_control_requires_its_own_kind_three_trials_exact_image_and_zero_loss(self):
+        digest='a'*64
+        control=dict(status='passed',binary_sha256=digest,ordinary_uid=os.getuid(),measured_seconds=60,topology='direct',
+                     trials=[dict(trial=n,accepted=True,exit_status=0,receipt=self.c_receipt()) for n in (1,2,3)])
+        def receipt(value):
+            root=self.receipt();root['clients'][0]['stdout']+='\n'+json.dumps(dict(independent_c_control=value));return root
+        lab.accepted(receipt(control),'candidate',0,'1 passed; 0 failed',control_digest=digest,control_kind='c')
+        with self.assertRaises(RuntimeError):lab.accepted(receipt(control),'candidate',0,'1 passed; 0 failed',control_digest=digest)
+        for changes in (dict(topology='loopback'),dict(binary_sha256='b'*64),dict(trials=control['trials'][:2]),
+                        dict(status='failed'),dict(ordinary_uid=0)):
+            with self.assertRaises(RuntimeError):
+                lab.accepted(receipt(dict(control,**changes)),'candidate',0,'1 passed; 0 failed',control_digest=digest,control_kind='c')
+        wrong=copy.deepcopy(control);wrong['trials'][0]['receipt']['missing']=128
+        with self.assertRaises(RuntimeError):lab.accepted(receipt(wrong),'candidate',0,'1 passed; 0 failed',control_digest=digest,control_kind='c')
+        wrong=copy.deepcopy(control);wrong['trials'][0]['trial']=True
+        with self.assertRaises(RuntimeError):lab.accepted(receipt(wrong),'candidate',0,'1 passed; 0 failed',control_digest=digest,control_kind='c')
+
+    def synthetic_ledgers(self, root):
+        producer=dict(capture=False,buffer_dequeued=True,producer_begin=96000,producer_end=96128,
+                      frames=128,measured_frames=128,first_marker=1,last_marker=128,
+                      stamp_ns=1,graph_ticks=0,chunk_flags=0,queue_result=0)
+        capture=dict(producer,capture=True,producer_begin=0,producer_end=0)
+        raw='\n'.join(json.dumps(row) for row in (producer,capture,dict(marker_counts=[1]*128)))+'\n'
+        data=gzip.compress(raw.encode(),mtime=0)
+        receipt=dict(planned=128,generated=128,graph_submitted=128,graph_received=128,missing=0,duplicate=0,
+                     invalid=0,ledger_overflow=0,ledger_events=2,marker_scheme='block-phase-per-frame-v1')
+        trials=[]
+        for n in (1,2,3):
+            (root/f'c-control.trial-{n}.ledger.jsonl.gz').write_bytes(data)
+            trials.append(dict(trial=n,ledger_bytes=len(data),ledger_raw_bytes=len(raw.encode()),
+                               ledger_sha256=hashlib.sha256(data).hexdigest(),receipt=dict(receipt)))
+        return dict(controls=[dict(trials=trials)])
+
+    def test_c_ledgers_reconcile_exact_retained_bytes_and_preserve_existing_raw_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);evidence=self.synthetic_ledgers(root)
+            result=lab.verify_c_ledgers(root,evidence)
+            self.assertEqual(len(result),3);self.assertTrue(all(row['reconciled'] for row in result))
+            self.assertTrue(all(not row['missing_ranges'] for row in result))
+            before=(root/'c-control.trial-1.ledger.jsonl').read_bytes()
+            with self.assertRaises(FileExistsError):lab.verify_c_ledgers(root,evidence)
+            self.assertEqual((root/'c-control.trial-1.ledger.jsonl').read_bytes(),before)
+        for mutation in ('digest','size','raw_size','counter','trials'):
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);evidence=self.synthetic_ledgers(root);row=evidence['controls'][0]['trials'][0]
+                if mutation=='digest':row['ledger_sha256']='0'*64
+                if mutation=='size':row['ledger_bytes']+=1
+                if mutation=='raw_size':row['ledger_raw_bytes']+=1
+                if mutation=='counter':row['receipt']['graph_received']-=1
+                if mutation=='trials':evidence['controls'][0]['trials'].pop()
+                with self.assertRaises(ValueError):lab.verify_c_ledgers(root,evidence)
+
     def test_failed_root_command_preserves_control_diagnostics_without_acceptance(self):
         control=dict(status='failed',trials=[dict(trial=1,accepted=False)])
         receipt=dict(status='failed',revision='candidate',clients=[],commands=[dict(
