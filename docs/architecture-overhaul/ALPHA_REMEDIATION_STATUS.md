@@ -99,6 +99,37 @@ rate/quantum or effective scheduling. No independent control has run through
 this new option yet, and it cannot qualify Gate 6. The GUI soak continues alone;
 there are no overlapping audio trials or local builds.
 
+The ordinary sealed-image channel now has a distinct `D` request for the
+maintained `gr-audio-linux` direct Rust graph control. It never executes an image
+as root and retains the existing image hash/seal checks and descriptor cleanup.
+The coordinator prebuilds/freezes the SDK observer and the independent integration
+test separately before entering the existing `usb-functional` phase. Use
+`scripts/run-alpha-usb-output-acceptance.py --independent-rust-control` for a dry
+run, or add `--apply --report` with a new external directory after provisioning
+the exact candidate and completing other live workloads.
+
+Three fresh quiet private graphs request quantum 512. Each selected test gets
+62 production seconds with the existing two-second warm-up and 60-second measured
+window, a 90-second process deadline and retained live client-thread scheduling.
+Only the reporting/test main process uses ordinary scheduling; audio data loops
+still request the existing bounded private realtime configuration. Effective
+policy must be read from receipts, not inferred from this request. Acceptance
+requires complete generation, exact measured frame counts, zero measured
+missing/duplicate/corrupt markers, the existing one-percent rate envelope and
+p99 below 20 ms. Missing/duplicate summaries, zero selected tests, wrong images
+or incomplete trial inventories reject. A measured marker failure is retained
+across all three trials; timeout, protocol or cleanup failure aborts safely.
+The SDK sample-factory request remains distinct and unchanged. A passing Rust
+control cannot turn a failed broader USB functional phase into success, replace
+the C controls, or close product acceptance.
+
+The 41 broker-audio and nine coordinator Python tests pass; Rust formatting also
+passes. A new sender regression verifies the distinct request and the same sealed
+descriptor contract. Its compilation/execution still requires exact-head CI or
+post-soak local validation. No new dependencies, production API or queue sizes
+changed. No new control trial has run yet; the final-image neutral GUI soak stays
+the sole live workload, and the earlier audio failures remain unresolved.
+
 ### Shared-driver audio diagnostic and keyboard pad correction
 
 At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of

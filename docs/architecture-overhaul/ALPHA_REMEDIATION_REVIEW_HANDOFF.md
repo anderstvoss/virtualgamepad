@@ -12,6 +12,20 @@ do not create cycles, and oversized/malformed logs fail without deletion. This
 workload covers neutral DualSense creation/removal only. It cannot close the
 remaining keyboard/control inventory or replace isolated live touch acceptance.
 
+Independent-control review: inspect the distinct sealed-image `D` request in
+`validate-broker-audio-live.py`, the ordinary sender in `src/controllers/tests.rs`
+and `--independent-rust-control` in the USB coordinator. It must select only the
+maintained direct test, use three fresh quiet graphs, preserve complete generation,
+60 measured seconds and the existing marker/rate/20 ms p99 limits, close every
+descriptor and terminate/reap owned children on failure. Verify actual client and
+daemon thread policies; the ordinary reporting process is not the audio data loop.
+The image must be the separately built `pipewire_live` integration test, not the
+SDK carrier. Review zero-selection, duplicate/incomplete inventory, image mismatch,
+marker loss, timeout and initiating/cleanup-error regressions. A passing independent
+control never overrides a failed root functional phase, and Rust-only evidence
+cannot close the C controls or any product acceptance cell. No live pass is claimed
+by the new channel's deterministic tests.
+
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
 Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`; see

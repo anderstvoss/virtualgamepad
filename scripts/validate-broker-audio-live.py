@@ -284,6 +284,76 @@ def submit_hid_output(descriptor,wire,operation):
 
 
 ROOT_FACTORY_TEST = 'controllers::tests::worker_outputs::live_public_usb_sample_factory'
+RUST_DIRECT_CONTROL_TEST = 'latency_graph_direct_control'
+
+
+def rust_control_accepted(text, exit_status):
+    """Validate the real direct-control receipt; SDK ownership is unrelated."""
+    if (type(exit_status) is not int or exit_status != 0
+            or len(re.findall(r'^test result: ok\. 1 passed; 0 failed;', text, re.MULTILINE)) != 1):
+        return False
+    def one(pattern):
+        matches = re.findall(pattern, text, re.MULTILINE)
+        return matches[0] if len(matches) == 1 else None
+    production = one(r'^direct_control producer_frames=(\d+) planned_frames=(\d+) consumer_frames=(\d+) queue=absent$')
+    window = one(r'^direct_graph_control warmup_frames=96000 measured_frames=(\d+) producer_ns=(\d+) drain_excluded=true$')
+    errors = one(r'^direct_graph_control missing_marker_frames=(\d+) duplicate_marker_frames=(\d+)$')
+    latency = one(r'^direct_graph_control frames=(\d+) p50_us=\d+ p95_us=\d+ p99_us=(\d+) max_us=\d+ invalid=(\d+) playback_queue_dropped=None expected_marker_frames=(\d+) \(.*\)$')
+    if any(value is None for value in (production, window, errors, latency)):
+        return False
+    generated, planned, received = map(int, production)
+    frames, elapsed = map(int, window)
+    observed, p99, invalid, expected = map(int, latency)
+    return (generated == planned == 2_976_000 and 2_880_000 <= received <= planned
+            and frames == observed == expected == 2_880_000
+            and 59_400_000_000 <= elapsed <= 60_600_000_000
+            and tuple(map(int, errors)) == (0, 0) and invalid == 0 and p99 < 20_000)
+
+
+def independent_rust_probe(frozen, expected):
+    if os.geteuid() == 0:
+        raise ValueError('independent control must run without root')
+    trials = []
+    for trial in range(1, 4):
+        with private_probe_graph(quiet=True, quantum=512) as environment:
+            environment.update(VIRTUALGAMEPAD_AUDIO_TRIAL_SECONDS='62', RUST_TEST_THREADS='1')
+            # Keep reporting/sorting ordinary; private audio data loops still
+            # request the existing finite realtime grant through module-rt.
+            command = ['/usr/bin/chrt', '--other', '0', '/proc/self/fd/'+str(frozen),
+                       '--exact', RUST_DIRECT_CONTROL_TEST, '--ignored', '--nocapture']
+            with tempfile.TemporaryFile() as output:
+                child = subprocess.Popen(command, env=environment, pass_fds=(frozen,),
+                                         stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+                initiating = None
+                try:
+                    deadline = time.monotonic()+90
+                    try: child.wait(timeout=3)
+                    except subprocess.TimeoutExpired: pass
+                    scheduling = owned_thread_scheduling(child)
+                    remaining = deadline-time.monotonic()
+                    if remaining <= 0: raise subprocess.TimeoutExpired(command, 90)
+                    child.wait(timeout=remaining)
+                    output.seek(0); data=output.read(PUBLIC_FACTORY_RECEIPT_LIMIT+1)
+                    if len(data)>PUBLIC_FACTORY_RECEIPT_LIMIT:
+                        raise ValueError('oversized independent control receipt')
+                    text=data.decode('utf-8',errors='strict')
+                    trials.append(dict(trial=trial, exit_status=child.returncode, stdout=text,
+                                       client_thread_scheduling=scheduling,
+                                       accepted=rust_control_accepted(text,child.returncode)))
+                except BaseException as error:
+                    initiating=error;raise
+                finally:
+                    try: stop_private_child(child)
+                    except BaseException as error:
+                        if initiating is not None:
+                            raise RuntimeError(dict(initiating=str(initiating),cleanup=str(error))) from error
+                        raise
+    passed=all(trial['accepted'] for trial in trials)
+    receipt=dict(status='passed' if passed else 'failed', binary_sha256=expected.hex(),
+                 ordinary_uid=os.geteuid(), trials=trials, measured_seconds=60,
+                 scope='independent Rust graph control only; C and product acceptance remain required')
+    print(json.dumps(dict(independent_rust_control=receipt)),flush=True)
+    return receipt
 
 
 def sealed_probe_image(source, expected):
@@ -595,7 +665,7 @@ def public_factory_probe(peer, instance=None):
     peer.settimeout(5)
     command = peer.recv(1)
     if not command: return dict(status='not-requested')
-    if command != b'R': raise ValueError('unknown public factory probe request')
+    if command not in (b'R', b'D'): raise ValueError('unknown public factory probe request')
     data, ancillary, flags, _ = peer.recvmsg(32, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
     descriptors = []
     frozen = None
@@ -610,6 +680,12 @@ def public_factory_probe(peer, instance=None):
             raise ValueError('exactly one probe image required')
         expected = data + exact(peer, 32-len(data))
         frozen = sealed_probe_image(descriptors[0], expected)
+        if command == b'D':
+            receipt = independent_rust_probe(frozen, expected)
+            passed = receipt['status'] == 'passed'
+            peer.sendall(b'F' if passed else b'E')
+            if not passed: raise ValueError('independent Rust control failed')
+            return receipt
         with private_probe_graph() as environment:
             environment.update(VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB='1',
                                VIRTUALGAMEPAD_PUBLIC_USB_NATIVE_OWNERSHIP_LAB='1')

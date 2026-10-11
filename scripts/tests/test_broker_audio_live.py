@@ -18,6 +18,93 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def direct_control_receipt(self):
+        return ('direct_control producer_frames=2976000 planned_frames=2976000 consumer_frames=2976000 queue=absent\n'
+                'direct_graph_control warmup_frames=96000 measured_frames=2880000 producer_ns=60000000000 drain_excluded=true\n'
+                'direct_graph_control missing_marker_frames=0 duplicate_marker_frames=0\n'
+                'direct_graph_control frames=2880000 p50_us=1000 p95_us=2000 p99_us=3000 max_us=4000 invalid=0 playback_queue_dropped=None expected_marker_frames=2880000 (synthetic fixture)\n'
+                'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n')
+
+    def test_independent_control_requires_complete_measured_markers_rate_and_latency(self):
+        text=self.direct_control_receipt()
+        self.assertTrue(module.rust_control_accepted(text,0))
+        cases=[text.replace('producer_frames=2976000','producer_frames=2975999'),
+               text.replace('missing_marker_frames=0','missing_marker_frames=128'),
+               text.replace('duplicate_marker_frames=0','duplicate_marker_frames=128'),
+               text.replace('missing_marker_frames=0','missing_marker_frames=128').replace('duplicate_marker_frames=0','duplicate_marker_frames=128'),
+               text.replace('invalid=0','invalid=1'),text.replace('p99_us=3000','p99_us=20000'),
+               text.replace('producer_ns=60000000000','producer_ns=59399999999'),
+               text.replace('producer_ns=60000000000','producer_ns=60600000001'),
+               text.replace('measured_frames=2880000','measured_frames=2879999'),
+               text.replace('1 passed; 0 failed','0 passed; 0 failed'),
+               text+text.splitlines()[2]+'\n',text+text.splitlines()[-1]+'\n']
+        for value in cases:
+            with self.subTest(text=value):self.assertFalse(module.rust_control_accepted(value,0))
+        for status in (False,True,1,-9,None):self.assertFalse(module.rust_control_accepted(text,status))
+
+    def test_independent_probe_runs_three_fresh_quiet_graphs_and_collects_marker_failure(self):
+        graphs=[];children=[]
+        @contextlib.contextmanager
+        def graph(**options):
+            self.assertEqual(options,dict(quiet=True,quantum=512));graphs.append('entered')
+            try:yield {'fixture':'private'}
+            finally:graphs.append('closed')
+        def spawn(command,**options):
+            self.assertEqual(command,['/usr/bin/chrt','--other','0','/proc/self/fd/42','--exact',
+                                      'latency_graph_direct_control','--ignored','--nocapture'])
+            self.assertEqual(options['pass_fds'],(42,))
+            self.assertEqual(options['env']['VIRTUALGAMEPAD_AUDIO_TRIAL_SECONDS'],'62')
+            self.assertNotIn('VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_LAB',options['env'])
+            text=self.direct_control_receipt()
+            if len(children)==1:text=text.replace('missing_marker_frames=0','missing_marker_frames=128')
+            options['stdout'].write(text.encode())
+            child=Mock(returncode=0);children.append(child);return child
+        with patch.object(module.os,'geteuid',return_value=1000), \
+             patch.object(module,'private_probe_graph',side_effect=graph), \
+             patch.object(module.subprocess,'Popen',side_effect=spawn), \
+             patch.object(module,'owned_thread_scheduling',return_value={'available':False}), \
+             patch.object(module,'stop_private_child') as stop,patch('builtins.print'):
+            receipt=module.independent_rust_probe(42,bytes(32))
+        self.assertEqual(graphs,['entered','closed']*3)
+        self.assertEqual([row['accepted'] for row in receipt['trials']],[True,False,True])
+        self.assertEqual(receipt['status'],'failed');self.assertEqual(stop.call_count,3)
+        self.assertEqual(receipt['binary_sha256'],'0'*64)
+
+    def test_independent_control_timeout_stops_owned_child_and_preserves_cleanup_failure(self):
+        for cleanup_failure in (False,True):
+            child=Mock();child.wait.side_effect=module.subprocess.TimeoutExpired('fixed control',90)
+            with self.subTest(cleanup_failure=cleanup_failure), \
+                 patch.object(module.os,'geteuid',return_value=1000), \
+                 patch.object(module,'private_probe_graph',return_value=contextlib.nullcontext({})), \
+                 patch.object(module.subprocess,'Popen',return_value=child), \
+                 patch.object(module,'owned_thread_scheduling',return_value={'available':False}), \
+                 patch.object(module,'stop_private_child',side_effect=RuntimeError('cleanup failed') if cleanup_failure else None) as stop:
+                with self.assertRaises(RuntimeError if cleanup_failure else module.subprocess.TimeoutExpired) as error:
+                    module.independent_rust_probe(42,bytes(32))
+                if cleanup_failure:
+                    self.assertIn('fixed control',str(error.exception));self.assertIn('cleanup failed',str(error.exception))
+                stop.assert_called_once_with(child)
+
+    def test_distinct_control_request_keeps_sealed_image_ownership_and_exact_reply(self):
+        for passed in (False,True):
+            with self.subTest(passed=passed),tempfile.TemporaryFile() as source:
+                descriptor=os.dup(source.fileno());frozen=os.dup(source.fileno())
+                peer=Mock();peer.recv.return_value=b'D'
+                peer.recvmsg.return_value=(bytes(32),[(socket.SOL_SOCKET,socket.SCM_RIGHTS,
+                    array.array('i',[descriptor]).tobytes())],0,None)
+                receipt=dict(status='passed' if passed else 'failed')
+                with patch.object(module.os,'geteuid',return_value=1000), \
+                     patch.object(module,'sealed_probe_image',return_value=frozen), \
+                     patch.object(module,'independent_rust_probe',return_value=receipt) as control, \
+                     patch.object(module,'private_probe_graph') as factory:
+                    if passed:self.assertEqual(module.public_factory_probe(peer),receipt)
+                    else:
+                        with self.assertRaisesRegex(ValueError,'independent Rust'):module.public_factory_probe(peer)
+                    control.assert_called_once_with(frozen,bytes(32));factory.assert_not_called()
+                peer.sendall.assert_called_once_with(b'F' if passed else b'E')
+                for fd in (descriptor,frozen):
+                    with self.assertRaises(OSError):os.fstat(fd)
+
     def test_private_graph_rejects_root_and_invalid_options_before_resource_creation(self):
         cases = [(0, {}), (1000, {'quantum': True}), (1000, {'quantum': 1024}),
                  (1000, {'quantum': '128'}), (1000, {'quiet': 'yes'})]

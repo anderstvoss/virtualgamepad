@@ -1002,14 +1002,25 @@ mod worker_outputs {
         }
         if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
             send_public_factory_image(&mut peer);
+        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
+            == Ok("direct-rust")
+        {
+            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
+                .expect("frozen ordinary control image");
+            send_probe_image(&mut peer, b'D', std::path::Path::new(&path));
         }
     }
 
     fn send_public_factory_image(peer: &mut UnixStream) {
+        send_probe_image(peer, b'R', std::path::Path::new("/proc/self/exe"));
+    }
+
+    fn send_probe_image(peer: &mut UnixStream, request: u8, path: &std::path::Path) {
         use std::io::{Read, Write};
         use std::process::{Command, Stdio};
-        peer.write_all(b"R").unwrap();
-        let image = std::fs::File::open("/proc/self/exe").unwrap();
+        assert!(matches!(request, b'R' | b'D'));
+        peer.write_all(&[request]).unwrap();
+        let image = std::fs::File::open(path).unwrap();
         let mut sender = Command::new("python3")
             .args(["-I", "-c", "import array,fcntl,hashlib,os,socket; s=socket.socket(fileno=0); f=os.fdopen(os.dup(1),'rb'); data=f.read(128*1024*1024+1); assert 4<=len(data)<=128*1024*1024; image=os.memfd_create('virtualgamepad-public-probe',os.MFD_CLOEXEC|os.MFD_ALLOW_SEALING); out=os.fdopen(os.dup(image),'wb'); out.write(data); out.flush(); os.fchmod(image,0o500); fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL); assert s.sendmsg([hashlib.sha256(data).digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])==32"])
             .stdin(Stdio::from(std::os::fd::OwnedFd::from(peer.try_clone().unwrap())))
@@ -1029,8 +1040,12 @@ mod worker_outputs {
             thread::sleep(Duration::from_millis(10));
         };
         assert!(status.success());
-        peer.set_read_timeout(Some(Duration::from_secs(75)))
-            .unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(if request == b'D' {
+            425
+        } else {
+            75
+        })))
+        .unwrap();
         let mut result = [0];
         peer.read_exact(&mut result).unwrap();
         assert_eq!(result, [b'F']);
@@ -1059,6 +1074,20 @@ mod worker_outputs {
         send_public_factory_image(&mut sender);
         assert!(child.wait().unwrap().success());
         assert_eq!(flags(), before);
+    }
+
+    #[test]
+    fn independent_image_sender_uses_distinct_request_and_the_same_sealed_fd_contract() {
+        use std::os::fd::OwnedFd;
+        use std::process::{Command, Stdio};
+        let (mut sender, receiver) = UnixStream::pair().unwrap();
+        let mut child = Command::new("python3")
+            .args(["-I", "-c", "import array,fcntl,os,socket; s=socket.socket(fileno=0); assert s.recv(1)==b'D'; data,ancillary,flags,_=s.recvmsg(32,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC); assert len(data)==32 and not flags&(socket.MSG_TRUNC|socket.MSG_CTRUNC) and len(ancillary)==1; fds=array.array('i'); fds.frombytes(ancillary[0][2]); assert len(fds)==1; expected=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL; assert fcntl.fcntl(fds[0],fcntl.F_GET_SEALS)&expected==expected; os.close(fds[0]); s.sendall(b'F')"])
+            .stdin(Stdio::from(OwnedFd::from(receiver)))
+            .spawn()
+            .unwrap();
+        send_probe_image(&mut sender, b'D', std::path::Path::new("/proc/self/exe"));
+        assert!(child.wait().unwrap().success());
     }
 
     fn public_factory_host_snapshot(stage: &str) {

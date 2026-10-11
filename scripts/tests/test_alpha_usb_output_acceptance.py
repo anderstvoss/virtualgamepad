@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import stat
+import os
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
@@ -11,6 +12,38 @@ lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
 
 
 class TypedOutputRunner(unittest.TestCase):
+    def direct_control_receipt(self):
+        return ('direct_control producer_frames=2976000 planned_frames=2976000 consumer_frames=2976000 queue=absent\n'
+                'direct_graph_control warmup_frames=96000 measured_frames=2880000 producer_ns=60000000000 drain_excluded=true\n'
+                'direct_graph_control missing_marker_frames=0 duplicate_marker_frames=0\n'
+                'direct_graph_control frames=2880000 p50_us=1000 p95_us=2000 p99_us=3000 max_us=4000 invalid=0 playback_queue_dropped=None expected_marker_frames=2880000 (synthetic fixture)\n'
+                'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n')
+
+    def test_independent_control_inventory_requires_three_exact_image_trials(self):
+        digest='a'*64
+        control=dict(status='passed',binary_sha256=digest,ordinary_uid=os.getuid(),measured_seconds=60,
+                     trials=[dict(trial=n,accepted=True,exit_status=0,stdout=self.direct_control_receipt())
+                             for n in (1,2,3)])
+        receipt=self.receipt();receipt['clients'][0]['stdout']+='\n'+json.dumps(dict(independent_rust_control=control))
+        lab.accepted(receipt,'candidate',0,'1 passed; 0 failed',control_digest=digest)
+        for replacement in (dict(control,binary_sha256='b'*64),dict(control,ordinary_uid=0),
+                            dict(control,trials=control['trials'][:2]),dict(control,measured_seconds=8),
+                            dict(control,trials=control['trials'][:2]+[control['trials'][0]]),
+                            dict(control,trials=[dict(row,stdout=row['stdout'].replace('p99_us=3000','p99_us=20000'))
+                                                for row in control['trials']])):
+            invalid=self.receipt();invalid['clients'][0]['stdout']+='\n'+json.dumps(dict(independent_rust_control=replacement))
+            with self.assertRaises(RuntimeError):
+                lab.accepted(invalid,'candidate',0,'1 passed; 0 failed',control_digest=digest)
+        receipt['status']='failed'
+        with self.assertRaises(RuntimeError):
+            lab.accepted(receipt,'candidate',0,'1 passed; 0 failed',control_digest=digest)
+
+    def test_independent_artifact_selection_is_distinct_from_the_sdk_carrier(self):
+        artifact=dict(reason='compiler-artifact',target=dict(name='pipewire_live'),
+                      profile=dict(test=True),executable='/fake/independent-control')
+        self.assertEqual(lab.built_test(json.dumps(artifact),'pipewire_live'),Path('/fake/independent-control'))
+        with self.assertRaises(RuntimeError):lab.built_test(json.dumps(artifact))
+
     def test_requires_one_real_root_unit_artifact_not_an_example_or_non_test_library(self):
         artifact=dict(reason='compiler-artifact',target=dict(name='virtualgamepad'),profile=dict(test=True),executable='/fake/root-tests')
         self.assertEqual(lab.built_test(json.dumps(artifact)),Path('/fake/root-tests'))
