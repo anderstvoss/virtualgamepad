@@ -3166,3 +3166,14 @@ changes, fixed identities/deadlines, refusal of occupied resources and retention
 of ambiguous cleanup. The package only covers Steam HID/evdev fixtures; reject
 claims that it isolates the production GUI or proves Steam acceptance. Do not
 expand the existing provider updater policy as an implicit workaround.
+
+### Root USB example protocol alignment
+
+Run `cargo test --locked --all-features --example usb_audio_acceptance`.
+Cross-check `LabIdentity::checker_arguments`, `marker_frame` and `trial_frames`
+against `scripts/validate-usb-audio-live.py`, including mono sign-tagged pairs,
+32767-index wrap, all channel lanes and three extra seconds. Require strict
+rejection of duplication hiding loss and channel corruption. Identity must be
+validated before controller creation and verified against the actual isolated
+USB attachment before streaming. Example tests are harness evidence only;
+recorded live USB microphone loss and VM qualification failures remain open.

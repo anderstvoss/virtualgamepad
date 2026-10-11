@@ -1,12 +1,74 @@
 //! Ordinary-caller, root-API USB sample continuity check. Requires the installed
 //! broker and a prepared VHCI host. This does not measure end-to-end latency.
-//! `cargo run --features audio-usbip --example usb_audio_acceptance -- dualsense 3 1 0`
+//! Supply the prepared lab instance and expected broker generation; the checker
+//! verifies serial, ancestry and isolation before streaming. See the CLI usage.
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 use virtualgamepad::{
     AudioExposure, AudioOptions, AudioRead, ControllerAudio, CreationOptions, RealizationId,
     create_dualsense, create_dualshock4, create_xbox360,
 };
+
+#[derive(Debug)]
+struct LabIdentity {
+    instance: String,
+    generation: u64,
+}
+impl LabIdentity {
+    fn new(instance: String, generation: u64) -> Result<Self, &'static str> {
+        if instance.is_empty()
+            || instance.len() > 32
+            || !instance
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            || generation == 0
+        {
+            return Err("invalid expected lab session identity");
+        }
+        Ok(Self {
+            instance,
+            generation,
+        })
+    }
+    fn checker_arguments(&self, family: &str, seconds: u64, trials: u64, port: u32) -> Vec<String> {
+        vec![
+            "scripts/validate-usb-audio-live.py".into(),
+            "--reserve-owned-card".into(),
+            "--profile".into(),
+            family.into(),
+            "--port".into(),
+            port.to_string(),
+            "--instance".into(),
+            self.instance.clone(),
+            "--generation".into(),
+            self.generation.to_string(),
+            "--seconds".into(),
+            seconds.to_string(),
+            "--trials".into(),
+            trials.to_string(),
+        ]
+    }
+}
+
+fn marker_frame(position: u64, channels: usize) -> [i16; 4] {
+    let index = if channels == 1 {
+        position / 2
+    } else {
+        position
+    };
+    let high = i16::try_from(index / 32_767 + 1).expect("bounded trial marker high");
+    let low = i16::try_from(index % 32_767 + 1).expect("bounded trial marker low");
+    if channels == 1 {
+        [if position % 2 == 0 { high } else { -low }, 0, 0, 0]
+    } else {
+        [high, low, -high, -low]
+    }
+}
+
+fn trial_frames(seconds: u64) -> u64 {
+    // The ALSA checker sends two startup seconds and one drain-edge second.
+    (seconds + 3) * 48_000
+}
 
 struct Checker(Child);
 impl Drop for Checker {
@@ -78,21 +140,38 @@ impl PatternAudit {
             self.interior_bad += 1;
         }
     }
-    fn observe_block(&mut self, read: AudioRead, samples: &[i16], pattern: &[i16]) {
-        if read.frames == 0 {
+    fn observe_block(&mut self, read: AudioRead, samples: &[i16], channels: usize) {
+        self.observe_samples(
+            read.frames,
+            read.first_frame,
+            read.discontinuity,
+            samples,
+            channels,
+        );
+    }
+    fn observe_samples(
+        &mut self,
+        frames: usize,
+        first_frame: u64,
+        discontinuity: bool,
+        samples: &[i16],
+        channels: usize,
+    ) {
+        if frames == 0 {
             return;
         }
-        if read.discontinuity
+        if discontinuity
             || self
                 .expected_position
-                .is_some_and(|position| position != read.first_frame)
+                .is_some_and(|position| position != first_frame)
         {
             self.discontinuities += 1;
         }
-        self.expected_position = Some(read.first_frame + read.frames as u64);
-        self.received += read.frames as u64;
-        for frame in samples[..read.frames * pattern.len()].chunks_exact(pattern.len()) {
-            self.observe(frame, pattern);
+        self.expected_position = Some(first_frame + frames as u64);
+        self.received += frames as u64;
+        for frame in samples[..frames * channels].chunks_exact(channels) {
+            let pattern = marker_frame(self.valid % self.trial_frames, channels);
+            self.observe(frame, &pattern[..channels]);
         }
     }
 }
@@ -117,7 +196,7 @@ fn refill_microphone(
         for frame in 0..frames {
             for channel in 0..channels {
                 microphone[frame * channels + channel] =
-                    i16::try_from(100 + (*submitted + frame as u64) % 97 + 100 * channel as u64)?;
+                    marker_frame(*submitted + frame as u64, channels)[channel];
             }
         }
         let accepted = match audio.write_microphone(&microphone[..frames * channels]) {
@@ -140,26 +219,18 @@ fn exercise(
     trials: u64,
     port: u32,
     microphone_fill_ms: u64,
+    identity: &LabIdentity,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let playback_channels = if family == "dualsense" { 4 } else { 2 };
     let microphone_channels = if family == "dualsense" { 2 } else { 1 };
     let mut child = Checker(
         Command::new("python3")
-            .arg("scripts/validate-usb-audio-live.py")
-            .arg("--reserve-owned-card")
-            .args(["--profile", family, "--port", &port.to_string()])
-            .args([
-                "--seconds",
-                &seconds.to_string(),
-                "--trials",
-                &trials.to_string(),
-            ])
+            .args(identity.checker_arguments(family, seconds, trials, port))
             .spawn()?,
     );
     let started = Instant::now();
     let mut submitted = 0_u64;
-    let mut pattern_audit = PatternAudit::new((seconds + 2) * 48_000, trials);
-    let pattern = &[101, -202, 303, -404][..playback_channels];
+    let mut pattern_audit = PatternAudit::new(trial_frames(seconds), trials);
     let mut playback = [0_i16; 4 * 128];
     let mut microphone = [0_i16; 2 * 128];
     let mut previous_loop = Instant::now();
@@ -167,7 +238,7 @@ fn exercise(
     let mut maximum_loop_gap_us = 0_u128;
     let mut maximum_host_advance = 0_u64;
     let mut maximum_refill_deficit = 0_u64;
-    let deadline = started + Duration::from_secs(trials * (seconds + 2) + 15);
+    let deadline = started + Duration::from_secs(trials * (seconds + 3) + 15);
     let child_status = loop {
         let now = Instant::now();
         maximum_loop_gap_us =
@@ -183,7 +254,7 @@ fn exercise(
             Ok(read) => read,
             Err(error) => return Err(terminal_audio_error(audio, &mut child, error)),
         };
-        pattern_audit.observe_block(read, &playback, pattern);
+        pattern_audit.observe_block(read, &playback, playback_channels);
         // Refill against the USB host's consumed position, not wall time.
         // Capacity is spare room, never a target operating fill.
         let host_frames = match audio.microphone_consumed_frames() {
@@ -220,7 +291,7 @@ fn exercise(
             std::thread::sleep(Duration::from_millis(1));
             continue;
         }
-        pattern_audit.observe_block(read, &playback, pattern);
+        pattern_audit.observe_block(read, &playback, playback_channels);
     }
     let dropped = audio.dropped_playback_frames();
     let silence = audio.underrun_frames();
@@ -247,7 +318,76 @@ fn exercise(
 
 #[cfg(test)]
 mod tests {
-    use super::{PatternAudit, refill_target};
+    use super::{LabIdentity, PatternAudit, marker_frame, refill_target, trial_frames};
+    #[test]
+    fn checker_receives_exact_expected_session_identity_and_trial_bounds() {
+        let identity = LabIdentity::new("fixture-lab".into(), 7).unwrap();
+        assert_eq!(
+            identity.checker_arguments("dualshock4", 3, 2, 1),
+            [
+                "scripts/validate-usb-audio-live.py",
+                "--reserve-owned-card",
+                "--profile",
+                "dualshock4",
+                "--port",
+                "1",
+                "--instance",
+                "fixture-lab",
+                "--generation",
+                "7",
+                "--seconds",
+                "3",
+                "--trials",
+                "2",
+            ]
+        );
+        assert_eq!(trial_frames(3), 288_000);
+        for instance in ["", "../foreign", "UPPER", "with space"] {
+            assert!(LabIdentity::new(instance.into(), 7).is_err());
+        }
+        assert!(LabIdentity::new("fixture".into(), 0).is_err());
+    }
+    #[test]
+    fn indexed_markers_match_checker_channel_and_wrap_contract() {
+        assert_eq!(marker_frame(0, 4), [1, 1, -1, -1]);
+        assert_eq!(marker_frame(32_766, 2)[..2], [1, 32_767]);
+        assert_eq!(marker_frame(32_767, 2)[..2], [2, 1]);
+        assert_eq!(marker_frame(65_534, 1)[0], 2);
+        assert_eq!(marker_frame(65_535, 1)[0], -1);
+    }
+    #[test]
+    fn indexed_playback_rejects_loss_offset_by_duplication_and_channel_corruption() {
+        for positions in [[0, 1, 2, 3], [0, 1, 1, 3]] {
+            let samples: Vec<_> = positions
+                .into_iter()
+                .flat_map(|position| marker_frame(position, 4))
+                .collect();
+            let mut audit = PatternAudit::new(4, 1);
+            audit.observe_samples(4, 0, false, &samples, 4);
+            if positions == [0, 1, 2, 3] {
+                assert_eq!((audit.valid, audit.interior_bad), (4, 0));
+            } else {
+                assert!(audit.valid < 4 && audit.interior_bad > 0);
+            }
+        }
+        let mut samples = marker_frame(0, 4);
+        samples[3] = 1;
+        let mut audit = PatternAudit::new(1, 1);
+        audit.observe_samples(1, 0, false, &samples, 4);
+        assert_eq!((audit.valid, audit.interior_bad), (0, 1));
+    }
+    #[test]
+    fn indexed_mono_carries_pair_phase_across_reads_and_restarts_each_trial() {
+        let mut audit = PatternAudit::new(4, 2);
+        for frame in 0..8 {
+            let samples = marker_frame(frame % 4, 1);
+            audit.observe_samples(1, frame, false, &samples[..1], 1);
+        }
+        assert_eq!(
+            (audit.valid, audit.interior_bad, audit.discontinuities),
+            (8, 0, 0)
+        );
+    }
     #[test]
     fn silence_is_allowed_only_before_and_between_complete_trials() {
         let mut audit = PatternAudit::new(2, 2);
@@ -282,6 +422,7 @@ fn run(
     trials: u64,
     port: u32,
     microphone_fill_ms: u64,
+    identity: &LabIdentity,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let options = CreationOptions::new(RealizationId::LINUX_USBIP_USB_AUDIO)
         .with_audio(AudioOptions::new(AudioExposure::Emulated));
@@ -295,6 +436,7 @@ fn run(
                 trials,
                 port,
                 microphone_fill_ms,
+                identity,
             );
             if result.is_err() {
                 eprintln!("controller_terminal {:?}", controller.diagnostics());
@@ -311,6 +453,7 @@ fn run(
                 trials,
                 port,
                 microphone_fill_ms,
+                identity,
             );
             if result.is_err() {
                 eprintln!("controller_terminal {:?}", controller.diagnostics());
@@ -327,6 +470,7 @@ fn run(
                 trials,
                 port,
                 microphone_fill_ms,
+                identity,
             );
             if result.is_err() {
                 eprintln!("controller_terminal {:?}", controller.diagnostics());
@@ -341,18 +485,26 @@ fn run(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    if !(4..=5).contains(&args.len()) {
-        return Err("usage: usb_audio_acceptance FAMILY SECONDS TRIALS PORT [MIC_FILL_MS]".into());
+    if !(6..=7).contains(&args.len()) {
+        return Err("usage: usb_audio_acceptance FAMILY SECONDS TRIALS PORT INSTANCE GENERATION [MIC_FILL_MS]".into());
     }
     let seconds = args[1].parse::<u64>()?;
     let trials = args[2].parse::<u64>()?;
     let port = args[3].parse::<u32>()?;
-    let microphone_fill_ms = args.get(4).map_or(Ok(12), |value| value.parse::<u64>())?;
+    let identity = LabIdentity::new(args[4].clone(), args[5].parse()?)?;
+    let microphone_fill_ms = args.get(6).map_or(Ok(12), |value| value.parse::<u64>())?;
     if !(1..=60).contains(&seconds)
         || !(1..=3).contains(&trials)
         || !(1..=16).contains(&microphone_fill_ms)
     {
         return Err("seconds must be 1..60, trials 1..3 and fill 1..16 ms".into());
     }
-    run(&args[0], seconds, trials, port, microphone_fill_ms)
+    run(
+        &args[0],
+        seconds,
+        trials,
+        port,
+        microphone_fill_ms,
+        &identity,
+    )
 }

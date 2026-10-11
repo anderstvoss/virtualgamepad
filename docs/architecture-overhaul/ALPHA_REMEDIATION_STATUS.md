@@ -3693,3 +3693,21 @@ registering each newly created resource before its next fallible operation fixes
 that rollback defect. No privileged installer or trial has run for this package.
 This is preparation for Gate 5, not consumer acceptance. It does not yet provide
 GUI-owned input isolation and cannot close Gate 1. Gates 1/4/5/6 remain open.
+
+### Repair of stale root USB acceptance example
+
+Inspection found that `examples/usb_audio_acceptance.rs` omitted the maintained
+checker's required instance/generation arguments. It also generated the retired
+periodic microphone pattern, compared playback against a constant pattern and
+expected two extra seconds although the checker produces three. The example now
+validates explicit expected identity before creation, forwards it for serial/
+ancestry/isolation verification, generates and verifies the indexed S16 marker
+contract, and accounts for the two startup plus one capture-edge seconds.
+Ordinary-root API signatures and production audio behavior are unchanged.
+
+Four regressions cover exact checker arguments/identity validation, marker
+channel and wrap encoding, loss offset by duplication/channel corruption, and
+mono phase across blocks and trial restarts. The two earlier regressions remain.
+This fixes a demonstrable harness incompatibility; it does not explain the
+recorded live microphone gaps or qualify VM continuity. No new positive audio
+acceptance is claimed; Gates 4 and 6 remain open.
