@@ -3465,3 +3465,39 @@ Regressions reject root execution, missing/unbounded grants, wrong scheduling,
 malformed counters, duplicate CPU identities and noninteger samples. They verify
 exact F/E terminal replies and that a timer receipt cannot satisfy C audio
 acceptance. A fresh installed-candidate timer diagnostic remains required.
+
+### Installed realtime timer result: wake delays persist outside PipeWire
+
+At `c1072847219b0efc51ee250b52d0e272ee41fa83`, tree
+`2b3d3735cd5d1ecac38616ae18e17ba16042e168`, the timer completed all 2000
+absolute sleeps on each of eight allowed CPUs, with zero affinity/sleep errors.
+Actual per-thread policy was FIFO (1), priority 88. Priority limits were 88/88,
+real-time runtime limits 200000/200000 microseconds. Maximum lateness per CPU in
+ms: 24.787127, 26.525500, 27.288629, 26.931337, 28.419585, 29.761963,
+25.799378 and 28.521628. There were 123 wakes over 20 ms. This isolated timer
+used no PipeWire or product PCM queue; substantial wake delays persist under
+the finite realtime grant. No raw scoped samples were retained, as recorded.
+
+Source hash `7446b514a3805ff17e234bc84708b9f9c535b11e52f5e7fdaf6c8e2962914809`,
+image hash `50d4f25c63d47e5aef2217b753c2b5706b6bd75327bf439b63cf2d3bb21dc98f`,
+compiler cc Debian 14.2.0-19. The ordinary observer completed all 24 typed
+outputs and the timer request successfully. The overall root USB phase still
+failed its functional audio checks; the coordinator correctly refused phase
+acceptance. Cleanup errors were empty, original service inactive/socket active
+state restored, and memory pressure remained zero. These are diagnostics, not
+native-host timing acceptance or audio qualification.
+
+Both independent audio controls currently fail with slow production and missing
+markers. The native timer strengthens the need to investigate guest/platform
+scheduling and clock behavior before more harness-only changes. It does not prove
+which kernel/hypervisor mechanism caused each loss. Host-side environment and
+Parallels configuration evidence requires operator access outside the guest.
+Keep the historical passing Rust trials, but do not claim current qualification.
+
+The next bounded discriminator restricts only the owned timer child to the first
+CPU in its allowed affinity. It retains the same source, 5 ms absolute period,
+ten-second duration, FIFO priority 88 and finite runtime limit. Exact one-thread
+and CPU identity are checked. This separates eight-thread wake traffic from a
+single-thread timer baseline; it does not force guest-wide affinity, disable
+services, burn CPU, or change persistent scheduling. Top-level boolean scheduler
+values are also rejected by the receipt validator regression.

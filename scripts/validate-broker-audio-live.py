@@ -847,7 +847,8 @@ int main(void) {
 
 
 def native_timer_valid(result):
-    if not isinstance(result,dict) or result.get('scheduler')!=1:return False
+    if (not isinstance(result,dict) or type(result.get('scheduler')) is not int
+            or result['scheduler']!=1):return False
     threads=result.get('threads',[])
     if not isinstance(threads,list) or not 1<=len(threads)<=8:return False
     cpus=[]
@@ -873,12 +874,17 @@ def native_timer_probe():
         command=['/usr/bin/cc','-O2','-Wall','-Wextra','-Werror','-pthread',str(source),'-o',str(image)]
         subprocess.run(command,check=True,timeout=15,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         digest=hashlib.sha256(image.read_bytes()).hexdigest()
-        result=subprocess.run(['/usr/bin/chrt','--fifo','88',str(image)],check=True,
+        cpu=min(os.sched_getaffinity(0))
+        result=subprocess.run(['/usr/bin/taskset','--cpu-list',str(cpu),
+                               '/usr/bin/chrt','--fifo','88',str(image)],check=True,
                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
         if len(result.stdout)>16384 or len(result.stderr)>8192:raise ValueError('oversized native timer receipt')
         receipt=json.loads(result.stdout)
-        if not native_timer_valid(receipt):raise ValueError('native timer policy/counters invalid')
+        if (not native_timer_valid(receipt) or len(receipt['threads'])!=1
+                or receipt['threads'][0]['cpu']!=cpu):
+            raise ValueError('native timer policy/counters/affinity invalid')
     report=dict(status='completed',ordinary_uid=os.geteuid(),receipt=receipt,
+                cpu_selection='first allowed CPU; single-thread comparison',
                 source_sha256=hashlib.sha256(NATIVE_TIMER_SOURCE.encode()).hexdigest(),
                 binary_sha256=digest,raw_samples_retained=False,
                 compiler=subprocess.check_output(['/usr/bin/cc','--version'],text=True,timeout=2).splitlines()[0],

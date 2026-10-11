@@ -850,6 +850,8 @@ class NativeTimerDiagnosticTests(unittest.TestCase):
         row=self.receipt();row['threads']*=2
         self.assertFalse(module.native_timer_valid(row))
         self.assertFalse(module.native_timer_valid(dict(scheduler=1,threads=[])))
+        row=self.receipt();row['scheduler']=True
+        self.assertFalse(module.native_timer_valid(row))
 
     def test_root_and_unbounded_or_absent_grants_reject_before_compilation(self):
         with patch.object(module.os,'geteuid',return_value=0),patch.object(module.subprocess,'run') as run:
@@ -880,7 +882,9 @@ class NativeTimerDiagnosticTests(unittest.TestCase):
             if command[0]=='/usr/bin/cc':
                 image=Path(command[-1]);roots.append(image.parent);image.write_bytes(b'synthetic executable')
                 return module.subprocess.CompletedProcess(command,0)
-            self.assertEqual(command[:3],['/usr/bin/chrt','--fifo','88'])
+            self.assertEqual(command[:2],['/usr/bin/taskset','--cpu-list'])
+            self.assertEqual(int(command[2]),min(os.sched_getaffinity(0)))
+            self.assertEqual(command[3:6],['/usr/bin/chrt','--fifo','88'])
             raise module.subprocess.TimeoutExpired(command,15)
         def limits(kind):return (88,88) if kind==module.resource.RLIMIT_RTPRIO else (200000,200000)
         with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.resource,'getrlimit',side_effect=limits),patch.object(module.subprocess,'run',side_effect=run):
