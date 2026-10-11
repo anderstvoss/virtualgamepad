@@ -3648,3 +3648,24 @@ The four existing host-dependent demo tests remain individually gated; no ignore
 suite was blanket-enabled. Gate 1 stays open pending complete display/isolation
 checks and final-image endurance. Finish the GUI batch before restarting the soak;
 no earlier image's endurance receipt certifies this implementation.
+
+### Owned-display diagnostic receipt for the GUI batch
+
+At `89195f47dd92e722a0c27780008e7b3e1257fd22`, the rebuilt production GUI
+SHA-256 is `119fb92361871fcadc2c0624b7f8b42a0a9e0cf05d9e378b088ea8577bd1f014`.
+Two private-display runs recorded 20 and 21 actual key actions. They repeat
+name edit/clear, count 1 -> 2 -> 1 and unavailable dummy_hcd rejection to reach
+the error-log scenario. Reviewed captures show the complete technical rejection
+message in the focused read-only popup and its disappearance after the next Tab.
+Capture filenames are not state evidence: the first run's nominal dismissal
+capture actually showed focused details; the second run explicitly captured the
+subsequent dismissal. Keep both raw receipts rather than relabel the first.
+
+Both runners report null errors and empty cleanup lists. Their GUI/display
+processes and display sockets were independently absent. No controllers, audio
+streams or touch input were created, and teardown was signal-driven. These
+receipts close the long-error display cell only; they do not establish normal
+window-close, active controller operation or full Gate 1 acceptance. Raw logs,
+actions and captures remain outside tracked source. The full workspace tests and
+mandatory checks passed after correcting an initial Clippy needless-borrow
+failure; no warning suppression or dependency changes were introduced.

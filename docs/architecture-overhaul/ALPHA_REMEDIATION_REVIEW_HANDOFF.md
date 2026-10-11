@@ -3144,3 +3144,13 @@ readability. Verify count/name editing is unchanged, gap period is a measurement
 window, and focus inspection sends no controller commands. Native accessibility
 support remains explicitly unavailable. Require owned-display checks and a final
 byte-pinned soak separately; deterministic success cannot close the whole gate.
+
+### Production error-display evidence
+
+Verify the [owned-display diagnostic receipt](ALPHA_REMEDIATION_STATUS.md#owned-display-diagnostic-receipt-for-the-gui-batch)
+for source `89195f47dd92e722a0c27780008e7b3e1257fd22` and GUI image
+`119fb92361871fcadc2c0624b7f8b42a0a9e0cf05d9e378b088ea8577bd1f014`.
+Inspect actual focused/dismissed captures rather than trusting filenames. The
+receipt is creation/error presentation only, with zero device creation and
+verified owned cleanup. It cannot replace isolated active-input acceptance or
+final-image endurance. Gates 1/4/5/6 remain open.
