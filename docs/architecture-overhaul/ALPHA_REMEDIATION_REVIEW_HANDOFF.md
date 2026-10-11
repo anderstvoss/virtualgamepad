@@ -3104,3 +3104,19 @@ This changes GUI implementation; rebuild and compare the production/soak images
 before reusing any final-image endurance claim. If their bytes differ, repeat
 the two-hour soak separately. The earlier accepted soak remains historical
 image-specific evidence, and Gate 1 remains open.
+
+### Rebuilt GUI endurance checkpoint
+
+At `df4c5e3bb440dc13ea1dbe688699accff6f8c486`, the rebuilt production GUI
+SHA-256 is `7408a5b575319426c8cad86fd178d3a79673fce34e4cd706fda8753510ff3ef8`;
+the neutral-soak image is
+`5e65c276674485dd2c8ea3dab2780783a5a9a1831d90481fbdc5456fc8e7a548`.
+Both differ from the earlier accepted images, so a new 7200-second neutral
+creation/removal soak was started alone with the maintained runner. Its owned
+unit was confirmed active/running with a 1 GiB memory cap; initial guest
+available memory was approximately 17 GiB with zero full memory pressure.
+This is a running trial, not an accepted result; require terminal receipt,
+resource accounting and owned cleanup before crediting it. No audio/Steam trial
+or compilation overlapped startup. The five mandatory local checks passed for
+the selector correction, and its focused regression failed before and passed
+after correction. No dependency changes. Gates 1/4/5/6 remain open.
