@@ -44,6 +44,40 @@ Gates 1/4/5/6 stay open: full display verification/final-image soak, remaining
 routing/native-playback/failure cells, scoped Steam input provisioning/consumer
 checks, and independent continuity qualification followed by sustained matrices.
 
+### Current-head infrastructure verification and GUI workload receipt
+
+At `cf710a47a5ca15aa60d5d718037781d6c69cee47`, CI, CodeQL, full-history
+Gitleaks, SBOM and Provider Tier B workflows completed successfully. CI included
+Linux/macOS/Windows build/test, actual MSRV selection, policy, supply-chain audit
+and pinned corpus jobs. The privileged provider job and dependency-review job
+were skipped; workflow success is not positive live evidence for those jobs.
+All 17 downloaded workspace SBOM identities, including `virtualgamepad`, matched
+locked Cargo metadata. Current-worker local provider evidence remains separately
+scoped above.
+
+The all-feature GUI and neutral-soak images were rebuilt without overlapping a
+live trial. A new 7200-second owned-display soak started from that revision;
+the frozen soak image SHA-256 is
+`211c492325de801cb9d3a95492db727d9671d93165eecf6d4059b517bab8f7f5`.
+Its workload is two neutral DualSense UHID controllers with per-minute removal
+and replacement, with audio disabled and no touch injection. It does not cover
+all-family interactive operation. The ordinary unit has a 1 GiB memory cap;
+initial steady samples are approximately 125 MiB RSS, 16–17 descriptors and
+23 threads, with no children or observed memory pressure. This is running
+evidence, not a completed or accepted soak.
+
+The soak verifier now requires actual cycle and completion receipts, not only
+elapsed time and a zero exit status. It rejects omitted, malformed, duplicate or
+regressing cycles, incomplete duration and excessive diagnostics. Repeated close
+requests from final egui frames are idempotent and do not count as extra cycles.
+At most the final minute-boundary cycle can be absent; a two-hour run needs at
+least 119 recorded cycles. Seven focused Python regressions pass. Two historical
+logs contain 119 cycles and completion at 7200 seconds; they remain historical
+and are not reused for current-image acceptance. The already-running supervisor
+loaded its earlier verifier, so its terminal receipt must also undergo this new
+workload check before acceptance. Final resource trends and owned cleanup remain
+required. No production behavior, GUI image, public API or dependency changed.
+
 ### Shared-driver audio diagnostic and keyboard pad correction
 
 At `f2fb5ca60b42cfebc422b327a9bb78fb4809743e`, a quiet 62-second Rust direct-control trial (two seconds of

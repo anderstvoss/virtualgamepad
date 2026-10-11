@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import secrets
 import signal
 import shutil
@@ -21,6 +22,8 @@ import time
 spec = importlib.util.spec_from_file_location('steam_lab', Path(__file__).with_name('run-alpha-steam-lab.py'))
 resources = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(resources)
+
+WORKLOAD_LOG_LIMIT = 1024 * 1024
 
 
 def owned_hid(pid, root=Path('/sys/bus/hid/devices')):
@@ -44,6 +47,44 @@ def process_sample(pid):
         except FileNotFoundError: pass
     return dict(rss_kib=int(status['VmRSS'].split()[0]), descriptors=len(list((root / 'fd').iterdir())),
                 threads=len(tasks), children=sorted(children))
+
+
+def workload_receipt(text, seconds):
+    """Require the pinned GUI's completed creation/removal workload, not just time."""
+    cycles = []
+    completed = []
+    for line in text.splitlines():
+        if line.startswith('gui_soak seconds='):
+            match = re.fullmatch(r'gui_soak seconds=(\d+) rss="VmRSS:\\t\s+\d+ kB" fds=(\d+) threads=(\d+)', line)
+            if match is None or completed or int(match[2]) == 0 or int(match[3]) == 0:
+                raise ValueError('malformed GUI workload cycle')
+            cycles.append(int(match[1]))
+        elif line.startswith('gui_soak completed'):
+            match = re.fullmatch(r'gui_soak completed seconds=(\d+)', line)
+            if match is None:
+                raise ValueError('malformed GUI workload completion')
+            completed.append(int(match[1]))
+    # A final frame can close before the next minute's slightly delayed cycle.
+    # Permit that boundary cycle only; large omissions still fail acceptance.
+    minimum = max(1, seconds // 60 - 1)
+    # Egui can deliver another frame while its close command is pending.
+    # Repeated terminal requests are idempotent evidence, not extra cycles.
+    if (not completed or any(value < seconds for value in completed) or len(cycles) < minimum
+            or any(value < 60 for value in cycles)
+            or any(right <= left for left, right in zip(cycles, cycles[1:]))
+            or any(right < left for left, right in zip(completed, completed[1:]))
+            or cycles[-1] > completed[0]):
+        raise ValueError('GUI creation/removal workload did not complete')
+    return dict(cycles=len(cycles), first_cycle_seconds=cycles[0],
+                last_cycle_seconds=cycles[-1], completed_seconds=completed[-1])
+
+
+def workload_file(path, seconds):
+    with path.open('rb') as source:
+        data = source.read(WORKLOAD_LOG_LIMIT + 1)
+    if len(data) > WORKLOAD_LOG_LIMIT:
+        raise ValueError('GUI workload diagnostic exceeds its quota')
+    return workload_receipt(data.decode('utf-8', errors='strict'), seconds)
 
 
 def unit_command(unit, script, arguments):
@@ -119,6 +160,7 @@ def trial(args):
         elapsed = time.monotonic() - started
         status = app.returncode
         if status != 0 or elapsed < args.seconds: raise RuntimeError('GUI did not complete its measured duration')
+        receipt['workload'] = workload_file(root / 'gui.log', args.seconds)
     except BaseException as error:
         failure = str(error)
     finally:

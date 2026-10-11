@@ -1,5 +1,17 @@
 # Independent alpha remediation PR review handoff
 
+Current GUI evidence caution: the `cf710a47a5ca15aa60d5d718037781d6c69cee47`
+two-hour neutral soak was started with image SHA-256
+`211c492325de801cb9d3a95492db727d9671d93165eecf6d4059b517bab8f7f5`.
+Do not accept a running receipt. Its supervisor loaded the earlier validator;
+apply `workload_file` from `scripts/run-alpha-gui-soak.py` to the final owned log
+as well as inspecting terminal status, resource trends and cleanup. Scrutinize
+the seven `test_alpha_gui_soak.py` regressions: elapsed time/exit zero alone must
+not pass, cycles must be monotonic and complete, repeated pending-close frames
+do not create cycles, and oversized/malformed logs fail without deletion. This
+workload covers neutral DualSense creation/removal only. It cannot close the
+remaining keyboard/control inventory or replace isolated live touch acceptance.
+
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
 Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`; see
