@@ -2724,3 +2724,24 @@ failed and malformed inventories. Mandatory workspace checks, Rust 1.85, strict
 rustdoc, API inventory/snapshot, root feature/offline consumers and 396 Python
 tests passed. No dependency or production API/behavior changed. Fresh complete
 functional receipts and exact-current-worker provider revalidation remain due.
+
+### Exact control-runner CI and failed-phase diagnostics
+
+At `7d12e2846b112e22b16b9feb3293c066ce4d0127`, CI run `38120783718`
+passed platform builds/tests, lint, forced MSRV, policy, audit and corpus checks.
+The sealed independent-image sender regression passed on Linux; all 409 Python
+tooling tests passed. Full-history Gitleaks, SBOM and Provider Tier B passed;
+all 17 downloaded SBOM identities were verified, including the root package.
+CodeQL was still running at this checkpoint. Skipped privileged/dependency-review
+jobs remain distinct from positive acceptance evidence.
+
+Failed USB phase commands can retain client stdout while the root `clients`
+inventory is empty. The coordinator now writes independent-control diagnostics
+from that command output before checking phase acceptance. It preserves the
+revision and failed root status and makes no qualification claim. Successful
+client records take precedence over their command copies; genuine duplicate
+control records remain visible. The regression covers this failed-phase shape,
+retained failures and duplicates, and continued refusal of whole-phase acceptance.
+All ten coordinator regressions pass. Fresh live controls remain outstanding;
+no loss, rate, latency, cleanup or acceptance assertion is weakened. The current
+GUI soak remains separate and requires its terminal workload/cleanup receipt.

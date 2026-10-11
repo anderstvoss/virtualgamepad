@@ -12,6 +12,21 @@ lab=importlib.util.module_from_spec(spec);spec.loader.exec_module(lab)
 
 
 class TypedOutputRunner(unittest.TestCase):
+    def test_failed_root_command_preserves_control_diagnostics_without_acceptance(self):
+        control=dict(status='failed',trials=[dict(trial=1,accepted=False)])
+        receipt=dict(status='failed',revision='candidate',clients=[],commands=[dict(
+            status=1,stdout='owned unit failed\n'+json.dumps(dict(independent_rust_control=control))+'\n')])
+        evidence=lab.control_evidence(receipt)
+        self.assertEqual(evidence['controls'],[control])
+        self.assertEqual(evidence['root_phase_status'],'failed')
+        self.assertEqual(evidence['revision'],'candidate')
+        with self.assertRaises(RuntimeError):lab.accepted(receipt,'candidate',0,'1 passed; 0 failed')
+        # A successful client and its command copy are one receipt, not two
+        # independent trials. Genuine duplicates within a client stay visible.
+        row=json.dumps(dict(independent_rust_control=control))
+        receipt['clients']=[dict(stdout=row+'\n'+row)]
+        self.assertEqual(lab.control_evidence(receipt)['controls'],[control,control])
+
     def direct_control_receipt(self):
         return ('direct_control producer_frames=2976000 planned_frames=2976000 consumer_frames=2976000 queue=absent\n'
                 'direct_graph_control warmup_frames=96000 measured_frames=2880000 producer_ns=60000000000 drain_excluded=true\n'

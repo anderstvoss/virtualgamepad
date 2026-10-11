@@ -86,6 +86,24 @@ def accepted(root_receipt, revision, observer_status, observer_text, factory_dig
             raise RuntimeError('independent Rust control did not supply three exact-image passing trials')
 
 
+def control_evidence(root_receipt):
+    """Retain diagnostics from failed commands without granting phase acceptance."""
+    controls=[]
+    # A failed systemd-run is recorded before the root runner can append its
+    # client receipt. Successful clients instead have their own stdout record.
+    records=root_receipt.get('clients',[])
+    if not records:
+        records=root_receipt.get('commands',[])
+    for record in records:
+        for line in record.get('stdout','').splitlines():
+            try:item=json.loads(line)
+            except json.JSONDecodeError:continue
+            if isinstance(item,dict) and 'independent_rust_control' in item:
+                controls.append(item['independent_rust_control'])
+    return dict(revision=root_receipt.get('revision'),root_phase_status=root_receipt.get('status'),
+                controls=controls,scope='diagnostics only; does not accept the root phase or qualify C/product audio')
+
+
 def observer_identity(properties, frozen, expected=None):
     fields=dict(line.split('=',1) for line in properties.splitlines() if '=' in line)
     if fields.get('LoadState')=='not-found':return None
@@ -182,7 +200,10 @@ def run(args):
         receipt['observer_exit']=observer.returncode;receipt['phase_exit']=phase.returncode
         raw=subprocess.check_output(['sudo','-n','-k',HELPER,'receipt'],text=True,timeout=10)
         (root/'root-receipt.json').write_text(raw)
-        accepted(json.loads(raw),revision,observer.returncode,(root/'observer.log').read_text(),
+        root_receipt=json.loads(raw)
+        if control_digest is not None:
+            (root/'independent-control-evidence.json').write_text(json.dumps(control_evidence(root_receipt),indent=2)+'\n')
+        accepted(root_receipt,revision,observer.returncode,(root/'observer.log').read_text(),
                  digest if args.public_samples else None, control_digest)
         if phase.returncode!=0:raise RuntimeError('root maintenance phase failed')
         if hashlib.sha256(frozen.read_bytes()).hexdigest()!=digest:raise RuntimeError('observer image changed')
