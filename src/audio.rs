@@ -205,6 +205,8 @@ pub struct AudioInputLossTrace {
 pub struct AudioNativeMicrophoneBridgeSample {
     pub age_us: u64,
     pub credit_host_frames: u64,
+    /// Worker source frames consumed; inserted silence grants no refill credit.
+    pub credit_consumed_source_frames: u64,
     pub credit_submitted_frames: u64,
     pub accepted_source_frames: u64,
     pub graph_queue_frames: Option<u64>,

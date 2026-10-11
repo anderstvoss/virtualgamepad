@@ -23,6 +23,7 @@ pub(crate) struct Bridge {
 struct BridgeSnapshot {
     sampled_at: Option<Instant>,
     credit_host_frames: u64,
+    credit_consumed_source_frames: u64,
     credit_submitted_frames: u64,
     accepted_source_frames: u64,
     graph_queue_frames: Option<u64>,
@@ -97,6 +98,7 @@ impl Metrics {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = BridgeSnapshot {
             sampled_at: Some(Instant::now()),
             credit_host_frames: credit.host,
+            credit_consumed_source_frames: credit.consumed,
             credit_submitted_frames: credit.submitted,
             accepted_source_frames,
             graph_queue_frames,
@@ -136,6 +138,7 @@ impl Metrics {
                 .map(|age| crate::audio::AudioNativeMicrophoneBridgeSample {
                     age_us: u64::try_from(age.as_micros()).unwrap_or(u64::MAX),
                     credit_host_frames: state.credit_host_frames,
+                    credit_consumed_source_frames: state.credit_consumed_source_frames,
                     credit_submitted_frames: state.credit_submitted_frames,
                     accepted_source_frames: state.accepted_source_frames,
                     graph_queue_frames: state.graph_queue_frames,
@@ -231,27 +234,35 @@ struct PumpConfig {
     playback_channels: usize,
     microphone_channels: usize,
 }
-// Keep native microphone production tied to actual USB host media time. A
-// stopped capture must stop delivery before the worker queue fills; its spare
-// capacity is not a steady-state target.
+// The host clock activates input, but only consumption of queued source grants
+// refill credit. Inserted silence must not expand the operating fill. A stopped
+// capture stops delivery; spare worker queue capacity is not a steady-state target.
+#[derive(Default)]
+struct NativeMicProgress {
+    host: u64,
+    consumed: u64,
+}
+
 struct NativeMicCredit {
     host: u64,
+    consumed: u64,
     submitted: u64,
     started: bool,
 }
 impl NativeMicCredit {
     const FILL: u64 = 672; // 14 ms at the compiled 48 kHz profiles.
-    fn update_host(&mut self, host: u64) {
+    fn update_progress(&mut self, host: u64, consumed: u64) {
         self.started |= host > 0;
         self.host = host;
-        self.submitted = self.submitted.max(host);
+        self.consumed = self.consumed.max(consumed);
+        self.submitted = self.submitted.max(self.consumed);
     }
     fn available(&self) -> usize {
         if !self.started {
             return 0;
         }
         usize::try_from(
-            self.host
+            self.consumed
                 .saturating_add(Self::FILL)
                 .saturating_sub(self.submitted)
                 .min(128),
@@ -288,7 +299,7 @@ fn refill_native_microphone(
 fn spawn_host_clock_poller(
     control: Arc<Mutex<Control>>,
     microphone_silence: Arc<AtomicU64>,
-    host_frames: Arc<AtomicU64>,
+    progress: Arc<Mutex<NativeMicProgress>>,
     poll_stop: Arc<std::sync::atomic::AtomicBool>,
     poll_error: Arc<Mutex<Option<AudioError>>>,
     metrics: Arc<Metrics>,
@@ -299,16 +310,24 @@ fn spawn_host_clock_poller(
         let mut previous_silence = 0;
         while !poll_stop.load(Ordering::Acquire) {
             let started = Instant::now();
-            let result = control
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .microphone_host_frames();
+            let result = {
+                let mut control = control
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                control
+                    .microphone_host_frames()
+                    .and_then(|(host, silence)| {
+                        control
+                            .microphone_consumed_frames()
+                            .map(|consumed| (host, silence, consumed))
+                    })
+            };
             metrics.maximum_credit_request_us.fetch_max(
                 u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
                 Ordering::Relaxed,
             );
             match result {
-                Ok((host, silence)) => {
+                Ok((host, silence, consumed)) => {
                     let completed = Instant::now();
                     metrics.observe_host_clock(
                         completed.duration_since(previous_completion),
@@ -325,7 +344,11 @@ fn spawn_host_clock_poller(
                     previous_completion = completed;
                     previous_host = host;
                     previous_silence = silence;
-                    host_frames.store(host, Ordering::Release);
+                    let mut progress = progress
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    progress.host = host;
+                    progress.consumed = progress.consumed.max(consumed);
                     microphone_silence.store(silence, Ordering::Release);
                 }
                 Err(error) => {
@@ -351,14 +374,14 @@ fn pump_session(
     metrics: &Arc<Metrics>,
     config: PumpConfig,
 ) -> Result<(), AudioError> {
-    let host_frames = Arc::new(AtomicU64::new(0));
+    let progress = Arc::new(Mutex::new(NativeMicProgress::default()));
     let poll_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let poll_error = Arc::new(Mutex::new(None));
     let poller = config.microphone_native.then(|| {
         spawn_host_clock_poller(
             control.clone(),
             microphone_silence.clone(),
-            host_frames.clone(),
+            progress.clone(),
             poll_stop.clone(),
             poll_error.clone(),
             metrics.clone(),
@@ -367,7 +390,7 @@ fn pump_session(
     let result = run(
         session,
         streams,
-        &host_frames,
+        &progress,
         &poll_error,
         stop,
         metrics,
@@ -606,7 +629,7 @@ fn mirror_profile(
 fn run(
     session: &mut gr_audio_linux::Session,
     streams: &Arc<Mutex<SampleStreams>>,
-    host_frames: &AtomicU64,
+    progress: &Mutex<NativeMicProgress>,
     poll_error: &Mutex<Option<AudioError>>,
     stop: &std::sync::atomic::AtomicBool,
     metrics: &Metrics,
@@ -622,6 +645,7 @@ fn run(
     let mut accepted_source_frames = 0_u64;
     let mut credit = NativeMicCredit {
         host: 0,
+        consumed: 0,
         submitted: 0,
         started: false,
     };
@@ -654,11 +678,16 @@ fn run(
             }
         }
         if config.microphone_native {
-            let host = host_frames.load(Ordering::Acquire);
+            let (host, consumed) = {
+                let progress = progress
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                (progress.host, progress.consumed)
+            };
             if credit.host == 0 && host > 0 {
                 session.activate_inputs();
             }
-            credit.update_host(host);
+            credit.update_progress(host, consumed);
             refill_native_microphone(&mut credit, |available| {
                 if microphone_pending.0 == microphone_pending.1 {
                     let block = session
@@ -707,19 +736,19 @@ mod tests {
         let task = thread::spawn(move || {
             let started = Instant::now();
             while let Ok((tag, generation)) = gr_privileged_broker::read_message(&mut server) {
-                assert_eq!((tag, generation.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+                assert!(matches!(tag, 5 | 7));
+                assert_eq!(generation.as_slice(), &7_u64.to_le_bytes()[..]);
                 let host = if progress {
                     u64::try_from(started.elapsed().as_micros()).unwrap() * 48 / 1_000
                 } else {
                     0
                 };
-                let reply = [
-                    generation,
-                    host.to_le_bytes().to_vec(),
-                    0_u64.to_le_bytes().to_vec(),
-                ]
-                .concat();
-                gr_privileged_broker::write_message(&mut server, 7, &reply).unwrap();
+                let mut reply = generation;
+                reply.extend(host.to_le_bytes());
+                if tag == 7 {
+                    reply.extend(0_u64.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, tag, &reply).unwrap();
             }
         });
         (
@@ -728,16 +757,90 @@ mod tests {
         )
     }
     #[test]
+    fn native_microphone_poller_requires_source_credit_and_preserves_terminal_errors() {
+        for malformed in [false, true] {
+            let (mut server, client) = UnixStream::pair().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let worker = thread::spawn(move || {
+                let (tag, generation) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!((tag, generation.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+                let reply = [
+                    generation,
+                    96_u64.to_le_bytes().to_vec(),
+                    96_u64.to_le_bytes().to_vec(),
+                ]
+                .concat();
+                gr_privileged_broker::write_message(&mut server, 7, &reply).unwrap();
+                let (tag, mut generation) =
+                    gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!((tag, generation.as_slice()), (5, &7_u64.to_le_bytes()[..]));
+                if !malformed {
+                    generation.extend(0_u64.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, 5, &generation).unwrap();
+            });
+            let progress = Arc::new(Mutex::new(NativeMicProgress::default()));
+            let silence = Arc::new(AtomicU64::new(0));
+            let error = Arc::new(Mutex::new(None));
+            let poller = spawn_host_clock_poller(
+                Arc::new(Mutex::new(Control::new(client, 7, 1).unwrap())),
+                silence.clone(),
+                progress.clone(),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                error.clone(),
+                Arc::new(Metrics::default()),
+            );
+            worker.join().unwrap();
+            poller.join().unwrap();
+            let progress = progress.lock().unwrap();
+            assert_eq!(progress.host, if malformed { 0 } else { 96 });
+            assert_eq!(progress.consumed, 0);
+            assert_eq!(
+                silence.load(Ordering::Acquire),
+                if malformed { 0 } else { 96 }
+            );
+            assert!(error.lock().unwrap().is_some());
+        }
+    }
+
+    #[test]
+    fn native_microphone_silence_does_not_replenish_source_credit() {
+        let mut credit = NativeMicCredit {
+            host: 0,
+            consumed: 0,
+            submitted: 0,
+            started: false,
+        };
+        // The host starts capturing, but has only received inserted silence.
+        credit.update_progress(48, 0);
+        refill_native_microphone(&mut credit, Ok).unwrap();
+        assert_eq!(credit.available(), 0);
+        // Another host packet contains silence: no queued source was consumed.
+        credit.update_progress(96, 0);
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted, NativeMicCredit::FILL);
+        credit.update_progress(144, 64);
+        assert_eq!(credit.available(), 64);
+        credit.accepted(64);
+        credit.update_progress(192, 0); // Regressing observations cannot create credit.
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted - credit.consumed, NativeMicCredit::FILL);
+    }
+
+    #[test]
     fn native_microphone_credit_stops_with_host_and_resumes_with_bounded_fill() {
         let mut credit = NativeMicCredit {
             host: 0,
+            consumed: 0,
             submitted: 0,
             started: false,
         };
         assert_eq!(credit.available(), 0);
-        credit.update_host(0);
+        credit.update_progress(0, 0);
         assert_eq!(credit.available(), 0);
-        credit.update_host(48);
+        credit.update_progress(48, 48);
         assert_eq!(credit.available(), 128);
         for _ in 0..5 {
             credit.accepted(128);
@@ -745,10 +848,10 @@ mod tests {
         assert_eq!(credit.available(), 32);
         credit.accepted(32);
         assert_eq!(credit.available(), 0);
-        credit.update_host(96);
+        credit.update_progress(96, 96);
         assert_eq!(credit.available(), 48);
         credit.accepted(48);
-        credit.update_host(960);
+        credit.update_progress(960, 960);
         assert_eq!(credit.submitted, 960);
         assert_eq!(credit.available(), 128);
     }
@@ -756,11 +859,12 @@ mod tests {
     fn native_microphone_refill_restores_existing_fill_after_delayed_host_progress() {
         let mut credit = NativeMicCredit {
             host: 0,
+            consumed: 0,
             submitted: 0,
             started: false,
         };
         refill_native_microphone(&mut credit, |_| panic!("capture has not started")).unwrap();
-        credit.update_host(48);
+        credit.update_progress(48, 48);
         let mut packets = Vec::new();
         refill_native_microphone(&mut credit, |available| {
             packets.push(available);
@@ -771,7 +875,7 @@ mod tests {
         assert_eq!(credit.submitted, 48 + NativeMicCredit::FILL);
         // Six milliseconds pass while the bridge is asleep. One packet cannot
         // replace the 288 frames consumed; catch up without expanding the fill.
-        credit.update_host(48 + 288);
+        credit.update_progress(48 + 288, 48 + 288);
         packets.clear();
         refill_native_microphone(&mut credit, |available| {
             packets.push(available);
@@ -787,6 +891,7 @@ mod tests {
     fn native_microphone_refill_bounds_partial_progress_and_preserves_backpressure_errors() {
         let mut credit = NativeMicCredit {
             host: 48,
+            consumed: 48,
             submitted: 48,
             started: true,
         };
@@ -906,6 +1011,7 @@ mod tests {
                     .unwrap(),
             ),
             credit_host_frames: 96,
+            credit_consumed_source_frames: 80,
             credit_submitted_frames: 768,
             accepted_source_frames: 672,
             graph_queue_frames: Some(256),
@@ -926,6 +1032,7 @@ mod tests {
             (96, 768)
         );
         assert_eq!(sample.accepted_source_frames, 672);
+        assert_eq!(sample.credit_consumed_source_frames, 80);
         assert_eq!(sample.graph_queue_frames, Some(256));
         assert_eq!(
             (sample.client_queue_frames, sample.pending_frames),

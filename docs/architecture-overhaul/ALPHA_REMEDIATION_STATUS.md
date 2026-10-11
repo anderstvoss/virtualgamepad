@@ -2849,3 +2849,31 @@ Mandatory workspace checks, Rust 1.85, strict rustdoc, API snapshot/inventory,
 root feature matrix with warnings denied/offline rebuild and Python tests passed.
 No dependency or ordinary-root signature changed. Live timing correlation remains
 required; the audio gates stay open.
+
+
+### Native microphone credit follows consumed source, not inserted silence
+
+A deterministic regression demonstrated that an additional all-silence host
+packet incorrectly granted 48 source frames of refill credit. Host time included
+inserted silence even though no queued source was consumed. Native refill now
+uses the existing worker operation 5 consumed-source counter; operation 7 remains
+responsible for activation, host progress and silence diagnostics. Both required
+replies complete before a coherent private progress sample is published. Invalid
+credit replies preserve the terminal error without publishing partial progress.
+
+The operating fill remains 672 frames, packet size 128 and per-cycle refill
+budget six packets. Queue capacities and loss/latency acceptance limits are
+unchanged. Only actual consumed source replenishes credit; regressing observations
+cannot create credit. The experimental bridge sample adds an explicit consumed
+source position. Ordinary-root signatures and worker wire operations are unchanged;
+no dependency was added. Host and source positions are separate observations,
+not an atomic worker snapshot or exact marker identity.
+
+Regressions cover silence-only host advance, real source consumption, stalled
+credit, regressing consumption, the exact operation 7/5 request sequence, malformed
+operation 5 replies and terminal shutdown. Previous lifecycle and refill regressions
+remain. Mandatory fmt/check/Clippy/test/Gitleaks, forced Rust 1.85, strict root
+rustdoc, API snapshot/inventory, all root feature consumers with warnings denied
+and offline rebuild, and Python tests passed. Candidate broker/worker images were
+rebuilt. This corrects a demonstrated credit-bound defect; live audio behavior and
+sustained acceptance remain unproven. Gates 1/4/5/6 remain open.
