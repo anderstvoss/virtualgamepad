@@ -1482,3 +1482,34 @@ rustdoc, API snapshot/inventory, all root feature consumers with warnings denied
 and offline rebuild, and Python tests passed. Candidate broker/worker images were
 rebuilt. This corrects a demonstrated credit-bound defect; live audio behavior and
 sustained acceptance remain unproven. Gates 1/4/5/6 remain open.
+
+
+### Live source-credit correction and active graph scheduling evidence
+
+The quiet trial at `c03e8d5aa15bb7e12ccf035d48bf974d06a36712`, tree
+`5d489f2c23319a739b26551c7cada6e8ab2f0370`, failed the DualSense native
+microphone cell: 143280 exact measured frames and 720 silent frames out of
+144000. Worker progress reconciled 288096 completed host frames, 285264 consumed
+source frames and 2832 total silence frames, with zero abandoned captures and
+source drops. Maximum host reply interval was 14732 microseconds; USB and PCM
+pump lateness were 8307 and 7685 microseconds. The source-based ledger correctly
+keeps submitted minus consumed credit within the unchanged 672-frame fill. That
+credit correction does not close remaining loss or prove its cause. Later families
+were not reached. Coordinator cleanup errors were empty; the original broker
+service returned inactive and socket active. No sustained memory pressure appeared.
+
+The lab now samples owned PipeWire and policy threads once per second while the
+factory executes, retaining at most 64 snapshots and counting omissions. This
+ordinary diagnostic observer performs no audio-callback I/O, changes no scheduler
+policy, and stops before graph children are reaped. It also stops on interrupted
+factory execution; a failed observation is explicitly unavailable evidence. A
+stuck observer prevents ambiguous PID cleanup and retains the initiating and
+restoration errors. Setup/end snapshots alone cannot establish streaming policy,
+and active snapshots still do not establish policy at an exact underrun instant.
+No private shared-session configuration, buffer capacity, loss assertion, dependency
+or ordinary-root API changes accompany this instrumentation.
+
+Regressions verify bounded collection/omissions, unavailable observations, finite
+join failures, interruption ordering, never-started and repeated close. Acceptance
+requires a fresh active-stream receipt, then causal correction and independent
+controls before sustained product qualification. Gates 1/4/5/6 remain open.

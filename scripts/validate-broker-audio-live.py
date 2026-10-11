@@ -368,12 +368,54 @@ def owned_thread_scheduling(child, proc=Path('/proc')):
                 truncated=len(paths)>64, scope='owned graph thread snapshot; not an underrun timestamp')
 
 
+class ActiveGraphScheduling:
+    """Bounded ordinary-thread observations while the factory owns its graph."""
+    def __init__(self, children):
+        self.children = tuple(children)
+        self.samples = []
+        self.omitted = 0
+        self.error = None
+        self.started_at = time.monotonic_ns()
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self.run, name='owned-graph-scheduling')
+
+    def sample(self):
+        if len(self.samples) >= 64:
+            self.omitted += 1
+            return
+        self.samples.append(dict(elapsed_ns=time.monotonic_ns()-self.started_at,
+                                 children=[owned_thread_scheduling(child) for child in self.children]))
+
+    def run(self):
+        try:
+            while not self.stop.is_set():
+                self.sample()
+                self.stop.wait(1)
+        except Exception as error:
+            self.error = str(error)
+            self.stop.set()
+
+    def start(self):
+        self.thread.start()
+
+    def close(self):
+        self.stop.set()
+        if self.thread.ident is not None:
+            self.thread.join(3)
+            if self.thread.is_alive():
+                raise RuntimeError('owned graph scheduling observer did not stop')
+
+    def receipt(self):
+        return dict(samples=self.samples, omitted_samples=self.omitted, error=self.error,
+                    scope='owned daemon/policy snapshots during factory execution; not exact underrun policies')
+
+
 @contextlib.contextmanager
 def private_probe_graph():
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
     root = Path(tempfile.mkdtemp(prefix='virtualgamepad-root-graph-'))
     identity = (root.stat().st_dev, root.stat().st_ino)
-    children = []; initiating = None; cleanup = []
+    children = []; initiating = None; cleanup = []; active = None
     try:
         for name in ('config', 'state', 'cache'): (root/name).mkdir(mode=0o700)
         environment = dict(os.environ)
@@ -398,7 +440,13 @@ def private_probe_graph():
                                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
             startup = private_graph_nodes(environment)
             startup_scheduling = [owned_thread_scheduling(child) for child in children]
-            yield environment
+            active = ActiveGraphScheduling(children)
+            active.start()
+            try:
+                yield environment
+            finally:
+                active.close()
+                print(json.dumps(dict(private_graph_active_scheduling=active.receipt())), flush=True)
             deadline = time.monotonic()+2
             while True:
                 final = private_graph_nodes(environment)
@@ -420,9 +468,14 @@ def private_probe_graph():
     except BaseException as error:
         initiating = error; raise
     finally:
-        for child in reversed(children):
-            try: stop_private_child(child)
+        if active is not None:
+            try: active.close()
             except BaseException as error: cleanup.append(str(error))
+        # Do not reap children while a stuck observer could inspect a reused PID.
+        if not cleanup:
+            for child in reversed(children):
+                try: stop_private_child(child)
+                except BaseException as error: cleanup.append(str(error))
         if not cleanup:
             try:
                 info = root.lstat()

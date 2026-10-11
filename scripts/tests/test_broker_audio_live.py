@@ -408,6 +408,74 @@ class BrokerLiveTests(unittest.TestCase):
 
 
 class OwnedThreadScheduling(unittest.TestCase):
+    def test_active_observation_failure_is_unavailable_evidence_and_stops(self):
+        observer=module.ActiveGraphScheduling([Mock()])
+        with patch.object(module,'owned_thread_scheduling',side_effect=RuntimeError('synthetic snapshot failure')):
+            observer.run()
+        self.assertEqual(observer.receipt()['error'],'synthetic snapshot failure')
+        self.assertEqual(observer.samples,[])
+        self.assertTrue(observer.stop.is_set())
+        observer.close()
+
+    def test_interrupted_factory_stops_observer_before_children_and_removes_owned_runtime(self):
+        sockets=[];runtimes=[];observers=[]
+        constructor=module.ActiveGraphScheduling
+        def observe(children):
+            observer=constructor(children);observers.append(observer);return observer
+        def start(command,**options):
+            root=Path(options['env']['PIPEWIRE_RUNTIME_DIR'])
+            if command==['pipewire']:
+                runtimes.append(root)
+                peer=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+                peer.bind(str(root/'pipewire-0'));sockets.append(peer)
+            child=Mock(pid=987654);child.poll.return_value=None;return child
+        def stop(child):self.assertFalse(observers[0].thread.is_alive())
+        try:
+            with patch.object(module.subprocess,'Popen',side_effect=start), \
+                 patch.object(module,'private_graph_nodes',return_value=[]), \
+                 patch.object(module,'owned_thread_scheduling',return_value={'available':False}), \
+                 patch.object(module,'ActiveGraphScheduling',side_effect=observe), \
+                 patch.object(module,'stop_private_child',side_effect=stop) as stopped, \
+                 patch('builtins.print'):
+                with self.assertRaisesRegex(RuntimeError,'synthetic interruption'):
+                    with module.private_probe_graph():raise RuntimeError('synthetic interruption')
+            self.assertEqual(stopped.call_count,2)
+            self.assertFalse(runtimes[0].exists())
+        finally:
+            for peer in sockets:peer.close()
+
+    def test_active_samples_are_bounded_and_count_omissions(self):
+        child=Mock(pid=123)
+        observer=module.ActiveGraphScheduling([child])
+        with patch.object(module, 'owned_thread_scheduling', return_value={'available':False}) as snapshot:
+            for _ in range(70):observer.sample()
+        self.assertEqual(snapshot.call_count,64)
+        receipt=observer.receipt()
+        self.assertEqual(len(receipt['samples']),64)
+        self.assertEqual(receipt['omitted_samples'],6)
+        self.assertTrue(all(sample['children']==[{'available':False}] for sample in receipt['samples']))
+        self.assertTrue(all(sample['elapsed_ns']>=0 for sample in receipt['samples']))
+
+    def test_active_observer_stops_before_repeated_close_and_never_starts_after_close(self):
+        observer=module.ActiveGraphScheduling([])
+        observer.start()
+        observer.close();observer.close()
+        self.assertFalse(observer.thread.is_alive())
+        size=len(observer.samples)
+        observer.run()
+        self.assertEqual(len(observer.samples),size)
+        never_started=module.ActiveGraphScheduling([])
+        never_started.close();never_started.close()
+        self.assertEqual(never_started.samples,[])
+
+    def test_active_observer_retains_bounded_join_failure(self):
+        observer=module.ActiveGraphScheduling([])
+        observer.thread=Mock(ident=123)
+        observer.thread.is_alive.return_value=True
+        with self.assertRaisesRegex(RuntimeError,'observer did not stop'):observer.close()
+        observer.thread.join.assert_called_once_with(3)
+        self.assertTrue(observer.stop.is_set())
+
     def test_actual_policy_and_kernel_priority_are_unique_and_required(self):
         self.assertEqual(module.parse_thread_scheduling('owned-data-loop\n policy : 2\n prio : 79'),
                          dict(policy=2, kernel_priority=79))
