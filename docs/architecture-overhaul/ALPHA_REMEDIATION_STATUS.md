@@ -2751,3 +2751,22 @@ failures, not a product behavior correction or continuity qualification. Queue
 sizes, operating fill, marker checks and loss/latency limits remain unchanged.
 If it passes, require event correlation, actual data-loop scheduling evidence and
 ordinary-user deployment implications before closing either audio gate.
+
+
+The bounded scheduling comparison at `3b5548d215f87580524fddd88bbe0f0834a876d5`
+(tree `6ff26106834ec813370d5b46f0e1bf6dbbc6a328`) failed the first DualSense
+native microphone cell: 143984 exact measured frames and 16 silent frames.
+The ordinary-parent receipt verified policy 2 (round-robin), priority 20,
+RTPRIO limits (88,88) and RTTIME limits (200000,200000) microseconds. Largest
+successful host-clock reply gap was 6483 microseconds; largest host-frame
+advance was 192; bridge-loop gap 1004 microseconds and maximum credit request
+4469 microseconds. Worker completed 288000 frames, consumed 286656 source
+frames, inserted 1344 total silence frames, and reported zero abandoned
+captures/source drops. Coordinator cleanup errors were empty. Later families
+were not reached. This does not close Gate 4 or qualify sustained Gate 6.
+
+The shorter reply interval with remaining silence weakens the hypothesis that
+reply gaps alone explain all loss. Next evidence must correlate graph/local/
+worker queue occupancy and silence in host media time; independent maxima are
+insufficient. Actual graph data-loop policies remain unverified. The comparison
+passed all mandatory local checks and 383 Python tests before deployment.

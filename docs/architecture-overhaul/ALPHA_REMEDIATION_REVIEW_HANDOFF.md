@@ -2425,3 +2425,13 @@ actual thread scheduling and event correlation before declaring a correction.
 The consumer checker now rejects unknown arguments and implements build-free
 help; inspect its new CLI regressions to prevent unexpected compilation during
 live acceptance. All seven provider phases passed with the `8ca53ed` worker.
+
+
+The bounded scheduled comparison at `3b5548d` also failed: 16 measured silent
+DualSense frames despite a 6.483 ms maximum host-clock reply gap. Parent policy
+and limits were verified; actual graph data-loop policies were not. Reject claims
+that temporary realtime scheduling alone resolved continuity. Require correlated
+queue/host-silence evidence and preserve both ordinary and scheduled failures.
+The grant applies only to the authorized ordinary USB functional client, never
+unauthorized peers, broker, worker or other phases; inspect the phase/identity
+regression and owned-unit restoration. All loss assertions remain unchanged.
