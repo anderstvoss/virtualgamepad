@@ -2848,3 +2848,26 @@ exercise inherited-descriptor export and malformed descriptors. Full validation
 and live installed-candidate trials remain required before claiming qualification.
 This changes validation tooling and test-only Rust support, not ordinary-root APIs,
 production provider/audio behavior, GUI controls or dependencies.
+
+### C main-loop priority discrimination
+
+The three C direct trials at `6f36523858e064ef69c5ce99c4fbc7d246963a42`
+(tree `cad8da6d2794b23ae76e0c51c229331c8bb4f5b8`) all failed. Control image
+SHA-256: `94a61f5b40a2f4bb39280b638e09fcff942fcf74a9871b2d06c87b5dae442831`.
+All produced/submitted 2880000 measured frames; received counts were 2478080,
+2469888 and 2440704. Missing counts were 401920, 410112 and 439296, invalid
+counts 11264, 10752 and 14848, and production spans 71.114245450, 71.390034159
+and 72.189030534 seconds. All three complete ledgers reconciled and classify
+missing ranges as unexplained after submission, not proof of graph-versus-capture
+loss. No product qualification follows. Observer/root failure remains recorded;
+owned cleanup was empty and original broker service/socket state restored.
+
+Actual C snapshots contain one callback/main-loop thread at RR priority 20
+(policy 2/kernel priority 79); the Rust control uses priority-88 data loops.
+The next bounded comparison changes only the C callback priority from 20 to 88,
+retaining RR policy, graph configuration, quantum 512, frame/rate/loss limits,
+ledger transport and finite 200 ms realtime allowance. This uses the already
+installed RTPRIO ceiling 88 and makes no persistent host scheduling change.
+Diagnostic export still switches to ordinary scheduling after streaming.
+Priority mismatch is a causal hypothesis, not an established explanation.
+The fixed-argument regression now verifies priority 88.

@@ -360,7 +360,7 @@ def independent_c_probe(frozen, expected, peer):
             reader.start();read_fd=None
             with private_probe_graph(quiet=True,quantum=512) as environment:
                 with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as diagnostics:
-                    command=['/usr/bin/chrt','--rr','20','/proc/self/fd/'+str(frozen),'60','-','-',
+                    command=['/usr/bin/chrt','--rr','88','/proc/self/fd/'+str(frozen),'60','-','-',
                              'fd:'+str(write_fd)]
                     child=subprocess.Popen(command,env=environment,pass_fds=(frozen,write_fd),
                                            stdout=output,stderr=diagnostics,start_new_session=True)

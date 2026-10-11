@@ -83,7 +83,7 @@ class BrokerLiveTests(unittest.TestCase):
             try:yield {}
             finally:graphs.append('closed')
         def spawn(command,**kwargs):
-            self.assertEqual(command[:4],['/usr/bin/chrt','--rr','20','/proc/self/fd/42'])
+            self.assertEqual(command[:4],['/usr/bin/chrt','--rr','88','/proc/self/fd/42'])
             descriptor=os.dup(kwargs['pass_fds'][1]);self.assertEqual(command[-1],'fd:'+str(kwargs['pass_fds'][1]))
             row=self.c_receipt()
             if len(children)==1:row['missing']=128
