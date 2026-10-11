@@ -2633,3 +2633,36 @@ limits, disabled fallbacks, private path scope and refusal to overwrite existing
 configuration. Interrupted/partial startup and cleanup regressions remain.
 Mandatory workspace validation and all 395 Python tests passed before deployment.
 No dependency, public API, buffer capacity or acceptance limit changed.
+
+
+### Complete-family functional failure collection
+
+The db68c69 private graph experiment verified FIFO policy 1/kernel priority 11
+(priority 88) on the actual daemon data loop in all eight streaming snapshots.
+Startup messages confirm the private override loaded and direct priority 88 was
+acquired. The policy daemon's unused data loop remained ordinary scheduling;
+it is not substituted for the measured driver. This demonstrates the lab
+configuration correction, but DualSense still failed with 143856 exact measured
+frames and 144 silence frames. Worker counters reconciled 288048 completed host
+frames, 285744 consumed source frames and 2304 total silence frames; abandoned
+captures/source drops were zero. Cleanup errors were empty. Sustained continuity
+is still unqualified and requires independent controls.
+
+The root USB functional fixture now collects marker verdicts for all three
+families before rejecting the aggregate result. It retains every former host
+success, loss/duplication/corruption, sample production and backend-health
+requirement. Each controller must close twice with healthy terminal state before
+the next cell starts; construction, protocol, deadline and cleanup failures still
+abort immediately. Only a measured marker verdict may be collected after verified
+cleanup. No failed cell can generate a passed=true receipt.
+
+The ordinary validator requires exactly one successful receipt for each of the
+12 ownership cells and rejects duplicates, failed cells and malformed suffixes.
+Its bounded factory diagnostic output cap is 256 KiB to accommodate three
+families' existing bounded ledgers; this is an output-log quota, not an audio queue
+or a loss tolerance. Root supervision retains its existing output/memory limits.
+Regressions preserve each acceptance predicate and verify incomplete, duplicate,
+failed and malformed inventories. Mandatory workspace checks, Rust 1.85, strict
+rustdoc, API inventory/snapshot, root feature/offline consumers and 396 Python
+tests passed. No dependency or production API/behavior changed. Fresh complete
+functional receipts and exact-current-worker provider revalidation remain due.

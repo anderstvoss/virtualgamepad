@@ -18,6 +18,17 @@ spec.loader.exec_module(module)
 
 
 class BrokerLiveTests(unittest.TestCase):
+    def test_factory_ownership_rejects_failed_duplicate_and_malformed_cells(self):
+        cells=[f'public_usb_sample_factory family={family} playback={playback} microphone={microphone} passed=true'
+               for family in ('dualsense','dualshock4','xbox360')
+               for playback in ('Samples','NativeClient') for microphone in ('Samples','NativeClient')]
+        complete='\n'.join(cells)
+        self.assertTrue(module.factory_ownership_complete(complete))
+        self.assertFalse(module.factory_ownership_complete('\n'.join(cells[:-1])))
+        self.assertFalse(module.factory_ownership_complete(complete+'\n'+cells[0]))
+        self.assertFalse(module.factory_ownership_complete(complete+'\n'+cells[0].replace('passed=true','passed=false')))
+        self.assertFalse(module.factory_ownership_complete(complete.replace('passed=true','passed=true-extra',1)))
+
     def test_probe_image_capture_rejects_corruption_non_elf_and_non_regular(self):
         for data, expected in ((b'not ELF', hashlib.sha256(b'not ELF').digest()),
                                (b'\x7fELFsynthetic', bytes(32))):

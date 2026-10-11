@@ -1434,13 +1434,62 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         assert_eq!(receipt, b"R");
     }
 
+    fn public_exchange_passed(
+        host_succeeded: bool,
+        marker_errors: (usize, usize, usize),
+        microphone_produced: usize,
+        native_microphone: bool,
+        backend_healthy: bool,
+    ) -> bool {
+        host_succeeded
+            && marker_errors == (0, 0, 0)
+            && (native_microphone || microphone_produced >= 240_000)
+            && backend_healthy
+    }
+
+    #[test]
+    fn public_usb_exchange_collection_retains_every_acceptance_failure() {
+        assert!(public_exchange_passed(
+            true,
+            (0, 0, 0),
+            240_000,
+            false,
+            true
+        ));
+        assert!(public_exchange_passed(true, (0, 0, 0), 0, true, true));
+        assert!(!public_exchange_passed(
+            false,
+            (0, 0, 0),
+            240_000,
+            false,
+            true
+        ));
+        for errors in [(1, 0, 0), (0, 1, 0), (0, 0, 1), (1, 1, 0)] {
+            assert!(!public_exchange_passed(true, errors, 240_000, false, true));
+        }
+        assert!(!public_exchange_passed(
+            true,
+            (0, 0, 0),
+            239_999,
+            false,
+            true
+        ));
+        assert!(!public_exchange_passed(
+            true,
+            (0, 0, 0),
+            240_000,
+            false,
+            false
+        ));
+    }
+
     #[allow(clippy::too_many_lines)] // Retain the owned ALSA child and controller through bounded drain.
     fn public_sample_exchange(
         controller: &mut impl PublicSampleController,
         family: &str,
         playback_channels: usize,
         microphone_channels: usize,
-    ) {
+    ) -> bool {
         use std::io::Read;
         use std::os::fd::OwnedFd;
         use std::os::unix::process::CommandExt;
@@ -1667,23 +1716,19 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         println!(
             "public_usb_sample_playback family={family} measured_frames=144000 missing={missing} duplicate={duplicate} invalid={invalid} microphone_produced={microphone_produced}"
         );
-        assert!(
+        let passed = public_exchange_passed(
             status.unwrap().success(),
-            "public sample host capture failed"
+            (missing, duplicate, invalid),
+            microphone_produced,
+            native_microphone.is_some(),
+            controller.sample_audio().last_error().is_none(),
         );
-        assert_eq!((missing, duplicate, invalid), (0, 0, 0));
-        if native_microphone.is_none() {
-            assert!(
-                microphone_produced >= 240_000,
-                "incomplete measured microphone production"
-            );
-        }
-        assert!(controller.sample_audio().last_error().is_none());
         if native_microphone.is_some() {
-            println!("public_usb_native_microphone_exchange family={family} passed=true");
+            println!("public_usb_native_microphone_exchange family={family} passed={passed}");
         } else {
-            println!("public_usb_sample_exchange family={family} passed=true");
+            println!("public_usb_sample_exchange family={family} passed={passed}");
         }
+        passed
     }
 
     #[test]
@@ -1695,6 +1740,7 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             Ok("1")
         );
         assert_ordinary_test_process();
+        let mut failures = Vec::new();
         macro_rules! exercise {
             ($factory:ident, $family:literal, $playback:literal, $microphone:literal, $options:expr, $playback_access:expr, $microphone_access:expr) => {{
                 let mut controller = crate::$factory($options)
@@ -1710,12 +1756,12 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                     $microphone_access,
                 );
                 controller.service(&mut |_| {}).unwrap();
-                if $playback_access == crate::AudioAccess::Samples
+                let exchange_passed = if $playback_access == crate::AudioAccess::Samples
                     && std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_SAMPLE_MARKER_LAB").as_deref()
                         == Ok("1")
                 {
-                    public_sample_exchange(&mut controller, $family, $playback, $microphone);
-                }
+                    public_sample_exchange(&mut controller, $family, $playback, $microphone)
+                } else { true };
                 controller.close();
                 controller.close();
                 let audio = controller.audio().unwrap();
@@ -1737,9 +1783,12 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 );
                 public_factory_host_snapshot($family);
                 println!(
-                    "public_usb_sample_factory family={} playback={:?} microphone={:?} passed=true",
+                    "public_usb_sample_factory family={} playback={:?} microphone={:?} passed={exchange_passed}",
                     $family, $playback_access, $microphone_access
                 );
+                if !exchange_passed {
+                    failures.push(format!("{} {:?}/{:?}", $family, $playback_access, $microphone_access));
+                }
             }};
         }
         let native =
@@ -1796,5 +1845,9 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
                 );
             }
         }
+        assert!(
+            failures.is_empty(),
+            "public USB marker cells failed: {failures:?}"
+        );
     }
 }
