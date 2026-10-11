@@ -2571,3 +2571,24 @@ experiment must inspect direct realtime setup and any verified isolated override
 without using the shared user bus or persistent host configuration. Coordinator
 cleanup errors were empty, and VM memory-pressure averages remained zero. No
 acceptance assertion was relaxed; Gates 4/6 remain open.
+
+
+### Direct realtime capability discrimination
+
+The private graph preflight now runs one fixed ordinary child requesting FIFO
+priority 88, bounded to two seconds and the existing lab RTTIME/priority limits.
+It rejects root invocation, malformed or wrong-policy receipts and timeouts. It
+never changes the parent policy or persistent host settings. This probe separates
+permission to acquire the requested policy from whether the graph acquired it.
+Private daemon startup logs are now retained independently of the final log tail;
+only the daemon receives diagnostic verbosity, not product clients or callbacks.
+These diagnostic trials are not sustained qualification and logging effects must
+not be treated as production latency evidence.
+
+Regressions cover fixed child arguments/deadline, actual policy verification,
+nonzero exit, malformed/oversized output, unavailable execution, root rejection
+and interrupted graph startup. Mandatory workspace checks, Rust 1.85, strict
+root rustdoc, API snapshot/inventory, root feature/offline consumers and all
+394 Python tests passed before deployment. No dependency, public-root signature,
+worker operation, queue size or acceptance limit changed. Live discrimination
+remains required; all prior audio failures remain preserved.

@@ -422,6 +422,32 @@ def owned_graph_log(log):
                 scope='owned private graph diagnostics; absent xrun messages do not prove zero xruns')
 
 
+def direct_realtime_probe():
+    """One bounded ordinary child; never change the parent or host configuration."""
+    if os.geteuid() == 0:
+        return dict(available=False, reason='direct realtime probe requires an ordinary identity')
+    command = ['/usr/bin/chrt', '--fifo', '88', '/usr/bin/python3', '-I', '-c',
+               'import json,os,resource;print(json.dumps(dict(policy=os.sched_getscheduler(0),'
+               'priority=os.sched_getparam(0).sched_priority,'
+               'rtprio=resource.getrlimit(resource.RLIMIT_RTPRIO),'
+               'rttime=resource.getrlimit(resource.RLIMIT_RTTIME))))']
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=2)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return dict(available=False, reason=str(error))
+    receipt = dict(exit_status=result.returncode, stderr=result.stderr[:2048].decode(errors='replace'),
+                   scope='owned child direct FIFO probe; not a graph scheduling measurement')
+    if result.returncode or len(result.stdout)>2048 or len(result.stderr)>2048:
+        return dict(receipt, available=False)
+    try:
+        state = json.loads(result.stdout)
+        if state['policy'] != os.SCHED_FIFO or state['priority'] != 88:
+            raise ValueError('direct child did not acquire the requested policy')
+    except (ValueError, KeyError, TypeError) as error:
+        return dict(receipt, available=False, reason=str(error))
+    return dict(receipt, available=True, scheduling=state)
+
+
 @contextlib.contextmanager
 def private_probe_graph():
     """Owned ordinary PipeWire/policy children, with independently retained cleanup."""
@@ -437,8 +463,10 @@ def private_probe_graph():
         environment.update(PIPEWIRE_RUNTIME_DIR=str(root), PIPEWIRE_REMOTE='pipewire-0',
                            XDG_RUNTIME_DIR=str(root), XDG_CONFIG_HOME=str(root/'config'),
                            XDG_STATE_HOME=str(root/'state'), XDG_CACHE_HOME=str(root/'cache'))
+        direct_realtime = direct_realtime_probe()
         with tempfile.TemporaryFile() as log:
-            daemon = subprocess.Popen(['pipewire'], env=environment, stdout=log,
+            daemon_environment = dict(environment, PIPEWIRE_DEBUG='3')
+            daemon = subprocess.Popen(['pipewire'], env=daemon_environment, stdout=log,
                                       stderr=subprocess.STDOUT, start_new_session=True)
             children.append(daemon)
             deadline = time.monotonic()+5
@@ -452,6 +480,7 @@ def private_probe_graph():
                                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True))
             startup = private_graph_nodes(environment)
             startup_scheduling = [owned_thread_scheduling(child) for child in children]
+            startup_log = owned_graph_log(log)
             active = ActiveGraphScheduling(children)
             active.start()
             try:
@@ -459,7 +488,9 @@ def private_probe_graph():
             finally:
                 active.close()
                 print(json.dumps(dict(private_graph_active_scheduling=active.receipt(),
-                                      private_graph_log=owned_graph_log(log))), flush=True)
+                                      private_graph_log=owned_graph_log(log),
+                                      private_graph_startup_log=startup_log,
+                                      direct_realtime_probe=direct_realtime)), flush=True)
             deadline = time.monotonic()+2
             while True:
                 final = private_graph_nodes(environment)

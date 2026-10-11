@@ -150,7 +150,8 @@ class BrokerLiveTests(unittest.TestCase):
             peer.bind(str(Path(options['env']['PIPEWIRE_RUNTIME_DIR'])/'pipewire-0'))
             sockets.append(peer); return daemon
         try:
-            with patch.object(module.subprocess, 'Popen', side_effect=start), \
+            with patch.object(module,'direct_realtime_probe',return_value={'available':False}), \
+                 patch.object(module.subprocess, 'Popen', side_effect=start), \
                  patch.object(module.os, 'killpg') as kill, \
                  patch.dict(os.environ, {'PIPEWIRE_CONFIG_DIR': '/fake/shared', 'PIPEWIRE_REMOTE': 'shared'}):
                 with self.assertRaisesRegex(RuntimeError, 'policy startup failed'):
@@ -172,7 +173,8 @@ class BrokerLiveTests(unittest.TestCase):
             peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); peer.bind(str(root/'pipewire-0'))
             sockets.append(peer); return daemon
         try:
-            with patch.object(module.subprocess, 'Popen', side_effect=start), \
+            with patch.object(module,'direct_realtime_probe',return_value={'available':False}), \
+                 patch.object(module.subprocess, 'Popen', side_effect=start), \
                  patch.object(module, 'stop_private_child', side_effect=RuntimeError('owned child stop failed')):
                 with self.assertRaises(RuntimeError) as error:
                     with module.private_probe_graph(): self.fail('partial startup must not yield')
@@ -408,6 +410,27 @@ class BrokerLiveTests(unittest.TestCase):
 
 
 class OwnedThreadScheduling(unittest.TestCase):
+    def test_direct_probe_is_an_ordinary_bounded_child_and_requires_actual_fifo(self):
+        state=b'{"policy":1,"priority":88,"rtprio":[88,88],"rttime":[200000,200000]}'
+        for status, output, expected in [(0,state,True),(1,b'',False),
+                                         (0,b'{}',False),(0,b'not-json',False),
+                                         (0,state.replace(b'"policy":1',b'"policy":2'),False),
+                                         (0,b'x'*2049,False)]:
+            result=Mock(returncode=status,stdout=output,stderr=b'')
+            with patch.object(module.os,'geteuid',return_value=1000), \
+                 patch.object(module.subprocess,'run',return_value=result) as run:
+                self.assertEqual(module.direct_realtime_probe()['available'],expected)
+            args,kwargs=run.call_args
+            self.assertEqual(args[0][:6],['/usr/bin/chrt','--fifo','88','/usr/bin/python3','-I','-c'])
+            self.assertEqual(kwargs,dict(capture_output=True,timeout=2))
+
+    def test_direct_probe_rejects_root_and_retains_timeout(self):
+        with patch.object(module.os,'geteuid',return_value=0),patch.object(module.subprocess,'run') as run:
+            self.assertFalse(module.direct_realtime_probe()['available']);run.assert_not_called()
+        with patch.object(module.os,'geteuid',return_value=1000), \
+             patch.object(module.subprocess,'run',side_effect=module.subprocess.TimeoutExpired('fixed-child',2)):
+            self.assertFalse(module.direct_realtime_probe()['available'])
+
     def test_private_graph_log_is_bounded_and_preserves_unknown_instrumentation(self):
         with tempfile.TemporaryFile() as log:
             log.write(b'synthetic-old-message'+b'x'*9000+b'\xffowned-scheduling-error')
@@ -444,7 +467,8 @@ class OwnedThreadScheduling(unittest.TestCase):
             child=Mock(pid=987654);child.poll.return_value=None;return child
         def stop(child):self.assertFalse(observers[0].thread.is_alive())
         try:
-            with patch.object(module.subprocess,'Popen',side_effect=start), \
+            with patch.object(module,'direct_realtime_probe',return_value={'available':False}), \
+                 patch.object(module.subprocess,'Popen',side_effect=start), \
                  patch.object(module,'private_graph_nodes',return_value=[]), \
                  patch.object(module,'owned_thread_scheduling',return_value={'available':False}), \
                  patch.object(module,'ActiveGraphScheduling',side_effect=observe), \
