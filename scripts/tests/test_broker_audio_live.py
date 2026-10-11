@@ -438,6 +438,8 @@ class OwnedThreadScheduling(unittest.TestCase):
             receipt=module.owned_graph_log(log)
         self.assertTrue(receipt['available']);self.assertTrue(receipt['truncated'])
         self.assertEqual(len(receipt['tail']),8192)
+        self.assertEqual(len(receipt['head']),8192)
+        self.assertTrue(receipt['head'].startswith('synthetic-old-message'))
         self.assertNotIn('synthetic-old-message',receipt['tail'])
         self.assertTrue(receipt['tail'].endswith('owned-scheduling-error'))
         self.assertIn('do not prove zero xruns',receipt['scope'])

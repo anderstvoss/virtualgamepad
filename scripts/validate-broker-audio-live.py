@@ -414,10 +414,12 @@ def owned_graph_log(log):
     """Only the private child log, bounded independently of daemon verbosity."""
     try:
         size = os.fstat(log.fileno()).st_size
+        prefix = os.pread(log.fileno(), min(size, 8192), 0)
         excerpt = os.pread(log.fileno(), 8192, max(0, size-8192))
     except OSError:
         return dict(available=False, reason='owned graph log unavailable')
     return dict(available=True, total_bytes=size, truncated=size>8192,
+                head=prefix.decode('utf-8', errors='replace'),
                 tail=excerpt.decode('utf-8', errors='replace'),
                 scope='owned private graph diagnostics; absent xrun messages do not prove zero xruns')
 

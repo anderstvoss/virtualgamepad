@@ -2977,3 +2977,18 @@ root rustdoc, API snapshot/inventory, root feature/offline consumers and all
 394 Python tests passed before deployment. No dependency, public-root signature,
 worker operation, queue size or acceptance limit changed. Live discrimination
 remains required; all prior audio failures remain preserved.
+
+
+The direct capability trial at `7e5c607a47d92c93e0e51fff3799382344ba42c2`,
+tree `c6ae2c731efbfb79397dcad0edf330e3511d64f1`, proved that the fixed
+ordinary child could acquire FIFO priority 88: policy 1, priority 88, RTPRIO
+(88,88), RTTIME (200000,200000), exit zero. This rejects a blanket direct
+scheduling-permission denial; it does not prove graph scheduling. DualSense
+still failed: 143408 exact measured frames, 592 silent frames and eight pattern
+gaps out of 144000. Coordinator cleanup errors were empty. The diagnostic
+startup log exceeded its 8192-byte tail bound, so the graph now retains both
+bounded prefix and tail with explicit truncation metadata. The truncation
+regression verifies that early initialization evidence survives alongside final
+messages. No graph policy or production audio behavior changed in this step.
+The daemon's initialization decision remains to be inspected before choosing
+any temporary configuration correction.
