@@ -227,6 +227,8 @@ def run(args):
                      '--property=RuntimeMaxSec='+('450' if control_digest is not None else '120'),
                      '--setenv=VIRTUALGAMEPAD_TYPED_OUTPUT_INSTANCE='+instance,
                      '--',str(frozen),TEST,'--exact','--ignored','--nocapture']
+            if getattr(args,'native_timer_diagnostic',False):
+                command.insert(command.index('--'),'--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=native-timer')
             if args.public_samples:
                 command.insert(command.index('--'), '--setenv=VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST=1')
             if control_digest is not None:
@@ -247,6 +249,19 @@ def run(args):
         raw=subprocess.check_output(['sudo','-n','-k',HELPER,'receipt'],text=True,timeout=10)
         (root/'root-receipt.json').write_text(raw)
         root_receipt=json.loads(raw)
+        if getattr(args,'native_timer_diagnostic',False):
+            timers=[]
+            for record in root_receipt.get('clients',[]) or root_receipt.get('commands',[]):
+                for line in record.get('stdout','').splitlines():
+                    try:item=json.loads(line)
+                    except ValueError:continue
+                    if isinstance(item,dict) and 'native_timer_diagnostic' in item:timers.append(item['native_timer_diagnostic'])
+            (root/'native-timer-evidence.json').write_text(json.dumps(timers,indent=2)+'\n')
+            if (len(timers)!=1 or timers[0].get('status')!='completed' or
+                    timers[0].get('ordinary_uid')!=os.getuid() or
+                    not audio_probe.native_timer_valid(timers[0].get('receipt'))):
+                raise RuntimeError('native timer diagnostic missing or invalid')
+            receipt['scope']='typed outputs and timer execution; no audio qualification'
         if control_digest is not None:
             evidence=control_evidence(root_receipt)
             (root/'independent-control-evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
@@ -291,6 +306,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true');parser.add_argument('--report',type=Path)
     probes=parser.add_mutually_exclusive_group()
+    probes.add_argument('--native-timer-diagnostic',action='store_true',
+                        help='ten-second native timer under the existing finite grant; never audio qualification')
     probes.add_argument('--public-samples',action='store_true',
                         help='require the sealed public USB ownership, lifecycle and marker fixture')
     probes.add_argument('--independent-rust-control',action='store_true',
@@ -301,7 +318,7 @@ def main():
     if not args.apply:
         print(json.dumps(dict(actions=['verify exact installed source','prebuild and freeze ordinary observer',
             'run fixed usb-functional phase','observe typed callbacks in bounded user unit','retrieve root receipt and restore owned resources'],
-            probe='independent-c' if args.independent_c_control else 'independent-rust' if args.independent_rust_control else 'public-samples' if args.public_samples else 'typed-outputs',
+            probe='native-timer' if args.native_timer_diagnostic else 'independent-c' if args.independent_c_control else 'independent-rust' if args.independent_rust_control else 'public-samples' if args.public_samples else 'typed-outputs',
             independent_trials=3 if args.independent_rust_control or args.independent_c_control else 0)))
         return
     if args.report is None:parser.error('--apply requires an exclusive report directory')

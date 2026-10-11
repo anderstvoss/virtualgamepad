@@ -829,3 +829,68 @@ class OwnedThreadScheduling(unittest.TestCase):
             for path in tasks.iterdir():(path/'sched').unlink()
             receipt=module.owned_thread_scheduling(child,proc)
             self.assertTrue(all(not task['available'] and task['scheduling'] is None for task in receipt['threads']))
+
+
+class NativeTimerDiagnosticTests(unittest.TestCase):
+    def receipt(self):
+        return dict(scheduler=1,threads=[dict(cpu=3,policy=1,priority=88,samples=2000,
+            errors=0,max_lateness_ns=30_000_000,over_10ms=10,over_20ms=4)])
+
+    def test_delays_are_retained_without_audio_qualification(self):
+        self.assertTrue(module.native_timer_valid(self.receipt()))
+        # Successful measurement means completed diagnostics, even when delays
+        # exceed an audio deadline; audio predicates must still refuse this data.
+        self.assertFalse(module.c_control_accepted(self.receipt(),0))
+
+    def test_invalid_policy_counts_and_cpu_identity_are_rejected(self):
+        for key,value in [('policy',0),('priority',20),('samples',1999),('errors',1),
+                          ('cpu',-1),('over_20ms',11),('max_lateness_ns',-1),('samples',True)]:
+            row=self.receipt();row['threads'][0][key]=value
+            self.assertFalse(module.native_timer_valid(row))
+        row=self.receipt();row['threads']*=2
+        self.assertFalse(module.native_timer_valid(row))
+        self.assertFalse(module.native_timer_valid(dict(scheduler=1,threads=[])))
+
+    def test_root_and_unbounded_or_absent_grants_reject_before_compilation(self):
+        with patch.object(module.os,'geteuid',return_value=0),patch.object(module.subprocess,'run') as run:
+            with self.assertRaisesRegex(ValueError,'without root'):module.native_timer_probe()
+            run.assert_not_called()
+        for limits in [(0,200000),(88,-1),(88,300000),(88,0)]:
+            def getlimit(kind):return (limits[0],88) if kind==module.resource.RLIMIT_RTPRIO else (limits[1],limits[1])
+            with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.resource,'getrlimit',side_effect=getlimit),patch.object(module.subprocess,'run') as run:
+                with self.assertRaisesRegex(ValueError,'grant unavailable'):module.native_timer_probe()
+                run.assert_not_called()
+
+    def test_timer_request_has_explicit_completion_and_error_replies(self):
+        for failed in [False,True]:
+            client,server=socket.socketpair()
+            try:
+                client.sendall(b'T')
+                with patch.object(module.os,'geteuid',return_value=1000),patch.object(module,'native_timer_probe',side_effect=ValueError('timer failed') if failed else None,return_value={'status':'completed'}):
+                    if failed:
+                        with self.assertRaises(ValueError):module.public_factory_probe(server)
+                    else:self.assertEqual(module.public_factory_probe(server),{'status':'completed'})
+                self.assertEqual(client.recv(1),b'E' if failed else b'F')
+            finally:client.close();server.close()
+
+    def test_child_deadlines_and_partial_compilation_cleanup(self):
+        roots=[]
+        def run(command,**kwargs):
+            self.assertEqual(kwargs['timeout'],15)
+            if command[0]=='/usr/bin/cc':
+                image=Path(command[-1]);roots.append(image.parent);image.write_bytes(b'synthetic executable')
+                return module.subprocess.CompletedProcess(command,0)
+            self.assertEqual(command[:3],['/usr/bin/chrt','--fifo','88'])
+            raise module.subprocess.TimeoutExpired(command,15)
+        def limits(kind):return (88,88) if kind==module.resource.RLIMIT_RTPRIO else (200000,200000)
+        with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.resource,'getrlimit',side_effect=limits),patch.object(module.subprocess,'run',side_effect=run):
+            with self.assertRaises(module.subprocess.TimeoutExpired):module.native_timer_probe()
+        self.assertEqual(len(roots),1)
+        self.assertFalse(roots[0].exists())
+
+    @unittest.skipUnless(Path('/usr/bin/cc').exists(),'C compiler unavailable')
+    def test_reviewed_native_source_compiles_without_pipewire(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);source=root/'timer.c';source.write_text(module.NATIVE_TIMER_SOURCE)
+            module.subprocess.run(['/usr/bin/cc','-O2','-Wall','-Wextra','-Werror','-pthread',
+                str(source),'-o',str(root/'timer')],check=True,timeout=15)

@@ -795,6 +795,101 @@ def factory_ownership_complete(text):
     return found == expected
 
 
+# Immutable source compiled/executed only after the lab drops root privileges.
+# Timer completion is diagnostic evidence, never audio qualification.
+NATIVE_TIMER_SOURCE = r'''
+#define _GNU_SOURCE
+#include <errno.h>
+#include <pthread.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <time.h>
+#include <sched.h>
+#define N 2000
+struct sample {uint64_t target, wake, raw, cpu;};
+static struct sample samples[8][N];
+static int errors[8], cpus_available[8], policy[8], priority[8];
+static unsigned thread_count;
+static pthread_barrier_t barrier;
+static uint64_t now(clockid_t clock) {struct timespec t;clock_gettime(clock,&t);return (uint64_t)t.tv_sec*1000000000+t.tv_nsec;}
+static void *run(void *arg) {
+ unsigned id=(unsigned)(uintptr_t)arg;cpu_set_t cpus;CPU_ZERO(&cpus);CPU_SET(cpus_available[id],&cpus);
+ if(pthread_setaffinity_np(pthread_self(),sizeof(cpus),&cpus))errors[id]++;
+ struct sched_param parameters;policy[id]=sched_getscheduler(0);
+ if(sched_getparam(0,&parameters))errors[id]++;else priority[id]=parameters.sched_priority;
+ pthread_barrier_wait(&barrier);uint64_t begin=now(CLOCK_MONOTONIC);
+ for(unsigned i=0;i<N;i++) {
+  uint64_t target=begin+(i+1)*5000000ULL;struct timespec t={target/1000000000,target%1000000000};
+  int status;do {status=clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&t,NULL);}while(status==EINTR);
+  if(status)errors[id]++;
+  samples[id][i]=(struct sample){target,now(CLOCK_MONOTONIC),now(CLOCK_MONOTONIC_RAW),now(CLOCK_THREAD_CPUTIME_ID)};
+ }
+ return NULL;
+}
+int main(void) {
+ cpu_set_t available;CPU_ZERO(&available);
+ if(sched_getaffinity(0,sizeof(available),&available))return 2;
+ for(int cpu=0;cpu<CPU_SETSIZE && thread_count<8;cpu++)if(CPU_ISSET(cpu,&available))cpus_available[thread_count++]=cpu;
+ if(!thread_count)return 2;
+ pthread_t threads[8];pthread_barrier_init(&barrier,NULL,thread_count);
+ for(unsigned i=0;i<thread_count;i++)if(pthread_create(&threads[i],NULL,run,(void*)(uintptr_t)i))return 2;
+ for(unsigned i=0;i<thread_count;i++)pthread_join(threads[i],NULL);
+ printf("{\"scope\":\"bounded realtime; no PipeWire; timer diagnostics only\",\"scheduler\":%d,\"threads\":[",sched_getscheduler(0));
+ for(unsigned id=0;id<thread_count;id++) {
+  uint64_t max=0;unsigned over10=0,over20=0;
+  for(unsigned i=0;i<N;i++){uint64_t late=samples[id][i].wake-samples[id][i].target;if(late>max)max=late;if(late>10000000)over10++;if(late>20000000)over20++;}
+  printf("%s{\"cpu\":%u,\"policy\":%d,\"priority\":%d,\"samples\":2000,\"errors\":%d,\"max_lateness_ns\":%lu,\"over_10ms\":%u,\"over_20ms\":%u}",id?",":"",(unsigned)cpus_available[id],policy[id],priority[id],errors[id],(unsigned long)max,over10,over20);
+ }
+ puts("]}");
+ return 0;
+}
+'''
+
+
+def native_timer_valid(result):
+    if not isinstance(result,dict) or result.get('scheduler')!=1:return False
+    threads=result.get('threads',[])
+    if not isinstance(threads,list) or not 1<=len(threads)<=8:return False
+    cpus=[]
+    for row in threads:
+        if not isinstance(row,dict):return False
+        for key in ('cpu','policy','priority','samples','errors','max_lateness_ns','over_10ms','over_20ms'):
+            if type(row.get(key)) is not int:return False
+        if (row['cpu']<0 or row['policy']!=1 or row['priority']!=88 or
+                row['samples']!=2000 or row['errors']!=0 or row['max_lateness_ns']<0 or
+                not 0<=row['over_20ms']<=row['over_10ms']<=2000):return False
+        cpus.append(row['cpu'])
+    return len(set(cpus))==len(cpus)
+
+
+def native_timer_probe():
+    if os.geteuid()==0:raise ValueError('native timer must run without root')
+    if (resource.getrlimit(resource.RLIMIT_RTPRIO)[0]<88 or
+            not 0<resource.getrlimit(resource.RLIMIT_RTTIME)[0]<=200000):
+        raise ValueError('bounded realtime grant unavailable')
+    with tempfile.TemporaryDirectory(prefix='virtualgamepad-native-timer-') as directory:
+        root=Path(directory);source=root/'timer.c';image=root/'timer'
+        source.write_text(NATIVE_TIMER_SOURCE)
+        command=['/usr/bin/cc','-O2','-Wall','-Wextra','-Werror','-pthread',str(source),'-o',str(image)]
+        subprocess.run(command,check=True,timeout=15,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        digest=hashlib.sha256(image.read_bytes()).hexdigest()
+        result=subprocess.run(['/usr/bin/chrt','--fifo','88',str(image)],check=True,
+                              stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
+        if len(result.stdout)>16384 or len(result.stderr)>8192:raise ValueError('oversized native timer receipt')
+        receipt=json.loads(result.stdout)
+        if not native_timer_valid(receipt):raise ValueError('native timer policy/counters invalid')
+    report=dict(status='completed',ordinary_uid=os.geteuid(),receipt=receipt,
+                source_sha256=hashlib.sha256(NATIVE_TIMER_SOURCE.encode()).hexdigest(),
+                binary_sha256=digest,raw_samples_retained=False,
+                compiler=subprocess.check_output(['/usr/bin/cc','--version'],text=True,timeout=2).splitlines()[0],
+                compile_flags=['-O2','-Wall','-Wextra','-Werror','-pthread'],
+                realtime_limits=dict(priority=resource.getrlimit(resource.RLIMIT_RTPRIO),
+                                     runtime_us=resource.getrlimit(resource.RLIMIT_RTTIME)),
+                scope='aggregate timer diagnostics only; never audio or native-host qualification')
+    print(json.dumps(dict(native_timer_diagnostic=report)),flush=True)
+    return report
+
+
 def public_factory_probe(peer, instance=None):
     # This function runs only after setpriv in the prepared ordinary client unit.
     # The peer can supply one immutable ELF image, never root commands or paths.
@@ -802,6 +897,13 @@ def public_factory_probe(peer, instance=None):
     peer.settimeout(5)
     command = peer.recv(1)
     if not command: return dict(status='not-requested')
+    if command == b'T':
+        try:
+            receipt=native_timer_probe()
+        except BaseException:
+            peer.sendall(b'E');raise
+        peer.sendall(b'F')
+        return receipt
     if command not in (b'R', b'D', b'C'): raise ValueError('unknown public factory probe request')
     data, ancillary, flags, _ = peer.recvmsg(32, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
     descriptors = []

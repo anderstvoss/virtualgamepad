@@ -1000,7 +1000,11 @@ mod worker_outputs {
                 "typed_output_observer family={family} generation={generation} requests={count} passed=true"
             );
         }
-        if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
+        if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
+            == Ok("native-timer")
+        {
+            send_native_timer_request(&mut peer);
+        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
             send_public_factory_image(&mut peer);
         } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
             == Ok("direct-rust")
@@ -1014,6 +1018,38 @@ mod worker_outputs {
             let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
                 .expect("frozen ordinary C control image");
             send_probe_image(&mut peer, b'C', std::path::Path::new(&path));
+        }
+    }
+
+    fn send_native_timer_request(peer: &mut UnixStream) {
+        use std::io::{Read, Write};
+        peer.write_all(b"T").unwrap();
+        peer.set_read_timeout(Some(std::time::Duration::from_secs(40)))
+            .unwrap();
+        let mut status = [0];
+        peer.read_exact(&mut status).unwrap();
+        assert_eq!(
+            status, *b"F",
+            "timer execution failed; not audio qualification"
+        );
+    }
+
+    #[test]
+    fn native_timer_request_requires_exact_terminal_reply() {
+        use std::io::{Read, Write};
+        for reply in [b'F', b'E'] {
+            let (mut client, mut server) = UnixStream::pair().unwrap();
+            let worker = std::thread::spawn(move || {
+                let mut command = [0];
+                server.read_exact(&mut command).unwrap();
+                assert_eq!(command, *b"T");
+                server.write_all(&[reply]).unwrap();
+            });
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                send_native_timer_request(&mut client);
+            }));
+            worker.join().unwrap();
+            assert_eq!(result.is_ok(), reply == b'F');
         }
     }
 

@@ -2996,3 +2996,27 @@ explain every audio loss. Next compare the same native timer under the existing
 finite realtime grant, recording actual policy and preserving owned cleanup;
 do not replace audio controls with timer success. Product qualification remains
 stopped until the required independent audio controls pass in the current lab.
+
+### Bounded realtime native-timer discriminator
+
+The fixed USB functional lab now supports an explicit timer-only request (`T`)
+after the ordinary typed-output checks. Unlike image requests R/D/C, T supplies
+no executable or descriptor: immutable reviewed C source is compiled and executed
+only after privileges are dropped. It samples at most eight CPUs from actual
+allowed affinity, with 2000 absolute 5 ms sleeps each (ten seconds), preallocated
+storage, FIFO priority 88, and inherited real-time CPU allowance at most 200 ms.
+Missing/unbounded grants reject before compilation. Compiler and child deadlines
+are each 15 seconds; subprocess timeouts terminate/reap the owned child.
+
+Completion records source/binary/compiler hashes and flags, actual per-thread
+policy/priority, wake-delay counters, resource limits and ordinary UID. The result
+is explicitly aggregate-only; individual raw samples are unavailable for this
+scoped measurement. A completed timer run can contain substantial lateness and
+must never be interpreted as audio/native-host qualification. Root action names,
+maintenance ownership/restoration and the existing three sudo categories remain
+unchanged. No audio queue, public API, provider behavior or dependency changes.
+
+Regressions reject root execution, missing/unbounded grants, wrong scheduling,
+malformed counters, duplicate CPU identities and noninteger samples. They verify
+exact F/E terminal replies and that a timer receipt cannot satisfy C audio
+acceptance. A fresh installed-candidate timer diagnostic remains required.
