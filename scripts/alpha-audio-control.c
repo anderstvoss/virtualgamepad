@@ -7,6 +7,8 @@
 #include <inttypes.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdatomic.h>
+#include <sys/syscall.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <sched.h>
@@ -62,9 +64,14 @@ static void print_clock(const char *name, const struct clock_observation *clock)
 
 struct control {
     struct pw_main_loop *loop;
+    struct pw_context *context;
+    struct pw_core *core;
     struct pw_stream *source, *sink;
-    bool ready[2];
-    uint64_t cursor, submitted, received, invalid, partial, errors;
+    struct spa_hook source_listener, sink_listener;
+    atomic_bool ready[2];
+    atomic_uint_fast64_t cursor, received, errors;
+    atomic_long process_owner;
+    uint64_t submitted, invalid, partial;
     uint64_t last_received_frame, out_of_order;
     uint64_t planned, first_ns, last_ns, deadline_ns;
     uint32_t *counts;
@@ -78,6 +85,24 @@ struct control {
     unsigned blocks;
     unsigned source_rate, sink_rate, source_channels, sink_channels;
 };
+
+/* A shared context selects one data loop. Fail closed if a platform dispatches
+ * callbacks on different threads: the losing callback never touches the ledger
+ * or marker counters. Main-loop observations use lock-free atomics only. */
+static bool claim_process_owner(struct control *c, long identity) {
+    long expected = 0;
+    if (atomic_compare_exchange_strong(&c->process_owner, &expected, identity) ||
+        expected == identity) return true;
+    c->errors++;
+    return false;
+}
+
+static void stop_streams(struct control *c) {
+    /* Listener removal synchronously clears RT callbacks on their data loop.
+     * Destroy both streams before reading callback-owned counters or freeing them. */
+    if (c->sink) { pw_stream_destroy(c->sink); c->sink = NULL; }
+    if (c->source) { pw_stream_destroy(c->source); c->source = NULL; }
+}
 
 static uint64_t now_ns(void) {
     struct timespec t;
@@ -222,6 +247,7 @@ static void sink_format(void *data, uint32_t id, const struct spa_pod *param) {
 
 static void produce(void *data) {
     struct control *c = data;
+    if (!claim_process_owner(c, syscall(SYS_gettid))) return;
     c->source_process_calls++;
     process_gap(now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned,
                 &c->source_previous_ns, &c->source_max_gap_ns);
@@ -277,6 +303,7 @@ static void produce(void *data) {
 
 static void consume(void *data) {
     struct control *c = data;
+    if (!claim_process_owner(c, syscall(SYS_gettid))) return;
     c->sink_process_calls++;
     process_gap(now_ns(), c->cursor >= 96000 && c->cursor < 96000 + c->planned,
                 &c->sink_previous_ns, &c->sink_max_gap_ns);
@@ -324,6 +351,12 @@ static const struct pw_stream_events sink_events = {
 
 int main(int argc, char **argv) {
     if ((argc == 2 || argc == 3) && !strcmp(argv[1], "--self-test")) {
+        struct control ownership = {0};
+        if (!claim_process_owner(&ownership, 11) || !claim_process_owner(&ownership, 11) ||
+            claim_process_owner(&ownership, 12) || ownership.errors != 1 ||
+            ownership.process_owner != 11 || ownership.ledger_length) return 1;
+        stop_streams(&ownership);
+        stop_streams(&ownership);
         struct spa_chunk chunk = {.offset = 2, .size = 4, .stride = 8,
                                   .flags = SPA_CHUNK_FLAG_EMPTY | SPA_CHUNK_FLAG_CORRUPTED};
         publish_chunk(&chunk, 1);
@@ -415,6 +448,14 @@ int main(int argc, char **argv) {
     c.loop = pw_main_loop_new(NULL);
     if (!c.loop) { free(c.counts); free(c.ledger); return 2; }
     struct pw_loop *loop = pw_main_loop_get_loop(c.loop);
+    int status = 2;
+    if (!atomic_is_lock_free(&c.cursor) || !atomic_is_lock_free(&c.received) ||
+        !atomic_is_lock_free(&c.errors) || !atomic_is_lock_free(&c.process_owner) ||
+        !atomic_is_lock_free(&c.ready[0])) goto out;
+    c.context = pw_context_new(loop, pw_properties_new("context.num-data-loops", "1", NULL), 0);
+    if (!c.context) goto out;
+    c.core = pw_context_connect(c.context, NULL, 0);
+    if (!c.core) goto out;
     struct pw_properties *source_props = pw_properties_new(PW_KEY_MEDIA_TYPE, "Audio",
         PW_KEY_MEDIA_CATEGORY, "Playback", PW_KEY_NODE_NAME, "alpha-independent-producer",
         "node.autoconnect", direct ? "false" : "true", NULL);
@@ -424,24 +465,26 @@ int main(int argc, char **argv) {
     if (!source_props || !sink_props) {
         if (source_props) pw_properties_free(source_props);
         if (sink_props) pw_properties_free(sink_props);
-        pw_main_loop_destroy(c.loop); pw_deinit(); free(c.counts); free(c.ledger); return 2;
+        goto out;
     }
     if (!direct) {
         pw_properties_set(source_props, PW_KEY_TARGET_OBJECT, argv[2]);
         pw_properties_set(sink_props, PW_KEY_TARGET_OBJECT, argv[3]);
     }
-    c.source = pw_stream_new_simple(loop, "alpha-independent-producer", source_props, &source_events, &c);
-    c.sink = pw_stream_new_simple(loop, "alpha-independent-receiver", sink_props, &sink_events, &c);
-    int status = 2;
+    c.source = pw_stream_new(c.core, "alpha-independent-producer", source_props);
+    c.sink = pw_stream_new(c.core, "alpha-independent-receiver", sink_props);
     if (!c.source || !c.sink) goto out;
+    pw_stream_add_listener(c.source, &c.source_listener, &source_events, &c);
+    pw_stream_add_listener(c.sink, &c.sink_listener, &sink_events, &c);
     uint8_t buffer[1024];
     struct spa_pod_builder builder = SPA_POD_BUILDER_INIT(buffer, sizeof(buffer));
     const struct spa_pod *params[] = { spa_format_audio_raw_build(&builder,
         SPA_PARAM_EnumFormat, &SPA_AUDIO_INFO_RAW_INIT(.format = SPA_AUDIO_FORMAT_S16_LE,
             .rate = 48000, .channels = 2, .position = {SPA_AUDIO_CHANNEL_FL, SPA_AUDIO_CHANNEL_FR})) };
-    /* Callbacks run on the main loop: counters have no cross-thread races. */
-    enum pw_stream_flags flags = PW_STREAM_FLAG_AUTOCONNECT | PW_STREAM_FLAG_MAP_BUFFERS;
-    if (direct) flags = PW_STREAM_FLAG_MAP_BUFFERS;
+    /* Match the documented realtime process model; never proxy audio work
+     * asynchronously through the main loop. Both streams share one context. */
+    enum pw_stream_flags flags = PW_STREAM_FLAG_MAP_BUFFERS | PW_STREAM_FLAG_RT_PROCESS;
+    if (!direct) flags |= PW_STREAM_FLAG_AUTOCONNECT;
     if (pw_stream_connect(c.sink, PW_DIRECTION_INPUT, PW_ID_ANY, flags, params, 1) < 0 ||
         pw_stream_connect(c.source, PW_DIRECTION_OUTPUT, PW_ID_ANY, flags, params, 1) < 0) goto out;
     struct spa_source *timer = pw_loop_add_timer(loop, tick, &c);
@@ -451,6 +494,7 @@ int main(int argc, char **argv) {
     pw_loop_update_timer(loop, timer, &interval, &interval, false);
     pw_main_loop_run(c.loop);
     pw_loop_destroy_source(loop, timer);
+    stop_streams(&c);
     uint64_t missing = 0, duplicate = 0;
     for (unsigned i = 0; i < c.blocks*128; i++) {
         if (!c.counts[i]) missing++;
@@ -482,8 +526,9 @@ int main(int argc, char **argv) {
         c.invalid || c.partial || c.errors || c.ledger_overflow || c.out_of_order || c.source_rate != 48000 || c.sink_rate != 48000 ||
         c.source_channels != 2 || c.sink_channels != 2;
 out:
-    if (c.sink) pw_stream_destroy(c.sink);
-    if (c.source) pw_stream_destroy(c.source);
+    stop_streams(&c);
+    if (c.core) pw_core_disconnect(c.core);
+    if (c.context) pw_context_destroy(c.context);
     pw_main_loop_destroy(c.loop);
     pw_deinit();
     /* Diagnostic export is outside streaming and its finite realtime budget. */

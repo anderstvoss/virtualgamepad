@@ -2871,3 +2871,29 @@ installed RTPRIO ceiling 88 and makes no persistent host scheduling change.
 Diagnostic export still switches to ordinary scheduling after streaming.
 Priority mismatch is a causal hypothesis, not an established explanation.
 The fixed-argument regression now verifies priority 88.
+
+### C realtime callback dispatch correction
+
+The priority-only comparison at `3dea9f8f749e095501d0a56eae5ccc333828017f`
+failed all three direct C trials. Missing measured frames were 414720, 312320
+and 412928; invalid frames were 12800, 4608 and 7168. Production spans were
+71.775261326, 68.328131783 and 71.306930325 seconds. The same control image
+used RR priority 88, with unchanged graph, format, quantum and limits. Cleanup
+errors were empty. Raising main-loop priority alone did not resolve the failure.
+
+The C harness omitted `PW_STREAM_FLAG_RT_PROCESS`, causing PipeWire to dispatch
+process callbacks asynchronously on its main loop. The maintained PipeWire
+source and audio examples establish the realtime callback model. The control
+now uses that model with two streams sharing one context/core and one requested
+data loop. A lock-free callback-owner guard rejects dispatch from another thread
+before touching shared marker/ledger storage. Main-loop readiness, progress and
+error observations use lock-free atomics; unsupported atomic implementations
+reject startup. Both streams are destroyed, synchronously quiescing their
+callbacks, before counters are read or storage is exported/freed. Partial startup
+uses the same idempotent cleanup path, including core/context destruction.
+
+C self-tests cover same-owner reuse, different-owner rejection without ledger
+mutation and repeated empty teardown, preserving previous marker/framing tests.
+No product audio queues, loss/rate/latency assertions, public API or dependencies
+change. Live qualification remains outstanding; this corrects the harness's
+callback model but does not yet demonstrate that it explains all recorded loss.
