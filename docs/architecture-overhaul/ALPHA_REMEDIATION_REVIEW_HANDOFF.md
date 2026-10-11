@@ -2745,3 +2745,47 @@ retained failures and duplicates, and continued refusal of whole-phase acceptanc
 All ten coordinator regressions pass. Fresh live controls remain outstanding;
 no loss, rate, latency, cleanup or acceptance assertion is weakened. The current
 GUI soak remains separate and requires its terminal workload/cleanup receipt.
+
+### Completed current-image soak and independent Rust qualification
+
+The neutral GUI soak at source `cf710a47a5ca15aa60d5d718037781d6c69cee47`
+completed 7201.5358 seconds, exit zero and no cleanup errors. The current workload
+verifier confirms 119 increasing removal/recreation cycles (60 through 7140
+seconds) and completion at 7200 seconds. Both owned GUI/display processes exited;
+owned HID inventory is empty. There were 240 process samples: steady descriptors
+16, threads 23, no children, and zero observed full memory pressure. RSS warmed
+from approximately 122 MiB to 141 MiB; the final half-hour ranged from 144624
+to 144724 KiB, without growing descriptor/thread/node inventories. This is a
+bounded neutral-resource receipt, not proof of audio-enabled or active-touch use.
+
+Rebuilding both all-feature GUI images at `46be2bf945b67fc664e03e4d03f7e72e09d1b531`
+produced the same bytes: soak SHA-256
+`211c492325de801cb9d3a95492db727d9671d93165eecf6d4059b517bab8f7f5`,
+production GUI SHA-256
+`167d8fd238f194aa91c87337ce6a4a332f2f102186dd42cc0a55e2da2469abf5`.
+The endurance cell passes for these images. The interactive inventory and
+isolated active-touch display evidence remain required for whole Gate 1.
+
+At that same candidate (tree `493428d0c5fed00531667ce9ab9093088388452d`),
+three independently constructed quiet Rust graphs passed 60 measured seconds
+each. Every trial generated/received all 2976000 planned frames, including
+96000 separately excluded warm-up frames. Each observed 2880000 measured frames
+with zero missing, duplicated or corrupt markers. Measured production spans were
+60.002594, 60.003067 and 60.002782 seconds. Application-to-application p99 values
+were 229, 238 and 242 microseconds, below the unchanged 20 ms requirement.
+Control image SHA-256:
+`cb47f76b0c30cc11365b69814e39bc556391d83f435a1d93e6a4f36ad955bc4b`.
+Ordinary client data-loop snapshots show FIFO policy 1/kernel priority 11
+(requested priority 88); reporting threads remain ordinary. Rust RAII queue-return
+status is unavailable and explicitly reported, not fabricated as success.
+
+The scoped root phase and exact-image observer exited zero, all 24 typed USB
+outputs passed, cleanup errors were empty, and original broker service inactive/
+socket active state was restored. This closes the independent Rust control cell,
+not independent C qualification, the 72 product trials, supported USB sustained
+cells or Gate 6. Earlier microphone and independent-control failures remain
+historical evidence. No loss/rate/latency limit or audio queue changed.
+
+All five exact-candidate workflows passed; all 17 downloaded SBOM identities
+were verified. The local Python suite passed 410 tests. Privileged remote and
+dependency-review skips do not count as additional acceptance.

@@ -2,7 +2,7 @@
 
 Current gate disposition: **Gates 2 and 3 passed**. Gate 2's current
 cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `6576c4732d301683195ff66cc3b57836abfbcc24`
+Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`
 against the rebuilt worker after the public USB audio close correction. Gates 1, 4, 5 and 6 remain open.
 See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 This current evidence supersedes older whole-gate ratings below. Reopen affected
@@ -366,3 +366,14 @@ still fail and Gate 4 remains open. Gates 1, 5 and 6 also remain open.
 Exact-head CI, CodeQL, full-history Gitleaks, Provider Tier B and all 17 SBOM
 identities passed at `c6ff0259baa52d18a5694bdbd6e983e7eeeae582`. Those are
 previous-head results; final-source CI and artifacts must be revalidated.
+
+## Current accepted cells at `46be2bf`
+
+The byte-identical final GUI images completed the two-hour neutral soak with
+119 verified creation/removal cycles and complete owned cleanup. Three fresh
+independent Rust controls passed 60 measured seconds each with complete
+production and zero missing/duplicated/corrupt measured markers. Exact figures,
+image identities and evidence scope are in the remediation status and reviewer
+handoff. Gate 1 still needs its interactive inventory; Gate 6 still needs C
+qualification and the sustained product/USB matrices. These passes do not erase
+historical failures or close the remaining gates.
