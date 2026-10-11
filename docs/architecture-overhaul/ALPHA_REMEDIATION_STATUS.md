@@ -2770,3 +2770,23 @@ reply gaps alone explain all loss. Next evidence must correlate graph/local/
 worker queue occupancy and silence in host media time; independent maxima are
 insufficient. Actual graph data-loop policies remain unverified. The comparison
 passed all mandatory local checks and 383 Python tests before deployment.
+
+
+The isolated typed-output observer at `96e94f73295f67ad580539fb1e4f95f182175baf`
+passed all 24 requests for DualSense (12), DS4 (6) and Xbox 360 (6), with exact
+root callbacks. The encompassing USB coordinator failed its accompanying ALSA
+microphone acceptance; it must not be reported as a complete phase pass. In the
+Xbox receipt, 288048 completed host frames reconcile with 268304 consumed source
+frames and 19744 silence frames; 384 submitted frames remained unconsumed, zero
+captures were abandoned, and queue drops were zero. Both initiating errors and
+empty cleanup errors were retained. Earlier non-audio controller evidence is
+unchanged; Gate 4 remains open. No leak or memory-pressure failure was observed.
+
+Production worker validators passed all three profiles at both ordinary and
+high descriptor numbers, including enumeration, exact report replies, ordered
+observations, bidirectional PCM, diagnostics and closure. Corpus validation
+passed. Downloaded exact-`96e94f7` SBOM collection verified all 17 workspace
+identities. At this recording, exact-head CI and CodeQL were still in progress;
+SBOM, Gitleaks history and Provider Tier B workflow conclusions were successful.
+A successful Provider workflow does not establish execution of a skipped
+privileged job; preserve the separately recorded live provider receipts.
