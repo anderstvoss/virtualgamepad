@@ -3461,3 +3461,30 @@ values and required image boundaries. Existing sealed descriptor and terminal
 reply regressions remain. Issue #146 remains open for maintained coordinator
 artifact discovery and exact scenario/image receipt reconciliation; this fix
 alone cannot make an older executable understand new selectors.
+
+
+### Retained Steam profile runtime collision
+
+The first installed HID fixture created nine event nodes and four HID nodes.
+The Steam namespace sentinel verified all 13 exact owned devices openable,
+private home/getent mapping, private proc/dev and dropped capabilities. The
+consumer then failed before Steam startup: bootstrap tried to extract public
+FEX assets into the retained test profile's already-existing runtime directory.
+This is a demonstrated harness defect, not failed controller recognition.
+The preceding workspace-parent attempt also correctly rejected a non-private
+parent before launch; the retry used an exclusive private directory.
+
+Bootstrap now extracts public assets and copies public FEX configuration into a
+fresh directory under the owned disk-backed namespace /tmp. Runtime/server paths
+point there, while authorized login/profile state retains its prior private
+location. The outer workspace teardown removes disposable runtime assets.
+A synthetic two-launch regression retains a fake login marker and prior runtime,
+requires distinct fresh extractions/configuration and verifies neither retained
+file changes. No real profile data is used as a fixture or published.
+
+The neutral fixture was explicitly stopped without arming. Its root receipt
+reports zero status and no initiating/cleanup errors; independent checks confirm
+producer exit, no matching owned device identities and no control socket.
+Both failed Steam preparation attempts report no cleanup errors. These are
+isolation/deployment and harness-correction evidence only; Gate 5 still requires
+actual consumer recognition/input/output and lifecycle checks after the fix.

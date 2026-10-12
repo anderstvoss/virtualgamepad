@@ -218,11 +218,14 @@ def remove_sentinel(path, expected):
 BOOTSTRAP = r'''set -eu
 /usr/bin/python3 -I /sentinel.py "$1" "$2"
 mkdir -p "$SNAP_USER_COMMON" "$SNAP_USER_DATA"
-/usr/bin/python3 -I /extract-rootfs.py "$SNAP/x86_rootfs.tar.gz" "$SNAP_USER_COMMON"
-cp -r "$SNAP/fex_config" "$SNAP_USER_COMMON/fex_config"
-export FEX_ROOTFS="$SNAP_USER_COMMON/x86_rootfs"
-export FEX_APP_CONFIG_LOCATION="$SNAP_USER_COMMON/fex_config"
-export FEX_SERVERSOCKETPATH="$SNAP_USER_COMMON/FEXServer.Socket"
+# Keep login/profile state separate from freshly extracted public runtime assets.
+# /tmp is an owned disk-backed workspace bind, removed by the outer lab teardown.
+runtime=$(mktemp -d /tmp/virtualgamepad-fex-runtime.XXXXXXXX)
+/usr/bin/python3 -I /extract-rootfs.py "$SNAP/x86_rootfs.tar.gz" "$runtime"
+cp -r "$SNAP/fex_config" "$runtime/fex_config"
+export FEX_ROOTFS="$runtime/x86_rootfs"
+export FEX_APP_CONFIG_LOCATION="$runtime/fex_config"
+export FEX_SERVERSOCKETPATH="$runtime/FEXServer.Socket"
 exec /usr/bin/dbus-run-session -- "$SNAP/usr/bin/FEXBash" -c "$SNAP/usr/bin/steam -no-cef-sandbox"
 '''
 

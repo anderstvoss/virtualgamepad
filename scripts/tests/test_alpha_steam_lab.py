@@ -201,6 +201,41 @@ class SteamNamespace(unittest.TestCase):
         self.assertEqual(lab.termination_reason(1, 'synthetic failure'), 'nonzero-exit')
         self.assertEqual(lab.termination_reason(0, ''), 'normal-exit')
 
+    def test_bootstrap_rebuilds_public_runtime_without_overwriting_retained_profile(self):
+        import io
+        import os
+        import subprocess
+        import tarfile
+        import shlex
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder); snap = root/'public'; snap.mkdir()
+            (snap/'fex_config').mkdir(); (snap/'fex_config'/'settings').write_text('fake public config')
+            with tarfile.open(snap/'x86_rootfs.tar.gz', 'w:gz') as archive:
+                member = tarfile.TarInfo('x86_rootfs/fake-runtime'); data = b'fake public runtime'
+                member.size = len(data); archive.addfile(member, io.BytesIO(data))
+            profile = root/'retained'; profile.mkdir(); (profile/'x86_rootfs').mkdir()
+            (profile/'x86_rootfs'/'historical').write_text('sanitized prior runtime')
+            (profile/'synthetic-login').write_text('fake retained state')
+            sentinel = root/'sentinel.py'; sentinel.write_text('pass')
+            runtime_parent = root/'fresh'; runtime_parent.mkdir()
+            source = lab.BOOTSTRAP.replace('/sentinel.py', str(sentinel)).replace(
+                '/extract-rootfs.py', shlex.quote(str(Path(lab.__file__).with_name('extract-alpha-steam-rootfs.py')))).replace(
+                '/tmp/virtualgamepad-fex-runtime.', str(runtime_parent/'runtime.')).replace(
+                'exec /usr/bin/dbus-run-session -- "$SNAP/usr/bin/FEXBash" -c "$SNAP/usr/bin/steam -no-cef-sandbox"',
+                'printf "%s\\n" "$FEX_ROOTFS"')
+            paths = []
+            for _ in range(2):
+                result = subprocess.run(['/bin/bash','-c', source, 'bootstrap','sentinel','marker'],
+                    env={**os.environ, 'SNAP':str(snap), 'SNAP_USER_COMMON':str(profile),
+                         'SNAP_USER_DATA':str(root/'data')}, check=True, capture_output=True, text=True)
+                paths.append(Path(result.stdout.splitlines()[-1]))
+            self.assertNotEqual(paths[0], paths[1])
+            for path in paths:
+                self.assertEqual((path/'fake-runtime').read_bytes(), b'fake public runtime')
+                self.assertEqual((path.parent/'fex_config'/'settings').read_text(), 'fake public config')
+            self.assertEqual((profile/'synthetic-login').read_text(), 'fake retained state')
+            self.assertEqual((profile/'x86_rootfs'/'historical').read_text(), 'sanitized prior runtime')
+
     def test_only_private_identified_test_profile_can_be_retained_and_reused(self):
         import os
         with tempfile.TemporaryDirectory() as directory:
