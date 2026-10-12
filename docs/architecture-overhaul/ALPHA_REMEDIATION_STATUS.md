@@ -4555,3 +4555,24 @@ exact process identity fields, six invalid scenario selections, interpreter
 syntax, helper hashes and sudo policy syntax. A matching revoker is supplied.
 Installation is still required; no GUI-owned active touch or whole Gate 1 pass
 is claimed. The final byte-pinned neutral soak follows the interaction inventory.
+
+## Fresh normal Steam exit after interruption handling
+
+Runner `282a36ebf156cb5b43b9d2e5b100c617024bd416`, tree
+`33bde2379e9302181cbab5a767cf8fd4317064ff`, and unchanged sealed input producer
+`d67f7ba` complete a fresh normal menu-exit trial. The reused, human-authorized
+private profile reaches the store without another login. Steam bootstrap, ordinary
+collector and root fixture all exit zero; initiating errors are absent and all
+cleanup lists are empty. The input rule is removed. Independent post-run checks
+find the owned producer, collector, display, original input nodes, workspace,
+control directory and display socket absent. Across 132 memory samples, available
+memory remains at least 14430040064 bytes. The 300-second limit is not reached.
+
+This accepts normal menu exit/restoration after the signal-handling correction;
+no controls were armed, and this is not a removal/input/output matrix or whole
+Gate 5 pass. The first attempt fails before Steam launch because the coordinator
+precreated the exclusive capture directory; its rejection and complete root
+restoration are preserved. The retry leaves capture-directory creation to the
+maintained runner. The screenshot helper encounters the expected X connection
+closure after requesting Exit; terminal receipts, rather than that helper error,
+prove normal termination. Private profile/screenshots/raw logs stay outside Git.
