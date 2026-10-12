@@ -118,7 +118,7 @@ class SteamNamespace(unittest.TestCase):
             with patch.object(lab,'consumer_device_settings',return_value=[]):
                 classic=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/js0'}])
                 ordinary=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/event0'}])
-            for hint in ['SDL_LINUX_JOYSTICK_CLASSIC','SDL_JOYSTICK_LINUX_CLASSIC']:
+            for hint in ['SDL_LINUX_JOYSTICK_CLASSIC','SDL_JOYSTICK_LINUX_CLASSIC','SDL_JOYSTICK_DISABLE_UDEV']:
                 self.assertIn(hint,classic); self.assertEqual(classic[classic.index(hint)+1],'1')
                 self.assertNotIn(hint,ordinary)
 

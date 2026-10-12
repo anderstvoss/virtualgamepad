@@ -4465,3 +4465,28 @@ All 460 Python tooling tests pass. An actual generated namespace control verifie
 alias disappearance independently of Steam, with zero exit and owned cleanup.
 This does not accept Steam hotplug: fresh affected live consumer cells are pending.
 Gate 5 remains open and the earlier stale controller-list observation is retained.
+
+## Dynamic classic-view live checkpoint and discovery experiment
+
+Runner `b8495138affbbda9065194723e0d2419b06f21fe`, unchanged producer
+`d67f7ba6782b8645e0fef7d04a08dae87724d4f5`: Steam's shipped SDL 3.5.0
+independently discovers four classic gamepads through the aliases. After scheduled
+DualSense removal, inspection of the identity-pinned actual Steam process namespace
+finds only the three sibling aliases and verifies Xbox backing identity. The first
+observer incorrectly resolved an absolute namespace symlink against the host and
+failed without producing an accepted receipt; the corrected lstat/canonical-backing
+observer passes. Steam still lists the removed DualSense. Xbox South press/release
+remains visible afterward. The overall run fails at its runtime deadline before
+normal exit; root fixture exit is zero, collector exit one, initiating timeout is
+retained, both cleanup lists are empty, owned inputs/processes/workspace absent.
+680 memory samples retain at least 11290025984 available bytes, with 98 reporting
+the retired node. No output acceptance is claimed.
+
+The next classic-only discovery experiment sets `SDL_JOYSTICK_DISABLE_UDEV=1`.
+The maintained SDL source and shipped library both identify this setting. It directs
+SDL toward fallback/directory notification discovery appropriate to the private
+namespace; it does not expose host udev events or foreign devices. Existing classic
+hints remain; default evdev/hidraw settings are unchanged. Regression checks the
+hint's exact value and absence in the default path. Fresh direct SDL hotplug and
+Steam list/input/normal-exit evidence remain required. This does not establish the
+exact Steam backend cause, close Gate 5, or alter controller/public API behavior.

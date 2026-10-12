@@ -353,7 +353,10 @@ def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seco
                        PATH='/usr/bin:/bin')
     if devices and all(re.fullmatch(r'/dev/input/js[0-9]+', item['target']) for item in devices):
         # SDL2 and SDL3 use different names for the same documented backend hint.
-        environment.update(SDL_LINUX_JOYSTICK_CLASSIC='1', SDL_JOYSTICK_LINUX_CLASSIC='1')
+        # This private network namespace cannot receive the host udev monitor.
+        # Use the visible owned directory's removal notifications in classic mode.
+        environment.update(SDL_LINUX_JOYSTICK_CLASSIC='1', SDL_JOYSTICK_LINUX_CLASSIC='1',
+                           SDL_JOYSTICK_DISABLE_UDEV='1')
     for key, value in environment.items(): settings += ['--setenv', key, value]
     return args[:boundary] + settings + ['--', '/bin/bash', '/bootstrap.sh', sentinel, marker]
 
