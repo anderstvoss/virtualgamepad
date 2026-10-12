@@ -26,7 +26,7 @@ control never overrides a failed root functional phase, and Rust-only evidence
 cannot close the C controls or any product acceptance cell. No live pass is claimed
 by the new channel's deterministic tests.
 
-Current gate disposition: **Gates 2 and 3 passed**. Gate 2 closure and its
+Current gate disposition: **Gate 3 passed; Gate 2 has a reopened DualSense evdev parity cell (#147)**. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
 Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`; see
 [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
@@ -3546,3 +3546,32 @@ Next steps: correct DualSense gamepad/contact composition with parity/transactio
 regressions, supply only owned discovery metadata inside the private consumer
 namespace, and demonstrate bounded interruption/restoration. Do not falsify host
 classification or remove implemented touch controls to make a test pass.
+
+## DualSense evdev discovery correction — 2026-10-12
+
+Code candidate `1b0029c119867daf0fd5f776f10c4fe10a7d7db3` (following
+`1931d64979b6c56cd1d3119df4005db70bbe899a`) shares the existing transactional
+DS4 gamepad/contact composition with DualSense. Both `BTN_TOUCH` (330) and
+`BTN_TOOL_FINGER` (325) route exclusively to the touch companion. Primary
+controls and conventional feedback remain on the gamepad. Both touch slots,
+tracking IDs, coordinates and releases remain available on the companion.
+Ordinary-root signatures are unchanged; DualSense association metadata now
+includes its owned touch companion. The surface documents that SDL gamepad touch
+APIs do not consume this separate evdev device.
+
+| Boundary | Evidence / disposition |
+|---|---|
+| Exact capabilities and frames | Deterministic DualSense regressions verify both touch-classification bits absent from primary, retained on companion, both slots and releases |
+| Transactional lifecycle | Fake second-open failure removes primary for both Sony families; DualSense repeated close and sibling feedback/service regressions pass; prior DS4 regressions retained |
+| Linux discovery | Candidate producer SHA-256 `a1ad9e3bf237fa53cdf1c2cd4df28015beb32d9959c5755e4fe8f74694e60836`: settled live udev identifies DualSense primary as joystick and companion as touchpad; all four primary families are joysticks |
+| Isolation and cleanup | Neutral-only scoped trial; private seat and shared desktop ignore flags retained; producer absent, owned nodes absent, rule removed, root status 0 with no initiating/cleanup errors |
+| Historical failures | The first split still left `BTN_TOOL_FINGER` on primary and failed live discovery. Its receipts are retained. The final audit initially expected a touchscreen companion; the actual touchpad classification correctly reflects retained finger semantics |
+| Validation | fmt/check/Clippy/workspace tests/Gitleaks and forced Rust 1.85 all-target/all-feature check passed |
+| Remaining acceptance | Active DualSense companion contact/feedback/consumer revalidation and isolated Steam discovery/input remain open. This classification pass does not close whole Gate 2 or Gate 5 |
+
+Reviewer: scrutinize shared Sony frame routing, exact finger/contact release,
+association ownership, second-node rollback and sibling survival. No global udev
+classification override, loss threshold change or queue enlargement was used.
+Raw receipts remain outside tracked source. The existing six-gate scope remains
+in force pending direct release-owner confirmation of the PR reviewer's proposed
+scope change; an external generated comment is not confirmation from this chat.
