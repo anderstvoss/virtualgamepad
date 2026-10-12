@@ -32,17 +32,29 @@ class SteamNamespace(unittest.TestCase):
         self.assertEqual({number: signal.getsignal(number) for number in original},original)
 
     def test_interrupt_inside_child_poll_is_not_swallowed_as_oserror(self):
-        import os, signal, subprocess, sys
+        import inspect, os, signal, subprocess, sys
         from unittest.mock import patch
         handlers = {number: signal.signal(number,lab.interrupted) for number in (signal.SIGTERM,signal.SIGINT)}
         child = subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(30)'],start_new_session=True)
-        waitpid = subprocess._del_safe.waitpid
+        poll = subprocess.Popen._internal_poll
+        # CPython 3.13 moved the cached waitpid from a function default into a
+        # destructor-safe namespace. Exercise the real polling catch on both.
+        defaults = poll.__defaults__
+        names = list(inspect.signature(poll).parameters)
+        waitpid = subprocess._del_safe.waitpid if hasattr(subprocess,'_del_safe') else inspect.signature(poll).parameters['_waitpid'].default
         def interrupt_poll(pid, flags):
             if pid == child.pid:
                 os.kill(os.getpid(),signal.SIGTERM)
             return waitpid(pid,flags)
         try:
-            with patch.object(subprocess._del_safe,'waitpid',side_effect=interrupt_poll):
+            if hasattr(subprocess,'_del_safe'):
+                boundary = patch.object(subprocess._del_safe,'waitpid',side_effect=interrupt_poll)
+            else:
+                replaced = list(defaults)
+                first_default = len(names)-len(defaults)
+                replaced[names.index('_waitpid')-first_default] = interrupt_poll
+                boundary = patch.object(poll,'__defaults__',tuple(replaced))
+            with boundary:
                 with self.assertRaisesRegex(lab.LabInterrupted,'SIGTERM'):
                     child.poll()
             self.assertIsNone(child.returncode)

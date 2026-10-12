@@ -4757,3 +4757,24 @@ workspace tests/Gitleaks, the unchanged local-path policy and cross-target
 Windows/macOS example checks. The new polling-interruption regression retains
 actual signal delivery and both previous restoration tests. No dependencies or
 ordinary-root API changes are introduced.
+
+### Fresh corrected-runner interruption acceptance at 993e7c0
+
+An owned, isolated classic Steam trial against runner `993e7c0` and immutable
+producer `9371da9` receives identity-checked SIGTERM after startup. Its terminal
+receipt records the expected initiating SIGTERM, empty inner/outer cleanup,
+normal root fixture exit, removed rule and absent original owned input nodes,
+producer, collector, control socket and temporary display workspace. The owned
+unit is inactive. All 58 memory samples retain at least 14,793,285,632 available
+bytes. The authorized retained test profile remains separate and is not copied
+into the repository. This accepts controlled interruption restoration only;
+full Gate 5 still remains open.
+
+Remote CI on 993e7c0 passes policy on all three platforms and macOS native tests;
+the Python corpus job exposes a regression-only compatibility error: CPython
+3.12 caches waitpid as a function default, whereas 3.13 uses a destructor-safe
+namespace. The deterministic real-poll signal test now handles both layouts,
+without changing its assertions or the runner. All 467 local Python tests pass;
+remote confirmation of the corrected test remains required. The 993e7c0 SBOM
+artifact independently verifies all 17 package identities. Failed intermediate
+receipts remain preserved outside tracked source. No gate criteria are relaxed.
