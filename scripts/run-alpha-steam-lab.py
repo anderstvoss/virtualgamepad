@@ -32,9 +32,9 @@ def verify_consumer_namespace(devices):
     """Check the mounted identity and open permissions without reading or writing input."""
     expected = {item['target'] for item in devices}
     if len(expected) != len(devices) or len(devices) > 128 or any(
-            re.fullmatch(r'/dev/(input/event[0-9]+|hidraw[0-9]+)', target) is None for target in expected):
+            re.fullmatch(r'/dev/(input/(event|js)[0-9]+|hidraw[0-9]+)', target) is None for target in expected):
         raise ValueError('invalid namespace consumer inventory')
-    actual = {str(path) for directory, pattern in [('/dev/input','event*'),('/dev','hidraw*')]
+    actual = {str(path) for directory, pattern in [('/dev/input','event*'),('/dev/input','js*'),('/dev','hidraw*')]
               for path in Path(directory).glob(pattern)}
     if actual != expected: raise ValueError('foreign or missing consumer nodes')
     for item in devices:
@@ -130,15 +130,17 @@ def input_owner_identity(pid, proc=Path('/proc')):
 
 
 def consumer_devices(pid, input_root=Path('/sys/class/input'),
-                     hidraw_root=Path('/sys/class/hidraw'), dev_root=Path('/dev')):
+                     hidraw_root=Path('/sys/class/hidraw'), dev_root=Path('/dev'), classic=False):
     """Read-only inventory. No arbitrary device path or vendor-only matching."""
     before = input_owner_identity(pid)
     spec = importlib.util.spec_from_file_location(
         'input_ownership', Path(__file__).with_name('run-alpha-input-lab.py'))
     ownership = importlib.util.module_from_spec(spec); spec.loader.exec_module(ownership)
     devices = []
-    for root, pattern, prefix in [(input_root, r'event[0-9]+', 'input'),
-                                  (hidraw_root, r'hidraw[0-9]+', '')]:
+    if type(classic) is not bool: raise ValueError('explicit boolean classic selection required')
+    roots = [(input_root, r'js[0-9]+', 'input')] if classic else [
+        (input_root, r'event[0-9]+', 'input'), (hidraw_root, r'hidraw[0-9]+', '')]
+    for root, pattern, prefix in roots:
         for entry in root.iterdir():
             if not re.fullmatch(pattern, entry.name) or not ownership.input_is_owned(entry, pid): continue
             source = dev_root/prefix/entry.name
@@ -172,7 +174,7 @@ def consumer_device_settings(devices):
     targets = set()
     for device in devices:
         target = device['target']
-        if (not re.fullmatch(r'/dev/(input/event[0-9]+|hidraw[0-9]+)', target) or target in targets):
+        if (not re.fullmatch(r'/dev/(input/(event|js)[0-9]+|hidraw[0-9]+)', target) or target in targets):
             raise ValueError('invalid or duplicate owned consumer target')
         targets.add(target)
         source = Path(device['source'])
@@ -282,6 +284,9 @@ def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seco
     environment = dict(DISPLAY=f':{display}', XAUTHORITY='/auth', LIBGL_ALWAYS_SOFTWARE='1',
                        SNAP=snap, SNAP_USER_COMMON=str(home / 'common'), SNAP_USER_DATA=str(home / 'data'),
                        PATH='/usr/bin:/bin')
+    if devices and all(re.fullmatch(r'/dev/input/js[0-9]+', item['target']) for item in devices):
+        # SDL2 and SDL3 use different names for the same documented backend hint.
+        environment.update(SDL_LINUX_JOYSTICK_CLASSIC='1', SDL_JOYSTICK_LINUX_CLASSIC='1')
     for key, value in environment.items(): settings += ['--setenv', key, value]
     return args[:boundary] + settings + ['--', '/bin/bash', '/bootstrap.sh', sentinel, marker]
 
@@ -488,12 +493,13 @@ def lock_profile(profile):
     return descriptor
 
 
-def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False, profile_directory=None, input_owner_pid=None):
+def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=None, visible=False, profile_directory=None, input_owner_pid=None, classic=False):
     if os.geteuid() == 0:
         raise RuntimeError('Steam lab must run as an ordinary user')
     if shutil.which('bwrap') is None:
         raise RuntimeError('bubblewrap is unavailable; no bootstrap attempted')
-    input_owner, devices = consumer_devices(input_owner_pid) if input_owner_pid is not None else (None, [])
+    if classic and input_owner_pid is None: raise ValueError('classic mode requires an owned producer')
+    input_owner, devices = consumer_devices(input_owner_pid, classic=classic) if input_owner_pid is not None else (None, [])
     account = pwd.getpwuid(os.getuid())
     home = Path(account.pw_dir)
     marker = secrets.token_hex(16)
@@ -528,7 +534,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
             if len(completed.stdout) > 4096:
                 raise RuntimeError('oversized namespace receipt')
             receipt = json.loads(completed.stdout)
-            receipt.update(test_profile_retained=profile_directory is not None, test_profile_reused=reused)
+            receipt.update(input_backend='classic-joystick' if classic else 'evdev-hidraw', test_profile_retained=profile_directory is not None, test_profile_reused=reused)
             if bootstrap:
                 if captures is not None: captures.mkdir(mode=0o700, exist_ok=False)
                 result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile, devices, input_owner)
@@ -552,6 +558,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--input-owner-pid', type=int, help='expose only event/hidraw devices of this live same-user test producer; never arbitrary device paths')
+    parser.add_argument('--classic-joystick', action='store_true', help='expose only owned js nodes and select the classic SDL input backend; separate evidence from evdev/output acceptance')
     parser.add_argument('--bootstrap', action='store_true', help='bounded isolated Steam/FEX bootstrap, not consumer acceptance')
     display = parser.add_mutually_exclusive_group()
     display.add_argument('--xvfb', type=Path, help='ordinary-user hidden display server binary')
@@ -563,13 +570,15 @@ def main():
     args = parser.parse_args()
     if args.input_owner_pid is not None and args.input_owner_pid <= 1:
         parser.error('--input-owner-pid requires a positive live process PID greater than one')
+    if args.classic_joystick and args.input_owner_pid is None:
+        parser.error('--classic-joystick requires --input-owner-pid')
     if not args.apply:
         print(json.dumps(dict(apply=False, phases=['private namespace', 'synthetic isolation sentinel'],
                               steam_launched=False, copies_existing_profile=False)))
         return 0
     server = args.xephyr if args.xephyr is not None else args.xvfb
     if args.bootstrap and server is None: parser.error('--bootstrap requires --xvfb or --xephyr')
-    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory, args.input_owner_pid)
+    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory, args.input_owner_pid, args.classic_joystick)
 
 
 if __name__ == '__main__':

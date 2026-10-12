@@ -9,6 +9,45 @@ spec.loader.exec_module(lab)
 
 
 class SteamNamespace(unittest.TestCase):
+    def test_classic_inventory_keeps_only_owned_js_nodes_and_rejects_replacement(self):
+        import os, stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); inputs=root/'input'; inputs.mkdir(); raw=root/'raw'; raw.mkdir()
+            dev=root/'dev'; (dev/'input').mkdir(parents=True)
+            for name,owner,minor in [('js0','2a',0),('js1','2b',1),('event0','2a',64)]:
+                entry=inputs/name; (entry/'device').mkdir(parents=True)
+                (entry/'device/phys').write_text('virtualgamepad/uhid/dualsense/p'+owner+'-i0')
+                (entry/'dev').write_text('13:'+str(minor)); (dev/'input'/name).write_text('synthetic')
+            original=Path.lstat
+            def meta(path):
+                if path.parent==dev/'input':
+                    minor={'js0':0,'js1':1,'event0':64}[path.name]
+                    return SimpleNamespace(st_mode=stat.S_IFCHR|0o660,st_dev=7,st_ino=8,st_rdev=os.makedev(13,minor))
+                return original(path)
+            with patch.object(lab,'input_owner_identity',return_value=(42,123)),patch.object(Path,'lstat',meta):
+                owner,devices=lab.consumer_devices(42,inputs,raw,dev,classic=True)
+                self.assertEqual([x['target'] for x in devices],['/dev/input/js0'])
+                self.assertIn('/dev/input/js0',lab.consumer_device_settings(devices))
+                lab.revalidate_consumer_devices(owner,devices)
+                with self.assertRaisesRegex(ValueError,'changed'):
+                    lab.consumer_device_settings([{**devices[0],'inode':99}])
+                with self.assertRaisesRegex(ValueError,'boolean'):
+                    lab.consumer_devices(42,inputs,raw,dev,classic='yes')
+
+    def test_classic_bootstrap_hints_are_scoped_and_default_is_unchanged(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            workspace=Path(directory)
+            with patch.object(lab,'consumer_device_settings',return_value=[]):
+                classic=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/js0'}])
+                ordinary=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/event0'}])
+            for hint in ['SDL_LINUX_JOYSTICK_CLASSIC','SDL_JOYSTICK_LINUX_CLASSIC']:
+                self.assertIn(hint,classic); self.assertEqual(classic[classic.index(hint)+1],'1')
+                self.assertNotIn(hint,ordinary)
+
+
     def test_owned_udev_snapshot_excludes_foreign_records_and_private_properties(self):
         import os
         from unittest.mock import patch
