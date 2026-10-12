@@ -102,6 +102,7 @@ fn desired_inputs(seconds: u64, start_after: u64, remove_at: u64) -> [bool; 4] {
     pressed
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn selected_inputs(seconds: u64, start: u64, remove_at: u64, family: Option<usize>) -> [bool; 4] {
     let Some(family) = family else {
         return desired_inputs(seconds, start, remove_at);

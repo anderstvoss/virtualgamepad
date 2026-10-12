@@ -31,6 +31,27 @@ class SteamNamespace(unittest.TestCase):
             self.assertEqual(list((root/'work').iterdir()),[])
         self.assertEqual({number: signal.getsignal(number) for number in original},original)
 
+    def test_interrupt_inside_child_poll_is_not_swallowed_as_oserror(self):
+        import os, signal, subprocess, sys
+        from unittest.mock import patch
+        handlers = {number: signal.signal(number,lab.interrupted) for number in (signal.SIGTERM,signal.SIGINT)}
+        child = subprocess.Popen([sys.executable,'-I','-c','import time;time.sleep(30)'],start_new_session=True)
+        waitpid = subprocess._del_safe.waitpid
+        def interrupt_poll(pid, flags):
+            if pid == child.pid:
+                os.kill(os.getpid(),signal.SIGTERM)
+            return waitpid(pid,flags)
+        try:
+            with patch.object(subprocess._del_safe,'waitpid',side_effect=interrupt_poll):
+                with self.assertRaisesRegex(lab.LabInterrupted,'SIGTERM'):
+                    child.poll()
+            self.assertIsNone(child.returncode)
+            self.assertEqual(signal.getsignal(signal.SIGTERM),signal.SIG_IGN)
+            self.assertEqual(signal.getsignal(signal.SIGINT),signal.SIG_IGN)
+        finally:
+            child.kill(); child.wait(timeout=5)
+            for number,handler in handlers.items():signal.signal(number,handler)
+
     def test_bootstrap_interrupt_reaps_owned_children_and_ignores_repeat_during_cleanup(self):
         import os, signal, subprocess, sys, threading
         from types import SimpleNamespace
@@ -63,7 +84,7 @@ class SteamNamespace(unittest.TestCase):
                     return SimpleNamespace(returncode=0,stderr=b'')
                 account=SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid())
                 with patch.object(Path,'exists',exists),patch.object(lab,'display_command',return_value=server),patch.object(lab,'bootstrap_unit_command',return_value=worker),patch.object(lab.subprocess,'Popen',side_effect=spawn),patch.object(lab.subprocess,'run',side_effect=restore):
-                    result=lab.run_bootstrap(root,Path('/home/synthetic'),account,'.vg-alpha-sentinel-fake','marker',Path(sys.executable),30)
+                    result=lab.run_bootstrap(root,root/'synthetic-home',account,'.vg-alpha-sentinel-fake','marker',Path(sys.executable),30)
                 self.assertIn('SIGTERM',result['initiating'])
                 self.assertEqual(result['cleanup'],[])
                 self.assertFalse(result['accepted'])
@@ -184,8 +205,8 @@ class SteamNamespace(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             workspace=Path(directory)
             with patch.object(lab,'consumer_device_settings',return_value=[]):
-                classic=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/js0'}])
-                ordinary=lab.bootstrap_command(workspace,Path('/home/synthetic'),42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/event0'}])
+                classic=lab.bootstrap_command(workspace,workspace/'synthetic-home',42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/js0'}])
+                ordinary=lab.bootstrap_command(workspace,workspace/'synthetic-home',42,43,'.vg-alpha-sentinel-fake','marker',222,60,devices=[{'target':'/dev/input/event0'}])
             for hint in ['SDL_LINUX_JOYSTICK_CLASSIC','SDL_JOYSTICK_LINUX_CLASSIC','SDL_JOYSTICK_DISABLE_UDEV']:
                 self.assertIn(hint,classic); self.assertEqual(classic[classic.index(hint)+1],'1')
                 self.assertNotIn(hint,ordinary)
@@ -207,7 +228,7 @@ class SteamNamespace(unittest.TestCase):
             self.assertIn('ID_SEAT=seat-private', text)
             self.assertNotIn('PRIVATE_TOKEN', text)
             with patch.object(lab, 'consumer_device_settings', return_value=[]):
-                command = lab.command(workspace, Path('/home/synthetic'), 42, 43, '.vg-alpha-sentinel-fake', 'marker', devices=devices)
+                command = lab.command(workspace, workspace/'synthetic-home', 42, 43, '.vg-alpha-sentinel-fake', 'marker', devices=devices)
             self.assertIn(str(snapshot), command)
             self.assertIn('/run/udev/data', command)
             self.assertNotIn('/run/udev/data/c13:65', command)

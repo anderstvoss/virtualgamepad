@@ -89,9 +89,13 @@ def begin_restoration():
             signal.signal(signum, signal.SIG_IGN)
 
 
+class LabInterrupted(Exception):
+    """Escape subprocess polling, which catches OSError including InterruptedError."""
+
+
 def interrupted(signum, _frame):
     begin_restoration()
-    raise InterruptedError('Steam lab interrupted by ' + signal.Signals(signum).name)
+    raise LabInterrupted('Steam lab interrupted by ' + signal.Signals(signum).name)
 
 
 def memory_sample(meminfo=Path('/proc/meminfo'), pressure=Path('/proc/pressure/memory')):

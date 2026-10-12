@@ -4135,3 +4135,40 @@ Reviewer: scrutinize this reclosure against the complete table, source/image
 invalidation boundaries, actual frame/callback receipts and owned cleanup; post
 any missing disposition directly in PR #133. Raw captures and root/private logs
 remain outside tracked source.
+
+## Exact-head CI audit and interruption regression after 617b2c5
+
+Manual dispatches at `617b2c587bec470011e2f407dab53e20ae2d698c` expose failures
+that older green runs did not cover. CI run 38307259160 passes Linux build/tests,
+lint, actual MSRV selection, corpus and supply-chain audit, but fails native
+Windows/macOS example compilation and all three policy jobs. The policy failure
+is a synthetic `/home` fixture path; the native build failure is an ungated
+`selected_inputs` calling a Linux/test-only helper. Temporary test homes and a
+matching Linux/test guard correct those two defects without changing production
+controller behavior or workflow policy. Native cross-target example checks pass;
+remote native tests still require the corrected candidate's own run.
+
+The full Python rerun additionally reproduces a missed interruption: the signal
+handler's `InterruptedError` is an `OSError`, which Python subprocess polling can
+catch. A dedicated `LabInterrupted(Exception)` escapes that polling catch while
+remaining handled by the outer receipt/restoration boundary. A regression sends
+an actual SIGTERM from inside child polling and verifies propagation, repeated
+signal suppression and bounded child cleanup. Existing bootstrap and outer
+sentinel/profile cleanup regressions remain. Preserve the intermediate failed
+runs; this code correction requires a new live interruption receipt before the
+changed Steam runner's restoration acceptance is reaffirmed.
+
+Exact-head SBOM run 38307271226 passes; downloaded artifact identities are checked
+against locked Cargo metadata: all 17 workspace reports, including the root,
+with exact package/version identities and no extras or omissions. Full-history
+Gitleaks run 38307265508 passes. Provider Tier B run 38307268263 passes its contract
+job but **skips privileged Linux validation**; that skip is not live acceptance.
+CodeQL run 38307262342 subsequently passes. These receipts apply to 617b2c5 only,
+not the subsequent corrected source. All six gate criteria remain unchanged;
+Gates 1/4/5/6 are open and PR #133 remains draft.
+
+The corrected increment passes all 467 Python tests, mandatory fmt/check/Clippy/
+workspace tests/Gitleaks, the unchanged local-path policy and cross-target
+Windows/macOS example checks. The new polling-interruption regression retains
+actual signal delivery and both previous restoration tests. No dependencies or
+ordinary-root API changes are introduced.
