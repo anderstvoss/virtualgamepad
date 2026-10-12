@@ -105,11 +105,13 @@ def native_playback_identity(node):
     return nodes[0]['id'], nodes[0]['info']['props']['object.serial']
 
 
-def bounded_native_capture(command, byte_count):
+def bounded_native_capture(command, byte_count, expected_record_stop_status=None):
     # Drain stdout as the client runs; neither a full pipe nor a stopped writer
     # can turn a finite trial into an unbounded wait. Only this child is killed.
     import selectors
     import signal
+    if expected_record_stop_status is not None and (type(expected_record_stop_status) is not int or expected_record_stop_status != 1):
+        raise ValueError('unsupported record stop contract')
     if type(byte_count) is not int or not 0 < byte_count <= MAX_CAPTURE_FRAMES * 8:
         raise ValueError('bounded native capture size required')
     def quota():
@@ -142,12 +144,19 @@ def bounded_native_capture(command, byte_count):
             except BaseException as error: cleanup.append(str(error))
             try: child.stdout.close()
             except BaseException as error: cleanup.append(str(error))
-        if child.returncode != 0 and not (terminated and child.returncode == -signal.SIGTERM):
-            cleanup.append('native capture child failed: ' + str(child.returncode))
         errors.seek(0); diagnostic = errors.read(65537)
+        # PipeWire 1.4.2 pw-cat returns 1 on a requested record stop: only
+        # playback reaches its drained flag. Accept that explicit contract only
+        # after the complete receipt and our stop, with no client diagnostics.
+        expected_stop = (terminated and len(data) == byte_count and not diagnostic
+                         and (child.returncode == -signal.SIGTERM or
+                              (expected_record_stop_status is not None and child.returncode == expected_record_stop_status)))
+        if child.returncode != 0 and not expected_stop:
+            cleanup.append('native capture child failed: ' + str(child.returncode))
     if initiating is not None or cleanup or len(diagnostic) > 65536:
-        raise RuntimeError(json.dumps(dict(initiating=initiating, cleanup=cleanup, diagnostic_quota_exceeded=len(diagnostic)>65536)))
-    return bytes(data), diagnostic
+        raise RuntimeError(json.dumps(dict(initiating=initiating, cleanup=cleanup, diagnostic_quota_exceeded=len(diagnostic)>65536, diagnostic=diagnostic[:4096].decode(errors='replace'))))
+    return bytes(data), diagnostic, dict(exit_status=child.returncode, termination_requested=terminated,
+                                        expected_record_stop_status=expected_record_stop_status, captured_bytes=len(data))
 
 
 def run_native_playback_trial(card, family, node, microphone_node=None):
@@ -159,7 +168,7 @@ def run_native_playback_trial(card, family, node, microphone_node=None):
     command = ['pw-cat', '--record', '--raw', '--format', 's16', '--rate', '48000',
                '--channels', str(channels), '--latency', '256', '--target', node, '-']
     with concurrent.futures.ThreadPoolExecutor(4) as pool:
-        capture = pool.submit(bounded_native_capture, command, frames*channels*2)
+        capture = pool.submit(bounded_native_capture, command, frames*channels*2, 1)
         playback = pool.submit(subprocess.run, ['aplay', *common, str(channels)], input=marker_pcm(frames, channels),
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=14)
         host_microphone = pool.submit(subprocess.run, ['arecord', *common, str(microphones), '-d', '6'],
@@ -168,7 +177,7 @@ def run_native_playback_trial(card, family, node, microphone_node=None):
                        '--rate', '48000', '--channels', str(microphones), '--latency', '256', '--target', microphone_node, '-'],
                        input=marker_pcm(frames, microphones), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=14)
                       if microphone_node else None)
-        data, diagnostic = capture.result(); output = playback.result()
+        data, diagnostic, capture_lifecycle = capture.result(); output = playback.result()
         source = microphone.result() if microphone else None
         incoming = host_microphone.result()
     if native_playback_identity(node) != identity or (microphone_node and native_microphone_identity(microphone_node) != microphone_identity):
@@ -178,7 +187,7 @@ def run_native_playback_trial(card, family, node, microphone_node=None):
     result.update(warmup=capture_summary(decoded, 0, min(96000, len(decoded[0]))),
                   edge_capture=capture_summary(decoded, min(240000, len(decoded[0]))),
                   captured_total_frames=len(data)//(channels*2), playback_status=output.returncode,
-                  playback_errors=output.stderr.decode(errors='replace'), native_capture_errors=diagnostic.decode(errors='replace'),
+                  playback_errors=output.stderr.decode(errors='replace'), native_capture_errors=diagnostic.decode(errors='replace'), native_capture_lifecycle=capture_lifecycle,
                   marker_scheme='indexed-s16-frame-or-mono-pair-v1', warmup_seconds=2, edge_capture_seconds=1,
                   native_microphone_submission_scope='stdin only; received microphone markers are audited separately')
     microphone_decoded = decode_capture(incoming.stdout, microphones)

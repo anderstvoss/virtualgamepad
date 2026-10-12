@@ -3202,3 +3202,15 @@ close the controller, retain audio/controller errors and permit independent
 receipts. Teardown health must affect marker verdicts before they are printed;
 closed-state assertions remain mandatory. Do not interpret continued collection
 as remediation of the observed DS4 broken pipe or grant alpha acceptance.
+
+### Recording client termination contract
+
+Compare the installed client version and upstream `pw-cat` 1.4.2 `do_quit`/
+`data.drained` return path. `expected_record_stop_is_narrow_and_retains_raw_status`
+and `complete_stdout_cannot_hide_nonzero_native_client_exit` must distinguish a
+requested stop AFTER complete capture from an unexpected exit. Require empty
+client diagnostics for the expected status-1 contract, raw lifecycle fields in
+the receipt and all unchanged marker/microphone assertions. Preserve all twelve
+`2c6eb91` verdicts, but do not turn its six rejected native captures into passes;
+a fresh live receipt is required. The single Xbox short pass is not sustained
+continuity or whole-gate acceptance.

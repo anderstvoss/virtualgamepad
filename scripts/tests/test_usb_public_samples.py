@@ -87,7 +87,7 @@ class PublicSampleIdentity(unittest.TestCase):
                     self.assertEqual(len(options['input']), 288000 * 8)
                     return Mock(returncode=1 if scenario == 'host-failed' else 0, stderr=b'')
                 with patch.dict(namespace, native_playback_identity=Mock(return_value=(1, 11)),
-                                bounded_native_capture=Mock(return_value=(bytes(data), b''))), \
+                                bounded_native_capture=Mock(return_value=(bytes(data), b'', {'exit_status':1, 'termination_requested':True}))), \
                      patch.object(namespace['subprocess'], 'run', side_effect=run):
                     result = namespace['run_native_playback_trial'](1, 'dualsense', 'virtualgamepad.12.1.playback')
                 self.assertEqual(result['passed'], scenario == 'complete')
@@ -110,7 +110,7 @@ class PublicSampleIdentity(unittest.TestCase):
                     return Mock(returncode=1 if scenario == 'native-source-failed' and command[0]=='pw-cat' else 0, stderr=b'')
                 with patch.dict(namespace, native_playback_identity=Mock(return_value=(1, 11)),
                                 native_microphone_identity=Mock(return_value=(2, 12)),
-                                bounded_native_capture=Mock(return_value=(captured, b''))), \
+                                bounded_native_capture=Mock(return_value=(captured, b'', {'exit_status':1, 'termination_requested':True}))), \
                      patch.object(namespace['subprocess'], 'run', side_effect=run):
                     if scenario in ('microphone-extra-byte', 'playback-extra-byte'):
                         with self.assertRaisesRegex(ValueError, 'partial captured PCM frame'):
@@ -133,7 +133,7 @@ class PublicSampleIdentity(unittest.TestCase):
     def test_bounded_native_capture_reaps_complete_truncated_and_stalled_children(self):
         import sys
         command = [sys.executable, '-I', '-c', "import os;os.write(1,b'sanitized')"]
-        self.assertEqual(namespace['bounded_native_capture'](command, 9), (b'sanitized', b''))
+        self.assertEqual(namespace['bounded_native_capture'](command, 9)[:2], (b'sanitized', b''))
         with self.assertRaisesRegex(RuntimeError, 'before complete production'):
             namespace['bounded_native_capture'](command, 10)
         stalled = [sys.executable, '-I', '-c', 'import time;time.sleep(30)']
@@ -151,14 +151,26 @@ class PublicSampleIdentity(unittest.TestCase):
         for invalid in (0, -1, True, namespace['MAX_CAPTURE_FRAMES'] * 8 + 1):
             with self.assertRaises(ValueError): namespace['bounded_native_capture'](command, invalid)
 
+    def test_expected_record_stop_is_narrow_and_retains_raw_status(self):
+        import sys
+        command = [sys.executable, '-I', '-c', "import os,signal,time;signal.signal(signal.SIGTERM,lambda *args:exit(1));os.write(1,b'sanitized');time.sleep(30)"]
+        data, diagnostic, lifecycle = namespace['bounded_native_capture'](command, 9, 1)
+        self.assertEqual((data, diagnostic), (b'sanitized', b''))
+        self.assertEqual(lifecycle, dict(exit_status=1, termination_requested=True, expected_record_stop_status=1, captured_bytes=9))
+        with self.assertRaisesRegex(RuntimeError, 'native capture child failed'):
+            namespace['bounded_native_capture'](command, 9)
+        noisy = [sys.executable, '-I', '-c', "import os,signal,time;signal.signal(signal.SIGTERM,lambda *args:exit(1));os.write(2,b'synthetic client error');os.write(1,b'sanitized');time.sleep(30)"]
+        with self.assertRaisesRegex(RuntimeError, 'synthetic client error'):
+            namespace['bounded_native_capture'](noisy, 9, 1)
+
     def test_complete_stdout_cannot_hide_nonzero_native_client_exit(self):
         read, write = os.pipe()
         os.write(write, b'sanitized'); os.close(write)
-        child = Mock(stdout=os.fdopen(read, 'rb'), returncode=3)
-        child.poll.return_value = 3
+        child = Mock(stdout=os.fdopen(read, 'rb'), returncode=1)
+        child.poll.return_value = 1
         with patch.object(namespace['subprocess'], 'Popen', return_value=child), \
              self.assertRaisesRegex(RuntimeError, 'native capture child failed'):
-            namespace['bounded_native_capture'](['sanitized-command'], 9)
+            namespace['bounded_native_capture'](['sanitized-command'], 9, 1)
         child.terminate.assert_not_called()
         child.wait.assert_called_once_with(timeout=3)
         self.assertTrue(child.stdout.closed)

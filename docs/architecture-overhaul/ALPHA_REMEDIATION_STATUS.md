@@ -3781,3 +3781,32 @@ closure and closed-API checks remain required. A synthetic broken-pipe service
 regression verifies owned-case cleanup before the next receipt and preservation
 of ordinary false verdicts. This is a harness collection correction, not a fix
 for the terminal service failure or audio loss. A fresh full matrix is required.
+
+### Complete USB cell collection and record-stop contract
+
+The `2c6eb91b8178b69feae1e3f5ff32cb4ed2675b93` trial (tree
+`3c75a5ad59702a4b338831249e3929ecf2f480b6`, observer SHA-256
+`be9f9049ddf5e3891c93b57935a2fd4e77c96fa1c7add46075a6c046866a5c67`)
+completed collection of all twelve verdicts in 114.61 seconds. The sample-playback/
+native-microphone Xbox 360 cell passed its short window. The other five sample-
+playback microphone cells retained 96/512/288/528/96 silent measured frames.
+All six native-playback cells rejected the capture client's exit status 1 before
+emitting marker receipts. This was a harness-stop incompatibility, not evidence
+of their marker integrity; those receipts remain unverified. All 24 typed outputs
+passed separately. Owned units/cgroups/USB serials were absent, VHCI ports free,
+original service/socket states restored and cleanup errors empty.
+
+Installed `pw-cat` reports compiled/linked PipeWire 1.4.2. Inspection of its
+`do_quit` and final `data.drained` condition, also present in the
+[upstream 1.4.2 source](https://raw.githubusercontent.com/PipeWire/pipewire/1.4.2/src/tools/pw-cat.c),
+shows that deliberate record termination returns 1 because it does not reach
+playback drain. The collector now recognizes that explicit record-stop contract
+only after complete bounded capture, a stop it requested, and empty diagnostics.
+It retains raw exit status, requested-stop flag, expected contract and captured
+byte count in the receipt. Unexpected status 1 without a requested stop still
+fails; client errors, incomplete production, corrupt/duplicate/missing markers
+and microphone loss remain failures. Bounded diagnostic text is retained on
+capture failure. A regression verifies expected stop, rejection without that
+contract, rejection of client diagnostics and rejection of an unrequested exit.
+This correction requires a fresh live matrix; no native-playback cell is closed
+from the discarded historical captures, and no loss/rate/latency limit changes.
