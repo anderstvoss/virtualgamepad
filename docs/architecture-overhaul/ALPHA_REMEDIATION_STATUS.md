@@ -3944,3 +3944,24 @@ cleanup errors empty, memory-pressure averages zero. Required local checks and
 445 Python tests passed before deployment. The remaining audio investigation
 must address measured loss rather than repeat the resolved capture-stop or
 missing-receipt issues. Gates 1/4/5/6 remain open and the PR remains draft.
+
+## Demo endpoint disappearance and routing recovery
+
+The production demo AudioRouter's private-graph routing fixture was extended
+beyond A/B/disconnect/reconnect. It now removes the selected test-owned loopback,
+waits at most five seconds for an observable routing error, verifies the
+unselected sibling is still alive, disconnects both ports, recreates the owned
+endpoint, waits for bounded node discovery, then verifies the reconnected exact
+stereo marker. Existing route-switch markers, forwarding rejection while
+inactive, host-process cleanup and all original regressions remain.
+No production behavior or dependencies changed.
+
+The diagnostic image passed every stage in an isolated PipeWire graph. Its
+source-file SHA-256 is
+`1fe35301193005efd273b9ad7549478084199e2251abd0a753cd0121380cbe7a`
+and executable SHA-256
+`e0d54d7f943ecf5fb9f02e2fa297db21a452f043edee1e1a39837e830591d928`.
+The diagnostic used an uncommitted fixture on `d4f7957`; a pinned committed run
+is required for acceptance. This covers the demo host-routing layer only;
+USB/IP transport, required-worker failures and sustained continuity remain
+separate. It does not close the whole GUI control inventory or either audio gate.

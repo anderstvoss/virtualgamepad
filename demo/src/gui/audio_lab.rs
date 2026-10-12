@@ -1850,19 +1850,20 @@ mod tests {
             .into_iter()
             .map(|side| format!("virtualgamepad-route-{}-{side}", std::process::id()))
             .collect();
-        let mut loops = Vec::new();
-        for name in &names {
-            loops.push(OwnedLoopback(Command::new("pw-loopback").args([
+        let spawn_loopback = |name: &str| {
+            OwnedLoopback(Command::new("pw-loopback").args([
                 "-n", name, "-c", "2", "-m", "[ FL FR ]", "-i",
                 &format!("{{ node.name = \"{name}.sink\" media.class = \"Audio/Sink\" node.virtual = true node.autoconnect = false }}"),
                 "-o", &format!("{{ node.name = \"{name}.source\" media.class = \"Audio/Source\" node.virtual = true node.autoconnect = false }}"),
-            ]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap()));
-        }
-        let ready = Command::new("python3")
-            .args([
-                "-I",
-                "-c",
-                r"import json,subprocess,sys,tempfile,time
+            ]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap())
+        };
+        let mut loops: Vec<_> = names.iter().map(|name| spawn_loopback(name)).collect();
+        let wait_nodes = || {
+            Command::new("python3")
+                .args([
+                    "-I",
+                    "-c",
+                    r"import json,subprocess,sys,tempfile,time
 expected={name+suffix for name in sys.argv[1:] for suffix in ('.sink','.source')}
 deadline=time.monotonic()+5
 while True:
@@ -1877,12 +1878,13 @@ while True:
  assert time.monotonic()<deadline,'owned routing nodes did not appear'
  time.sleep(.02)
 ",
-                &names[0],
-                &names[1],
-            ])
-            .status()
-            .unwrap();
-        assert!(ready.success());
+                    &names[0],
+                    &names[1],
+                ])
+                .status()
+                .unwrap()
+        };
+        assert!(wait_nodes().success());
         let mut routing = RoutingState {
             backend: HostBackend::PipeWire,
             jack_connector: None,
@@ -1945,6 +1947,23 @@ while True:
                 names[index]
             );
         }
+        let removed = loops.pop().unwrap();
+        let removed_pid = removed.0.id();
+        drop(removed);
+        assert!(!std::path::Path::new(&format!("/proc/{removed_pid}")).exists());
+        let until = Instant::now() + Duration::from_secs(5);
+        while router.error().is_none() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            router.error().is_some(),
+            "removed routing endpoint must expose failure"
+        );
+        assert!(
+            loops[0].0.try_wait().unwrap().is_none(),
+            "unselected sibling endpoint stopped"
+        );
+        println!("demo_route stage=endpoint-disappeared error_observed=true sibling_alive=true");
         routing.outputs[0].enabled = false;
         routing.inputs[0].connected = false;
         assert_eq!(router.configure(&routing, true, true), None);
@@ -1952,6 +1971,8 @@ while True:
         assert!(!router.output("test-output", &[1, -1], 2));
         assert!(router.input("test-input", 2).is_none());
         println!("demo_route stage=disconnected ports=0");
+        loops.push(spawn_loopback(&names[1]));
+        assert!(wait_nodes().success());
         routing.outputs[0].enabled = true;
         routing.inputs[0].connected = true;
         assert_eq!(router.configure(&routing, true, true), None);
