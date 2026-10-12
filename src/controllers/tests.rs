@@ -929,12 +929,75 @@ mod worker_outputs {
         }
     }
 
+    fn selected_probe_request(
+        selector: Option<&str>,
+        image: Option<&std::ffi::OsStr>,
+    ) -> Result<Option<u8>, &'static str> {
+        let request = match selector {
+            None => return Ok(None),
+            Some("1") => b'R',
+            Some("native-timer") => b'T',
+            Some("native-timer-prebuilt") => b'N',
+            Some("direct-rust") => b'D',
+            Some("direct-c") => b'C',
+            Some(_) => return Err("unknown public probe selector"),
+        };
+        if matches!(request, b'N' | b'D' | b'C') && image.is_none_or(std::ffi::OsStr::is_empty) {
+            return Err("selected probe requires an explicit image");
+        }
+        Ok(Some(request))
+    }
+
+    #[test]
+    fn public_probe_selection_rejects_unknown_modes_and_missing_images() {
+        let image = Some(std::ffi::OsStr::new("synthetic-prebuilt-image"));
+        assert_eq!(selected_probe_request(None, None), Ok(None));
+        for (selector, request) in [
+            ("1", b'R'),
+            ("native-timer", b'T'),
+            ("native-timer-prebuilt", b'N'),
+            ("direct-rust", b'D'),
+            ("direct-c", b'C'),
+        ] {
+            assert_eq!(
+                selected_probe_request(Some(selector), image),
+                Ok(Some(request))
+            );
+            if matches!(request, b'N' | b'D' | b'C') {
+                assert!(selected_probe_request(Some(selector), None).is_err());
+                assert!(
+                    selected_probe_request(Some(selector), Some(std::ffi::OsStr::new(""))).is_err()
+                );
+            }
+        }
+        for invalid in [
+            "",
+            "0",
+            "native-timer-prebuild",
+            "direct-c ",
+            "shell",
+            "N",
+            "1\n",
+        ] {
+            assert!(selected_probe_request(Some(invalid), image).is_err());
+        }
+    }
+
     #[test]
     #[ignore = "requires the bounded USB lab and an ordinary-user observer; no kernel input injection"]
     fn live_kernel_worker_outputs_reach_root_callbacks() {
         use std::io::{Read, Write};
         use std::os::linux::net::SocketAddrExt;
         use std::os::unix::net::SocketAddr;
+        // Reject a requested but unrecognized scenario before connecting or creating resources.
+        let selector = match std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST") {
+            Ok(value) => Some(value),
+            Err(std::env::VarError::NotPresent) => None,
+            Err(error) => panic!("invalid public probe selector: {error}"),
+        };
+        let image = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE");
+        let request = selected_probe_request(selector.as_deref(), image.as_deref())
+            .expect("valid explicit public probe selection");
         let instance =
             std::env::var("VIRTUALGAMEPAD_TYPED_OUTPUT_INSTANCE").expect("explicit lab instance");
         assert!(
@@ -1000,30 +1063,26 @@ mod worker_outputs {
                 "typed_output_observer family={family} generation={generation} requests={count} passed=true"
             );
         }
-        if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
-            == Ok("native-timer")
-        {
-            send_native_timer_request(&mut peer);
-        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
-            == Ok("native-timer-prebuilt")
-        {
-            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
-                .expect("prebuilt frozen timer image");
-            send_probe_image(&mut peer, b'N', std::path::Path::new(&path));
-        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
-            send_public_factory_image(&mut peer);
-        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
-            == Ok("direct-rust")
-        {
-            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
-                .expect("frozen ordinary control image");
-            send_probe_image(&mut peer, b'D', std::path::Path::new(&path));
-        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
-            == Ok("direct-c")
-        {
-            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
-                .expect("frozen ordinary C control image");
-            send_probe_image(&mut peer, b'C', std::path::Path::new(&path));
+        match request {
+            Some(b'T') => send_native_timer_request(&mut peer),
+            Some(b'R') => send_public_factory_image(&mut peer),
+            Some(mode @ (b'N' | b'D' | b'C')) => {
+                send_probe_image(
+                    &mut peer,
+                    mode,
+                    std::path::Path::new(image.as_ref().unwrap()),
+                );
+            }
+            None => {}
+            Some(_) => unreachable!("validated probe request"),
+        }
+        if let Some(mode) = request {
+            println!(
+                "public_probe_completed request={} passed=true",
+                char::from(mode)
+            );
+        } else {
+            println!("public_probe_completed request=output-only passed=true");
         }
     }
 

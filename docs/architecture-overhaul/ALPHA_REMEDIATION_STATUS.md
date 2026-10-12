@@ -4041,3 +4041,19 @@ require actual scenario output and executable identity, rather than accepting
 coordinator status alone. Unknown optional observer selectors currently fall
 through without the requested probe; fail-closed selector validation and
 scenario-completion reconciliation remain a tooling correction to implement.
+
+
+### Fail-closed optional observer selection
+
+The typed USB observer now parses its requested optional probe before connecting
+to the lab or constructing controllers. Unknown/empty modes and missing/empty
+prebuilt image arguments reject explicitly. An absent selector retains output-only
+mode. Existing R/D/C/N and legacy-T rejection scenarios remain explicit.
+After successful terminal acknowledgement, the observer emits a mode-specific
+`public_probe_completed` marker; failures cannot reach that print.
+
+A deterministic regression covers every recognized selector, unknown/malformed
+values and required image boundaries. Existing sealed descriptor and terminal
+reply regressions remain. Issue #146 remains open for maintained coordinator
+artifact discovery and exact scenario/image receipt reconciliation; this fix
+alone cannot make an older executable understand new selectors.
