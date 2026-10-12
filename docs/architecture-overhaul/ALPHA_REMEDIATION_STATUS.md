@@ -3965,3 +3965,17 @@ The diagnostic used an uncommitted fixture on `d4f7957`; a pinned committed run
 is required for acceptance. This covers the demo host-routing layer only;
 USB/IP transport, required-worker failures and sustained continuity remain
 separate. It does not close the whole GUI control inventory or either audio gate.
+
+### Pinned routing-disappearance acceptance
+
+At source `32db5267c95d31589af21b08844ea6e968bf0b63`, tree
+`4d129fda9f67ad2e1f534d0a9300e4de0bc769c9`, the frozen demo test executable
+`e0d54d7f943ecf5fb9f02e2fa297db21a452f043edee1e1a39837e830591d928`
+passed A/B marker routing, selected endpoint disappearance with an observable
+error, unselected sibling survival, explicit disconnection, recreated endpoint
+reconnection and exact stereo marker delivery. The selected ignored test ran
+alone in a private graph; owned loopbacks were reaped and the private graph's
+policy/daemon were stopped by the runner. This closes that demo host-routing
+failure/recovery cell for the pinned image, not USB transport failure/routing
+or sustained audio acceptance. Required fmt/check/Clippy/test/Gitleaks checks
+passed before committing. No production behavior or dependencies changed.
