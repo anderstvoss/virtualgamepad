@@ -4292,3 +4292,23 @@ copy normal account state, replace the kernel, or relabel failed discovery as
 accepted. The opt-in classic comparison remains useful independent evidence,
 not the final acceptance substitute. Generic-companion evdev recognition and
 active contact/feedback remain separate pending cells. PR stays draft.
+
+## Exact shipped SDL comparison — 2026-10-12
+
+A bounded i386 reader linked to Steam's shipped SDL3 (`SDL_GetVersion=3005000`,
+SHA-256 `ae4e7ec75bde30e4ddf70b11c16be95ed9c28d31095798e9309ee6392b29f702`)
+ran under FEX 2608 in a private namespace with only four owned classic nodes.
+It explicitly sets the classic hint before initialization. SDL enumerates all
+four named family joysticks, classifies all four as gamepads and supplies their
+button/axis mappings. The selected DualSense South pulse reads button mask one
+then zero; siblings remain neutral. This narrows the failed Steam UI comparison:
+classic support and mapping exist in the exact shipped SDL library. Steam's
+controller type/filtering/configuration remains to be isolated; no precise Steam
+cause is yet confirmed and Gate 5 remains open.
+
+The SDL reader/fixture exit zero, temporary rule removal and cleanup pass, owned
+nodes and diagnostic processes are absent. No normal account state, output
+writes, desktop touch or persistent host configuration were used. The public
+runtime was extracted into a disposable diagnostic directory; raw receipts and
+build artifacts stay outside tracked source. This is a direct SDL observation,
+not a replacement for Steam or the separately reviewed SDL probe contract.
