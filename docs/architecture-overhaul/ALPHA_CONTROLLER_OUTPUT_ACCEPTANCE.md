@@ -1,8 +1,10 @@
 # Controller output acceptance ledger
 
-Gate 2 retains its pinned output and isolation passes, but the DualSense evdev
-discovery/parity cell is reopened in issue #147: the combined node is classified
-as a touchpad without joystick classification. Do not claim the whole gate passed.
+Gate 2 retains its pinned output and isolation passes. Issue #147 reopened the
+DualSense evdev discovery/parity boundary after the combined primary was classified
+as a touchpad. Fresh discovery at `d67f7ba` now passes with separate gamepad and
+generic contact nodes; active contact/feedback/consumer revalidation remains open.
+Do not claim the whole gate passed.
 The historical closure audit below did not cover that discovered boundary. Historical pending statements describe their earlier
 checkpoint; the closure matrix supersedes them. Physical-controller comparisons
 remain post-alpha issue #136, and sustained audio remains separately gated.
@@ -316,3 +318,37 @@ classification override, loss threshold change or queue enlargement was used.
 Raw receipts remain outside tracked source. The existing six-gate scope remains
 in force pending direct release-owner confirmation of the PR reviewer's proposed
 scope change; an external generated comment is not confirmation from this chat.
+
+## Corrected classic sibling lifecycle and native classification — 2026-10-12
+
+Pinned producer `d67f7ba6782b8645e0fef7d04a08dae87724d4f5` (SHA-256
+`1d1674e9952decbf7834f1b7fcf37feaacb96b59899a09678f34748aa5c929cb`)
+passes the affected post-removal arm sequence. After scheduled DualSense removal
+at second 600, the producer accepts Xbox arming at second 600 and emits South
+true then false at second 602. Identity-checked native removal and unchanged
+sibling identity precede the pulse. Steam's selected Xbox test screen shows A
+pressed at one second and released at 2.6 seconds, with other displayed controls
+neutral. The producer stays live until normal Steam menu exit; collector, fixture
+and bootstrap all exit zero. Cleanup lists are empty, rule removed, owned input
+nodes/control socket/producer/display/workspace absent. 589 memory samples retain
+at least 14696333312 available bytes; 11 samples report the retired classic node.
+This accepts the scoped classic sibling-input cell, not whole Gate 5.
+
+Fresh native evdev discovery on the same image classifies all four primaries as
+joysticks. The DualSense primary keeps `054c:0ce6`, while its generic companion
+is `0000:0000`, version `0001`, and a touchpad without joystick classification.
+The DS4 primary keeps `054c:05c4`; its contact companion is a touchscreen.
+Every owned node carries the private test seat and desktop-ignore property.
+This closes the current native discovery/classification cell; active contacts,
+feedback and full affected consumer parity remain separate Gate 2 requirements.
+No desktop touch was injected by this trial.
+
+The earlier stale Steam-list observation is not erased. An independent sanitized
+regular-file mount control confirms that an individually bind-mounted target
+remains present with the same inode after its source is unlinked outside the
+namespace. This proves the namespace retention mechanism, not the exact shipped
+Steam backend or the controller's hotplug behavior. Current SDL Linux source is
+an evidence lead for directory/udev removal handling, not a matched shipped-source
+receipt. Future hotplug evidence must inspect both host and consumer visibility;
+do not equate the existing host-side removed-node counter with consumer removal.
+Private profiles/screenshots and raw receipts remain outside tracked source.
