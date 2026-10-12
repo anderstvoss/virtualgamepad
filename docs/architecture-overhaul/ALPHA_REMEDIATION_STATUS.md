@@ -3868,3 +3868,28 @@ Original broker inactive/socket active state was independently verified after
 completion. Gate 3 retains its pass for this worker. This provider suite does
 not prove microphone marker continuity or close Gates 1/4/5/6. A fresh USB
 functional matrix is still required to exercise the corrected progress race.
+
+### Fresh functional traffic after the snapshot correction
+
+The installed `b817f48` worker was exercised with ordinary observer source
+`02370e44d3eb55705ac11510f5f8c1b54d27bff2` (documentation-only descendant),
+tree `8cfbf343c5f0f2e50d8f6b89b05155f08c008aa9`, observer SHA-256
+`12a6afe9cac773e6f141ad5e233e4a2c817a604772fed6bc5ca65853fa42e5b5`.
+All twelve duplex verdicts still failed. All 24 typed output requests passed.
+Neither the invalid progress-counter error nor terminal-controller failure
+recurred in this run; the deterministic regression is the race proof, while
+one live absence alone is not proof of every possible interleaving.
+
+DS4 and Xbox native playback each delivered all 144000 measured markers with
+zero silence/gaps in both microphone ownership modes. Their microphone silence
+counts were respectively 48/240 and 144/144 for native/sample ownership.
+DualSense native playback emitted no usable capture receipt in either mode;
+its helper failure requires explicit child-exit diagnostics before assigning a
+cause. Sample-playback/native-microphone silence was 192/32/240 frames for
+DualSense/DS4/Xbox (Xbox also had four marker gaps); sample/sample silence was
+6672/8224/3312. These remain failures. No loss limit was weakened.
+
+Owned broker/socket/observer units were absent/inactive, no owned USB serial
+remained, original broker inactive/socket active state was restored, and both
+supervisors reported empty cleanup errors. Memory-pressure averages stayed
+zero. Gate 4 remains open; none of these short cells qualify sustained Gate 6.
