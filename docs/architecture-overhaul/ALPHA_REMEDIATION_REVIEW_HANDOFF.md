@@ -3761,3 +3761,31 @@ Focused regression and mandatory fmt, locked all-target/all-feature workspace
 check, Clippy, workspace tests and Gitleaks pass. Review the child handshake,
 close-on-exec assertion, timeout/reaping and retained exclusive ownership.
 This resolves the test isolation gap, not any outstanding live acceptance cell.
+
+## Xbox classic Steam input and normal shutdown — 2026-10-12
+
+At unchanged classic runner `1551be1` and pinned producer `82e0dcc`, isolated
+Steam lists all four named controllers. Selecting Virtual Xbox 360 and arming
+only that family shows A pressed at one second and released at 2.6 seconds;
+sticks and triggers remain neutral. Together with the previous scoped
+DualSense/DS4/Switch observations, all four classic South input cells now have
+consumer evidence. Classic generic type and zero vendor/product remain explicit
+limitations; this does not prove full family identity, outputs, HID/USB paths or
+whole Gate 5 acceptance.
+
+Steam was exited through its own menu before the unit deadline. Collector and
+root fixture both exit zero; bootstrap exit zero, initiating error absent,
+cleanup lists empty, temporary rule removed, owned display/producer/workspace/
+input nodes/control socket absent. The authorized private test profile was
+reused and retained; no normal account credentials or profile were copied.
+576 memory samples retain a minimum 14042464256 available bytes. Raw private
+screenshots and receipts remain outside source. A preliminary attempt rejected
+a non-private workspace parent before launching Steam; its root cleanup passed
+and its failed receipt remains preserved.
+
+Per-controller removal/sibling survival is still pending: the producer removes
+DualSense at 600 seconds, coinciding with this trial's 600-second Steam limit.
+The next lifecycle trial uses a bounded 700-second consumer window inside the
+unchanged 900-second fixture limit, leaving time to observe removal and sibling
+input before normal exit. No live deadline was silently extended, and no
+acceptance assertion changed.
