@@ -3320,3 +3320,31 @@ are unchanged. A scheduling refusal fails rather than being ignored. Regressions
 verify the exact thread/policy transition and refusal, plus completion-before-
 transition and transition-before-decoding for both captured directions. This
 requires fresh evidence; no claim that the SIGKILL cause is resolved yet.
+
+### Complete native marker receipts after ordinary analysis scheduling
+
+The fresh matrix at observer source `7b9840e7ba56f1cf309f3584dcd316027837d59f`,
+tree `047aa4a3cb641671a459998700bef2167f931299`, observer SHA-256
+`dec9aa87c34cc7fa8f0c65022f1a8ad4a91aad6b92d9f06e57392dcb38973864`,
+used the unchanged accepted `b817f48` worker. All six native helpers now emitted
+complete receipts and exited with ordinary status 1 for measured failures;
+none ended with SIGKILL. Every native receipt records prior policy 2 and
+analysis policy/priority 0/0. This one-variable change supports the diagnosis
+that realtime CPU analysis caused the missing receipts, while the kernel kill
+source itself was not independently traced. Do not describe it as an audio
+continuity correction.
+
+Five native-playback directions delivered all 144000 measured markers with
+zero silence/gaps: both DualSense modes, both Xbox modes and DS4 with sample
+microphone. DS4 native/native had 176 silence frames. Native-microphone silence
+was 624/432/432 for DualSense/DS4/Xbox; sample-microphone silence in those native-
+playback cells was 5568/5184/5136. All twelve duplex verdicts still failed.
+Sample-playback/native-microphone silence was 240/432/432 (DualSense one marker
+gap); sample/sample silence was 6720/6528/8208. No assertions were relaxed.
+
+All 24 typed outputs passed. Owned units were absent/inactive, owned USB serial
+absent, authorized VHCI ports free, broker inactive/socket active restored,
+cleanup errors empty, memory-pressure averages zero. Required local checks and
+445 Python tests passed before deployment. The remaining audio investigation
+must address measured loss rather than repeat the resolved capture-stop or
+missing-receipt issues. Gates 1/4/5/6 remain open and the PR remains draft.
