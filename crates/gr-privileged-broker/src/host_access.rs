@@ -383,8 +383,99 @@ mod tests {
         assert!(root.is_dir());
     }
 
+    fn inherited_lock_survives_owner_close_until_child_exec() {
+        use std::{
+            io::{Read, Write},
+            os::unix::{net::UnixStream, process::CommandExt},
+        };
+
+        let f = Fixture::new();
+        let access = f.access();
+        // Rust opens the lock CLOEXEC. It remains inherited between fork and
+        // exec; the lock must stay exclusive throughout that interval.
+        let HostAccess { _lock: lock, .. } = &access;
+        // SAFETY: access owns a valid descriptor; F_GETFD does not mutate it.
+        let flags = unsafe { libc::fcntl(lock.as_raw_fd(), libc::F_GETFD) };
+        assert!(flags >= 0);
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
+        let (mut parent, child) = UnixStream::pair().unwrap();
+        parent
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        let child_fd = child.as_raw_fd();
+        let spawning = std::thread::spawn(move || {
+            let mut command = std::process::Command::new("true");
+            // SAFETY: after fork, use only async-signal-safe libc operations on
+            // an already-open socket. poll bounds the wait if the parent fails.
+            unsafe {
+                command.pre_exec(move || {
+                    let marker = [1_u8];
+                    if libc::write(child_fd, marker.as_ptr().cast(), 1) != 1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    let mut fd = libc::pollfd {
+                        fd: child_fd,
+                        events: libc::POLLIN,
+                        revents: 0,
+                    };
+                    if libc::poll(&raw mut fd, 1, 5_000) != 1 {
+                        return Err(io::Error::from_raw_os_error(libc::ETIMEDOUT));
+                    }
+                    let mut release = [0_u8];
+                    if libc::read(child_fd, release.as_mut_ptr().cast(), 1) != 1 {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let result = command.spawn();
+            drop(child);
+            result
+        });
+        parent.read_exact(&mut [0]).unwrap();
+        drop(access);
+        let blocked = HostAccess::lock(config(), f.0.join("test"), &f.0);
+        // Release and reap before asserting, including on an unexpected result.
+        parent.write_all(&[1]).unwrap();
+        let mut child = spawning.join().unwrap().unwrap();
+        assert!(child.wait().unwrap().success());
+        assert_eq!(blocked.err().unwrap().kind(), io::ErrorKind::WouldBlock);
+        let restarted = f.access();
+        drop(restarted);
+    }
+
     #[test]
     fn restart_lock_and_idempotent_cleanup() {
+        const CHILD: &str = "VIRTUALGAMEPAD_LOCK_TEST_CHILD";
+        const TEST: &str = "host_access::tests::restart_lock_and_idempotent_cleanup";
+        if std::env::var_os(CHILD).is_none() {
+            // Concurrent tests spawn workers. A fork can retain this test's
+            // flock until exec even though the descriptor has CLOEXEC. Run the
+            // immediate restart assertion in a single-test process, and cover
+            // that inherited-descriptor boundary explicitly below.
+            let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", TEST, "--test-threads=1"])
+                .env(CHILD, "1")
+                .spawn()
+                .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+            loop {
+                if let Some(status) = child.try_wait().unwrap() {
+                    assert!(
+                        status.success(),
+                        "isolated lock regression failed: {status}"
+                    );
+                    return;
+                }
+                if std::time::Instant::now() >= deadline {
+                    child.kill().unwrap();
+                    child.wait().unwrap();
+                    panic!("isolated lock regression timed out");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+        inherited_lock_survives_owner_close_until_child_exec();
         let f = Fixture::new();
         let access = f.access();
         assert!(HostAccess::lock(config(), f.0.join("test"), &f.0).is_err());

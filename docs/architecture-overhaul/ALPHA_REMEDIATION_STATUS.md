@@ -4333,3 +4333,27 @@ empty, owned workspace/display/producer/nodes absent and rule removed. Thus thre
 specific input observations pass, while the overall trial and Gate 5 remain
 unaccepted. Xbox input, removal/sibling and remaining realization/output cells
 still require evidence. Private screenshots and profile stay outside Git.
+
+## Ownership-lock restart regression — 2026-10-12
+
+The first mandatory workspace run at `c689755` failed the immediate restart
+assertion with `WouldBlock`; isolated and complete reruns passed. A new bounded
+regression deliberately pauses a child between fork and exec. The lock has
+`FD_CLOEXEC`, but after the original owner closes it, reacquisition still returns
+`WouldBlock` while the child holds its inherited open-file description. After
+exec and reaping the child, immediate reacquisition succeeds. This demonstrates
+the process-inheritance mechanism that can invalidate a parallel test's
+immediate-drop assumption; it does not reconstruct the original failed run's
+exact timing.
+
+The existing restart/journal/idempotent-cleanup assertions now run in a bounded,
+single-test subprocess, with the inherited-lock sequence covered explicitly.
+The parent terminates and reaps a timed-out test child. No production lock,
+recovery policy, queue, admission rule or public API changed. In particular,
+there is no explicit unlock that would allow a second owner while an inherited
+lock descriptor remains live. Preserve the initial failed receipt.
+
+Focused regression and mandatory fmt, locked all-target/all-feature workspace
+check, Clippy, workspace tests and Gitleaks pass. Review the child handshake,
+close-on-exec assertion, timeout/reaping and retained exclusive ownership.
+This resolves the test isolation gap, not any outstanding live acceptance cell.
