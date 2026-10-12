@@ -3601,3 +3601,32 @@ input rule removed, root fixture status zero. Minimum available host memory was
 Private screenshots, logs and retained authorized test profile remain outside
 tracked source. Gate 5 stays open for exact input, duplicate-entry diagnosis,
 remaining consumer cells and complete acceptance.
+
+## Single-family Steam fixture and companion identity follow-up — 2026-10-12
+
+`3d686eaef3f90f290c23407c66fec112620dbbf7` adds explicit `arm-dualsense`,
+`arm-ds4`, `arm-switch`, `arm-xbox360` and `pause` commands to the owned producer.
+Only the chosen family pulses; siblings stay neutral. The legacy full-family
+cycle remains. Six focused fixture tests verify closed command selection,
+startup/release/removal and sibling suppression; workspace validation and Rust
+1.85 pass. The immutable input updater installed the same two existing scenarios
+with producer SHA-256 `0e1fe0cc1d4514c8048623e289593b00ff52d01dd47d19d1c78499770b333330`.
+
+The prior all-family live trial completed owned shutdown and cleanup with zero
+collector/root status. Independent evdev observations confirm primary South
+press/release. Steam exact input remains unaccepted. The single-family trial
+kept siblings neutral, but did not observe the expected highlight on the selected
+PS5 screen and ended at its 300-second unit timeout with failure retained;
+cleanup completed without errors. No exact input pass follows from recognition.
+
+Steam reported two distinct Sony SDL GUIDs. Their name CRC bytes match the
+primary (`5756`, DualSense Wireless Controller) and companion (`514c`, Virtual
+DualSense Touch Contacts), using [SDL's CRC algorithm](https://github.com/libsdl-org/SDL/blob/SDL2/src/stdlib/SDL_crc16.c).
+This corroborates companion misidentification, without proving the cause of the
+input mismatch. Correction `82e0dcc` presents only the DualSense companion as a
+generic touch device (vendor/product zero, version one), retains primary Sony
+identity, both touch controls and creation-scoped association. An exact identity
+regression is added; mandatory Rust checks and forced 1.85 pass. Fresh live
+consumer revalidation is still required; Gate 2 and Gate 5 remain open.
+Private profile/captures/logs remain outside tracked source. No dependencies,
+persistent host changes or relaxed acceptance assertions.
