@@ -44,6 +44,15 @@ pub(crate) fn requests(
         }
     }
     .into();
+    if spec.identity.product_id == 0x0ce6 {
+        // A companion is a generic touch device, not a second DualSense gamepad.
+        // Keep association through creation-scoped phys/uniq, not a gamepad VID/PID.
+        touch.identity = gr_realization_api::NativeDeviceIdentity {
+            vendor_id: 0,
+            product_id: 0,
+            version: 1,
+        };
+    }
     touch.event_codes = vec![common::EV_KEY, common::EV_ABS];
     touch.key_codes.retain(|code| matches!(*code, 325 | 330));
     touch.force_feedback_codes.clear();

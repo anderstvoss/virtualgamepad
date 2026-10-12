@@ -412,6 +412,19 @@ mod tests {
         assert!(gamepad.absolute_axes.iter().all(|axis| axis.code < 47));
         assert!(gamepad.force_feedback_codes.contains(&0x50));
         assert_eq!(touch.device_name, "Virtual DualSense Touch Contacts");
+        assert_eq!(
+            (gamepad.identity.vendor_id, gamepad.identity.product_id),
+            (0x054c, 0x0ce6)
+        );
+        assert_eq!(
+            (
+                touch.identity.vendor_id,
+                touch.identity.product_id,
+                touch.identity.version
+            ),
+            (0, 0, 1)
+        );
+
         assert_eq!(touch.key_codes, vec![330, 325]);
         assert!(touch.force_feedback_codes.is_empty());
         for (code, max) in [(53, 1919), (54, 941), (0, 1919), (1, 941)] {
