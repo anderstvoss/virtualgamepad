@@ -1933,6 +1933,12 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
             thread::sleep(Duration::from_millis(1));
             previous_sleep_us = u64::try_from(sleep_begin.elapsed().as_micros()).unwrap();
         }
+        println!(
+            "public_usb_host_exit family={family} playback={:?} microphone={:?} status={:?}",
+            native_playback.as_ref().map(|_| "NativeClient"),
+            native_microphone.as_ref().map(|_| "NativeClient"),
+            status
+        );
         let mut receipt = Vec::new();
         output.take(8193).read_to_end(&mut receipt).unwrap();
         assert!(receipt.len() <= 8192);
