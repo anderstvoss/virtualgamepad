@@ -4010,3 +4010,34 @@ sealed-image integrity, exact success/error completion and child reaping.
 Prebuild tests cover no-op default, dirty/root rejection, exclusive artifacts
 and hash receipts. This adds diagnostic evidence only; historical failed audio
 trials and Gate 6 remain open until the required controls and product matrix pass.
+
+
+### Verified event-level timer comparison at `a040f7e`
+
+A corrected bounded run used the current all-feature ordinary observer image
+SHA-256 `82a3b2f39431880b4f912d7a722b6943b6da5b636b073dfb18ec65bdd234a2b8`
+and prebuilt timer SHA-256
+`f9c60ec7b5b53c88df469155329ec031059a430afbb842891c64bff9fc732c7a`.
+The root lab/source and C prebuild were pinned to
+`a040f7e47b456dc30dc30a0ad1180de44c2ca40b`, tree
+`cf539eb7d86b9208be530161a5a658e1057719d5`. The coordinator ran from the
+later documentation-only `65ffc11` tree. Exactly one timer ledger was independently
+extracted from the root receipt; all 2,000 records and aggregates validate, and
+both source and binary hashes match the separate prebuild receipt.
+
+On the first allowed CPU, the observed thread policy was FIFO, priority 88,
+with zero errors, maximum wake lateness 1,144,917 ns and zero wakes above 10 or
+20 ms. This ten-second result contradicts an unconditional claim that this VM
+always misses the relevant timer deadlines. It does not resolve intermittent
+historical failures, qualify a 60-second audio control, or close Gate 6.
+The observer and root phase exited zero; cleanup errors were empty. Independent
+checks found the observer unit absent, authorized VHCI ports free, and original
+broker inactive/socket active state restored. Observer peak memory was 5.7 MiB.
+
+The immediately preceding run selected an older observer and emitted no timer
+ledger despite zero process exits. It is excluded from timer acceptance; raw
+results and a separate invalid-evidence audit are preserved. Reviewers must
+require actual scenario output and executable identity, rather than accepting
+coordinator status alone. Unknown optional observer selectors currently fall
+through without the requested probe; fail-closed selector validation and
+scenario-completion reconciliation remain a tooling correction to implement.

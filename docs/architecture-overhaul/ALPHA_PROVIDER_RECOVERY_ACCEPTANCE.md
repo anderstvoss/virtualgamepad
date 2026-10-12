@@ -1,3 +1,14 @@
+# Current provider image evidence
+
+All seven provider phases passed at `b817f48d7fc50ac38de21046144e4f55d1595e6d`
+(tree `1f37f93c1b1385799f41e32088ca110cb6546a54`) after the coherent
+microphone-progress snapshot correction. Worker SHA-256:
+`2ebea0f5ab8e35ae1656ce3c4611da723fe0fd799e6b7ce0daafaca27890fbe4`.
+Broker SHA-256: `f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`.
+See the remediation status section “Provider revalidation on the consistent-counter
+worker” for scope and restoration. This supersedes older current-image headings
+below; historical acceptance and failures remain. It does not close audio continuity.
+
 # Provider security and recovery acceptance
 
 Current-image refresh: all seven fixed provider phases passed at
