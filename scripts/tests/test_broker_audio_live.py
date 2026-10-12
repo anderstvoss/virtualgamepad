@@ -846,8 +846,28 @@ class OwnedThreadScheduling(unittest.TestCase):
 
 class NativeTimerDiagnosticTests(unittest.TestCase):
     def receipt(self):
+        events=[]
+        for i in range(2000):
+            target=1_000_000_000+(i+1)*5_000_000
+            wake=target+(30_000_000 if i==1999 else 0)
+            events.append([target,wake,wake+1000,(i+1)*10000])
         return dict(scheduler=1,threads=[dict(cpu=3,policy=1,priority=88,samples=2000,
-            errors=0,max_lateness_ns=30_000_000,over_10ms=10,over_20ms=4)])
+            errors=0,max_lateness_ns=30_000_000,over_10ms=1,over_20ms=1,events=events)])
+
+    def test_raw_timer_ledger_must_reconcile_and_preserve_clock_order(self):
+        for mode in ['absent','short','shape','bool','early','target-step','raw-backwards','cpu-backwards','balanced-loss-replay','summary']:
+            row=self.receipt();events=row['threads'][0]['events']
+            if mode=='absent':del row['threads'][0]['events']
+            elif mode=='short':events.pop()
+            elif mode=='shape':events[1].pop()
+            elif mode=='bool':events[1][0]=True
+            elif mode=='early':events[1][1]=events[1][0]-1
+            elif mode=='target-step':events[1][0]+=1
+            elif mode=='raw-backwards':events[1][2]=events[0][2]-1
+            elif mode=='cpu-backwards':events[1][3]=events[0][3]-1
+            elif mode=='balanced-loss-replay':events[1]=events[0].copy()
+            elif mode=='summary':row['threads'][0]['max_lateness_ns']-=1
+            with self.subTest(mode=mode):self.assertFalse(module.native_timer_valid(row))
 
     def test_delays_are_retained_without_audio_qualification(self):
         self.assertTrue(module.native_timer_valid(self.receipt()))
@@ -868,42 +888,66 @@ class NativeTimerDiagnosticTests(unittest.TestCase):
 
     def test_root_and_unbounded_or_absent_grants_reject_before_compilation(self):
         with patch.object(module.os,'geteuid',return_value=0),patch.object(module.subprocess,'run') as run:
-            with self.assertRaisesRegex(ValueError,'without root'):module.native_timer_probe()
+            with self.assertRaisesRegex(ValueError,'without root'):module.native_timer_probe(123,bytes(32))
             run.assert_not_called()
         for limits in [(0,200000),(88,-1),(88,300000),(88,0)]:
             def getlimit(kind):return (limits[0],88) if kind==module.resource.RLIMIT_RTPRIO else (limits[1],limits[1])
             with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.resource,'getrlimit',side_effect=getlimit),patch.object(module.subprocess,'run') as run:
-                with self.assertRaisesRegex(ValueError,'grant unavailable'):module.native_timer_probe()
+                with self.assertRaisesRegex(ValueError,'grant unavailable'):module.native_timer_probe(123,bytes(32))
                 run.assert_not_called()
 
-    def test_timer_request_has_explicit_completion_and_error_replies(self):
+    def test_legacy_compiling_timer_request_rejects_without_launching_any_child(self):
+        client,server=socket.socketpair()
+        try:
+            client.sendall(b'T')
+            with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.subprocess,'run') as run:
+                with self.assertRaisesRegex(ValueError,'prebuilt'):module.public_factory_probe(server)
+                run.assert_not_called()
+            self.assertEqual(client.recv(1),b'E')
+        finally:client.close();server.close()
+
+    def test_prebuilt_timer_request_has_terminal_replies_and_closes_received_fds(self):
         for failed in [False,True]:
-            client,server=socket.socketpair()
+            client,server=socket.socketpair();image=os.memfd_create('synthetic timer',os.MFD_ALLOW_SEALING)
             try:
-                client.sendall(b'T')
-                with patch.object(module.os,'geteuid',return_value=1000),patch.object(module,'native_timer_probe',side_effect=ValueError('timer failed') if failed else None,return_value={'status':'completed'}):
+                os.write(image,b'\x7fELFsynthetic');os.fchmod(image,0o500)
+                fcntl.fcntl(image,fcntl.F_ADD_SEALS,fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL)
+                client.sendall(b'N');client.sendmsg([hashlib.sha256(b'\x7fELFsynthetic').digest()],[(socket.SOL_SOCKET,socket.SCM_RIGHTS,array.array('i',[image]))])
+                received=[]
+                def probe(fd,digest):
+                    received.append(fd)
+                    if failed:raise ValueError('timer failed')
+                    return {'status':'completed'}
+                with patch.object(module.os,'geteuid',return_value=1000),patch.object(module,'native_timer_probe',side_effect=probe):
                     if failed:
                         with self.assertRaises(ValueError):module.public_factory_probe(server)
                     else:self.assertEqual(module.public_factory_probe(server),{'status':'completed'})
                 self.assertEqual(client.recv(1),b'E' if failed else b'F')
-            finally:client.close();server.close()
+                with self.assertRaises(OSError):os.fstat(received[0])
+            finally:client.close();server.close();os.close(image)
 
-    def test_child_deadlines_and_partial_compilation_cleanup(self):
-        roots=[]
+    def test_prebuilt_timer_rejects_missing_fd_with_terminal_error(self):
+        client,server=socket.socketpair()
+        try:
+            client.sendall(b'N'+bytes(32))
+            with patch.object(module.os,'geteuid',return_value=1000),patch.object(module,'native_timer_probe') as run:
+                with self.assertRaisesRegex(ValueError,'one probe image'):module.public_factory_probe(server)
+                run.assert_not_called()
+            self.assertEqual(client.recv(1),b'E')
+        finally:client.close();server.close()
+
+    def test_prebuilt_timer_execution_has_fixed_deadline_and_no_compilation(self):
         def run(command,**kwargs):
             self.assertEqual(kwargs['timeout'],15)
-            if command[0]=='/usr/bin/cc':
-                image=Path(command[-1]);roots.append(image.parent);image.write_bytes(b'synthetic executable')
-                return module.subprocess.CompletedProcess(command,0)
+            self.assertEqual(kwargs['pass_fds'],(123,))
             self.assertEqual(command[:2],['/usr/bin/taskset','--cpu-list'])
             self.assertEqual(int(command[2]),min(os.sched_getaffinity(0)))
             self.assertEqual(command[3:6],['/usr/bin/chrt','--fifo','88'])
+            self.assertEqual(command[6],'/proc/self/fd/123')
             raise module.subprocess.TimeoutExpired(command,15)
         def limits(kind):return (88,88) if kind==module.resource.RLIMIT_RTPRIO else (200000,200000)
         with patch.object(module.os,'geteuid',return_value=1000),patch.object(module.resource,'getrlimit',side_effect=limits),patch.object(module.subprocess,'run',side_effect=run):
-            with self.assertRaises(module.subprocess.TimeoutExpired):module.native_timer_probe()
-        self.assertEqual(len(roots),1)
-        self.assertFalse(roots[0].exists())
+            with self.assertRaises(module.subprocess.TimeoutExpired):module.native_timer_probe(123,bytes(32))
 
     @unittest.skipUnless(Path('/usr/bin/cc').exists(),'C compiler unavailable')
     def test_reviewed_native_source_compiles_without_pipewire(self):

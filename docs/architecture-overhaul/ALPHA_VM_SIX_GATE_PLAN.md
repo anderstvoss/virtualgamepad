@@ -1688,3 +1688,34 @@ failed and malformed inventories. Mandatory workspace checks, Rust 1.85, strict
 rustdoc, API inventory/snapshot, root feature/offline consumers and 396 Python
 tests passed. No dependency or production API/behavior changed. Fresh complete
 functional receipts and exact-current-worker provider revalidation remain due.
+
+
+### Prebuilt event-level timer diagnostic
+
+The native timer diagnostic now exports all 2,000 preallocated event records
+(target CLOCK_MONOTONIC, wake CLOCK_MONOTONIC, wake CLOCK_MONOTONIC_RAW and
+thread CPU time) after the timing thread terminates. Validation requires exact
+5 ms deadline increments, monotonic clock/cpu observations, complete records,
+and reconciliation of maximum lateness and threshold counts. Collection does
+not allocate, log or perform blocking output in the timing loop. This diagnostic
+can distinguish observed clock movement from time without thread execution;
+it does not establish audio continuity or identify a hypervisor cause by itself.
+
+`scripts/build-alpha-native-timer.py` defaults to a read-only action description.
+Its explicit ordinary-user prebuild requires a clean committed candidate and
+an exclusive output directory, records source/tree/compiler/source and binary
+hashes, and never executes the image. Build before any live timing trial.
+The lab's supporting test transport accepts `N` with exactly one sealed image
+and a matching digest. The receiver's execution deadline is 15 seconds; the
+sender requires an exact terminal success within 25 seconds. Legacy `T`, which
+compiled during the live trial, now receives explicit error before launching a
+child. Ordinary-root signatures, worker protocol and production behavior are
+unchanged. The sender's build receipt remains necessary: the receiver can verify
+the transferred image digest, but cannot infer its compiler or source provenance.
+
+Regressions reject incomplete or reordered events, incorrect aggregates,
+malformed/absent descriptors and changed scheduling grants. Sender tests verify
+sealed-image integrity, exact success/error completion and child reaping.
+Prebuild tests cover no-op default, dirty/root rejection, exclusive artifacts
+and hash receipts. This adds diagnostic evidence only; historical failed audio
+trials and Gate 6 remain open until the required controls and product matrix pass.

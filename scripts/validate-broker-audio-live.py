@@ -847,7 +847,9 @@ int main(void) {
  for(unsigned id=0;id<thread_count;id++) {
   uint64_t max=0;unsigned over10=0,over20=0;
   for(unsigned i=0;i<N;i++){uint64_t late=samples[id][i].wake-samples[id][i].target;if(late>max)max=late;if(late>10000000)over10++;if(late>20000000)over20++;}
-  printf("%s{\"cpu\":%u,\"policy\":%d,\"priority\":%d,\"samples\":2000,\"errors\":%d,\"max_lateness_ns\":%lu,\"over_10ms\":%u,\"over_20ms\":%u}",id?",":"",(unsigned)cpus_available[id],policy[id],priority[id],errors[id],(unsigned long)max,over10,over20);
+  printf("%s{\"cpu\":%u,\"policy\":%d,\"priority\":%d,\"samples\":2000,\"errors\":%d,\"max_lateness_ns\":%lu,\"over_10ms\":%u,\"over_20ms\":%u,\"events\":[",id?",":"",(unsigned)cpus_available[id],policy[id],priority[id],errors[id],(unsigned long)max,over10,over20);
+  for(unsigned i=0;i<N;i++)printf("%s[%lu,%lu,%lu,%lu]",i?",":"",(unsigned long)samples[id][i].target,(unsigned long)samples[id][i].wake,(unsigned long)samples[id][i].raw,(unsigned long)samples[id][i].cpu);
+  printf("]}");
  }
  puts("]}");
  return 0;
@@ -868,39 +870,49 @@ def native_timer_valid(result):
         if (row['cpu']<0 or row['policy']!=1 or row['priority']!=88 or
                 row['samples']!=2000 or row['errors']!=0 or row['max_lateness_ns']<0 or
                 not 0<=row['over_20ms']<=row['over_10ms']<=2000):return False
+        events=row.get('events')
+        if not isinstance(events,list) or len(events)!=2000:return False
+        previous=None;late=[]
+        for event in events:
+            if (not isinstance(event,list) or len(event)!=4 or
+                    any(type(value) is not int or not 0<=value<2**64 for value in event)):return False
+            target,wake,raw,cpu=event
+            if wake<target:return False
+            if previous is not None and (target-previous[0]!=5_000_000 or
+                    wake<previous[1] or raw<previous[2] or cpu<previous[3]):return False
+            previous=event;late.append(wake-target)
+        if (max(late)!=row['max_lateness_ns'] or
+                sum(value>10_000_000 for value in late)!=row['over_10ms'] or
+                sum(value>20_000_000 for value in late)!=row['over_20ms']):return False
         cpus.append(row['cpu'])
     return len(set(cpus))==len(cpus)
 
 
-def native_timer_probe():
+def native_timer_probe(image, expected):
     if os.geteuid()==0:raise ValueError('native timer must run without root')
     if (resource.getrlimit(resource.RLIMIT_RTPRIO)[0]<88 or
             not 0<resource.getrlimit(resource.RLIMIT_RTTIME)[0]<=200000):
         raise ValueError('bounded realtime grant unavailable')
-    with tempfile.TemporaryDirectory(prefix='virtualgamepad-native-timer-') as directory:
-        root=Path(directory);source=root/'timer.c';image=root/'timer'
-        source.write_text(NATIVE_TIMER_SOURCE)
-        command=['/usr/bin/cc','-O2','-Wall','-Wextra','-Werror','-pthread',str(source),'-o',str(image)]
-        subprocess.run(command,check=True,timeout=15,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        digest=hashlib.sha256(image.read_bytes()).hexdigest()
-        cpu=min(os.sched_getaffinity(0))
-        result=subprocess.run(['/usr/bin/taskset','--cpu-list',str(cpu),
-                               '/usr/bin/chrt','--fifo','88',str(image)],check=True,
-                              stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=15)
-        if len(result.stdout)>16384 or len(result.stderr)>8192:raise ValueError('oversized native timer receipt')
-        receipt=json.loads(result.stdout)
-        if (not native_timer_valid(receipt) or len(receipt['threads'])!=1
-                or receipt['threads'][0]['cpu']!=cpu):
-            raise ValueError('native timer policy/counters/affinity invalid')
+    cpu=min(os.sched_getaffinity(0))
+    result=subprocess.run(['/usr/bin/taskset','--cpu-list',str(cpu),
+                           '/usr/bin/chrt','--fifo','88','/proc/self/fd/'+str(image)],
+                          pass_fds=(image,),check=True,stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE,timeout=15)
+    if len(result.stdout)>262144 or len(result.stderr)>8192:raise ValueError('oversized native timer receipt')
+    if result.stderr:raise ValueError('native timer diagnostic errors')
+    receipt=json.loads(result.stdout)
+    if (not native_timer_valid(receipt) or len(receipt['threads'])!=1
+            or receipt['threads'][0]['cpu']!=cpu):
+        raise ValueError('native timer policy/counters/affinity invalid')
     report=dict(status='completed',ordinary_uid=os.geteuid(),receipt=receipt,
                 cpu_selection='first allowed CPU; single-thread comparison',
-                source_sha256=hashlib.sha256(NATIVE_TIMER_SOURCE.encode()).hexdigest(),
-                binary_sha256=digest,raw_samples_retained=False,
-                compiler=subprocess.check_output(['/usr/bin/cc','--version'],text=True,timeout=2).splitlines()[0],
-                compile_flags=['-O2','-Wall','-Wextra','-Werror','-pthread'],
+                expected_source_sha256=hashlib.sha256(NATIVE_TIMER_SOURCE.encode()).hexdigest(),
+                binary_sha256=expected.hex(),raw_samples_retained=True,
+                build_scope='externally prebuilt sealed image; sender build receipt required',
                 realtime_limits=dict(priority=resource.getrlimit(resource.RLIMIT_RTPRIO),
                                      runtime_us=resource.getrlimit(resource.RLIMIT_RTTIME)),
-                scope='aggregate timer diagnostics only; never audio or native-host qualification')
+                event_columns=['target_monotonic_ns','wake_monotonic_ns','wake_raw_ns','thread_cpu_ns'],
+                scope='event-level timer diagnostics only; never audio or native-host qualification')
     print(json.dumps(dict(native_timer_diagnostic=report)),flush=True)
     return report
 
@@ -913,13 +925,9 @@ def public_factory_probe(peer, instance=None):
     command = peer.recv(1)
     if not command: return dict(status='not-requested')
     if command == b'T':
-        try:
-            receipt=native_timer_probe()
-        except BaseException:
-            peer.sendall(b'E');raise
-        peer.sendall(b'F')
-        return receipt
-    if command not in (b'R', b'D', b'C'): raise ValueError('unknown public factory probe request')
+        peer.sendall(b'E')
+        raise ValueError('legacy compiling timer request unavailable; send one prebuilt sealed image with N')
+    if command not in (b'R', b'D', b'C', b'N'): raise ValueError('unknown public factory probe request')
     data, ancillary, flags, _ = peer.recvmsg(32, socket.CMSG_SPACE(4), socket.MSG_CMSG_CLOEXEC)
     descriptors = []
     frozen = None
@@ -934,6 +942,10 @@ def public_factory_probe(peer, instance=None):
             raise ValueError('exactly one probe image required')
         expected = data + exact(peer, 32-len(data))
         frozen = sealed_probe_image(descriptors[0], expected)
+        if command == b'N':
+            receipt=native_timer_probe(frozen,expected)
+            peer.sendall(b'F')
+            return receipt
         if command == b'C':
             receipt=independent_c_probe(frozen,expected,peer)
             passed=receipt['status']=='passed'
@@ -983,6 +995,10 @@ def public_factory_probe(peer, instance=None):
         peer.sendall(b'F' if passed else b'E')
         if not passed: raise ValueError('public factory probe failed or selected zero tests')
         return receipt
+    except BaseException:
+        if command == b'N':
+            peer.sendall(b'E')
+        raise
     finally:
         for descriptor in descriptors: os.close(descriptor)
         if frozen is not None: os.close(frozen)

@@ -1004,6 +1004,12 @@ mod worker_outputs {
             == Ok("native-timer")
         {
             send_native_timer_request(&mut peer);
+        } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
+            == Ok("native-timer-prebuilt")
+        {
+            let path = std::env::var_os("VIRTUALGAMEPAD_INDEPENDENT_CONTROL_IMAGE")
+                .expect("prebuilt frozen timer image");
+            send_probe_image(&mut peer, b'N', std::path::Path::new(&path));
         } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref() == Ok("1") {
             send_public_factory_image(&mut peer);
         } else if std::env::var("VIRTUALGAMEPAD_PUBLIC_USB_FACTORY_REQUEST").as_deref()
@@ -1060,7 +1066,7 @@ mod worker_outputs {
     fn send_probe_image(peer: &mut UnixStream, request: u8, path: &std::path::Path) {
         use std::io::{Read, Write};
         use std::process::{Command, Stdio};
-        assert!(matches!(request, b'R' | b'D' | b'C'));
+        assert!(matches!(request, b'R' | b'D' | b'C' | b'N'));
         peer.write_all(&[request]).unwrap();
         let image = std::fs::File::open(path).unwrap();
         let mut sender = Command::new("python3")
@@ -1114,6 +1120,8 @@ if sys.argv[1]=='C':
         assert!(status.success());
         peer.set_read_timeout(Some(Duration::from_secs(if request == b'C' {
             5
+        } else if request == b'N' {
+            25
         } else if request == b'D' {
             425
         } else {
@@ -1123,6 +1131,44 @@ if sys.argv[1]=='C':
         let mut result = [0];
         peer.read_exact(&mut result).unwrap();
         assert_eq!(result, [b'F']);
+    }
+
+    #[test]
+    fn prebuilt_native_timer_sender_requires_terminal_reply_and_sealed_image() {
+        use std::os::fd::OwnedFd;
+        use std::process::{Command, Stdio};
+        for reply in ["F", "E"] {
+            let (mut sender, receiver) = UnixStream::pair().unwrap();
+            let mut child = Command::new("python3")
+                .args([
+                    "-I",
+                    "-c",
+                    r"import array,fcntl,hashlib,os,socket,sys
+s=socket.socket(fileno=0); assert s.recv(1)==b'N'
+data,ancillary,flags,_=s.recvmsg(32,socket.CMSG_SPACE(4),socket.MSG_CMSG_CLOEXEC)
+assert len(data)==32 and len(ancillary)==1 and not flags&(socket.MSG_TRUNC|socket.MSG_CTRUNC)
+fds=array.array('i'); fds.frombytes(ancillary[0][2]); assert len(fds)==1
+required=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
+assert fcntl.fcntl(fds[0],fcntl.F_GET_SEALS)&required==required
+os.lseek(fds[0],0,os.SEEK_SET)
+with os.fdopen(fds[0],'rb') as image: assert hashlib.sha256(image.read()).digest()==data
+s.sendall(sys.argv[1].encode())
+",
+                ])
+                .arg(reply)
+                .stdin(Stdio::from(OwnedFd::from(receiver)))
+                .spawn()
+                .unwrap();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                send_probe_image(&mut sender, b'N', std::path::Path::new("/proc/self/exe"));
+            }));
+            assert_eq!(result.is_ok(), reply == "F");
+            assert!(child.wait().unwrap().success());
+            assert_eq!(
+                sender.read_timeout().unwrap(),
+                Some(Duration::from_secs(25))
+            );
+        }
     }
 
     #[test]
