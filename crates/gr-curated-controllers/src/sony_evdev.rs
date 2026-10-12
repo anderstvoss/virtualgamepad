@@ -32,7 +32,7 @@ pub(crate) fn requests(
     }
     // Pinned SDL's Linux native layout revision; not physical firmware evidence.
     spec.identity.version = 0x8111;
-    spec.key_codes.retain(|code| *code != 330);
+    spec.key_codes.retain(|code| !matches!(*code, 325 | 330));
     spec.absolute_axes.retain(|axis| axis.code < 47);
     touch.device_name = match (spec.identity.vendor_id, spec.identity.product_id) {
         (0x054c, 0x05c4) => "Virtual DS4 Touch Contacts",
@@ -45,7 +45,7 @@ pub(crate) fn requests(
     }
     .into();
     touch.event_codes = vec![common::EV_KEY, common::EV_ABS];
-    touch.key_codes = vec![330];
+    touch.key_codes.retain(|code| matches!(*code, 325 | 330));
     touch.force_feedback_codes.clear();
     touch.absolute_axes.retain(|axis| axis.code >= 47);
     touch.absolute_axes.extend([
@@ -137,7 +137,7 @@ pub(crate) fn split(events: Vec<EvdevEvent>) -> [ComponentFrame; 2] {
                 }
                 touch.push(event);
             }
-            (common::EV_KEY, 330) => touch.push(event),
+            (common::EV_KEY, 325 | 330) => touch.push(event),
             (common::EV_SYN, common::SYN_REPORT) => {}
             _ => gamepad.push(event),
         }

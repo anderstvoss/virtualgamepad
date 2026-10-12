@@ -408,10 +408,11 @@ mod tests {
             panic!()
         };
         assert!(!gamepad.key_codes.contains(&330));
+        assert!(!gamepad.key_codes.contains(&325));
         assert!(gamepad.absolute_axes.iter().all(|axis| axis.code < 47));
         assert!(gamepad.force_feedback_codes.contains(&0x50));
         assert_eq!(touch.device_name, "Virtual DualSense Touch Contacts");
-        assert_eq!(touch.key_codes, vec![330]);
+        assert_eq!(touch.key_codes, vec![330, 325]);
         assert!(touch.force_feedback_codes.is_empty());
         for (code, max) in [(53, 1919), (54, 941), (0, 1919), (1, 941)] {
             let axis = touch

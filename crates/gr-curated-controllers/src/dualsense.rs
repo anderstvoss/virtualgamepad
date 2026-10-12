@@ -1664,9 +1664,8 @@ mod tests {
                 panic!()
             };
             assert!(
-                !gamepad
-                    .iter()
-                    .any(|e| e.code == 330 || (e.event_type == common::EV_ABS && e.code >= 47))
+                !gamepad.iter().any(|e| matches!(e.code, 325 | 330)
+                    || (e.event_type == common::EV_ABS && e.code >= 47))
             );
             assert_eq!(
                 touch
@@ -1680,6 +1679,10 @@ mod tests {
             );
             assert_eq!(
                 touch.iter().find(|e| e.code == 330).unwrap().value,
+                i32::from(touches.iter().any(Option::is_some))
+            );
+            assert_eq!(
+                touch.iter().find(|e| e.code == 325).unwrap().value,
                 i32::from(touches.iter().any(Option::is_some))
             );
             for events in [gamepad, touch] {
