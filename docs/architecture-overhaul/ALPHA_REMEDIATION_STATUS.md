@@ -4634,3 +4634,16 @@ production controller/public API or GUI behavior. Fresh native frame, feedback
 and consumer observations against the packaged image are required; no contact
 acceptance is inferred from these deterministic checks. Separate GUI provisioning
 is still needed for GUI-owned active touch.
+
+## Bounded explicit removal in the input acceptance fixture
+
+The same ordinary input fixture now accepts the literal `remove-dualsense`
+command, which invokes the existing owned DualSense neutralize/commit/repeated-close
+path before its unchanged scheduled removal deadline. No identity, node name,
+port or arbitrary removal target is accepted. Repeated requests are idempotent,
+siblings continue servicing, and further arming of the closed handle rejects
+explicitly. The scheduled boundary and post-removal sibling lifetime regressions
+remain. This permits bounded native contact/feedback/removal acceptance without
+waiting ten minutes for each test. It changes only the acceptance fixture;
+production APIs, the two root scenario selectors and updater policy are unchanged.
+Fresh image-specific acceptance is still required.

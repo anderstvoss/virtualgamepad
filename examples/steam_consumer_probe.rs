@@ -157,6 +157,10 @@ fn selected_touch_fits(begin: u64, remove_at: u64, end_at: u64, family: u8) -> b
             .is_some_and(|end| end <= end_at && (family != 0 || end <= remove_at))
 }
 
+fn removal_due(seconds: u64, scheduled: u64, requested: bool, active: bool) -> bool {
+    active && (requested || seconds >= scheduled)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::parse(std::env::args().skip(1))?;
     println!(
@@ -209,6 +213,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let mut armed_start = None;
     let mut armed_family = None;
     let mut armed_touch = None;
+    let mut remove_requested = false;
     let mut contacts = [[None; 2]; 2];
     let remove_at = options.remove_after.unwrap_or(options.seconds - 10);
     while started.elapsed() < Duration::from_secs(options.seconds) {
@@ -217,7 +222,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
             Some(control::Command::Stop) => break,
             Some(control::Command::Arm) if armed_start.is_none() => {
                 let begin = seconds + options.start_after;
-                if begin + 40 > remove_at {
+                if !active[0] || begin + 40 > remove_at {
                     return Err("not enough time for a complete input cycle before removal".into());
                 }
                 armed_start = Some(begin);
@@ -227,7 +232,9 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
             }
             Some(control::Command::ArmFamily(family)) => {
                 let begin = seconds + options.start_after;
-                if !selected_input_fits(begin, remove_at, options.seconds, usize::from(family)) {
+                if !active[usize::from(family)]
+                    || !selected_input_fits(begin, remove_at, options.seconds, usize::from(family))
+                {
                     return Err("selected input exceeds controller or fixture lifetime".into());
                 }
                 armed_start = Some(begin);
@@ -239,7 +246,9 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
             }
             Some(control::Command::TouchFamily(family)) => {
                 let begin = seconds + options.start_after;
-                if !selected_touch_fits(begin, remove_at, options.seconds, family) {
+                if !active[usize::from(family)]
+                    || !selected_touch_fits(begin, remove_at, options.seconds, family)
+                {
                     return Err("selected contacts exceed controller or fixture lifetime".into());
                 }
                 armed_start = None;
@@ -249,6 +258,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                     "armed-touch: family={family}; first contact at second={begin}; siblings neutral"
                 );
             }
+            Some(control::Command::RemoveSony) => remove_requested = true,
             Some(control::Command::Pause) => {
                 armed_start = None;
                 armed_family = None;
@@ -327,7 +337,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
         advance!(ds4, 1);
         advance!(switch, 2);
         advance!(xbox, 3);
-        if seconds >= remove_at && active[0] {
+        if removal_due(seconds, remove_at, remove_requested, active[0]) {
             sony.neutralize()?;
             sony.commit()?;
             sony.close();
@@ -427,6 +437,7 @@ mod control {
         Arm,
         ArmFamily(u8),
         TouchFamily(u8),
+        RemoveSony,
         Pause,
         Stop,
     }
@@ -440,6 +451,7 @@ mod control {
             b"arm-xbox360" => Ok(Command::ArmFamily(3)),
             b"touch-dualsense" => Ok(Command::TouchFamily(0)),
             b"touch-ds4" => Ok(Command::TouchFamily(1)),
+            b"remove-dualsense" => Ok(Command::RemoveSony),
             b"pause" => Ok(Command::Pause),
             b"stop" | b"stop\n" => Ok(Command::Stop),
             _ => Err(io::Error::other("unknown or oversized producer command")),
@@ -468,6 +480,9 @@ mod control {
             ] {
                 assert!(parse(bytes).is_err());
             }
+            assert_eq!(parse(b"remove-dualsense").unwrap(), Command::RemoveSony);
+            assert!(parse(b"remove-ds4").is_err());
+            assert!(parse(b"remove-dualsense extra").is_err());
             assert_eq!(parse(b"pause").unwrap(), Command::Pause);
             for bytes in [
                 b"arm-4".as_slice(),
@@ -702,6 +717,16 @@ mod tests {
         assert!(!selected_touch_fits(896, 600, 900, 1));
         assert!(!selected_touch_fits(0, 600, 900, 2));
         assert!(!selected_touch_fits(u64::MAX, 600, 900, 0));
+    }
+
+    #[test]
+    fn explicit_removal_is_idempotent_and_preserves_the_scheduled_boundary() {
+        assert!(!removal_due(0, 600, false, true));
+        assert!(removal_due(0, 600, true, true));
+        assert!(!removal_due(0, 600, true, false));
+        assert!(!removal_due(599, 600, false, true));
+        assert!(removal_due(600, 600, false, true));
+        assert!(!removal_due(601, 600, false, false));
     }
 
     #[test]
