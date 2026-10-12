@@ -101,6 +101,21 @@ fn desired_inputs(seconds: u64, start_after: u64, remove_at: u64) -> [bool; 4] {
     pressed
 }
 
+fn selected_inputs(seconds: u64, start: u64, remove_at: u64, family: Option<usize>) -> [bool; 4] {
+    let Some(family) = family else {
+        return desired_inputs(seconds, start, remove_at);
+    };
+    let mut pressed = [false; 4];
+    if family < 4
+        && seconds >= start
+        && (seconds - start) % 10 < 2
+        && (family != 0 || seconds < remove_at)
+    {
+        pressed[family] = true;
+    }
+    pressed
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::parse(std::env::args().skip(1))?;
     println!(
@@ -151,6 +166,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let mut active = [true; 4];
     let mut observations = [0_u64; 4];
     let mut armed_start = None;
+    let mut armed_family = None;
     let remove_at = options.remove_after.unwrap_or(options.seconds - 10);
     while started.elapsed() < Duration::from_secs(options.seconds) {
         let seconds = started.elapsed().as_secs();
@@ -164,10 +180,26 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = Some(begin);
                 println!("armed: first input at second={begin}");
             }
+            Some(control::Command::ArmFamily(family)) => {
+                let begin = seconds + options.start_after;
+                if begin + 2 > remove_at {
+                    return Err("not enough time for selected input before removal".into());
+                }
+                armed_start = Some(begin);
+                armed_family = Some(usize::from(family));
+                println!(
+                    "armed-family: family={family}; first input at second={begin}; siblings neutral"
+                );
+            }
+            Some(control::Command::Pause) => {
+                armed_start = None;
+                armed_family = None;
+                println!("paused: all families neutral");
+            }
             _ => {}
         }
         let desired = armed_start.map_or([false; 4], |begin| {
-            desired_inputs(seconds, begin, remove_at)
+            selected_inputs(seconds, begin, remove_at, armed_family)
         });
         macro_rules! advance {
             ($controller:ident, $index:expr) => {
@@ -296,14 +328,45 @@ mod control {
     #[derive(Debug, PartialEq, Eq)]
     pub(super) enum Command {
         Arm,
+        ArmFamily(u8),
+        Pause,
         Stop,
     }
 
     fn parse(bytes: &[u8]) -> io::Result<Command> {
         match bytes {
             b"arm" | b"arm\n" => Ok(Command::Arm),
+            b"arm-dualsense" => Ok(Command::ArmFamily(0)),
+            b"arm-ds4" => Ok(Command::ArmFamily(1)),
+            b"arm-switch" => Ok(Command::ArmFamily(2)),
+            b"arm-xbox360" => Ok(Command::ArmFamily(3)),
+            b"pause" => Ok(Command::Pause),
             b"stop" | b"stop\n" => Ok(Command::Stop),
             _ => Err(io::Error::other("unknown or oversized producer command")),
+        }
+    }
+
+    #[cfg(test)]
+    mod command_tests {
+        use super::*;
+        #[test]
+        fn family_selection_is_predefined_and_pause_is_explicit() {
+            for (bytes, family) in [
+                (b"arm-dualsense".as_slice(), 0),
+                (b"arm-ds4".as_slice(), 1),
+                (b"arm-switch".as_slice(), 2),
+                (b"arm-xbox360".as_slice(), 3),
+            ] {
+                assert_eq!(parse(bytes).unwrap(), Command::ArmFamily(family));
+            }
+            assert_eq!(parse(b"pause").unwrap(), Command::Pause);
+            for bytes in [
+                b"arm-4".as_slice(),
+                b"arm-xbox360 extra".as_slice(),
+                b"arm-ds4\n".as_slice(),
+            ] {
+                assert!(parse(bytes).is_err());
+            }
         }
     }
 
@@ -479,6 +542,33 @@ mod control {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn single_family_arming_keeps_all_siblings_neutral_and_releases() {
+        for family in 0..4 {
+            for second in 0..40 {
+                let actual = selected_inputs(second, 10, 35, Some(family));
+                for sibling in 0..4 {
+                    assert_eq!(
+                        actual[sibling],
+                        sibling == family
+                            && second >= 10
+                            && (second - 10) % 10 < 2
+                            && (family != 0 || second < 35)
+                    );
+                }
+            }
+        }
+        assert_eq!(selected_inputs(10, 10, 35, Some(4)), [false; 4]);
+        assert_eq!(
+            selected_inputs(10, 10, 35, Some(0)),
+            [true, false, false, false]
+        );
+        assert_eq!(
+            selected_inputs(10, 10, 35, Some(1)),
+            [false, true, false, false]
+        );
+    }
 
     #[test]
     fn startup_pulses_release_and_removal_are_exact() {
