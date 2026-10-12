@@ -9,6 +9,47 @@ spec.loader.exec_module(lab)
 
 
 class SteamNamespace(unittest.TestCase):
+    def test_owned_udev_snapshot_excludes_foreign_records_and_private_properties(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); data = root/'data'; data.mkdir(); workspace = root/'work'; workspace.mkdir()
+            (data/'c13:64').write_text('E:ID_INPUT=1\nE:ID_INPUT_JOYSTICK=1\nE:ID_SEAT=seat-private\nE:PRIVATE_TOKEN=synthetic\nG:seat\n')
+            (data/'c13:65').write_text('E:ID_INPUT=1\n')
+            devices = [dict(rdev=os.makedev(13,64))]
+            with patch.object(lab, 'consumer_device_settings', return_value=[]):
+                snapshot = lab.prepare_consumer_udev(workspace, devices, data)
+            self.assertEqual([p.name for p in snapshot.iterdir()], ['c13:64'])
+            text = (snapshot/'c13:64').read_text()
+            self.assertIn('ID_INPUT_JOYSTICK=1', text)
+            self.assertIn('ID_SEAT=seat-private', text)
+            self.assertNotIn('PRIVATE_TOKEN', text)
+            with patch.object(lab, 'consumer_device_settings', return_value=[]):
+                command = lab.command(workspace, Path('/home/synthetic'), 42, 43, '.vg-alpha-sentinel-fake', 'marker', devices=devices)
+            self.assertIn(str(snapshot), command)
+            self.assertIn('/run/udev/data', command)
+            self.assertNotIn('/run/udev/data/c13:65', command)
+
+
+    def test_owned_udev_snapshot_rejects_symlinks_oversize_and_changed_devices(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); data = root/'data'; data.mkdir()
+            record = data/'c13:64'; foreign = root/'foreign'; foreign.write_text('E:ID_INPUT=1\n')
+            record.symlink_to(foreign)
+            devices = [dict(rdev=os.makedev(13,64))]
+            workspace = root/'one'; workspace.mkdir()
+            with patch.object(lab, 'consumer_device_settings', return_value=[]):
+                with self.assertRaises(OSError): lab.prepare_consumer_udev(workspace,devices,data)
+            record.unlink(); record.write_bytes(b'x'*65537)
+            workspace = root/'two'; workspace.mkdir()
+            with patch.object(lab, 'consumer_device_settings', return_value=[]):
+                with self.assertRaisesRegex(ValueError,'bounded regular'): lab.prepare_consumer_udev(workspace,devices,data)
+            record.write_text('E:ID_INPUT=1\n'); workspace = root/'three'; workspace.mkdir()
+            with patch.object(lab, 'consumer_device_settings', side_effect=[[], ValueError('changed')]):
+                with self.assertRaisesRegex(ValueError,'changed'): lab.prepare_consumer_udev(workspace,devices,data)
+
     def test_input_owner_identity_rejects_foreign_dead_and_reused_processes(self):
         import os
         from unittest.mock import patch

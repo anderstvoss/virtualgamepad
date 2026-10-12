@@ -185,6 +185,40 @@ def consumer_device_settings(devices):
     return settings
 
 
+
+def prepare_consumer_udev(workspace, devices, data_root=Path('/run/udev/data')):
+    """Snapshot only discovery fields for identity-pinned owned devices."""
+    if not devices:
+        return None
+    consumer_device_settings(devices)  # Validate character-device ownership first.
+    destination = workspace / 'owned-udev-data'
+    destination.mkdir(mode=0o700)
+    for device in devices:
+        key = f"c{os.major(device['rdev'])}:{os.minor(device['rdev'])}"
+        descriptor = os.open(data_root / key, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_size > 65536:
+                raise ValueError('bounded regular owned udev record required')
+            data = source.read(65537)
+        if len(data) > 65536:
+            raise ValueError('owned udev record exceeds quota')
+        lines = []
+        for line in data.decode('utf-8', errors='strict').splitlines():
+            if line.startswith('E:') and '=' in line:
+                name, value = line[2:].split('=', 1)
+                if (re.fullmatch(r'ID_INPUT(?:_[A-Z0-9_]+)?', name) or
+                        name in ('ID_BUS', 'ID_SEAT', 'LIBINPUT_IGNORE_DEVICE')):
+                    if any(ord(c) < 32 or ord(c) == 127 for c in value):
+                        raise ValueError('malformed owned udev property')
+                    lines.append(line)
+            elif line in ('G:seat', 'G:uaccess', 'Q:seat', 'Q:uaccess'):
+                lines.append(line)
+        with (destination / key).open('x') as output:
+            output.write('\n'.join(lines) + '\n')
+    consumer_device_settings(devices)  # Refuse device replacement during snapshot.
+    return destination
+
 def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=()):
     if (type(uid) is not int or type(gid) is not int or uid <= 0 or gid <= 0 or
             not home.is_absolute() or home in (Path('/'), Path('/home')) or
@@ -205,7 +239,9 @@ def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=(
              '--setenv', 'LANG', 'C', '--setenv', 'XDG_RUNTIME_DIR', f'/run/user/{uid}',
              '--chdir', str(home), '--', '/usr/bin/python3', '-I', '/sentinel.py', sentinel, marker]
     boundary = args.index('--')
-    return args[:boundary] + consumer_device_settings(devices) + args[boundary:]
+    metadata = workspace / 'owned-udev-data'
+    discovery = ['--dir', '/run/udev', '--ro-bind', str(metadata), '/run/udev/data'] if devices and metadata.is_dir() else []
+    return args[:boundary] + consumer_device_settings(devices) + discovery + args[boundary:]
 
 
 def remove_sentinel(path, expected):
@@ -482,7 +518,9 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
                 marker_path = Path(output.name)
             marker_path.replace(profile / 'private-home-marker')
             (workspace / 'sentinel.py').write_text(SENTINEL)
-            if input_owner is not None: revalidate_consumer_devices(input_owner, devices)
+            if input_owner is not None:
+                revalidate_consumer_devices(input_owner, devices)
+                prepare_consumer_udev(workspace, devices)
             completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile, devices),
                                        capture_output=True, text=True, timeout=20, env={'PATH':'/usr/bin:/bin'})
             if completed.returncode:
