@@ -3658,3 +3658,15 @@ scoped; it cannot establish evdev compatibility or full output parity. Gate 5
 remains open. Generic-companion Steam recognition/contact/feedback revalidation
 also remains pending. Raw data and probe-build receipts stay outside tracked
 source. Available host memory remained above 17 GiB; no heavy concurrent trial.
+
+### Classic joystick differential
+
+The same pinned producer and FEX reader then opened only the identity-verified
+owned primary's classic joystick sibling. Each reader received 22 initialization
+records separately from the measured South press/release. Both native and FEX
+8-byte decoding yield identical measured timestamps, button zero, values one then
+zero. Both exit statuses are zero; owned nodes absent and rule cleanup passed.
+This supplies a viable next consumer experiment, not Steam acceptance. Next add
+explicit, tested classic-joystick selection and owned-node namespace exposure;
+then verify actual Steam recognition/input/output and cleanup. Preserve the
+failed evdev result and do not extrapolate classic input into evdev/output parity.
