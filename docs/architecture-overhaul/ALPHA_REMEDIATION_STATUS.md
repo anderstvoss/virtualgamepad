@@ -4614,3 +4614,23 @@ Two regressions cover loss, complete capture, different ticks, failed submission
 and backward measured-source timestamps. All 464 Python tests pass. This adds independently
 reproducible evidence to Gate 6; it does not qualify the graph, enable the 72-trial
 product matrix or close either audio gate. Historical failures are retained.
+
+## Explicit finite Sony contact fixture for affected companion acceptance
+
+The ordinary isolated input producer now accepts only two predefined contact
+commands (`touch-dualsense`, `touch-ds4`). The existing Steam HID/evdev root
+scenarios and updater wrapper remain unchanged. All input is neutral until an
+explicit command; contact commands require verified test-owned desktop-ignore
+nodes before arming. The five-step one-shot sequence presses contact 7, adds
+contact 8, moves both, releases the first, and releases the second. Pause or a
+South-input command cancels contact selection and commits releases. Shutdown
+retains ordinary neutralization, repeated close and owned-node removal.
+
+Selection/lifetime regressions cover exact slot IDs/positions, finite release,
+neutral siblings, pause cancellation, pre-start state, invalid families, overflow
+and sufficient release time before controller removal. Existing South-input,
+control-socket and cleanup regressions remain. This is acceptance tooling, not
+production controller/public API or GUI behavior. Fresh native frame, feedback
+and consumer observations against the packaged image are required; no contact
+acceptance is inferred from these deterministic checks. Separate GUI provisioning
+is still needed for GUI-owned active touch.

@@ -8,8 +8,9 @@ use std::{
 };
 #[cfg(target_os = "linux")]
 use virtualgamepad::{
-    CreationOptions, DigitalControlUpdate, DualSenseController, DualShock4Controller, FaceButton,
-    RealizationId, SwitchProController, Xbox360Controller, create_dualsense, create_dualshock4,
+    CreationOptions, DigitalControlUpdate, DualSenseController, DualSenseTouchContact,
+    DualShock4Controller, DualShock4TouchContact, DualShock4TouchSlot, FaceButton, RealizationId,
+    SwitchProController, TouchSlot, Xbox360Controller, create_dualsense, create_dualshock4,
     create_switch_pro, create_xbox360,
 };
 
@@ -124,10 +125,42 @@ fn selected_input_fits(begin: u64, remove_at: u64, end_at: u64, family: usize) -
             .is_some_and(|release| release <= end_at && (family != 0 || release <= remove_at))
 }
 
+type ContactPoints = [Option<(u8, u16, u16)>; 2];
+
+/// One finite contact sequence: press, add, move, release first, release second.
+fn touch_inputs(elapsed_ms: Option<u64>) -> ContactPoints {
+    match elapsed_ms {
+        Some(0..=999) => [Some((7, 100, 200)), None],
+        Some(1000..=1999) => [Some((7, 100, 200)), Some((8, 500, 600))],
+        Some(2000..=2999) => [Some((7, 300, 400)), Some((8, 700, 800))],
+        Some(3000..=3999) => [None, Some((8, 700, 800))],
+        _ => [None; 2],
+    }
+}
+
+fn selected_contacts(elapsed_ms: u64, armed: Option<(u8, u64)>) -> [ContactPoints; 2] {
+    let mut result = [[None; 2]; 2];
+    if let Some((family, begin)) = armed.filter(|(family, _)| *family < 2) {
+        result[usize::from(family)] = touch_inputs(
+            begin
+                .checked_mul(1000)
+                .and_then(|start| elapsed_ms.checked_sub(start)),
+        );
+    }
+    result
+}
+
+fn selected_touch_fits(begin: u64, remove_at: u64, end_at: u64, family: u8) -> bool {
+    family < 2
+        && begin
+            .checked_add(5)
+            .is_some_and(|end| end <= end_at && (family != 0 || end <= remove_at))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::parse(std::env::args().skip(1))?;
     println!(
-        "proposed: four families; realization={}; duration={}; delay-after-arm={}; South pulses only; no touch/audio; inputs remain neutral until armed",
+        "proposed: four families; realization={}; duration={}; delay-after-arm={}; South pulses or explicit finite Sony contacts; no audio; inputs remain neutral until armed",
         if options.evdev { "evdev" } else { "hid" },
         options.seconds,
         options.start_after
@@ -175,6 +208,8 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let mut observations = [0_u64; 4];
     let mut armed_start = None;
     let mut armed_family = None;
+    let mut armed_touch = None;
+    let mut contacts = [[None; 2]; 2];
     let remove_at = options.remove_after.unwrap_or(options.seconds - 10);
     while started.elapsed() < Duration::from_secs(options.seconds) {
         let seconds = started.elapsed().as_secs();
@@ -186,6 +221,8 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                     return Err("not enough time for a complete input cycle before removal".into());
                 }
                 armed_start = Some(begin);
+                armed_family = None;
+                armed_touch = None;
                 println!("armed: first input at second={begin}");
             }
             Some(control::Command::ArmFamily(family)) => {
@@ -195,13 +232,27 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 }
                 armed_start = Some(begin);
                 armed_family = Some(usize::from(family));
+                armed_touch = None;
                 println!(
                     "armed-family: family={family}; first input at second={begin}; siblings neutral"
+                );
+            }
+            Some(control::Command::TouchFamily(family)) => {
+                let begin = seconds + options.start_after;
+                if !selected_touch_fits(begin, remove_at, options.seconds, family) {
+                    return Err("selected contacts exceed controller or fixture lifetime".into());
+                }
+                armed_start = None;
+                armed_family = None;
+                armed_touch = Some((family, begin));
+                println!(
+                    "armed-touch: family={family}; first contact at second={begin}; siblings neutral"
                 );
             }
             Some(control::Command::Pause) => {
                 armed_start = None;
                 armed_family = None;
+                armed_touch = None;
                 println!("paused: all families neutral");
             }
             _ => {}
@@ -209,6 +260,44 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
         let desired = armed_start.map_or([false; 4], |begin| {
             selected_inputs(seconds, begin, remove_at, armed_family)
         });
+        let desired_contacts = selected_contacts(
+            u64::try_from(started.elapsed().as_millis()).expect("bounded fixture duration"),
+            armed_touch,
+        );
+        macro_rules! apply_contacts {
+            ($controller:ident, $index:expr, $contact:ident, $first:expr, $second:expr) => {
+                if active[$index] && contacts[$index] != desired_contacts[$index] {
+                    for (slot, point) in [$first, $second].into_iter().zip(desired_contacts[$index])
+                    {
+                        let point = point
+                            .map(|(id, x, y)| $contact::new(id, x, y))
+                            .transpose()?;
+                        $controller.set_touch(slot, point)?;
+                    }
+                    $controller.commit()?;
+                    contacts[$index] = desired_contacts[$index];
+                    println!(
+                        "contacts: family={} second={seconds} points={:?}",
+                        stringify!($controller),
+                        contacts[$index]
+                    );
+                }
+            };
+        }
+        apply_contacts!(
+            sony,
+            0,
+            DualSenseTouchContact,
+            TouchSlot::First,
+            TouchSlot::Second
+        );
+        apply_contacts!(
+            ds4,
+            1,
+            DualShock4TouchContact,
+            DualShock4TouchSlot::First,
+            DualShock4TouchSlot::Second
+        );
         macro_rules! advance {
             ($controller:ident, $index:expr) => {
                 if active[$index] {
@@ -266,7 +355,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let truncated = observations.iter().any(|count| *count > 64);
     println!(
         "closed: all controllers; input-armed={}; output-counts={observations:?}; output-log-truncated={truncated}; consumer observations still required",
-        armed_start.is_some()
+        armed_start.is_some() || armed_touch.is_some()
     );
     if truncated {
         return Err("output log limit exceeded; repeat the affected consumer check".into());
@@ -337,6 +426,7 @@ mod control {
     pub(super) enum Command {
         Arm,
         ArmFamily(u8),
+        TouchFamily(u8),
         Pause,
         Stop,
     }
@@ -348,6 +438,8 @@ mod control {
             b"arm-ds4" => Ok(Command::ArmFamily(1)),
             b"arm-switch" => Ok(Command::ArmFamily(2)),
             b"arm-xbox360" => Ok(Command::ArmFamily(3)),
+            b"touch-dualsense" => Ok(Command::TouchFamily(0)),
+            b"touch-ds4" => Ok(Command::TouchFamily(1)),
             b"pause" => Ok(Command::Pause),
             b"stop" | b"stop\n" => Ok(Command::Stop),
             _ => Err(io::Error::other("unknown or oversized producer command")),
@@ -366,6 +458,15 @@ mod control {
                 (b"arm-xbox360".as_slice(), 3),
             ] {
                 assert_eq!(parse(bytes).unwrap(), Command::ArmFamily(family));
+            }
+            assert_eq!(parse(b"touch-dualsense").unwrap(), Command::TouchFamily(0));
+            assert_eq!(parse(b"touch-ds4").unwrap(), Command::TouchFamily(1));
+            for bytes in [
+                b"touch-switch".as_slice(),
+                b"touch-ds4 extra",
+                b"touch-dualsense\n",
+            ] {
+                assert!(parse(bytes).is_err());
             }
             assert_eq!(parse(b"pause").unwrap(), Command::Pause);
             for bytes in [
@@ -409,7 +510,7 @@ mod control {
                 .expect("bound socket")
                 .set_nonblocking(true)?;
             println!(
-                "control: {}; send arm only after verifying the isolated controller-test screen; stop cancels",
+                "control: {}; send arm only after verifying the isolated controller-test screen; touch commands require isolated owned contact nodes; pause/stop release",
                 path.display()
             );
             println!(
@@ -550,6 +651,58 @@ mod control {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn contacts_preserve_ids_move_each_slot_and_release_in_order() {
+        assert_eq!(touch_inputs(None), [None; 2]);
+        for millis in [0, 999] {
+            assert_eq!(touch_inputs(Some(millis)), [Some((7, 100, 200)), None]);
+        }
+        assert_eq!(
+            touch_inputs(Some(1000)),
+            [Some((7, 100, 200)), Some((8, 500, 600))]
+        );
+        assert_eq!(
+            touch_inputs(Some(2000)),
+            [Some((7, 300, 400)), Some((8, 700, 800))]
+        );
+        assert_eq!(touch_inputs(Some(3000)), [None, Some((8, 700, 800))]);
+        for millis in [4000, 5000, u64::MAX] {
+            assert_eq!(touch_inputs(Some(millis)), [None; 2]);
+        }
+        // Cancellation uses None immediately; no held contact survives a pause.
+        assert_eq!(touch_inputs(None), [None; 2]);
+    }
+
+    #[test]
+    fn selected_contacts_keep_siblings_neutral_and_pause_releases_both_slots() {
+        for family in 0..2 {
+            for millis in [0, 999, 1000, 2000, 3000, 4000, 5000] {
+                let result = selected_contacts(10000 + millis, Some((family, 10)));
+                assert_eq!(result[usize::from(family)], touch_inputs(Some(millis)));
+                assert_eq!(result[1 - usize::from(family)], [None; 2]);
+            }
+        }
+        for armed in [None, Some((2, 0)), Some((0, u64::MAX)), Some((1, 20))] {
+            assert_eq!(selected_contacts(10000, armed), [[None; 2]; 2]);
+        }
+        assert_eq!(
+            selected_contacts(12000, Some((0, 10)))[0],
+            [Some((7, 300, 400)), Some((8, 700, 800))]
+        );
+        assert_eq!(selected_contacts(12000, None), [[None; 2]; 2]);
+    }
+
+    #[test]
+    fn contacts_reject_unrepresentable_families_and_incomplete_lifetimes() {
+        assert!(selected_touch_fits(595, 600, 900, 0));
+        assert!(!selected_touch_fits(596, 600, 900, 0));
+        assert!(selected_touch_fits(601, 600, 900, 1));
+        assert!(selected_touch_fits(895, 600, 900, 1));
+        assert!(!selected_touch_fits(896, 600, 900, 1));
+        assert!(!selected_touch_fits(0, 600, 900, 2));
+        assert!(!selected_touch_fits(u64::MAX, 600, 900, 0));
+    }
 
     #[test]
     fn sibling_arming_after_removal_respects_its_own_lifetime() {
