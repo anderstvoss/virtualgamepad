@@ -4452,3 +4452,16 @@ an evidence lead for directory/udev removal handling, not a matched shipped-sour
 receipt. Future hotplug evidence must inspect both host and consumer visibility;
 do not equate the existing host-side removed-node counter with consumer removal.
 Private profiles/screenshots and raw receipts remain outside tracked source.
+
+## Classic Steam namespace retirement correction — 2026-10-12
+
+The classic-only consumer view now removes identity-pinned joystick aliases when
+the original owned nodes disappear. Hidden backing bindings remain owned until
+consumer teardown; the default evdev/hidraw path is unchanged. No root policy,
+provider binary, public API or dependencies change. Four focused regressions
+cover retirement/idempotence/sibling preservation, changed owner/directory/alias
+identities and foreign entries, canonical bindings and namespace verification.
+All 460 Python tooling tests pass. An actual generated namespace control verifies
+alias disappearance independently of Steam, with zero exit and owned cleanup.
+This does not accept Steam hotplug: fresh affected live consumer cells are pending.
+Gate 5 remains open and the earlier stale controller-list observation is retained.

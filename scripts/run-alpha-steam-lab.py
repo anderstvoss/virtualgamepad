@@ -28,6 +28,12 @@ import threading
 import subprocess
 import tempfile
 
+def input_binding_target(target):
+    if not re.fullmatch(r'/dev/input/js[0-9]+', target):
+        raise ValueError('dynamic input view requires classic owned joystick nodes')
+    return '/owned-input-bindings' + target[len('/dev'):]
+
+
 def verify_consumer_namespace(devices):
     """Check the mounted identity and open permissions without reading or writing input."""
     expected = {item['target'] for item in devices}
@@ -38,11 +44,18 @@ def verify_consumer_namespace(devices):
               for path in Path(directory).glob(pattern)}
     if actual != expected: raise ValueError('foreign or missing consumer nodes')
     for item in devices:
-        info = Path(item['target']).lstat()
+        target = Path(item['target'])
+        info = target.lstat()
+        opened_path = item['target']
+        if stat.S_ISLNK(info.st_mode):
+            opened_path = input_binding_target(item['target'])
+            if str(target.readlink()) != opened_path:
+                raise ValueError('consumer alias target changed')
+            info = target.stat()
         identity = item['device'],item['inode'],item['rdev']
         if not stat.S_ISCHR(info.st_mode) or (info.st_dev,info.st_ino,info.st_rdev) != identity:
             raise ValueError('mounted consumer identity changed')
-        descriptor = os.open(item['target'],os.O_RDWR|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
+        descriptor = os.open(opened_path,os.O_RDWR|os.O_NONBLOCK|os.O_NOFOLLOW|os.O_CLOEXEC)
         try:
             opened = os.fstat(descriptor)
             if not stat.S_ISCHR(opened.st_mode) or (opened.st_dev,opened.st_ino,opened.st_rdev) != identity:
@@ -66,7 +79,7 @@ expected = verify_consumer_namespace(devices)
 print(json.dumps(dict(scope="namespace-isolation-only", uid=os.getuid(), real_home_hidden=True,
     passwd_home_hidden=True, capabilities_dropped=True, private_proc=True, private_dev=True, owned_consumer_devices=sorted(expected), consumer_device_opens_verified=len(expected))))
 '''
-SENTINEL = 'import os, re, stat\nfrom pathlib import Path\n' + inspect.getsource(verify_consumer_namespace) + SENTINEL
+SENTINEL = 'import os, re, stat\nfrom pathlib import Path\n' + inspect.getsource(input_binding_target) + inspect.getsource(verify_consumer_namespace) + SENTINEL
 
 
 def memory_sample(meminfo=Path('/proc/meminfo'), pressure=Path('/proc/pressure/memory')):
@@ -169,8 +182,62 @@ def revalidate_consumer_devices(owner, devices):
     return removed
 
 
-def consumer_device_settings(devices):
+def prepare_consumer_input_view(workspace, devices):
+    if not devices or len(devices) > 128:
+        raise ValueError('bounded nonempty classic input inventory required')
+    aliases = {item['target']: input_binding_target(item['target']) for item in devices}
+    if len(aliases) != len(devices):
+        raise ValueError('duplicate classic input target')
+    view = workspace / 'consumer-input'
+    view.mkdir(mode=0o700)
+    registry = dict(directory=(view.stat().st_dev, view.stat().st_ino), aliases={}, retired=set())
+    for target, backing in aliases.items():
+        path = view / Path(target).name
+        path.symlink_to(backing)
+        info = path.lstat()
+        registry['aliases'][target] = (info.st_dev, info.st_ino)
+    return view, registry
+
+
+def check_consumer_input_view(view, registry):
+    info = view.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077
+            or (info.st_dev, info.st_ino) != registry['directory']):
+        raise ValueError('owned consumer view identity changed')
+    expected = {Path(target).name for target in registry['aliases'] if target not in registry['retired']}
+    if {path.name for path in view.iterdir()} != expected:
+        raise ValueError('foreign or missing consumer aliases')
+    for target, identity in registry['aliases'].items():
+        if target in registry['retired']: continue
+        path = view / Path(target).name
+        info = path.lstat()
+        if (not stat.S_ISLNK(info.st_mode) or (info.st_dev, info.st_ino) != identity
+                or str(path.readlink()) != input_binding_target(target)):
+            raise ValueError('owned consumer alias identity changed')
+
+
+def retire_consumer_input_aliases(owner, devices, view, registry):
+    removed = revalidate_consumer_devices(owner, devices)
+    check_consumer_input_view(view, registry)
+    for target in removed:
+        if target not in registry['aliases']:
+            raise ValueError('unregistered consumer alias retirement')
+        if target not in registry['retired']:
+            (view / Path(target).name).unlink()
+            registry['retired'].add(target)
+    return removed
+
+
+def consumer_device_settings(devices, input_view=None):
     settings = ['--dir', '/dev/input'] if devices else []
+    if input_view is not None:
+        view, registry = input_view
+        check_consumer_input_view(view, registry)
+        if registry['retired']:
+            raise ValueError('cannot launch consumer with already-retired aliases')
+        if set(registry['aliases']) != {item['target'] for item in devices}:
+            raise ValueError('consumer view inventory changed')
+        settings += ['--dir', '/owned-input-bindings/input', '--ro-bind', str(view), '/dev/input']
     targets = set()
     for device in devices:
         target = device['target']
@@ -182,7 +249,7 @@ def consumer_device_settings(devices):
         if not stat.S_ISCHR(info.st_mode) or (info.st_dev, info.st_ino, info.st_rdev) != (
                 device['device'], device['inode'], device['rdev']):
             raise ValueError('owned consumer node changed before namespace preparation')
-        settings += ['--dev-bind', str(source), target]
+        settings += ['--dev-bind', str(source), input_binding_target(target) if input_view is not None else target]
     settings += ['--setenv', 'VIRTUALGAMEPAD_OWNED_CONSUMER_DEVICES', json.dumps(devices)]
     return settings
 
@@ -221,7 +288,7 @@ def prepare_consumer_udev(workspace, devices, data_root=Path('/run/udev/data')):
     consumer_device_settings(devices)  # Refuse device replacement during snapshot.
     return destination
 
-def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=()):
+def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=(), input_view=None):
     if (type(uid) is not int or type(gid) is not int or uid <= 0 or gid <= 0 or
             not home.is_absolute() or home in (Path('/'), Path('/home')) or
             not workspace.is_absolute() or not sentinel.startswith('.vg-alpha-sentinel-') or
@@ -243,7 +310,7 @@ def command(workspace, home, uid, gid, sentinel, marker, profile=None, devices=(
     boundary = args.index('--')
     metadata = workspace / 'owned-udev-data'
     discovery = ['--dir', '/run/udev', '--ro-bind', str(metadata), '/run/udev/data'] if devices and metadata.is_dir() else []
-    return args[:boundary] + consumer_device_settings(devices) + discovery + args[boundary:]
+    return args[:boundary] + (consumer_device_settings(devices, input_view) if input_view is not None else consumer_device_settings(devices)) + discovery + args[boundary:]
 
 
 def remove_sentinel(path, expected):
@@ -268,10 +335,10 @@ exec /usr/bin/dbus-run-session -- "$SNAP/usr/bin/FEXBash" -c "$SNAP/usr/bin/stea
 '''
 
 
-def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds, profile=None, devices=()):
+def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seconds, profile=None, devices=(), input_view=None):
     if type(display) is not int or not 200 <= display <= 299 or type(seconds) is not int or not 30 <= seconds <= 900:
         raise ValueError('invalid owned display or bounded deadline')
-    args = command(workspace, home, uid, gid, sentinel, marker, profile, devices)
+    args = command(workspace, home, uid, gid, sentinel, marker, profile, devices, input_view)
     temporary = args.index("--tmpfs")
     args[temporary:temporary+2] = ["--bind", str(workspace / "tmp"), "/tmp"]
     boundary = args.index('--')
@@ -327,7 +394,7 @@ def display_command(server, display, auth, visible=False):
     return command + ['-nolisten', 'tcp', '-auth', str(auth), '-noreset']
 
 
-def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False, profile=None, devices=(), input_owner=None):
+def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures=None, visible=False, profile=None, devices=(), input_owner=None, input_view=None):
     if not xvfb.is_absolute() or not xvfb.is_file():
         raise RuntimeError('an explicit available Xvfb binary is required')
     display = next((number for number in range(200, 300)
@@ -370,7 +437,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
             if daemon.poll() is not None or time.monotonic() >= deadline:
                 raise RuntimeError('owned display startup failed')
             time.sleep(.02)
-        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds, profile, devices)
+        client = bootstrap_command(workspace, home, account.pw_uid, account.pw_gid, name, marker, display, seconds, profile, devices, input_view)
         if input_owner is not None: revalidate_consumer_devices(input_owner, devices)
         require_memory(memory_sample(), starting=True)
         launcher = subprocess.Popen(bootstrap_unit_command(unit, client, seconds, budget),
@@ -385,7 +452,9 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
             if time.monotonic() >= next_sample:
                 sample = memory_sample()
                 if input_owner is not None:
-                    sample["removed_owned_consumer_devices"] = revalidate_consumer_devices(input_owner, devices)
+                    sample["removed_owned_consumer_devices"] = (
+                        retire_consumer_input_aliases(input_owner, devices, *input_view)
+                        if input_view is not None else revalidate_consumer_devices(input_owner, devices))
                 samples.append(sample)
                 require_memory(sample)
                 next_sample = time.monotonic() + 1
@@ -527,7 +596,8 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
             if input_owner is not None:
                 revalidate_consumer_devices(input_owner, devices)
                 prepare_consumer_udev(workspace, devices)
-            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile, devices),
+            input_view = prepare_consumer_input_view(workspace, devices) if classic else None
+            completed = subprocess.run(command(workspace, home, account.pw_uid, account.pw_gid, name, marker, profile, devices, input_view),
                                        capture_output=True, text=True, timeout=20, env={'PATH':'/usr/bin:/bin'})
             if completed.returncode:
                 raise RuntimeError('namespace sentinel failed: ' + completed.stderr[:4096])
@@ -537,7 +607,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
             receipt.update(input_backend='classic-joystick' if classic else 'evdev-hidraw', test_profile_retained=profile_directory is not None, test_profile_reused=reused)
             if bootstrap:
                 if captures is not None: captures.mkdir(mode=0o700, exist_ok=False)
-                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile, devices, input_owner)
+                result = run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, captures, visible, profile, devices, input_owner, input_view)
                 receipt["bootstrap"] = result
                 if result["initiating"] or result["cleanup"]:
                     raise RuntimeError("isolated Steam bootstrap did not complete")

@@ -36,6 +36,81 @@ class SteamNamespace(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'boolean'):
                     lab.consumer_devices(42,inputs,raw,dev,classic='yes')
 
+    def test_dynamic_classic_aliases_retire_only_missing_owned_nodes(self):
+        from unittest.mock import patch
+        devices = [dict(target='/dev/input/js0'), dict(target='/dev/input/js1')]
+        with tempfile.TemporaryDirectory() as directory:
+            view, registry = lab.prepare_consumer_input_view(Path(directory), devices)
+            lab.check_consumer_input_view(view, registry)
+            with patch.object(lab, 'revalidate_consumer_devices', return_value=['/dev/input/js0']):
+                self.assertEqual(lab.retire_consumer_input_aliases((42,123), devices, view, registry), ['/dev/input/js0'])
+                lab.retire_consumer_input_aliases((42,123), devices, view, registry)
+            self.assertFalse((view/'js0').is_symlink())
+            self.assertEqual(str((view/'js1').readlink()), '/owned-input-bindings/input/js1')
+            self.assertEqual(registry['retired'], {'/dev/input/js0'})
+            with patch.object(lab, 'revalidate_consumer_devices', side_effect=ValueError('owner changed')):
+                with self.assertRaisesRegex(ValueError, 'owner changed'):
+                    lab.retire_consumer_input_aliases((42,123), devices, view, registry)
+            self.assertTrue((view/'js1').is_symlink())
+
+    def test_dynamic_view_rejects_replacement_and_foreign_aliases_without_unlink(self):
+        from unittest.mock import patch
+        for change in ('directory', 'target', 'foreign'):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                workspace=Path(directory); devices=[dict(target='/dev/input/js0')]
+                view, registry=lab.prepare_consumer_input_view(workspace, devices)
+                if change == 'directory':
+                    view.rename(workspace/'original'); view.mkdir(mode=0o700)
+                    (view/'js0').symlink_to('/foreign')
+                elif change == 'target':
+                    (view/'js0').unlink(); (view/'js0').symlink_to('/foreign')
+                else: (view/'foreign').write_text('sanitized foreign fixture')
+                with patch.object(lab, 'revalidate_consumer_devices', return_value=['/dev/input/js0']):
+                    with self.assertRaises(ValueError):
+                        lab.retire_consumer_input_aliases((42,123),devices,view,registry)
+                self.assertTrue((view/'js0').is_symlink())
+                if change=='foreign':self.assertEqual((view/'foreign').read_text(),'sanitized foreign fixture')
+
+    def test_dynamic_view_inventory_and_backing_paths_are_closed(self):
+        import os,stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        for targets in ([], ['/dev/input/event0'], ['/dev/input/js0','/dev/input/js0'], ['/etc/passwd']):
+            with tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(ValueError):
+                    lab.prepare_consumer_input_view(Path(directory),[dict(target=t) for t in targets])
+                self.assertFalse((Path(directory)/'consumer-input').exists())
+        with tempfile.TemporaryDirectory() as directory:
+            source=Path(directory)/'source'; source.write_text('sanitized')
+            device=dict(target='/dev/input/js0',source=str(source),device=7,inode=8,rdev=os.makedev(13,0))
+            view,registry=lab.prepare_consumer_input_view(Path(directory),[device])
+            original=Path.lstat
+            def meta(path):
+                if path==source:return SimpleNamespace(st_mode=stat.S_IFCHR|0o600,st_dev=7,st_ino=8,st_rdev=device['rdev'])
+                return original(path)
+            with patch.object(Path,'lstat',meta):
+                args=lab.consumer_device_settings([device],(view,registry))
+                ordinary=lab.consumer_device_settings([device])
+            self.assertIn('/owned-input-bindings/input/js0',args)
+            self.assertIn(str(view),args)
+            self.assertEqual(ordinary[ordinary.index('--dev-bind')+2],'/dev/input/js0')
+
+    def test_namespace_alias_verifies_canonical_target_before_opening_backing(self):
+        import os,stat
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        device=dict(target='/dev/input/js0',device=7,inode=8,rdev=os.makedev(13,0))
+        char=SimpleNamespace(st_mode=stat.S_IFCHR,st_dev=7,st_ino=8,st_rdev=device['rdev'])
+        def glob(path,pattern):return [Path('/dev/input/js0')] if pattern=='js*' else []
+        with patch.object(Path,'glob',glob), patch.object(Path,'lstat',return_value=SimpleNamespace(st_mode=stat.S_IFLNK)), \
+             patch.object(Path,'stat',return_value=char), patch.object(Path,'readlink',return_value=Path('/owned-input-bindings/input/js0')), \
+             patch.object(lab.os,'open',return_value=99) as opened, patch.object(lab.os,'fstat',return_value=char), patch.object(lab.os,'close'):
+            self.assertEqual(lab.verify_consumer_namespace([device]),['/dev/input/js0'])
+            self.assertEqual(opened.call_args.args[0],'/owned-input-bindings/input/js0')
+            with patch.object(Path,'readlink',return_value=Path('/foreign')):
+                with self.assertRaisesRegex(ValueError,'alias target changed'):lab.verify_consumer_namespace([device])
+            self.assertEqual(opened.call_count,1)
+
     def test_classic_bootstrap_hints_are_scoped_and_default_is_unchanged(self):
         from unittest.mock import patch
         with tempfile.TemporaryDirectory() as directory:

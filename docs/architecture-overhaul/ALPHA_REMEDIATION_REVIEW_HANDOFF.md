@@ -1,5 +1,29 @@
 # Independent alpha remediation PR review handoff
 
+## Reviewer reporting and current Steam namespace correction
+
+Post follow-up findings and recommendations directly on PR #133. Pin the reviewed
+head and tree, identify exact source locations and triggering scenarios, separate
+confirmed defects from missing acceptance evidence, and include the smallest
+correction and regression needed. Link related issue comments. Do not infer gate
+closure from builds or from a passing narrower consumer cell.
+
+The classic Steam lab now exposes an owned directory of canonical joystick
+aliases at `/dev/input`, backed by the same identity-checked character-device
+bindings in a separate namespace directory. After the original owned node is
+removed, the coordinator removes only its registered alias. Individual device
+binds previously left the visible path present after host removal. The correction
+changes the test harness, not controller transport behavior or privileged scope.
+
+Scrutinize source/owner identity checks, canonical alias targets, directory and
+symlink identity checks, foreign-entry refusal, repeated retirement, unchanged
+siblings, and the default evdev/hidraw path. A generated-namespace synthetic
+control using a public null device verified visible alias removal with the hidden
+binding retained until teardown. This is mount evidence only. Fresh Steam device
+list, input, removal and sibling receipts remain required; retain the historical
+stale-list failure until those affected cells pass.
+
+
 Current GUI evidence caution: the `cf710a47a5ca15aa60d5d718037781d6c69cee47`
 two-hour neutral soak was started with image SHA-256
 `211c492325de801cb9d3a95492db727d9671d93165eecf6d4059b517bab8f7f5`.
