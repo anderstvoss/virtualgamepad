@@ -1,4 +1,5 @@
 //! `DualShock 4` USB HID-Gyro controller, modelled from `OpenPuck`'s PC mode.
+#[cfg(test)]
 mod evdev;
 mod worker_state;
 
@@ -1329,30 +1330,9 @@ impl common::HidDriver for DualShock4Definition {
         &self,
         request: gr_realization_api::ProviderOpenRequest,
         association: &mut crate::ControllerAssociation,
-    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, ProviderError> {
-        use std::io::Read;
-        if request.selection.target != RealizationTarget::LINUX_UINPUT {
-            return gr_realization_api::NativeProviderFactory::open(
-                &gr_provider_linux_dummy_hcd::LinuxDummyHcdProvider,
-                request,
-            );
-        }
-        let mut creation = [0; 16];
-        std::fs::File::open("/dev/urandom")
-            .and_then(|mut entropy| entropy.read_exact(&mut creation))
-            .map_err(|error| ProviderError::Open {
-                reason: error.to_string(),
-            })?;
-        let identity = gr_controller_runtime::CompoundIdentity {
-            logical: creation,
-            creation,
-        };
-        *association = evdev::association(identity, &request)?;
-        evdev::open(
-            identity,
-            request,
-            std::sync::Arc::new(gr_provider_linux_uinput::LinuxUinputProvider),
-        )
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        crate::sony_evdev::open_native(request, association)
     }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {

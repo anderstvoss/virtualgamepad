@@ -134,6 +134,14 @@ impl Protocol for DualSenseUsbProtocol {
 }
 
 impl common::HidDriver for DualSenseDefinition {
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        association: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        crate::sony_evdev::open_native(request, association)
+    }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             battery: state.battery,

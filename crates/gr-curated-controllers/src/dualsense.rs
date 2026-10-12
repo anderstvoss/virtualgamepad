@@ -445,7 +445,11 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_type: 21,
     event_code: 80,
 }];
-static RESTRICTIONS: [TargetRestriction; 5] = [
+static RESTRICTIONS: [TargetRestriction; 6] = [
+    TargetRestriction {
+        feature: "touch companion",
+        reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
+    },
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
         feature: "motion",
@@ -1392,7 +1396,7 @@ impl DualSenseController {
             .with_sink(|sink| sink.reply(ProviderFrame::HidSetReportReply { request_id, status }))
     }
 }
-fn realization() -> NativeControllerRealization {
+pub(crate) fn realization() -> NativeControllerRealization {
     NativeControllerRealization::Evdev(NativeEvdevRealization {
         physical_path: None,
         device_name: "DualSense Wireless Controller".into(),
@@ -1625,6 +1629,64 @@ pub fn test_controller(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn evdev_companions_keep_exact_contacts_and_release_off_the_gamepad() {
+        for touches in [
+            [
+                Some(DualSenseTouchContact::new(1, 123, 456).unwrap()),
+                Some(DualSenseTouchContact::new(2, 1800, 900).unwrap()),
+            ],
+            [
+                None,
+                Some(DualSenseTouchContact::new(2, 1800, 900).unwrap()),
+            ],
+            [None, None],
+        ] {
+            let state = DualSenseState {
+                touches,
+                ..Default::default()
+            };
+            let selection = RealizationSelection {
+                controller: ControllerId::new("virtualgamepad.dualsense"),
+                target: RealizationTarget::LINUX_UINPUT,
+            };
+            let ProviderFrame::Evdev(original) =
+                DualSenseDefinition.encode(selection, &state).unwrap()
+            else {
+                panic!()
+            };
+            let frames = crate::sony_evdev::split(original.clone());
+            let ProviderFrame::Evdev(gamepad) = &frames[0].frame else {
+                panic!()
+            };
+            let ProviderFrame::Evdev(touch) = &frames[1].frame else {
+                panic!()
+            };
+            assert!(
+                !gamepad
+                    .iter()
+                    .any(|e| e.code == 330 || (e.event_type == common::EV_ABS && e.code >= 47))
+            );
+            assert_eq!(
+                touch
+                    .iter()
+                    .filter(|e| e.event_type == common::EV_ABS && e.code >= 47)
+                    .collect::<Vec<_>>(),
+                original
+                    .iter()
+                    .filter(|e| e.event_type == common::EV_ABS && e.code >= 47)
+                    .collect::<Vec<_>>()
+            );
+            assert_eq!(
+                touch.iter().find(|e| e.code == 330).unwrap().value,
+                i32::from(touches.iter().any(Option::is_some))
+            );
+            for events in [gamepad, touch] {
+                assert_eq!(events.last().unwrap().event_type, common::EV_SYN);
+            }
+        }
+    }
 
     #[test]
     fn dualsense_topology_tracks_target_motion_support() {
