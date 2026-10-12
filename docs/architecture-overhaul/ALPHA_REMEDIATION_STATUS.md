@@ -3893,3 +3893,26 @@ Owned broker/socket/observer units were absent/inactive, no owned USB serial
 remained, original broker inactive/socket active state was restored, and both
 supervisors reported empty cleanup errors. Memory-pressure averages stayed
 zero. Gate 4 remains open; none of these short cells qualify sustained Gate 6.
+
+## Native marker helper exit investigation at `38b7c0c`
+
+Raw helper exit diagnostics at observer source
+`38b7c0c2552fd0bd519f480e033ecb336ce60cf0`, tree
+`a4baad11742f739aa1705716e5010663aa523c7b`, observer SHA-256
+`b3458e5301e10987928828e2a042e47f4aacfbe75ffba8585eb47b6b380c9ec1`,
+confirmed both missing DualSense native capture receipts ended with SIGKILL
+(raw Unix wait status 9). Other completed marker helpers retained status 0 or
+1. Two sample-playback/native-microphone cells (DualSense/DS4) passed this short
+run, but the matrix still failed. Historical failures remain; those two passes
+are not sustained acceptance. No counter-race terminal failure recurred.
+The client unit's recorded peak was far below its memory cap; this is not proof
+of SIGKILL's source. The inherited realtime execution bound remains a hypothesis.
+
+Post-capture CPU-heavy marker analysis now explicitly lowers only its current
+thread to SCHED_OTHER after all owned audio clients have completed and before
+any decoding. Prior/current scheduling is retained in each receipt. Active graph
+and client scheduling, resource limits, marker/loss/latency assertions and queues
+are unchanged. A scheduling refusal fails rather than being ignored. Regressions
+verify the exact thread/policy transition and refusal, plus completion-before-
+transition and transition-before-decoding for both captured directions. This
+requires fresh evidence; no claim that the SIGKILL cause is resolved yet.

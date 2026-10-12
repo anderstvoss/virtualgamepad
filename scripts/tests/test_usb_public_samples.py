@@ -130,6 +130,44 @@ class PublicSampleIdentity(unittest.TestCase):
             with patch.dict(namespace, shared_graph=Mock(return_value=objects)):
                 with self.assertRaises(ValueError): namespace['native_playback_identity'](node)
 
+    def test_native_analysis_follows_client_completion_and_precedes_decoding(self):
+        completed = set()
+        analysis = []
+        decode = namespace['decode_capture']
+        def capture(*args):
+            completed.add('capture')
+            return namespace['marker_pcm'](288000, 2), b'', {}
+        def run(command, **options):
+            completed.add(command[0])
+            return Mock(returncode=0, stdout=namespace['marker_pcm'](288000, 1), stderr=b'')
+        def schedule():
+            self.assertEqual(completed, {'capture', 'aplay', 'arecord'})
+            analysis.append(True)
+            return {'policy': 0}
+        def decode_after_analysis(*args):
+            self.assertEqual(analysis, [True])
+            return decode(*args)
+        with patch.dict(namespace, native_playback_identity=Mock(return_value=(1, 11)),
+                        bounded_native_capture=capture, marker_analysis_scheduling=schedule,
+                        decode_capture=decode_after_analysis), \
+             patch.object(namespace['subprocess'], 'run', side_effect=run):
+            receipt = namespace['run_native_playback_trial'](1, 'dualshock4', 'virtualgamepad.12.1.playback')
+        self.assertTrue(receipt['passed'])
+        self.assertEqual(receipt['analysis_scheduling'], {'policy': 0})
+
+    def test_marker_analysis_drops_only_current_thread_realtime_scheduling(self):
+        calls = []
+        with patch.object(namespace['os'], 'sched_getscheduler', side_effect=[2, 0]), \
+             patch.object(namespace['os'], 'sched_setscheduler', side_effect=lambda pid, policy, parameter: calls.append((pid, policy, parameter.sched_priority))), \
+             patch.object(namespace['os'], 'sched_getparam', return_value=os.sched_param(0)):
+            receipt = namespace['marker_analysis_scheduling']()
+        self.assertEqual(calls, [(0, os.SCHED_OTHER, 0)])
+        self.assertEqual(receipt, dict(previous_policy=2, policy=0, priority=0,
+                                      scope='post-capture marker analysis only'))
+        with patch.object(namespace['os'], 'sched_setscheduler', side_effect=PermissionError('synthetic scheduling refusal')):
+            with self.assertRaisesRegex(PermissionError, 'synthetic scheduling refusal'):
+                namespace['marker_analysis_scheduling']()
+
     def test_bounded_native_capture_reaps_complete_truncated_and_stalled_children(self):
         import sys
         command = [sys.executable, '-I', '-c', "import os;os.write(1,b'sanitized')"]

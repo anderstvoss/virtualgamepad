@@ -159,6 +159,17 @@ def bounded_native_capture(command, byte_count, expected_record_stop_status=None
                                         expected_record_stop_status=expected_record_stop_status, captured_bytes=len(data))
 
 
+def marker_analysis_scheduling():
+    # All owned audio clients have completed/reaped before analysis. CPU-heavy
+    # marker decoding has no realtime deadline and must not consume the lab's
+    # finite realtime execution budget. Do not change any graph/client thread.
+    previous = os.sched_getscheduler(0)
+    os.sched_setscheduler(0, os.SCHED_OTHER, os.sched_param(0))
+    return dict(previous_policy=previous, policy=os.sched_getscheduler(0),
+                priority=os.sched_getparam(0).sched_priority,
+                scope='post-capture marker analysis only')
+
+
 def run_native_playback_trial(card, family, node, microphone_node=None):
     _, channels, microphones = PROFILES[family]
     identity = native_playback_identity(node)
@@ -182,11 +193,12 @@ def run_native_playback_trial(card, family, node, microphone_node=None):
         incoming = host_microphone.result()
     if native_playback_identity(node) != identity or (microphone_node and native_microphone_identity(microphone_node) != microphone_identity):
         raise ValueError('native caller identity changed during marker exchange')
+    analysis_scheduling = marker_analysis_scheduling()
     decoded = decode_capture(data, channels)
     result = capture_summary(decoded, min(96000, len(decoded[0])), min(240000, len(decoded[0])))
     result.update(warmup=capture_summary(decoded, 0, min(96000, len(decoded[0]))),
                   edge_capture=capture_summary(decoded, min(240000, len(decoded[0]))),
-                  captured_total_frames=len(data)//(channels*2), playback_status=output.returncode,
+                  captured_total_frames=len(data)//(channels*2), analysis_scheduling=analysis_scheduling, playback_status=output.returncode,
                   playback_errors=output.stderr.decode(errors='replace'), native_capture_errors=diagnostic.decode(errors='replace'), native_capture_lifecycle=capture_lifecycle,
                   marker_scheme='indexed-s16-frame-or-mono-pair-v1', warmup_seconds=2, edge_capture_seconds=1,
                   native_microphone_submission_scope='stdin only; received microphone markers are audited separately')
