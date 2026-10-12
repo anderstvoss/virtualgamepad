@@ -3991,3 +3991,41 @@ restoration are preserved. The retry leaves capture-directory creation to the
 maintained runner. The screenshot helper encounters the expected X connection
 closure after requesting Exit; terminal receipts, rather than that helper error,
 prove normal termination. Private profile/screenshots/raw logs stay outside Git.
+
+## Quiet audio submission/capture discriminator after Steam restoration
+
+At source `dc7f09a3b2eb172c54d3afc8e9a8a27dc6a58059`, tree
+`58a3edf385cac380459d3678f54e1b1143bc075a`, the maintained C source hash is
+`76ff9eeec7f7669f35ac0ee4b5a99c3eab99f5de03d22563bd0736b769b27afc` and frozen binary hash is
+`66fef1af9b3504619c37954dbb918839741382f6df7b14c726e91346a22abb8e`.
+The freshly prebuilt control (GCC, GNU11,
+`-O2 -Wall -Wextra -Werror`, self-test passed) runs alone after Steam and owned
+input restoration. This is one short diagnostic per scheduling mode, not sustained
+qualification. With quantum 512, ordinary scheduling generates and successfully
+queues all 144000 markers but capture misses 512 (markers 52481–52992); there
+are no duplicate, invalid, partial-frame or callback errors. Producer duration
+is 3147668627 ns, outside the unchanged three-second rate envelope. A 33700167 ns
+source callback gap precedes two submitted buffers with the same observed graph
+tick, 27209 ns apart; the latter is captured and the former is absent.
+
+The one-variable comparison grants only owned daemon data-loop/main and client
+main/data-loop threads verified SCHED_RR priority 20 through existing realtime
+access, with finite per-process execution/file bounds. It also generates/submits
+all 144000 markers and misses 512 (47361–47872), with zero duplicates/invalid/errors.
+Producer duration is 3263952501 ns and maximum source gap 41315584 ns. The missing
+buffer and next submitted buffer have different graph ticks; the analyzer must
+not fabricate a same-tick explanation for this trial. Both trials remain failed,
+all reported private daemon/policy/supervisor PIDs are absent afterward, and no
+production session or PCM queue participates. Realtime scheduling alone does not
+eliminate the observed gap/loss in this comparison. The evidence still cannot
+separate driver handoff from capture loss or assign a kernel/hypervisor cause.
+
+The maintained ledger analyzer now reports submitted, missing buffer ranges
+followed by another successful submission at the same observed graph tick. It
+records event indices, exact range, missing-frame count and submission interval;
+this is an observation only. Existing `unexplained_after_submission` categorization,
+`graph_vs_capture_loss` unavailability and all acceptance limits remain unchanged.
+Two regressions cover loss, complete capture, different ticks, failed submission
+and backward measured-source timestamps. All 464 Python tests pass. This adds independently
+reproducible evidence to Gate 6; it does not qualify the graph, enable the 72-trial
+product matrix or close either audio gate. Historical failures are retained.

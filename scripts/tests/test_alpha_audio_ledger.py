@@ -89,6 +89,34 @@ class Reconciliation(unittest.TestCase):
         self.assertEqual(result['counters']['generated'], 6)
         self.assertEqual(result['missing_ranges'], [])
 
+    def test_same_tick_loss_is_observed_without_assigning_graph_cause(self):
+        first = self.event(1, 2); first['stamp_ns'] = 100
+        second = self.event(3, 6); second['stamp_ns'] = 130
+        receipt = self.receipt(received=4, missing=2); receipt['ledger_events'] = 3
+        result = ledger.reconcile(receipt, [first, second, self.event(3, 6, capture=True)], [0, 0, 1, 1, 1, 1])
+        self.assertEqual(result['same_tick_submission_observations'], [dict(
+            first_event=0, next_event=1, graph_ticks=200, first_marker=1,
+            last_marker=2, missing_frames=2, submission_interval_ns=30)])
+        self.assertEqual(result['missing_ranges'][0]['category'], 'unexplained_after_submission')
+        self.assertEqual(result['graph_vs_capture_loss'], 'unavailable from this ledger')
+        self.assertFalse(result['acceptance_changed'])
+        second['graph_ticks'] = 201
+        self.assertEqual(ledger.reconcile(receipt, [first, second, self.event(3, 6, capture=True)],
+                                         [0, 0, 1, 1, 1, 1])['same_tick_submission_observations'], [])
+
+    def test_same_tick_complete_capture_failed_submission_and_backward_clock(self):
+        first = self.event(1, 2); second = self.event(3, 6)
+        receipt = self.receipt(); receipt['ledger_events'] = 3
+        events = [first, second, self.event(1, 6, capture=True)]
+        self.assertEqual(ledger.reconcile(receipt, events, [1]*6)['same_tick_submission_observations'], [])
+        first['queue_result'] = -5
+        receipt.update(graph_submitted=4, graph_received=4, missing=2)
+        events[-1] = self.event(3, 6, capture=True)
+        self.assertEqual(ledger.reconcile(receipt, events, [0, 0, 1, 1, 1, 1])['same_tick_submission_observations'], [])
+        first['stamp_ns'] = 101
+        with self.assertRaisesRegex(ValueError, 'timestamps moved backward'):
+            ledger.reconcile(receipt, events, [0, 0, 1, 1, 1, 1])
+
     def test_truncated_duplicate_trailer_and_events_after_trailer_reject(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'ledger.jsonl'

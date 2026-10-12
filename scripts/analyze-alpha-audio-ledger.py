@@ -30,6 +30,7 @@ def reconcile(receipt, events, counts):
     generated = submitted = captured = 0
     states = bytearray(planned)
     capture_discontinuities = []
+    source_observations = []
     for index, event in enumerate(events):
         if type(event['capture']) is not bool or type(event['buffer_dequeued']) is not bool:
             raise ValueError('invalid callback role')
@@ -64,6 +65,9 @@ def reconcile(receipt, events, counts):
         if any(states[first-1:last]):
             raise ValueError('overlapping producer ranges')
         states[first-1:last] = bytes([1 if status >= 0 else 2]) * measured
+        source_observations.append(dict(event=index, first_marker=first, last_marker=last,
+                                        stamp_ns=event['stamp_ns'], graph_ticks=event['graph_ticks'],
+                                        submitted=status >= 0))
         generated += measured
         if status >= 0:
             submitted += measured
@@ -91,7 +95,25 @@ def reconcile(receipt, events, counts):
             raise ValueError('counter reconciliation failed: '+name)
     if captured != received + integer(receipt['invalid']):
         raise ValueError('counter reconciliation failed: capture callbacks')
+    # Same-tick submissions after a scheduling gap are an observation, not a
+    # diagnosis: this ledger has no driver handoff or capture dequeue history.
+    # Count exact per-frame absence without expanding missing ranges per event.
+    bursts = []
+    for previous, current in zip(source_observations, source_observations[1:]):
+        if current['stamp_ns'] < previous['stamp_ns']:
+            raise ValueError('source callback timestamps moved backward')
+        if not (previous['submitted'] and current['submitted'] and
+                previous['graph_ticks'] == current['graph_ticks']):
+            continue
+        absent = sum(count == 0 for count in counts[previous['first_marker']-1:previous['last_marker']])
+        if absent:
+            bursts.append(dict(first_event=previous['event'], next_event=current['event'],
+                               graph_ticks=current['graph_ticks'],
+                               first_marker=previous['first_marker'], last_marker=previous['last_marker'],
+                               missing_frames=absent,
+                               submission_interval_ns=current['stamp_ns']-previous['stamp_ns']))
     return dict(reconciled=True, counters=observed, missing_ranges=ranges,
+                same_tick_submission_observations=bursts,
                 capture_flag_observations=capture_discontinuities,
                 graph_vs_capture_loss='unavailable from this ledger',
                 acceptance_changed=False)
