@@ -3256,3 +3256,19 @@ construction must use `Counters::default()`; workspace consumers already do.
 Ordinary-root APIs and the operation-7 wire format are unchanged. Review lock
 contention and rerun worker/provider validation on the new image. All mandatory
 local checks pass, including the corrected final Clippy run; no dependencies added.
+
+### Provider revalidation on the consistent-counter worker
+
+All seven bounded provider phases passed at
+`b817f48d7fc50ac38de21046144e4f55d1595e6d`, tree
+`1f37f93c1b1385799f41e32088ca110cb6546a54`: rejection, positive lifecycle,
+client exit, client-before-handoff, worker death, broker death, and siblings/
+admission. Independently retrieved root receipts agree on revision, passed
+status and worker SHA-256
+`2ebea0f5ab8e35ae1656ce3c4611da723fe0fd799e6b7ce0daafaca27890fbe4`;
+broker SHA-256 remains
+`f1b6f56178e5a971c42b28ee5d8d5a4026e820850687bc37d0abe91c38d35cfa`.
+Original broker inactive/socket active state was independently verified after
+completion. Gate 3 retains its pass for this worker. This provider suite does
+not prove microphone marker continuity or close Gates 1/4/5/6. A fresh USB
+functional matrix is still required to exercise the corrected progress race.
