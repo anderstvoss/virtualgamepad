@@ -4266,3 +4266,29 @@ This supplies a viable next consumer experiment, not Steam acceptance. Next add
 explicit, tested classic-joystick selection and owned-node namespace exposure;
 then verify actual Steam recognition/input/output and cleanup. Preserve the
 failed evdev result and do not extrapolate classic input into evdev/output parity.
+
+## Isolated Steam classic-backend experiment — 2026-10-12
+
+Runner `1551be1` adds opt-in `--classic-joystick`. Inventory selects only owned
+`js` character nodes with process/sysfs/device identity checks; default evdev/HID
+inventory is unchanged. The private namespace rejects foreign joystick nodes,
+sets both SDL2/SDL3 classic hints, and records the selected backend. Two new
+regressions cover foreign exclusion, replacement rejection and hint/default
+separation. All 456 Python tests and mandatory Rust/Gitleaks checks pass.
+
+The actual Steam experiment exposed exactly four owned classic nodes. Its
+sentinel passed and both hints were verified in the owned Steam process
+environment. Steam nevertheless displayed no connected controllers. Therefore
+the working direct classic reader does **not** establish a working Steam backend.
+No input pass is claimed. The registered unit was stopped after identity
+verification, before its deadline. Collector and root fixture exit zero;
+initiating/cleanup errors empty, workspace removed, display/producer absent,
+temporary rule removed. The runner's `passed` verdict covers isolation/bootstrap/
+restoration only; the controller consumer observation is failed.
+
+Next resolve Steam's actual discovery/backend contract or qualify an available
+consumer runtime supporting the observed ABI. Do not patch product event sizes,
+copy normal account state, replace the kernel, or relabel failed discovery as
+accepted. The opt-in classic comparison remains useful independent evidence,
+not the final acceptance substitute. Generic-companion evdev recognition and
+active contact/feedback remain separate pending cells. PR stays draft.
