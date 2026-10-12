@@ -474,20 +474,9 @@ fn control_loop(
             }
             7 if body.len() == 8 => {
                 let mut response = generation.to_le_bytes().to_vec();
-                response.extend(
-                    stats
-                        .usb
-                        .microphone_host_frames
-                        .load(Ordering::Relaxed)
-                        .to_le_bytes(),
-                );
-                response.extend(
-                    stats
-                        .usb
-                        .microphone_silence_frames
-                        .load(Ordering::Relaxed)
-                        .to_le_bytes(),
-                );
+                let (host, silence) = stats.usb.microphone_progress();
+                response.extend(host.to_le_bytes());
+                response.extend(silence.to_le_bytes());
                 write_message(&mut socket, 7, &response)?;
             }
             4 if body.len() == 8 => {

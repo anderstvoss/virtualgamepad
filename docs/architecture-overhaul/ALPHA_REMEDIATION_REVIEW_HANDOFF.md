@@ -3214,3 +3214,45 @@ the receipt and all unchanged marker/microphone assertions. Preserve all twelve
 `2c6eb91` verdicts, but do not turn its six rejected native captures into passes;
 a fresh live receipt is required. The single Xbox short pass is not sustained
 continuity or whole-gate acceptance.
+
+## Consistent microphone progress snapshot after the `8089c64` trial
+
+A fresh isolated twelve-cell USB matrix at source
+`8089c64a38ea5676992a71b8a10681b810f8a518`, tree
+`24a494026d1e8d828cbd07fba3580113da3cafed`, observer SHA-256
+`4a996c013e79d918a08925214194ecfca9474ea8462801f37ad05774f5352193`,
+failed all twelve duplex cells. All 24 typed outputs passed separately.
+Xbox native playback delivered 144000/144000 measured markers with zero silence
+or gaps in both microphone modes; their microphone checks failed. DS4 native
+playback with sample microphone had 192 silence frames. Other microphone cells
+retained silence/loss; no sustained qualification is claimed.
+The corrected owned recording-stop contract produced three complete native
+receipts retaining exit status 1, requested termination and complete byte counts.
+Missing native receipts remain failures, not assumed passes.
+
+DS4 native/native also terminated with `microphone silence exceeds host frames`.
+Inspection reproduced a counter race: capture updates silence before host time,
+while the control thread formerly loaded host time before silence. A reader
+between those updates could falsely reject a valid worker. Paired updates and
+operation-7 snapshots now share a short internal mutex. The critical section
+contains only atomic counter accesses, without IPC, PCM work or user callbacks.
+The wire reply and ordinary-root signatures remain unchanged. The deterministic
+`microphone_progress_snapshot_waits_for_complete_packet_accounting` regression
+holds the writer's intermediate state, verifies the snapshot waits, then checks
+exact completed and non-silent subsequent progress. Existing malformed-reply
+rejection remains intact. This fixes a demonstrated terminal race, not marker loss.
+
+The live root supervisor and observer reported empty cleanup errors. Independent
+checks found owned broker/socket/observer units absent/inactive, no owned USB
+serial, all authorized VHCI ports free, and original broker inactive/socket active.
+Memory-pressure averages remained zero. Raw receipts are outside tracked source.
+The worker image must be rebuilt and installed before live race revalidation;
+Gate 3's prior accepted image remains historical until affected provider cells
+are revalidated. Gates 1, 4, 5 and 6 remain open; alpha and the PR remain unready.
+
+Supporting-contract implication: `gr_usbip::worker::Counters` gains private
+synchronization state and a public paired-read method. External struct-literal
+construction must use `Counters::default()`; workspace consumers already do.
+Ordinary-root APIs and the operation-7 wire format are unchanged. Review lock
+contention and rerun worker/provider validation on the new image. All mandatory
+local checks pass, including the corrected final Clippy run; no dependencies added.
