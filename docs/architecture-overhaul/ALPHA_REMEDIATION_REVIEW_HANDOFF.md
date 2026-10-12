@@ -4062,3 +4062,26 @@ remain. This permits bounded native contact/feedback/removal acceptance without
 waiting ten minutes for each test. It changes only the acceptance fixture;
 production APIs, the two root scenario selectors and updater policy are unchanged.
 Fresh image-specific acceptance is still required.
+
+## Maintained native evdev feedback probe
+
+`scripts/alpha-evdev-feedback-probe.c` supplies the ordinary Linux native ioctl
+probe used by the affected Sony acceptance. Compile before live trials with
+`cc -std=gnu11 -O2 -Wall -Wextra -Werror scripts/alpha-evdev-feedback-probe.c -o PROBE`.
+The caller must first verify the held gamepad descriptor belongs to the isolated
+producer and matches its immutable image, process lifetime, sysfs ancestry and
+private-seat/desktop-ignore properties. Pass that inherited descriptor number as
+its sole argument; the probe reopens that exact held device and checks character
+identity, giving its own consumer file description. It first requires explicit
+EOPNOTSUPP for unsupported automatic-trigger interval 9, then uploads replayable
+rumble (12345/6789, length 150 ms, delay 40 ms), starts it, updates to 22222/3333,
+starts, stops and erases. `--exit-active` is the only optional mode and exits with
+a started effect, enabling a true consumer-close test while the supervisor keeps
+its separate identity descriptor. It requires no root, new package or dependency.
+
+Two no-device regressions compile the native ABI probe and reject missing/empty/
+malformed/oversized descriptor arguments, extra modes, a regular file and a
+non-input character device. Neither can falsely report successful input output.
+A fresh committed-source trial must validate exact root callbacks, including the
+expected stop on erase/consumer close, rather than equating ioctl success with
+complete output delivery. Raw root/client logs remain outside tracked source.
