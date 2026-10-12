@@ -3630,3 +3630,31 @@ regression is added; mandatory Rust checks and forced 1.85 pass. Fresh live
 consumer revalidation is still required; Gate 2 and Gate 5 remain open.
 Private profile/captures/logs remain outside tracked source. No dependencies,
 persistent host changes or relaxed acceptance assertions.
+
+## FEX input ABI differential — 2026-10-12
+
+A bounded ordinary-user direct-read comparison used the installed `82e0dcc`
+producer (SHA-256 `27e47c3148fd08e5cade18a4c3db78de97eb768999bf8d27a9bfa5624510ff27`),
+FEX 2608 (binary SHA-256 `9562f9682a6fbe3efb36ffa164970e83aff5dbf73ff8f6464955ab7fb754ea19`)
+and kernel `6.12.111+deb13-arm64`. A static i386 reader, without product queues or
+SDL, opened only the process-owned DualSense primary read-only. It received two
+48-byte chunks. Native 24-byte decoding and FEX data decoded as 24-byte records
+both yield exactly South press, sync, South release, sync. Expected i386 16-byte
+decoding instead yields invalid event types/codes. Reader and fixture exited zero;
+no owned nodes remained; temporary input rule removal and cleanup passed.
+
+The kernel rejects `PR_GET_COMPAT_INPUT` (`0x63494e50`) with `EINVAL`.
+[FEX's compatibility change](https://github.com/FEX-Emu/FEX/pull/4106) requires
+[a corresponding kernel interface](https://github.com/slp/linux/commit/897560fd00e1add63a9973c31fc437b006855680).
+This confirms the direct FEX evdev ABI mismatch on this host, not the exact
+backend chosen by Steam. Do not change product report layout to accommodate it.
+Two preceding attempts waited for deferred runner output and timed out before
+input testing; both cleaned up. Their failed receipts remain preserved. The
+successful diagnostic instead verified the live producer, owned nodes and socket.
+
+Next discriminate Steam's backend and test its supported classic joystick path
+using only identity-verified owned nodes. Any classic-path success is separately
+scoped; it cannot establish evdev compatibility or full output parity. Gate 5
+remains open. Generic-companion Steam recognition/contact/feedback revalidation
+also remains pending. Raw data and probe-build receipts stay outside tracked
+source. Available host memory remained above 17 GiB; no heavy concurrent trial.
