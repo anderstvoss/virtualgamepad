@@ -4312,3 +4312,24 @@ writes, desktop touch or persistent host configuration were used. The public
 runtime was extracted into a disposable diagnostic directory; raw receipts and
 build artifacts stay outside tracked source. This is a direct SDL observation,
 not a replacement for Steam or the separately reviewed SDL probe contract.
+
+## Settled Steam classic input observations — 2026-10-12
+
+At runner `1551be16d3a275acf6c6b6ec9e41b28f43342ad6` with the pinned `82e0dcc`
+producer, Steam eventually lists all four classic controllers without changing
+settings. Its input screen shows the selected South press and release for
+DualSense, DS4 and Switch individually; triggers/sticks and siblings remain
+neutral. Xbox recognition is observed, but its input cell was not exercised
+before the configured 600-second unit deadline. Standard gamepad classification
+and vendor/product zero remain classic-backend limitations; named recognition
+is not exact physical-family identity or output parity.
+
+This supersedes the inference from the earlier early-time “no controllers”
+screenshot: that run did not establish a settled discovery failure. Preserve its
+observation and receipt without attributing a permanent Steam filtering defect.
+The direct evdev ABI mismatch remains confirmed independently. The latest unit
+expired with collector status one; root fixture status zero, cleanup errors
+empty, owned workspace/display/producer/nodes absent and rule removed. Thus three
+specific input observations pass, while the overall trial and Gate 5 remain
+unaccepted. Xbox input, removal/sibling and remaining realization/output cells
+still require evidence. Private screenshots and profile stay outside Git.
