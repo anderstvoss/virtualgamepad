@@ -4084,3 +4084,33 @@ producer exit, no matching owned device identities and no control socket.
 Both failed Steam preparation attempts report no cleanup errors. These are
 isolation/deployment and harness-correction evidence only; Gate 5 still requires
 actual consumer recognition/input/output and lifecycle checks after the fix.
+
+
+### First isolated Steam HID consumer observations
+
+At Steam-runner source `5ba0b94`, the installed input fixture remained pinned to
+`d4f7957` (probe SHA-256
+`f8f228892246e54a8e56bae2b05752d9f8e08e0a35956cde15a92c3ad1885f67`).
+The corrected bootstrap reused the authorized private test login and reached
+home and controller settings. The namespace sentinel opened all 13 exact owned
+nodes, hid the real home, and verified private proc/dev and dropped capabilities.
+Only Xbox 360 appeared in Steam's connected-controller list; DualSense, DS4 and
+Switch Pro recognition is not accepted by this trial.
+
+On the Xbox test screen, a controlled fixture sequence generated only South
+pulses, but a captured active state showed Y, D-pad and stick activity rather than
+an exact South-button response. This is a consumer mismatch requiring causal
+investigation, not yet an identified library-code defect. Isolated device metadata,
+consumer HID versus evdev selection and FEX/backend decoding are candidate
+boundaries to discriminate. Do not mark Xbox input accepted from its device name
+or substitute this partial sequence for full input/output coverage.
+
+The fixture was stopped through its owned control socket; the exact owned Steam
+unit was stopped and reaped. Root and ordinary cleanup report no errors.
+Independent checks confirm producer absence, no matching owned nodes/control
+socket, removed temporary Steam workspace, and an absent/inactive Steam unit.
+The private test profile remains by user request. Raw screenshots/logs are private
+outside tracked source and are not published. Memory cap was 12,279,873,536 bytes,
+minimum measured available memory 15,314,513,920 bytes, maximum full avg10 pressure
+0.42%; no memory termination occurred. This accepts isolation/bootstrap only.
+Gate 5 remains open; compare evdev and narrowed enumeration/decoding controls next.
