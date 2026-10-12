@@ -50,9 +50,10 @@ control never overrides a failed root functional phase, and Rust-only evidence
 cannot close the C controls or any product acceptance cell. No live pass is claimed
 by the new channel's deterministic tests.
 
-Current gate disposition: **Gate 3 passed; Gate 2 has a reopened DualSense evdev parity cell (#147)**. Gate 2 closure and its
+Current gate disposition: **Gates 2 and 3 passed with pinned evidence**. Gate 2
+was reclosed at `44bf06e` after fresh native contact/feedback/removal revalidation. Gate 2 closure and its
 source/image receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`; see
+Gate 3 was revalidated at `b817f48d7fc50ac38de21046144e4f55d1595e6d`; see
 [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 Gates 1, 4, 5 and 6 remain open.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
@@ -4085,3 +4086,52 @@ non-input character device. Neither can falsely report successful input output.
 A fresh committed-source trial must validate exact root callbacks, including the
 expected stop on erase/consumer close, rather than equating ioctl success with
 complete output delivery. Raw root/client logs remain outside tracked source.
+
+## Gate 2 affected-boundary reclosure at `44bf06e`
+
+The reopened native discovery/parity requirements in #147 now have supported
+dispositions. This supplements, rather than replaces, the historical output
+closure matrix above. Production `src`, `crates`, `demo`, root manifests and
+lockfile are unchanged between `d67f7ba` and this candidate; the latest increments
+change only acceptance tooling and documentation. The broker/worker, HID report
+codecs and protocol parsers also have no diff from the accepted `7b9840e` output
+checkpoint in their corresponding paths. Reuse those unrelated pinned passes
+only within their original scope.
+
+| Reopened requirement | Evidence and disposition |
+| --- | --- |
+| Primary/companion discovery and identity | Accepted native discovery at `d67f7ba`: four joystick primaries; generic DualSense touchpad companion and DS4 contact companion. Production source/lockfile unchanged afterward. Fresh native probes verify six PID-owned nodes and private seat/desktop-ignore properties before any contact command. |
+| Exact contacts and native consumer delivery | The current immutable producer at `9371da9c23ae9e8fa24fa12959c374779913fdcc` emits both Sony five-step sequences. An independent ordinary native evdev reader reconstructs exact IDs 7/8, positions, movement, first/second release and SYN frame boundaries. Five contact frames per family pass; primary nodes receive no contact fields and siblings remain neutral. Active-contact Pause releases both. |
+| Exact feedback and required replies | Committed native probe source `44bf06e6eea8a787f7756b335e463a5ba1605484`, tree `e12515b20e07468da074dac01a693d36dbad86be`, uploads/starts/updates/stops/erases supported rumble. Exact root callback sequences contain 13 Sony and 21 DS4 observations including active consumer-close stop/erase. Automatic-trigger interval 9 returns EOPNOTSUPP 95 and root status -95, as documented; valid interval zero returns status zero. No request or child times out. |
+| Owned removal, siblings and repeated cleanup | Explicit DualSense removal removes both gamepad/contact nodes; repetition invokes no second removal. DS4 feedback still passes and Xbox South press/release is received afterward. Held descriptors retain exact character/sysfs identities. Final producer/root status zero, no initiating/cleanup errors, rule removed, producer/control and all owned nodes absent. |
+| Partial second-node rollback and contract | Current fake-provider regressions cover both Sony families and partial open/rollback, exact capabilities, association identity, service and idempotent close. The earlier DS4 three-repeat kernel rollback receipt remains historical live evidence. Ordinary-root signatures are unchanged; the separate generic companion/SDL-gamepad-touch limitation is explicit in the supporting association and surface. |
+
+Producer SHA-256:
+`55e77b0c3bbeb8858cddcf6536c91a0326f86539a5b0d4c1523d0f283e8489d3`.
+Native probe source SHA-256:
+`df38346174a6f3d69687e66ae48a1d48e117a625834e16b9362aba2c252ad1fa`;
+native binary SHA-256:
+`754683f1d2188e52f94fb2f087bebcbbb187e83d2d645621b8575c42bf2526af`.
+The C client reopens a matching held owned device into its own file description;
+its active exit therefore really closes the consumer despite the observer's
+separate descriptor. Exact callback validation expects the explicit stop plus
+erase stop, rather than silently discarding a second stop observation.
+
+The first feedback trial used a nonzero automatic-trigger interval and returned
+the declared unsupported error; its overall failure and successful cleanup are
+preserved. It was a probe configuration error, not a library rumble defect.
+The subsequent supported and negative cases pass. All 466 Python tests, the
+mandatory fmt/check/Clippy/workspace tests/Gitleaks and forced Rust 1.85 checks
+pass. Eleven focused producer tests preserve prior regressions and add finite
+contacts/selection/lifetime/removal coverage. No dependencies, production API,
+root scenario selectors, persistent host rules or acceptance limits changed.
+
+**Gate 2 is reclosed for these supported dispositions**, with Gate 3 retaining
+its separately pinned provider pass. This does not close full Steam compatibility,
+GUI-owned touch/keyboard/final-image soak, USB routing or sustained audio. Those
+remain Gates 1/4/5/6. Historical classification, consumer and audio failures remain
+visible. Reopen affected cells if later production or relevant image changes.
+Reviewer: scrutinize this reclosure against the complete table, source/image
+invalidation boundaries, actual frame/callback receipts and owned cleanup; post
+any missing disposition directly in PR #133. Raw captures and root/private logs
+remain outside tracked source.

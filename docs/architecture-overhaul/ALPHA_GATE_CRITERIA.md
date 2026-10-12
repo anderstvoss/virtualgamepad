@@ -1,9 +1,10 @@
 # Alpha gate criteria audit
 
-Current gate disposition: **Gate 3 passed; Gate 2 has a reopened DualSense evdev discovery/parity cell (#147)**. Gate 2's current
+Current gate disposition: **Gates 2 and 3 passed with pinned evidence**. Gate 2
+was reclosed at `44bf06e` after fresh native contact/feedback/removal revalidation. Gate 2's current
 cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`
-against the rebuilt worker after the public USB audio close correction. Gates 1, 4, 5 and 6 remain open.
+Gate 3 was revalidated at `b817f48d7fc50ac38de21046144e4f55d1595e6d`
+against the consistent microphone-progress worker. Gates 1, 4, 5 and 6 remain open.
 See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.

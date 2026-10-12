@@ -1,10 +1,10 @@
-# Strategy for the five open alpha gates
+# Strategy for the four open alpha gates
 
 This review preserves the complete criteria in [the gate audit](ALPHA_GATE_CRITERIA.md)
 and the approved [six-gate plan](ALPHA_VM_SIX_GATE_PLAN.md). Gates 1, 4, 5 and 6
-remain open. Gate 2 has reopened DualSense evdev companion discovery/contact/feedback
-cells (#147); unrelated pinned output passes remain applicable only after an
-affected-image check. Gate 3 retains its pinned seven-phase acceptance at
+remain open. Gate 2 reclosed at `44bf06e` after native contact/feedback/consumer
+close/removal/sibling acceptance; its historical reopened boundary is retained
+in the output ledger. Gate 3 retains its pinned seven-phase acceptance at
 `b817f48`; revalidate affected cells after relevant executable changes. Physical
 comparisons and native timing
 remain post-alpha issues, but VM audio continuity is still mandatory.
@@ -44,16 +44,14 @@ Steam, compilation or audio trials. Reuse an earlier soak only if its accepted
 GUI image is byte-identical. Close the gate only when every inventory cell and
 final owned cleanup have evidence.
 
-## Gate 2: close the affected Sony companion cells
+## Gate 2: preserve the revalidated Sony boundary
 
-The generic DualSense touch companion at `82e0dcc` preserves the primary's Sony
-identity and keeps touch capabilities off the gamepad. Fresh evdev discovery,
-active contact/release, feedback routing, per-controller removal and sibling
-survival remain required against that image. The four classic joystick inputs
-observed in Steam do not expose companion nodes or establish this parity.
-Use the existing isolated contact/feedback seams; preserve their exact frame,
-partial construction and cleanup assertions. Do not reopen unrelated passes
-merely to repeat activity, or claim the whole gate from primary discovery alone.
+Native contact/feedback/consumer-close/removal/sibling cells passed at `44bf06e`.
+The output ledger's reclosure audit records the complete dispositions and pinned
+images. No production source or lockfile changes follow the accepted native
+classification candidate. Preserve the historical failed classifier/consumer
+receipts; reopen affected cells after relevant production or image changes.
+Full Steam compatibility and GUI-owned interaction remain their separate gates.
 
 ## Gate 4: separate USB functionality from timing
 
