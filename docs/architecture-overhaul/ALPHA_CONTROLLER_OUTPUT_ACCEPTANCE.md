@@ -1,7 +1,9 @@
 # Controller output acceptance ledger
 
-Gate 2 passes for the implemented, representable transports after the current
-closure audit below. Historical pending statements describe their earlier
+Gate 2 retains its pinned output and isolation passes, but the DualSense evdev
+discovery/parity cell is reopened in issue #147: the combined node is classified
+as a touchpad without joystick classification. Do not claim the whole gate passed.
+The historical closure audit below did not cover that discovered boundary. Historical pending statements describe their earlier
 checkpoint; the closure matrix supersedes them. Physical-controller comparisons
 remain post-alpha issue #136, and sustained audio remains separately gated.
 A process socket fixture alone is not kernel-consumer acceptance.

@@ -4114,3 +4114,31 @@ outside tracked source and are not published. Memory cap was 12,279,873,536 byte
 minimum measured available memory 15,314,513,920 bytes, maximum full avg10 pressure
 0.42%; no memory termination occurred. This accepts isolation/bootstrap only.
 Gate 5 remains open; compare evdev and narrowed enumeration/decoding controls next.
+
+
+### Evdev comparison and reopened DualSense discovery parity
+
+The next isolated Steam run exposed only five test-owned event nodes; no raw HID
+nodes were mounted. Its controller list showed none. All five node opens passed
+the namespace sentinel. The private namespace omits the host udev database;
+this is a discovery-metadata difference to investigate, not proof that the product
+cannot create usable devices. The host's owned-device property audit classified
+DS4's gamepad, Switch and Xbox as joysticks, and DS4's companion as a touchscreen.
+DualSense's combined node was classified only as a touchpad, with no joystick
+property. This specific product discovery/parity defect is tracked in #147 and
+reopens the affected Gate 2 cell; earlier unrelated output passes remain pinned.
+
+The evdev fixture remained neutral, then was stopped through its owned socket.
+Its root receipt reports status zero, no initiating/cleanup errors and rule removal.
+The identity-verified Steam unit was also stopped. The ordinary collection process
+terminated with SIGTERM (143) without a final JSON receipt; although the registered
+producer, display and Steam/FEX processes are absent, the private workspace
+remains as interrupted evidence. Full ordinary restoration is not accepted from
+missing output. Investigate signal/collector teardown and preserve the private
+workspace; no broad removal or foreign-resource cleanup was attempted.
+
+Gate 3 alone currently retains whole-gate acceptance. Gates 1/2/4/5/6 remain open.
+Next steps: correct DualSense gamepad/contact composition with parity/transactional
+regressions, supply only owned discovery metadata inside the private consumer
+namespace, and demonstrate bounded interruption/restoration. Do not falsify host
+classification or remove implemented touch controls to make a test pass.
