@@ -1,9 +1,12 @@
-# Strategy for the four open alpha gates
+# Strategy for the five open alpha gates
 
 This review preserves the complete criteria in [the gate audit](ALPHA_GATE_CRITERIA.md)
 and the approved [six-gate plan](ALPHA_VM_SIX_GATE_PLAN.md). Gates 1, 4, 5 and 6
-remain open. Gates 2 and 3 retain their pinned accepted scope; revalidate affected
-cells after relevant executable changes. Physical comparisons and native timing
+remain open. Gate 2 has reopened DualSense evdev companion discovery/contact/feedback
+cells (#147); unrelated pinned output passes remain applicable only after an
+affected-image check. Gate 3 retains its pinned seven-phase acceptance at
+`b817f48`; revalidate affected cells after relevant executable changes. Physical
+comparisons and native timing
 remain post-alpha issues, but VM audio continuity is still mandatory.
 
 ## Verify the verifier before another live claim
@@ -41,6 +44,17 @@ Steam, compilation or audio trials. Reuse an earlier soak only if its accepted
 GUI image is byte-identical. Close the gate only when every inventory cell and
 final owned cleanup have evidence.
 
+## Gate 2: close the affected Sony companion cells
+
+The generic DualSense touch companion at `82e0dcc` preserves the primary's Sony
+identity and keeps touch capabilities off the gamepad. Fresh evdev discovery,
+active contact/release, feedback routing, per-controller removal and sibling
+survival remain required against that image. The four classic joystick inputs
+observed in Steam do not expose companion nodes or establish this parity.
+Use the existing isolated contact/feedback seams; preserve their exact frame,
+partial construction and cleanup assertions. Do not reopen unrelated passes
+merely to repeat activity, or claim the whole gate from primary discovery alone.
+
 ## Gate 4: separate USB functionality from timing
 
 Preserve passed direct-ALSA, output, teardown and demo route-disappearance cells
@@ -72,6 +86,15 @@ realizations, checking recognition, actual inputs, available outputs, selection,
 removal and sibling survival. Complete supported USB consumer cells through their
 separate attachment isolation. Use direct transport evidence for implemented
 features Steam cannot express, with explicit scope and limitations.
+
+Current classic input evidence covers South press/release for all four named
+families, with normal Steam exit and complete cleanup in the Xbox-first trial.
+Classic generic controller type and zero vendor/product remain explicit
+limitations; that evidence cannot close evdev ABI, exact-family identity,
+outputs or the remaining realization/lifecycle matrix. The producer's scheduled
+single-controller removal is at 600 seconds, so its consumer trial uses a
+700-second limit inside the unchanged 900-second fixture limit. Do not run both
+sides with a 600-second limit and infer a removal pass from fixture output alone.
 
 Keep a per-cell receipt and terminate/reap only owned Steam/FEX and fixture
 processes. A visible home screen or detected controller name cannot replace
