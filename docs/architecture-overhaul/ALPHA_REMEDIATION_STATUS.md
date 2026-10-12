@@ -4525,3 +4525,33 @@ cleanup and handler restoration, plus two actual owned subprocesses with repeate
 signals during teardown. Both children are reaped; no Steam, root or real display
 is used by those regressions. All 462 Python tests and mandatory repository checks
 pass. Fresh terminal live receipts are still required before accepting shutdown.
+
+## Live interruption restoration and GUI provisioning checkpoint
+
+At `2c5f342`, a controlled SIGTERM to the identity-pinned ordinary Steam supervisor
+produces the expected failed-run receipt with `Steam lab interrupted by SIGTERM`.
+Bootstrap and outer cleanup lists are empty. The unchanged input fixture exits
+zero with no initiating error, no cleanup error and its rule removed. Owned
+producer/collector/input nodes/workspace/display socket are absent. 59 memory
+samples retain at least 14543065088 available bytes. This accepts the live
+interruption/restoration cell, not consumer completeness or normal shutdown.
+
+The first probe refused startup because the earlier killed fixture left its
+private control socket. That failure and failed coordinator cleanup are retained.
+After verifying the known test owner was absent, its owned nodes were absent,
+the socket had no listener, private ownership/inventory and current inode
+identities matched, the stale test directory was moved intact into private
+evidence quarantine; nothing was deleted and no provider journal was recovered.
+The retry then starts and restores normally. Preserve this boundary: this is
+operator restoration of that test artifact, not automatic lease recovery or
+permission to clear unprovable provider journals.
+
+A separate hash-pinned GUI keyboard package is prepared for administrator
+installation. It permits one predefined, 900-second non-root GUI run on a
+registered private display with existing PID-owned input isolation. It does not
+change the two Steam scenarios, their updater, provider services or general sudo.
+Preparation verifies malformed/oversized/symlink/nonprivate display records,
+exact process identity fields, six invalid scenario selections, interpreter
+syntax, helper hashes and sudo policy syntax. A matching revoker is supplied.
+Installation is still required; no GUI-owned active touch or whole Gate 1 pass
+is claimed. The final byte-pinned neutral soak follows the interaction inventory.
