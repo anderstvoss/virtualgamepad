@@ -117,6 +117,36 @@ class Reconciliation(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'timestamps moved backward'):
             ledger.reconcile(receipt, events, [0, 0, 1, 1, 1, 1])
 
+    def test_complete_capture_can_still_have_a_source_graph_tick_gap(self):
+        first = self.event(1, 2); second = self.event(3, 6)
+        second.update(graph_ticks=204, stamp_ns=130)
+        receipt = self.receipt(); receipt['ledger_events'] = 3
+        result = ledger.reconcile(receipt, [first,second,self.event(1,6,capture=True)], [1]*6)
+        self.assertEqual(result['source_graph_tick_discontinuities'],[dict(
+            first_event=0,next_event=1,first_marker=1,next_marker=3,
+            graph_tick_delta=4,preceding_buffer_frames=2,submission_interval_ns=30)])
+        self.assertEqual(result['missing_ranges'],[])
+        self.assertFalse(result['acceptance_changed'])
+        self.assertEqual(result['graph_vs_capture_loss'],'unavailable from this ledger')
+        second['graph_ticks']=202
+        self.assertEqual(ledger.reconcile(receipt,[first,second,self.event(1,6,capture=True)],
+                                         [1]*6)['source_graph_tick_discontinuities'],[])
+
+    def test_tick_step_uses_full_buffer_including_startup_not_marker_count(self):
+        first = self.event(1, 3); first.update(producer_begin=95998,frames=5)
+        second = self.event(4, 6); second.update(graph_ticks=205,stamp_ns=130)
+        receipt = self.receipt(); receipt['ledger_events'] = 3
+        result=ledger.reconcile(receipt,[first,second,self.event(1,6,capture=True)],[1]*6)
+        self.assertEqual(result['source_graph_tick_discontinuities'],[])
+
+    def test_failed_submission_does_not_claim_an_adjacent_successful_tick_gap(self):
+        first=self.event(1,2,-5); second=self.event(3,6)
+        second.update(graph_ticks=204,stamp_ns=130)
+        receipt=self.receipt(submitted=4,received=4,missing=2); receipt['ledger_events']=3
+        result=ledger.reconcile(receipt,[first,second,self.event(3,6,capture=True)], [0,0,1,1,1,1])
+        self.assertEqual(result['source_graph_tick_discontinuities'],[])
+        self.assertEqual(result['missing_ranges'][0]['category'],'failed_submission')
+
     def test_truncated_duplicate_trailer_and_events_after_trailer_reject(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'ledger.jsonl'

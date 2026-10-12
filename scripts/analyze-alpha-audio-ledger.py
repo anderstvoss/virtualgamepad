@@ -67,7 +67,7 @@ def reconcile(receipt, events, counts):
         states[first-1:last] = bytes([1 if status >= 0 else 2]) * measured
         source_observations.append(dict(event=index, first_marker=first, last_marker=last,
                                         stamp_ns=event['stamp_ns'], graph_ticks=event['graph_ticks'],
-                                        submitted=status >= 0))
+                                        frames=frames, submitted=status >= 0))
         generated += measured
         if status >= 0:
             submitted += measured
@@ -99,9 +99,18 @@ def reconcile(receipt, events, counts):
     # diagnosis: this ledger has no driver handoff or capture dequeue history.
     # Count exact per-frame absence without expanding missing ranges per event.
     bursts = []
+    tick_discontinuities = []
     for previous, current in zip(source_observations, source_observations[1:]):
         if current['stamp_ns'] < previous['stamp_ns']:
             raise ValueError('source callback timestamps moved backward')
+        if previous['submitted'] and current['submitted']:
+            tick_delta = current['graph_ticks']-previous['graph_ticks']
+            if tick_delta != previous['frames']:
+                tick_discontinuities.append(dict(first_event=previous['event'],
+                    next_event=current['event'], first_marker=previous['first_marker'],
+                    next_marker=current['first_marker'], graph_tick_delta=tick_delta,
+                    preceding_buffer_frames=previous['frames'],
+                    submission_interval_ns=current['stamp_ns']-previous['stamp_ns']))
         if not (previous['submitted'] and current['submitted'] and
                 previous['graph_ticks'] == current['graph_ticks']):
             continue
@@ -114,6 +123,7 @@ def reconcile(receipt, events, counts):
                                submission_interval_ns=current['stamp_ns']-previous['stamp_ns']))
     return dict(reconciled=True, counters=observed, missing_ranges=ranges,
                 same_tick_submission_observations=bursts,
+                source_graph_tick_discontinuities=tick_discontinuities,
                 capture_flag_observations=capture_discontinuities,
                 graph_vs_capture_loss='unavailable from this ledger',
                 acceptance_changed=False)

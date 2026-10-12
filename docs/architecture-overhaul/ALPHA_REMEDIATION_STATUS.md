@@ -4778,3 +4778,47 @@ without changing its assertions or the runner. All 467 local Python tests pass;
 remote confirmation of the corrected test remains required. The 993e7c0 SBOM
 artifact independently verifies all 17 package identities. Failed intermediate
 receipts remain preserved outside tracked source. No gate criteria are relaxed.
+
+## First-core audio discriminator and exact-Git consumers at 871a697
+
+After compilation and Steam teardown, one prebuilt independent direct C control
+runs alone for three measured seconds at quantum 512. Actual daemon/client main
+and data-loop threads use RR priority 20 and affinity to the first allowed CPU.
+All 144,000 markers are generated, submitted and received; missing, duplicate,
+invalid, partial, queue errors and ledger overflow are zero. Nevertheless,
+production takes 3,317,281,335 ns, outside the unchanged one-percent rate envelope;
+maximum source/capture callback gaps are about 44 ms. The trial **fails**. One
+short result does not prove affinity fixes marker loss or qualify this VM.
+All granted process identities are independently absent after teardown.
+
+The maintained analyzer now reports source graph-tick discontinuities, including
+full preceding buffer frames, exact event/marker boundaries and wall intervals.
+This receipt has 30 adjacent successful submissions with 1,024 tick advances
+following 512-frame buffers, totaling 15,360 excess observed ticks (320 ms at
+48 kHz). This explains where elapsed time accumulates in the observed ledger;
+it does not prove a kernel, graph-driver or hypervisor cause, infer missing
+markers, or change qualification. Three deterministic regressions preserve full
+capture with tick gaps, startup-buffer accounting and failed-submission scope.
+All 470 Python tests and mandatory repository checks pass. Historical ordinary
+and realtime marker-loss trials remain failed.
+
+Exact-Git consumers at full 871a697 revision pass all eight feature subsets and
+cached offline rebuild, with unchanged generated lock. Compiler is Rust 1.95.0;
+consumer source SHA-256 is
+`3b282ebb665e5d96d54055e21bb42111363a3a83ae27bfb8244ae95aa9a1e8da`
+and lock SHA-256 is
+`17ac692d799680501a73c36010cf962bdac69b1a67db1210e5710b0e1e06d5cf`.
+Source-path consumers, API snapshot/inventory, dependency audit/policy also pass;
+retained unmaintained ttf-parser warnings remain disclosed. These are compile
+checks, not live acceptance. CI run 38308483134 passes native Linux/macOS/Windows,
+policy, actual MSRV, corpus, lint and supply-chain jobs; dispatch dependency review
+is skipped. Provider run 38308492909 skips privileged validation; its contract
+job passes. Downloaded SBOM run 38308496535 verifies all 17 workspace identities.
+CodeQL is still running at this audit. These receipts apply to 871a697 and must
+not be presented as final evidence for a newer source candidate.
+
+Gates 1/4/5/6 remain open. The next causal scheduling comparison must distinguish
+actual graph-driver policy/affinity from the already-tested client priority;
+existing RR88 client qualification did not establish a matching daemon policy.
+Do not repeat qualification or enlarge queues merely because one short trial
+retained markers. GUI-specific scope still needs administrator provisioning.
