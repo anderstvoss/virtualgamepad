@@ -9,6 +9,74 @@ spec.loader.exec_module(lab)
 
 
 class SteamNamespace(unittest.TestCase):
+    def test_main_interrupt_writes_failure_and_restores_canary_profile_and_handlers(self):
+        import contextlib, io, json, os, signal, sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        original = {number: signal.getsignal(number) for number in (signal.SIGTERM, signal.SIGINT)}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); home = root / 'home'; home.mkdir()
+            account = SimpleNamespace(pw_dir=str(home), pw_uid=os.getuid(), pw_gid=os.getgid())
+            completed = SimpleNamespace(returncode=0, stdout='{"scope":"fake-namespace"}', stderr='')
+            def interrupt(*_args, **_kwargs):
+                os.kill(os.getpid(), signal.SIGTERM)
+            output = io.StringIO()
+            with patch.object(sys, 'argv', ['lab','--apply','--bootstrap','--xvfb',sys.executable,'--work-directory',str(root/'work')]), patch.object(lab.pwd,'getpwuid',return_value=account), patch.object(lab.shutil,'which',return_value='/usr/bin/bwrap'), patch.object(lab.subprocess,'run',return_value=completed), patch.object(lab,'run_bootstrap',side_effect=interrupt), contextlib.redirect_stdout(output):
+                self.assertEqual(lab.main(),1)
+            receipt = json.loads(output.getvalue())
+            self.assertEqual(receipt['status'],'failed')
+            self.assertIn('SIGTERM',receipt['initiating'])
+            self.assertEqual(receipt['cleanup'],[])
+            self.assertEqual(list(home.iterdir()),[])
+            self.assertEqual(list((root/'work').iterdir()),[])
+        self.assertEqual({number: signal.getsignal(number) for number in original},original)
+
+    def test_bootstrap_interrupt_reaps_owned_children_and_ignores_repeat_during_cleanup(self):
+        import os, signal, subprocess, sys, threading
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        original_popen = subprocess.Popen; original_exists = Path.exists
+        handlers = {number: signal.signal(number,lab.interrupted) for number in (signal.SIGTERM,signal.SIGINT)}
+        children=[]; timer=None; calls=[]
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root=Path(directory); ready=root/'private-display-ready'
+                server = [sys.executable,'-I','-c',
+                    'import signal,time,sys;from pathlib import Path; p=Path(sys.argv[1]);'
+                    'signal.signal(signal.SIGTERM,lambda *_:sys.exit(0));p.touch();'
+                    '\ntry:time.sleep(60)\nfinally:p.unlink(missing_ok=True)',str(ready)]
+                worker=[sys.executable,'-I','-c','import time;print("fake ready",flush=True);time.sleep(60)']
+                def exists(path):
+                    if str(path)=='/tmp/.X11-unix/X200':return original_exists(ready)
+                    if str(path)=='/tmp/.X200-lock':return False
+                    return original_exists(path)
+                def spawn(command,**kwargs):
+                    nonlocal timer
+                    child=original_popen(command,**kwargs);children.append(child);calls.append(kwargs)
+                    if len(children)==2:
+                        timer=threading.Timer(.1,lambda:os.kill(os.getpid(),signal.SIGTERM));timer.start()
+                    return child
+                def restore(command,**_kwargs):
+                    if command[:3]==['systemctl','--user','stop']:
+                        os.kill(os.getpid(),signal.SIGTERM);os.kill(os.getpid(),signal.SIGINT)
+                        if len(children)==2 and children[1].poll() is None:os.killpg(children[1].pid,signal.SIGTERM)
+                    return SimpleNamespace(returncode=0,stderr=b'')
+                account=SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid())
+                with patch.object(Path,'exists',exists),patch.object(lab,'display_command',return_value=server),patch.object(lab,'bootstrap_unit_command',return_value=worker),patch.object(lab.subprocess,'Popen',side_effect=spawn),patch.object(lab.subprocess,'run',side_effect=restore):
+                    result=lab.run_bootstrap(root,Path('/home/synthetic'),account,'.vg-alpha-sentinel-fake','marker',Path(sys.executable),30)
+                self.assertIn('SIGTERM',result['initiating'])
+                self.assertEqual(result['cleanup'],[])
+                self.assertFalse(result['accepted'])
+                self.assertEqual(len(children),2)
+                self.assertTrue(all(child.poll() is not None for child in children))
+                self.assertTrue(all(call['start_new_session'] for call in calls))
+                self.assertFalse(ready.exists())
+        finally:
+            if timer is not None:timer.join(timeout=2)
+            for child in children:
+                if child.poll() is None:os.killpg(child.pid,signal.SIGKILL);child.wait(timeout=5)
+            for number,handler in handlers.items():signal.signal(number,handler)
+
     def test_classic_inventory_keeps_only_owned_js_nodes_and_rejects_replacement(self):
         import os, stat
         from types import SimpleNamespace

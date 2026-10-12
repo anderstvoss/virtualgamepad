@@ -82,6 +82,18 @@ print(json.dumps(dict(scope="namespace-isolation-only", uid=os.getuid(), real_ho
 SENTINEL = 'import os, re, stat\nfrom pathlib import Path\n' + inspect.getsource(input_binding_target) + inspect.getsource(verify_consumer_namespace) + SENTINEL
 
 
+def begin_restoration():
+    # Restoration has explicit deadlines; a second interrupt must not orphan it.
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        if signal.getsignal(signum) is interrupted:
+            signal.signal(signum, signal.SIG_IGN)
+
+
+def interrupted(signum, _frame):
+    begin_restoration()
+    raise InterruptedError('Steam lab interrupted by ' + signal.Signals(signum).name)
+
+
 def memory_sample(meminfo=Path('/proc/meminfo'), pressure=Path('/proc/pressure/memory')):
     """Read bounded public resource counters; missing evidence fails closed."""
     fields = {}
@@ -353,7 +365,7 @@ def bootstrap_command(workspace, home, uid, gid, sentinel, marker, display, seco
                        PATH='/usr/bin:/bin')
     if devices and all(re.fullmatch(r'/dev/input/js[0-9]+', item['target']) for item in devices):
         # SDL2 and SDL3 use different names for the same documented backend hint.
-        # This private network namespace cannot receive the host udev monitor.
+        # The isolated owned-device view and static udev snapshot are not live discovery.
         # Use the visible owned directory's removal notifications in classic mode.
         environment.update(SDL_LINUX_JOYSTICK_CLASSIC='1', SDL_JOYSTICK_LINUX_CLASSIC='1',
                            SDL_JOYSTICK_DISABLE_UDEV='1')
@@ -444,7 +456,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
         if input_owner is not None: revalidate_consumer_devices(input_owner, devices)
         require_memory(memory_sample(), starting=True)
         launcher = subprocess.Popen(bootstrap_unit_command(unit, client, seconds, budget),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
         reader = threading.Thread(target=drain)
         reader.start()
         deadline = time.monotonic() + seconds + 15
@@ -472,6 +484,7 @@ def run_bootstrap(workspace, home, account, name, marker, xvfb, seconds, capture
     except BaseException as error:
         initiating = str(error)
     finally:
+        begin_restoration()
         # This unpredictable unit name was registered before launch; no foreign
         # service is stopped. Stop even if systemd-run failed part way through.
         try:
@@ -617,6 +630,7 @@ def run(bootstrap=False, xvfb=None, seconds=120, work_directory=None, captures=N
     except Exception as error:
         initiating = str(error)
     finally:
+        begin_restoration()
         if profile_lock is not None: os.close(profile_lock)
         try: remove_sentinel(canary, expected)
         except Exception as error: cleanup.append(str(error))
@@ -651,7 +665,13 @@ def main():
         return 0
     server = args.xephyr if args.xephyr is not None else args.xvfb
     if args.bootstrap and server is None: parser.error('--bootstrap requires --xvfb or --xephyr')
-    return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory, args.input_owner_pid, args.classic_joystick)
+    handlers = {signum: signal.signal(signum, interrupted)
+                for signum in (signal.SIGTERM, signal.SIGINT)}
+    try:
+        return run(args.bootstrap, server, args.seconds, args.work_directory, args.captures, args.xephyr is not None, args.profile_directory, args.input_owner_pid, args.classic_joystick)
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
 
 
 if __name__ == '__main__':

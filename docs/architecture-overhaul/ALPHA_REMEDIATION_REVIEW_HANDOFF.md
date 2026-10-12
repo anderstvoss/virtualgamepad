@@ -3899,9 +3899,44 @@ the retired node. No output acceptance is claimed.
 
 The next classic-only discovery experiment sets `SDL_JOYSTICK_DISABLE_UDEV=1`.
 The maintained SDL source and shipped library both identify this setting. It directs
-SDL toward fallback/directory notification discovery appropriate to the private
-namespace; it does not expose host udev events or foreign devices. Existing classic
+SDL toward fallback/directory notification discovery appropriate to the isolated
+owned-device view; it does not expose host udev events or foreign devices. Existing classic
 hints remain; default evdev/hidraw settings are unchanged. Regression checks the
 hint's exact value and absence in the default path. Fresh direct SDL hotplug and
 Steam list/input/normal-exit evidence remain required. This does not establish the
 exact Steam backend cause, close Gate 5, or alter controller/public API behavior.
+
+## Causal classic-discovery result and interruption regression — 2026-10-12
+
+At runner `a4c6fa8`, unchanged producer `d67f7ba`, two direct readers of the same
+shipped SDL library identify revision `SDL-release-3.4.0-1359-g70e9cc86d`.
+Both start with four gamepads and retire the same visible owned alias after kernel
+removal. Udev mode exits zero with count four and no disconnected handle; directory
+mode exits zero with count three and exactly the removed handle disconnected.
+Both observe Xbox South press/release afterward. Steam using directory mode shows
+the DualSense disconnection notification and a list containing exactly DS4, Switch
+and Xbox; the selected Xbox test also shows press/release. This supports the
+classic isolation-harness discovery correction; it does not establish every
+Steam backend or a controller product defect. The sandbox retains networking for
+login: the earlier network-namespace explanation was incorrect. The relevant
+boundary is the isolated device view/static udev snapshot and observed discovery
+mode, not a claimed network isolation mechanism.
+
+The overall live run fails: the collector/tool exits 143 without a terminal JSON
+receipt, the owned Steam unit records timeout, and the input supervisor reaches
+its own deadline (child status -9, cleanup empty, rule removed). No normal-exit
+or whole-lifecycle pass is claimed. Owned fixture/readers/display are absent,
+owned input inventory is empty, the display socket is absent, and the matching
+synthetic home canary is removed. The private interrupted workspace remains as
+raw evidence outside Git. The exact source of the collector's termination is not
+established. Do not erase the failed receipts or promote the scoped input/removal
+observations to complete Gate 5 acceptance.
+
+The maintained ordinary Steam supervisor now handles SIGTERM/SIGINT, enters its
+bounded restoration path, ignores repeat interrupts during restoration, restores
+prior signal handlers afterward, and starts its systemd launcher in a separate
+session. Two focused regressions exercise real SIGTERM, outer canary/profile
+cleanup and handler restoration, plus two actual owned subprocesses with repeated
+signals during teardown. Both children are reaped; no Steam, root or real display
+is used by those regressions. All 462 Python tests and mandatory repository checks
+pass. Fresh terminal live receipts are still required before accepting shutdown.
