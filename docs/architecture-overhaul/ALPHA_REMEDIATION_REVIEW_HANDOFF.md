@@ -3575,3 +3575,29 @@ classification override, loss threshold change or queue enlargement was used.
 Raw receipts remain outside tracked source. The existing six-gate scope remains
 in force pending direct release-owner confirmation of the PR reviewer's proposed
 scope change; an external generated comment is not confirmation from this chat.
+
+## Isolated Steam discovery comparison — 2026-10-12
+
+Runner `9ebb0cb` exposes a bounded snapshot of discovery properties only for
+identity-pinned owned character devices. It rejects symlinks, oversized records
+and device replacement; private seat/desktop-ignore values remain unchanged.
+All 454 Python tooling regressions pass, including synthetic foreign/private
+record exclusion and namespace binding tests. No host udev configuration changes.
+
+With producer `1b0029c119867daf0fd5f776f10c4fe10a7d7db3`, the namespace sentinel
+passed: all six owned evdev nodes openable, real/passwd home hidden, private
+proc/dev and capabilities dropped. Steam then listed PS5, PS4, Switch Pro and
+Xbox 360. It also listed an additional PS5 entry; the touch companion is a
+candidate cause requiring investigation. Before the owned udev snapshot,
+Steam listed no evdev controllers. This is recognition evidence only: input was
+not armed and no exact input acceptance is claimed.
+
+The bounded 120-second unit reached its configured timeout and the collector
+reported failure/nonzero exit. Preserve that result rather than promote the
+recognition observation to a successful full trial. Cleanup had no errors:
+unit absent/inactive, display and producer absent, disposable workspace removed,
+input rule removed, root fixture status zero. Minimum available host memory was
+14,382,125,056 bytes; recorded unit memory peak was 5.1 GiB, without swap.
+Private screenshots, logs and retained authorized test profile remain outside
+tracked source. Gate 5 stays open for exact input, duplicate-entry diagnosis,
+remaining consumer cells and complete acceptance.
