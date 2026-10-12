@@ -116,6 +116,14 @@ fn selected_inputs(seconds: u64, start: u64, remove_at: u64, family: Option<usiz
     pressed
 }
 
+/// A sibling remains usable after `DualSense` removal, until fixture shutdown.
+fn selected_input_fits(begin: u64, remove_at: u64, end_at: u64, family: usize) -> bool {
+    family < 4
+        && begin
+            .checked_add(2)
+            .is_some_and(|release| release <= end_at && (family != 0 || release <= remove_at))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::parse(std::env::args().skip(1))?;
     println!(
@@ -182,8 +190,8 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
             }
             Some(control::Command::ArmFamily(family)) => {
                 let begin = seconds + options.start_after;
-                if begin + 2 > remove_at {
-                    return Err("not enough time for selected input before removal".into());
+                if !selected_input_fits(begin, remove_at, options.seconds, usize::from(family)) {
+                    return Err("selected input exceeds controller or fixture lifetime".into());
                 }
                 armed_start = Some(begin);
                 armed_family = Some(usize::from(family));
@@ -542,6 +550,24 @@ mod control {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sibling_arming_after_removal_respects_its_own_lifetime() {
+        for family in 1..4 {
+            assert!(selected_input_fits(601, 600, 900, family));
+            assert!(selected_input_fits(898, 600, 900, family));
+            assert!(!selected_input_fits(899, 600, 900, family));
+            assert!(!selected_input_fits(u64::MAX, 600, 900, family));
+            let mut expected = [false; 4];
+            expected[family] = true;
+            assert_eq!(selected_inputs(601, 601, 600, Some(family)), expected);
+            assert_eq!(selected_inputs(603, 601, 600, Some(family)), [false; 4]);
+        }
+        assert!(selected_input_fits(598, 600, 900, 0));
+        assert!(!selected_input_fits(599, 600, 900, 0));
+        assert!(!selected_input_fits(601, 600, 900, 0));
+        assert!(!selected_input_fits(601, 600, 900, 4));
+    }
 
     #[test]
     fn single_family_arming_keeps_all_siblings_neutral_and_releases() {

@@ -4385,3 +4385,36 @@ The next lifecycle trial uses a bounded 700-second consumer window inside the
 unchanged 900-second fixture limit, leaving time to observe removal and sibling
 input before normal exit. No live deadline was silently extended, and no
 acceptance assertion changed.
+
+## Steam lifecycle trial: sibling-arm harness defect — 2026-10-12
+
+The 700-second classic consumer trial at unchanged producer `82e0dcc` observed
+kernel removal of DualSense at its scheduled 600-second boundary. The consumer
+receipt records `/dev/input/js1` absent in 94 samples, but Steam's controller
+list still shows all four entries in the post-removal screenshot. Stale private
+bind mounts/discovery metadata are a hypothesis for the consumer result, not a
+confirmed product removal defect. Sibling input after removal is unaccepted.
+
+The subsequent Xbox arm request exposed a separate deterministic fixture bug:
+`ArmFamily` compared every selected family's pulse deadline to DualSense's
+removal time. It returned `not enough time for selected input before removal`,
+ending the producer although three siblings were alive. Root fixture exit one,
+collector exit one, bootstrap initiating reason `input owner is not live`;
+this run terminated on the producer error, not the 700-second unit deadline.
+Cleanup lists are empty, temporary rule removed, owned nodes/processes/display/
+workspace/control socket absent. The minimum available memory was 14630780928
+bytes; no memory-pressure cause was established. Preserve the failed receipt.
+
+`selected_input_fits` now applies the early removal deadline only to DualSense;
+all siblings retain the fixture shutdown deadline. The regression exercises
+arming after removal, exact two-second release, boundary acceptance/rejection,
+removed-family rejection, invalid index and overflow. Seven focused producer
+tests pass. No product API, provider, desktop isolation, sudo scope or acceptance
+assertion changed. Rebuild and autonomously stage the fixed producer, then
+repeat only affected lifecycle cells and independently investigate stale
+consumer discovery. Gate 5 remains open.
+
+Validation of the sibling-lifetime correction: mandatory fmt, locked workspace
+all-target/all-feature check, Clippy, workspace tests and Gitleaks pass; forced
+Rust 1.85.0 workspace/all-target/all-feature check passes. The seven focused
+producer tests include the new post-removal regression. No dependencies added.
