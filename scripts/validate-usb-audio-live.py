@@ -110,7 +110,7 @@ def isolated_card(properties, objects, card, instance):
         if item.get('type') in ('PipeWire:Interface:Device', 'PipeWire:Interface:Node') and any(
                 str(props.get(key, '')) == str(card)
                 for key in ('api.alsa.card', 'api.alsa.pcm.card')):
-            raise ValueError('shared session manager imported the owned card')
+            raise ValueError('shared session manager imported the owned card: '+json.dumps({key:props.get(key) for key in ('api.alsa.card', 'api.alsa.pcm.card', 'device.name', 'node.name', 'device.bus-path', 'device.serial')},sort_keys=True))
 
 
 def reserve_direct_alsa(card, bus, instance, generation):
