@@ -14,7 +14,7 @@ No more timing/control diagnostics, 72-cell trials or GUI soaks. Reuse the accep
 `46be2bf` soak. Record audio gaps as limitations; require actual flow and cleanup.
 Historical failures remain visible; do not apply superseded whole-gate criteria.
 
-The finite live results and frozen executable identities are in [the current status](ALPHA_REMEDIATION_STATUS.md). Final-head validation remains pending. Review receipt termination races, unchanged isolation assertions, sibling/removal cleanup and the explicit distinction between marker flow and failed continuity assertions. Do not require deferred Steam, physical, latency or sustained matrices to pass this narrowed alpha boundary.
+The finite live results and frozen executable identities are in [the current status](ALPHA_REMEDIATION_STATUS.md). Exact-head validation and review readiness are recorded on PR #133. Review receipt termination races, unchanged isolation assertions, sibling/removal cleanup and the explicit distinction between marker flow and failed continuity assertions. Do not require deferred Steam, physical, latency or sustained matrices to pass this narrowed alpha boundary.
 
 Historical disposition (superseded by the current scope correction and status ledger): **Gates 2 and 3 passed**. Gate 2's cell-by-cell
 receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).

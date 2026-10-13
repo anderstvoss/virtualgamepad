@@ -14,7 +14,7 @@ No more timing/control diagnostics, 72-cell trials or GUI soaks. Reuse the accep
 `46be2bf` soak. Record audio gaps as limitations; require actual flow and cleanup.
 Historical failures remain visible; do not apply superseded whole-gate criteria.
 
-Current disposition (2026-10-13): **finite live checks completed; final-head validation pending; PR #133 remains draft**.
+Current disposition (2026-10-13): **finite live checks completed; review readiness follows the exact-head checks on PR #133**.
 The product was built once at `dfc1f603fd7331e2669305efe24c2f3990df574d`.
 Production Rust, manifests and lockfile remain identical to `708e758`;
 subsequent corrections affect receipt retrieval and lab readiness only.
@@ -44,9 +44,7 @@ return bounded hashed previews, and a removed ALSA graph object gets one second
 to withdraw before the unchanged isolation assertion fails.
 All 475 deterministic Python tests passed. The signal-cleanup regression now uses
 synthetic healthy memory counters; live memory protection remains unchanged.
-At `dfc1f60`, platform CI including Windows, MSRV, CodeQL, Gitleaks and SBOM generation
-passed. These are historical until final-head workflows and downloaded SBOM identity
-verification complete. Raw receipts remain outside tracked source.
+At `eeba362d0827a8e6f08f6585605ef02ef04b917e`, platform CI including Windows and macOS, MSRV, CodeQL, Gitleaks and SBOM generation passed. All 17 downloaded SBOM identities and exact-Git consumers with cached offline rebuild were verified. Later documentation-only commits require exact-head checks on PR #133; its latest result table records readiness. Privileged CI was skipped; the recorded scoped lab supplies the required live checks. Raw receipts remain outside tracked source.
 
 Current closure criteria and verifier gaps are in
 [the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
