@@ -3,6 +3,10 @@
 
 pub use gr_dualsense_wire as dualsense;
 
+/// Neutral identity for the virtual standard-HID presentation. It must not
+/// select a vendor-native wire decoder; these are not assigned physical USB IDs.
+pub const STANDARD_GAMEPAD_VIRTUAL_IDENTITY: (u16, u16) = (0, 0);
+
 pub const STANDARD_GAMEPAD_DESCRIPTOR: &[u8] = &[
     0x05, 0x01, 0x09, 0x05, 0xa1, 0x01, 0x15, 0x00, 0x25, 0x01, 0x35, 0x00, 0x45, 0x01, 0x75, 0x01,
     // Eleven controls in encoder order, mapped to Linux's legacy xpad keys.

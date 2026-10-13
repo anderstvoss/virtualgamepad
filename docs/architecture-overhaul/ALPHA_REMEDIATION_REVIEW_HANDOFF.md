@@ -4280,3 +4280,23 @@ complete successfully, with privileged Provider Tier B and dispatch dependency
 review still skipped. The downloaded SBOM verifies all 17 identities. These
 structural passes do not resolve the new identity defect or remaining audio/UI
 acceptance. Private account/profile data and raw screenshots remain untracked.
+
+## Xbox standard-HID identity correction candidate
+
+Issue #148 is caused by advertising Microsoft 045e:028e for a nine-byte
+standard-HID report. The correction uses neutral virtual identity 0000:0000
+for UHID and compiled USB/gadget standard-HID profiles. These are virtual
+identifiers, not assigned physical USB IDs; consumer classification may be
+generic. The typed Xbox application API, nine-byte descriptor/codec, and native
+evdev identity remain unchanged. No XInput protocol or HID output support is
+added. Target restrictions expose the different wire-layout limitation.
+
+Regressions pin UHID identity/descriptor/report length and restrictions, retained
+evdev identity, both static/session USB descriptors and unaffected Sony identity,
+and gadget identity/descriptor coherence. The gadget realization remains
+unavailable; editing its compiled profile does not establish gadget acceptance.
+Historical wrong-button observations remain preserved. Gate 2 stays open until
+new pinned consumer controls, unsupported-output rejection and cleanup pass.
+Relevant USB worker/broker profile evidence must be revalidated after rebuilding.
+The previous GUI packet is no longer a final-candidate package after this
+production change: rebuild and provision a current GUI image before acceptance.

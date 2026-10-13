@@ -53,7 +53,10 @@ impl Profile {
                 (0x054c_u16, 0x0ce6_u16, dualsense::USB_DESCRIPTOR, 4, 2)
             }
             ProfileId::DualShock4Emulated => (0x054c, 0x05c4, DUALSHOCK4_USB_DESCRIPTOR, 2, 1),
-            ProfileId::Xbox360HidEmulated => (0x045e, 0x028e, STANDARD_GAMEPAD_DESCRIPTOR, 2, 1),
+            ProfileId::Xbox360HidEmulated => {
+                let (vendor, product) = gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY;
+                (vendor, product, STANDARD_GAMEPAD_DESCRIPTOR, 2, 1)
+            }
         };
         let [vl, vh] = vendor.to_le_bytes();
         let [pl, ph] = product.to_le_bytes();
@@ -208,6 +211,19 @@ fn configuration(report_length: usize, playback: u8, microphone: u8) -> Vec<u8> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn standard_hid_usb_identity_cannot_claim_the_native_xbox_wire_protocol() {
+        for profile in [
+            Profile::new(ProfileId::Xbox360HidEmulated),
+            Profile::for_session(ProfileId::Xbox360HidEmulated, "test-lab", 9).unwrap(),
+        ] {
+            assert_eq!(&profile.device()[8..12], &[0, 0, 0, 0]);
+            assert_eq!(profile.report(), STANDARD_GAMEPAD_DESCRIPTOR);
+            let other = Profile::new(ProfileId::DualSenseEmulated);
+            assert_eq!(&other.device()[8..12], &[0x4c, 0x05, 0xe6, 0x0c]);
+        }
+    }
+
     #[test]
     fn session_serial_is_exact_and_invalid_identity_is_rejected() {
         for id in [

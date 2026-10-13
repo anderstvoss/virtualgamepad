@@ -101,10 +101,10 @@ fn profile(kind: CompiledControllerKind) -> ControllerProfile {
         },
         CompiledControllerKind::Xbox360 => ControllerProfile {
             kind,
-            vendor_id: "0x045e",
-            product_id: "0x028e",
+            vendor_id: "0x0000",
+            product_id: "0x0000",
             device_bcd: "0x0114",
-            manufacturer: "Microsoft",
+            manufacturer: "Virtualgamepad",
             product: "Xbox 360 Controller (HID)",
             serial_prefix: "VG-POC-X36",
             descriptor: STANDARD_GAMEPAD_DESCRIPTOR,
@@ -855,12 +855,27 @@ mod tests {
     }
 
     #[test]
+    fn standard_hid_gadget_identity_matches_the_generic_wire_profile() {
+        let profile = profile(CompiledControllerKind::Xbox360);
+        assert_eq!(
+            (
+                u16::from_str_radix(&profile.vendor_id[2..], 16).unwrap(),
+                u16::from_str_radix(&profile.product_id[2..], 16).unwrap()
+            ),
+            gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY
+        );
+        assert_eq!(profile.manufacturer, "Virtualgamepad");
+        assert_eq!(profile.report_length, 9);
+        assert_eq!(profile.descriptor, STANDARD_GAMEPAD_DESCRIPTOR);
+    }
+
+    #[test]
     fn compiled_profiles_are_fixed_and_report_size_bound() {
         let expected = [
             (CompiledControllerKind::DualSense, "0x054c", "0x0ce6", 64),
             (CompiledControllerKind::DualShock4, "0x054c", "0x05c4", 64),
             (CompiledControllerKind::SwitchPro, "0x057e", "0x2009", 64),
-            (CompiledControllerKind::Xbox360, "0x045e", "0x028e", 9),
+            (CompiledControllerKind::Xbox360, "0x0000", "0x0000", 9),
         ];
         for (kind, vendor_id, product_id, report_length) in expected {
             let profile = profile(kind);
