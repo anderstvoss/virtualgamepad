@@ -21,8 +21,12 @@ do not unpin without a deliberate audit.
       `Cargo.toml [package].license`.
 - [ ] [Cargo.toml](../Cargo.toml) — fill `description`, `repository`,
       `readme`, `keywords`, `categories`, `rust-version` (MSRV),
-      `authors`, `[lints.rust]` (`unsafe_code = "forbid"`),
-      `[lints.clippy]` (`all` + `pedantic` warn, priority -1).
+      `authors`, `[lints.rust]` (`unsafe_code = "forbid"`; a workspace
+      with FFI crates sets `deny` and puts `#![forbid(unsafe_code)]` at
+      every non-FFI crate root), `[lints.clippy]` (`all` + `pedantic`
+      warn, priority -1; `undocumented_unsafe_blocks = "deny"`).
+- [ ] [ruff.toml](../ruff.toml) — if the repo carries Python helpers:
+      pyflakes + bandit rules, enforced by the `ruff-check` hook.
 - [ ] [rust-toolchain.toml](../rust-toolchain.toml) — pin channel +
       `rustfmt`, `clippy` components for reproducible builds.
 - [ ] [deny.toml](../deny.toml) — cargo-deny allow-lists for
@@ -70,10 +74,11 @@ do not unpin without a deliberate audit.
 
 - [ ] [.github/workflows/ci.yml](../.github/workflows/ci.yml) —
       `rust-lint`, `msrv`, `rust-test` (ubuntu+macos+windows), `policy`
-      (matrix), `supply-chain`, `dependency-review`. harden-runner
-      egress block on every Linux job.
+      (matrix), `supply-chain`, `dependency-review`, `python-scripts`.
+      harden-runner egress block on every Linux job.
 - [ ] [.github/workflows/codeql.yml](../.github/workflows/codeql.yml)
-      — GitHub-native Rust code scanning; `queries: security-extended`.
+      — GitHub-native code scanning for Rust and for the workflow files
+      themselves (`actions`); `queries: security-extended`.
 - [ ] [.github/workflows/scorecard.yml](../.github/workflows/scorecard.yml)
       — OpenSSF Scorecard; full triggers; `publish_results: true`;
       `id-token: write`.
@@ -110,6 +115,11 @@ For each clone, once after cloning:
 Every job in every workflow is `if: ${{ !github.event.repository.private }}`
 — they sit dormant on private and activate the moment the repo flips.
 
+- [ ] **Before anything else:** run
+      [scripts/deep-scan.sh](../scripts/deep-scan.sh) and confirm it
+      passes. Flipping visibility publishes every reachable commit, so
+      the full-history scan must happen while the repo is still private;
+      the CI history scan only activates after the flip.
 - [ ] Rename the repo to drop any `-private` suffix:
       `gh repo rename <new-name>` from inside the clone.
 - [ ] Update [.github/ISSUE_TEMPLATE/config.yml](../.github/ISSUE_TEMPLATE/config.yml)
@@ -136,6 +146,9 @@ Every job in every workflow is `if: ${{ !github.event.repository.private }}`
   - [ ] Private vulnerability reporting
   - [ ] Dependabot alerts + automated security updates
   - [ ] Branch protection with required-status contexts
+  - [ ] Tag protection ruleset for `v*`
+  - [ ] Actions hardening: read-only default `GITHUB_TOKEN`, Actions
+        may not approve PRs, first-time fork contributors need approval
 - [ ] Open a draft PR to trigger the now-active CI; verify all
       required-status contexts pass.
 - [ ] Manually `gh workflow run scorecard.yml --repo $REPO`; verify

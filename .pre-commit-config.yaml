@@ -26,6 +26,12 @@ repos:
       - id: detect-private-key
         exclude: '^\.pre-commit-config\.yaml$'
 
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: f12be1ebaa5351c1fc76472de98db2c3446c8253  # frozen: v0.16.10
+    hooks:
+      - id: ruff-check
+        # Configuration (defect + security rules only) lives in ruff.toml.
+
   - repo: local
     hooks:
       - id: block-env-files
@@ -89,19 +95,19 @@ repos:
 
       - id: cargo-check
         name: cargo check
-        entry: cargo check --all-targets --all-features
+        entry: cargo check --locked --all-targets --all-features
         language: system
         pass_filenames: false
 
       - id: cargo-clippy
         name: cargo clippy
-        entry: cargo clippy --all-targets --all-features -- -D warnings
+        entry: cargo clippy --locked --all-targets --all-features -- -D warnings
         language: system
         pass_filenames: false
 
       - id: cargo-test
         name: cargo test
-        entry: cargo test --all-features
+        entry: cargo test --locked --all-features
         language: system
         pass_filenames: false
 
