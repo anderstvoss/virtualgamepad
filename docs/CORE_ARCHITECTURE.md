@@ -13,7 +13,7 @@ the resulting component set. See [ADR-0017](architecture-overhaul/decisions/ADR-
 | `linux.uinput` | Linux uinput | Controller-owned evdev controls and supported outputs. |
 | `linux.uhid.usb` | Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
 | `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Unavailable: current f_hid lacks complete request metadata and negative replies; creation fails closed. |
-| `linux.usbip.usb-audio` | stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2; installed security/recovery acceptance remains open. |
+| `linux.usbip.usb-audio` | stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2; seven scoped broker security/recovery phases passed (#115 closed), streaming qualification deferred (#143/#145). |
 
 `RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 

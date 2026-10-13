@@ -1,7 +1,9 @@
 # Proposed Git alpha release notes
 
 Candidate tag for maintainer review: `0.1.0-alpha.1`. Workspace packages remain
-`0.1.0` and unpublished; this package prepares a Git-based alpha, not a tag or
+`0.1.0` and unpublished (`publish = false`). The proposed Git tag
+`0.1.0-alpha.1` carries crate version `0.1.0`; consumers should pin by tag or
+full SHA. This package prepares a Git-based alpha, not a published tag or
 registry release. The exact release SHA and final acceptance are recorded only
 after review, merges and final validation.
 
@@ -33,11 +35,22 @@ workspace crates are excluded from the compatibility promise. Breaking changes
 need demonstrated necessity, API review and migration rationale; alpha status does
 not waive that policy. See [migration notes](ALPHA_API_MIGRATION.md).
 
-Known limits: USB/IP is WIP/excluded from accepted support. Installed broker
-security/recovery acceptance is tracked by #115; its closure alone would not
-qualify streaming continuity or the full provider matrix.
-matching and physical microphone equivalence remain unavailable pending #116.
-No sustained/native continuity or latency guarantee is advertised. Ignored host
+Known limits: USB/IP remains opt-in WIP. Seven scoped installed broker
+security/recovery phases passed (#115 closed); this does not qualify streaming
+continuity or the full routing matrix. Playback and microphone marker flow was
+observed for DualSense, DS4 and standard-HID Xbox, including close/restoration;
+strict zero-loss assertions failed and remain failed evidence (#143/#145).
+Controller matching and physical microphone equivalence remain unavailable (#116).
+
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
+
+No screen-reader support is provided. Broader hands-on GUI acceptance is
+post-alpha #126. Steam is deferred to x86-64 #144, with release-owner confirmation
+of that deferral outstanding; no Steam compatibility is claimed. Physical
+comparisons (#136) and native-host timing (#135) remain deferred. Windows/macOS
+CI establishes build/test results, not functioning controller providers.
+`linux.dummy_hcd.usb-hid` creation is rejected before resource allocation because
+`f_hid` lacks adequate GET_REPORT metadata and explicit negative replies. Ignored host
 probes and compilation do not imply physical acceptance. Host capture beyond the
 reviewed routing/channel scope and native scheduling/shutdown remain explicit
 limits. The existing unmaintained ttf-parser dependency warning is retained for

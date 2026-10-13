@@ -1,5 +1,11 @@
 # Alpha freeze candidate
 
+> **Recorded review scope.** This review and its source revisions are retained
+> unchanged below. The API audit, 110-item snapshot guard and separate quality
+> review have landed. Seven scoped broker security/recovery phases subsequently
+> passed (#115 closed); streaming remains WIP. Current acceptance and deferred
+> work are in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+
 This review block establishes the ordinary root snapshot after the merged post-GUI
 review (#129, `7bb16df`). It is prepared for maintainer review, not a declaration
 that final alpha acceptance or release has happened. Its exact source commit is

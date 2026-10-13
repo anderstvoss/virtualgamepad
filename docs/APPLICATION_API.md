@@ -1,4 +1,4 @@
-# Application API: current pre-alpha candidate
+# Application API: reviewed ordinary-root alpha boundary
 
 `virtualgamepad` is a standalone curated-controller appliance. The root API owns
 virtual controllers, not physical discovery, normalization, routing, player slots,

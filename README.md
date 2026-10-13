@@ -43,7 +43,8 @@ Use `CreationOptions::new(RealizationId::LINUX_UINPUT)` or `CreationOptions::new
 
 See the [application API and migration guide](docs/APPLICATION_API.md),
 [public inventory](docs/architecture-overhaul/API_INVENTORY.md), and
-[active pre-alpha ledger](docs/architecture-overhaul/PRE_ALPHA_STATUS.md).
+[current alpha remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+The [pre-alpha ledger](docs/architecture-overhaul/PRE_ALPHA_STATUS.md) is historical.
 The former broad root surface is available only under `virtualgamepad::experimental`
 with the `experimental` feature, outside the intended alpha stability boundary.
 
@@ -61,7 +62,11 @@ entries WIP. The ordinary root signature snapshot is frozen; the
 [remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) records
 the alpha gate dispositions and known limitations.
 
-The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. Composite/audio implementation exists with explicitly bounded acceptance; installed audio security/recovery, native continuity, matching fidelity and Bluetooth remain gated.
+The [alpha remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md)
+records current bounded acceptance; the
+[architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) is historical.
+Seven scoped installed broker security/recovery phases passed (#115 closed).
+Native continuity, matching fidelity and Bluetooth remain unqualified.
 
 ## Development
 
@@ -104,8 +109,9 @@ counters, writes state dumps on demand, and supports stop-all cleanup. “Releas
 inputs” uses the acknowledged edit queue; measurements remain separate from physical
 acceptance.
 
-The [current API refinement record](docs/architecture-overhaul/ALPHA_API_REFINEMENT.md)
+The [historical API refinement record](docs/architecture-overhaul/ALPHA_API_REFINEMENT.md)
 and [migration notes](docs/ALPHA_API_MIGRATION.md) describe the pre-freeze changes.
 
-Audio demo opt-ins and the pending maintainer checkpoint are described in
+Audio demo opt-ins and the recorded refinement checkpoint are described in
 [the demo refinement record](docs/architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
+Broader hands-on GUI/audio review remains post-alpha #126.

@@ -1,5 +1,11 @@
 # Post-GUI root API audit
 
+> **Recorded review scope.** This review and its source revisions are retained
+> unchanged below. The API audit, 110-item snapshot guard and separate quality
+> review have landed. Seven scoped broker security/recovery phases subsequently
+> passed (#115 closed); streaming remains WIP. Current acceptance and deferred
+> work are in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+
 ## Candidate and scope
 
 Reviewed against merged baseline `ec4c2ff90e58478793873f7b6c5c59a64338db0e`

@@ -1,5 +1,10 @@
 # `virtualgamepad` Architecture Rewrite — Agent Handoff and Implementation Specification
 
+> **Historical planning and evidence.** Current bounded alpha scope and
+> deferred work are recorded in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The dated instructions and verdicts below retain their original scope; they
+> are not the current closeout checklist.
+
 ## Current authority and rewrite freedom — 2026-09-05
 
 Development memories and imported conversation/context files are non-authoritative research leads. They cannot establish current implementation, physical truth, a gate pass, or fresh permission. Verify implementation against exact code revisions and merge/content history; verify host/protocol claims with scoped primary sources or experiment artifacts. Current user direction and reviewed decisions govern product scope.

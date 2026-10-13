@@ -1,5 +1,11 @@
 # Separate alpha implementation quality review
 
+> **Recorded review scope.** This review and its source revisions are retained
+> unchanged below. The API audit, 110-item snapshot guard and separate quality
+> review have landed. Seven scoped broker security/recovery phases subsequently
+> passed (#115 closed); streaming remains WIP. Current acceptance and deferred
+> work are in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+
 This block reviews implementation robustness after the post-GUI API audit and
 freeze-candidate snapshot. It does not redesign the public contract or perform
 privileged installed acceptance. The quality PR head identifies the exact reviewed
