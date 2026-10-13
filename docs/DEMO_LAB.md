@@ -20,7 +20,8 @@ create it. Each controller receives a session-local **Controller ID** in the
 form `NNN-TGT-TYPE`: a three-digit creation sequence, realization abbreviation,
 and controller-family abbreviation. The ID is a GUI label, not library identity
 or session ownership. The Advanced options panel previews the next ID. Hover the
-`!` beside **USB / dummy_hcd** for the experimental-gadget requirements.
+`!` beside **USB / dummy_hcd** for its kernel protocol limitation. This target is
+currently unavailable and rejects creation before opening resources.
 
 Select any controller to exercise its existing button, axis, motion, battery and
 touch controls where supported. The live panel shows its realization, controller ID,
@@ -63,12 +64,14 @@ and observe continuing service on the others. Keep each consumer selection exact
    test nodes is the current resumption path; headless SDL alone is insufficient.
 4. Gate G needs administrator-reserved gadget resources and a supported request
    interface before generic broker replacement. The current read-only inventory
-   still lacks ConfigFS gadget availability, UDC authorization and broker socket.
+   lacks ConfigFS gadget availability and verified UDC authorization. Socket
+   availability alone does not establish authorization, binary provenance or readiness.
    Keep compiled profiles; permissions cannot add missing GET/SET metadata.
-5. Gate F/H emulated audio implementations exist. Audio GUI integration is implemented with explicit demo feature opt-ins;
-   defaults still leave audio features off. See the
+5. Gate F/H emulated audio implementations exist. Audio GUI integration is implemented. Demo defaults enable ALSA and WIP
+   USB/IP; UHID/PipeWire requires its feature and root defaults remain empty. See the
    [demo refinement checkpoint](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
-   Native continuity/latency (#112), installed broker recovery/security (#115), and
+   Native continuity/latency remains unresolved despite closed #112; installed
+   broker recovery/security (#115) and
    microphone/matching fidelity (#116) remain separate acceptance gates. Confirmed
    physical output/reconnect observations stay credited. L/M Bluetooth work remains
    separately gated; no support is promoted by endpoint enumeration.

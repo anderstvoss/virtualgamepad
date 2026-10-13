@@ -3,15 +3,61 @@ use pipewire::{self as pw, properties::properties, spa};
 use std::{
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
 
+#[derive(Default)]
+struct ProcessStats {
+    calls: AtomicU64,
+    buffers: AtomicU64,
+    empty: AtomicU64,
+    max_gap_ns: AtomicU64,
+}
+impl ProcessStats {
+    fn record_buffers(&self, count: u64) {
+        self.buffers.fetch_add(count, Ordering::Relaxed);
+        if count == 0 {
+            self.empty.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    fn snapshot(&self) -> (u64, u64, u64, u64) {
+        (
+            self.calls.load(Ordering::Acquire),
+            self.buffers.load(Ordering::Acquire),
+            self.empty.load(Ordering::Acquire),
+            self.max_gap_ns.load(Ordering::Acquire),
+        )
+    }
+}
+
+fn process_gap(previous: &mut Option<u64>, now: u64, measured: bool) -> u64 {
+    if !measured {
+        *previous = None;
+        return 0;
+    }
+    let gap = previous.map_or(0, |last| now.saturating_sub(last));
+    *previous = Some(now);
+    gap
+}
+
+#[test]
+fn process_gap_excludes_startup_and_drain_baselines() {
+    let mut previous = None;
+    assert_eq!(process_gap(&mut previous, 10, false), 0);
+    assert_eq!(process_gap(&mut previous, 100, true), 0);
+    assert_eq!(process_gap(&mut previous, 140, true), 40);
+    assert_eq!(process_gap(&mut previous, 1_000, false), 0);
+    assert_eq!(process_gap(&mut previous, 2_000, true), 0);
+}
+
 pub struct Source {
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
+    generated: Option<Arc<AtomicU64>>,
+    process_stats: Arc<ProcessStats>,
 }
 impl Source {
     pub fn start(
@@ -22,6 +68,10 @@ impl Source {
     ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = stop.clone();
+        let generated = Arc::new(AtomicU64::new(0));
+        let worker_generated = Arc::clone(&generated);
+        let process_stats = Arc::new(ProcessStats::default());
+        let worker_stats = Arc::clone(&process_stats);
         let worker = thread::spawn(move || {
             pw::init();
             let main = pw::main_loop::MainLoopRc::new(None).unwrap();
@@ -40,12 +90,23 @@ impl Source {
             )
             .unwrap();
             let mut position = 0_usize;
+            let mut previous_process = None;
             let listener = stream
                 .add_local_listener::<()>()
                 .process(move |stream, ()| {
+                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
+                    worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                    let gap = process_gap(
+                        &mut previous_process,
+                        now,
+                        position >= WARMUP_BLOCKS * 128 && position < stamps.len() * 128,
+                    );
+                    worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
                     let Some(mut buffer) = stream.dequeue_buffer() else {
+                        worker_stats.record_buffers(0);
                         return;
                     };
+                    worker_stats.record_buffers(1);
                     let requested = usize::try_from(buffer.requested()).unwrap();
                     let Some(data) = buffer.datas_mut().first_mut() else {
                         return;
@@ -55,22 +116,14 @@ impl Source {
                     };
                     let stride = channels * 2;
                     let frames = requested.min(bytes.len() / stride);
-                    let now = u64::try_from(started.elapsed().as_nanos()).unwrap() + 1;
-                    for frame in bytes[..frames * stride].chunks_exact_mut(stride) {
-                        let block = position / 128;
-                        let marker = if block < stamps.len() {
-                            if position % 128 == 0 {
-                                stamps[block].store(now, Ordering::Release);
-                            }
-                            i16::try_from(block + 1).unwrap()
-                        } else {
-                            0
-                        };
-                        for sample in frame.chunks_exact_mut(2) {
-                            sample.copy_from_slice(&marker.to_le_bytes());
-                        }
-                        position += 1;
-                    }
+                    let markers = fill_markers(
+                        &mut bytes[..frames * stride],
+                        channels,
+                        &mut position,
+                        &stamps,
+                        now,
+                    );
+                    worker_generated.fetch_add(markers as u64, Ordering::Release);
                     let chunk = data.chunk_mut();
                     *chunk.offset_mut() = 0;
                     *chunk.stride_mut() = i32::try_from(stride).unwrap();
@@ -100,7 +153,18 @@ impl Source {
         Self {
             stop,
             worker: Some(worker),
+            generated: Some(generated),
+            process_stats,
         }
+    }
+    pub fn process_accounting(&self) -> (u64, u64, u64, u64) {
+        self.process_stats.snapshot()
+    }
+    pub fn generated_frames(&self) -> u64 {
+        self.generated
+            .as_ref()
+            .expect("producer accounting")
+            .load(Ordering::Acquire)
     }
 }
 impl Drop for Source {
@@ -113,6 +177,76 @@ impl Drop for Source {
             }
         }
     }
+}
+
+// Multichannel frames carry a base-32767 index with complementary rear channels.
+// Mono uses a sign-tagged two-frame pair; preserve its decoder across buffers.
+fn frame_samples(position: usize, channels: usize, out: &mut [i16; 4]) {
+    let index = if channels == 1 {
+        position / 2
+    } else {
+        position
+    };
+    let high = i16::try_from(index / 32767 + 1).unwrap();
+    let low = i16::try_from(index % 32767 + 1).unwrap();
+    *out = match channels {
+        1 => [if position % 2 == 0 { high } else { -low }, 0, 0, 0],
+        2 => [high, low, 0, 0],
+        4 => [high, low, -high, -low],
+        _ => panic!("unsupported marker channel count"),
+    };
+}
+
+pub fn block_samples(block: usize, channels: usize) -> Vec<i16> {
+    let mut result = Vec::with_capacity(128 * channels);
+    for position in block * 128..(block + 1) * 128 {
+        let mut frame = [0; 4];
+        frame_samples(position, channels, &mut frame);
+        result.extend_from_slice(&frame[..channels]);
+    }
+    result
+}
+
+// Counts generated non-silent frames, not bytes written to a client pipe.
+fn fill_markers(
+    bytes: &mut [u8],
+    channels: usize,
+    position: &mut usize,
+    stamps: &[AtomicU64],
+    now: u64,
+) -> usize {
+    let mut generated = 0;
+    for frame in bytes.chunks_exact_mut(channels * 2) {
+        let block = *position / 128;
+        let mut samples = [0; 4];
+        if block < stamps.len() {
+            if *position % 128 == 0 {
+                stamps[block].store(now, Ordering::Release);
+            }
+            frame_samples(*position, channels, &mut samples);
+            generated += 1;
+        }
+        for (sample, value) in frame.chunks_exact_mut(2).zip(samples) {
+            sample.copy_from_slice(&value.to_le_bytes());
+        }
+        *position += 1;
+    }
+    generated
+}
+
+#[test]
+fn producer_accounting_distinguishes_generated_markers_from_silent_drain() {
+    let stamps = [AtomicU64::new(0), AtomicU64::new(0)];
+    let mut position = 0;
+    let mut bytes = [0; 260 * 4];
+    assert_eq!(fill_markers(&mut bytes, 2, &mut position, &stamps, 37), 256);
+    assert_eq!(position, 260);
+    assert_eq!(stamps.map(|stamp| stamp.load(Ordering::Acquire)), [37, 37]);
+    assert!(bytes[256 * 4..].iter().all(|byte| *byte == 0));
+    assert_eq!(
+        i16::from_le_bytes([bytes[128 * 4 + 2], bytes[128 * 4 + 3]]),
+        129
+    );
 }
 
 fn format_bytes(channels: usize) -> Vec<u8> {
@@ -151,71 +285,424 @@ fn format_bytes(channels: usize) -> Vec<u8> {
     .into_inner()
 }
 
+// Fixed nominal two-second marker warm-up, independent of session startup delay.
+pub const WARMUP_BLOCKS: usize = 48_000 * 2 / 128;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TrialWindow {
+    pub frames: usize,
+    pub producer_ns: u64,
+    pub missing: usize,
+    pub duplicate: usize,
+}
+
+pub fn trial_window(stamps: &[AtomicU64], counts: &[usize]) -> Result<TrialWindow, &'static str> {
+    if stamps.len() != counts.len() || !(WARMUP_BLOCKS + 1..=23_250).contains(&stamps.len()) {
+        return Err("invalid planned marker window");
+    }
+    // Production must complete even for markers excluded as warm-up. An expected
+    // count derived only from timestamps already present could hide an early stop.
+    if stamps
+        .iter()
+        .any(|stamp| stamp.load(Ordering::Acquire) == 0)
+    {
+        return Err("incomplete production");
+    }
+    let first = stamps[WARMUP_BLOCKS].load(Ordering::Acquire);
+    let mut previous = first;
+    for stamp in &stamps[WARMUP_BLOCKS + 1..] {
+        let current = stamp.load(Ordering::Acquire);
+        if current < previous {
+            return Err("producer clock reversal");
+        }
+        previous = current;
+    }
+    let frames = (stamps.len() - WARMUP_BLOCKS) * 128;
+    // Timestamps are taken at block handoff. Include the last block's nominal
+    // duration; repeated timestamps within one graph buffer are valid.
+    let producer_ns = previous
+        .checked_sub(first)
+        .and_then(|span| span.checked_add(128 * 1_000_000_000 / 48_000))
+        .ok_or("producer duration overflow")?;
+    let nominal_ns = u64::try_from(frames).unwrap() * 1_000_000_000 / 48_000;
+    if producer_ns < nominal_ns * 99 / 100 || producer_ns > nominal_ns * 101 / 100 {
+        return Err("measured production outside 1% rate envelope");
+    }
+    let (missing, duplicate) =
+        counts[WARMUP_BLOCKS..]
+            .iter()
+            .fold((0, 0), |(missing, duplicate), count| {
+                (
+                    missing + 128_usize.saturating_sub(*count),
+                    duplicate + count.saturating_sub(128),
+                )
+            });
+    Ok(TrialWindow {
+        frames,
+        producer_ns,
+        missing,
+        duplicate,
+    })
+}
+
 pub struct Observations {
     pub counts: Vec<AtomicU64>,
     latencies: Vec<AtomicU64>,
+    seen: Vec<AtomicU64>,
+    mono_high: AtomicI32,
+    measured_start: Option<usize>,
+    last_index: AtomicU64,
     invalid: AtomicU64,
+    buffers: AtomicU64,
+    coalesced_callbacks: AtomicU64,
 }
 impl Observations {
     pub fn new(blocks: usize) -> Arc<Self> {
         Arc::new(Self {
             counts: (0..blocks).map(|_| AtomicU64::new(0)).collect(),
             latencies: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
+            seen: (0..blocks * 128).map(|_| AtomicU64::new(0)).collect(),
+            mono_high: AtomicI32::new(0),
+            measured_start: None,
+            last_index: AtomicU64::new(0),
             invalid: AtomicU64::new(0),
+            buffers: AtomicU64::new(0),
+            coalesced_callbacks: AtomicU64::new(0),
         })
+    }
+    pub fn for_trial(blocks: usize) -> Arc<Self> {
+        assert!(blocks > WARMUP_BLOCKS);
+        let mut result = Self::new(blocks);
+        Arc::get_mut(&mut result).unwrap().measured_start = Some(WARMUP_BLOCKS);
+        result
+    }
+    fn measured(&self, block: usize, stamp: u64) -> bool {
+        self.measured_start
+            .map_or(stamp > 2_000_000_000, |start| block >= start)
+    }
+    fn measured_progress(&self, now: u64) -> bool {
+        self.measured_start.map_or(now > 2_000_000_000, |start| {
+            self.last_index.load(Ordering::Acquire) >= (start * 128) as u64
+        }) && self
+            .counts
+            .last()
+            .is_some_and(|n| n.load(Ordering::Acquire) < 128)
+    }
+    pub fn ready_buffers(&self) -> (u64, u64) {
+        (
+            self.buffers.load(Ordering::Acquire),
+            self.coalesced_callbacks.load(Ordering::Acquire),
+        )
     }
     pub fn snapshot(&self, stamps: &[AtomicU64]) -> (Vec<u64>, Vec<usize>, usize) {
         let mut times = Vec::new();
-        let counts: Vec<_> = self
+        let counts = self
             .counts
             .iter()
             .map(|n| usize::try_from(n.load(Ordering::Acquire)).unwrap())
             .collect();
         for (block, stamp) in stamps.iter().enumerate() {
-            if stamp.load(Ordering::Acquire) > 2_000_000_000 {
-                times.extend(
-                    self.latencies[block * 128..block * 128 + counts[block].min(128)]
-                        .iter()
-                        .map(|v| v.load(Ordering::Acquire)),
-                );
+            if self.measured(block, stamp.load(Ordering::Acquire)) {
+                for index in block * 128..(block + 1) * 128 {
+                    if self.seen[index].load(Ordering::Acquire) != 0 {
+                        times.push(self.latencies[index].load(Ordering::Acquire));
+                    }
+                }
             }
         }
         (
             times,
             counts,
-            usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap(),
+            usize::try_from(self.invalid.load(Ordering::Acquire)).unwrap()
+                + usize::from(self.mono_high.load(Ordering::Acquire) != 0),
         )
     }
-    fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
-        if channels == 0 || bytes.len() % (channels * 2) != 0 {
-            self.invalid.fetch_add(1, Ordering::Relaxed);
+    fn bad(&self) {
+        self.invalid.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn record_frame(&self, frame: &[i16], stamps: &[AtomicU64], now: u64) {
+        if frame.iter().all(|value| *value == 0) {
+            if self.mono_high.swap(0, Ordering::Relaxed) != 0 {
+                self.bad();
+            }
             return;
         }
-        for frame in bytes.chunks_exact(channels * 2) {
-            if frame.iter().all(|v| *v == 0) {
-                continue;
+        let (high, low, width) = match frame {
+            [value] if *value > 0 => {
+                if self.mono_high.swap(i32::from(*value), Ordering::Relaxed) != 0 {
+                    self.bad();
+                }
+                return;
             }
-            let value = i16::from_le_bytes([frame[0], frame[1]]);
-            let marker = usize::try_from(value).unwrap_or(0);
-            if !(1..=stamps.len()).contains(&marker)
-                || frame.chunks_exact(2).any(|v| v != &frame[..2])
+            [value] if *value < 0 => {
+                let high = self.mono_high.swap(0, Ordering::Relaxed);
+                (high, -i32::from(*value), 2)
+            }
+            [high, low] => (i32::from(*high), i32::from(*low), 1),
+            [high, low, rear_high, rear_low]
+                if i32::from(*rear_high) == -i32::from(*high)
+                    && i32::from(*rear_low) == -i32::from(*low) =>
             {
-                self.invalid.fetch_add(1, Ordering::Relaxed);
-                continue;
+                (i32::from(*high), i32::from(*low), 1)
             }
-            let stamp = stamps[marker - 1].load(Ordering::Acquire);
-            if stamp == 0 || stamp - 1 > now {
-                self.invalid.fetch_add(1, Ordering::Relaxed);
-                continue;
+            _ => {
+                self.bad();
+                return;
             }
-            let count = usize::try_from(self.counts[marker - 1].load(Ordering::Relaxed)).unwrap();
-            if count < 128 {
-                self.latencies[(marker - 1) * 128 + count]
-                    .store(now - (stamp - 1), Ordering::Relaxed);
+        };
+        if !(1..=32767).contains(&high) || !(1..=32767).contains(&low) {
+            self.bad();
+            return;
+        }
+        let index = usize::try_from((high - 1) * 32767 + low - 1).unwrap() * width;
+        let Some(stamp) = stamps.get(index / 128).map(|s| s.load(Ordering::Acquire)) else {
+            self.bad();
+            return;
+        };
+        if stamp == 0 || stamp - 1 > now {
+            self.bad();
+            return;
+        }
+        let measured = self.measured(index / 128, stamp);
+        let previous = self
+            .last_index
+            .swap((index + width) as u64, Ordering::Relaxed);
+        if measured && previous > index as u64 {
+            self.bad();
+        }
+        for position in index..index + width {
+            let old = self.seen[position].fetch_add(1, Ordering::Relaxed);
+            if measured && old != 0 {
+                self.bad();
             }
-            self.counts[marker - 1].store(u64::try_from(count + 1).unwrap(), Ordering::Release);
+            if old == 0 {
+                self.latencies[position].store(now - (stamp - 1), Ordering::Relaxed);
+            }
+        }
+        self.counts[index / 128].fetch_add(width as u64, Ordering::Release);
+    }
+    pub fn record_samples(&self, samples: &[i16], channels: usize, stamps: &[AtomicU64], now: u64) {
+        if ![1, 2, 4].contains(&channels) || samples.len() % channels != 0 {
+            self.bad();
+            return;
+        }
+        for frame in samples.chunks_exact(channels) {
+            self.record_frame(frame, stamps, now);
         }
     }
+    pub fn record(&self, bytes: &[u8], channels: usize, stamps: &[AtomicU64], now: u64) {
+        if ![1, 2, 4].contains(&channels) || bytes.len() % (channels * 2) != 0 {
+            self.bad();
+            return;
+        }
+        for bytes in bytes.chunks_exact(channels * 2) {
+            let mut frame = [0; 4];
+            for (sample, value) in bytes.chunks_exact(2).zip(frame.iter_mut()) {
+                *value = i16::from_le_bytes([sample[0], sample[1]]);
+            }
+            self.record_frame(&frame[..channels], stamps, now);
+        }
+    }
+}
+
+#[test]
+fn indexed_markers_detect_balanced_loss_and_replay_in_every_layout() {
+    for channels in [1, 2, 4] {
+        let samples = block_samples(0, channels);
+        let width = if channels == 1 { 2 } else { 1 };
+        let mut replay = samples.clone();
+        replay.drain(10 * width * channels..11 * width * channels);
+        replay.extend_from_slice(&samples[20 * width * channels..21 * width * channels]);
+        assert_eq!(replay.len(), samples.len());
+        let observations = Observations::new(1);
+        observations.record_samples(
+            &replay,
+            channels,
+            &[AtomicU64::new(3_000_000_001)],
+            3_000_000_010,
+        );
+        let (times, counts, invalid) = observations.snapshot(&[AtomicU64::new(3_000_000_001)]);
+        assert_eq!(counts, [128]); // Aggregate accounting alone would accept this.
+        assert_eq!(times.len(), 128 - width);
+        assert!(
+            invalid >= width,
+            "lost/replayed marker must fail for {channels} channels"
+        );
+    }
+}
+
+#[test]
+fn indexed_markers_keep_mono_pair_state_across_every_buffer_split() {
+    for channels in [1, 2, 4] {
+        let samples = block_samples(0, channels);
+        for split in 0..=128 {
+            let observations = Observations::new(1);
+            let stamps = [AtomicU64::new(3_000_000_001)];
+            observations.record_samples(
+                &samples[..split * channels],
+                channels,
+                &stamps,
+                3_000_000_010,
+            );
+            observations.record_samples(
+                &samples[split * channels..],
+                channels,
+                &stamps,
+                3_000_000_020,
+            );
+            let (times, counts, invalid) = observations.snapshot(&stamps);
+            assert_eq!((times.len(), counts, invalid), (128, vec![128], 0));
+        }
+    }
+}
+
+#[test]
+fn indexed_markers_reject_partial_pairs_corrupt_channels_and_reordering() {
+    let stamps = [AtomicU64::new(3_000_000_001)];
+    for samples in [vec![1], vec![-1], vec![1, 1, -1], vec![1, i16::MIN]] {
+        let observations = Observations::new(1);
+        observations.record_samples(&samples, 1, &stamps, 3_000_000_010);
+        assert!(observations.snapshot(&stamps).2 > 0);
+    }
+    let observations = Observations::new(1);
+    observations.record_samples(&[1, 2, -1, -3], 4, &stamps, 3_000_000_010);
+    observations.record(&[1, 0, 1], 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 2);
+    let observations = Observations::new(1);
+    observations.record_samples(&[1, 2, 1, 1], 2, &stamps, 3_000_000_010);
+    assert!(observations.snapshot(&stamps).2 > 0);
+}
+
+#[test]
+fn indexed_markers_exclude_startup_replay_and_silent_drain() {
+    for channels in [1, 2, 4] {
+        let observations = Observations::new(1);
+        let stamps = [AtomicU64::new(1)];
+        let samples = block_samples(0, channels);
+        observations.record_samples(&samples, channels, &stamps, 2);
+        observations.record_samples(&samples, channels, &stamps, 3);
+        observations.record_samples(&vec![0; 3 * channels], channels, &stamps, 4);
+        let (times, counts, invalid) = observations.snapshot(&stamps);
+        assert_eq!((times.len(), counts, invalid), (0, vec![256], 0));
+    }
+}
+
+#[test]
+fn indexed_markers_preserve_base_rollover_and_bound_observations() {
+    let stamps: Vec<_> = (0..300).map(|_| AtomicU64::new(3_000_000_001)).collect();
+    let observations = Observations::new(300);
+    let samples = block_samples(255, 2);
+    assert!(samples.chunks_exact(2).any(|frame| frame == [2, 1]));
+    observations.record_samples(&samples, 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 0);
+    assert_eq!(observations.counts[255].load(Ordering::Acquire), 128);
+    observations.record_samples(&[32767, 32767], 2, &stamps, 3_000_000_010);
+    observations.record_samples(&[0, 1], 2, &stamps, 3_000_000_010);
+    assert_eq!(observations.snapshot(&stamps).2, 2);
+}
+
+#[test]
+fn trial_window_requires_complete_production_and_fixed_sixty_seconds() {
+    let stamps: Vec<_> = (0..23_250)
+        .map(|i| AtomicU64::new(5_000_000_001 + i * 128 * 1_000_000_000 / 48_000))
+        .collect();
+    let mut counts = vec![128; stamps.len()];
+    counts[0] = 4096; // Repeated priming is outside the measured frame window.
+    let window = trial_window(&stamps, &counts).unwrap();
+    assert_eq!(
+        (window.frames, window.missing, window.duplicate),
+        (2_880_000, 0, 0)
+    );
+    assert_eq!(window.producer_ns, 59_999_999_999);
+    for position in [0, WARMUP_BLOCKS, stamps.len() - 1] {
+        let previous = stamps[position].swap(0, Ordering::Relaxed);
+        assert_eq!(trial_window(&stamps, &counts), Err("incomplete production"));
+        stamps[position].store(previous, Ordering::Relaxed);
+    }
+    counts[WARMUP_BLOCKS] -= 1;
+    counts[WARMUP_BLOCKS + 1] += 1;
+    let window = trial_window(&stamps, &counts).unwrap();
+    assert_eq!((window.missing, window.duplicate), (1, 1));
+}
+
+#[test]
+fn trial_window_rate_boundaries_reject_fast_slow_reversed_and_incomplete_windows() {
+    const BLOCK_NS: u64 = 128 * 1_000_000_000 / 48_000;
+    let nominal: u64 = 60_000_000_000;
+    for (elapsed, accepted) in [
+        (nominal * 99 / 100, true),
+        (nominal * 101 / 100, true),
+        (nominal * 99 / 100 - 1, false),
+        (nominal * 101 / 100 + 1, false),
+    ] {
+        let stamps: Vec<_> = (0..23_250)
+            .map(|i| {
+                AtomicU64::new(if i < WARMUP_BLOCKS {
+                    1
+                } else {
+                    5_000_000_001 + (i - WARMUP_BLOCKS) as u64 * (elapsed - BLOCK_NS) / 22_499
+                })
+            })
+            .collect();
+        assert_eq!(
+            trial_window(&stamps, &vec![128; stamps.len()]).is_ok(),
+            accepted
+        );
+    }
+    let stamps: Vec<_> = (0..23_250)
+        .map(|i| AtomicU64::new(5_000_000_001 + i * 128 * 1_000_000_000 / 48_000))
+        .collect();
+    stamps[WARMUP_BLOCKS + 2].store(1, Ordering::Relaxed);
+    assert_eq!(
+        trial_window(&stamps, &vec![128; stamps.len()]),
+        Err("producer clock reversal")
+    );
+    assert_eq!(trial_window(&[], &[]), Err("invalid planned marker window"));
+    assert_eq!(
+        trial_window(&stamps, &[128]),
+        Err("invalid planned marker window")
+    );
+}
+
+#[test]
+fn trial_window_accepts_coalesced_block_timestamps_without_including_drain() {
+    for quantum in [128_u64, 256, 512] {
+        let stamps: Vec<_> = (0..23_250)
+            .map(|i| {
+                AtomicU64::new(
+                    5_000_000_001 + (i * 128 / quantum) * quantum * 1_000_000_000 / 48_000,
+                )
+            })
+            .collect();
+        let window = trial_window(&stamps, &vec![128; stamps.len()]).unwrap();
+        assert_eq!(window.frames, 2_880_000);
+        assert!((59_400_000_000..=60_600_000_000).contains(&window.producer_ns));
+    }
+}
+
+#[test]
+fn graph_observations_exclude_fixed_warmup_even_when_session_start_is_delayed() {
+    let stamps: Vec<_> = (0..752).map(|_| AtomicU64::new(1)).collect();
+    let observed = Observations::for_trial(stamps.len());
+    assert!(!observed.measured_progress(5_000_000_001));
+    // Classification is by planned frame index, not the session's wall clock.
+    let priming = block_samples(WARMUP_BLOCKS - 1, 2);
+    observed.record_samples(&priming, 2, &stamps, 5_000_000_001);
+    observed.record_samples(&priming, 2, &stamps, 5_000_000_001);
+    observed.record_samples(&block_samples(WARMUP_BLOCKS, 2), 2, &stamps, 5_000_000_001);
+    let (times, counts, invalid) = observed.snapshot(&stamps);
+    assert_eq!((times.len(), invalid), (128, 0));
+    assert_eq!(counts[WARMUP_BLOCKS - 1], 256);
+    assert_eq!(counts[WARMUP_BLOCKS], 128);
+    assert!(observed.measured_progress(5_000_000_001));
+    observed.record_samples(
+        &block_samples(WARMUP_BLOCKS + 1, 2),
+        2,
+        &stamps,
+        5_000_000_001,
+    );
+    assert!(!observed.measured_progress(5_000_000_001));
 }
 
 // Same RAII thread owner as Source; capture writes only to preallocated storage.
@@ -226,70 +713,107 @@ pub fn capture(
     channels: usize,
     observations: Arc<Observations>,
 ) -> Source {
+    capture_inner(target, stamps, started, channels, observations, false)
+}
+
+/// A graph sink which observes incoming markers directly, with no library queue.
+pub fn direct_sink(
+    name: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+) -> Source {
+    capture_inner(name, stamps, started, channels, observations, true)
+}
+
+fn capture_inner(
+    target: String,
+    stamps: Arc<Vec<AtomicU64>>,
+    started: Instant,
+    channels: usize,
+    observations: Arc<Observations>,
+    direct: bool,
+) -> Source {
     let stop = Arc::new(AtomicBool::new(false));
     let worker_stop = stop.clone();
+    let process_stats = Arc::new(ProcessStats::default());
+    let worker_stats = Arc::clone(&process_stats);
     let worker = thread::spawn(move || {
         pw::init();
         let main = pw::main_loop::MainLoopRc::new(None).unwrap();
         let context = pw::context::ContextRc::new(&main, None).unwrap();
         let core = context.connect_rc(None).unwrap();
-        let stream = pw::stream::StreamRc::new(
-            core.clone(),
-            "synthetic-marker-capture",
-            properties! {
-                "media.type" => "Audio", "media.category" => "Capture",
-                "target.object" => target, "node.latency" => "128/48000",
-                "stream.dont-remix" => "true",
-            },
-        )
-        .unwrap();
+        let props = capture_properties(&target, direct);
+        let stream =
+            pw::stream::StreamRc::new(core.clone(), "synthetic-marker-capture", props).unwrap();
+        let mut previous_process = None;
         let listener = stream
             .add_local_listener::<()>()
             .process(move |stream, ()| {
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    return;
-                };
-                let Some(data) = buffer.datas_mut().first_mut() else {
-                    return;
-                };
-                let offset = data.chunk().offset() as usize;
-                let size = data.chunk().size() as usize;
-                if data
-                    .chunk()
-                    .flags()
-                    .contains(spa::buffer::ChunkFlags::CORRUPTED)
-                {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                }
-                if data.chunk().flags().bits() & 2 != 0 {
-                    return;
-                }
-                let Some(bytes) = data
-                    .data()
-                    .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
-                else {
-                    observations.invalid.fetch_add(1, Ordering::Relaxed);
-                    return;
-                };
-                observations.record(
-                    bytes,
-                    channels,
-                    &stamps,
-                    u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                let now = u64::try_from(started.elapsed().as_nanos()).unwrap();
+                worker_stats.calls.fetch_add(1, Ordering::Relaxed);
+                let measured = observations.measured_progress(now);
+                let gap = process_gap(&mut previous_process, now, measured);
+                worker_stats.max_gap_ns.fetch_max(gap, Ordering::Relaxed);
+                let drained = drain_ready(
+                    || stream.dequeue_buffer(),
+                    |mut buffer| {
+                        let Some(data) = buffer.datas_mut().first_mut() else {
+                            return;
+                        };
+                        let offset = data.chunk().offset() as usize;
+                        let size = data.chunk().size() as usize;
+                        if data
+                            .chunk()
+                            .flags()
+                            .contains(spa::buffer::ChunkFlags::CORRUPTED)
+                        {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                        if data.chunk().flags().bits() & 2 != 0 {
+                            return;
+                        }
+                        let Some(bytes) = data
+                            .data()
+                            .and_then(|bytes| bytes.get(offset..offset.saturating_add(size)))
+                        else {
+                            observations.invalid.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        };
+                        observations.record(
+                            bytes,
+                            channels,
+                            &stamps,
+                            u64::try_from(started.elapsed().as_nanos()).unwrap(),
+                        );
+                    },
                 );
+                worker_stats.record_buffers(drained as u64);
+                observations
+                    .buffers
+                    .fetch_add(drained as u64, Ordering::Release);
+                if drained > 1 {
+                    observations
+                        .coalesced_callbacks
+                        .fetch_add(1, Ordering::Release);
+                }
             })
             .register()
             .unwrap();
         let bytes = format_bytes(channels);
+        let mut flags = pw::stream::StreamFlags::RT_PROCESS
+            | pw::stream::StreamFlags::MAP_BUFFERS
+            | pw::stream::StreamFlags::DONT_RECONNECT;
+        if !direct {
+            flags |= pw::stream::StreamFlags::AUTOCONNECT;
+        }
         stream
             .connect(
                 spa::utils::Direction::Input,
                 None,
-                pw::stream::StreamFlags::RT_PROCESS
-                    | pw::stream::StreamFlags::MAP_BUFFERS
-                    | pw::stream::StreamFlags::AUTOCONNECT
-                    | pw::stream::StreamFlags::DONT_RECONNECT,
+                flags,
                 &mut [spa::pod::Pod::from_bytes(&bytes).unwrap()],
             )
             .unwrap();
@@ -303,19 +827,53 @@ pub fn capture(
     Source {
         stop,
         worker: Some(worker),
+        generated: None,
+        process_stats,
     }
+}
+
+fn capture_properties(target: &str, direct: bool) -> pw::properties::PropertiesBox {
+    if direct {
+        properties! {
+            "node.name" => target, "node.virtual" => "true",
+            "media.type" => "Audio", "media.class" => "Audio/Sink",
+            "node.autoconnect" => "false", "priority.session" => "0",
+            "node.latency" => "128/48000", "stream.dont-remix" => "true",
+        }
+    } else {
+        properties! {
+            "media.type" => "Audio", "media.category" => "Capture",
+            "target.object" => target, "node.latency" => "128/48000",
+            "stream.dont-remix" => "true",
+        }
+    }
+}
+
+#[test]
+fn direct_control_has_an_owned_sink_and_normal_capture_keeps_its_exact_target() {
+    let sink = capture_properties("synthetic.control.7", true);
+    assert_eq!(sink.get("node.name"), Some("synthetic.control.7"));
+    assert_eq!(sink.get("media.class"), Some("Audio/Sink"));
+    assert_eq!(sink.get("node.autoconnect"), Some("false"));
+    assert_eq!(sink.get("target.object"), None);
+    let capture = capture_properties("synthetic.microphone.8", false);
+    assert_eq!(capture.get("target.object"), Some("synthetic.microphone.8"));
+    assert_eq!(capture.get("media.category"), Some("Capture"));
+    assert_eq!(capture.get("node.name"), None);
 }
 
 #[test]
 fn capture_observations_preserve_duplicates_and_reject_channel_corruption() {
     let stamps = [AtomicU64::new(2_000_000_001)];
     let observed = Observations::new(1);
-    observed.record(&[1, 0, 1, 0].repeat(129), 2, &stamps, 2_000_000_100);
+    let mut samples = block_samples(0, 2);
+    samples.extend_from_slice(&[1, 1]);
+    observed.record_samples(&samples, 2, &stamps, 2_000_000_100);
     observed.record(&[1, 0, 0, 0], 2, &stamps, 2_000_000_100);
     let (times, counts, invalid) = observed.snapshot(&stamps);
     assert_eq!(times, vec![100; 128]);
     assert_eq!(counts, [129]);
-    assert_eq!(invalid, 1);
+    assert_eq!(invalid, 3); // Replay, out-of-order arrival and corrupt channel.
 }
 
 #[test]
@@ -328,4 +886,68 @@ fn capture_rejects_partial_frames_without_counting_the_valid_prefix() {
     assert!(times.is_empty());
     assert_eq!(counts, [0]);
     assert_eq!(invalid, 2);
+}
+
+// A process notification can cover multiple ready buffers. Returning after one
+// leaves older graph data pending until later callbacks or pool exhaustion.
+fn drain_ready<T>(mut next: impl FnMut() -> Option<T>, mut receive: impl FnMut(T)) -> usize {
+    let mut count = 0;
+    while let Some(buffer) = next() {
+        receive(buffer);
+        count += 1;
+    }
+    count
+}
+
+#[test]
+fn one_notification_drains_all_ready_markers_and_returns_invalid_buffers() {
+    use std::collections::VecDeque;
+    use std::sync::atomic::AtomicUsize;
+    struct Buffer {
+        bytes: Vec<u8>,
+        returned: Arc<AtomicUsize>,
+    }
+    impl Drop for Buffer {
+        fn drop(&mut self) {
+            self.returned.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    let returned = Arc::new(AtomicUsize::new(0));
+    let mut ready: VecDeque<_> = [
+        block_samples(0, 2)[..128]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect(),
+        vec![1, 0, 1],
+        block_samples(0, 2)[128..]
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect(),
+    ]
+    .into_iter()
+    .map(|bytes| Buffer {
+        bytes,
+        returned: returned.clone(),
+    })
+    .collect();
+    let observations = Observations::new(1);
+    let stamps = [AtomicU64::new(3_000_000_001)];
+    assert_eq!(
+        drain_ready(
+            || ready.pop_front(),
+            |buffer| {
+                observations.record(&buffer.bytes, 2, &stamps, 3_000_000_010);
+            }
+        ),
+        3
+    );
+    let (latencies, counts, invalid) = observations.snapshot(&stamps);
+    assert_eq!(counts, [128]);
+    assert_eq!(latencies.len(), 128);
+    assert_eq!(invalid, 1);
+    assert_eq!(returned.load(Ordering::Relaxed), 3);
+    assert_eq!(
+        drain_ready(|| ready.pop_front(), |_| panic!("no pending buffers")),
+        0
+    );
 }

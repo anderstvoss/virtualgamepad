@@ -26,8 +26,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Setup {
+    /// Validated administrator-owned broker instance used in the USB serial.
+    pub instance: String,
     pub profile: ProfileId,
     pub generation: u64,
     pub device: u32,
@@ -109,12 +111,15 @@ where
         let Ok(report) = Report::from_wire(ReportType::Output, self.numbered, bytes) else {
             return false;
         };
-        match self.protocol.output(report, now) {
-            Ok(event) => {
-                self.event(event);
-                true
-            }
-            Err(_) => false,
+        // USB interrupt OUT has a completion status, just like SET_REPORT.
+        // Reuse the controller-owned setter policy instead of the permissive
+        // native HID observation hook, which also preserves unknown reports.
+        let (reply, event) = self.protocol.request(&RequestKind::Set(report), now);
+        if matches!(reply, Reply::Set(Ok(()))) {
+            self.event(event);
+            true
+        } else {
+            false
         }
     }
 }
@@ -160,6 +165,7 @@ impl Drop for Threads {
 }
 
 pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
+    Profile::for_session(setup.profile, &setup.instance, setup.generation)?;
     if setup.device == 0 || setup.generation == 0 {
         return Err(io::Error::other("invalid worker setup"));
     }
@@ -265,7 +271,7 @@ where
     let worker = Worker::new(
         channels.usb,
         setup.device,
-        Profile::new(setup.profile),
+        Profile::for_session(setup.profile, setup.instance, setup.generation)?,
         handler,
         playback,
         microphone,
@@ -468,20 +474,9 @@ fn control_loop(
             }
             7 if body.len() == 8 => {
                 let mut response = generation.to_le_bytes().to_vec();
-                response.extend(
-                    stats
-                        .usb
-                        .microphone_host_frames
-                        .load(Ordering::Relaxed)
-                        .to_le_bytes(),
-                );
-                response.extend(
-                    stats
-                        .usb
-                        .microphone_silence_frames
-                        .load(Ordering::Relaxed)
-                        .to_le_bytes(),
-                );
+                let (host, silence) = stats.usb.microphone_progress();
+                response.extend(host.to_le_bytes());
+                response.extend(silence.to_le_bytes());
                 write_message(&mut socket, 7, &response)?;
             }
             4 if body.len() == 8 => {
@@ -503,6 +498,110 @@ mod tests {
         b.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
         (a, b)
     }
+    fn check_output_policy<P: Protocol<Output = RawReverseEvent>>(
+        protocol: P,
+        state: NativeState,
+        numbered: bool,
+        id: Option<u8>,
+        valid: Option<Vec<u8>>,
+    ) {
+        let (_, updates) = mpsc::sync_channel(1);
+        let (acknowledgements, _) = mpsc::sync_channel(1);
+        let (events, observed) = mpsc::sync_channel(8);
+        let mut handler = Handler {
+            protocol,
+            state: Transactions::new(7, state).unwrap(),
+            extract: |_: &NativeState| None::<P::State>,
+            numbered,
+            updates,
+            acknowledgements,
+            events,
+            lost: Arc::new(AtomicU64::new(0)),
+        };
+        for bytes in [
+            vec![],
+            vec![id.unwrap_or(0)],
+            vec![id.unwrap_or(0), 0],
+            vec![0x7f; 64],
+        ] {
+            assert!(!handler.output(&bytes, 0));
+            assert!(matches!(
+                observed.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+        }
+        if let Some(payload) = valid {
+            let report = Report::new(ReportType::Output, id, payload.clone()).unwrap();
+            let expected = RawReverseEvent::HidOutput {
+                report_id: id,
+                bytes: payload,
+            };
+            assert!(handler.output(&report.wire(), 1));
+            assert_eq!(observed.try_recv().unwrap(), expected);
+            assert!(matches!(
+                observed.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            let reply = handler.request(&RequestKind::Set(report), 2);
+            assert_eq!(reply, Reply::Set(Ok(())));
+            assert_eq!(observed.try_recv().unwrap(), expected);
+        }
+        assert_eq!(handler.lost.load(Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn interrupt_outputs_follow_controller_set_policy_and_emit_once() {
+        check_output_policy(
+            usb_personality::dualsense([0; 6]),
+            NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
+            true,
+            Some(2),
+            Some(vec![0; 47]),
+        );
+        check_output_policy(
+            usb_personality::dualshock4([0; 6]),
+            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
+            true,
+            Some(5),
+            Some(vec![0; 31]),
+        );
+        check_output_policy(
+            usb_personality::xbox360(),
+            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
+            false,
+            None,
+            None,
+        );
+    }
+
+    #[test]
+    fn invalid_instance_rejects_before_readiness_and_closes_all_channels() {
+        let (usb, mut host) = pair();
+        let (control, mut client) = pair();
+        let (playback, mut samples) = pair();
+        let (microphone, mut mic) = pair();
+        let error = run(
+            Setup {
+                instance: "../escape".into(),
+                profile: ProfileId::DualSenseEmulated,
+                generation: 1,
+                device: 1,
+                identity: [0; 6],
+            },
+            Channels {
+                usb,
+                control,
+                playback,
+                microphone,
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "invalid compiled USB session identity");
+        for peer in [&mut host, &mut client, &mut samples, &mut mic] {
+            assert_eq!(peer.read(&mut [0]).unwrap(), 0);
+        }
+    }
+
     #[test]
     fn pcm_pump_delay_reports_only_excess_over_nominal_interval() {
         assert_eq!(pcm_lateness_us(Duration::ZERO), 0);
@@ -559,6 +658,7 @@ mod tests {
             let worker = thread::spawn(move || {
                 run(
                     Setup {
+                        instance: "test".into(),
                         profile,
                         generation: 9,
                         device: 1,
@@ -622,6 +722,7 @@ mod tests {
         let worker = thread::spawn(move || {
             run(
                 Setup {
+                    instance: "test".into(),
                     profile: ProfileId::Xbox360HidEmulated,
                     generation: 9,
                     device: 1,
@@ -653,6 +754,7 @@ mod tests {
         let worker = thread::spawn(move || {
             run(
                 Setup {
+                    instance: "test".into(),
                     profile: ProfileId::DualSenseEmulated,
                     generation: 17,
                     device: 1,

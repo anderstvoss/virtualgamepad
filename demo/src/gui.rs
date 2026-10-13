@@ -420,10 +420,183 @@ fn target_help(target: RealizationId) -> Option<TargetHelp> {
         }),
         RealizationId::LINUX_DUMMY_HCD_USB_HID => Some(TargetHelp {
             title: "Experimental USB gadget (dummy_hcd)",
-            body: "Exercises USB device enumeration through Linux's dummy_hcd virtual USB host-controller path. Unlike UHID, this is a USB gadget test path, but it does not connect a physical USB device or a remote host. Requires the privileged broker and prepared dummy_hcd resources. Complete Gate G host setup before validation; research and test use only.",
+            body: "Unavailable USB gadget test path: Linux f_hid exposes GET_REPORT IDs without report type/request length or an explicit negative reply. This transport cannot represent complete controller request semantics. Creation is rejected before host resources are opened; no alternative realization is selected automatically.",
         }),
         _ => None,
     }
+}
+
+fn controller_remove_button(ui: &mut egui::Ui, name: &str) -> egui::Response {
+    let response = ui
+        .add_sized(
+            [CONTROLLER_DELETE_WIDTH, CONTROLLER_ROW_HEIGHT],
+            Button::new("×").fill(destructive_button_fill(ui)),
+        )
+        .on_hover_text("Remove controller");
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            response.enabled(),
+            format!("Remove controller {name}"),
+        )
+    });
+    response
+}
+
+fn clear_name_button(ui: &mut egui::Ui, rect: egui::Rect) -> egui::Response {
+    let response = ui
+        .put(rect, Button::new("×").frame(false).min_size(Vec2::ZERO))
+        .on_hover_text("Clear name");
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Button,
+            response.enabled(),
+            "Clear optional controller name",
+        )
+    });
+    response
+}
+
+fn show_information<R>(
+    response: &egui::Response,
+    label: &str,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<egui::InnerResponse<R>> {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, response.enabled(), label)
+    });
+    if response.has_focus() {
+        // Keyboard users have no pointer anchor. Keep information next to its
+        // control and let Tab move on without creating another focus target.
+        egui::Tooltip::always_open(
+            response.ctx.clone(),
+            response.layer_id,
+            response.id,
+            response.rect,
+        )
+        .show(contents)
+    } else if response.hovered() {
+        egui::Tooltip::for_widget(response)
+            .at_pointer()
+            .show(contents)
+    } else {
+        None
+    }
+}
+
+fn draw_name_field(
+    ui: &mut egui::Ui,
+    draft: &mut String,
+    size: [f32; 2],
+    hint: Option<&str>,
+) -> egui::Response {
+    let previous = draft.clone();
+    let mut edit = egui::TextEdit::singleline(draft).vertical_align(egui::Align::Center);
+    if let Some(hint) = hint {
+        edit = edit
+            .hint_text(hint)
+            .desired_width(size[0])
+            .margin(egui::Margin {
+                left: 4,
+                right: 22,
+                top: 2,
+                bottom: 2,
+            });
+    }
+    let response = ui.add_sized(size, edit);
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::text_edit(
+            response.enabled(),
+            &previous,
+            draft.as_str(),
+            hint.unwrap_or_default(),
+        );
+        info.label = Some(
+            if hint.is_some() {
+                "Optional controller name"
+            } else {
+                "Controller name"
+            }
+            .into(),
+        );
+        info
+    });
+    response
+}
+
+fn draw_gap_period(ui: &mut egui::Ui, seconds: &mut u32) -> egui::Response {
+    let response = ui
+        .add_sized(
+            [38.0, NAME_INPUT_HEIGHT],
+            egui::DragValue::new(seconds).speed(1.0).suffix("s"),
+        )
+        .on_hover_text(format!(
+            "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
+        ));
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::new(egui::WidgetType::DragValue);
+        info.enabled = response.enabled();
+        info.value = Some(f64::from(*seconds));
+        info.label = Some("Gap measurement period (seconds)".into());
+        info
+    });
+    response
+}
+
+fn show_readonly_details(ui: &egui::Ui, response: &egui::Response, label: &str, message: &str) {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, response.enabled(), label)
+    });
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            response.rect,
+            0.0,
+            response.ctx.style().visuals.selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+        egui::Tooltip::always_open(
+            response.ctx.clone(),
+            response.layer_id,
+            response.id,
+            response.rect,
+        )
+        .show(|ui| {
+            ui.label(message);
+        });
+    } else if response.hovered() {
+        egui::Tooltip::for_widget(response).at_pointer().show(|ui| {
+            ui.label(message);
+        });
+    }
+}
+
+fn draw_diagnostic_entry(ui: &mut egui::Ui, message: &str, color: Color32) -> egui::Response {
+    let response = ui.add(
+        egui::Label::new(egui::RichText::new(message).color(color))
+            .sense(Sense::focusable_noninteractive()),
+    );
+    show_readonly_details(ui, &response, "Diagnostic details", message);
+    response
+}
+
+fn draw_kind_selector(ui: &mut egui::Ui, kind: &mut Kind) -> egui::Response {
+    let response = egui::ComboBox::from_id_salt("controller_type")
+        .selected_text(kind.label())
+        .width(ui.available_width())
+        .show_ui(ui, |ui| {
+            for option in Kind::ALL {
+                ui.selectable_value(kind, option, option.label());
+            }
+        })
+        .response;
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ComboBox,
+            response.enabled(),
+            format!("Controller family: {}", kind.label()),
+        )
+    });
+    response
 }
 
 fn draw_target_selector(
@@ -444,7 +617,7 @@ fn draw_target_selector(
                 egui::vec2(combo_width, combo_height),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
-                    egui::ComboBox::from_id_salt("controller_target")
+                    let response = egui::ComboBox::from_id_salt("controller_target")
                         .selected_text(target_label(*target))
                         .truncate()
                         .width(combo_width)
@@ -457,20 +630,24 @@ fn draw_target_selector(
                             ] {
                                 ui.selectable_value(target, option, target_label(option));
                             }
-                        });
+                        })
+                        .response;
+                    response.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::ComboBox,
+                            response.enabled(),
+                            format!("Controller target: {}", target_label(*target)),
+                        )
+                    });
                 },
             );
             if let Some(help) = help {
                 let response = ui.add_sized([18.0, 18.0], Button::new("!"));
                 help_rect = Some(response.rect);
-                if response.hovered() {
-                    egui::Tooltip::for_widget(&response)
-                        .at_pointer()
-                        .show(|ui| {
-                            ui.strong(help.title);
-                            ui.label(help.body);
-                        });
-                }
+                show_information(&response, "Controller realization details", |ui| {
+                    ui.strong(help.title);
+                    ui.label(help.body);
+                });
             }
         })
         .response
@@ -556,6 +733,7 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
         data.get_temp::<String>(id)
             .unwrap_or_else(|| value.to_string())
     });
+    let previous_text = text.clone();
     let text_response = ui.add_sized(
         [CREATE_COUNT_SPINBOX_WIDTH, SPINBOX_HEIGHT],
         egui::TextEdit::singleline(&mut text)
@@ -570,6 +748,12 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
             })
             .id(id),
     );
+    text_response.widget_info(|| {
+        let mut info =
+            egui::WidgetInfo::text_edit(text_response.enabled(), &previous_text, &text, "");
+        info.label = Some("Controller count".into());
+        info
+    });
     if text_response.changed() {
         if let Ok(parsed) = text.trim().parse::<u32>() {
             *value = parsed.max(1);
@@ -584,6 +768,22 @@ fn create_count_spinbox(ui: &mut egui::Ui, value: &mut u32) -> egui::Response {
     let (increment_rect, decrement_rect) = spinbox_arrow_rects(text_response.rect, ARROW_WIDTH);
     let increment_response = ui.interact(increment_rect, id.with("increment"), Sense::click());
     let decrement_response = ui.interact(decrement_rect, id.with("decrement"), Sense::click());
+    for (response, label) in [
+        (&increment_response, "Increase controller count"),
+        (&decrement_response, "Decrease controller count"),
+    ] {
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, response.enabled(), label)
+        });
+        if response.has_focus() {
+            ui.painter().rect_stroke(
+                response.rect.shrink(0.5),
+                0.0,
+                ui.visuals().selection.stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+    }
     paint_spinbox_arrow(ui, increment_rect, true, increment_response.hovered());
     paint_spinbox_arrow(ui, decrement_rect, false, decrement_response.hovered());
     if increment_response.clicked() {
@@ -1421,6 +1621,7 @@ pub struct App {
     diagnostic_log: Vec<DiagnosticLogEntry>,
     lifecycle_status: Option<ControllerLifecycleStatus>,
     backend_healthy: bool,
+    discovery: host_audio::Discovery,
 }
 impl Default for App {
     fn default() -> Self {
@@ -1441,10 +1642,50 @@ impl Default for App {
             diagnostic_log: Vec::new(),
             lifecycle_status: None,
             backend_healthy: true,
+            discovery: host_audio::Discovery::default(),
         }
     }
 }
 impl App {
+    /// Neutral, test-owned UHID workload for the separately invoked GUI soak example.
+    #[allow(dead_code)] // Used by the validation example, not normal application startup.
+    #[allow(clippy::field_reassign_with_default)] // App owns Drop resources and cannot use struct update syntax.
+    pub(crate) fn validation_soak() -> Result<Self, String> {
+        let mut app = Self::default();
+        app.configure_neutral_soak();
+        for _ in 0..2 {
+            app.create();
+        }
+        if app.controllers.len() != 2 {
+            return Err(format!("soak creation: {:?}", app.lifecycle_status));
+        }
+        Ok(app)
+    }
+    #[allow(dead_code)] // Used by the validation example and its configuration regression.
+    fn configure_neutral_soak(&mut self) {
+        self.kind = Kind::DualSense;
+        self.target = RealizationId::LINUX_UHID_USB;
+        // The normal demo enables audio for some feature/target combinations.
+        // This workload must not attach to the user's running audio session.
+        self.audio_creation.enabled = false;
+    }
+    #[allow(dead_code)]
+    pub(crate) fn validation_soak_cycle(&mut self) -> Result<(), String> {
+        self.remove_controller(0);
+        self.create();
+        if self.controllers.len() != 2
+            || self.controllers.iter().any(|named| {
+                named
+                    .service_worker
+                    .as_ref()
+                    .is_none_or(|worker| worker_failure(&worker.failure).is_some())
+            })
+        {
+            return Err("GUI soak worker failed".into());
+        }
+        Ok(())
+    }
+
     fn next_default_name(&self) -> String {
         next_available_name(
             self.kind,
@@ -1724,6 +1965,30 @@ impl eframe::App for App {
                 }
             }
         }
+        if let Some(view) = self
+            .selected_controller
+            .and_then(|index| self.controllers.get(index))
+            .and_then(|named| named.audio_view.as_ref())
+        {
+            self.discovery.poll(view.routing.backend);
+        }
+        for named in &mut self.controllers {
+            if let Some(view) = named
+                .audio_view
+                .as_mut()
+                .filter(|view| self.discovery.matches(view.routing.backend))
+            {
+                if let Some(Ok(devices)) = &self.discovery.result {
+                    view.playback_devices.clone_from(&devices.playback);
+                    view.capture_devices.clone_from(&devices.capture);
+                }
+                view.discovery_status = match &self.discovery.result {
+                    None => Some("Discovering audio devices…".into()),
+                    Some(Err(error)) => Some(format!("Audio discovery: {error}")),
+                    Some(Ok(_)) => None,
+                };
+            }
+        }
         self.backend_healthy = backend_healthy;
         ctx.request_repaint_after(service_repaint_interval(self.controllers.len(), None));
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -1749,19 +2014,8 @@ impl eframe::App for App {
                                 .spacing([6.0, 4.0])
                                 .show(ui, |ui| {
                                     ui.label("Type");
-                                    let type_selector = egui::ComboBox::from_id_salt("controller_type")
-                                        .selected_text(self.kind.label())
-                                        .width(ui.available_width())
-                                        .show_ui(ui, |ui| {
-                                            for kind in Kind::ALL {
-                                                ui.selectable_value(
-                                                    &mut self.kind,
-                                                    kind,
-                                                    kind.label(),
-                                                );
-                                            }
-                                        });
-                                    let target_row_width = type_selector.response.rect.width();
+                                    let type_selector = draw_kind_selector(ui, &mut self.kind);
+                                    let target_row_width = type_selector.rect.width();
                                     ui.end_row();
                                     ui.label("Target");
                                     let _ = draw_target_selector(
@@ -1791,20 +2045,12 @@ impl eframe::App for App {
                                 } else {
                                     ui.available_width()
                                 };
-                                let name_response = ui
-                            .add_sized(
-                                [edit_width, NAME_INPUT_HEIGHT],
-                                egui::TextEdit::singleline(&mut self.name_draft)
-                                    .hint_text(default_name)
-                                    .desired_width(edit_width)
-                                    .vertical_align(egui::Align::Center)
-                                    .margin(egui::Margin {
-                                        left: 4,
-                                        right: 22,
-                                        top: 2,
-                                        bottom: 2,
-                                    }),
-                            )
+                                let name_response = draw_name_field(
+                                    ui,
+                                    &mut self.name_draft,
+                                    [edit_width, NAME_INPUT_HEIGHT],
+                                    Some(&default_name),
+                                )
                             .on_hover_text(
                                 "Optional name. Leave empty for the automatic controller name.",
                             );
@@ -1816,13 +2062,7 @@ impl eframe::App for App {
                                         ),
                                         name_response.rect.right_bottom(),
                                     );
-                                    if ui
-                                        .put(
-                                            clear_rect,
-                                            Button::new("×").frame(false).min_size(Vec2::ZERO),
-                                        )
-                                        .on_hover_text("Clear name")
-                                        .clicked()
+                                    if clear_name_button(ui, clear_rect).clicked()
                                     {
                                         self.name_draft.clear();
                                     }
@@ -2004,17 +2244,7 @@ impl eframe::App for App {
                                                             index,
                                                             controller_response.clicked(),
                                                         );
-                                                    let delete_clicked = ui
-                                                        .add_sized(
-                                                            [
-                                                                CONTROLLER_DELETE_WIDTH,
-                                                                CONTROLLER_ROW_HEIGHT,
-                                                            ],
-                                                            egui::Button::new("×")
-                                                                .fill(destructive_button_fill(ui)),
-                                                        )
-                                                        .on_hover_text("Remove controller")
-                                                        .clicked();
+                                                    let delete_clicked = controller_remove_button(ui, &controller.name).clicked();
                                                     if let Some(index) =
                                                         controller_removal_after_delete_click(
                                                             index,
@@ -2027,6 +2257,7 @@ impl eframe::App for App {
                                             );
                                         }
                                     });
+                                    input_clusters::reveal_keyboard_focus(ui);
                                 });
                             let footer_height = sidebar_layout.footer;
                             let log_height = sidebar_layout.diagnostic_log;
@@ -2082,13 +2313,14 @@ impl eframe::App for App {
                                         ui.weak("Warnings and error codes will appear here");
                                     }
                                     for entry in &self.diagnostic_log {
-                                        ui.colored_label(
+                                        draw_diagnostic_entry(
+                                            ui,
+                                            &entry.message,
                                             if entry.success {
                                                 SUCCESS_LOG_COLOR
                                             } else {
                                                 footer_ui.visuals().error_fg_color
                                             },
-                                            &entry.message,
                                         );
                                     }
                                 });
@@ -2164,7 +2396,9 @@ impl eframe::App for App {
                                             self.last_cleanup.as_deref(),
                                             &mut recreation_clicked,
                                         ) {
-                                            if !named
+                                            if matches!(action, audio_lab::Action::RetryDiscovery) {
+                                                if let Some(view) = &audio_view { self.discovery.refresh(view.routing.backend); }
+                                            } else if !named
                                                 .service_worker
                                                 .as_ref()
                                                 .is_some_and(|worker| {
@@ -2193,10 +2427,7 @@ impl eframe::App for App {
                                             wide_card(ui, "Controller output", |ui| {
                                                 draw_feedback_rows(ui, &named.indicators);
                                             });
-                                            if let (Some(view), Some(routing)) =
-                                                (audio_view.as_ref(), audio_routing.as_mut())
-                                                && (routing.jack_connector.is_some()
-                                                    || !routing.outputs.is_empty())
+                                            if let Some((view, routing)) = audio_view.as_ref().zip(audio_routing.as_mut()).filter(|(_, routing)| routing.jack_connector.is_some() || !routing.outputs.is_empty())
                                             {
                                                 audio_routing_changed |= wide_card(ui, "Audio", |ui| {
                                                     audio_lab::draw_output_routes(
@@ -2308,6 +2539,7 @@ impl eframe::App for App {
                                         }
                                     }
                                     self.polling_period_seconds = polling_period_seconds;
+                                    input_clusters::reveal_keyboard_focus(ui);
                                 });
                         });
                     });
@@ -2411,10 +2643,11 @@ fn draw_controller_state(
             .show(ui, |ui| {
                 ui.label("Name");
                 ui.horizontal(|ui| {
-                    ui.add_sized(
+                    draw_name_field(
+                        ui,
+                        &mut controller.name_draft,
                         [180.0, NAME_INPUT_HEIGHT],
-                        egui::TextEdit::singleline(&mut controller.name_draft)
-                            .vertical_align(egui::Align::Center),
+                        None,
                     );
                     if ui.button("Apply").clicked() {
                         apply_controller_name(controller);
@@ -2542,15 +2775,7 @@ fn draw_controller_metrics(
             );
             ui.horizontal(|ui| {
                 ui.label("Polling period:");
-                ui.add_sized(
-                    [38.0, NAME_INPUT_HEIGHT],
-                    egui::DragValue::new(polling_period_seconds)
-                        .speed(1.0)
-                        .suffix("s"),
-                )
-                .on_hover_text(format!(
-                    "0 includes all retained samples (up to {SERVICE_GAP_HISTORY_LIMIT})"
-                ));
+                draw_gap_period(ui, polling_period_seconds);
                 for (label, gap) in [
                     ("10%:", gaps.map(|gaps| gaps[0])),
                     ("1%:", gaps.map(|gaps| gaps[1])),
@@ -2699,9 +2924,10 @@ fn draw_rumble_contents(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
 
 fn draw_feedback_indicator(ui: &mut egui::Ui, label: &str, color: Color32, tooltip: &str) {
     ui.label(format!("{label}:"));
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::splat(14.0), Sense::focusable_noninteractive());
     ui.painter().circle_filled(rect.center(), 5.0, color);
-    response.on_hover_text(tooltip);
+    show_readonly_details(ui, &response, &format!("{label} status"), tooltip);
 }
 
 fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable: bool) {
@@ -2723,29 +2949,8 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
             }
             if battery_controls_are_visible(supported, exposed) {
                 let mut percentage = battery.level().percent();
-                let slider_changed = ui
-                    .add_enabled_ui(editable, |ui| {
-                        ui.add_sized(
-                            [120.0, NAME_INPUT_HEIGHT],
-                            egui::Slider::new(&mut percentage, 0..=100).show_value(false),
-                        )
-                    })
-                    .inner
-                    .changed();
-                let entry_changed = ui
-                    .add_enabled_ui(editable, |ui| {
-                        ui.add_sized(
-                            [56.0, NAME_INPUT_HEIGHT],
-                            egui::DragValue::new(&mut percentage)
-                                .range(0..=100)
-                                .suffix("%"),
-                        )
-                    })
-                    .inner
-                    .changed();
-                if (slider_changed || entry_changed)
-                    && let Ok(level) = BatteryLevel::new(percentage)
-                {
+                let changed = draw_battery_percentage_controls(ui, &mut percentage, editable);
+                if let Some(level) = BatteryLevel::new(percentage).ok().filter(|_| changed) {
                     let _ = view.set_battery_level(level);
                 }
             } else {
@@ -2757,6 +2962,57 @@ fn draw_battery_emulation(ui: &mut egui::Ui, view: &mut ControllerView, editable
             }
         });
     });
+}
+
+fn draw_battery_percentage_controls(
+    ui: &mut egui::Ui,
+    percentage: &mut u8,
+    editable: bool,
+) -> bool {
+    let slider = ui
+        .add_enabled_ui(editable, |ui| {
+            let response = ui.add_sized(
+                [120.0, NAME_INPUT_HEIGHT],
+                egui::Slider::new(percentage, 0..=100).show_value(false),
+            );
+            if response.gained_focus() {
+                ui.ctx()
+                    .request_discard("establish numeric keyboard focus filter");
+            }
+            response.widget_info(|| {
+                egui::WidgetInfo::slider(
+                    response.enabled(),
+                    f64::from(*percentage),
+                    "Battery level",
+                )
+            });
+            response
+        })
+        .inner;
+    let entry = ui
+        .add_enabled_ui(editable, |ui| {
+            let response = ui.add_sized(
+                [56.0, NAME_INPUT_HEIGHT],
+                // The integral default is 0.25; each arrow step rounds to zero.
+                egui::DragValue::new(percentage)
+                    .speed(1.0)
+                    .range(0..=100)
+                    .suffix("%"),
+            );
+            if response.gained_focus() {
+                ui.ctx()
+                    .request_discard("establish numeric keyboard focus filter");
+            }
+            response.widget_info(|| {
+                let mut info =
+                    egui::WidgetInfo::drag_value(response.enabled(), f64::from(*percentage));
+                info.label = Some("Battery percentage".into());
+                info
+            });
+            response
+        })
+        .inner;
+    slider.changed() || entry.changed()
 }
 
 const fn battery_controls_are_visible(supported: bool, exposed: bool) -> bool {
@@ -2830,34 +3086,30 @@ fn draw_target_surface_tooltip(ui: &mut egui::Ui, surface: &dyn ControllerSurfac
         [INPUT_HEADER_BUTTON_WIDTH, NAME_INPUT_HEIGHT],
         Button::new("Target surface"),
     );
-    if surface_response.hovered() {
-        egui::Tooltip::for_widget(&surface_response)
-            .at_pointer()
-            .show(|ui| {
-                let surface = surface.common_surface();
-                ui.strong("Selected target surface");
-                ui.label(format!("Target: {}", surface.target()));
-                ui.label(format!("Evidence: {:?}", surface.validation_status()));
-                ui.label(format!(
-                    "{} axes, {} digital controls, {} output channels",
-                    surface.axes().len(),
-                    surface.digital_controls().len(),
-                    surface.outputs().len()
-                ));
-                for axis in surface.axes() {
-                    ui.monospace(format!(
-                        "{}: code {} {}..={} (neutral {})",
-                        axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
-                    ));
-                }
-                for restriction in surface.restrictions() {
-                    ui.small(format!(
-                        "Unavailable: {} — {}",
-                        restriction.feature, restriction.reason
-                    ));
-                }
-            });
-    }
+    show_information(&surface_response, "Target surface details", |ui| {
+        let surface = surface.common_surface();
+        ui.strong("Selected target surface");
+        ui.label(format!("Target: {}", surface.target()));
+        ui.label(format!("Evidence: {:?}", surface.validation_status()));
+        ui.label(format!(
+            "{} axes, {} digital controls, {} output channels",
+            surface.axes().len(),
+            surface.digital_controls().len(),
+            surface.outputs().len()
+        ));
+        for axis in surface.axes() {
+            ui.monospace(format!(
+                "{}: code {} {}..={} (neutral {})",
+                axis.control, axis.event_code, axis.minimum, axis.maximum, axis.neutral
+            ));
+        }
+        for restriction in surface.restrictions() {
+            ui.small(format!(
+                "Unavailable: {} — {}",
+                restriction.feature, restriction.reason
+            ));
+        }
+    });
 }
 
 #[allow(clippy::too_many_lines)]
@@ -3480,6 +3732,129 @@ mod tests {
     use super::*;
 
     #[test]
+    fn tab_reveals_controls_beyond_both_scroll_viewports() {
+        let context = egui::Context::default();
+        context.style_mut(|style| {
+            style.animation_time = 0.0;
+            style.scroll_animation = egui::style::ScrollAnimation::none();
+        });
+        let mut seen = std::collections::BTreeSet::new();
+        for frame in 0..241 {
+            let _ = context.run(
+                egui::RawInput {
+                    time: Some(f64::from(frame) * 0.25),
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO, egui::vec2(360.0, 240.0),
+                    )),
+                    events: match frame % 3 {
+                        1 | 2 => vec![egui::Event::Key {
+                            key: egui::Key::Tab, physical_key: None,
+                            pressed: frame % 3 == 1, repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }],
+                        _ => vec![],
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                            for row in 0..12 {
+                                input_clusters::horizontal_cards(ui, row, false, |ui| {
+                                    for column in 0..4 {
+                                        let response = ui.add_sized(
+                                            [150.0, 28.0], egui::Button::new(format!("{row}/{column}")),
+                                        );
+                                        if frame % 3 == 0 && response.has_focus() {
+                                            assert!(ui.clip_rect().contains_rect(response.rect),
+                                                "focused control {row}/{column} must be visible: {:?} in {:?}",
+                                                response.rect, ui.clip_rect());
+                                            seen.insert((row, column));
+                                        }
+                                    }
+                                });
+                            }
+                            input_clusters::reveal_keyboard_focus(ui);
+                        });
+                    });
+                },
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            48,
+            "real Tab traversal must reach every row and column"
+        );
+    }
+
+    #[test]
+    fn focus_reveal_preserves_manual_scroll_and_ignores_other_panels() {
+        let context = egui::Context::default();
+        context.style_mut(|style| style.scroll_animation = egui::style::ScrollAnimation::none());
+        let mut target = None;
+        for frame in 0..4 {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(360.0, 240.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                    let outside = ui.button("Other panel");
+                    if frame == 3 { outside.request_focus(); }
+                    let area = egui::ScrollArea::vertical().max_height(70.0);
+                    let area = if frame >= 2 { area.vertical_scroll_offset(0.0) } else { area };
+                    let scroll = area
+                        .show(ui, |ui| {
+                            for row in 0..28 {
+                                let response = ui.button(format!("Controller {row}"));
+                                if row == 23 {
+                                    target = Some(response.id);
+                                    if frame == 0 { response.request_focus(); }
+                                }
+                            }
+                            input_clusters::reveal_keyboard_focus(ui);
+                        });
+                    if frame == 1 {
+                        assert!(scroll.state.offset.y > 0.0, "new off-viewport focus is revealed");
+                    } else if frame >= 2 {
+                        assert!(scroll.state.offset.y.abs() < f32::EPSILON,
+                            "unchanged focus or another panel must not override manual scrolling");
+                    }
+                    if frame < 3 { assert_eq!(context.memory(egui::Memory::focused), target); }
+                });
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn neutral_soak_disables_inherited_audio_before_any_controller_creation() {
+        for enabled in [false, true] {
+            let mut app = App::default();
+            app.kind = Kind::SwitchPro;
+            app.target = RealizationId::LINUX_USBIP_USB_AUDIO;
+            app.audio_creation.enabled = enabled;
+            app.configure_neutral_soak();
+            assert!(matches!(app.kind, Kind::DualSense));
+            assert_eq!(app.target, RealizationId::LINUX_UHID_USB);
+            assert!(app.controllers.is_empty());
+            assert!(!app.audio_creation.enabled);
+            assert_eq!(
+                app.audio_creation
+                    .options(app.target, true)
+                    .unwrap()
+                    .audio()
+                    .exposure(),
+                virtualgamepad::AudioExposure::Disabled
+            );
+        }
+    }
+
+    #[test]
     fn uhid_creation_failure_distinguishes_registration_from_access() {
         use virtualgamepad::ControllerError;
         for target in [
@@ -3567,8 +3942,11 @@ mod tests {
         }
         assert!(owned_nodes().is_empty());
         let mut app = App::default();
-        app.kind = Kind::DualSense;
-        app.target = RealizationId::LINUX_UHID_USB;
+        app.configure_neutral_soak();
+        assert!(
+            !app.audio_creation.enabled,
+            "neutral lifecycle must not join host audio"
+        );
         for count in 1..=2 {
             app.create();
             assert!(
@@ -3618,6 +3996,68 @@ mod tests {
     }
 
     #[test]
+    fn creation_selectors_name_family_and_target_on_keyboard_focus() {
+        for original_target in [
+            RealizationId::LINUX_UINPUT,
+            RealizationId::LINUX_UHID_USB,
+            RealizationId::LINUX_USBIP_USB_AUDIO,
+            RealizationId::LINUX_DUMMY_HCD_USB_HID,
+        ] {
+            let context = egui::Context::default();
+            let mut kind = Kind::Xbox360;
+            let mut target = original_target;
+            let mut labels = std::collections::BTreeSet::new();
+            for frame in 0..17 {
+                let output = context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(240.0, 600.0),
+                        )),
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Tab,
+                                physical_key: None,
+                                pressed: frame % 2 == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            let family = draw_kind_selector(ui, &mut kind);
+                            draw_target_selector(ui, &mut target, family.rect.width());
+                            let _ = ui.button("Adjacent control");
+                        });
+                    },
+                );
+                labels.extend(
+                    output
+                        .platform_output
+                        .events
+                        .iter()
+                        .filter_map(|event| event.widget_info().label.clone()),
+                );
+            }
+            assert!(labels.contains("Controller family: Xbox 360"), "{labels:?}");
+            assert!(
+                labels.contains(&format!(
+                    "Controller target: {}",
+                    target_label(original_target)
+                )),
+                "{labels:?}"
+            );
+            assert!(labels.contains("Adjacent control"), "{labels:?}");
+            assert!(matches!(kind, Kind::Xbox360));
+            assert_eq!(target, original_target);
+        }
+    }
+
+    #[test]
     fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
         assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
         assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
@@ -3647,6 +4087,100 @@ mod tests {
             controller_id(9, RealizationId::LINUX_USBIP_USB_AUDIO, Kind::DualSense),
             "009-UIP-DUALSENSE"
         );
+    }
+
+    #[test]
+    fn focused_information_dismisses_when_tab_moves_to_the_next_control() {
+        let context = egui::Context::default();
+        let mut shown = [false; 5];
+        let mut adjacent_focused = false;
+        for (frame, visible) in shown.iter_mut().enumerate() {
+            let _ = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let response = ui.button("!");
+                        show_information(&response, "Synthetic details", |ui| {
+                            *visible = true;
+                            ui.label("Test-owned explanation");
+                        });
+                        adjacent_focused |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+        }
+        assert_eq!(shown, [false, true, true, false, false]);
+        assert!(adjacent_focused);
+    }
+
+    #[test]
+    fn target_help_is_readable_with_keyboard_focus_without_pointer_input() {
+        let context = egui::Context::default();
+        let mut target = RealizationId::LINUX_DUMMY_HCD_USB_HID;
+        let mut explained = false;
+        let mut identified = false;
+        let mut adjacent_focused = false;
+        for frame in 0..7 {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(800.0, 600.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_target_selector(ui, &mut target, 220.0);
+                        adjacent_focused |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+            explained |= output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => text
+                    .galley
+                    .job
+                    .text
+                    .contains("complete controller request semantics"),
+                _ => false,
+            });
+            identified |= output.platform_output.events.iter().any(|event| {
+                event.widget_info().label.as_deref() == Some("Controller realization details")
+            });
+        }
+        assert!(
+            explained,
+            "keyboard users must see the unavailable transport reason without hovering"
+        );
+        assert!(
+            identified,
+            "the symbol button must identify its information"
+        );
+        assert!(adjacent_focused, "Tab must leave the information control");
     }
 
     #[test]
@@ -4106,6 +4640,46 @@ mod tests {
     }
 
     #[test]
+    fn stalled_discovery_does_not_block_service_removal_or_shutdown() {
+        let (discovery_started_tx, discovery_started) = mpsc::sync_channel(1);
+        let mut discovery = host_audio::Discovery::with_runner(move |_, generation, expected| {
+            discovery_started_tx.send(()).unwrap();
+            while generation.load(std::sync::atomic::Ordering::Acquire) == expected {
+                thread::sleep(Duration::from_millis(1));
+            }
+            Err("cancelled fake discovery".into())
+        });
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            discovery.poll(audio_lab::HostBackend::PipeWire);
+            if discovery_started.try_recv().is_ok() {
+                break;
+            }
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(1));
+        }
+        let (sender, receiver) = mpsc::channel();
+        let worker = spawn_service_worker(FakeService {
+            progress: Some(sender),
+            ..Default::default()
+        });
+        for _ in 0..3 {
+            receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+        }
+        assert_eq!(worker.stop().unwrap().closed, 1);
+        assert!(
+            discovery.result.is_none(),
+            "discovery is still stalled during controller removal"
+        );
+        let before = Instant::now();
+        drop(discovery);
+        assert!(
+            before.elapsed() < Duration::from_secs(2),
+            "shutdown cancels discovery"
+        );
+    }
+
+    #[test]
     fn removing_one_worker_preserves_another_workers_service() {
         let first = FakeService::default();
         let (sender, receiver) = mpsc::channel();
@@ -4194,6 +4768,222 @@ mod tests {
         let constrained = sidebar_layout_budget(90.0, 50.0, 74.0, 3.0);
         assert!((constrained.diagnostic_log - 74.0).abs() < 0.001);
         assert!((constrained.controller_list - CONTROLLER_LIST_MIN_HEIGHT).abs() < 0.001);
+    }
+
+    #[test]
+    fn name_and_count_fields_identify_their_purpose_on_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut name = String::new();
+        let mut rename = "Existing controller".to_owned();
+        let mut count = 1;
+        let mut period = 0;
+        let mut labels = std::collections::BTreeSet::new();
+        for frame in 0..21 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_name_field(ui, &mut name, [180.0, 22.0], Some("Automatic name"));
+                        draw_name_field(ui, &mut rename, [180.0, 22.0], None);
+                        create_count_spinbox(ui, &mut count);
+                        draw_gap_period(ui, &mut period);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        for label in [
+            "Optional controller name",
+            "Controller name",
+            "Controller count",
+            "Gap measurement period (seconds)",
+            "Adjacent control",
+        ] {
+            assert!(labels.contains(label), "missing {label}: {labels:?}");
+        }
+        assert!(name.is_empty());
+        assert_eq!(rename, "Existing controller");
+        assert_eq!(count, 1);
+        assert_eq!(period, 0);
+    }
+
+    #[test]
+    fn named_name_field_preserves_keyboard_edit_metadata() {
+        let context = egui::Context::default();
+        let mut draft = String::new();
+        let mut edited = false;
+        for frame in 0..5 {
+            let events = match frame {
+                1 | 2 => vec![egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed: frame == 1,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                3 => vec![egui::Event::Text("Example controller".into())],
+                _ => vec![],
+            };
+            let output = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_name_field(ui, &mut draft, [180.0, 22.0], Some("Automatic name"));
+                    });
+                },
+            );
+            edited |= output.platform_output.events.iter().any(|event| {
+                let info = event.widget_info();
+                info.label.as_deref() == Some("Optional controller name")
+                    && info.current_text_value.as_deref() == Some("Example controller")
+                    && info.prev_text_value.as_deref() == Some("")
+                    && info.hint_text.as_deref() == Some("Automatic name")
+            });
+        }
+        assert_eq!(draft, "Example controller");
+        assert!(
+            edited,
+            "purpose labels must preserve edit value/history/hint metadata"
+        );
+    }
+
+    #[test]
+    fn output_indicator_status_is_readable_from_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut visible = false;
+        let mut named = false;
+        let mut adjacent = false;
+        for frame in 0..9 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_feedback_indicator(ui, "Motors", Color32::DARK_GRAY, "Rumble unknown");
+                        adjacent |= ui.button("Adjacent control").has_focus();
+                    });
+                },
+            );
+            visible |= output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => text.galley.job.text == "Rumble unknown",
+                _ => false,
+            });
+            named |= output
+                .platform_output
+                .events
+                .iter()
+                .any(|event| event.widget_info().label.as_deref() == Some("Motors status"));
+        }
+        assert!(named, "read-only output must identify the focused status");
+        assert!(visible, "status text must not require pointer hover");
+        assert!(adjacent, "reading output must not trap Tab");
+    }
+
+    #[test]
+    fn long_diagnostic_is_readable_on_keyboard_focus_and_tab_moves_on() {
+        let context = egui::Context::default();
+        let message =
+            "Complete diagnostic with a technical reason and cleanup outcome. ".repeat(12);
+        let mut explained = false;
+        let mut named = false;
+        let mut adjacent = false;
+        for frame in 0..13 {
+            let mut adjacent_this_frame = false;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000.0, 800.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.set_width(200.0);
+                        egui::ScrollArea::vertical()
+                            .max_height(70.0)
+                            .show(ui, |ui| {
+                                draw_diagnostic_entry(ui, &message, Color32::RED);
+                            });
+                        adjacent_this_frame = ui.button("Adjacent control").has_focus();
+                        adjacent |= adjacent_this_frame;
+                    });
+                },
+            );
+            named |=
+                output.platform_output.events.iter().any(|event| {
+                    event.widget_info().label.as_deref() == Some("Diagnostic details")
+                });
+            let fully_visible = output.shapes.iter().any(|shape| match &shape.shape {
+                egui::epaint::Shape::Text(text) => {
+                    text.galley.job.text == message
+                        && text.galley.rect.height() > 70.0
+                        && shape
+                            .clip_rect
+                            .contains_rect(text.galley.rect.translate(text.pos.to_vec2()))
+                }
+                _ => false,
+            });
+            explained |= fully_visible;
+            if adjacent_this_frame {
+                assert!(
+                    !fully_visible,
+                    "diagnostic popup must dismiss after focus moves on"
+                );
+            }
+        }
+        assert!(named, "log entry must be a named keyboard focus target");
+        assert!(
+            explained,
+            "complete message must escape the clipped log viewport"
+        );
+        assert!(adjacent, "read-only diagnostic must not trap Tab");
     }
 
     #[test]
@@ -4386,6 +5176,140 @@ mod tests {
     }
 
     #[test]
+    fn battery_percentage_keyboard_controls_are_named_editable_and_disabled_safely() {
+        for editable in [true, false] {
+            let context = egui::Context::default();
+            let mut percentage = 50_u8;
+            let mut labels = std::collections::BTreeSet::new();
+            let mut changes = Vec::new();
+            let mut adjacent = false;
+            let key = |key, pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let frames = [
+                vec![],
+                vec![key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+                vec![key(egui::Key::ArrowRight, true)],
+                vec![key(egui::Key::ArrowRight, false), key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+                vec![key(egui::Key::ArrowUp, true)],
+                vec![key(egui::Key::ArrowUp, false), key(egui::Key::Tab, true)],
+                vec![key(egui::Key::Tab, false)],
+            ];
+            for keys in frames {
+                let mut did_edit = false;
+                let output = context.run(
+                    egui::RawInput {
+                        events: keys,
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            ui.horizontal(|ui| {
+                                did_edit |=
+                                    draw_battery_percentage_controls(ui, &mut percentage, editable);
+                                adjacent |= ui.button("Adjacent control").has_focus();
+                            });
+                        });
+                    },
+                );
+                changes.push(did_edit);
+                labels.extend(
+                    output
+                        .platform_output
+                        .events
+                        .iter()
+                        .filter_map(|event| event.widget_info().label.clone()),
+                );
+            }
+            assert!(adjacent, "Tab must leave the battery controls");
+            if editable {
+                assert!(
+                    labels.contains("Battery level"),
+                    "slider name missing: {labels:?}"
+                );
+                assert!(
+                    labels.contains("Battery percentage"),
+                    "entry name missing: {labels:?}"
+                );
+                assert_eq!(
+                    percentage, 52,
+                    "both arrow adjustments must apply exactly once"
+                );
+                assert_eq!(
+                    changes,
+                    [false, false, false, true, false, false, true, false, false]
+                );
+            } else {
+                assert_eq!(percentage, 50);
+                assert!(changes.iter().all(|did_edit| !did_edit));
+                assert!(!labels.contains("Battery level"));
+                assert!(!labels.contains("Battery percentage"));
+            }
+        }
+    }
+
+    #[test]
+    fn numeric_focus_handles_arrows_on_the_first_frame_after_tab() {
+        let context = egui::Context::default();
+        let mut percentage = 50_u8;
+        let mut values = Vec::new();
+        let mut adjacent = false;
+        let event = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frames = [
+            vec![],
+            vec![event(egui::Key::Tab, true)],
+            vec![
+                event(egui::Key::Tab, false),
+                event(egui::Key::ArrowRight, true),
+            ],
+            vec![
+                event(egui::Key::ArrowRight, false),
+                event(egui::Key::Tab, true),
+            ],
+            vec![
+                event(egui::Key::Tab, false),
+                event(egui::Key::ArrowUp, true),
+            ],
+            vec![
+                event(egui::Key::ArrowUp, false),
+                event(egui::Key::Tab, true),
+            ],
+            vec![event(egui::Key::Tab, false)],
+        ];
+        for keys in frames {
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            draw_battery_percentage_controls(ui, &mut percentage, true);
+                            adjacent |= ui.button("Adjacent control").has_focus();
+                        });
+                    });
+                },
+            );
+            values.push(percentage);
+        }
+        assert_eq!(values, [50, 50, 51, 51, 52, 52, 52]);
+        assert!(adjacent);
+    }
+
+    #[test]
     fn sized_battery_slider_uses_native_left_aligned_rail() {
         let ctx = egui::Context::default();
         let mut value = 50_u8;
@@ -4484,9 +5408,7 @@ mod tests {
 
             assert!(metrics_rect.height() > 0.0);
             assert!(!output.shapes.is_empty());
-            if frame > 1
-                && let Some(previous_height) = previous_height
-            {
+            if let Some(previous_height) = previous_height.filter(|_| frame > 1) {
                 assert!(
                     (metrics_rect.height() - previous_height).abs() < f32::EPSILON,
                     "metrics panel changed height: {previous_height} -> {}",
@@ -4604,10 +5526,156 @@ mod tests {
     }
 
     #[test]
+    fn symbol_buttons_describe_and_activate_keyboard_actions_beyond_the_viewport() {
+        let context = egui::Context::default();
+        let mut names: Vec<String> = (0..28).map(|index| format!("Controller {index}")).collect();
+        let mut draft = String::from("Optional name");
+        let mut labels = std::collections::BTreeSet::new();
+        let mut activate = false;
+        let mut removed = Vec::new();
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for frame in 0..68 {
+            let mut keys = if frame == 0 {
+                vec![]
+            } else {
+                vec![key(egui::Key::Tab, frame % 2 == 1)]
+            };
+            keys.push(key(egui::Key::Space, activate));
+            activate = false;
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(320.0, 160.0),
+                    )),
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let (rect, _) = ui.allocate_exact_size(Vec2::splat(18.0), Sense::hover());
+                        if clear_name_button(ui, rect).clicked() {
+                            draft.clear();
+                        }
+                        let mut remove = None;
+                        egui::ScrollArea::vertical().show(ui, |ui| {
+                            for (index, name) in names.iter().enumerate() {
+                                ui.push_id(name, |ui| {
+                                    if controller_remove_button(ui, name).clicked() {
+                                        remove = Some(index);
+                                    }
+                                });
+                            }
+                        });
+                        if let Some(index) = remove {
+                            removed.push(names.remove(index));
+                        }
+                    });
+                },
+            );
+            for event in output.platform_output.events {
+                if let Some(label) = &event.widget_info().label {
+                    labels.insert(label.clone());
+                    if matches!(event, egui::output::OutputEvent::FocusGained(_))
+                        && (label == "Clear optional controller name"
+                            || label == "Remove controller Controller 23")
+                    {
+                        activate = true;
+                    }
+                }
+            }
+        }
+        assert!(draft.is_empty(), "clear must activate without a pointer");
+        assert_eq!(removed, ["Controller 23"]);
+        assert_eq!(names.len(), 27);
+        assert!(names.contains(&String::from("Controller 22")));
+        assert!(names.contains(&String::from("Controller 24")));
+        assert!(labels.contains("Clear optional controller name"));
+        assert!(labels.contains("Remove controller Controller 23"));
+    }
+
+    #[test]
     fn create_count_spinbox_steps_without_crossing_its_minimum() {
         assert_eq!(step_create_count(1, false), 1);
         assert_eq!(step_create_count(4, false), 3);
         assert_eq!(step_create_count(9_999, true), 10_000);
+    }
+
+    #[test]
+    fn create_count_arrows_handle_keyboard_traversal_and_describe_focus() {
+        let context = egui::Context::default();
+        let mut count = 2;
+        let mut labels = Vec::new();
+        let mut adjacent_focused = false;
+        let mut increment_rect = egui::Rect::NOTHING;
+        let mut focus_outline = false;
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let frames = [
+            vec![],
+            vec![key(egui::Key::Space, true)],
+            vec![key(egui::Key::Space, false), key(egui::Key::Tab, true)],
+            vec![key(egui::Key::Tab, false), key(egui::Key::Space, true)],
+            vec![key(egui::Key::Space, false), key(egui::Key::Tab, true)],
+        ];
+        for (frame, events) in frames.into_iter().enumerate() {
+            let output = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let id = ui.make_persistent_id("create_count_spinbox");
+                            let response = create_count_spinbox(ui, &mut count);
+                            increment_rect = spinbox_arrow_rects(response.rect, 16.0).0;
+                            if frame == 0 {
+                                ui.memory_mut(|memory| memory.request_focus(id.with("increment")));
+                            }
+                            adjacent_focused |= ui.button("Adjacent control").has_focus();
+                        });
+                    });
+                },
+            );
+            if frame == 1 {
+                focus_outline = output.shapes.iter().any(|shape| {
+                    matches!(&shape.shape, egui::Shape::Rect(rect)
+                        if rect.rect == increment_rect.shrink(0.5) && rect.stroke.width > 0.0)
+                });
+            }
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .into_iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+            assert_eq!(count, [2, 3, 3, 2, 2][frame]);
+        }
+        assert!(adjacent_focused, "Tab must leave the complete spinbox");
+        assert!(focus_outline, "keyboard focus must have a visible outline");
+        assert!(
+            labels
+                .iter()
+                .any(|label| label == "Increase controller count")
+        );
+        assert!(
+            labels
+                .iter()
+                .any(|label| label == "Decrease controller count")
+        );
     }
 
     #[test]
@@ -4647,6 +5715,28 @@ mod tests {
     fn controller_row_click_selects_the_clicked_controller() {
         assert_eq!(selection_after_controller_click(Some(0), 3, true), Some(3));
         assert_eq!(selection_after_controller_click(Some(3), 1, false), Some(3));
+    }
+
+    #[test]
+    fn selection_and_removal_preserve_positions_beyond_the_viewport() {
+        for count in [12, 257, 1024] {
+            assert_eq!(controller_tab_indices(count).count(), count);
+            for position in 0..count {
+                let selected = selection_after_controller_click(Some(0), position, true);
+                assert_eq!(selected, Some(position));
+                let remaining = count - 1;
+                assert_eq!(
+                    selection_after_removal(remaining, position, selected),
+                    Some(position.min(remaining - 1))
+                );
+                if position > 0 {
+                    assert_eq!(
+                        selection_after_removal(remaining, 0, selected),
+                        Some(position - 1)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

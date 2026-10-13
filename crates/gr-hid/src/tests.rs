@@ -141,7 +141,7 @@ impl Protocol for Personality {
     fn output(&mut self, r: Report, _: u64) -> Result<Option<u8>, Error> {
         Ok(r.payload().first().copied())
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         match event {
             Lifecycle::Open => {
                 self.open = true;
@@ -155,6 +155,8 @@ impl Protocol for Personality {
             }
             Lifecycle::Start { .. } | Lifecycle::Stop => {}
         }
+
+        None
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }

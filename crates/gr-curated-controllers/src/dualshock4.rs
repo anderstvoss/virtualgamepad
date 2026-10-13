@@ -416,8 +416,8 @@ static RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
 }];
 static EVDEV_RESTRICTIONS: [TargetRestriction; 6] = [
     TargetRestriction {
-        feature: "SDL gamepad discovery",
-        reason: "combined touch/gamepad capabilities are classified as a touchscreen on tested udev; a separate touch presentation is pending",
+        feature: "touch companion",
+        reason: "evdev exposes associated touch contacts separately so udev classifies the primary device as a gamepad; SDL gamepad touch APIs do not consume this companion",
     },
     common::FEEDBACK_RESTRICTION,
     TargetRestriction {
@@ -1326,6 +1326,14 @@ fn create_dualshock4_inner(
     Ok(DualShock4Controller(c))
 }
 impl common::HidDriver for DualShock4Definition {
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        association: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        crate::sony_evdev::open_native(request, association)
+    }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             battery: state.battery,
@@ -1465,7 +1473,7 @@ mod tests {
         assert!(
             EVDEV_RESTRICTIONS
                 .iter()
-                .any(|restriction| restriction.feature == "SDL gamepad discovery")
+                .any(|restriction| restriction.feature == "touch companion")
         );
     }
 

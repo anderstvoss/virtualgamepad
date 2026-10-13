@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import subprocess
 import unittest
+from unittest.mock import patch
 
 MODULE = Path(__file__).resolve().parents[1]/'check-alpha-api.py'
 SPEC = importlib.util.spec_from_file_location('alpha_api', MODULE)
@@ -10,7 +11,25 @@ api = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(api)
 
 
+def render_fixture(source, docs):
+    result = subprocess.run(
+        ['rustdoc', '--edition=2024', '--crate-name', 'snapshot_fixture',
+         str(source), '-o', str(docs)], capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(
+            f'rustdoc fixture failed ({result.returncode}):\n'
+            f'{result.stdout}\n{result.stderr}')
+
+
 class SnapshotTests(unittest.TestCase):
+    def test_rustdoc_failure_preserves_compiler_diagnostic(self):
+        failure = subprocess.CompletedProcess(
+            [], 1, stdout='fixture output', stderr='compiler unavailable')
+        with patch.object(subprocess, 'run', return_value=failure):
+            with self.assertRaisesRegex(
+                    RuntimeError, r'(?s)failed \(1\).*fixture output.*compiler unavailable'):
+                render_fixture(Path('fake.rs'), Path('fake-docs'))
+
     def test_fields_methods_traits_and_features_change_the_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -51,8 +70,7 @@ class SnapshotTests(unittest.TestCase):
                 source.write_text('pub struct Handle; pub mod experimental { pub struct Spi; }'
                                   + (' pub mod ordinary { pub struct Added; }' if ordinary else ''))
                 docs = root/str(ordinary)
-                subprocess.run(['rustdoc', '--edition=2024', '--crate-name', 'snapshot_fixture',
-                                str(source), '-o', str(docs)], check=True, capture_output=True)
+                render_fixture(source, docs)
                 doc_root = docs/'snapshot_fixture'
                 if ordinary:
                     with self.assertRaisesRegex(ValueError, 'ordinary/index.html'):

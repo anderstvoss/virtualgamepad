@@ -30,6 +30,35 @@ pub(crate) struct Session<S> {
     _state: PhantomData<S>,
 }
 
+/// One root-bridge observation: protocol errors terminate the client and retain
+/// the initiating error; only delivered events increment observation accounting.
+pub(crate) fn worker_output(
+    control: &mut Control,
+    retained: &mut ProviderDiagnostics,
+) -> Result<Option<RawReverseEvent>, ProviderError> {
+    if control.is_closed() && retained.state == ProviderState::Failed {
+        if let Some(reason) = &retained.last_error {
+            return Err(ProviderError::Read {
+                reason: reason.clone(),
+            });
+        }
+    }
+    control
+        .output()
+        .inspect(|event| {
+            if event.is_some() {
+                retained.reverse_events_drained += 1;
+            }
+        })
+        .map_err(|error| {
+            retained.state = ProviderState::Failed;
+            retained.last_error = Some(error.to_string());
+            ProviderError::Read {
+                reason: error.to_string(),
+            }
+        })
+}
+
 impl<S: Send> WorkerBridge<S> for Session<S> {
     fn update(&mut self, state: &S) -> Result<(), ProviderError> {
         let mut control = self
@@ -50,22 +79,13 @@ impl<S: Send> WorkerBridge<S> for Session<S> {
         Ok(())
     }
     fn output(&mut self) -> Result<Option<RawReverseEvent>, ProviderError> {
-        self.control
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .output()
-            .inspect(|event| {
-                if event.is_some() {
-                    self.retained.reverse_events_drained += 1;
-                }
-            })
-            .map_err(|error| {
-                self.retained.state = ProviderState::Failed;
-                self.retained.last_error = Some(error.to_string());
-                ProviderError::Read {
-                    reason: error.to_string(),
-                }
-            })
+        worker_output(
+            &mut self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            &mut self.retained,
+        )
     }
     fn diagnostics(&mut self) -> ProviderDiagnostics {
         if self.retained.state == ProviderState::Open {
@@ -218,7 +238,12 @@ impl Pcm {
                 let cleanup = streams
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .close()
+                    .close_with(|| {
+                        control
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .close()
+                    })
                     .err()
                     .map(|error| AudioError::Backend {
                         reason: error.to_string(),
@@ -267,6 +292,25 @@ impl Pcm {
         self.error.get().is_some()
     }
 }
+fn read_usb_microphone_progress(
+    control: &mut Control,
+) -> io::Result<crate::audio::AudioUsbMicrophoneProgress> {
+    let diagnostics = control.diagnostics()?;
+    let consumed_source_frames = control.microphone_consumed_frames()?;
+    let (host_frames, silence_frames) = control.microphone_host_frames()?;
+    let maximum_pcm_pump_lateness_us = control.maximum_pcm_pump_lateness_us()?;
+    Ok(crate::audio::AudioUsbMicrophoneProgress {
+        host_frames,
+        silence_frames,
+        consumed_source_frames,
+        completed_capture_frames: diagnostics[5],
+        abandoned_capture_frames: diagnostics[6],
+        maximum_lateness_us: diagnostics[7],
+        maximum_pcm_pump_lateness_us,
+        dropped_source_frames: diagnostics[8],
+    })
+}
+
 impl crate::audio::backend::Backend for Pcm {
     fn timings(&self) -> Vec<crate::audio::AudioStreamTiming> {
         #[cfg(feature = "audio-pipewire")]
@@ -324,10 +368,60 @@ impl crate::audio::backend::Backend for Pcm {
         }
         None
     }
+    fn native_microphone_graph_loss_frames(&self) -> Option<(u64, u64, u64)> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.graph_input_loss_frames());
+        }
+        None
+    }
+    fn native_microphone_graph_loss_trace(&self) -> Option<Vec<crate::audio::AudioInputLossTrace>> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.graph_input_loss_trace());
+        }
+        None
+    }
+    fn native_microphone_silence_trace(
+        &self,
+    ) -> Option<crate::audio::AudioNativeMicrophoneSilenceTrace> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.silence_trace());
+        }
+        None
+    }
+    fn usb_microphone_progress(
+        &self,
+    ) -> Result<Option<crate::audio::AudioUsbMicrophoneProgress>, AudioError> {
+        if self.closed {
+            return Ok(None);
+        }
+        let result = read_usb_microphone_progress(
+            &mut self
+                .control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+        .map_err(|error| AudioError::Backend {
+            reason: error.to_string(),
+        });
+        if let Err(error) = &result {
+            let _ = self.error.set(error.clone());
+        }
+        result.map(Some)
+    }
     fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         #[cfg(feature = "audio-pipewire")]
         if let Some(bridge) = &self.bridge {
             return Some(bridge.graph_input_queue_frames());
+        }
+        None
+    }
+    fn native_microphone_host_clock_progress(&self) -> Option<(u64, u64)> {
+        #[cfg(feature = "audio-pipewire")]
+        if let Some(bridge) = &self.bridge {
+            return Some(bridge.host_clock_progress());
         }
         None
     }
@@ -392,7 +486,12 @@ impl crate::audio::backend::Backend for Pcm {
             bridge.close();
             cleanup.extend(bridge.error());
         }
-        if let Err(error) = self.lock().close() {
+        if let Err(error) = self.lock().close_with(|| {
+            self.control
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .close()
+        }) {
             cleanup.push(AudioError::Backend {
                 reason: error.to_string(),
             });
@@ -509,6 +608,214 @@ pub(crate) fn xbox360(state: &Xbox360State) -> NativeState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_progress_preserves_source_host_completion_and_loss_domains() {
+        let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let task = std::thread::spawn(move || {
+            let counters = [0_u64, 1, 6, 0, 96, 96, 4, 1200, 3];
+            for (tag, values) in [
+                (3, counters.to_vec()),
+                (5, vec![90]),
+                (7, vec![96, 6]),
+                (6, vec![2_000]),
+            ] {
+                let (actual, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!(actual, tag);
+                assert_eq!(body, 7_u64.to_le_bytes());
+                for value in values {
+                    body.extend(value.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+            }
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let progress = read_usb_microphone_progress(&mut control).unwrap();
+        assert_eq!(
+            progress,
+            crate::audio::AudioUsbMicrophoneProgress {
+                host_frames: 96,
+                silence_frames: 6,
+                consumed_source_frames: 90,
+                completed_capture_frames: 96,
+                abandoned_capture_frames: 4,
+                dropped_source_frames: 3,
+                maximum_lateness_us: 1200,
+                maximum_pcm_pump_lateness_us: 2_000,
+            }
+        );
+        task.join().unwrap();
+    }
+
+    #[test]
+    fn malformed_worker_progress_fails_without_fabricated_counters() {
+        let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+        let task = std::thread::spawn(move || {
+            let (tag, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+            assert_eq!(tag, 3);
+            body.extend([0; 8]);
+            gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        assert!(read_usb_microphone_progress(&mut control).is_err());
+        assert!(control.is_closed());
+        task.join().unwrap();
+    }
+
+    #[test]
+    fn pcm_close_acknowledges_worker_before_channels_end_and_repeats_safely() {
+        use crate::audio::backend::Backend;
+        use std::{io::Read, os::unix::net::UnixStream, thread};
+        for (id, family, profile) in [
+            (
+                ProfileId::DualSenseEmulated,
+                1,
+                gr_curated_controllers::audio::dualsense(crate::AudioExposure::Emulated).unwrap(),
+            ),
+            (
+                ProfileId::DualShock4Emulated,
+                2,
+                gr_curated_controllers::audio::dualshock4(crate::AudioExposure::Emulated).unwrap(),
+            ),
+            (
+                ProfileId::Xbox360HidEmulated,
+                3,
+                gr_curated_controllers::audio::xbox360(crate::AudioExposure::Emulated).unwrap(),
+            ),
+        ] {
+            let (socket, mut worker) = UnixStream::pair().unwrap();
+            let (playback, mut worker_playback) = UnixStream::pair().unwrap();
+            let (microphone, mut worker_microphone) = UnixStream::pair().unwrap();
+            let control = Arc::new(Mutex::new(Control::new(socket, 7, family).unwrap()));
+            let streams = SampleStreams::new(id, 7, playback, microphone).unwrap();
+            let task = thread::spawn(move || {
+                worker
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                assert_eq!(
+                    gr_privileged_broker::read_message(&mut worker).unwrap(),
+                    (4, 7_u64.to_le_bytes().to_vec())
+                );
+                for channel in [&mut worker_playback, &mut worker_microphone] {
+                    channel.set_nonblocking(true).unwrap();
+                    let mut bounded = false;
+                    for _ in 0..64 {
+                        match channel.read(&mut [0; 4096]) {
+                            Ok(0) => panic!("client ended PCM before graceful worker close"),
+                            Ok(_) => {}
+                            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                                bounded = true;
+                                break;
+                            }
+                            Err(error) => panic!("unexpected PCM state: {error}"),
+                        }
+                    }
+                    assert!(bounded);
+                }
+                gr_privileged_broker::write_message(&mut worker, 4, &7_u64.to_le_bytes()).unwrap();
+                assert_eq!(worker.read(&mut [0]).unwrap(), 0);
+            });
+            let options = AudioOptions::new(crate::AudioExposure::Emulated);
+            let (mut pcm, nodes) = Pcm::new(
+                streams,
+                options,
+                &profile,
+                7,
+                Arc::new(AtomicU64::new(0)),
+                control.clone(),
+            )
+            .unwrap();
+            assert_eq!(nodes, [None, None]);
+            pcm.close();
+            pcm.close();
+            assert!(pcm.is_closed());
+            assert!(pcm.error().is_none());
+            assert!(control.lock().unwrap().is_closed());
+            control.lock().unwrap().close().unwrap();
+            task.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn malformed_worker_pcm_timing_progress_is_terminal_after_valid_counters() {
+        for length in [0, 7, 9] {
+            let (client, mut server) = std::os::unix::net::UnixStream::pair().unwrap();
+            let task = std::thread::spawn(move || {
+                for (tag, values) in [(3, vec![0_u64; 9]), (5, vec![0]), (7, vec![0, 0])] {
+                    let (actual, mut body) =
+                        gr_privileged_broker::read_message(&mut server).unwrap();
+                    assert_eq!(actual, tag);
+                    assert_eq!(body, 7_u64.to_le_bytes());
+                    for value in values {
+                        body.extend(value.to_le_bytes());
+                    }
+                    gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+                }
+                let (tag, mut body) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!(tag, 6);
+                assert_eq!(body, 7_u64.to_le_bytes());
+                body.extend(vec![0; length]);
+                gr_privileged_broker::write_message(&mut server, tag, &body).unwrap();
+            });
+            let mut control = Control::new(client, 7, 1).unwrap();
+            assert!(read_usb_microphone_progress(&mut control).is_err());
+            assert!(control.is_closed());
+            task.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn terminal_diagnostic_failure_survives_output_service_and_cleanup() {
+        use std::{io::Read, os::unix::net::UnixStream, thread};
+        let (client, mut server) = UnixStream::pair().unwrap();
+        let task = thread::spawn(move || {
+            let (tag, generation) = gr_privileged_broker::read_message(&mut server).unwrap();
+            assert_eq!(tag, 3);
+            assert_eq!(generation, 7_u64.to_le_bytes());
+            let mut wrong_generation = 8_u64.to_le_bytes().to_vec();
+            wrong_generation.extend([0; 72]);
+            gr_privileged_broker::write_message(&mut server, 3, &wrong_generation).unwrap();
+            assert_eq!(
+                server.read(&mut [0]).unwrap(),
+                0,
+                "terminal client must not send another request"
+            );
+        });
+        let mut control = Control::new(client, 7, 1).unwrap();
+        let initiating = control.diagnostics().unwrap_err().to_string();
+        assert_eq!(initiating, "stale or invalid worker acknowledgement");
+        let mut retained = ProviderDiagnostics {
+            state: ProviderState::Failed,
+            frames_sent: 2,
+            reverse_events_drained: 3,
+            write_failures: 0,
+            lifecycle_events: 0,
+            last_error: Some(initiating.clone()),
+        };
+        for _ in 0..2 {
+            assert_eq!(
+                worker_output(&mut control, &mut retained),
+                Err(ProviderError::Read {
+                    reason: initiating.clone()
+                })
+            );
+            assert_eq!(retained.last_error.as_deref(), Some(initiating.as_str()));
+            assert_eq!(retained.reverse_events_drained, 3);
+        }
+        finish_close(
+            &mut retained,
+            control.close(),
+            Err(io::Error::other("broker cleanup failure")),
+        )
+        .unwrap_err();
+        assert_eq!(
+            retained.last_error.as_deref(),
+            Some(
+                "stale or invalid worker acknowledgement; cleanup failed: broker: broker cleanup failure"
+            )
+        );
+        task.join().unwrap();
+    }
 
     #[test]
     fn closure_retains_original_and_each_cleanup_failure() {

@@ -12,7 +12,7 @@ use std::{
     io::{self, Read},
     os::unix::net::UnixStream,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -38,6 +38,8 @@ pub trait HidHandler {
 /// Diagnostics survive worker shutdown when retained by the session owner.
 #[derive(Default)]
 pub struct Counters {
+    // Serialize the paired scheduling counters across USB and control threads.
+    microphone_progress: Mutex<()>,
     pub microphone_silence_frames: AtomicU64,
     pub completed_transfers: AtomicU64,
     pub stalled_transfers: AtomicU64,
@@ -56,6 +58,28 @@ pub struct Counters {
     pub maximum_audio_lateness_us: AtomicU64,
 }
 impl Counters {
+    /// Consistent host progress and underrun snapshot for the control scheduler.
+    pub fn microphone_progress(&self) -> (u64, u64) {
+        let _guard = self
+            .microphone_progress
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (
+            self.microphone_host_frames.load(Ordering::Relaxed),
+            self.microphone_silence_frames.load(Ordering::Relaxed),
+        )
+    }
+
+    fn record_microphone_progress(&self, silence: u64) {
+        let _guard = self
+            .microphone_progress
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.microphone_silence_frames
+            .fetch_add(silence, Ordering::Relaxed);
+        self.microphone_host_frames.fetch_add(48, Ordering::Relaxed);
+    }
+
     fn record_transfer(
         &self,
         header: Header,
@@ -559,13 +583,7 @@ fn capture_packet(
         u64::try_from(read.frames).map_err(error)?,
         Ordering::Relaxed,
     );
-    counters.microphone_silence_frames.fetch_add(
-        u64::try_from(48 - read.frames).map_err(error)?,
-        Ordering::Relaxed,
-    );
-    counters
-        .microphone_host_frames
-        .fetch_add(48, Ordering::Relaxed);
+    counters.record_microphone_progress(u64::try_from(48 - read.frames).map_err(error)?);
     for (pair, sample) in data[..bytes].chunks_exact_mut(2).zip(&samples[..count]) {
         pair.copy_from_slice(&sample.to_le_bytes());
     }

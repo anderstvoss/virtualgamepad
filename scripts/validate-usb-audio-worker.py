@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """Unprivileged process-level USB/IP test; no kernel attach or physical devices."""
 import argparse
+import importlib.util
 from pathlib import Path
 import socket
 import struct
 import subprocess
+import sys
+
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location('live', Path(__file__).with_name('validate-usb-audio-live.py'))
+live = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(live)
 
 
 def exact(peer, size):
@@ -39,7 +46,7 @@ def trial(worker, family, channels, microphones):
     process = None
     with peer, child:
         peer.settimeout(2)
-        process = subprocess.Popen([str(worker), family, str(0x10001), '1'],
+        process = subprocess.Popen([str(worker), family, str(0x10001), '1', '--protocol-fixture'],
                                    stdin=child, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         child.close()
         try:
@@ -67,16 +74,21 @@ def trial(worker, family, channels, microphones):
             status, actual, _, _ = transfer(peer,7,0,0,2,
                 bytes([0x21,9,report_id,3,3,0,2,0]),bytes([report_id,0]))
             assert status == (1 << 32)-32 and actual == 0
+            # Interrupt OUT must use the same controller-owned report policy.
+            assert transfer(peer,102,4,0,2,payload=bytes([report_id,0]))[:2] == (0xffffffe0,0)
+            wire=(bytes([2])+bytes(47) if family=='dualsense' else
+                  bytes([5])+bytes(31) if family=='dualshock4' else bytes(8))
+            expected=(0,len(wire)) if family!='xbox360' else (0xffffffe0,0)
+            assert transfer(peer,103,4,0,len(wire),payload=wire)[:2] == expected
             payload = struct.pack('<'+'h'*channels, *range(1,channels+1))*48*8
             status, actual, _, iso = transfer(peer,8,1,0,len(payload),payload=payload,packets=8)
             assert status == 0 and actual == len(payload)
             assert all(struct.unpack_from('>4I',iso,i*16)[2:] == (48*channels*2,0) for i in range(8))
             status, actual, data, iso = transfer(peer,9,2,1,49*microphones*2*32,packets=32)
             assert status == 0 and actual == 48*microphones*2*32
-            frames = list(struct.iter_unpack('<'+'h'*microphones,data))
-            assert all(100 <= frame[0] <= 196 for frame in frames)
-            assert all(frame[c]-frame[0] == 100*c for frame in frames for c in range(microphones))
-            assert all((b[0]-100) == ((a[0]-100+1)%97) for a,b in zip(frames,frames[1:]))
+            assert data == live.marker_pcm(48*32, microphones)
+            markers = live.inspect_capture(data, microphones)
+            assert markers['exact_pattern'] == 48*32 and markers['pattern_gaps'] == 0
             assert all(struct.unpack_from('>4I',iso,i*16)[2:] == (48*microphones*2,0) for i in range(32))
             stdout, stderr = process.communicate(timeout=3)
             if process.returncode:
@@ -91,6 +103,8 @@ def trial(worker, family, channels, microphones):
 
 
 def main():
+    if not __debug__:
+        raise RuntimeError('validation requires Python assertions; optimization is unsupported')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--worker', type=Path, required=True)
     args = parser.parse_args()

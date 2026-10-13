@@ -39,6 +39,8 @@ def inspect(target, root=Path('/'), access=None):
             report('creation-device', 'denied', 'Cannot inspect device identity.')
         report('consumer-access', 'unvalidated', 'Verify only the created session hidraw/event nodes during the live test.')
     elif target == TARGETS[2]:
+        report('transport-contract', 'unsupported',
+               'Current f_hid exposes GET_REPORT IDs without report type/request length or negative replies; candidate creation is rejected before resources are opened.')
         gadget = path('/sys/kernel/config/usb_gadget')
         report('configfs', 'ready' if gadget.is_dir() else 'missing',
                'Administrator prepares ConfigFS and HID gadget support; applications never mount or load modules.')

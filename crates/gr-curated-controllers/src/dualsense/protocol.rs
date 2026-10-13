@@ -113,7 +113,7 @@ impl Protocol for DualSenseUsbProtocol {
         // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
         Ok(Some(Self::decode(&report)))
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         match event {
             Lifecycle::Start {
                 numbered_input,
@@ -127,11 +127,21 @@ impl Protocol for DualSenseUsbProtocol {
             Lifecycle::Stop => self.active = false,
             Lifecycle::Open | Lifecycle::Close => {}
         }
+
+        Some(RawReverseEvent::HidLifecycle(event))
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }
 
 impl common::HidDriver for DualSenseDefinition {
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        association: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        crate::sony_evdev::open_native(request, association)
+    }
     fn neutralize_state(state: &mut Self::State) {
         *state = Self::State {
             battery: state.battery,

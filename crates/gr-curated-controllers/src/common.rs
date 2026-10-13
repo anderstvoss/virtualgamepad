@@ -15,9 +15,9 @@ use gr_provider_linux_dummy_hcd::LinuxDummyHcdProvider;
 use gr_provider_linux_uhid::LinuxUhidProvider;
 use gr_provider_linux_uinput::LinuxUinputProvider;
 use gr_realization_api::{
-    NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, NativeProviderFactory,
-    NativeProviderSession, ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent,
-    RawReverseEvent, RealizationTarget,
+    NativeControllerRealization, NativeDeviceIdentity, NativeHidRealization, NativeProviderSession,
+    ProviderError, ProviderFrame, ProviderOpenRequest, ProviderReverseEvent, RawReverseEvent,
+    RealizationTarget,
 };
 pub use session::WorkerBridge;
 pub(crate) use session::{ControllerSession, HidDriver, creation_identity};
@@ -236,15 +236,7 @@ where
         return ControllerSession::hid(driver, request, restored);
     }
     let mut association = crate::ControllerAssociation::requested(&request.realization);
-    let session: Box<dyn NativeProviderSession> = match options.target {
-        RealizationTarget::LINUX_UINPUT => LinuxUinputProvider.open(request)?,
-        RealizationTarget::LINUX_DUMMY_HCD_USB_HID => LinuxDummyHcdProvider.open(request)?,
-        _ => {
-            return Err(ProviderError::Unsupported {
-                reason: "unknown realization target".into(),
-            });
-        }
-    };
+    let session = driver.open_native(request, &mut association)?;
     association.observed_host_path = session.host_path();
     ControllerRuntime::new(
         driver,

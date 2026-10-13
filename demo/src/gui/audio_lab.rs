@@ -256,11 +256,7 @@ impl AudioRouter {
         let ports = self.inputs.get(id)?;
         let mut blocks = Vec::with_capacity(ports.len());
         for route in ports {
-            let mut newest = route.port.read();
-            while let Some(next) = route.port.read() {
-                newest = Some(next);
-            }
-            if let Some(samples) = newest {
+            if let Some(samples) = route.port.read_newest() {
                 blocks.push((route.device_channels.clone(), samples));
             }
         }
@@ -336,17 +332,6 @@ fn host_devices(backend: HostBackend) -> [HostDevice; 1] {
             HostBackend::Alsa => "ALSA default device".into(),
         },
     }]
-}
-
-fn discovered_devices(
-    backend: HostBackend,
-    direction: super::host_audio::Direction,
-) -> Vec<HostDevice> {
-    if !backend.compiled() {
-        return host_devices(backend).to_vec();
-    }
-    super::host_audio::enumerate(backend, direction)
-        .unwrap_or_else(|_| host_devices(backend).to_vec())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -636,10 +621,18 @@ fn draw_labeled_combo_box(
 ) {
     ui.label(label);
     ui.add_enabled_ui(enabled, |ui| {
-        egui::ComboBox::from_id_salt(id)
+        let response = egui::ComboBox::from_id_salt(id)
             .selected_text(selected_text)
             .width(ui.available_width())
-            .show_ui(ui, add_options);
+            .show_ui(ui, add_options)
+            .response;
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::ComboBox,
+                response.enabled(),
+                format!("{label}: {selected_text}"),
+            )
+        });
     });
 }
 
@@ -655,8 +648,7 @@ pub(super) fn draw_creation(
         ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut config.enabled, "Emulated audio");
             let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
-            if info.hovered() {
-                egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+            super::show_information(&info, "Audio creation details", |ui| {
                     ui.strong("Audio creation details");
                     ui.label("Audio endpoints and the selected host backend are created with the controller. Recreate it to change those choices.");
                     ui.label("Samples ownership routes speaker output to the system default device. Microphone piping starts disabled.");
@@ -667,8 +659,7 @@ pub(super) fn draw_creation(
                     if let Err(error) = &validation {
                         ui.colored_label(egui::Color32::YELLOW, error.to_string());
                     }
-                });
-            }
+            });
         });
 
         let status = if let Some(status) = backend_status(target, has_audio) {
@@ -752,6 +743,7 @@ pub(super) enum Action {
     Tone(bool),
     Routing(RoutingState),
     RetryRouting,
+    RetryDiscovery,
 }
 #[derive(Clone, Debug)]
 pub(super) struct Activity {
@@ -811,8 +803,8 @@ impl Activity {
             peak: 0,
             tone: false,
             routing: RoutingState::for_topology(AudioTopology::for_family(family), backend),
-            playback_devices: discovered_devices(backend, super::host_audio::Direction::Playback),
-            capture_devices: discovered_devices(backend, super::host_audio::Direction::Capture),
+            playback_devices: host_devices(backend).to_vec(),
+            capture_devices: host_devices(backend).to_vec(),
             routing_error: None,
             initialized: true,
             pending: Vec::new(),
@@ -878,7 +870,7 @@ impl Activity {
                 self.routing = routing;
                 Ok(())
             }
-            Action::RetryRouting => Ok(()),
+            Action::RetryRouting | Action::RetryDiscovery => Ok(()),
         }
     }
     #[allow(clippy::too_many_lines)]
@@ -1034,6 +1026,7 @@ impl Activity {
 
 #[derive(Clone, Debug)]
 pub(super) struct View {
+    pub discovery_status: Option<String>,
     pub endpoints: Vec<AudioEndpoint>,
     pub health: AudioDiagnostics,
     pub limitation: &'static str,
@@ -1048,6 +1041,7 @@ pub(super) struct View {
 pub(super) fn snapshot(audio: &ControllerAudio, activity: &Activity) -> View {
     let endpoints = audio.endpoints().to_vec();
     View {
+        discovery_status: None,
         playback_channel_labels: endpoints
             .iter()
             .find(|endpoint| endpoint.direction() == SampleDirection::HostToController)
@@ -1160,6 +1154,13 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
         return None;
     };
 
+    if let Some(status) = &view.discovery_status {
+        ui.label(status);
+    }
+    if ui.button("Refresh audio devices").clicked() {
+        action = Some(Action::RetryDiscovery);
+    }
+
     let status = if view.health.failed() {
         "Failed"
     } else if view.health.is_closed() {
@@ -1219,8 +1220,7 @@ pub(super) fn draw_diagnostics(ui: &mut egui::Ui, view: Option<&View>) -> Option
 fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
     ui.horizontal(|ui| {
         let info = ui.add_sized([18.0, 18.0], egui::Button::new("!"));
-        if info.hovered() {
-            egui::Tooltip::for_widget(&info).at_pointer().show(|ui| {
+        super::show_information(&info, "Audio session details", |ui| {
                 ui.set_max_width(360.0);
                 ui.strong("Controller audio details");
                 if let Some(view) = view {
@@ -1228,8 +1228,7 @@ fn draw_audio_info_header(ui: &mut egui::Ui, view: Option<&View>) {
                 }
                 ui.label("Playback samples are monitored here. The meters and device selectors in Output and Input belong to this controller's physical audio endpoints.");
                 ui.label("Endpoint selectors belong to this open creation; resolve them again after recreating the controller.");
-            });
-        }
+        });
     });
 }
 
@@ -1436,7 +1435,7 @@ pub(super) fn draw_output_routes(
             .outputs
             .iter_mut()
             .find(|route| route.id == "jack-output")
-            && route.manual_channel_control != next_manual_control
+            .filter(|route| route.manual_channel_control != next_manual_control)
         {
             route.manual_channel_control = next_manual_control;
             if !next_manual_control {
@@ -1804,6 +1803,195 @@ fn input_channel_label<'a>(route: &InputRoute, channel: usize, labels: &'a [Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires the explicit private PipeWire lab; ordinary user, owned virtual nodes only"]
+    #[allow(clippy::too_many_lines)] // One fixture retains ownership through every routing transition.
+    fn live_private_pipewire_route_switch_disconnect_and_reconnect() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::{Child, Command, Stdio};
+        use std::time::{Duration, Instant};
+        struct OwnedLoopback(Child);
+        impl Drop for OwnedLoopback {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                self.0.wait().expect("owned loopback must be reaped");
+            }
+        }
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_DEMO_ROUTE_LAB").as_deref(),
+            Ok("1")
+        );
+        let runtime = std::env::var("PIPEWIRE_RUNTIME_DIR").unwrap();
+        assert_eq!(std::env::var("XDG_RUNTIME_DIR").unwrap(), runtime);
+        assert!(
+            std::path::Path::new(&runtime)
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("virtualgamepad-pw-lab-")
+        );
+        assert_eq!(
+            std::fs::metadata(&runtime).unwrap().permissions().mode() & 0o77,
+            0
+        );
+        assert!(
+            std::fs::read_to_string("/proc/self/status")
+                .unwrap()
+                .lines()
+                .find(|line| line.starts_with("Uid:"))
+                .unwrap()
+                .split_whitespace()
+                .skip(1)
+                .all(|uid| uid != "0")
+        );
+
+        let names: Vec<_> = ['a', 'b']
+            .into_iter()
+            .map(|side| format!("virtualgamepad-route-{}-{side}", std::process::id()))
+            .collect();
+        let spawn_loopback = |name: &str| {
+            OwnedLoopback(Command::new("pw-loopback").args([
+                "-n", name, "-c", "2", "-m", "[ FL FR ]", "-i",
+                &format!("{{ node.name = \"{name}.sink\" media.class = \"Audio/Sink\" node.virtual = true node.autoconnect = false }}"),
+                "-o", &format!("{{ node.name = \"{name}.source\" media.class = \"Audio/Source\" node.virtual = true node.autoconnect = false }}"),
+            ]).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap())
+        };
+        let mut loops: Vec<_> = names.iter().map(|name| spawn_loopback(name)).collect();
+        let wait_nodes = || {
+            Command::new("python3")
+                .args([
+                    "-I",
+                    "-c",
+                    r"import json,subprocess,sys,tempfile,time
+expected={name+suffix for name in sys.argv[1:] for suffix in ('.sink','.source')}
+deadline=time.monotonic()+5
+while True:
+ with tempfile.TemporaryFile() as output:
+  subprocess.run(['pw-dump'],stdout=output,check=True,timeout=2)
+  output.seek(0);raw=output.read(1048577)
+ assert len(raw)<=1048576
+ graph=json.loads(raw)
+ assert not any(item.get('info',{}).get('props',{}).get('device.api')=='alsa' for item in graph)
+ names={item.get('info',{}).get('props',{}).get('node.name') for item in graph}
+ if expected<=names:break
+ assert time.monotonic()<deadline,'owned routing nodes did not appear'
+ time.sleep(.02)
+",
+                    &names[0],
+                    &names[1],
+                ])
+                .status()
+                .unwrap()
+        };
+        assert!(wait_nodes().success());
+        let mut routing = RoutingState {
+            backend: HostBackend::PipeWire,
+            jack_connector: None,
+            jack_connected: false,
+            jack_device: JackDevice::Headset,
+            outputs: vec![OutputRoute {
+                id: "test-output".into(),
+                label: "Owned output".into(),
+                channels: 2,
+                enabled: true,
+                channel_device_ids: vec![String::new(); 2],
+                manual_channel_control: false,
+                source_channels: vec![Some(0), Some(1)],
+                peak: vec![0; 2],
+            }],
+            inputs: vec![InputRoute {
+                id: "test-input".into(),
+                label: "Owned input".into(),
+                connected: true,
+                enabled: true,
+                channel_device_ids: vec![String::new(); 2],
+                manual_channel_control: false,
+                source_channels: 2,
+                target_channels: vec![Some(0), Some(1)],
+                peak: vec![0; 2],
+            }],
+        };
+        let mut router = AudioRouter::default();
+        let transfer = |router: &AudioRouter, marker: i16| {
+            let samples: Vec<_> = (0..480).flat_map(|_| [marker, -marker]).collect();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                assert!(
+                    router.output("test-output", &samples, 2),
+                    "owned output rejected a packet: {:?}",
+                    router.error()
+                );
+                if router.input("test-input", 2).is_some_and(|samples| {
+                    samples
+                        .chunks_exact(2)
+                        .any(|frame| frame == [marker, -marker])
+                }) {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "owned route did not deliver marker {marker}; {:?}",
+                    router.error()
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        };
+        for (index, marker) in [(0, 1100), (1, 2200)] {
+            routing.outputs[0].channel_device_ids = vec![format!("{}.sink", names[index]); 2];
+            routing.inputs[0].channel_device_ids = vec![format!("{}.source", names[index]); 2];
+            assert_eq!(router.configure(&routing, true, true), None);
+            transfer(&router, marker);
+            println!(
+                "demo_route stage={} marker={marker} stereo_pattern_verified=true",
+                names[index]
+            );
+        }
+        let removed = loops.pop().unwrap();
+        let removed_pid = removed.0.id();
+        drop(removed);
+        assert!(!std::path::Path::new(&format!("/proc/{removed_pid}")).exists());
+        let until = Instant::now() + Duration::from_secs(5);
+        while router.error().is_none() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            router.error().is_some(),
+            "removed routing endpoint must expose failure"
+        );
+        assert!(
+            loops[0].0.try_wait().unwrap().is_none(),
+            "unselected sibling endpoint stopped"
+        );
+        println!("demo_route stage=endpoint-disappeared error_observed=true sibling_alive=true");
+        routing.outputs[0].enabled = false;
+        routing.inputs[0].connected = false;
+        assert_eq!(router.configure(&routing, true, true), None);
+        assert!(router.outputs.is_empty() && router.inputs.is_empty());
+        assert!(!router.output("test-output", &[1, -1], 2));
+        assert!(router.input("test-input", 2).is_none());
+        println!("demo_route stage=disconnected ports=0");
+        loops.push(spawn_loopback(&names[1]));
+        assert!(wait_nodes().success());
+        routing.outputs[0].enabled = true;
+        routing.inputs[0].connected = true;
+        assert_eq!(router.configure(&routing, true, true), None);
+        transfer(&router, 3300);
+        println!("demo_route stage=reconnected marker=3300 stereo_pattern_verified=true");
+        routing.outputs[0].enabled = false;
+        routing.inputs[0].connected = false;
+        assert_eq!(router.configure(&routing, true, true), None);
+        assert!(router.outputs.is_empty() && router.inputs.is_empty());
+        let pids: Vec<_> = loops.iter().map(|owned| owned.0.id()).collect();
+        drop(router);
+        drop(loops);
+        for pid in pids {
+            assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+        }
+        println!(
+            "demo_route owned_loopbacks_reaped=true; functional_only=true; no_USB_or_sustained_claim=true"
+        );
+    }
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use virtualgamepad::AudioChannel;
@@ -2043,9 +2231,7 @@ mod tests {
                 },
             );
             assert!(rect.height() > 0.0);
-            if frame > 1
-                && let Some(previous_height) = previous_height
-            {
+            if let Some(previous_height) = previous_height.filter(|_| frame > 1) {
                 assert!((rect.height() - previous_height).abs() < f32::EPSILON);
             }
             previous_height = Some(rect.height());
@@ -2431,6 +2617,161 @@ mod tests {
             JackDevice::Headset.label_for_connector(JackConnector::Mm35),
             "TRRS headset"
         );
+    }
+
+    #[test]
+    fn creation_audio_selectors_identify_their_purpose_on_keyboard_focus() {
+        let context = egui::Context::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut config = CreationAudio {
+            enabled: true,
+            ..CreationAudio::default()
+        };
+        // This checks the enabled supporting surface without opening a device.
+        // The selector helper is also shared by routing controls.
+        for frame in 0..17 {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(240.0, 600.0),
+                    )),
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        for (name, id, access) in [
+                            ("Playback", "test_playback", &mut config.playback),
+                            ("Microphone", "test_microphone", &mut config.microphone),
+                        ] {
+                            draw_labeled_combo_box(ui, name, id, "Samples", true, |ui| {
+                                ui.selectable_value(access, AudioAccess::Samples, "Samples");
+                                ui.selectable_value(
+                                    access,
+                                    AudioAccess::NativeClient,
+                                    "Native client",
+                                );
+                            });
+                        }
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        assert!(labels.contains("Playback: Samples"), "{labels:?}");
+        assert!(labels.contains("Microphone: Samples"), "{labels:?}");
+        assert!(
+            labels.contains("Adjacent control"),
+            "Tab traversal trapped: {labels:?}"
+        );
+        assert_eq!(config.playback, AudioAccess::Samples);
+        assert_eq!(config.microphone, AudioAccess::Samples);
+    }
+
+    #[test]
+    fn audio_information_is_keyboard_visible_without_changing_creation_options() {
+        for creation in [true, false] {
+            let context = egui::Context::default();
+            let mut config = CreationAudio::default();
+            let original = (
+                config.enabled,
+                config.playback,
+                config.microphone,
+                config.host_backend,
+            );
+            let mut explained = false;
+            let mut identified = false;
+            let mut adjacent_focused = false;
+            for frame in 0..9 {
+                let output = context.run(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(800.0, 600.0),
+                        )),
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::Tab,
+                                physical_key: None,
+                                pressed: frame % 2 == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            if creation {
+                                draw_creation(
+                                    ui,
+                                    &mut config,
+                                    RealizationId::LINUX_UHID_USB,
+                                    false,
+                                );
+                            } else {
+                                draw_audio_info_header(ui, None);
+                            }
+                            adjacent_focused |= ui.button("Adjacent control").has_focus();
+                        });
+                    },
+                );
+                let body = if creation {
+                    "Recreate it to change those choices"
+                } else {
+                    "resolve them again after recreating"
+                };
+                explained |= output.shapes.iter().any(|shape| match &shape.shape {
+                    egui::epaint::Shape::Text(text) => text.galley.job.text.contains(body),
+                    _ => false,
+                });
+                let label = if creation {
+                    "Audio creation details"
+                } else {
+                    "Audio session details"
+                };
+                identified |= output
+                    .platform_output
+                    .events
+                    .iter()
+                    .any(|event| event.widget_info().label.as_deref() == Some(label));
+            }
+            assert!(explained, "audio information must not require a mouse");
+            assert!(
+                identified,
+                "symbol controls must identify their information"
+            );
+            assert!(adjacent_focused, "information must not trap Tab");
+            assert_eq!(
+                (
+                    config.enabled,
+                    config.playback,
+                    config.microphone,
+                    config.host_backend
+                ),
+                original
+            );
+        }
     }
 
     #[test]

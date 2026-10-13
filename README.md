@@ -1,11 +1,13 @@
 # virtualgamepad
 
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
+
 `virtualgamepad` provides reviewed, compiled virtual controllers. There are no runtime profiles, descriptors, plugins, or generic controller constructors. Each controller selects one exact primary realization target; selection never falls back.
 
 - `linux.uinput`: controller-owned Linux evdev controls through uinput.
 - `linux.uhid.usb`: local HID presentation with controller-owned stateful USB protocols.
 - `linux.usbip.usb-audio`: opt-in, initial emulated HID/UAC2 audio via the administrator-installed local broker.
-- `linux.dummy_hcd.usb-hid`: experimental research SPI only; excluded from normal application constructors (Gate G).
+- `linux.dummy_hcd.usb-hid`: unavailable. The current Linux `f_hid` transport lacks complete GET_REPORT metadata and negative replies; provider and broker creation reject it before opening resources. It remains excluded from normal application constructors.
 
 The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro.
 Each retains a compiled experimental `DummyHcd` USB profile; the Xbox 360 profile is explicitly
@@ -55,9 +57,9 @@ functions remain ephemeral. See the [identity contract](docs/architecture-overha
 for consumer-association limits and concurrent-identity policy.
 
 The [controller support matrix](docs/CONTROLLER_SUPPORT.md) currently marks all
-entries WIP. The [active pre-alpha plan](docs/architecture-overhaul/PRE_ALPHA_STATUS.md)
-requires controller/demo refinement and hands-on feedback before the final API
-review, separate quality pass and Git-based alpha release.
+entries WIP. The ordinary root signature snapshot is frozen; the
+[remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) records
+the alpha gate dispositions and known limitations.
 
 The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. Composite/audio implementation exists with explicitly bounded acceptance; installed audio security/recovery, native continuity, matching fidelity and Bluetooth remain gated.
 
@@ -78,10 +80,11 @@ optional gadget broker have separate [deployment requirements](docs/DEPLOYMENT_A
 
 The [core acceptance matrix](docs/architecture-overhaul/CORE_ACCEPTANCE.md) records
 measured family/provider results. SDL evdev controls and conventional rumble pass
-for DualSense, Switch Pro and Xbox on the recorded profile. DS4's combined evdev
-touch/gamepad node currently fails SDL gamepad discovery; use its measured UHID
-profile while a separate touch presentation is developed. Full evdev touch and
-physical fidelity remain unvalidated.
+for DualSense, Switch Pro and Xbox on the recorded profile. DS4 now creates an
+associated gamepad node and touch companion transactionally, retaining both
+contacts and gamepad feedback. Deterministic composition tests pass; production
+SDL discovery, isolated touch consumption and physical fidelity still require
+live acceptance. See the [remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
 Physical reference testing currently targets the available DualSense, Xbox Series
 and Steam Controller hardware. Other families remain best-effort with explicit

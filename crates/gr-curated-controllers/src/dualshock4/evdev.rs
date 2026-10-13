@@ -1,239 +1,5 @@
-//! Test-only DS4 gamepad/contact prototype; live display isolation is unresolved.
-use super::common;
-use gr_controller_runtime::{
-    ComponentFrame, ComponentId, ComponentOpen, CompoundIdentity, CompoundSession,
-    CompoundSessionError,
-};
-use gr_realization_api::{
-    EvdevEvent, EventReadiness, NativeAbsoluteAxis, NativeControllerRealization,
-    NativeProviderFactory, NativeProviderSession, ProviderDiagnostics, ProviderError,
-    ProviderFrame, ProviderOpenRequest, ProviderReverseEvent, ProviderReverseEventSink,
-    ProviderState, RealizationSessionId,
-};
-use std::sync::Arc;
-
-const GAMEPAD: ComponentId = ComponentId(0);
-const TOUCH: ComponentId = ComponentId(1);
-pub(super) const TOUCH_NAME: &str = "Virtual DS4 Touch Contacts";
-
-fn requests(mut request: ProviderOpenRequest) -> Result<[ProviderOpenRequest; 2], ProviderError> {
-    let NativeControllerRealization::Evdev(ref mut spec) = request.realization else {
-        return Err(ProviderError::Unsupported {
-            reason: "DS4 composition requires evdev".into(),
-        });
-    };
-    let mut touch = spec.clone();
-    // Pinned SDL's Linux native layout revision; not physical firmware evidence.
-    spec.identity.version = 0x8111;
-    spec.key_codes.retain(|code| *code != 330);
-    spec.absolute_axes.retain(|axis| axis.code < 47);
-    touch.device_name = TOUCH_NAME.into();
-    touch.event_codes = vec![common::EV_KEY, common::EV_ABS];
-    touch.key_codes = vec![330];
-    touch.force_feedback_codes.clear();
-    touch.absolute_axes.retain(|axis| axis.code >= 47);
-    touch.absolute_axes.extend([
-        NativeAbsoluteAxis {
-            code: 0,
-            minimum: 0,
-            maximum: 1919,
-            flat: 0,
-        },
-        NativeAbsoluteAxis {
-            code: 1,
-            minimum: 0,
-            maximum: 941,
-            flat: 0,
-        },
-    ]);
-    let mut companion = request.clone();
-    companion.realization = NativeControllerRealization::Evdev(touch);
-    companion.requirements = gr_realization_api::ProviderRequirements::default();
-    Ok([request, companion])
-}
-
-pub(super) fn open(
-    identity: CompoundIdentity,
-    request: ProviderOpenRequest,
-    factory: Arc<dyn NativeProviderFactory>,
-) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
-    let application_id = request.session;
-    let [gamepad, touch] = requests(request)?;
-    let compound = CompoundSession::open_associated(
-        identity,
-        vec![
-            ComponentOpen {
-                id: GAMEPAD,
-                factory: Arc::clone(&factory),
-                request: gamepad,
-            },
-            ComponentOpen {
-                id: TOUCH,
-                factory,
-                request: touch,
-            },
-        ],
-    )
-    .map_err(|error| ProviderError::Open {
-        reason: error.to_string(),
-    })?;
-    Ok(Box::new(Session {
-        compound,
-        application_id,
-        sequence: 0,
-    }))
-}
-
-fn split(events: Vec<EvdevEvent>) -> [ComponentFrame; 2] {
-    let mut gamepad = Vec::new();
-    let mut touch = Vec::new();
-    let mut contacts = [[-1, 0, 0]; 2];
-    let mut slot = 0;
-    for event in events {
-        match (event.event_type, event.code) {
-            (common::EV_ABS, 47) => {
-                slot = usize::try_from(event.value).unwrap_or(2);
-                touch.push(event);
-            }
-            (common::EV_ABS, code @ (53 | 54 | 57)) => {
-                if let Some(contact) = contacts.get_mut(slot) {
-                    contact[match code {
-                        57 => 0,
-                        53 => 1,
-                        _ => 2,
-                    }] = event.value;
-                }
-                touch.push(event);
-            }
-            (common::EV_KEY, 330) => touch.push(event),
-            (common::EV_SYN, common::SYN_REPORT) => {}
-            _ => gamepad.push(event),
-        }
-    }
-    // Legacy coordinates represent the first active contact, never the gamepad stick.
-    if let Some(contact) = contacts.iter().find(|contact| contact[0] >= 0) {
-        for (code, value) in [(0, contact[1]), (1, contact[2])] {
-            touch.push(EvdevEvent {
-                event_type: common::EV_ABS,
-                code,
-                value,
-            });
-        }
-    }
-    for events in [&mut gamepad, &mut touch] {
-        events.push(EvdevEvent {
-            event_type: common::EV_SYN,
-            code: common::SYN_REPORT,
-            value: 0,
-        });
-    }
-    [
-        ComponentFrame {
-            component: GAMEPAD,
-            frame: ProviderFrame::Evdev(gamepad),
-        },
-        ComponentFrame {
-            component: TOUCH,
-            frame: ProviderFrame::Evdev(touch),
-        },
-    ]
-}
-fn error(error: CompoundSessionError) -> ProviderError {
-    match error {
-        CompoundSessionError::Provider { source, .. } => source,
-        CompoundSessionError::Closed => ProviderError::Closed,
-        other => ProviderError::Unsupported {
-            reason: other.to_string(),
-        },
-    }
-}
-struct Session {
-    compound: CompoundSession,
-    application_id: RealizationSessionId,
-    sequence: u64,
-}
-impl NativeProviderSession for Session {
-    fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
-        match frame {
-            ProviderFrame::Evdev(events) => self.compound.send(&split(events)).map_err(error),
-            reply @ (ProviderFrame::ForceFeedbackUploadReply { .. }
-            | ProviderFrame::ForceFeedbackEraseReply { .. }) => {
-                self.compound.reply(GAMEPAD, reply).map_err(error)
-            }
-            _ => Err(ProviderError::Unsupported {
-                reason: "DS4 evdev accepts input snapshots and conventional feedback completions"
-                    .into(),
-            }),
-        }
-    }
-    fn drain_reverse_events(
-        &mut self,
-        sink: &mut dyn ProviderReverseEventSink,
-    ) -> Result<(), ProviderError> {
-        let mut unexpected = false;
-        let result = self
-            .compound
-            .drain_reverse(&mut |component, event| {
-                if component == GAMEPAD {
-                    sink.push(ProviderReverseEvent {
-                        session: self.application_id,
-                        sequence: self.sequence,
-                        event,
-                    });
-                    self.sequence = self.sequence.wrapping_add(1);
-                } else {
-                    unexpected = true;
-                }
-            })
-            .map_err(error);
-        result?;
-        if unexpected {
-            return Err(ProviderError::Read {
-                reason: "unexpected output on DS4 contact-only companion".into(),
-            });
-        }
-        Ok(())
-    }
-    fn readiness(&self) -> EventReadiness {
-        EventReadiness::AlwaysPoll
-    }
-    fn diagnostics(&self) -> ProviderDiagnostics {
-        let diagnostics = self.compound.diagnostics();
-        let mut result = ProviderDiagnostics {
-            state: if diagnostics.closed {
-                ProviderState::Closed
-            } else {
-                ProviderState::Open
-            },
-            frames_sent: 0,
-            reverse_events_drained: 0,
-            write_failures: 0,
-            lifecycle_events: 0,
-            last_error: None,
-        };
-        for component in diagnostics.components {
-            result.frames_sent += component.provider.frames_sent;
-            result.reverse_events_drained += component.provider.reverse_events_drained;
-            result.write_failures += component.provider.write_failures;
-            result.lifecycle_events += component.provider.lifecycle_events;
-            if component.provider.last_error.is_some() {
-                result.last_error = component.provider.last_error;
-            }
-        }
-        result
-    }
-    fn close(&mut self) -> Result<(), ProviderError> {
-        let diagnostics = self.compound.close();
-        if let Some(reason) = diagnostics
-            .components
-            .into_iter()
-            .find_map(|component| component.last_close_error)
-        {
-            return Err(ProviderError::Write { reason });
-        }
-        Ok(())
-    }
-}
+//! DS4 composition regressions. Shared implementation preserves Sony touch.
+use crate::sony_evdev::*;
 
 #[cfg(test)]
 mod tests {
@@ -241,6 +7,12 @@ mod tests {
         DualShock4State, DualShock4TouchContact, ds4_evdev_frame, evdev_realization,
     };
     use super::*;
+    use crate::common;
+    use gr_controller_runtime::{ComponentId, CompoundIdentity};
+    use gr_realization_api::*;
+    use std::sync::Arc;
+    const GAMEPAD: ComponentId = ComponentId(0);
+    const TOUCH: ComponentId = ComponentId(1);
     use gr_realization_api::{
         ControllerId, ProviderCapabilities, ProviderPreflightError, ProviderRequirements,
         RawReverseEvent, RealizationSelection, RealizationTarget,
@@ -382,6 +154,35 @@ mod tests {
             vec![47, 57, 53, 54, 0, 1]
         );
     }
+    #[test]
+    fn topology_reports_both_creation_scoped_owned_nodes() {
+        let identity = CompoundIdentity {
+            logical: [1; 16],
+            creation: [2; 16],
+        };
+        let association = association(identity, &request()).unwrap();
+        assert_eq!(
+            association.requested_physical_path,
+            Some(identity.component(GAMEPAD).physical_path)
+        );
+        assert_eq!(
+            association.requested_unique_id,
+            Some(identity.component(GAMEPAD).unique_id)
+        );
+        assert_eq!(association.companions.len(), 1);
+        let touch = &association.companions[0];
+        assert_eq!(touch.role, "touch");
+        assert_eq!(
+            touch.requested_physical_path,
+            Some(identity.component(TOUCH).physical_path)
+        );
+        assert_eq!(
+            touch.requested_unique_id,
+            Some(identity.component(TOUCH).unique_id)
+        );
+        assert_ne!(touch.requested_unique_id, association.requested_unique_id);
+    }
+
     #[test]
     fn both_slots_coordinates_and_release_survive_routing() {
         for touches in [
@@ -531,14 +332,197 @@ mod tests {
     }
 
     #[test]
-    fn second_open_failure_rolls_back_gamepad() {
-        let record = Arc::new(Mutex::new(Record {
-            fail_open: true,
-            ..Default::default()
-        }));
-        assert!(open(request(), Arc::new(Factory(Arc::clone(&record)))).is_err());
-        assert_eq!(record.lock().unwrap().closes, vec![0]);
+    fn second_open_failure_rolls_back_both_sony_gamepads() {
+        for realization in [evdev_realization(), crate::dualsense::realization()] {
+            let record = Arc::new(Mutex::new(Record {
+                fail_open: true,
+                ..Default::default()
+            }));
+            let mut request = request();
+            request.realization = realization;
+            assert!(open(request, Arc::new(Factory(Arc::clone(&record)))).is_err());
+            assert_eq!(record.lock().unwrap().closes, vec![0]);
+        }
     }
+    #[test]
+    fn dualsense_close_is_idempotent_and_leaves_sibling_serviceable() {
+        let mut request = request();
+        request.realization = crate::dualsense::realization();
+        let first_record = Arc::new(Mutex::new(Record::default()));
+        let second_record = Arc::new(Mutex::new(Record::default()));
+        let mut first = open(
+            request.clone(),
+            Arc::new(Factory(Arc::clone(&first_record))),
+        )
+        .unwrap();
+        let mut second = open(request, Arc::new(Factory(Arc::clone(&second_record)))).unwrap();
+        first.close().unwrap();
+        first.close().unwrap();
+        assert_eq!(
+            first.send(ProviderFrame::Evdev(vec![])),
+            Err(ProviderError::Closed)
+        );
+        for _ in 0..3 {
+            second
+                .send(ProviderFrame::Evdev(vec![EvdevEvent {
+                    event_type: common::EV_KEY,
+                    code: 304,
+                    value: 1,
+                }]))
+                .unwrap();
+            let mut events = vec![];
+            second.drain_reverse_events(&mut events).unwrap();
+            assert_eq!(events.len(), 1);
+            second
+                .send(ProviderFrame::ForceFeedbackEraseReply {
+                    request_id: 9,
+                    status: -22,
+                })
+                .unwrap();
+        }
+        second.close().unwrap();
+        second.close().unwrap();
+        drop((first, second));
+        for record in [&first_record, &second_record] {
+            assert_eq!(record.lock().unwrap().closes, vec![1, 0]);
+        }
+        let record = second_record.lock().unwrap();
+        assert_eq!(record.frames.len(), 9);
+        assert!(
+            record
+                .frames
+                .iter()
+                .filter(|(_, frame)| matches!(frame, ProviderFrame::ForceFeedbackEraseReply { .. }))
+                .all(|(id, _)| *id == 0)
+        );
+    }
+    #[test]
+    fn dualsense_primary_is_gamepad_only_and_contact_geometry_is_preserved() {
+        let mut request = request();
+        request.realization = crate::dualsense::realization();
+        let [gamepad, touch] = requests(request).unwrap();
+        let NativeControllerRealization::Evdev(gamepad) = gamepad.realization else {
+            panic!()
+        };
+        let NativeControllerRealization::Evdev(touch) = touch.realization else {
+            panic!()
+        };
+        assert!(!gamepad.key_codes.contains(&330));
+        assert!(!gamepad.key_codes.contains(&325));
+        assert!(gamepad.absolute_axes.iter().all(|axis| axis.code < 47));
+        assert!(gamepad.force_feedback_codes.contains(&0x50));
+        assert_eq!(touch.device_name, "Virtual DualSense Touch Contacts");
+        assert_eq!(
+            (gamepad.identity.vendor_id, gamepad.identity.product_id),
+            (0x054c, 0x0ce6)
+        );
+        assert_eq!(
+            (
+                touch.identity.vendor_id,
+                touch.identity.product_id,
+                touch.identity.version
+            ),
+            (0, 0, 1)
+        );
+
+        assert_eq!(touch.key_codes, vec![330, 325]);
+        assert!(touch.force_feedback_codes.is_empty());
+        for (code, max) in [(53, 1919), (54, 941), (0, 1919), (1, 941)] {
+            let axis = touch
+                .absolute_axes
+                .iter()
+                .find(|axis| axis.code == code)
+                .unwrap();
+            assert_eq!((axis.minimum, axis.maximum), (0, max));
+        }
+    }
+    #[test]
+    #[ignore = "requires prepared ordinary-user uinput access; creates only a neutral gamepad"]
+    fn live_second_open_failure_removes_observed_gamepad() {
+        use gr_provider_linux_uinput::LinuxUinputProvider;
+        use std::path::PathBuf;
+        struct FailContact {
+            opened: Mutex<usize>,
+            observed: Mutex<Vec<PathBuf>>,
+        }
+        impl NativeProviderFactory for FailContact {
+            fn capabilities(&self) -> ProviderCapabilities {
+                LinuxUinputProvider.capabilities()
+            }
+            fn preflight(
+                &self,
+                request: &ProviderOpenRequest,
+            ) -> Result<(), ProviderPreflightError> {
+                LinuxUinputProvider.preflight(request)
+            }
+            fn open(
+                &self,
+                request: ProviderOpenRequest,
+            ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+                let mut opened = self.opened.lock().unwrap();
+                *opened += 1;
+                if *opened % 2 == 0 {
+                    return Err(ProviderError::Open {
+                        reason: "injected second-node construction failure".into(),
+                    });
+                }
+                let NativeControllerRealization::Evdev(spec) = &request.realization else {
+                    panic!("DS4 evdev request")
+                };
+                let physical = spec.physical_path.clone().expect("owned component label");
+                let session = LinuxUinputProvider.open(request)?;
+                let host =
+                    PathBuf::from(session.host_path().expect("kernel-observed uinput object"));
+                assert!(host.starts_with("/sys/devices/virtual/input"));
+                assert_eq!(
+                    std::fs::read_to_string(host.join("phys")).unwrap().trim(),
+                    physical
+                );
+                self.observed.lock().unwrap().push(host);
+                // No input frame is sent and no contact node is created.
+                Ok(session)
+            }
+        }
+        assert_eq!(
+            std::env::var("VIRTUALGAMEPAD_OUTPUT_LAB").as_deref(),
+            Ok("1")
+        );
+        let status = std::fs::read_to_string("/proc/self/status").unwrap();
+        let uids = status
+            .lines()
+            .find(|line| line.starts_with("Uid:"))
+            .unwrap();
+        assert!(uids.split_whitespace().skip(1).all(|uid| uid != "0"));
+        let factory = Arc::new(FailContact {
+            opened: Mutex::new(0),
+            observed: Mutex::new(Vec::new()),
+        });
+        for _ in 0..3 {
+            let error = match open(request(), factory.clone()) {
+                Ok(mut unexpected) => {
+                    unexpected.close().unwrap();
+                    panic!("second construction unexpectedly succeeded")
+                }
+                Err(error) => error,
+            };
+            assert!(
+                error
+                    .to_string()
+                    .contains("injected second-node construction failure")
+            );
+            assert!(
+                factory
+                    .observed
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .all(|host| !host.exists())
+            );
+        }
+        assert_eq!(*factory.opened.lock().unwrap(), 6);
+        assert_eq!(factory.observed.lock().unwrap().len(), 3);
+    }
+
     #[test]
     fn full_snapshot_retry_and_feedback_routing_close_both_nodes_once() {
         let record = Arc::new(Mutex::new(Record {

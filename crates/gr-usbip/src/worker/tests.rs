@@ -463,3 +463,31 @@ fn microphone_credit_tracks_queue_consumption_before_transfer_completion() {
         96
     );
 }
+
+#[test]
+fn microphone_progress_snapshot_waits_for_complete_packet_accounting() {
+    let counters = Arc::new(Counters::default());
+    let guard = counters.microphone_progress.lock().unwrap();
+    // Reproduce the writer's formerly visible intermediate state.
+    counters
+        .microphone_silence_frames
+        .store(48, Ordering::Relaxed);
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (done_tx, done_rx) = std::sync::mpsc::channel();
+    let reader = Arc::clone(&counters);
+    let thread = std::thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        done_tx.send(reader.microphone_progress()).unwrap();
+    });
+    started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+    assert!(done_rx.recv_timeout(Duration::from_millis(20)).is_err());
+    counters.microphone_host_frames.store(48, Ordering::Relaxed);
+    drop(guard);
+    assert_eq!(
+        done_rx.recv_timeout(Duration::from_secs(1)).unwrap(),
+        (48, 48)
+    );
+    thread.join().unwrap();
+    counters.record_microphone_progress(0);
+    assert_eq!(counters.microphone_progress(), (96, 48));
+}

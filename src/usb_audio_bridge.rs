@@ -19,22 +19,191 @@ pub(crate) struct Bridge {
     metrics: Arc<Metrics>,
     thread: Option<JoinHandle<()>>,
 }
+#[derive(Clone, Copy, Default)]
+struct BridgeSnapshot {
+    sampled_at: Option<Instant>,
+    credit_host_frames: u64,
+    credit_consumed_source_frames: u64,
+    credit_submitted_frames: u64,
+    accepted_source_frames: u64,
+    graph_queue_frames: Option<u64>,
+    client_queue_frames: u64,
+    client_pump_maximum_interval_us: u64,
+    client_pump_policy: Option<u32>,
+    client_pump_kernel_priority: Option<i32>,
+    pending_frames: u64,
+}
+struct SilenceLedger {
+    events: Vec<crate::audio::AudioNativeMicrophoneSilenceEvent>,
+    omitted_events: u64,
+}
+impl Default for SilenceLedger {
+    fn default() -> Self {
+        Self {
+            events: Vec::with_capacity(64),
+            omitted_events: 0,
+        }
+    }
+}
+impl SilenceLedger {
+    fn record(&mut self, event: crate::audio::AudioNativeMicrophoneSilenceEvent) {
+        if self.events.len() < 64 {
+            self.events.push(event);
+        } else {
+            self.omitted_events = self.omitted_events.saturating_add(1);
+        }
+    }
+}
 #[derive(Default)]
 struct Metrics {
     timings: Mutex<Vec<crate::audio::AudioStreamTiming>>,
+    loss_trace: Mutex<Vec<crate::audio::AudioInputLossTrace>>,
+    bridge_snapshot: Mutex<BridgeSnapshot>,
+    silence_ledger: Mutex<SilenceLedger>,
     source_underruns: AtomicU64,
     graph_input_dropped: AtomicU64,
+    graph_input_empty: AtomicU64,
+    graph_input_corrupted: AtomicU64,
+    graph_input_overflow: AtomicU64,
     graph_input_fill: AtomicU64,
     graph_input_peak: AtomicU64,
     maximum_credit_request_us: AtomicU64,
     maximum_pump_gap_us: AtomicU64,
+    maximum_host_poll_gap_us: AtomicU64,
+    maximum_host_advance_frames: AtomicU64,
 }
 impl Metrics {
+    fn capture_bridge_state(
+        &self,
+        session: &gr_audio_linux::Session,
+        streams: &Arc<Mutex<SampleStreams>>,
+        credit: &NativeMicCredit,
+        accepted_source_frames: u64,
+        pending_frames: usize,
+    ) {
+        let (client_queue_frames, client_pump_maximum_interval_us, client_pump_scheduling) = {
+            let streams = streams
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            (
+                streams.queued_microphone_frames() as u64,
+                streams.maximum_pump_interval_us(),
+                streams.pump_scheduling(),
+            )
+        };
+        let graph_queue_frames = session.queued_playback_frames().map(|frames| frames as u64);
+        *self
+            .bridge_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = BridgeSnapshot {
+            sampled_at: Some(Instant::now()),
+            credit_host_frames: credit.host,
+            credit_consumed_source_frames: credit.consumed,
+            credit_submitted_frames: credit.submitted,
+            accepted_source_frames,
+            graph_queue_frames,
+            client_queue_frames,
+            client_pump_maximum_interval_us,
+            client_pump_policy: client_pump_scheduling.map(|scheduling| scheduling.policy),
+            client_pump_kernel_priority: client_pump_scheduling
+                .map(|scheduling| scheduling.kernel_priority),
+            pending_frames: pending_frames as u64,
+        };
+    }
+    fn observe_silence(
+        &self,
+        previous_host: u64,
+        host: u64,
+        previous_silence: u64,
+        silence: u64,
+        gap: Duration,
+    ) {
+        if silence <= previous_silence {
+            return;
+        }
+        let state = *self
+            .bridge_snapshot
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let observed = Instant::now();
+        let event = crate::audio::AudioNativeMicrophoneSilenceEvent {
+            previous_host_frames: previous_host,
+            host_frames: host,
+            previous_silence_frames: previous_silence,
+            silence_frames: silence,
+            reply_interval_us: u64::try_from(gap.as_micros()).unwrap_or(u64::MAX),
+            bridge: state
+                .sampled_at
+                .and_then(|sampled| observed.checked_duration_since(sampled))
+                .map(|age| crate::audio::AudioNativeMicrophoneBridgeSample {
+                    age_us: u64::try_from(age.as_micros()).unwrap_or(u64::MAX),
+                    credit_host_frames: state.credit_host_frames,
+                    credit_consumed_source_frames: state.credit_consumed_source_frames,
+                    credit_submitted_frames: state.credit_submitted_frames,
+                    accepted_source_frames: state.accepted_source_frames,
+                    graph_queue_frames: state.graph_queue_frames,
+                    client_queue_frames: state.client_queue_frames,
+                    client_pump_maximum_interval_us: state.client_pump_maximum_interval_us,
+                    client_pump_policy: state.client_pump_policy,
+                    client_pump_kernel_priority: state.client_pump_kernel_priority,
+                    pending_frames: state.pending_frames,
+                }),
+        };
+        self.silence_ledger
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .record(event);
+    }
+    fn observe_host_clock(&self, gap: Duration, previous: u64, host: u64) {
+        self.maximum_host_poll_gap_us.fetch_max(
+            u64::try_from(gap.as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+        self.maximum_host_advance_frames
+            .fetch_max(host.saturating_sub(previous), Ordering::Relaxed);
+    }
     fn capture(&self, session: &gr_audio_linux::Session) {
         self.source_underruns
             .store(session.underrun_frames(), Ordering::Release);
         self.graph_input_dropped
             .store(session.dropped_playback_frames(), Ordering::Release);
+        *self
+            .loss_trace
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = session
+            .input_loss_trace()
+            .into_iter()
+            .map(|trace| crate::audio::AudioInputLossTrace {
+                endpoint: trace.endpoint,
+                received_frames: trace.received_frames,
+                omitted_events: trace.omitted_events,
+                events: trace
+                    .events
+                    .into_iter()
+                    .map(|event| crate::audio::AudioInputLossEvent {
+                        first_frame: event.first_frame,
+                        frames: event.frames,
+                        graph_ticks: event.graph_ticks,
+                        reason: match event.reason {
+                            gr_audio_linux::InputLossReason::Empty => {
+                                crate::audio::AudioInputLossReason::Empty
+                            }
+                            gr_audio_linux::InputLossReason::Corrupted => {
+                                crate::audio::AudioInputLossReason::Corrupted
+                            }
+                            gr_audio_linux::InputLossReason::QueueOverflow => {
+                                crate::audio::AudioInputLossReason::QueueOverflow
+                            }
+                        },
+                    })
+                    .collect(),
+            })
+            .collect();
+        let (empty, corrupted, overflow) = session.input_loss_frames();
+        self.graph_input_empty.store(empty, Ordering::Release);
+        self.graph_input_corrupted
+            .store(corrupted, Ordering::Release);
+        self.graph_input_overflow.store(overflow, Ordering::Release);
         if let Some(fill) = session.queued_playback_frames() {
             self.graph_input_fill.store(fill as u64, Ordering::Release);
             self.graph_input_peak
@@ -65,27 +234,35 @@ struct PumpConfig {
     playback_channels: usize,
     microphone_channels: usize,
 }
-// Keep native microphone production tied to actual USB host media time. A
-// stopped capture must stop delivery before the worker queue fills; its spare
-// capacity is not a steady-state target.
+// The host clock activates input, but only consumption of queued source grants
+// refill credit. Inserted silence must not expand the operating fill. A stopped
+// capture stops delivery; spare worker queue capacity is not a steady-state target.
+#[derive(Default)]
+struct NativeMicProgress {
+    host: u64,
+    consumed: u64,
+}
+
 struct NativeMicCredit {
     host: u64,
+    consumed: u64,
     submitted: u64,
     started: bool,
 }
 impl NativeMicCredit {
     const FILL: u64 = 672; // 14 ms at the compiled 48 kHz profiles.
-    fn update_host(&mut self, host: u64) {
+    fn update_progress(&mut self, host: u64, consumed: u64) {
         self.started |= host > 0;
         self.host = host;
-        self.submitted = self.submitted.max(host);
+        self.consumed = self.consumed.max(consumed);
+        self.submitted = self.submitted.max(self.consumed);
     }
     fn available(&self) -> usize {
         if !self.started {
             return 0;
         }
         usize::try_from(
-            self.host
+            self.consumed
                 .saturating_add(Self::FILL)
                 .saturating_sub(self.submitted)
                 .min(128),
@@ -96,28 +273,82 @@ impl NativeMicCredit {
         self.submitted += frames as u64;
     }
 }
+fn refill_native_microphone(
+    credit: &mut NativeMicCredit,
+    mut transfer: impl FnMut(usize) -> Result<usize, AudioError>,
+) -> Result<(), AudioError> {
+    // One delayed wake-up may represent several wire packets. Refill only the
+    // existing operating fill, with a finite per-cycle budget and no busy wait.
+    for _ in 0..NativeMicCredit::FILL.div_ceil(128) {
+        let available = credit.available();
+        if available == 0 {
+            break;
+        }
+        let accepted = transfer(available)?;
+        if accepted > available {
+            return Err(AudioError::InvalidRequirement);
+        }
+        if accepted == 0 {
+            break;
+        }
+        credit.accepted(accepted);
+    }
+    Ok(())
+}
+
 fn spawn_host_clock_poller(
     control: Arc<Mutex<Control>>,
     microphone_silence: Arc<AtomicU64>,
-    host_frames: Arc<AtomicU64>,
+    progress: Arc<Mutex<NativeMicProgress>>,
     poll_stop: Arc<std::sync::atomic::AtomicBool>,
     poll_error: Arc<Mutex<Option<AudioError>>>,
     metrics: Arc<Metrics>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
+        let mut previous_completion = Instant::now();
+        let mut previous_host = 0;
+        let mut previous_silence = 0;
         while !poll_stop.load(Ordering::Acquire) {
             let started = Instant::now();
-            let result = control
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .microphone_host_frames();
+            let result = {
+                let mut control = control
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                control
+                    .microphone_host_frames()
+                    .and_then(|(host, silence)| {
+                        control
+                            .microphone_consumed_frames()
+                            .map(|consumed| (host, silence, consumed))
+                    })
+            };
             metrics.maximum_credit_request_us.fetch_max(
                 u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
                 Ordering::Relaxed,
             );
             match result {
-                Ok((host, silence)) => {
-                    host_frames.store(host, Ordering::Release);
+                Ok((host, silence, consumed)) => {
+                    let completed = Instant::now();
+                    metrics.observe_host_clock(
+                        completed.duration_since(previous_completion),
+                        previous_host,
+                        host,
+                    );
+                    metrics.observe_silence(
+                        previous_host,
+                        host,
+                        previous_silence,
+                        silence,
+                        completed.duration_since(previous_completion),
+                    );
+                    previous_completion = completed;
+                    previous_host = host;
+                    previous_silence = silence;
+                    let mut progress = progress
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    progress.host = host;
+                    progress.consumed = progress.consumed.max(consumed);
                     microphone_silence.store(silence, Ordering::Release);
                 }
                 Err(error) => {
@@ -143,14 +374,14 @@ fn pump_session(
     metrics: &Arc<Metrics>,
     config: PumpConfig,
 ) -> Result<(), AudioError> {
-    let host_frames = Arc::new(AtomicU64::new(0));
+    let progress = Arc::new(Mutex::new(NativeMicProgress::default()));
     let poll_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let poll_error = Arc::new(Mutex::new(None));
     let poller = config.microphone_native.then(|| {
         spawn_host_clock_poller(
             control.clone(),
             microphone_silence.clone(),
-            host_frames.clone(),
+            progress.clone(),
             poll_stop.clone(),
             poll_error.clone(),
             metrics.clone(),
@@ -159,7 +390,7 @@ fn pump_session(
     let result = run(
         session,
         streams,
-        &host_frames,
+        &progress,
         &poll_error,
         stop,
         metrics,
@@ -293,6 +524,41 @@ impl Bridge {
             self.metrics.graph_input_peak.load(Ordering::Acquire),
         )
     }
+    pub(crate) fn graph_input_loss_frames(&self) -> (u64, u64, u64) {
+        (
+            self.metrics.graph_input_empty.load(Ordering::Acquire),
+            self.metrics.graph_input_corrupted.load(Ordering::Acquire),
+            self.metrics.graph_input_overflow.load(Ordering::Acquire),
+        )
+    }
+    pub(crate) fn graph_input_loss_trace(&self) -> Vec<crate::audio::AudioInputLossTrace> {
+        self.metrics
+            .loss_trace
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+    pub(crate) fn silence_trace(&self) -> crate::audio::AudioNativeMicrophoneSilenceTrace {
+        let ledger = self
+            .metrics
+            .silence_ledger
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        crate::audio::AudioNativeMicrophoneSilenceTrace {
+            events: ledger.events.clone(),
+            omitted_events: ledger.omitted_events,
+        }
+    }
+    pub(crate) fn host_clock_progress(&self) -> (u64, u64) {
+        (
+            self.metrics
+                .maximum_host_poll_gap_us
+                .load(Ordering::Acquire),
+            self.metrics
+                .maximum_host_advance_frames
+                .load(Ordering::Acquire),
+        )
+    }
     pub(crate) fn scheduling_us(&self) -> (u64, u64) {
         (
             self.metrics
@@ -363,7 +629,7 @@ fn mirror_profile(
 fn run(
     session: &mut gr_audio_linux::Session,
     streams: &Arc<Mutex<SampleStreams>>,
-    host_frames: &AtomicU64,
+    progress: &Mutex<NativeMicProgress>,
     poll_error: &Mutex<Option<AudioError>>,
     stop: &std::sync::atomic::AtomicBool,
     metrics: &Metrics,
@@ -376,8 +642,10 @@ fn run(
     let mut microphone_pending = (0, 0);
     let mut last_timing = Instant::now();
     let mut previous_pump = Instant::now();
+    let mut accepted_source_frames = 0_u64;
     let mut credit = NativeMicCredit {
         host: 0,
+        consumed: 0,
         submitted: 0,
         started: false,
     };
@@ -410,18 +678,25 @@ fn run(
             }
         }
         if config.microphone_native {
-            let host = host_frames.load(Ordering::Acquire);
+            let (host, consumed) = {
+                let progress = progress
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                (progress.host, progress.consumed)
+            };
             if credit.host == 0 && host > 0 {
                 session.activate_inputs();
             }
-            credit.update_host(host);
-            let available = credit.available();
-            if available > 0 && microphone_pending.0 == microphone_pending.1 {
-                let block = session
-                    .read_playback(&mut microphone[..FRAMES * config.microphone_channels])?;
-                microphone_pending = (0, block.frames);
-            }
-            if available > 0 && microphone_pending.0 < microphone_pending.1 {
+            credit.update_progress(host, consumed);
+            refill_native_microphone(&mut credit, |available| {
+                if microphone_pending.0 == microphone_pending.1 {
+                    let block = session
+                        .read_playback(&mut microphone[..FRAMES * config.microphone_channels])?;
+                    microphone_pending = (0, block.frames);
+                }
+                if microphone_pending.0 == microphone_pending.1 {
+                    return Ok(0);
+                }
                 let offset = microphone_pending.0 * config.microphone_channels;
                 let end = (microphone_pending.0 + available).min(microphone_pending.1)
                     * config.microphone_channels;
@@ -430,8 +705,16 @@ fn run(
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .write_microphone(&microphone[offset..end])?;
                 microphone_pending.0 += accepted;
-                credit.accepted(accepted);
-            }
+                accepted_source_frames = accepted_source_frames.saturating_add(accepted as u64);
+                Ok(accepted)
+            })?;
+            metrics.capture_bridge_state(
+                session,
+                streams,
+                &credit,
+                accepted_source_frames,
+                microphone_pending.1 - microphone_pending.0,
+            );
         }
         if last_timing.elapsed() >= Duration::from_millis(100) {
             metrics.capture(session);
@@ -453,19 +736,19 @@ mod tests {
         let task = thread::spawn(move || {
             let started = Instant::now();
             while let Ok((tag, generation)) = gr_privileged_broker::read_message(&mut server) {
-                assert_eq!((tag, generation.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+                assert!(matches!(tag, 5 | 7));
+                assert_eq!(generation.as_slice(), &7_u64.to_le_bytes()[..]);
                 let host = if progress {
                     u64::try_from(started.elapsed().as_micros()).unwrap() * 48 / 1_000
                 } else {
                     0
                 };
-                let reply = [
-                    generation,
-                    host.to_le_bytes().to_vec(),
-                    0_u64.to_le_bytes().to_vec(),
-                ]
-                .concat();
-                gr_privileged_broker::write_message(&mut server, 7, &reply).unwrap();
+                let mut reply = generation;
+                reply.extend(host.to_le_bytes());
+                if tag == 7 {
+                    reply.extend(0_u64.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, tag, &reply).unwrap();
             }
         });
         (
@@ -474,16 +757,90 @@ mod tests {
         )
     }
     #[test]
+    fn native_microphone_poller_requires_source_credit_and_preserves_terminal_errors() {
+        for malformed in [false, true] {
+            let (mut server, client) = UnixStream::pair().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(1)))
+                .unwrap();
+            let worker = thread::spawn(move || {
+                let (tag, generation) = gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!((tag, generation.as_slice()), (7, &7_u64.to_le_bytes()[..]));
+                let reply = [
+                    generation,
+                    96_u64.to_le_bytes().to_vec(),
+                    96_u64.to_le_bytes().to_vec(),
+                ]
+                .concat();
+                gr_privileged_broker::write_message(&mut server, 7, &reply).unwrap();
+                let (tag, mut generation) =
+                    gr_privileged_broker::read_message(&mut server).unwrap();
+                assert_eq!((tag, generation.as_slice()), (5, &7_u64.to_le_bytes()[..]));
+                if !malformed {
+                    generation.extend(0_u64.to_le_bytes());
+                }
+                gr_privileged_broker::write_message(&mut server, 5, &generation).unwrap();
+            });
+            let progress = Arc::new(Mutex::new(NativeMicProgress::default()));
+            let silence = Arc::new(AtomicU64::new(0));
+            let error = Arc::new(Mutex::new(None));
+            let poller = spawn_host_clock_poller(
+                Arc::new(Mutex::new(Control::new(client, 7, 1).unwrap())),
+                silence.clone(),
+                progress.clone(),
+                Arc::new(std::sync::atomic::AtomicBool::new(false)),
+                error.clone(),
+                Arc::new(Metrics::default()),
+            );
+            worker.join().unwrap();
+            poller.join().unwrap();
+            let progress = progress.lock().unwrap();
+            assert_eq!(progress.host, if malformed { 0 } else { 96 });
+            assert_eq!(progress.consumed, 0);
+            assert_eq!(
+                silence.load(Ordering::Acquire),
+                if malformed { 0 } else { 96 }
+            );
+            assert!(error.lock().unwrap().is_some());
+        }
+    }
+
+    #[test]
+    fn native_microphone_silence_does_not_replenish_source_credit() {
+        let mut credit = NativeMicCredit {
+            host: 0,
+            consumed: 0,
+            submitted: 0,
+            started: false,
+        };
+        // The host starts capturing, but has only received inserted silence.
+        credit.update_progress(48, 0);
+        refill_native_microphone(&mut credit, Ok).unwrap();
+        assert_eq!(credit.available(), 0);
+        // Another host packet contains silence: no queued source was consumed.
+        credit.update_progress(96, 0);
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted, NativeMicCredit::FILL);
+        credit.update_progress(144, 64);
+        assert_eq!(credit.available(), 64);
+        credit.accepted(64);
+        credit.update_progress(192, 0); // Regressing observations cannot create credit.
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted - credit.consumed, NativeMicCredit::FILL);
+    }
+
+    #[test]
     fn native_microphone_credit_stops_with_host_and_resumes_with_bounded_fill() {
         let mut credit = NativeMicCredit {
             host: 0,
+            consumed: 0,
             submitted: 0,
             started: false,
         };
         assert_eq!(credit.available(), 0);
-        credit.update_host(0);
+        credit.update_progress(0, 0);
         assert_eq!(credit.available(), 0);
-        credit.update_host(48);
+        credit.update_progress(48, 48);
         assert_eq!(credit.available(), 128);
         for _ in 0..5 {
             credit.accepted(128);
@@ -491,13 +848,84 @@ mod tests {
         assert_eq!(credit.available(), 32);
         credit.accepted(32);
         assert_eq!(credit.available(), 0);
-        credit.update_host(96);
+        credit.update_progress(96, 96);
         assert_eq!(credit.available(), 48);
         credit.accepted(48);
-        credit.update_host(960);
+        credit.update_progress(960, 960);
         assert_eq!(credit.submitted, 960);
         assert_eq!(credit.available(), 128);
     }
+    #[test]
+    fn native_microphone_refill_restores_existing_fill_after_delayed_host_progress() {
+        let mut credit = NativeMicCredit {
+            host: 0,
+            consumed: 0,
+            submitted: 0,
+            started: false,
+        };
+        refill_native_microphone(&mut credit, |_| panic!("capture has not started")).unwrap();
+        credit.update_progress(48, 48);
+        let mut packets = Vec::new();
+        refill_native_microphone(&mut credit, |available| {
+            packets.push(available);
+            Ok(available)
+        })
+        .unwrap();
+        assert_eq!(packets, [128, 128, 128, 128, 128, 32]);
+        assert_eq!(credit.submitted, 48 + NativeMicCredit::FILL);
+        // Six milliseconds pass while the bridge is asleep. One packet cannot
+        // replace the 288 frames consumed; catch up without expanding the fill.
+        credit.update_progress(48 + 288, 48 + 288);
+        packets.clear();
+        refill_native_microphone(&mut credit, |available| {
+            packets.push(available);
+            Ok(available)
+        })
+        .unwrap();
+        assert_eq!(packets, [128, 128, 32]);
+        assert_eq!(credit.available(), 0);
+        assert_eq!(credit.submitted, credit.host + NativeMicCredit::FILL);
+    }
+
+    #[test]
+    fn native_microphone_refill_bounds_partial_progress_and_preserves_backpressure_errors() {
+        let mut credit = NativeMicCredit {
+            host: 48,
+            consumed: 48,
+            submitted: 48,
+            started: true,
+        };
+        let mut attempts = 0;
+        refill_native_microphone(&mut credit, |_| {
+            attempts += 1;
+            Ok(0)
+        })
+        .unwrap();
+        assert_eq!(attempts, 1);
+        assert_eq!(credit.submitted, 48);
+        attempts = 0;
+        refill_native_microphone(&mut credit, |_| {
+            attempts += 1;
+            Ok(1)
+        })
+        .unwrap();
+        assert_eq!(attempts, 6);
+        assert_eq!(credit.submitted, 54);
+        let error = AudioError::Backend {
+            reason: "synthetic transfer failure".into(),
+        };
+        assert_eq!(
+            refill_native_microphone(&mut credit, |_| Err(error.clone())),
+            Err(error)
+        );
+        assert_eq!(credit.submitted, 54);
+        assert_eq!(
+            refill_native_microphone(&mut credit, |available| Ok(available + 1)),
+            Err(AudioError::InvalidRequirement)
+        );
+        assert_eq!(credit.submitted, 54);
+    }
+
     #[test]
     fn graph_diagnostics_remain_readable_after_bridge_closure() {
         let timing = crate::audio::AudioStreamTiming {
@@ -514,23 +942,184 @@ mod tests {
             error: Arc::new(Mutex::new(None)),
             metrics: Arc::new(Metrics {
                 timings: Mutex::new(vec![timing.clone()]),
+                loss_trace: Mutex::new(vec![crate::audio::AudioInputLossTrace {
+                    endpoint: "synthetic.native".into(),
+                    received_frames: 256,
+                    events: vec![crate::audio::AudioInputLossEvent {
+                        reason: crate::audio::AudioInputLossReason::Empty,
+                        first_frame: 0,
+                        frames: 8,
+                        graph_ticks: Some(42),
+                    }],
+                    omitted_events: 3,
+                }]),
                 source_underruns: AtomicU64::new(512),
                 graph_input_dropped: AtomicU64::new(24),
+                graph_input_empty: AtomicU64::new(8),
+                graph_input_corrupted: AtomicU64::new(4),
+                graph_input_overflow: AtomicU64::new(12),
                 graph_input_fill: AtomicU64::new(128),
                 graph_input_peak: AtomicU64::new(512),
                 maximum_credit_request_us: AtomicU64::new(1_500),
                 maximum_pump_gap_us: AtomicU64::new(3_000),
+                maximum_host_poll_gap_us: AtomicU64::new(9_000),
+                maximum_host_advance_frames: AtomicU64::new(432),
+                bridge_snapshot: Mutex::new(BridgeSnapshot::default()),
+                silence_ledger: Mutex::new(SilenceLedger::default()),
             }),
             thread: None,
         };
+        bridge
+            .metrics
+            .observe_silence(0, 48, 0, 8, Duration::from_millis(1));
+        let retained_silence = bridge.silence_trace();
         bridge.close();
         bridge.close();
+        assert_eq!(bridge.silence_trace(), retained_silence);
         assert_eq!(bridge.timings(), vec![timing]);
         assert_eq!(bridge.source_underrun_frames(), 512);
         assert_eq!(bridge.graph_input_dropped_frames(), 24);
+        assert_eq!(bridge.graph_input_loss_frames(), (8, 4, 12));
+        let trace = bridge.graph_input_loss_trace();
+        assert_eq!(trace[0].received_frames, 256);
+        assert_eq!(trace[0].events[0].frames, 8);
+        assert_eq!(trace[0].omitted_events, 3);
         assert_eq!(bridge.graph_input_queue_frames(), (128, 512));
         assert_eq!(bridge.scheduling_us(), (1_500, 3_000));
+        assert_eq!(bridge.host_clock_progress(), (9_000, 432));
+        assert_eq!(bridge.silence_trace().events.len(), 1);
+        assert_eq!(bridge.silence_trace().omitted_events, 0);
     }
+    #[test]
+    fn silence_ledger_preserves_host_bounds_and_unavailable_bridge_samples() {
+        let metrics = Metrics::default();
+        metrics.observe_silence(0, 48, 0, 0, Duration::from_millis(1));
+        assert!(metrics.silence_ledger.lock().unwrap().events.is_empty());
+        metrics.observe_silence(48, 96, 0, 16, Duration::from_millis(2));
+        let event = metrics.silence_ledger.lock().unwrap().events[0].clone();
+        assert_eq!((event.previous_host_frames, event.host_frames), (48, 96));
+        assert_eq!(
+            (event.previous_silence_frames, event.silence_frames),
+            (0, 16)
+        );
+        assert_eq!(event.reply_interval_us, 2_000);
+        assert_eq!(event.bridge, None);
+        *metrics.bridge_snapshot.lock().unwrap() = BridgeSnapshot {
+            sampled_at: Some(
+                Instant::now()
+                    .checked_sub(Duration::from_millis(1))
+                    .unwrap(),
+            ),
+            credit_host_frames: 96,
+            credit_consumed_source_frames: 80,
+            credit_submitted_frames: 768,
+            accepted_source_frames: 672,
+            graph_queue_frames: Some(256),
+            client_queue_frames: 128,
+            pending_frames: 32,
+            client_pump_maximum_interval_us: 2_000,
+            client_pump_policy: Some(2),
+            client_pump_kernel_priority: Some(79),
+        };
+        metrics.observe_silence(96, 144, 16, 24, Duration::from_millis(3));
+        let sample = metrics.silence_ledger.lock().unwrap().events[1]
+            .bridge
+            .clone()
+            .unwrap();
+        assert!(sample.age_us >= 1_000);
+        assert_eq!(
+            (sample.credit_host_frames, sample.credit_submitted_frames),
+            (96, 768)
+        );
+        assert_eq!(sample.accepted_source_frames, 672);
+        assert_eq!(sample.credit_consumed_source_frames, 80);
+        assert_eq!(sample.graph_queue_frames, Some(256));
+        assert_eq!(
+            (sample.client_queue_frames, sample.pending_frames),
+            (128, 32)
+        );
+        metrics.bridge_snapshot.lock().unwrap().sampled_at =
+            Some(Instant::now() + Duration::from_secs(3_600));
+        metrics.observe_silence(144, 192, 24, 32, Duration::from_millis(1));
+        assert_eq!(
+            metrics.silence_ledger.lock().unwrap().events[2].bridge,
+            None
+        );
+    }
+
+    #[test]
+    fn silence_ledger_bounds_events_without_allocating_more_slots() {
+        let metrics = Metrics::default();
+        let capacity = metrics.silence_ledger.lock().unwrap().events.capacity();
+        for i in 0..70 {
+            metrics.observe_silence(i * 48, (i + 1) * 48, i, i + 1, Duration::from_millis(1));
+        }
+        // Equal or regressing counters are not fabricated as loss increases.
+        metrics.observe_silence(3_360, 3_408, 70, 70, Duration::from_millis(1));
+        metrics.observe_silence(3_408, 3_456, 70, 0, Duration::from_millis(1));
+        let ledger = metrics.silence_ledger.lock().unwrap();
+        assert_eq!(ledger.events.len(), 64);
+        assert_eq!(ledger.events.capacity(), capacity);
+        assert_eq!(ledger.omitted_events, 6);
+        assert_eq!(ledger.events[0].previous_host_frames, 0);
+        assert_eq!(ledger.events[63].host_frames, 3_072);
+    }
+
+    #[test]
+    fn silence_ledger_reads_one_coherent_bridge_sample_during_publication() {
+        let metrics = Arc::new(Metrics::default());
+        *metrics.bridge_snapshot.lock().unwrap() = BridgeSnapshot {
+            sampled_at: Some(Instant::now()),
+            graph_queue_frames: Some(0),
+            ..BridgeSnapshot::default()
+        };
+        let writer = metrics.clone();
+        let thread = std::thread::spawn(move || {
+            for value in 0..500 {
+                *writer.bridge_snapshot.lock().unwrap() = BridgeSnapshot {
+                    sampled_at: Some(Instant::now()),
+                    credit_host_frames: value,
+                    credit_submitted_frames: value,
+                    accepted_source_frames: value,
+                    graph_queue_frames: Some(value),
+                    client_queue_frames: value,
+                    pending_frames: value,
+                    ..BridgeSnapshot::default()
+                };
+            }
+        });
+        for i in 0..64 {
+            metrics.observe_silence(i * 48, (i + 1) * 48, i, i + 1, Duration::from_millis(1));
+        }
+        thread.join().unwrap();
+        for event in &metrics.silence_ledger.lock().unwrap().events {
+            assert!(event.bridge.is_some());
+            if let Some(sample) = &event.bridge {
+                assert_eq!(sample.credit_host_frames, sample.credit_submitted_frames);
+                assert_eq!(sample.credit_host_frames, sample.accepted_source_frames);
+                assert_eq!(Some(sample.credit_host_frames), sample.graph_queue_frames);
+                assert_eq!(sample.credit_host_frames, sample.client_queue_frames);
+                assert_eq!(sample.credit_host_frames, sample.pending_frames);
+            }
+        }
+    }
+
+    #[test]
+    fn host_clock_observations_include_poll_sleep_and_preserve_maxima() {
+        let metrics = Metrics::default();
+        metrics.observe_host_clock(Duration::from_millis(15), 100, 820);
+        metrics.observe_host_clock(Duration::from_millis(2), 820, 916);
+        metrics.observe_host_clock(Duration::from_millis(3), 916, 900);
+        assert_eq!(
+            metrics.maximum_host_poll_gap_us.load(Ordering::Acquire),
+            15_000
+        );
+        assert_eq!(
+            metrics.maximum_host_advance_frames.load(Ordering::Acquire),
+            720
+        );
+    }
+
     #[test]
     fn mirror_preserves_group_formats_and_reverses_only_native_directions() {
         for profile in [

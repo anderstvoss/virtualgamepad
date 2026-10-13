@@ -67,6 +67,20 @@ pub trait HostSessionFactory: Send + Sync {
 
 /// The only broker endpoint accepted by unprivileged providers.
 pub const BROKER_SOCKET_PATH: &str = "/run/virtualgamepad/broker.sock";
+
+/// Why the current Linux HID gadget transport cannot satisfy the controller contract.
+pub const DUMMY_HCD_UNAVAILABLE_REASON: &str = "dummy_hcd HID is unavailable: Linux f_hid exposes GET_REPORT IDs without report type/request length or an explicit negative reply; complete controller request semantics cannot be represented";
+
+/// Reject the current ID-only gadget transport before opening host resources.
+///
+/// A future transport must implement complete request metadata and error replies,
+/// not merely detect a newer kernel version or the presence of an ioctl.
+///
+/// # Errors
+/// Returns the technical limitation of the currently implemented transport.
+pub fn require_dummy_hcd_contract() -> Result<(), &'static str> {
+    Err(DUMMY_HCD_UNAVAILABLE_REASON)
+}
 const PROTOCOL_VERSION: u16 = 1;
 const MAX_WIRE_PAYLOAD: usize = 256;
 
@@ -441,7 +455,12 @@ impl BrokerRegistry {
             let _ = self.policy.close(peer, session);
             let _permit = self.permits.remove(&session);
             if let Some(mut host) = self.sessions.remove(&session) {
-                let _ = host.close();
+                if let Err(cleanup) = host.close() {
+                    let initiating = result.err().expect("terminal host error");
+                    return Err(BrokerError::Host {
+                        reason: format!("{initiating}; cleanup also failed: {cleanup}"),
+                    });
+                }
             }
         }
         result
@@ -876,6 +895,60 @@ mod tests {
             registry.send_input(1000, session, &[0; 64]),
             Err(BrokerError::UnknownSession { .. })
         ));
+    }
+
+    #[test]
+    fn terminal_probe_error_cancels_owned_session_and_preserves_cleanup_error() {
+        struct FailingProbe(Arc<Mutex<u8>>);
+        impl HostSession for FailingProbe {
+            fn send_input(&mut self, _: &[u8]) -> Result<(), BrokerError> {
+                Ok(())
+            }
+            fn poll_reverse(&mut self) -> Result<Option<Vec<u8>>, BrokerError> {
+                Err(BrokerError::Host {
+                    reason: "unsupported probe".into(),
+                })
+            }
+            fn diagnostics(&self) -> Vec<u8> {
+                vec![]
+            }
+            fn close(&mut self) -> Result<(), BrokerError> {
+                *self.0.lock().unwrap() += 1;
+                Err(BrokerError::Host {
+                    reason: "unbind failed".into(),
+                })
+            }
+        }
+        let closed = Arc::new(Mutex::new(0));
+        let factory = FakeFactory {
+            closed: Arc::clone(&closed),
+        };
+        let mut registry = BrokerRegistry::new(vec![1000]);
+        let session = registry
+            .open(
+                1000,
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                CompiledControllerKind::DualSense,
+                &factory,
+            )
+            .unwrap();
+        registry
+            .sessions
+            .insert(session, Box::new(FailingProbe(Arc::clone(&closed))));
+        let error = registry
+            .poll_reverse(1000, session)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unsupported probe"));
+        assert!(error.contains("unbind failed"));
+        assert_eq!(*closed.lock().unwrap(), 1);
+        assert!(matches!(
+            registry.poll_reverse(1000, session),
+            Err(BrokerError::UnknownSession { .. })
+        ));
+        registry.close_all();
+        registry.close_all();
+        assert_eq!(*closed.lock().unwrap(), 1);
     }
 
     #[test]

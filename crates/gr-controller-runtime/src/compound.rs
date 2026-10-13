@@ -47,10 +47,16 @@ impl CompoundIdentity {
         ComponentAssociation {
             identity: self,
             role,
-            physical_path: format!("virtualgamepad/{}/c{:04x}", hex(self.creation), role.0),
+            physical_path: component_physical_path(&hex(self.creation), role, std::process::id()),
             unique_id: format!("{}/c{:04x}", hex(self.logical), role.0),
         }
     }
+}
+
+// Preserve all creation entropy while exposing the creating process for
+// process-scoped host resource inventories. This label is not authorization.
+fn component_physical_path(creation: &str, role: ComponentId, process: u32) -> String {
+    format!("virtualgamepad/p{process:x}/{creation}/c{:04x}", role.0)
 }
 
 /// One prepared provider open owned by a controller package.
@@ -1030,6 +1036,24 @@ mod tests {
             before.components[0].association
         );
         assert!(session.diagnostics().closed);
+    }
+
+    #[test]
+    fn compound_physical_identity_preserves_entropy_roles_and_process_bounds() {
+        let creation = "0123456789abcdef0123456789abcdef";
+        for process in [1, 42, u32::MAX] {
+            for role in [ComponentId(0), ComponentId(1), ComponentId(u16::MAX)] {
+                let path = component_physical_path(creation, role, process);
+                assert!(path.starts_with(&format!("virtualgamepad/p{process:x}/")));
+                assert!(path.contains(creation));
+                assert!(path.ends_with(&format!("/c{:04x}", role.0)));
+                assert!(path.len() < 64);
+            }
+        }
+        assert_ne!(
+            component_physical_path(creation, ComponentId(0), 42),
+            component_physical_path(creation, ComponentId(0), 43)
+        );
     }
 
     #[test]

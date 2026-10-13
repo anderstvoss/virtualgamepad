@@ -566,6 +566,11 @@ pub enum ProviderError {
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ProviderPreflightError {
+    #[error("{target} is unavailable: {reason}")]
+    Unavailable {
+        target: RealizationTarget,
+        reason: String,
+    },
     #[error("invalid provider request: {reason}")]
     InvalidRequest { reason: String },
     #[error("{target} is unavailable on this platform")]

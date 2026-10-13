@@ -104,9 +104,10 @@ silently mapped to a lower-fidelity realization. USB gadget, Bluetooth and audio
 support are not promoted by API cleanup. The demo disables gadget selection and
 uses the same application API as ordinary consumers.
 
-The root contract is a **preliminary** candidate. Hands-on refinement precedes
-the final API review and separate quality review. The intended alpha is Git-based;
-registry publication remains disabled. Changes after alpha require rationale and
+The ordinary root signatures are checked against the reviewed alpha snapshot.
+The holistic release review and remediation retain unresolved acceptance gates;
+a signature freeze alone does not establish readiness. The intended alpha is
+Git-based; registry publication remains disabled. Changes after alpha require rationale and
 migration notes, not a promise of 1.0 compatibility.
 
 
@@ -138,3 +139,24 @@ Use `AudioDiagnostics` for retained health and loss, typed errors for sample
 alignment/ownership/closure, and optional `microphone_consumed_frames()` for pacing.
 Graph timing is experimental instrumentation, not measured end-to-end latency.
 See [audio](CONTROLLER_AUDIO.md) and [migration](ALPHA_API_MIGRATION.md).
+
+## Lifecycle observations and companion topology
+
+Host Start/Open/Close/Stop observations arrive through the same bounded output
+path as controller feedback after required protocol handling in `service`. Their
+order is preserved; diagnostics account for observation overflow. Closing an
+application controller does not invent a host lifecycle event. Subscription close
+disconnects publication, drains accepted events and waits for finite callbacks;
+a callback can close its own subscription without joining itself. A panicking
+callback terminates that subscription and increments its panic diagnostics.
+
+DS4 uinput creation owns a gamepad node and a separate touch companion. The
+primary component surface describes the complete logical controller; the touch
+component exposes its association role and creation-scoped identity. Applications
+should iterate topology components rather than assume one input component per
+controller. Touch requires an isolated consumer for safe acceptance testing.
+
+The supporting `gr_hid::Protocol::lifecycle` hook now returns `Option<Output>`;
+custom implementations must return their observation or `None` after state
+handling. Supporting `ControllerAssociation` constructors also need the new
+`companions` field. These SPI changes leave ordinary root signatures unchanged.

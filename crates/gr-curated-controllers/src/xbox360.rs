@@ -277,7 +277,12 @@ static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     event_code: 80,
 }];
 static HID_OUTPUTS: [OutputSurface; 0] = [];
-static DUMMY_HCD_RESTRICTIONS: [TargetRestriction; 3] = [
+const STANDARD_HID_IDENTITY_RESTRICTION: TargetRestriction = TargetRestriction {
+    feature: "Xbox protocol identity",
+    reason: "standard HID uses a neutral virtual identity; vendor-native Xbox decoders require a different wire layout",
+};
+static DUMMY_HCD_RESTRICTIONS: [TargetRestriction; 4] = [
+    STANDARD_HID_IDENTITY_RESTRICTION,
     TargetRestriction {
         feature: "headset-audio",
         reason: "requires a separately declared audio sidecar",
@@ -291,7 +296,8 @@ static DUMMY_HCD_RESTRICTIONS: [TargetRestriction; 3] = [
         reason: "this best-effort USB attachment is curated standard HID, not the proprietary Xbox USB protocol",
     },
 ];
-static USBIP_RESTRICTIONS: [TargetRestriction; 2] = [
+static USBIP_RESTRICTIONS: [TargetRestriction; 3] = [
+    STANDARD_HID_IDENTITY_RESTRICTION,
     TargetRestriction {
         feature: "chatpad",
         reason: "requires controller-native accessory transport",
@@ -311,6 +317,12 @@ static RESTRICTIONS: [TargetRestriction; 3] = [
         feature: "chatpad",
         reason: "requires controller-native accessory transport",
     },
+];
+static HID_RESTRICTIONS: [TargetRestriction; 4] = [
+    RESTRICTIONS[0],
+    RESTRICTIONS[1],
+    RESTRICTIONS[2],
+    STANDARD_HID_IDENTITY_RESTRICTION,
 ];
 const STICK_AXIS: InputAxisRange = InputAxisRange {
     minimum: i16::MIN as i32,
@@ -475,7 +487,7 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        restrictions: &HID_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
@@ -910,8 +922,10 @@ fn realization() -> NativeControllerRealization {
     })
 }
 fn hid_realization() -> NativeControllerRealization {
-    // Local HID identity only; physical Xbox/xpad USB behavior requires USB gadget.
-    common::hid_realization("Virtual Xbox 360", 0x045e, 0x028e)
+    // Microsoft Xbox identity would select native XInput packet decoding, while
+    // this presentation uses the descriptor's generic nine-byte input layout.
+    let (vendor, product) = gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY;
+    common::hid_realization("Virtual Xbox 360 (standard HID)", vendor, product)
 }
 pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, ProviderError> {
     let realization = match options.target {
@@ -1001,6 +1015,50 @@ pub fn test_controller(
 mod tests {
     use super::*;
     use gr_realization_api::RealizationSessionId;
+
+    #[test]
+    fn standard_hid_identity_does_not_select_a_native_xbox_wire_decoder() {
+        let NativeControllerRealization::Uhid(profile) = hid_realization() else {
+            panic!("UHID presentation required");
+        };
+        // Microsoft 045e:028e selects a native Xbox decoder in HIDAPI consumers.
+        // This controller instead emits the descriptor's nine-byte generic frame.
+        assert_eq!(
+            (profile.identity.vendor_id, profile.identity.product_id),
+            (0, 0)
+        );
+        assert!(profile.device_name.contains("standard HID"));
+        for surface in [&HID_SURFACE, &DUMMY_HCD_SURFACE, &USBIP_SURFACE] {
+            assert!(
+                surface
+                    .common
+                    .restrictions()
+                    .iter()
+                    .any(
+                        |restriction| restriction.feature == "Xbox protocol identity"
+                            && restriction.reason.contains("neutral virtual identity")
+                            && restriction.reason.contains("different wire layout")
+                    )
+            );
+        }
+        assert_eq!(
+            profile.descriptor,
+            gr_controller_wire::STANDARD_GAMEPAD_DESCRIPTOR
+        );
+        let ProviderFrame::HidInput { bytes, report_id } = xbox_hid_frame(&Xbox360State::default())
+        else {
+            panic!("generic HID input required");
+        };
+        assert_eq!(report_id, None);
+        assert_eq!(bytes.len(), 9);
+        let NativeControllerRealization::Evdev(evdev) = realization() else {
+            panic!("evdev presentation required");
+        };
+        assert_eq!(
+            (evdev.identity.vendor_id, evdev.identity.product_id),
+            (0x045e, 0x028e)
+        );
+    }
 
     #[test]
     fn every_xbox_target_has_the_valid_complete_input_topology() {

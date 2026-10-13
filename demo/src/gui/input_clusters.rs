@@ -83,6 +83,8 @@ struct TouchpadState {
     lockout_started: Option<Instant>,
     suppress_until_neutral: bool,
     suppress_until_pointer_release: bool,
+    keyboard_contact: Option<usize>,
+    suppress_until_keyboard_release: bool,
 }
 
 impl Default for TouchpadState {
@@ -96,6 +98,8 @@ impl Default for TouchpadState {
             lockout_started: None,
             suppress_until_neutral: false,
             suppress_until_pointer_release: false,
+            keyboard_contact: None,
+            suppress_until_keyboard_release: false,
         }
     }
 }
@@ -140,10 +144,13 @@ impl InputUiState {
                 contact.active = false;
                 contact.held = false;
                 contact.relative = false;
+                contact.release_pending = false;
             }
             touchpad.lockout_started = None;
             touchpad.suppress_until_neutral = false;
             touchpad.suppress_until_pointer_release = false;
+            touchpad.keyboard_contact = None;
+            touchpad.suppress_until_keyboard_release = false;
         }
     }
 
@@ -169,13 +176,37 @@ impl InputUiState {
     }
 }
 
+// Each scroll area tracks focus separately; holding focus never undoes manual scrolling.
+fn changed_keyboard_focus_rect(ui: &mut egui::Ui) -> Option<egui::Rect> {
+    let focused = ui.memory(egui::Memory::focused);
+    let changed = ui.data_mut(|data| {
+        let key = ui.id().with("last-revealed-keyboard-focus");
+        let previous = data.get_temp::<Option<egui::Id>>(key).flatten();
+        data.insert_temp(key, focused);
+        previous != focused
+    });
+    if !changed {
+        return None;
+    }
+    let response = focused.and_then(|id| ui.ctx().read_response(id))?;
+    (response.has_focus() && ui.min_rect().contains(response.rect.center()))
+        .then_some(response.rect)
+}
+
+pub(super) fn reveal_keyboard_focus(ui: &mut egui::Ui) {
+    if let Some(rect) = changed_keyboard_focus_rect(ui) {
+        ui.scroll_to_rect(rect, None);
+    }
+}
+
 pub(super) fn horizontal_cards(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash,
     bottom_aligned: bool,
     add: impl FnOnce(&mut egui::Ui),
 ) -> egui::scroll_area::ScrollAreaOutput<()> {
-    egui::ScrollArea::horizontal()
+    let mut focused_rect = None;
+    let output = egui::ScrollArea::horizontal()
         .id_salt(id)
         .max_height(CLUSTER_ROW_MAX_HEIGHT)
         .auto_shrink([false, true])
@@ -194,7 +225,17 @@ pub(super) fn horizontal_cards(
                 }),
                 add,
             );
-        })
+            focused_rect = changed_keyboard_focus_rect(ui);
+            if let Some(rect) = focused_rect {
+                ui.scroll_to_rect(rect, None);
+            }
+        });
+    // egui consumes both scroll targets even when this area only scrolls horizontally.
+    // Forward the focused child to the enclosing vertical area after that consumption.
+    if let Some(rect) = focused_rect {
+        ui.scroll_to_rect(rect, None);
+    }
+    output
 }
 
 pub(super) fn card(
@@ -512,7 +553,14 @@ pub(super) fn draw_stick(
                     });
                 }
             }
-            let (next, changed) = axis_pad(ui, value, stick.x(), stick.y(), state.held(stick.id()));
+            let (next, changed) = axis_pad(
+                ui,
+                stick.title(),
+                value,
+                stick.x(),
+                stick.y(),
+                state.held(stick.id()),
+            );
             if changed {
                 events.push(InputEvent::Axis2 {
                     id: stick.id(),
@@ -572,6 +620,13 @@ pub(super) fn draw_trigger_stack(
                                     .selected(current || button_is_selected(state, key))
                                     .min_size(Vec2::new(72.0, CONTROL_HEIGHT)),
                             );
+                            response.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Button,
+                                    ui.is_enabled(),
+                                    format!("{} press", control.label),
+                                )
+                            });
                             emit_holdable(ui, &response, stack.id(), key, state, |pressed| {
                                 events.push(InputEvent::Button { id, pressed });
                             });
@@ -582,23 +637,49 @@ pub(super) fn draw_trigger_stack(
                                 egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                     .show_value(true),
                             );
-                            if response.changed() {
-                                events.push(InputEvent::Axis1 { id, value });
-                            }
-                            if !state.held(stack.id())
-                                && (response.drag_stopped() || response.clicked())
-                            {
-                                events.push(InputEvent::Axis1 {
-                                    id,
-                                    value: range.neutral,
-                                });
-                            }
+                            response.widget_info(|| {
+                                egui::WidgetInfo::slider(
+                                    ui.is_enabled(),
+                                    f64::from(value),
+                                    control.label,
+                                )
+                            });
+                            emit_axis_slider(
+                                ui,
+                                &response,
+                                id,
+                                range,
+                                value,
+                                state.held(stack.id()),
+                                events,
+                            );
                         }
                     }
                 });
             }
         },
     );
+}
+
+fn draw_touch_lockout_seconds(
+    ui: &mut egui::Ui,
+    seconds: &mut u32,
+    enabled: bool,
+) -> egui::Response {
+    let response = ui.add_enabled(
+        enabled,
+        // Seconds are integral; a fractional default makes arrow steps inert.
+        egui::DragValue::new(seconds)
+            .speed(1.0)
+            .range(1..=3600)
+            .suffix(" seconds"),
+    );
+    response.widget_info(|| {
+        let mut info = egui::WidgetInfo::drag_value(response.enabled(), f64::from(*seconds));
+        info.label = Some("Touchpad lockout duration in seconds".into());
+        info
+    });
+    response
 }
 
 #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
@@ -669,21 +750,16 @@ pub(super) fn draw_touchpad(
             let mut timer_enabled = was_enabled;
             let mut timer_seconds = previous_seconds;
             ui.horizontal(|ui| {
-                ui.checkbox(&mut timer_enabled, "");
-                ui.colored_label(
-                    if timer_enabled {
-                        ui.visuals().text_color()
-                    } else {
-                        Color32::RED
-                    },
-                    "Lockout timer",
+                let label_color = if timer_enabled {
+                    ui.visuals().text_color()
+                } else {
+                    Color32::RED
+                };
+                ui.checkbox(
+                    &mut timer_enabled,
+                    egui::RichText::new("Lockout timer").color(label_color),
                 );
-                ui.add_enabled(
-                    timer_enabled,
-                    egui::DragValue::new(&mut timer_seconds)
-                        .range(1..=3600)
-                        .suffix(" seconds"),
-                );
+                draw_touch_lockout_seconds(ui, &mut timer_seconds, timer_enabled);
             });
             reset_this_frame |=
                 configure_touchpad_lockout(input, state, timer_enabled, timer_seconds, events);
@@ -713,17 +789,15 @@ pub(super) fn draw_touchpad(
                             egui::Slider::new(&mut value, range.minimum..=range.maximum)
                                 .text("Deflection"),
                         );
-                        if response.changed() {
-                            events.push(InputEvent::Axis1 { id, value });
-                        }
-                        if !state.held(input.id())
-                            && (response.drag_stopped() || response.clicked())
-                        {
-                            events.push(InputEvent::Axis1 {
-                                id,
-                                value: range.neutral,
-                            });
-                        }
+                        emit_axis_slider(
+                            ui,
+                            &response,
+                            id,
+                            range,
+                            value,
+                            state.held(input.id()),
+                            events,
+                        );
                     }
                 }
                 reset_requested = ui
@@ -751,6 +825,8 @@ pub(super) fn draw_touchpad(
                 egui::StrokeKind::Inside,
             );
             let pointer_down = response.is_pointer_button_down_on();
+            let pointer_clicked = response.clicked()
+                && ui.input(|input| input.pointer.button_released(egui::PointerButton::Primary));
             let mut touch_input_suppressed = reset_this_frame;
             if reset_this_frame {
                 touch_state.suppress_until_neutral |= current.iter().any(Option::is_some);
@@ -758,13 +834,14 @@ pub(super) fn draw_touchpad(
             }
             touch_input_suppressed |=
                 touch_state.suppress_until_neutral || touch_state.suppress_until_pointer_release;
-            if !touch_input_suppressed && (pointer_down || response.clicked()) {
+            if !touch_input_suppressed && (pointer_down || pointer_clicked) {
+                touch_state.keyboard_contact = None;
                 if let Some(position) = response.interact_pointer_pos() {
                     let (x, y) = touch_point(rect, position, input.width(), input.height());
                     let selected = touch_state.selected;
                     let contact = &mut touch_state.contacts[selected];
                     contact.active = true;
-                    contact.release_pending = response.clicked()
+                    contact.release_pending = pointer_clicked
                         && !touch_contact_persists(selected, multitouch, contact.held);
                     emit_touch_move(input, touch_state, selected, (x, y), events);
                 }
@@ -781,6 +858,8 @@ pub(super) fn draw_touchpad(
                     });
                 }
             }
+            let keyboard = touch_keyboard_command(ui, &response, touch_input_suppressed);
+            update_touch_keyboard(input, touch_state, multitouch, keyboard, events);
             for (index, contact) in touch_state.contacts.iter().enumerate() {
                 if contact.active {
                     let point = Pos2::new(
@@ -931,6 +1010,162 @@ fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut 
     touch_state.selected = 0;
     touch_state.relative_input = false;
     touch_state.lockout_started = None;
+    touch_state.keyboard_contact = None;
+    touch_state.suppress_until_keyboard_release = true;
+}
+
+#[derive(Default, Clone, Copy)]
+#[allow(clippy::struct_excessive_bools)] // Independent focus, press edge, held key and lockout evidence.
+struct TouchKeyboardCommand {
+    focused: bool,
+    space_pressed: bool,
+    space_down: bool,
+    direction: (i8, i8),
+    suppressed: bool,
+}
+
+fn touch_keyboard_command(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    suppressed: bool,
+) -> TouchKeyboardCommand {
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Other,
+            ui.is_enabled(),
+            "Touch canvas: Space for contact, W/A/S/D to move",
+        )
+    });
+    ui.small("Keyboard simulates a finger: Space down/up · W/A/S/D move · Tab focus")
+        .on_hover_text("These keys operate the demo, not a physical controller. They send the same touch coordinates and contact releases as mouse input. Hold keeps the selected contact down; leaving the canvas releases a momentary contact.");
+    let focused = response.has_focus() && ui.is_enabled();
+    if focused {
+        ui.painter().rect_stroke(
+            response.rect,
+            3.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
+    ui.input(|input| {
+        let space_pressed = input.events.iter().any(|event| {
+            matches!(
+                event,
+                egui::Event::Key {
+                    key: egui::Key::Space,
+                    pressed: true,
+                    repeat: false,
+                    ..
+                }
+            )
+        });
+        let keys = [egui::Key::A, egui::Key::D, egui::Key::W, egui::Key::S]
+            .map(|key| input.key_pressed(key));
+        TouchKeyboardCommand {
+            focused,
+            space_pressed,
+            space_down: input.key_down(egui::Key::Space),
+            direction: (
+                i8::from(keys[1]) - i8::from(keys[0]),
+                i8::from(keys[3]) - i8::from(keys[2]),
+            ),
+            suppressed,
+        }
+    })
+}
+
+fn release_keyboard_contact(
+    input: &TouchpadInput,
+    state: &mut TouchpadState,
+    multitouch: bool,
+    events: &mut Vec<InputEvent>,
+) {
+    if let Some(index) = state.keyboard_contact.take() {
+        if let Some(contact) = state.contacts.get_mut(index) {
+            if contact.active && !touch_contact_persists(index, multitouch, contact.held) {
+                contact.active = false;
+                contact.release_pending = false;
+                events.push(InputEvent::Touch {
+                    id: input.id(),
+                    contact: u8::try_from(index).expect("contact count is u8"),
+                    point: None,
+                });
+            }
+        }
+    }
+}
+
+fn update_touch_keyboard(
+    input: &TouchpadInput,
+    state: &mut TouchpadState,
+    multitouch: bool,
+    command: TouchKeyboardCommand,
+    events: &mut Vec<InputEvent>,
+) {
+    if !command.space_down {
+        state.suppress_until_keyboard_release = false;
+    }
+    if !command.focused || command.suppressed {
+        release_keyboard_contact(input, state, multitouch, events);
+        state.suppress_until_keyboard_release |= command.space_down;
+        return;
+    }
+    if state.suppress_until_keyboard_release {
+        return;
+    }
+    if state
+        .keyboard_contact
+        .is_some_and(|index| index != state.selected)
+        || !command.space_down
+    {
+        release_keyboard_contact(input, state, multitouch, events);
+    }
+    let selected = state.selected;
+    let contacts: Vec<_> = state
+        .contacts
+        .iter()
+        .map(|contact| (contact.active, contact.held))
+        .collect();
+    if !touch_contact_selectable(selected, multitouch, &contacts) {
+        return;
+    }
+    let Some(contact) = state.contacts.get(selected).copied() else {
+        return;
+    };
+    if command.space_pressed {
+        if contact.active && touch_contact_persists(selected, multitouch, contact.held) {
+            state.contacts[selected].active = false;
+            state.contacts[selected].release_pending = false;
+            state.keyboard_contact = None;
+            events.push(InputEvent::Touch {
+                id: input.id(),
+                contact: u8::try_from(selected).expect("contact count is u8"),
+                point: None,
+            });
+            return;
+        }
+        state.keyboard_contact = Some(selected);
+        emit_touch_move(input, state, selected, (contact.x, contact.y), events);
+    }
+    if state.contacts[selected].active && command.direction != (0, 0) {
+        let contact = state.contacts[selected];
+        let move_axis = |value: u32, direction: i8, extent: u32| {
+            clamp_touch_coordinate(
+                i64::from(value) + i64::from(direction) * i64::from((extent / 100).max(1)),
+                extent,
+            )
+        };
+        emit_touch_move(
+            input,
+            state,
+            selected,
+            (
+                move_axis(contact.x, command.direction.0, input.width()),
+                move_axis(contact.y, command.direction.1, input.height()),
+            ),
+            events,
+        );
+    }
 }
 
 fn clear_touchpad_input(
@@ -1123,6 +1358,8 @@ pub(super) fn draw_motion(
         input.id(),
         state,
         |ui, state, released| {
+            ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
+                .on_hover_text("The sliders inject virtual sensor values. Releasing a keyboard adjustment or leaving the slider resets momentary input to the demo's neutral value; this does not model a physical controller's resting sensor readings.");
             let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale());
             let mut accel = unscale_vector(accelerometer, input.accelerometer_scale());
             let mut changed = false;
@@ -1134,7 +1371,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= response.drag_stopped() || response.clicked();
+                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
             }
             for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
                 .into_iter()
@@ -1145,7 +1382,7 @@ pub(super) fn draw_motion(
                         .text(label),
                 );
                 changed |= response.changed();
-                interaction_finished |= response.drag_stopped() || response.clicked();
+                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
             }
             if motion_should_neutralize(released, hold, interaction_finished) {
                 gyro = [input.range().neutral; 3];
@@ -1163,6 +1400,59 @@ pub(super) fn draw_motion(
     );
 }
 
+fn momentary_axis_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
+    // egui's lost_focus edge can be consumed before the next draw when a
+    // containing view surrenders focus. Retain our own previous-frame evidence.
+    let focused = response.has_focus() && ui.is_enabled();
+    let lost_focus = ui.data_mut(|data| {
+        let id = response.id.with("momentary-axis-keyboard-focus");
+        let previous = data.get_temp::<bool>(id).unwrap_or(false);
+        data.insert_temp(id, focused);
+        previous && !focused
+    });
+    lost_focus
+        || response.drag_stopped()
+        || response.clicked()
+        || response.lost_focus()
+        || (response.has_focus()
+            && ui.input(|input| {
+                input.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::ArrowLeft
+                                | egui::Key::ArrowRight
+                                | egui::Key::ArrowUp
+                                | egui::Key::ArrowDown,
+                            pressed: false,
+                            ..
+                        }
+                    )
+                })
+            }))
+}
+
+fn emit_axis_slider(
+    ui: &egui::Ui,
+    response: &egui::Response,
+    id: InputControlId,
+    range: InputAxisRange,
+    value: i32,
+    held: bool,
+    events: &mut Vec<InputEvent>,
+) {
+    let finished = momentary_axis_interaction_finished(ui, response);
+    if response.changed() {
+        events.push(InputEvent::Axis1 { id, value });
+    }
+    if !held && finished {
+        events.push(InputEvent::Axis1 {
+            id,
+            value: range.neutral,
+        });
+    }
+}
+
 fn motion_should_neutralize(released: bool, hold: bool, interaction_finished: bool) -> bool {
     released || (!hold && interaction_finished)
 }
@@ -1178,13 +1468,22 @@ pub(super) fn draw_extra_axis(
         ExtraAxisInput::OneDimensional { id, title, range } => {
             card(ui, title, |ui| {
                 let mut next = value.0;
-                if ui
-                    .add(egui::Slider::new(&mut next, range.minimum..=range.maximum))
-                    .changed()
-                {
+                let response = ui.add(egui::Slider::new(&mut next, range.minimum..=range.maximum));
+                response.widget_info(|| {
+                    egui::WidgetInfo::slider(ui.is_enabled(), f64::from(next), title)
+                });
+                if response.changed() {
                     events.push(InputEvent::Axis1 { id, value: next });
                 }
-                if ui.button("Reset").clicked() {
+                let reset = ui.button("Reset");
+                reset.widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Button,
+                        ui.is_enabled(),
+                        format!("Reset {title}"),
+                    )
+                });
+                if reset.clicked() {
                     events.push(InputEvent::Axis1 {
                         id,
                         value: range.neutral,
@@ -1194,7 +1493,7 @@ pub(super) fn draw_extra_axis(
         }
         ExtraAxisInput::TwoDimensional { id, title, x, y } => {
             card(ui, title, |ui| {
-                let (next, changed) = axis_pad(ui, value, x, y, false);
+                let (next, changed) = axis_pad(ui, title, value, x, y, false);
                 if changed {
                     events.push(InputEvent::Axis2 {
                         id,
@@ -1412,6 +1711,7 @@ fn value_axis(values: &[(InputControlId, InputValue)], id: InputControlId, neutr
 
 fn axis_pad(
     ui: &mut egui::Ui,
+    label: &str,
     value: (i32, i32),
     x_range: InputAxisRange,
     y_range: InputAxisRange,
@@ -1430,8 +1730,75 @@ fn axis_pad(
     } else if response.drag_stopped() {
         next = axis_release_value(value, x_range, y_range, hold);
     }
+    next = keyboard_pad(ui, &response, label, next, x_range, y_range, hold);
     ui.monospace(format!("x={} y={}", next.0, next.1));
     (next, next != value)
+}
+
+fn keyboard_pad(
+    ui: &mut egui::Ui,
+    response: &egui::Response,
+    label: &str,
+    value: (i32, i32),
+    x_range: InputAxisRange,
+    y_range: InputAxisRange,
+    hold: bool,
+) -> (i32, i32) {
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, ui.is_enabled(), label));
+    ui.small("W/A/S/D · Tab to move focus");
+    let direction = if response.has_focus() && ui.is_enabled() {
+        ui.painter().rect_stroke(
+            response.rect,
+            2.0,
+            ui.visuals().selection.stroke,
+            egui::StrokeKind::Inside,
+        );
+        ui.input(|input| {
+            let keys = [egui::Key::A, egui::Key::D, egui::Key::W, egui::Key::S]
+                .map(|key| input.key_down(key));
+            keys.iter().any(|&down| down).then_some((
+                i8::from(keys[1]) - i8::from(keys[0]),
+                i8::from(keys[3]) - i8::from(keys[2]),
+            ))
+        })
+    } else {
+        None
+    };
+    let key = response.id.with("keyboard-active");
+    let previous = ui.data(|data| data.get_temp::<bool>(key).unwrap_or(false));
+    let (next, active) = keyboard_pad_value(value, x_range, y_range, hold, previous, direction);
+    ui.data_mut(|data| {
+        if active {
+            data.insert_temp(key, true);
+        } else {
+            data.remove::<bool>(key);
+        }
+    });
+    next
+}
+
+fn keyboard_pad_value(
+    value: (i32, i32),
+    x_range: InputAxisRange,
+    y_range: InputAxisRange,
+    hold: bool,
+    was_active: bool,
+    direction: Option<(i8, i8)>,
+) -> ((i32, i32), bool) {
+    if let Some((x, y)) = direction {
+        let axis = |direction, range: InputAxisRange| match direction {
+            -1 => range.minimum,
+            0 => range.neutral,
+            1 => range.maximum,
+            _ => unreachable!("keyboard direction is a difference of booleans"),
+        };
+        ((axis(x, x_range), axis(y, y_range)), true)
+    } else if was_active {
+        (axis_release_value(value, x_range, y_range, hold), false)
+    } else {
+        (value, false)
+    }
 }
 
 fn axis_release_value(
@@ -1512,6 +1879,19 @@ fn snapping_pad(
     } else {
         previous
     };
+    let keyboard = keyboard_pad(
+        ui,
+        &response,
+        "D-pad: W/A/S/D keys",
+        (i32::from(next.0), i32::from(next.1)),
+        range,
+        range,
+        hold,
+    );
+    let next = (
+        i8::try_from(keyboard.0).expect("D-pad range"),
+        i8::try_from(keyboard.1).expect("D-pad range"),
+    );
     (next, next_release_pending)
 }
 
@@ -1607,6 +1987,667 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn keyboard_touch_fixture() -> (TouchpadInput, TouchpadState) {
+        let input = gr_controller_contract::construction::TouchpadInputSpec {
+            id: InputControlId::new("keyboard-touch"),
+            title: "Synthetic touch",
+            width: 100,
+            height: 50,
+            contacts: 2,
+            actuation: TouchpadActuation::None,
+        }
+        .build();
+        let state = TouchpadState {
+            contacts: vec![TouchContactState::default(); 2],
+            ..Default::default()
+        };
+        (input, state)
+    }
+
+    #[test]
+    fn keyboard_touch_quick_press_release_and_focus_loss_are_exact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let mut events = Vec::new();
+        let pressed = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: Some((0, 0))
+            }]
+        );
+        assert!(state.contacts[0].active);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None
+            }]
+        );
+        events.clear();
+        let pressed = TouchKeyboardCommand {
+            space_down: true,
+            ..pressed
+        };
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                space_down: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None
+            }]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, false, pressed, &mut events);
+        assert!(
+            events.is_empty(),
+            "held key cannot reactivate after focus loss"
+        );
+    }
+
+    #[test]
+    fn keyboard_touch_hold_toggle_and_relative_motion_preserve_other_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        state.relative_input = true;
+        state.contacts[0] = TouchContactState {
+            active: true,
+            held: true,
+            relative: true,
+            x: 90,
+            y: 49,
+            ..Default::default()
+        };
+        state.contacts[1] = TouchContactState {
+            held: true,
+            x: 20,
+            y: 10,
+            ..Default::default()
+        };
+        state.selected = 1;
+        let mut events = Vec::new();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, &mut state, true, press, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            true,
+            TouchKeyboardCommand {
+                focused: true,
+                direction: (1, 1),
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: Some((91, 49))
+                },
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 1,
+                    point: Some((21, 11))
+                },
+            ]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, true, press, &mut events);
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 1,
+                point: None
+            }]
+        );
+        assert!(state.contacts[0].active);
+    }
+
+    #[test]
+    fn keyboard_touch_reset_requires_key_release_and_clamps_coordinates() {
+        let (input, _) = keyboard_touch_fixture();
+        let mut ui_state = InputUiState::default();
+        let state = ui_state.touchpad(&input);
+        state.contacts[0] = TouchContactState {
+            active: true,
+            x: 99,
+            y: 49,
+            ..Default::default()
+        };
+        state.keyboard_contact = Some(0);
+        let mut events = Vec::new();
+        reset_touchpad(&input, &mut ui_state, &mut events);
+        assert_eq!(events.len(), 1);
+        events.clear();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        update_touch_keyboard(&input, ui_state.touchpad(&input), false, press, &mut events);
+        assert!(events.is_empty());
+        update_touch_keyboard(
+            &input,
+            ui_state.touchpad(&input),
+            false,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        let state = ui_state.touchpad(&input);
+        state.contacts[0].x = 99;
+        state.contacts[0].y = 49;
+        update_touch_keyboard(
+            &input,
+            state,
+            false,
+            TouchKeyboardCommand {
+                direction: (1, 1),
+                ..press
+            },
+            &mut events,
+        );
+        assert!(events.iter().all(|event| matches!(
+            event,
+            InputEvent::Touch {
+                point: Some((99, 49)),
+                ..
+            }
+        )));
+        ui_state.release_all();
+        let state = ui_state.touchpad(&input);
+        assert!(state.keyboard_contact.is_none());
+        assert!(!state.contacts[0].active);
+        assert!(!state.contacts[0].release_pending);
+    }
+
+    #[test]
+    fn keyboard_touch_selection_change_and_suppression_release_only_owned_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let press = TouchKeyboardCommand {
+            focused: true,
+            space_pressed: true,
+            space_down: true,
+            ..Default::default()
+        };
+        let mut events = Vec::new();
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        state.selected = 1;
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                space_pressed: false,
+                ..press
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None,
+            }]
+        );
+        assert!(!state.contacts[1].active, "locked contact cannot activate");
+        state.selected = 0;
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        events.clear();
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            false,
+            TouchKeyboardCommand {
+                suppressed: true,
+                ..press
+            },
+            &mut events,
+        );
+        assert_eq!(
+            events,
+            vec![InputEvent::Touch {
+                id: input.id(),
+                contact: 0,
+                point: None,
+            }]
+        );
+        events.clear();
+        update_touch_keyboard(&input, &mut state, false, press, &mut events);
+        assert!(events.is_empty(), "suppression cannot rearm a held key");
+        state.selected = usize::MAX;
+        update_touch_keyboard(
+            &input,
+            &mut state,
+            true,
+            TouchKeyboardCommand {
+                focused: true,
+                ..Default::default()
+            },
+            &mut events,
+        );
+        assert!(events.is_empty(), "removed selection cannot produce input");
+    }
+
+    #[test]
+    fn touch_canvas_handles_real_space_movement_and_focus_events() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let context = egui::Context::default();
+        let mut id = None;
+        let key = |key| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for (frame, keys) in [
+            vec![],
+            vec![key(egui::Key::Space)],
+            vec![key(egui::Key::D)],
+            vec![],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if frame == 3 {
+                context.memory_mut(|memory| memory.surrender_focus(id.unwrap()));
+            }
+            let mut events = Vec::new();
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let (_, response) =
+                                ui.allocate_exact_size(Vec2::splat(100.0), Sense::click_and_drag());
+                            id = Some(response.id);
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            let command = touch_keyboard_command(ui, &response, false);
+                            update_touch_keyboard(&input, &mut state, false, command, &mut events);
+                            let _ = ui.button("Adjacent control");
+                        });
+                    });
+                },
+            );
+            let expected = match frame {
+                0 => vec![],
+                1 => vec![Some((0, 0))],
+                2 => vec![Some((1, 0))],
+                _ => vec![None],
+            };
+            assert_eq!(
+                events,
+                expected
+                    .into_iter()
+                    .map(|point| InputEvent::Touch {
+                        id: input.id(),
+                        contact: 0,
+                        point
+                    })
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    #[test]
+    fn touch_canvas_tab_traversal_releases_momentary_contact() {
+        let (input, mut state) = keyboard_touch_fixture();
+        let context = egui::Context::default();
+        let mut events = Vec::new();
+        let mut adjacent_focused = false;
+        for frame in 0..4 {
+            let keys = match frame {
+                1 => vec![egui::Key::Space],
+                2 => vec![egui::Key::Tab],
+                _ => vec![],
+            };
+            let _ = context.run(
+                egui::RawInput {
+                    events: keys
+                        .into_iter()
+                        .map(|key| egui::Event::Key {
+                            key,
+                            physical_key: None,
+                            pressed: true,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        })
+                        .collect(),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let (_, response) =
+                            ui.allocate_exact_size(Vec2::splat(100.0), Sense::click_and_drag());
+                        if frame == 0 {
+                            response.request_focus();
+                        }
+                        let command = touch_keyboard_command(ui, &response, false);
+                        update_touch_keyboard(&input, &mut state, false, command, &mut events);
+                        adjacent_focused |= ui.button("Next control").has_focus();
+                    });
+                },
+            );
+        }
+        assert!(adjacent_focused, "Tab must reach the adjacent focus target");
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: Some((0, 0))
+                },
+                InputEvent::Touch {
+                    id: input.id(),
+                    contact: 0,
+                    point: None
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn axis_slider_keyboard_release_emits_exact_neutral_and_hold_preserves_value() {
+        for held in [false, true] {
+            let context = egui::Context::default();
+            let id = InputControlId::new("synthetic-slider");
+            let range = InputAxisRange {
+                minimum: -100,
+                maximum: 100,
+                neutral: 0,
+            };
+            let mut value = 0;
+            let mut events = Vec::new();
+            for frame in 0..3 {
+                let _ = context.run(
+                    egui::RawInput {
+                        events: if frame == 0 {
+                            vec![]
+                        } else {
+                            vec![egui::Event::Key {
+                                key: egui::Key::ArrowRight,
+                                physical_key: None,
+                                pressed: frame == 1,
+                                repeat: false,
+                                modifiers: egui::Modifiers::NONE,
+                            }]
+                        },
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            let response =
+                                ui.add(egui::Slider::new(&mut value, -100..=100).text("Trigger"));
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            emit_axis_slider(ui, &response, id, range, value, held, &mut events);
+                        });
+                    },
+                );
+            }
+            assert!(value > 0);
+            let mut expected = vec![InputEvent::Axis1 { id, value }];
+            if !held {
+                expected.push(InputEvent::Axis1 { id, value: 0 });
+            }
+            assert_eq!(events, expected);
+        }
+    }
+
+    #[test]
+    fn motion_slider_keyboard_release_and_focus_loss_end_momentary_input() {
+        let context = egui::Context::default();
+        let mut value = 0;
+        let mut slider_id = None;
+        let mut completion_edges = Vec::new();
+        let mut changed_on_press = false;
+        for frame in 0..5 {
+            if frame == 4 {
+                context.memory_mut(|memory| memory.surrender_focus(slider_id.unwrap()));
+            }
+            let _ = context.run(
+                egui::RawInput {
+                    events: match frame {
+                        1 | 2 => vec![egui::Event::Key {
+                            key: egui::Key::ArrowRight,
+                            physical_key: None,
+                            pressed: frame == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }],
+                        _ => vec![],
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        let response =
+                            ui.add(egui::Slider::new(&mut value, -100..=100).text("Gyro X"));
+                        slider_id = Some(response.id);
+                        if frame == 0 {
+                            response.request_focus();
+                        }
+                        if frame == 1 {
+                            changed_on_press = response.changed();
+                        }
+                        let finished = momentary_axis_interaction_finished(ui, &response);
+                        if frame == 2 {
+                            assert!(
+                                !response.drag_stopped() && !response.clicked(),
+                                "pointer-only completion misses keyboard release"
+                            );
+                        }
+                        completion_edges.push(finished);
+                        assert!(
+                            !motion_should_neutralize(false, true, finished),
+                            "Hold preserves motion"
+                        );
+                        if motion_should_neutralize(false, false, finished) {
+                            value = 0;
+                        }
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+        }
+        assert!(changed_on_press);
+        assert_eq!(completion_edges, vec![false, false, true, false, true]);
+        assert_eq!(value, 0);
+    }
+
+    #[test]
+    fn focused_pad_handles_keyboard_and_neutralizes_on_focus_loss() {
+        let context = egui::Context::default();
+        let range = InputAxisRange {
+            minimum: 0,
+            maximum: 255,
+            neutral: 127,
+        };
+        let mut value = (127, 127);
+        let mut pad_id = None;
+        for (frame, events) in [
+            vec![],
+            vec![egui::Event::Key {
+                key: egui::Key::D,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }],
+            vec![],
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if frame == 2 {
+                context.memory_mut(|memory| memory.surrender_focus(pad_id.unwrap()));
+            }
+            let _ = context.run(
+                egui::RawInput {
+                    events,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        ui.horizontal(|ui| {
+                            let (_, response) =
+                                ui.allocate_exact_size(Vec2::splat(112.0), Sense::drag());
+                            pad_id = Some(response.id);
+                            if frame == 0 {
+                                response.request_focus();
+                            }
+                            value = keyboard_pad(
+                                ui,
+                                &response,
+                                "Synthetic stick",
+                                value,
+                                range,
+                                range,
+                                false,
+                            );
+                            let _ = ui.button("Adjacent focus target");
+                        });
+                    });
+                },
+            );
+            assert_eq!(value, if frame == 1 { (255, 127) } else { (127, 127) });
+            if frame == 1 {
+                assert_eq!(context.memory(egui::Memory::focused), pad_id);
+            }
+        }
+    }
+
+    #[test]
+    fn keyboard_pads_preserve_ranges_release_and_focus_loss() {
+        let x = InputAxisRange {
+            minimum: i32::MIN,
+            maximum: i32::MAX,
+            neutral: -1,
+        };
+        let y = InputAxisRange {
+            minimum: 0,
+            maximum: 255,
+            neutral: 127,
+        };
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, false, Some((-1, 1))),
+            ((i32::MIN, 255), true)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, true, None),
+            ((-1, 127), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, true, true, None),
+            ((8, 9), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, false, None),
+            ((8, 9), false)
+        );
+        assert_eq!(
+            keyboard_pad_value((8, 9), x, y, false, true, Some((0, 0))),
+            ((-1, 127), true)
+        );
+    }
+
+    #[test]
+    fn keyboard_dpad_release_emits_exact_button_transitions() {
+        let range = InputAxisRange {
+            minimum: -1,
+            maximum: 1,
+            neutral: 0,
+        };
+        let (pressed, active) =
+            keyboard_pad_value((0, 0), range, range, false, false, Some((1, -1)));
+        assert!(active);
+        let mut events = Vec::new();
+        emit_dpad_transition((0, 0), (1, -1), &mut events);
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Dpad {
+                    direction: DpadDirection::Right,
+                    pressed: true
+                },
+                InputEvent::Dpad {
+                    direction: DpadDirection::Up,
+                    pressed: true
+                }
+            ]
+        );
+        let (released, active) = keyboard_pad_value(pressed, range, range, false, active, None);
+        assert_eq!(released, (0, 0));
+        assert!(!active);
+        events.clear();
+        emit_dpad_transition((1, -1), (0, 0), &mut events);
+        assert_eq!(
+            events,
+            vec![
+                InputEvent::Dpad {
+                    direction: DpadDirection::Right,
+                    pressed: false
+                },
+                InputEvent::Dpad {
+                    direction: DpadDirection::Up,
+                    pressed: false
+                }
+            ]
+        );
+    }
 
     #[test]
     fn snapping_pad_covers_center_cardinals_and_corners() {
@@ -1769,6 +2810,230 @@ mod tests {
         };
         assert_eq!(axis_release_value((4, -7), range, range, true), (4, -7));
         assert_eq!(axis_release_value((4, -7), range, range, false), (0, 0));
+    }
+
+    #[test]
+    fn touch_lockout_seconds_supports_whole_keyboard_steps_bounds_and_disabled_state() {
+        for (initial, enabled, key, expected) in [
+            (120, true, egui::Key::ArrowUp, 121),
+            (1, true, egui::Key::ArrowDown, 1),
+            (3600, true, egui::Key::ArrowUp, 3600),
+            (120, false, egui::Key::ArrowUp, 120),
+        ] {
+            let context = egui::Context::default();
+            let mut seconds = initial;
+            let mut named = false;
+            let mut adjacent = false;
+            let event = |key, pressed| egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let frames = [
+                vec![],
+                vec![event(egui::Key::Tab, true)],
+                vec![event(egui::Key::Tab, false)],
+                vec![event(key, true)],
+                vec![event(key, false), event(egui::Key::Tab, true)],
+                vec![event(egui::Key::Tab, false)],
+            ];
+            for keys in frames {
+                let output = context.run(
+                    egui::RawInput {
+                        events: keys,
+                        ..Default::default()
+                    },
+                    |context| {
+                        egui::CentralPanel::default().show(context, |ui| {
+                            draw_touch_lockout_seconds(ui, &mut seconds, enabled);
+                            adjacent |= ui.button("Adjacent control").has_focus();
+                        });
+                    },
+                );
+                named |= output.platform_output.events.iter().any(|event| {
+                    event.widget_info().label.as_deref()
+                        == Some("Touchpad lockout duration in seconds")
+                });
+            }
+            assert_eq!(seconds, expected, "whole-second adjustment/bounds");
+            assert_eq!(named, enabled);
+            assert!(adjacent, "Tab must leave the duration field");
+        }
+    }
+
+    #[test]
+    fn extra_axes_keyboard_traversal_names_controls_and_emits_exact_values() {
+        let range = InputAxisRange {
+            minimum: -10,
+            maximum: 10,
+            neutral: 0,
+        };
+        let one = ExtraAxisInput::OneDimensional {
+            id: InputControlId::new("one"),
+            title: "Throttle",
+            range,
+        };
+        let two = ExtraAxisInput::TwoDimensional {
+            id: InputControlId::new("two"),
+            title: "Camera",
+            x: range,
+            y: range,
+        };
+        let context = egui::Context::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut generated = Vec::new();
+        let mut pad = (0, 0);
+        let mut focus_label = String::new();
+        let key = |key, pressed| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for frame in 0..31 {
+            let mut keys = if frame == 0 {
+                vec![]
+            } else {
+                vec![key(egui::Key::Tab, frame % 2 == 1)]
+            };
+            if focus_label == "Reset Throttle" {
+                keys.push(key(egui::Key::Space, true));
+            }
+            if focus_label == "Camera" {
+                keys.push(key(egui::Key::W, true));
+            } else {
+                keys.push(key(egui::Key::W, false));
+            }
+            let mut events = Vec::new();
+            let output = context.run(
+                egui::RawInput {
+                    events: keys,
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_extra_axis(ui, &one, (7, 0), &mut events);
+                        draw_extra_axis(ui, &two, pad, &mut events);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            for event in &events {
+                if let InputEvent::Axis2 { x, y, .. } = event {
+                    pad = (*x, *y);
+                }
+            }
+            generated.extend(events);
+            focus_label.clear();
+            for event in output.platform_output.events {
+                if let Some(label) = &event.widget_info().label {
+                    labels.insert(label.clone());
+                    if matches!(event, egui::output::OutputEvent::FocusGained(_)) {
+                        focus_label = label.clone();
+                    }
+                }
+            }
+        }
+        for label in ["Throttle", "Reset Throttle", "Camera", "Adjacent control"] {
+            assert!(
+                labels.contains(label),
+                "missing focused control {label}: {labels:?}"
+            );
+        }
+        assert!(generated.iter().any(|event| matches!(event, InputEvent::Axis1 { id, value: 0 } if *id == InputControlId::new("one"))));
+        assert!(generated.iter().any(|event| matches!(event, InputEvent::Axis2 { id, x: 0, y: -10 } if *id == InputControlId::new("two"))));
+        assert_eq!(
+            pad,
+            (0, 0),
+            "momentary pad must neutralize after focus moves on"
+        );
+    }
+
+    #[test]
+    fn trigger_keyboard_traversal_identifies_each_control() {
+        static CONTROLS: [virtualgamepad::TriggerInput; 2] = [
+            virtualgamepad::TriggerInput {
+                label: "Digital trigger",
+                kind: TriggerInputKind::Button {
+                    id: InputControlId::new("digital"),
+                },
+            },
+            virtualgamepad::TriggerInput {
+                label: "Analog trigger",
+                kind: TriggerInputKind::Axis {
+                    id: InputControlId::new("analog"),
+                    range: InputAxisRange {
+                        minimum: 0,
+                        maximum: 255,
+                        neutral: 0,
+                    },
+                },
+            },
+        ];
+        let stack = gr_controller_contract::construction::TriggerStackSpec {
+            id: InputControlId::new("keyboard-triggers"),
+            title: "Triggers",
+            controls: &CONTROLS,
+        }
+        .build();
+        let context = egui::Context::default();
+        let mut state = InputUiState::default();
+        let mut labels = std::collections::BTreeSet::new();
+        let mut events = Vec::new();
+        for frame in 0..25 {
+            let output = context.run(
+                egui::RawInput {
+                    events: if frame == 0 {
+                        vec![]
+                    } else {
+                        vec![egui::Event::Key {
+                            key: egui::Key::Tab,
+                            physical_key: None,
+                            pressed: frame % 2 == 1,
+                            repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }]
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        draw_trigger_stack(ui, &stack, &[], &mut state, &mut events);
+                        let _ = ui.button("Adjacent control");
+                    });
+                },
+            );
+            labels.extend(
+                output
+                    .platform_output
+                    .events
+                    .iter()
+                    .filter_map(|event| event.widget_info().label.clone()),
+            );
+        }
+        assert!(
+            labels.contains("Adjacent control"),
+            "Tab must leave the trigger stack"
+        );
+        assert!(
+            labels.contains("Digital trigger press"),
+            "focused press must identify its trigger: {labels:?}"
+        );
+        assert!(
+            labels.contains("Analog trigger"),
+            "focused axis must identify its trigger: {labels:?}"
+        );
+        assert!(
+            events.iter().all(|event| *event
+                == InputEvent::Axis1 {
+                    id: InputControlId::new("analog"),
+                    value: 0,
+                }),
+            "traversal may release focus to neutral, but must never press a trigger: {events:?}",
+        );
     }
 
     #[test]

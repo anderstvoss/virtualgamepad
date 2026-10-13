@@ -14,8 +14,8 @@ use std::{
     io,
     os::unix::net::UnixStream,
     sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -27,15 +27,66 @@ const PLAYBACK_CAPACITY_FRAMES: usize = 4096;
 const MICROPHONE_CAPACITY_FRAMES: usize = 1024;
 const BLOCK_FRAMES: usize = 128;
 
+struct PumpExit {
+    result: io::Result<()>,
+    // Preserve channel ownership until coordinated worker shutdown is acknowledged.
+    channels: (Receiver, Sender),
+}
+
+/// Effective scheduling read on the client pump thread at startup. Kernel
+/// priority is the Linux /proc value, not the requested realtime priority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClientPumpScheduling {
+    pub policy: u32,
+    pub kernel_priority: i32,
+}
+fn parse_pump_scheduling(text: &str) -> Option<ClientPumpScheduling> {
+    let mut policy = None;
+    let mut priority = None;
+    for line in text.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        match name.trim() {
+            "policy" if policy.is_none() => policy = Some(value.trim().parse().ok()?),
+            "prio" if priority.is_none() => priority = Some(value.trim().parse().ok()?),
+            "policy" | "prio" => return None,
+            _ => {}
+        }
+    }
+    Some(ClientPumpScheduling {
+        policy: policy?,
+        kernel_priority: priority?,
+    })
+}
+#[derive(Default)]
+struct PumpTiming {
+    maximum_interval_us: AtomicU64,
+    scheduling: OnceLock<Option<ClientPumpScheduling>>,
+}
+impl PumpTiming {
+    fn observe_interval(&self, interval: Duration) {
+        self.maximum_interval_us.fetch_max(
+            u64::try_from(interval.as_micros()).unwrap_or(u64::MAX),
+            Ordering::Relaxed,
+        );
+    }
+}
+struct PumpControl<'a> {
+    stop: &'a AtomicBool,
+    timing: &'a PumpTiming,
+}
+
 /// Separate from the worker control client and kernel-facing attachment owner.
 /// The application thread never needs to poll these anonymous IPC sockets.
 pub struct SampleStreams {
     playback: PcmConsumer,
     microphone: PcmProducer,
     playback_loss: PcmObserver,
+    timing: Arc<PumpTiming>,
     stop: Arc<AtomicBool>,
     failure: Arc<Mutex<Option<String>>>,
-    pump: Option<JoinHandle<io::Result<()>>>,
+    pump: Option<JoinHandle<PumpExit>>,
 }
 impl SampleStreams {
     pub fn new(
@@ -57,11 +108,11 @@ impl SampleStreams {
         let (microphone_writer, microphone_reader) =
             pcm_queue(microphone_format, MICROPHONE_CAPACITY_FRAMES).map_err(io::Error::other)?;
         let playback_loss = playback_writer.observer();
-        let playback_socket = Receiver::new(
+        let mut playback_socket = Receiver::new(
             playback,
             Format::new(profile, Direction::Playback, generation)?,
         )?;
-        let microphone_socket = Sender::new(
+        let mut microphone_socket = Sender::new(
             microphone,
             Format::new(profile, Direction::Microphone, generation)?,
         )?;
@@ -69,19 +120,24 @@ impl SampleStreams {
         let failure = Arc::new(Mutex::new(None));
         let thread_stop = stop.clone();
         let thread_failure = failure.clone();
+        let timing = Arc::new(PumpTiming::default());
+        let thread_timing = timing.clone();
         let playback_channels = playback_format.channels().len();
         let microphone_channels = microphone_format.channels().len();
         let pump = thread::Builder::new()
             .name("controller-audio-client".into())
             .spawn(move || {
                 let result = run_pump(
-                    playback_socket,
-                    microphone_socket,
+                    &mut playback_socket,
+                    &mut microphone_socket,
                     playback_writer,
                     microphone_reader,
                     playback_channels,
                     microphone_channels,
-                    &thread_stop,
+                    &PumpControl {
+                        stop: &thread_stop,
+                        timing: &thread_timing,
+                    },
                 );
                 if let Err(error) = &result {
                     *thread_failure
@@ -89,12 +145,16 @@ impl SampleStreams {
                         .unwrap_or_else(std::sync::PoisonError::into_inner) =
                         Some(error.to_string());
                 }
-                result
+                PumpExit {
+                    result,
+                    channels: (playback_socket, microphone_socket),
+                }
             })?;
         Ok(Self {
             playback: playback_reader,
             microphone: microphone_writer,
             playback_loss,
+            timing,
             stop,
             failure,
             pump: Some(pump),
@@ -115,6 +175,26 @@ impl SampleStreams {
     pub fn flush_playback(&mut self) -> Result<(), AudioError> {
         self.playback.flush()
     }
+    /// Local accepted microphone frames not yet consumed by the IPC pump. This
+    /// snapshot excludes a pending framed socket packet and the worker queue.
+    #[must_use]
+    pub fn queued_microphone_frames(&self) -> usize {
+        self.microphone.queued_frames()
+    }
+
+    /// Maximum interval between client PCM pump iterations, including its
+    /// intended park. A scheduling observation, not an audio latency measurement.
+    #[must_use]
+    pub fn maximum_pump_interval_us(&self) -> u64 {
+        self.timing.maximum_interval_us.load(Ordering::Acquire)
+    }
+    /// Effective client-pump thread scheduling captured before the pump loop.
+    /// Unreadable /proc or an unstarted pump returns None.
+    #[must_use]
+    pub fn pump_scheduling(&self) -> Option<ClientPumpScheduling> {
+        self.timing.scheduling.get().copied().flatten()
+    }
+
     pub fn flush_microphone(&mut self) -> Result<(), AudioError> {
         self.microphone.flush()
     }
@@ -134,36 +214,67 @@ impl SampleStreams {
         self.stop.load(Ordering::Acquire) || self.pump.as_ref().is_none_or(JoinHandle::is_finished)
     }
     pub fn close(&mut self) -> io::Result<()> {
+        self.close_with(|| Ok(()))
+    }
+    /// Stop local sample production, acknowledge worker shutdown, then release
+    /// the PCM channels. The callback runs once, after the pump has joined, even
+    /// if the pump failed. Both initiating and acknowledgement errors survive.
+    /// This prevents a normal controller close from appearing as worker IPC loss.
+    pub fn close_with(&mut self, close_worker: impl FnOnce() -> io::Result<()>) -> io::Result<()> {
+        let Some(pump) = self.pump.take() else {
+            return Ok(());
+        };
         self.stop.store(true, Ordering::Release);
-        if let Some(pump) = &self.pump {
-            pump.thread().unpark();
-        }
-        let result = self.pump.take().map_or(Ok(()), |handle| {
-            handle
-                .join()
-                .map_err(|_| io::Error::other("PCM client pump panicked"))?
-        });
+        pump.thread().unpark();
+        let exit = pump
+            .join()
+            .map_err(|_| io::Error::other("PCM client pump panicked"));
         self.playback.close();
         self.microphone.close();
-        result
+        let worker = close_worker();
+        let local = match exit {
+            Ok(PumpExit { result, channels }) => {
+                drop(channels);
+                result
+            }
+            Err(error) => Err(error),
+        };
+        match (local, worker) {
+            (Ok(()), outcome) | (outcome, Ok(())) => outcome,
+            (Err(local), Err(worker)) => Err(io::Error::other(format!(
+                "PCM client pump: {local}; worker close: {worker}"
+            ))),
+        }
     }
 }
 fn run_pump(
-    mut playback_socket: Receiver,
-    mut microphone_socket: Sender,
+    playback_socket: &mut Receiver,
+    microphone_socket: &mut Sender,
     mut playback_writer: PcmProducer,
     mut microphone_reader: PcmConsumer,
     playback_channels: usize,
     microphone_channels: usize,
-    stop: &AtomicBool,
+    control: &PumpControl<'_>,
 ) -> io::Result<()> {
+    // Ordinary-thread startup only: never read /proc in an audio callback.
+    let scheduling = std::fs::read_to_string("/proc/thread-self/sched")
+        .ok()
+        .and_then(|text| parse_pump_scheduling(&text));
+    let _ = control.timing.scheduling.set(scheduling);
     let started = Instant::now();
+    let mut previous = started;
     let mut playback_samples = [0_i16; BLOCK_FRAMES * 4];
     let mut microphone_samples = [0_i16; BLOCK_FRAMES * 4];
     let mut pending = None::<PcmRead>;
     let mut next_playback = 0_u64;
-    while !stop.load(Ordering::Acquire) {
-        let now = u64::try_from(started.elapsed().as_micros()).map_err(io::Error::other)?;
+    while !control.stop.load(Ordering::Acquire) {
+        let observed = Instant::now();
+        control
+            .timing
+            .observe_interval(observed.duration_since(previous));
+        previous = observed;
+        let now = u64::try_from(observed.duration_since(started).as_micros())
+            .map_err(io::Error::other)?;
         if let Some(block) = playback_socket.receive(&mut playback_samples, now)? {
             if block.first_frame > next_playback {
                 playback_writer
@@ -179,27 +290,55 @@ fn run_pump(
             }
             next_playback = block.first_frame + block.frames as u64;
         }
-        microphone_socket.pump(now)?;
-        if pending.is_none() {
-            let read = microphone_reader
-                .read(&mut microphone_samples[..BLOCK_FRAMES * microphone_channels])
-                .map_err(io::Error::other)?;
-            if read.frames != 0 {
-                pending = Some(read);
-            }
-        }
-        if let Some(read) = pending {
-            let accepted = microphone_socket.send(
-                &microphone_samples[..read.frames * microphone_channels],
-                read.first_frame,
-                read.discontinuity,
-                now,
-            )?;
-            if accepted == read.frames {
-                pending = None;
-            }
-        }
+        pump_microphone(
+            microphone_socket,
+            &mut microphone_reader,
+            &mut microphone_samples,
+            microphone_channels,
+            &mut pending,
+            now,
+        )?;
         thread::park_timeout(Duration::from_micros(500));
+    }
+    Ok(())
+}
+// Bound catch-up by the existing local queue capacity. A wake-up may represent
+// several coalesced writes; sleeping after one packet leaves accepted audio
+// stranded in the queue even when the socket has room. Keep playback and stop
+// checks responsive, and retain the pending packet under socket backpressure.
+fn pump_microphone(
+    socket: &mut Sender,
+    reader: &mut PcmConsumer,
+    samples: &mut [i16],
+    channels: usize,
+    pending: &mut Option<PcmRead>,
+    now: u64,
+) -> io::Result<()> {
+    socket.pump(now)?;
+    for _ in 0..MICROPHONE_CAPACITY_FRAMES.div_ceil(BLOCK_FRAMES) {
+        if pending.is_none() {
+            let read = reader
+                .read(&mut samples[..BLOCK_FRAMES * channels])
+                .map_err(io::Error::other)?;
+            if read.frames == 0 {
+                break;
+            }
+            *pending = Some(read);
+        }
+        let read = pending.expect("pending microphone packet");
+        let accepted = socket.send(
+            &samples[..read.frames * channels],
+            read.first_frame,
+            read.discontinuity,
+            now,
+        )?;
+        if accepted == 0 {
+            break;
+        }
+        if accepted != read.frames {
+            return Err(io::Error::other("partial microphone packet acceptance"));
+        }
+        *pending = None;
     }
     Ok(())
 }
@@ -212,6 +351,257 @@ impl Drop for SampleStreams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn microphone_pump_drains_coalesced_writes_within_existing_capacity() {
+        for profile in [
+            ProfileId::DualSenseEmulated,
+            ProfileId::DualShock4Emulated,
+            ProfileId::Xbox360HidEmulated,
+        ] {
+            let format = Format::new(profile, Direction::Microphone, 7).unwrap();
+            let channels = format.channels();
+            let definition = match profile {
+                ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
+                ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
+                ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+            }
+            .unwrap();
+            let (mut writer, mut reader) =
+                pcm_queue(definition.streams()[1].format(), MICROPHONE_CAPACITY_FRAMES).unwrap();
+            let samples: Vec<i16> = (0..MICROPHONE_CAPACITY_FRAMES * channels)
+                .map(|i| i16::try_from(i).unwrap())
+                .collect();
+            assert_eq!(writer.push(&samples).unwrap(), MICROPHONE_CAPACITY_FRAMES);
+            let (client, worker) = UnixStream::pair().unwrap();
+            let mut sender = Sender::new(client, format).unwrap();
+            let mut receiver = Receiver::new(worker, format).unwrap();
+            let mut block = [0_i16; BLOCK_FRAMES * 4];
+            let mut pending = None;
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0,
+            )
+            .unwrap();
+            assert!(pending.is_none());
+            assert_eq!(
+                reader
+                    .read(&mut block[..BLOCK_FRAMES * channels])
+                    .unwrap()
+                    .frames,
+                0
+            );
+            for offset in (0..MICROPHONE_CAPACITY_FRAMES).step_by(BLOCK_FRAMES) {
+                let packet = receiver
+                    .receive(&mut block, 0)
+                    .unwrap()
+                    .expect("queued packet");
+                assert_eq!(packet.first_frame, offset as u64);
+                assert_eq!(packet.frames, BLOCK_FRAMES);
+                assert!(!packet.discontinuity);
+                assert_eq!(
+                    &block[..BLOCK_FRAMES * channels],
+                    &samples[offset * channels..(offset + BLOCK_FRAMES) * channels]
+                );
+            }
+            assert!(receiver.receive(&mut block, 0).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn microphone_pump_retains_packet_on_backpressure_and_terminal_error() {
+        let profile = ProfileId::Xbox360HidEmulated;
+        let format = Format::new(profile, Direction::Microphone, 7).unwrap();
+        let channels = format.channels();
+        let definition = match profile {
+            ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
+            ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
+            ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+        }
+        .unwrap();
+        let (mut writer, mut reader) =
+            pcm_queue(definition.streams()[1].format(), MICROPHONE_CAPACITY_FRAMES).unwrap();
+        let (client, worker) = UnixStream::pair().unwrap();
+        let mut sender = Sender::new(client, format).unwrap();
+        let samples = vec![17_i16; BLOCK_FRAMES * channels];
+        let mut blocked = false;
+        for i in 0..4096 {
+            if sender
+                .send(&samples, i * BLOCK_FRAMES as u64, false, 0)
+                .unwrap()
+                == 0
+            {
+                blocked = true;
+                break;
+            }
+        }
+        assert!(blocked, "socket did not reach bounded backpressure");
+        assert_eq!(writer.push(&samples).unwrap(), BLOCK_FRAMES);
+        let mut block = [0_i16; BLOCK_FRAMES * 4];
+        let mut pending = None;
+        for _ in 0..2 {
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0,
+            )
+            .unwrap();
+            assert_eq!(pending.unwrap().first_frame, 0);
+            assert_eq!(pending.unwrap().frames, BLOCK_FRAMES);
+            assert_eq!(&block[..samples.len()], samples);
+        }
+        assert_eq!(
+            reader.read(&mut [0_i16; BLOCK_FRAMES * 4]).unwrap().frames,
+            0
+        );
+        drop(worker);
+        assert!(
+            pump_microphone(
+                &mut sender,
+                &mut reader,
+                &mut block,
+                channels,
+                &mut pending,
+                0
+            )
+            .is_err()
+        );
+        assert_eq!(pending.unwrap().frames, BLOCK_FRAMES);
+    }
+
+    #[test]
+    fn pump_scheduling_parser_requires_unique_actual_policy_and_kernel_priority() {
+        assert_eq!(
+            parse_pump_scheduling("owned-client-task\npolicy : 2\nprio : 79\nse.exec_start : 10"),
+            Some(ClientPumpScheduling {
+                policy: 2,
+                kernel_priority: 79
+            })
+        );
+        for text in [
+            "",
+            "policy: 2",
+            "prio: 79",
+            "policy: bad\nprio: 79",
+            "policy: -1\nprio: 79",
+            "policy: 2\nprio: bad",
+            "policy: 2\npolicy: 2\nprio: 79",
+            "policy: 2\nprio: 79\nprio: 79",
+        ] {
+            assert_eq!(parse_pump_scheduling(text), None);
+        }
+    }
+
+    #[test]
+    fn client_pump_interval_preserves_maximum_and_unavailable_scheduling() {
+        let timing = PumpTiming::default();
+        assert_eq!(timing.scheduling.get(), None);
+        for micros in [0, 500, 15_300, 600] {
+            timing.observe_interval(Duration::from_micros(micros));
+        }
+        assert_eq!(timing.maximum_interval_us.load(Ordering::Acquire), 15_300);
+        timing.scheduling.set(None).unwrap();
+        assert_eq!(timing.scheduling.get(), Some(&None));
+    }
+
+    fn drain_until_blocked(peer: &mut UnixStream) {
+        use std::io::Read;
+        peer.set_nonblocking(true).unwrap();
+        for _ in 0..64 {
+            match peer.read(&mut [0; 4096]) {
+                Ok(0) => panic!("PCM channel ended before worker acknowledgement"),
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => return,
+                Err(error) => panic!("unexpected PCM channel state: {error}"),
+            }
+        }
+        panic!("unbounded queued PCM during shutdown");
+    }
+
+    #[test]
+    fn coordinated_close_keeps_channels_until_acknowledgement_and_is_idempotent() {
+        use std::io::Read;
+        for profile in [
+            ProfileId::DualSenseEmulated,
+            ProfileId::DualShock4Emulated,
+            ProfileId::Xbox360HidEmulated,
+        ] {
+            for worker_failure in [false, true] {
+                let (mut playback, client_playback) = UnixStream::pair().unwrap();
+                let (mut microphone, client_microphone) = UnixStream::pair().unwrap();
+                let mut client =
+                    SampleStreams::new(profile, 7, client_playback, client_microphone).unwrap();
+                let mut acknowledgements = 0;
+                let result = client.close_with(|| {
+                    drain_until_blocked(&mut playback);
+                    drain_until_blocked(&mut microphone);
+                    acknowledgements += 1;
+                    if worker_failure {
+                        Err(io::Error::other("worker close failure"))
+                    } else {
+                        Ok(())
+                    }
+                });
+                assert_eq!(result.is_err(), worker_failure);
+                if let Err(error) = result {
+                    assert_eq!(error.to_string(), "worker close failure");
+                }
+                assert_eq!(acknowledgements, 1);
+                assert_eq!(playback.read(&mut [0]).unwrap(), 0);
+                assert_eq!(microphone.read(&mut [0]).unwrap(), 0);
+                assert!(client.is_closed());
+                client
+                    .close_with(|| {
+                        panic!("repeated close must not request another acknowledgement")
+                    })
+                    .unwrap();
+                client.close().unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn coordinated_close_retains_initiating_pump_and_worker_cleanup_failures() {
+        let (playback, client_playback) = UnixStream::pair().unwrap();
+        let (_microphone, client_microphone) = UnixStream::pair().unwrap();
+        let mut client = SampleStreams::new(
+            ProfileId::DualShock4Emulated,
+            9,
+            client_playback,
+            client_microphone,
+        )
+        .unwrap();
+        drop(playback);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !client.is_closed() {
+            assert!(
+                Instant::now() < deadline,
+                "pump must terminate after peer loss"
+            );
+            thread::sleep(Duration::from_millis(1));
+        }
+        let initiating = client.last_error().unwrap();
+        let mut called = false;
+        let error = client
+            .close_with(|| {
+                called = true;
+                Err(io::Error::other("worker close failure"))
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(called);
+        assert!(error.contains(&initiating));
+        assert!(error.contains("worker close failure"));
+        assert_eq!(client.last_error().as_deref(), Some(initiating.as_str()));
+        client.close_with(|| panic!("already closed")).unwrap();
+    }
 
     #[test]
     fn all_compiled_profiles_transfer_both_directions_and_close_terminally() {

@@ -6,11 +6,14 @@ synthetic microphone data and retain only aggregate results, never recordings.
 Successful playback submission does not establish worker-side loss acceptance.
 """
 import argparse
+import array
 import concurrent.futures
 import json
 from pathlib import Path
 import re
 import struct
+import resource
+import tempfile
 import subprocess
 import time
 
@@ -47,8 +50,10 @@ def resolve_card(port, family, previous=None):
         raise ValueError('selected device is not the requested compiled emulation')
     cards = [card for card in Path('/sys/class/sound').glob('card[0-9]*')
              if (card/'device').resolve().is_relative_to(device)]
+    if not cards:
+        raise FileNotFoundError('associated ALSA card not yet registered')
     if len(cards) != 1:
-        raise ValueError('expected exactly one associated ALSA card')
+        raise ValueError('ambiguous associated ALSA cards')
     return ownership, int(cards[0].name[4:])
 
 
@@ -61,62 +66,191 @@ def owned_pipewire_device(objects, card):
     return candidates[0] if candidates else None
 
 
-def reserve_direct_alsa(card, bus):
-    # Test-harness-only exclusion of the session manager from this newly owned
-    # virtual card. Never change defaults or a physical audio device.
-    device = (Path('/sys/bus/usb/devices')/bus).resolve(strict=True)
-    if 'vhci_hcd.0' not in device.parts or not (Path('/sys/class/sound')/f'card{card}'/'device').resolve().is_relative_to(device):
-        raise ValueError('ALSA ancestry changed before reservation')
-    deadline = time.monotonic()+2
-    while time.monotonic() < deadline:
-        result = subprocess.run(['pw-dump'],capture_output=True,timeout=3)
+def compiled_serial(instance, generation):
+    if (not re.fullmatch(r'[a-z0-9-]{1,32}', instance) or
+            type(generation) is not int or not 0 < generation < 2**64):
+        raise ValueError('invalid expected session identity')
+    return f'vg-{instance}-{generation:016x}'
+
+
+def shared_graph():
+    # A shared graph inspection must be bounded and read-only. Spool rather
+    # than accumulating unbounded stdout from another process in memory.
+    limit = 1024 * 1024
+    def quota():
+        resource.setrlimit(resource.RLIMIT_FSIZE, (limit, limit))
+    with tempfile.TemporaryFile() as output:
+        result = subprocess.run(['pw-dump'], stdout=output, stderr=subprocess.DEVNULL,
+                                timeout=3, preexec_fn=quota)
         if result.returncode:
-            return
-        item = owned_pipewire_device(json.loads(result.stdout),card)
-        if item:
-            profiles = item['info'].get('params',{}).get('EnumProfile',[])
-            off = [profile['index'] for profile in profiles if profile.get('name') == 'off']
-            if len(off) != 1:
-                raise ValueError('owned PipeWire device has no unique off profile')
-            subprocess.run(['pw-cli','set-param',str(item['id']),'Profile',json.dumps(dict(index=off[0],save=False))],check=True,stdout=subprocess.DEVNULL,timeout=3)
-            return
-        time.sleep(.02)
-    raise TimeoutError('owned PipeWire card not ready for exclusive ALSA test')
+            raise RuntimeError('shared PipeWire inspection unavailable or exceeded quota')
+        output.seek(0)
+        objects = json.loads(output.read(limit + 1))
+    if not isinstance(objects, list) or any(not isinstance(item, dict) for item in objects):
+        raise ValueError('invalid shared PipeWire graph')
+    return objects
+
+
+def shared_defaults(objects):
+    values = []
+    for item in objects:
+        if (item.get('type') == 'PipeWire:Interface:Metadata' and
+                item.get('props', {}).get('metadata.name') == 'default'):
+            for entry in item.get('metadata', []):
+                if entry.get('key', '').startswith(('default.audio.', 'default.configured.audio.')):
+                    values.append(entry)
+    return sorted(values, key=lambda entry: (entry.get('subject', 0), entry['key']))
+
+
+def isolated_card(properties, objects, card, instance):
+    if properties.get('ACP_IGNORE') != '1' or properties.get('VG_ALPHA_AUDIO_INSTANCE') != instance:
+        raise ValueError('owned card lacks pre-attachment audio isolation')
+    for item in objects:
+        props = item.get('info', {}).get('props', {})
+        if item.get('type') in ('PipeWire:Interface:Device', 'PipeWire:Interface:Node') and any(
+                str(props.get(key, '')) == str(card)
+                for key in ('api.alsa.card', 'api.alsa.pcm.card')):
+            raise ValueError('shared session manager imported the owned card: '+json.dumps({key:props.get(key) for key in ('api.alsa.card', 'api.alsa.pcm.card', 'device.name', 'node.name', 'device.bus-path', 'device.serial')},sort_keys=True))
+
+
+def isolated_graph(properties, card, instance, inspect=shared_graph, wait=time.sleep):
+    # A removed ALSA card's graph object can outlive its reused numeric index.
+    # Wait for withdrawal; never accept an imported object or mutate its profile.
+    for attempt in range(11):
+        objects = inspect()
+        try:
+            isolated_card(properties, objects, card, instance)
+            return objects
+        except ValueError:
+            if attempt == 10 or properties.get('ACP_IGNORE') != '1' or properties.get('VG_ALPHA_AUDIO_INSTANCE') != instance:
+                raise
+            wait(.1)
+
+
+def reserve_direct_alsa(card, bus, instance, generation):
+    """Verify pre-attachment exclusion; never change a shared device profile."""
+    serial = compiled_serial(instance, generation)
+    device = (Path('/sys/bus/usb/devices') / bus).resolve(strict=True)
+    entry = Path('/sys/class/sound') / f'card{card}'
+    if ('vhci_hcd.0' not in device.parts or
+            not (entry / 'device').resolve().is_relative_to(device) or
+            (device / 'serial').read_text().strip() != serial):
+        raise ValueError('ALSA session identity or ancestry changed before verification')
+    result = subprocess.run(['udevadm', 'info', '--query=property', '--path=' + str(entry)],
+                            capture_output=True, check=True, timeout=3)
+    if len(result.stdout) > 64 * 1024:
+        raise ValueError('ALSA properties exceeded quota')
+    properties = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
+    objects = isolated_graph(properties, card, instance)
+    if ((device / 'serial').read_text().strip() != serial or
+            not (entry / 'device').resolve(strict=True).is_relative_to(device)):
+        raise ValueError('ALSA session identity changed while waiting for graph withdrawal')
+    return dict(serial=serial, shared_defaults=shared_defaults(objects))
+
+
+MARKER_BASE = 32767
+MAX_CAPTURE_FRAMES = 3_200_000
+
+
+def marker_frame(position, channels):
+    """Indexed S16 markers: stereo frames or sign-tagged pairs for mono.
+
+    Mono needs two frames to encode a complete index. Positive/negative tags
+    prevent phase ambiguity; capture analysis carries pairs across window edges.
+    """
+    if (type(position) is not int or position < 0
+            or type(channels) is not int or channels not in (1, 2, 4)):
+        raise ValueError('invalid indexed marker position or channels')
+    index = position // 2 if channels == 1 else position
+    high, low = divmod(index, MARKER_BASE)
+    if high >= MARKER_BASE: raise ValueError('indexed marker exhausted')
+    high += 1; low += 1
+    if channels == 1: return (high if position % 2 == 0 else -low,)
+    return (high, low) if channels == 2 else (high, low, -high, -low)
+
+
+def marker_pcm(frames, channels, start=0):
+    if type(frames) is not int or not 0 <= frames <= MAX_CAPTURE_FRAMES:
+        raise ValueError('bounded marker production required')
+    marker_frame(start, channels)
+    if frames: marker_frame(start+frames-1, channels)
+    samples = array.array('h', (value for position in range(start, start+frames)
+                              for value in marker_frame(position, channels)))
+    if samples.itemsize != 2: raise ValueError('16-bit sample storage required')
+    import sys
+    if sys.byteorder != 'little': samples.byteswap()
+    return samples.tobytes()
+
+
+def decode_capture(data, channels):
+    if type(channels) is not int or channels not in (1, 2, 4) or len(data) % (channels*2):
+        raise ValueError('partial captured PCM frame or invalid channels')
+    frames = len(data) // (channels*2)
+    if frames > MAX_CAPTURE_FRAMES: raise ValueError('oversized captured PCM')
+    valid = bytearray(frames)
+    silence = bytearray(frames)
+    gaps = bytearray(frames)
+    positions = array.array('q', [-1]) * frames
+    previous = None
+    pending = None
+    for offset, frame in enumerate(struct.iter_unpack('<'+'h'*channels, data)):
+        if not any(frame): silence[offset] = 1
+        if channels == 1:
+            value = frame[0]
+            if 1 <= value <= MARKER_BASE:
+                # A repeated header leaves the earlier incomplete pair invalid.
+                pending = (offset, value)
+            elif -MARKER_BASE <= value <= -1 and pending is not None:
+                header_offset, high = pending
+                index = (high-1)*MARKER_BASE + (-value-1)
+                valid[header_offset] = valid[offset] = 1
+                positions[header_offset], positions[offset] = 2*index, 2*index+1
+                if previous is not None and index != previous+1:
+                    # Both halves carry the discontinuity, including a pair
+                    # straddling warm-up, measurement or drain boundaries.
+                    gaps[header_offset] = gaps[offset] = 1
+                previous, pending = index, None
+            else:
+                pending = None
+        else:
+            high, low = frame[:2]
+            if not (1 <= high <= MARKER_BASE and 1 <= low <= MARKER_BASE): continue
+            index = (high-1)*MARKER_BASE + low-1
+            if frame != marker_frame(index, channels): continue
+            valid[offset] = 1
+            positions[offset] = index
+            if previous is not None and index != previous+1: gaps[offset] = 1
+            previous = index
+    return valid, silence, gaps, positions
+
+
+def capture_summary(decoded, begin=0, end=None):
+    valid, silence, gaps, positions = decoded
+    end = len(valid) if end is None else end
+    if not 0 <= begin <= end <= len(valid): raise ValueError('invalid capture window')
+    first_bad = next((i for i in range(begin, end) if not valid[i]), None)
+    last_bad = next((i for i in range(end-1, begin-1, -1) if not valid[i]), None)
+    first_gap = next((i for i in range(begin, end) if gaps[i]), None)
+    last_gap = next((i for i in range(end-1, begin-1, -1) if gaps[i]), None)
+    relative = lambda value: None if value is None else value-begin
+    return dict(frames=end-begin, exact_pattern=valid.count(1, begin, end),
+                silence=silence.count(1, begin, end), pattern_gaps=gaps.count(1, begin, end),
+                first_unexpected_frame=relative(first_bad), last_unexpected_frame=relative(last_bad),
+                first_pattern_gap=relative(first_gap), last_pattern_gap=relative(last_gap),
+                first_source_frame=next((positions[i] for i in range(begin, end) if valid[i]), None),
+                last_source_frame=next((positions[i] for i in range(end-1, begin-1, -1) if valid[i]), None))
 
 
 def inspect_capture(data, channels):
-    if len(data) % (channels*2):
-        raise ValueError('partial captured PCM frame')
-    total = valid = silence = gaps = 0
-    previous = None
-    first_unexpected = last_unexpected = None
-    first_pattern_gap = last_pattern_gap = None
-    for frame in struct.iter_unpack('<'+'h'*channels,data):
-        first = frame[0]
-        matches = 100 <= first <= 196 and all(value-first == 100*c for c,value in enumerate(frame))
-        total += 1
-        if not matches:
-            if first_unexpected is None:
-                first_unexpected = total - 1
-            last_unexpected = total - 1
-        valid += matches
-        silence += all(value == 0 for value in frame)
-        if previous is not None and matches and first-100 != (previous-100+1)%97:
-            gaps += 1
-            if first_pattern_gap is None:
-                first_pattern_gap = total - 1
-            last_pattern_gap = total - 1
-        previous = first if matches else None
-    return dict(frames=total, exact_pattern=valid, silence=silence, pattern_gaps=gaps,
-                first_unexpected_frame=first_unexpected,last_unexpected_frame=last_unexpected,
-                first_pattern_gap=first_pattern_gap,last_pattern_gap=last_pattern_gap)
+    return capture_summary(decode_capture(data, channels))
 
 
 def run_trial(card, family, seconds):
     _, channels, microphones = PROFILES[family]
     warmup_seconds = 2
-    total_seconds = seconds + warmup_seconds
-    data = struct.pack('<'+'h'*channels,*[101,-202,303,-404][:channels]) * (48000*total_seconds)
+    edge_capture_seconds = 1
+    total_seconds = seconds + warmup_seconds + edge_capture_seconds
+    data = marker_pcm(48000*total_seconds, channels)
     common = ['-q','-D',f'hw:{card},0','-t','raw','-f','S16_LE','-r','48000','-c']
     started = time.monotonic()
     with concurrent.futures.ThreadPoolExecutor(2) as pool:
@@ -125,9 +259,15 @@ def run_trial(card, family, seconds):
         capture = pool.submit(subprocess.run,['arecord',*common,str(microphones),'-d',str(total_seconds)],
                               stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=total_seconds+8)
         output, incoming = playback.result(), capture.result()
-    warmup_bytes = 48000 * warmup_seconds * microphones * 2
-    result = inspect_capture(incoming.stdout[warmup_bytes:],microphones)
-    result['warmup'] = inspect_capture(incoming.stdout[:warmup_bytes],microphones)
+    decoded = decode_capture(incoming.stdout, microphones)
+    warmup_frames, measured_frames = warmup_seconds*48000, seconds*48000
+    measured_end = min(warmup_frames+measured_frames, len(decoded[0]))
+    measured_begin = min(warmup_frames, measured_end)
+    result = capture_summary(decoded, measured_begin, measured_end)
+    result['warmup'] = capture_summary(decoded, 0, min(warmup_frames, len(decoded[0])))
+    result['edge_capture'] = capture_summary(decoded, measured_end)
+    result['edge_capture_seconds'] = edge_capture_seconds
+    result['marker_scheme'] = 'indexed-s16-frame-or-mono-pair-v1'
     result['warmup_seconds'] = warmup_seconds
     result['captured_total_frames'] = len(incoming.stdout) // (microphones * 2)
     result.update(command_interval_seconds=time.monotonic()-started,
@@ -146,10 +286,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port',type=int,required=True)
     parser.add_argument('--profile',choices=PROFILES,required=True)
+    parser.add_argument('--instance', required=True)
+    parser.add_argument('--generation', type=int, required=True)
     parser.add_argument('--seconds',type=int,default=60)
     parser.add_argument('--trials',type=int,default=3)
     parser.add_argument('--reserve-owned-card',action='store_true',
-                        help='temporarily release only this owned virtual card from PipeWire')
+                        help='verify pre-attachment isolation without changing shared profiles')
     parser.add_argument('--prepare-only',action='store_true',
                         help='verify and reserve the owned virtual card without streaming')
     args = parser.parse_args()
@@ -159,15 +301,14 @@ def main():
         if not args.reserve_owned_card:
             parser.error('--prepare-only requires --reserve-owned-card')
         ownership, card = resolve_card(args.port,args.profile)
-        reserve_direct_alsa(card,ownership[1])
+        reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
         print(json.dumps(dict(profile=args.profile,card=card,port=args.port,
                               ownership=ownership[1])),flush=True)
         return 0
     ownership = None
     for trial in range(args.trials):
         ownership, card = resolve_card(args.port,args.profile,ownership)
-        if args.reserve_owned_card:
-            reserve_direct_alsa(card,ownership[1])
+        isolation = reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
         print(json.dumps(dict(status='running',profile=args.profile,trial=trial,
                               duration_seconds=args.seconds)),flush=True)
         result = run_trial(card,args.profile,args.seconds)
@@ -176,6 +317,9 @@ def main():
         # A disconnected session must not replace the useful result with a traceback.
         try:
             resolve_card(args.port,args.profile,ownership)
+            after = reserve_direct_alsa(card,ownership[1],args.instance,args.generation)
+            result['shared_defaults_unchanged'] = after['shared_defaults'] == isolation['shared_defaults']
+            result['passed'] &= result['shared_defaults_unchanged']
             result['session_present_after_trial'] = True
         except (ValueError, OSError) as error:
             result['session_present_after_trial'] = False

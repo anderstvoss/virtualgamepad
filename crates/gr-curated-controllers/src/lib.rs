@@ -30,6 +30,7 @@
 
 pub mod audio;
 mod common;
+mod sony_evdev;
 pub use common::WorkerBridge;
 pub use dualsense::create_dualsense_usb_worker;
 pub use dualshock4::create_dualshock4_usb_worker;
@@ -50,7 +51,7 @@ pub struct CreationOptions {
     pub session: RealizationSessionId,
 }
 
-/// Creation metadata for the current single-component curated profiles.
+/// Creation metadata for curated profiles and their owned companions.
 ///
 /// Requested physical paths distinguish creations even with restored identity
 /// or reused application IDs. A cached host path is an observation at creation,
@@ -58,9 +59,18 @@ pub struct CreationOptions {
 /// and current identity before using host paths; never associate by display name.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ControllerAssociation {
+    /// Additional owned input roles; the logical controller surface remains primary.
+    pub companions: Vec<CompanionAssociation>,
     pub requested_physical_path: Option<String>,
     pub requested_unique_id: Option<String>,
     pub observed_host_path: Option<String>,
+}
+/// Requested identity of a controller-owned companion kernel presentation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompanionAssociation {
+    pub role: &'static str,
+    pub requested_physical_path: Option<String>,
+    pub requested_unique_id: Option<String>,
 }
 impl ControllerAssociation {
     /// Controller-owned role; compound profiles have their own distinct roles.
@@ -75,6 +85,7 @@ impl ControllerAssociation {
                 requested_physical_path: Some(spec.physical_path.clone()),
                 requested_unique_id: Some(spec.unique_id.clone()),
                 observed_host_path: None,
+                companions: Vec::new(),
             },
             NativeControllerRealization::Evdev(spec) => Self {
                 requested_physical_path: spec.physical_path.clone(),

@@ -108,7 +108,7 @@ impl Protocol for SwitchUsbProtocol {
         }
         Ok(Some(Self::observation(&report)))
     }
-    fn lifecycle(&mut self, event: Lifecycle, now: u64) {
+    fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
         match event {
             Lifecycle::Start {
                 numbered_input,
@@ -126,6 +126,8 @@ impl Protocol for SwitchUsbProtocol {
             }
             Lifecycle::Open | Lifecycle::Close => {}
         }
+
+        Some(RawReverseEvent::HidLifecycle(event))
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
 }

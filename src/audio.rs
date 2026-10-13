@@ -159,6 +159,101 @@ pub struct AudioStreamTiming {
     pub missed_graph_frames: u64,
 }
 
+/// Experimental classification of graph input frames rejected before queue admission.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+// Constructed by the optional Linux USB/PipeWire bridge; still available in
+// the experimental diagnostic surface when that backend is not compiled.
+#[cfg_attr(
+    not(all(
+        target_os = "linux",
+        feature = "audio-usbip",
+        feature = "audio-pipewire"
+    )),
+    allow(dead_code)
+)]
+pub enum AudioInputLossReason {
+    Empty,
+    Corrupted,
+    QueueOverflow,
+}
+/// A rejected input range. Media position includes earlier rejected buffers and
+/// is not a producer marker identity. Graph ticks are raw observed clock units.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioInputLossEvent {
+    pub reason: AudioInputLossReason,
+    pub first_frame: u64,
+    pub frames: u64,
+    pub graph_ticks: Option<u64>,
+}
+/// Bounded first-event ledger for one graph input. Later events are explicitly
+/// counted as omitted. Cached diagnostics are not a transactional snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioInputLossTrace {
+    pub endpoint: String,
+    pub received_frames: u64,
+    pub events: Vec<AudioInputLossEvent>,
+    pub omitted_events: u64,
+}
+
+/// Latest bridge state sampled after refill. Counts from different queues are
+/// independent observations; this is not the state at a worker underrun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneBridgeSample {
+    pub age_us: u64,
+    pub credit_host_frames: u64,
+    /// Worker source frames consumed; inserted silence grants no refill credit.
+    pub credit_consumed_source_frames: u64,
+    pub credit_submitted_frames: u64,
+    pub accepted_source_frames: u64,
+    pub graph_queue_frames: Option<u64>,
+    pub client_queue_frames: u64,
+    pub client_pump_maximum_interval_us: u64,
+    pub client_pump_policy: Option<u32>,
+    pub client_pump_kernel_priority: Option<i32>,
+    pub pending_frames: u64,
+}
+/// A worker silence increase observed between two host-clock replies. Host
+/// bounds are media counters, not producer marker offsets. `bridge` is unavailable
+/// until a bridge sample exists; its sample may precede or follow the underrun.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneSilenceEvent {
+    pub previous_host_frames: u64,
+    pub host_frames: u64,
+    pub previous_silence_frames: u64,
+    pub silence_frames: u64,
+    pub reply_interval_us: u64,
+    pub bridge: Option<AudioNativeMicrophoneBridgeSample>,
+}
+/// First 64 observed silence increases; further increases are explicitly counted
+/// as omitted. Samples from the worker and bridge are not transactional.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioNativeMicrophoneSilenceTrace {
+    pub events: Vec<AudioNativeMicrophoneSilenceEvent>,
+    pub omitted_events: u64,
+}
+
+/// USB microphone progress observations from bounded worker queries. These
+/// counters are read sequentially and are not a transactional snapshot. Host
+/// media includes silence and canceled requests; completion is a separate count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AudioUsbMicrophoneProgress {
+    pub host_frames: u64,
+    pub silence_frames: u64,
+    pub consumed_source_frames: u64,
+    pub completed_capture_frames: u64,
+    pub abandoned_capture_frames: u64,
+    pub dropped_source_frames: u64,
+    pub maximum_lateness_us: u64,
+    pub maximum_pcm_pump_lateness_us: u64,
+}
+
 /// Audio is borrowed from a controller, never independently reopened or detached.
 /// Endpoint association distinguishes `PipeWire` companions from USB composite
 /// audio interfaces. Emulated profiles do not claim physical-controller fidelity.
@@ -569,11 +664,50 @@ impl<'a> AudioInstrumentation<'a> {
     pub fn native_microphone_dropped_frames(&self) -> Option<u64> {
         self.audio.session.native_microphone_dropped_frames()
     }
+    /// Native microphone input frames rejected as EMPTY, CORRUPTED or queue
+    /// overflow, respectively. Cached every 100 ms; separate atomic reads are
+    /// not a transactional snapshot. `None` means unavailable instrumentation.
+    #[must_use]
+    pub fn native_microphone_graph_loss_frames(&self) -> Option<(u64, u64, u64)> {
+        self.audio.session.native_microphone_graph_loss_frames()
+    }
+    /// First 64 rejected ranges per native graph input, including explicit
+    /// ledger overflow. Callback recording is preallocated; export is cached
+    /// every 100 ms. `None` means the backend does not provide this evidence.
+    #[must_use]
+    pub fn native_microphone_graph_loss_trace(&self) -> Option<Vec<AudioInputLossTrace>> {
+        self.audio.session.native_microphone_graph_loss_trace()
+    }
+    /// Bounded observed silence increases with host reply bounds and latest
+    /// bridge queue/credit samples. These are diagnostic observations, not exact
+    /// underrun positions. `None` means the backend does not expose this evidence.
+    #[must_use]
+    pub fn native_microphone_silence_trace(&self) -> Option<AudioNativeMicrophoneSilenceTrace> {
+        self.audio.session.native_microphone_silence_trace()
+    }
+    /// Bounded USB worker progress queries for sample or native ownership.
+    /// `None` means unavailable (including after close). This does not prove
+    /// that an accepted or completed virtual transfer reached a physical device.
+    /// # Errors
+    /// Returns a terminal worker protocol or transport failure.
+    pub fn usb_microphone_progress(
+        &self,
+    ) -> Result<Option<AudioUsbMicrophoneProgress>, AudioError> {
+        self.audio.session.usb_microphone_progress()
+    }
     /// Current and peak native microphone graph queue fill, in frames. Queue
     /// capacity is spare room for scheduling stalls, not a desired latency.
     #[must_use]
     pub fn native_microphone_queue_frames(&self) -> Option<(u64, u64)> {
         self.audio.session.native_microphone_queue_frames()
+    }
+    /// Maximum interval between successful native microphone host-clock replies
+    /// (microseconds), and largest host-frame advance between replies. Includes
+    /// poll sleep, lock contention and request time; not audio latency. The
+    /// maxima are independently observed and need not belong to the same poll.
+    #[must_use]
+    pub fn native_microphone_host_clock_progress(&self) -> Option<(u64, u64)> {
+        self.audio.session.native_microphone_host_clock_progress()
     }
     /// Maximum observed credit-request and bridge-loop intervals in
     /// microseconds. These scheduling observations are not audio latency.

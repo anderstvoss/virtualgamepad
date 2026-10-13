@@ -78,6 +78,7 @@ impl Factory for Host {
         port.revalidate(&fs::read_to_string(format!("{VHCI}/status"))?)?;
         let (mut session, channels) = Session::prepare(
             Launch {
+                instance: config.instance.clone(),
                 profile,
                 device,
                 generation,

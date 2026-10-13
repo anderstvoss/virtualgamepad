@@ -1,9 +1,11 @@
 # Controller audio execution ledger
 
-**Current continuation:** [Alpha API refinement](ALPHA_API_REFINEMENT.md).
+**Current continuation:** [Alpha remediation](ALPHA_REMEDIATION_STATUS.md).
 Implementation chronology below is preserved; old next-step directives do not
-override the current package or the open #112/#115/#116/#117 acceptance gates.
-USB/IP remains opt-in WIP. Current root API instrumentation is experimental.
+override the current package or unresolved native continuity/latency acceptance retained in closed #112 and the
+open #115/#116/#117 acceptance gates.
+USB/IP remains opt-in WIP. Ordinary root signatures are frozen; supporting instrumentation remains outside
+the compatibility promise.
 
 Baseline: GUI PR #110, `476056a`. Audio is newly authorized pre-alpha work; final
 API review, quality review and release still follow audio and later GUI feedback.
@@ -251,7 +253,13 @@ The headless root-only `controller_audio` example prints endpoint metadata, drai
 playback, services HID and reports retained teardown diagnostics. The
 `usb_audio_root` smoke example exercises root USB creation; the
 `usb_audio_acceptance` example pairs root sample access with an owned-ALSA
-full-duplex checker. Their sustained installed-broker result is pending. A
+full-duplex checker. It requires `FAMILY SECONDS TRIALS PORT INSTANCE GENERATION
+[MIC_FILL_MS]`, where the instance/generation identify the prepared, isolated
+candidate session; the checker verifies the compiled serial and VHCI ancestry
+before streaming. Its indexed markers match the maintained ALSA checker and
+account for two startup seconds plus one capture-edge second per trial. Do not
+substitute a guessed identity or infer acceptance from playback submission.
+Their sustained installed-broker result is pending. A
 separate root-only consumer checked successfully from Git revision `58fb8ae`
 with a fresh initial dependency fetch and then an offline rebuild after caching.
 

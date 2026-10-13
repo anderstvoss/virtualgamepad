@@ -159,6 +159,37 @@ mod tests {
         (profile, state)
     }
     #[test]
+    fn session_string_requests_reply_exactly_and_reject_wrong_metadata() {
+        let profile = Profile::for_session(ProfileId::DualSenseEmulated, "lab", 7).unwrap();
+        let mut state = ControlState::default();
+        let serial = profile.string(3).unwrap();
+        for language in [0_u16, 0x0409] {
+            let [lo, hi] = language.to_le_bytes();
+            for length in [0_u8, 2, 255] {
+                assert_eq!(
+                    state.handle(&profile, [0x80, 6, 3, 3, lo, hi, length, 0], &[]),
+                    Completion::Data(serial[..serial.len().min(usize::from(length))].to_vec())
+                );
+            }
+        }
+        for setup in [
+            [0x80, 6, 3, 3, 0x11, 4, 255, 0],
+            [0x80, 6, 4, 3, 9, 4, 255, 0],
+        ] {
+            assert_eq!(state.handle(&profile, setup, &[]), Completion::Stall);
+        }
+        assert_eq!(
+            state.handle(
+                &Profile::new(ProfileId::DualSenseEmulated),
+                [0x80, 6, 3, 3, 9, 4, 255, 0],
+                &[]
+            ),
+            Completion::Stall
+        );
+        assert!(!state.configured());
+    }
+
+    #[test]
     fn enumeration_clock_ranges_and_alternate_setting_lifecycle() {
         let (p, mut s) = configured();
         assert_eq!(

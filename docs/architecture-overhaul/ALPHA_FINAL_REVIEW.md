@@ -1,4 +1,8 @@
-# Final alpha review handoff
+# Historical final alpha review handoff
+
+This document preserves the earlier, narrower candidate review. It does not
+establish current alpha readiness under the expanded all-implemented-paths gate.
+Use the [remediation status](ALPHA_REMEDIATION_STATUS.md) for the current alpha disposition.
 
 ## Review blocks and exact candidate
 

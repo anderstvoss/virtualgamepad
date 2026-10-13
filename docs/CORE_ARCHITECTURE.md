@@ -12,7 +12,7 @@ the resulting component set. See [ADR-0017](architecture-overhaul/decisions/ADR-
 | --- | --- | --- |
 | `linux.uinput` | Linux uinput | Controller-owned evdev controls and supported outputs. |
 | `linux.uhid.usb` | Linux UHID with USB bus metadata | Local HID protocol presentation; not an actual USB device. |
-| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Experimental broker-backed USB HID research only. |
+| `linux.dummy_hcd.usb-hid` | dummy_hcd and ConfigFS | Unavailable: current f_hid lacks complete request metadata and negative replies; creation fails closed. |
 | `linux.usbip.usb-audio` | stock Linux USB/IP/VHCI | Opt-in WIP composite HID/UAC2; installed security/recovery acceptance remains open. |
 
 `RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
@@ -33,7 +33,7 @@ The UHID provider handles CREATE2, INPUT2, output, GET/SET requests and replies,
 
 Input/output/feature classes remain distinct. Logical payloads exclude a numbered report ID; serialization includes it once. Unnumbered reports use no logical ID. START flags are the runtime authority for numbering. STOP, START, consumer OPEN/CLOSE, and terminal library close have distinct meanings. Each request receives a session-scoped ordinal independently of a reusable kernel transaction ID.
 
-The uinput path retains transactional evdev encoding. Curated controller sessions own conventional force-feedback acceptance, 64 stored effects, bounded completion retries and typed playback observations; uinput only decodes native ABI fields and executes replies. Applications no longer acknowledge curated upload/erase callbacks. See [ADR-0006](architecture-overhaul/decisions/ADR-0006-conventional-feedback.md). The existing dummy_hcd path retains its compiled broker startup behavior until Gate G establishes dynamic forwarding capability and latency. This is a migration boundary, not a claim that the broker rewrite is complete. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
+The uinput path retains transactional evdev encoding. Curated controller sessions own conventional force-feedback acceptance, 64 stored effects, bounded completion retries and typed playback observations; uinput only decodes native ABI fields and executes replies. Applications no longer acknowledge curated upload/erase callbacks. See [ADR-0006](architecture-overhaul/decisions/ADR-0006-conventional-feedback.md). The earlier compiled dummy_hcd startup prototype remains in deterministic tests, but every construction entrypoint now rejects its incomplete request contract. Gate G preparation cannot enable that transport. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
 
 ## State, scheduling, and delivery
 
