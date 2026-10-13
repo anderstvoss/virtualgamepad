@@ -1,11 +1,12 @@
 # Alpha gate criteria audit
 
-Current gate disposition: **Gates 2 and 3 passed with pinned evidence**. Gate 2
-was reclosed at `44bf06e` after fresh native contact/feedback/removal revalidation. Gate 2's current
-cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `b817f48d7fc50ac38de21046144e4f55d1595e6d`
-against the consistent microphone-progress worker. Gates 1, 4, 5 and 6 remain open.
-See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+Current gate disposition: **Gate 3 passed with pinned evidence; Gate 2 reopened**.
+New Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148)
+prevents its whole-gate closure. Preserve the prior 44bf06e Sony contact/feedback
+and other output passes within their recorded scope. See
+[controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
+Gate 3 remains pinned to b817f48d7fc50ac38de21046144e4f55d1595e6d.
+Gates 1, 2, 4, 5 and 6 remain open. Alpha is not ready.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
 

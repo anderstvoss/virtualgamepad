@@ -1,11 +1,12 @@
 # Alpha remediation status
 
-Current gate disposition: **Gates 2 and 3 passed with pinned evidence**. Gate 2
-was reclosed at `44bf06e` after fresh native contact/feedback/removal revalidation. Gate 2's current
-cell-by-cell audit is in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 was revalidated at `b817f48d7fc50ac38de21046144e4f55d1595e6d`
-against the consistent microphone-progress worker. Gates 1, 4, 5 and 6 remain open.
-See [provider acceptance and regression map](ALPHA_PROVIDER_RECOVERY_ACCEPTANCE.md).
+Current gate disposition: **Gate 3 passed with pinned evidence; Gate 2 reopened**.
+New Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148)
+prevents its whole-gate closure. Preserve the prior 44bf06e Sony contact/feedback
+and other output passes within their recorded scope. See
+[controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
+Gate 3 remains pinned to b817f48d7fc50ac38de21046144e4f55d1595e6d.
+Gates 1, 2, 4, 5 and 6 remain open. Alpha is not ready.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
 
@@ -4822,3 +4823,46 @@ actual graph-driver policy/affinity from the already-tested client priority;
 existing RR88 client qualification did not establish a matching daemon policy.
 Do not repeat qualification or enlarge queues merely because one short trial
 retained markers. GUI-specific scope still needs administrator provisioning.
+
+## HID consumer discovery and Xbox identity blocker
+
+At production source b951c6e, the first isolated HID Steam launch fails before
+Steam starts because one owned udev record is not ready. Root exit is zero,
+cleanup errors empty and owned devices absent. Waiting for the exact owned
+records allows launch; the controller-settings view does not remain observable.
+That subsequent trial is incomplete, explicitly stopped by identity-checked
+SIGTERM, and restores the owned unit/devices/processes with empty cleanup errors.
+No input acceptance or product cause is inferred from the UI observation.
+
+The maintained runner now waits at most three seconds for exact owned udev
+records before snapshot creation. Existing O_NOFOLLOW, size/type, property
+allowlist and device-identity checks remain; missing metadata still fails closed.
+Two regressions cover delayed arrival excluding foreign data and timeout without
+a partial snapshot. All 472 Python tests and mandatory checks pass.
+
+A direct reader linked to Steam's shipped SDL 3.5.0 through installed ARM64/FEX
+recognizes all four HID families with the expected type and hidraw path. Sony
+and Switch South press/release observations pass. A four-reader coordinator uses
+an invalid arm-xbox command and fails overall; preserve that failure and cleanup,
+not a whole-matrix pass. The separate corrected arm-xbox360 trial has normal
+root/reader exits and complete owned cleanup, but exposes wrong functional input:
+South press is absent and release yields North (button mask 8), not South mask 1.
+
+[Issue #148](https://github.com/anderstvoss/virtualgamepad/issues/148) tracks the
+confirmed identity/codec mismatch. Xbox hid_realization advertises 045e:028e,
+while xbox_hid_frame sends the declared nine-byte standard-HID layout. The
+[matching SDL driver](https://github.com/libsdl-org/SDL/blob/70e9cc86d/src/joystick/hidapi/SDL_hidapi_xbox360.c)
+selects Xbox type and decodes native Xbox wire offsets. This is not the FEX evdev
+24/16-byte framing issue and is not excused by physical-fidelity deferral. Correct
+truthful standard-HID identity/presentation across affected targets, then regress
+identity/codec coherence and rerun all mapped controls, rejection and cleanup.
+Do not silently force a consumer-wide backend fallback or invent XInput support.
+
+Gate 2's whole-gate disposition is reopened for this newly demonstrated Xbox
+identity/consumer boundary; previously accepted Sony contacts/feedback and other
+output cells retain their pinned evidence. Gate 3 retains its pass. Gates
+1/2/4/5/6 remain open and PR #133 remains draft. All five b951c6e remote workflows
+complete successfully, with privileged Provider Tier B and dispatch dependency
+review still skipped. The downloaded SBOM verifies all 17 identities. These
+structural passes do not resolve the new identity defect or remaining audio/UI
+acceptance. Private account/profile data and raw screenshots remain untracked.

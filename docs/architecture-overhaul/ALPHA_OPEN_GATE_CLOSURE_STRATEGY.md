@@ -1,8 +1,8 @@
-# Strategy for the four open alpha gates
+# Strategy for the five open alpha gates
 
 This review preserves the complete criteria in [the gate audit](ALPHA_GATE_CRITERIA.md)
 and the approved [six-gate plan](ALPHA_VM_SIX_GATE_PLAN.md). Gates 1, 4, 5 and 6
-remain open. Gate 2 reclosed at `44bf06e` after native contact/feedback/consumer
+remain open. Gate 2 is reopened by Xbox standard-HID identity mismatch #148. Its historical reclosure was at `44bf06e` after native contact/feedback/consumer
 close/removal/sibling acceptance; its historical reopened boundary is retained
 in the output ledger. Gate 3 retains its pinned seven-phase acceptance at
 `b817f48`; revalidate affected cells after relevant executable changes. Physical
@@ -44,9 +44,9 @@ Steam, compilation or audio trials. Reuse an earlier soak only if its accepted
 GUI image is byte-identical. Close the gate only when every inventory cell and
 final owned cleanup have evidence.
 
-## Gate 2: preserve the revalidated Sony boundary
+## Gate 2: correct Xbox identity and preserve Sony evidence
 
-Native contact/feedback/consumer-close/removal/sibling cells passed at `44bf06e`.
+Fix and revalidate the Xbox identity/codec mismatch in issue #148; no whole-gate pass remains. Native contact/feedback/consumer-close/removal/sibling cells passed at `44bf06e`.
 The output ledger's reclosure audit records the complete dispositions and pinned
 images. No production source or lockfile changes follow the accepted native
 classification candidate. Preserve the historical failed classifier/consumer

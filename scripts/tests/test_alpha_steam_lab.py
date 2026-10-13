@@ -246,6 +246,35 @@ class SteamNamespace(unittest.TestCase):
             self.assertNotIn('/run/udev/data/c13:65', command)
 
 
+    def test_owned_udev_startup_waits_for_exact_records_without_copying_foreign_data(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); data=root/'data'; data.mkdir(); workspace=root/'work'; workspace.mkdir()
+            (data/'c13:65').write_text('E:ID_INPUT=1\nE:PRIVATE_TOKEN=fake\n')
+            devices=[dict(rdev=os.makedev(13,64))]
+            def arrive(_seconds): (data/'c13:64').write_text('E:ID_INPUT=1\n')
+            with patch.object(lab,'consumer_device_settings',return_value=[]), \
+                 patch.object(lab.time,'sleep',side_effect=arrive) as pause:
+                snapshot=lab.prepare_consumer_udev(workspace,devices,data)
+            pause.assert_called_once_with(.02)
+            self.assertEqual([x.name for x in snapshot.iterdir()],['c13:64'])
+            self.assertEqual((snapshot/'c13:64').read_text(),'E:ID_INPUT=1\n')
+
+    def test_owned_udev_startup_timeout_leaves_no_partial_snapshot(self):
+        import os
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory); data=root/'data'; data.mkdir()
+            devices=[dict(rdev=os.makedev(13,64))]
+            with patch.object(lab,'consumer_device_settings',return_value=[]), \
+                 patch.object(lab.time,'monotonic',side_effect=[10,13]), \
+                 patch.object(lab.time,'sleep') as pause:
+                with self.assertRaisesRegex(TimeoutError,'did not become ready'):
+                    lab.prepare_consumer_udev(root,devices,data)
+            pause.assert_not_called()
+            self.assertFalse((root/'owned-udev-data').exists())
+
     def test_owned_udev_snapshot_rejects_symlinks_oversize_and_changed_devices(self):
         import os
         from unittest.mock import patch

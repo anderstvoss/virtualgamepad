@@ -1,5 +1,7 @@
 # Controller output acceptance ledger
 
+Current override: **Gate 2 reopened** for Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148). Prior native Sony and other output receipts below remain scoped passes, not current whole-gate closure.
+
 Gate 2 is reclosed at `44bf06e` after the affected DualSense evdev boundary is
 revalidated with native contacts, exact feedback, active consumer close, removal
 and sibling survival. The final section records the complete reclosure audit and

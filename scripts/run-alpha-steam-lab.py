@@ -271,11 +271,30 @@ def consumer_device_settings(devices, input_view=None):
 
 
 
+def wait_for_owned_udev(devices, data_root):
+    """Bound the device-node/udev-record startup race; never invent metadata."""
+    deadline = time.monotonic()+3
+    while True:
+        missing = False
+        for device in devices:
+            key = f"c{os.major(device['rdev'])}:{os.minor(device['rdev'])}"
+            try:
+                (data_root/key).lstat()
+            except FileNotFoundError:
+                missing = True
+        if not missing:
+            return
+        if time.monotonic() >= deadline:
+            raise TimeoutError('owned udev discovery records did not become ready')
+        time.sleep(.02)
+
+
 def prepare_consumer_udev(workspace, devices, data_root=Path('/run/udev/data')):
     """Snapshot only discovery fields for identity-pinned owned devices."""
     if not devices:
         return None
     consumer_device_settings(devices)  # Validate character-device ownership first.
+    wait_for_owned_udev(devices, data_root)
     destination = workspace / 'owned-udev-data'
     destination.mkdir(mode=0o700)
     for device in devices:
