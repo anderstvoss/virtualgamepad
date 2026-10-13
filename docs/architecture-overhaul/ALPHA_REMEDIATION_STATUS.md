@@ -1,14 +1,27 @@
 # Alpha remediation status
 
-Current gate disposition: **Gate 3 passed with pinned evidence; Gate 2 reopened**.
-New Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148)
-prevents its whole-gate closure. Preserve the prior 44bf06e Sony contact/feedback
-and other output passes within their recorded scope. See
-[controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
-Gate 3 remains pinned to b817f48d7fc50ac38de21046144e4f55d1595e6d.
-Gates 1, 2, 4, 5 and 6 remain open. Alpha is not ready.
-This current evidence supersedes older whole-gate ratings below. Reopen affected
-cells after relevant code/binary changes. Alpha remains not ready.
+Current disposition (2026-10-13): **alpha is not ready; PR #133 remains draft**.
+Production Rust source is unchanged since `708e758`; later commits record evidence.
+The Xbox generic-HID identity defect is corrected at `04943b1`, but its remaining
+realization/consumer acceptance still prevents whole Gate 2 closure. Preserve
+prior Sony contact/feedback passes within their pinned scope.
+
+| Gate | Current disposition | Next required evidence |
+| --- | --- | --- |
+| 1: keyboard/accessibility | Open; DualSense touch, lockout and motion subsets have native receipts | Complete remaining control/family cells; resolve the third wrapper's outer status 143; finish and interpret the current neutral-soak image, keeping its identity distinct from the ordinary demo image |
+| 2: controller outputs/isolation | Reopened; identity correction and native Xbox sweep/transition subsets pass | Changed-worker USB/profile lifecycle and default consumer matrix; classic-backend diagnostics do not supply default acceptance |
+| 3: provider recovery/security | Pass pinned to `b817f48d7fc50ac38de21046144e4f55d1595e6d`; current changed worker not revalidated | Rebuild/stage a source-pinned worker and rerun affected provider phases with independent restoration receipts |
+| 4: USB/IP audio/routing | Open; prior short microphone marker cells failed | Complete native/sample ownership, routing, failure/isolation and cleanup cells with actual marker receipts |
+| 5: isolated Steam | Open; native and explicitly classic SDL subsets do not close it | Confirm the local FEX input-ABI mechanism, then obtain actual default Steam/consumer observations in the isolated profile |
+| 6: continuity | Unqualified | Discriminating prebuilt controls, three passing 60-second trials per required control, then complete product/USB sustain and slow-consumer matrices |
+
+The current two-hour neutral GUI soak is pending, not accepted. Its frozen
+executable is `1212f5ca3a8fad8b6def50dd186e68862b1c966e1309beb9ba273eb7d8b6d936`.
+No compilation, audio trials or Steam overlap this workload. Finite isolated GUI
+checks occurred during it and are recorded separately. Exact-head Windows
+acceptance remains missing after certificate-revocation network failures; no
+verification was disabled. Current evidence supersedes older whole-gate ratings
+below; affected cells must be reopened after relevant source/image changes.
 
 Current closure criteria and verifier gaps are in
 [the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress
