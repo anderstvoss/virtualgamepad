@@ -1,47 +1,18 @@
 # Alpha gate criteria audit
 
-## Binding alpha scope and execution plan — 2026-10-13
+## Current alpha boundary — 2026-10-13
 
-The release owner's [final scope decision](https://github.com/anderstvoss/virtualgamepad/pull/133#issuecomment-6148689485)
-supersedes the broader historical acceptance requirements below. The user's
-subsequent instruction also defers Steam/FEX acceptance to x86-64 testing in
-[#144](https://github.com/anderstvoss/virtualgamepad/issues/144), **not a pass**.
-FEX's input-event ABI boundary is a credible contributor; Steam's selected backend
-and the cause of every consumer failure are not established. Native protocol and
-transport traces establish controller correctness; Steam is separate compatibility
-evidence. Preserve all historical failures without investigating deferred cells.
-
-Execute once on one frozen source/build candidate:
-
-1. Record source/tree, compiler/lockfile and demo/broker/worker hashes. Build once.
-2. GUI: four default-realization families; Tab/Shift-Tab visible creation, face,
-   stick, trigger and removal focus; face/stick input and neutral release;
-   middle removal with working neighbours; window close and owned cleanup.
-   Record lack of screen-reader support (eframe accesskit is not enabled).
-3. Changed controller cells only: native reviewed SDL Xbox all-control HID/evdev
-   sweeps, USB output EPIPE/no callback, DualSense companion contact movement/
-   release and both-node removal. Reuse DS4 rollback and Sony output passes.
-4. Run the existing seven provider phases once with owned restoration. Rerun
-   only affected checks if broker/worker/USB product code changes.
-5. USB audio: each of DualSense, DS4 and Xbox 360 delivers playback markers to
-   host ALSA and microphone markers to the application; close/repeated close,
-   untouched shared defaults/foreign resources and owned cleanup. Reuse applicable
-   worker-kill/route-disappearance passes. Record silence/gaps/loss as limitations;
-   do not investigate sustained continuity. Complete absence of flow is distinct
-   from occasional gaps and still requires a supported disposition.
-6. Steam is deferred by the user's later direction. Sustained audio/zero-loss/
-   latency are deferred by the release owner to #135/#145; physical comparisons
-   remain #136. Full control/accessibility and consumer/routing matrices move to
-   beta. No independent controls, timing diagnostics, 72-cell matrix, new tooling
-   unless needed to execute a listed check, or additional GUI soak. The accepted
-   `46be2bf` soak suffices for alpha.
-7. Run final automated checks and exact-head CI, including Windows, CodeQL,
-   Gitleaks and all workspace SBOMs. Publish one short result table and known
-   limitations in the PR, update #143/#144/#145, then mark ready for review when
-   required checks pass. Do not merge, tag or release.
-
-Historical whole-gate ratings and broader mandatory wording below are superseded
-by this scope. Keep raw receipts outside source; do not add more evidence ledgers.
+The release owner's [binding narrowed scope](https://github.com/anderstvoss/virtualgamepad/pull/133#issuecomment-6148689485)
+supersedes the broader historical requirements below. Execute the finite checks
+in [the current execution plan](ALPHA_OPEN_GATE_CLOSURE_STRATEGY.md): GUI smoke,
+changed controller cells, one provider rerun, functional USB audio and final CI.
+Sustained continuity/zero-loss/latency and full matrices are deferred to #135/#145;
+physical comparisons remain #136. The user's later instruction also defers Steam
+acceptance to x86-64 in #144, not a pass. Native transport/protocol evidence is the
+source of truth for correctness; Steam is separate compatibility evidence.
+No more timing/control diagnostics, 72-cell trials or GUI soaks. Reuse the accepted
+`46be2bf` soak. Record audio gaps as limitations; require actual flow and cleanup.
+Historical failures remain visible; do not apply superseded whole-gate criteria.
 
 Current gate disposition: **Gate 3 passed with pinned evidence; Gate 2 reopened**.
 New Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148)

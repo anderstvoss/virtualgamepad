@@ -358,6 +358,14 @@ class ReversibleMaintenance(unittest.TestCase):
         for name in ('Uppercase', 'a' * 33, 'dot.name'):
             with self.assertRaises(RuntimeError): lab.instance_name(Path('/synthetic') / name)
 
+    def test_command_width_is_bounded_without_relaxing_output_quota(self):
+        host = object.__new__(lab.Host)
+        host.events = []
+        with patch.object(lab.subprocess, 'run', return_value=Mock(returncode=0)) as run:
+            self.assertEqual(host.run(['ss', '-H', '-xnp', 'state', 'connected']), '')
+        self.assertEqual(run.call_args.kwargs['env']['COLUMNS'], '80')
+        self.assertIn('--fsize='+str(lab.OUTPUT_LIMIT), run.call_args.args[0])
+
     def test_failed_command_preserves_bounded_stdout_and_stderr(self):
         host = lab.Host(Mock())
         with self.assertRaises(subprocess.CalledProcessError):

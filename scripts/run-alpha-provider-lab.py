@@ -499,7 +499,7 @@ class Host:
         with tempfile.TemporaryFile() as stdout, tempfile.TemporaryFile() as stderr:
             result = subprocess.run(['/usr/bin/prlimit', '--fsize='+str(OUTPUT_LIMIT), '--', *argv],
                                     stdout=stdout, stderr=stderr, timeout=timeout,
-                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'})
+                                    env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C', 'COLUMNS': '80'})
             stdout.seek(0); stderr.seek(0)
             output = stdout.read(OUTPUT_LIMIT + 1)
             diagnostic = stderr.read(OUTPUT_LIMIT + 1)
