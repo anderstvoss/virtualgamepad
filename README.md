@@ -58,8 +58,8 @@ for consumer-association limits and concurrent-identity policy.
 
 The [controller support matrix](docs/CONTROLLER_SUPPORT.md) currently marks all
 entries WIP. The ordinary root signature snapshot is frozen; the
-[remediation gate](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) tracks
-correctness fixes and acceptance required before a Git-based alpha release.
+[remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) records
+the alpha gate dispositions and known limitations.
 
 The [architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) separates deterministic results from blocked live-host work. Composite/audio implementation exists with explicitly bounded acceptance; installed audio security/recovery, native continuity, matching fidelity and Bluetooth remain gated.
 

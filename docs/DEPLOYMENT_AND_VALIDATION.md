@@ -92,7 +92,7 @@ indicators show host activity.
 The retained ignored gadget tests describe the earlier prototype, not current
 successful construction. Do not blanket-enable them. Require the deterministic
 rejection regressions and installed candidate rejection instead. Installed USB/IP
-audio acceptance remains a separate gate; see [the alpha lab](architecture-overhaul/ALPHA_ACCEPTANCE_LAB.md).
+audio acceptance remains a separate gate; see [the remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
 Root-only integration tests are intentionally ignored in normal test runs.
 DummyHcd validation covers USB enumeration, HID feature exchange, motion input,

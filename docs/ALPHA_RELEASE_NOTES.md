@@ -43,10 +43,8 @@ reviewed routing/channel scope and native scheduling/shutdown remain explicit
 limits. The existing unmaintained ttf-parser dependency warning is retained for
 review; no new advisory suppression was added.
 
-The expanded all-implemented-paths release gate is **not ready**. Current code
-resolution and unresolved host/audio gates are in the
-[remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) and
-[reviewer handoff](architecture-overhaul/ALPHA_REMEDIATION_REVIEW_HANDOFF.md).
+Alpha gate dispositions and known limitations are in the
+[remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
 Review [the historical acceptance handoff](architecture-overhaul/ALPHA_FINAL_REVIEW.md),
 [API disposition](architecture-overhaul/ALPHA_ROOT_API_AUDIT.md),
