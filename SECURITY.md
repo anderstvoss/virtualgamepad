@@ -34,6 +34,11 @@ This repo enforces:
   storage URIs, and binary artifacts.
 - Pre-push: gitleaks full-tree scan + tracked-file blocker + local-paths
   guard + `cargo deny check` + `cargo audit`.
+- Every `unsafe` block carries a `// SAFETY:` justification, enforced by
+  `clippy::undocumented_unsafe_blocks`; non-FFI crates forbid `unsafe`.
+- Python helpers are linted for defects and security footguns (ruff
+  pyflakes + bandit rules) and their unit tests run in CI.
+- CodeQL (`security-extended`) for Rust and for the workflow files.
 - CI on every PR and push to `main`: `cargo fmt`, `clippy -D warnings`,
   `cargo check`, `cargo test` across Ubuntu + macOS + Windows; the full
   pre-commit + pre-push policy replay on the same matrix; `cargo-deny`
@@ -46,8 +51,11 @@ This repo enforces:
 - OpenSSF Scorecard on push to `main`, weekly cron, and
   branch-protection-rule events; SARIF published to the Security tab.
 - Dependabot alerts + automated security updates.
-- Codeowner review required on `.github/`, security docs, and
-  dependency manifests.
+- Codeowner review required on `.github/`, hooks, security docs,
+  dependency manifests, and privileged host integration files
+  (`systemd/`, `udev/`, `modules-load.d/`).
+- A full-history secret scan is a precondition for changing repository
+  visibility.
 
 For the end-to-end setup procedure (reusable across projects), see
 [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).

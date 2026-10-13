@@ -42,9 +42,9 @@
 ## Agent Memory
 
 Per-project agent auto-memory lives at `.agents/memory/` in the repo.
-The directory's contents are per-user scratch state and never reach
-the public mirror (`.agents/` is in the sync EXCLUDE_PATHS). Other
-agent runtimes (Codex, etc.) should write to the same location.
+The directory's contents are per-user scratch state and must never be
+committed; only `.agents/.gitkeep` is tracked. Other agent runtimes
+(Codex, etc.) should write to the same location.
 
 ### One-time setup on each clone
 
@@ -62,9 +62,9 @@ mkdir -p "$(dirname "$RUNTIME_MEM")"
 [ -L "$RUNTIME_MEM" ] || ln -s "$(pwd)/.agents/memory" "$RUNTIME_MEM"
 ```
 
-The repo's tracked `.gitignore` does not list `.agents/memory/` — that
-rule would itself leak path names into the public mirror. Instead,
-add the rule to your per-clone exclude file once:
+Keep the ignore rule in your per-clone exclude file rather than the
+tracked `.gitignore`, so per-user memory layout stays out of the public
+history. Add it once:
 
 ```bash
 grep -qxF '/.agents/memory/' .git/info/exclude \
@@ -81,6 +81,13 @@ cargo check --locked --workspace --all-targets --all-features
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
 gitleaks detect
+```
+
+If the task touched Python under `scripts/`, also run:
+
+```bash
+ruff check .
+(cd scripts/tests && python3 -m unittest $(ls test_*.py | grep -vx test_protocol_corpus.py | sed 's/\.py$//'))
 ```
 
 ## Required Completion Summary

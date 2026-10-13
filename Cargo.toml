@@ -49,6 +49,7 @@ unsafe_code = "deny"
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "deny"
 
 [dependencies]
 gr-hid = { path = "crates/gr-hid", version = "0.1" }

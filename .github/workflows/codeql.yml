@@ -35,7 +35,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [rust]
+        include:
+          # The Rust extractor only supports build-mode none; the cargo
+          # build below still runs so dependencies resolve the same way.
+          - language: rust
+            build-mode: none
+          # Scans the workflow files themselves (script injection,
+          # untrusted checkout, excessive permissions). No build needed.
+          - language: actions
+            build-mode: none
 
     steps:
       - name: Harden runner
@@ -68,10 +76,11 @@ jobs:
           persist-credentials: false
 
       - name: Install Linux audio build dependencies
-        if: runner.os == 'Linux'
+        if: matrix.language == 'rust'
         run: sudo bash scripts/install-ci-audio-deps.sh
 
       - name: Install Rust
+        if: matrix.language == 'rust'
         # The SHA-pinned dtolnay/rust-toolchain at this revision
         # requires an explicit toolchain input. `stable` here is a
         # baseline; rust-toolchain.toml at the repo root drives the
@@ -81,6 +90,7 @@ jobs:
           toolchain: stable
 
       - name: Cache cargo
+        if: matrix.language == 'rust'
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: codeql-${{ matrix.language }}
@@ -89,11 +99,13 @@ jobs:
         uses: github/codeql-action/init@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           # security-extended adds higher-severity, lower-noise queries
           # on top of the default suite.
           queries: security-extended
 
       - name: Build (manual)
+        if: matrix.language == 'rust'
         # Rust needs an explicit build for CodeQL to observe the
         # compilation. cargo build (debug) is enough; the dev profile
         # keeps the run fast.

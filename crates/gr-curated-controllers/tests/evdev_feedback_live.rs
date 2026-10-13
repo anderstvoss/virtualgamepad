@@ -474,6 +474,7 @@ fn consumer_file() -> fs::File {
     let mut name = [0_u8; 128];
     // Only query and operate the already-open, parent-selected event descriptor.
     assert!(
+        // SAFETY: EVIOCGNAME writes at most 128 bytes into the live `name` buffer.
         unsafe {
             libc::ioctl(
                 fd,
@@ -541,6 +542,8 @@ fn uinput_consumer() {
                 effect.u[0] = u32::from_ne_bytes(bytes);
             }
             assert_eq!(
+                // SAFETY: `effect` is a fully initialized `ff_effect` matching EVIOCSFF and
+                // lives for the whole call; `fd` is the open event node.
                 unsafe {
                     libc::ioctl(
                         fd,
@@ -570,11 +573,13 @@ fn uinput_consumer() {
             };
             let size = std::mem::size_of_val(&event);
             assert_eq!(
+                // SAFETY: `event` is an initialized `input_event` and `size` is its exact size.
                 unsafe { libc::write(fd, (&raw const event).cast(), size) },
                 isize::try_from(size).unwrap()
             );
         }
         assert_eq!(
+            // SAFETY: EVIOCRMFF takes the effect id by value; `fd` is the open event node.
             unsafe {
                 libc::ioctl(
                     fd,
