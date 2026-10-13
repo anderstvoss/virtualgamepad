@@ -4904,3 +4904,33 @@ each followed by a neutral interval. Pause, mode changes and completion release
 the sweep. Deterministic boundary and strict command-parser tests pass; complete
 consumer observations of this expanded sequence are still required. Its changes
 do not expand privileged scenario names or updater permissions.
+
+## Complete Xbox sweep comparison and transition regression
+
+At `3d2100a61c2abc3e45e715e131d8f7a1d187b348`, all 25 sweep cells
+were submitted. Native installed SDL 3.2.10 observes all 50 exact active/release
+transitions. Steam-shipped SDL 3.5.0 through FEX default mode observes only the
+eleven buttons (22 transitions); absolute inputs remain unobserved. The same
+shipped reader in explicit classic mode observes all 50 Xbox transitions. Classic
+mode enumerates only three controllers in this HID trial, so neither classic
+result nor native result establishes the complete four-family Steam matrix.
+Both version and execution environment differ in the native comparison; it does
+not establish FEX alone as cause. Classic mode is a diagnostic alternative, not
+a silent default-backend fallback. All three trials have zero reader/root exits,
+empty cleanup errors, removed temporary rules and no owned nodes remaining.
+
+Review of the fixture found a transition defect: entering a sweep from a held
+South pulse could reconcile the stale pulse after the first A cell and cancel
+it; re-arming within a cell could also fail to resubmit. The fixture now delivers
+neutral state before resetting transition tracking. Fake-provider regressions
+cover pressed-pulse entry, repeated re-arm and failed neutral commit preserving
+tracking. A red regression fails when neutral delivery is omitted. The previous
+25-cell runs started neutral and remain evidence for that specific path; the
+corrected transition requires its own pinned-image revalidation.
+
+All five `3d2100a` remote workflows pass, including native platform/MSRV jobs.
+Privileged Provider Tier B and dispatch dependency review remain skipped. The
+downloaded SBOM validates all 17 workspace identities. The separately provisioned
+GUI keyboard scope uses the `3d2100a` demo image; fixture-only changes do not
+claim a different GUI image. Gate 2 remains open for affected USB/consumer
+acceptance, and Gates 1/4/5/6 remain incomplete. Gate 3 retains its pinned scope.

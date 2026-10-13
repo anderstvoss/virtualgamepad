@@ -171,6 +171,20 @@ fn xbox_sweep_cell(seconds: u64, armed: Option<u64>) -> Option<u8> {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn reset_xbox_sweep<E>(
+    neutralize_and_commit: impl FnOnce() -> Result<(), E>,
+    pressed: &mut bool,
+    previous_cell: &mut Option<u8>,
+) -> Result<(), E> {
+    // A previous South pulse must not suppress the first sweep cell. Re-arming
+    // within the same cell also needs a fresh transition after neutralization.
+    neutralize_and_commit()?;
+    *pressed = false;
+    *previous_cell = None;
+    Ok(())
+}
+
 fn removal_due(seconds: u64, scheduled: u64, requested: bool, active: bool) -> bool {
     active && (requested || seconds >= scheduled)
 }
@@ -247,6 +261,15 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = None;
                 armed_family = None;
                 armed_touch = None;
+                reset_xbox_sweep(
+                    || -> Result<(), Box<dyn Error>> {
+                        xbox.neutralize()?;
+                        xbox.commit()?;
+                        Ok(())
+                    },
+                    &mut pressed[3],
+                    &mut previous_sweep_cell,
+                )?;
                 armed_sweep = Some(begin);
                 println!(
                     "armed-sweep: xbox; first cell at second={begin}; duration=100; siblings neutral"
@@ -949,5 +972,88 @@ mod xbox_sweep_tests {
         }
         assert_eq!(xbox_sweep_cell(110, Some(10)), None);
         assert_eq!(xbox_sweep_cell(u64::MAX, Some(10)), None);
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod sweep_mode_tests {
+    use super::*;
+    use gr_realization_api::{
+        EventReadiness, NativeProviderSession, ProviderDiagnostics, ProviderError, ProviderFrame,
+        ProviderReverseEventSink, ProviderState,
+    };
+    struct Fake;
+    impl NativeProviderSession for Fake {
+        fn send(&mut self, _: ProviderFrame) -> Result<(), ProviderError> {
+            Ok(())
+        }
+        fn drain_reverse_events(
+            &mut self,
+            _: &mut dyn ProviderReverseEventSink,
+        ) -> Result<(), ProviderError> {
+            Ok(())
+        }
+        fn readiness(&self) -> EventReadiness {
+            EventReadiness::NoReverseEvents
+        }
+        fn diagnostics(&self) -> ProviderDiagnostics {
+            ProviderDiagnostics {
+                state: ProviderState::Open,
+                frames_sent: 0,
+                reverse_events_drained: 0,
+                write_failures: 0,
+                lifecycle_events: 0,
+                last_error: None,
+            }
+        }
+        fn close(&mut self) -> Result<(), ProviderError> {
+            Ok(())
+        }
+    }
+    #[test]
+    fn failed_neutral_delivery_preserves_transition_tracking() {
+        let mut pressed = true;
+        let mut previous = Some(23);
+        assert_eq!(
+            reset_xbox_sweep(|| Err("commit failed"), &mut pressed, &mut previous),
+            Err("commit failed")
+        );
+        assert!(pressed);
+        assert_eq!(previous, Some(23));
+    }
+    #[test]
+    fn starting_from_a_pressed_pulse_and_rearming_a_cell_release_before_new_input() {
+        let mut xbox = gr_curated_controllers::xbox360::test_controller(Box::new(Fake)).unwrap();
+        let mut pulse = true;
+        let mut previous = Some(0);
+        for _ in 0..2 {
+            xbox.set_native(Xbox360Control::A, true).unwrap();
+            xbox.set_triggers(Xbox360Trigger::new(255), Xbox360Trigger::new(0))
+                .unwrap();
+            xbox.commit().unwrap();
+            reset_xbox_sweep(
+                || -> Result<(), Box<dyn Error>> {
+                    xbox.neutralize()?;
+                    xbox.commit()?;
+                    Ok(())
+                },
+                &mut pulse,
+                &mut previous,
+            )
+            .unwrap();
+            assert!(!pulse);
+            assert_eq!(previous, None);
+            assert!(!xbox.state().native_pressed(Xbox360Control::A));
+            assert_eq!(xbox.state().triggers().0.raw(), 0);
+            assert!(!xbox.is_dirty());
+            // The first A cell must remain pressed after pulse reconciliation.
+            xbox.set_native(Xbox360Control::A, true).unwrap();
+            xbox.commit().unwrap();
+            assert!(xbox.state().native_pressed(Xbox360Control::A));
+            pulse = true;
+            previous = Some(0);
+        }
+        xbox.close();
+        xbox.close();
     }
 }
