@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -163,3 +164,22 @@ class ProviderPacket(unittest.TestCase):
             self.assertEqual(calls[-2:],[namespace['HELPER'],namespace['POLICY']])
             self.assertIn('visudo',str(raised.exception))
             self.assertIn('restore helper',str(raised.exception));self.assertIn('restore policy',str(raised.exception))
+
+
+class BoundedReceiptRetrieval(unittest.TestCase):
+    def test_large_error_receipt_keeps_result_and_bounded_diagnostic(self):
+        namespace={'__name__':'receipt_test'}
+        exec(packet.HELPER.replace('__CONFIG__', repr({'stage':'/unused'})), namespace)
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'owned.json'
+            path.write_text(json.dumps({'status':'failed','error':'failure '+('x'*1100000),
+                                        'commands':[{'status':1,'stderr':'cause'}]}))
+            text=namespace['receipt_text'](path)
+            value=json.loads(text)
+            self.assertEqual(value['status'],'failed')
+            self.assertTrue(value['error']['preview'].startswith('failure '))
+            self.assertTrue(value['error']['truncated'])
+            self.assertEqual(value['commands'][0]['stderr'],'cause')
+            self.assertLess(len(text.encode()),1048576)
+            path.write_bytes(b'x'*(8*1048576+1))
+            with self.assertRaises(ValueError):namespace['receipt_text'](path)

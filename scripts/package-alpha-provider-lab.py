@@ -59,6 +59,23 @@ def trusted(path,directory=False):
 def invoke(command,timeout=20):
     return subprocess.run(['/usr/bin/prlimit','--fsize=1048576','--',*command],check=True,
                           capture_output=True,timeout=timeout,env=ENV,cwd='/').stdout.decode()
+def receipt_text(path):
+    # Read only the registered root-owned receipt; keep the command's output cap.
+    with path.open('rb') as source:
+        data=source.read(8*1048576+1)
+    if len(data)>8*1048576:raise ValueError('oversized receipt exceeds bounded retrieval')
+    if len(data)<=1048576:return data.decode('utf-8')
+    value=json.loads(data)
+    def compact(item):
+        if isinstance(item,str) and len(item)>8192:
+            return {'preview':item[:8192], 'bytes':len(item.encode()),
+                    'sha256':hashlib.sha256(item.encode()).hexdigest(), 'truncated':True}
+        if isinstance(item,list):return [compact(entry) for entry in item]
+        if isinstance(item,dict):return {key:compact(entry) for key,entry in item.items()}
+        return item
+    rendered=json.dumps(compact(value))
+    if len(rendered.encode())>1048576:raise ValueError('receipt summary exceeds output quota')
+    return rendered
 def main():
     if os.geteuid()!=0 or not sys.flags.isolated or os.environ.get('SUDO_UID')!=str(CONFIG['client_uid']):
         raise ValueError('scoped invoking identity required')
@@ -81,8 +98,7 @@ def main():
             marker=STAGE/'latest';trusted(marker);name=marker.read_text().strip()
             if not re.fullmatch(r'[a-f0-9]{32}\\.json',name):raise ValueError('invalid receipt marker')
             report=STAGE/'reports'/name;trusted(report)
-            if report.stat().st_size>1048576:raise ValueError('oversized receipt')
-            print(report.read_text(),end='');return 0
+            print(receipt_text(report),end='');return 0
         name=uuid.uuid4().hex+'.json';report=STAGE/'reports'/name
         command=['/usr/bin/python3','-I',str(STAGE/'run-alpha-provider-lab.py'),'--apply',
           '--broker',str(STAGE/'gr-privileged-broker'),'--broker-hash',CONFIG['hashes']['gr-privileged-broker'],
