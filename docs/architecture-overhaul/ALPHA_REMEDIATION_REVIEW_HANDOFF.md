@@ -4387,3 +4387,16 @@ and acceleration neutral release. Inspect the owned node's fuzz-16 receipt:
 raw/native equality at value one was an incorrect harness assumption, whose
 failed trace remains preserved. Larger-movement evidence must not be extrapolated
 to physical fidelity or full GUI acceptance. No whole-gate disposition changed.
+
+
+Review the subsequent two-held-contact/selected-slot/Reset, relative-input,
+BTN_LEFT click, and keyboard row-removal receipts on the same GUI image. The
+root/coordinator records complete zero-status cleanup, but the outer execution
+handle reports 143; require an explanation before treating the whole wrapper
+trial as passing. Preserve that discrepancy alongside the native observations.
+
+For Steam, challenge the new ABI hypothesis against raw reads. ELF32 consumer,
+24-byte native events and missing compat-input kernel hook match FEX's upstream
+issue, but are not substitutes for an owned-node raw comparison. Do not change
+product codecs, impose a consumer-wide fallback, replace the kernel, or close
+the mandatory consumer gate from this prerequisite inspection.

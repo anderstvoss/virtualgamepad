@@ -5033,3 +5033,36 @@ The retry closed normally with root status zero, its input rule removed, and
 no initiating/cleanup errors. No production code or dependencies changed.
 Remaining interactive controls/families and final soak completion are still
 required; neither this subset nor the ongoing soak closes the whole GUI gate.
+
+
+### Multicontact, relative input and row-removal evidence
+
+A third isolated run used the same `708e758` GUI image. Native contact states
+progressed `{0:0} -> {0:0,1:1} -> {1:1} -> {}` across two held contacts and Reset.
+Only slot 1 moved to X=19 while selected, preserving slot 0. Touch click emitted
+BTN_LEFT `1 -> 0`. Keyboard-enabled global and per-contact Relative controls
+then produced slot 0 movement to X=19 followed by release. Reset cleared relative
+and Hold settings. Keyboard activation of the controller row's remove button
+left no owned input nodes; normal window close and the root runner returned zero,
+with the input rule removed and no recorded initiating/cleanup error.
+
+The outer execution handle nevertheless returned 143 after the completed
+coordinator receipt. Independent inspection found the private display socket
+and registration/auth files absent. Preserve this discrepancy: these native
+functional observations are evidence, but the overall wrapper exit is not an
+unconditional passing trial. Its cause still needs investigation. No production
+behavior or dependency changed. Other family/remaining UI cells and final soak
+completion remain required.
+
+### FEX input-ABI prerequisite investigation
+
+The shipped SDL probe and library are i386 ELF32. This ARM64 host reports a
+24-byte native input-event structure, and the read-only PR_GET_COMPAT_INPUT
+probe returned EINVAL. The [upstream FEX issue](https://github.com/FEX-Emu/FEX/issues/4114)
+identifies native/compat input-event framing as a known problem for emulated
+32-bit evdev consumers. [FEX's compatibility support](https://github.com/FEX-Emu/FEX/pull/4106)
+uses a corresponding kernel hook, absent in this host's probe. This is a strong
+lead for the observed default-backend button/axis discrepancy, not yet a local
+raw-read causal proof. A bounded native/i386 raw control is prepared privately
+for prebuilding and isolated execution after the soak; no kernel or installed
+consumer configuration has changed. Steam acceptance remains open.
