@@ -4886,3 +4886,21 @@ new pinned consumer controls, unsupported-output rejection and cleanup pass.
 Relevant USB worker/broker profile evidence must be revalidated after rebuilding.
 The previous GUI packet is no longer a final-candidate package after this
 production change: rebuild and provision a current GUI image before acceptance.
+
+## Pinned Xbox triggering-case revalidation
+
+At `04943b14944e5dc67c4e74a6eda5c7b529258e61`, the newly installed
+immutable two-scenario input image is exercised against Steam's shipped SDL
+3.5.0 through FEX, default backend. Xbox is a standard gamepad (type 1),
+using the descriptor-backed Linux input path. South press yields mask 1 and
+release mask 0; the prior wrong North release is absent. Sony/Switch retain
+their respective HID paths. Reader and root exits are zero, cleanup errors
+empty, temporary rule removed, and owned nodes absent. This is a South-only
+direct consumer check, not whole Gate 2 or Steam-UI acceptance.
+
+The fixture now offers a separately armed, finite `sweep-xbox360` sequence:
+eleven buttons, four D-pad directions, eight stick extrema and two triggers,
+each followed by a neutral interval. Pause, mode changes and completion release
+the sweep. Deterministic boundary and strict command-parser tests pass; complete
+consumer observations of this expanded sequence are still required. Its changes
+do not expand privileged scenario names or updater permissions.

@@ -8,10 +8,11 @@ use std::{
 };
 #[cfg(target_os = "linux")]
 use virtualgamepad::{
-    CreationOptions, DigitalControlUpdate, DualSenseController, DualSenseTouchContact,
-    DualShock4Controller, DualShock4TouchContact, DualShock4TouchSlot, FaceButton, RealizationId,
-    SwitchProController, TouchSlot, Xbox360Controller, create_dualsense, create_dualshock4,
-    create_switch_pro, create_xbox360,
+    CreationOptions, DigitalControlUpdate, DpadDirection, DualSenseController,
+    DualSenseTouchContact, DualShock4Controller, DualShock4TouchContact, DualShock4TouchSlot,
+    FaceButton, RealizationId, SwitchProController, TouchSlot, Xbox360Axis, Xbox360Control,
+    Xbox360Controller, Xbox360Trigger, create_dualsense, create_dualshock4, create_switch_pro,
+    create_xbox360,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -158,6 +159,18 @@ fn selected_touch_fits(begin: u64, remove_at: u64, end_at: u64, family: u8) -> b
             .is_some_and(|end| end <= end_at && (family != 0 || end <= remove_at))
 }
 
+/// Twenty-five finite cells, each with two seconds active and two neutral.
+/// Covers eleven buttons, four D-pad directions, eight stick extrema, two triggers.
+#[cfg(any(target_os = "linux", test))]
+fn xbox_sweep_cell(seconds: u64, armed: Option<u64>) -> Option<u8> {
+    let elapsed = seconds.checked_sub(armed?)?;
+    if elapsed < 100 && elapsed % 4 < 2 {
+        Some(u8::try_from(elapsed / 4).expect("bounded sweep cell"))
+    } else {
+        None
+    }
+}
+
 fn removal_due(seconds: u64, scheduled: u64, requested: bool, active: bool) -> bool {
     active && (requested || seconds >= scheduled)
 }
@@ -165,7 +178,7 @@ fn removal_due(seconds: u64, scheduled: u64, requested: bool, active: bool) -> b
 fn main() -> Result<(), Box<dyn Error>> {
     let options = Options::parse(std::env::args().skip(1))?;
     println!(
-        "proposed: four families; realization={}; duration={}; delay-after-arm={}; South pulses or explicit finite Sony contacts; no audio; inputs remain neutral until armed",
+        "proposed: four families; realization={}; duration={}; delay-after-arm={}; South pulses, finite Xbox controls sweep or explicit finite Sony contacts; no audio; inputs remain neutral until armed",
         if options.evdev { "evdev" } else { "hid" },
         options.seconds,
         options.start_after
@@ -214,6 +227,8 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let mut armed_start = None;
     let mut armed_family = None;
     let mut armed_touch = None;
+    let mut armed_sweep = None;
+    let mut previous_sweep_cell = None;
     let mut remove_requested = false;
     let mut contacts = [[None; 2]; 2];
     let remove_at = options.remove_after.unwrap_or(options.seconds - 10);
@@ -221,6 +236,22 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
         let seconds = started.elapsed().as_secs();
         match inbox.poll()? {
             Some(control::Command::Stop) => break,
+            Some(control::Command::XboxSweep) => {
+                let begin = seconds + options.start_after;
+                if begin
+                    .checked_add(100)
+                    .is_none_or(|end| end > options.seconds)
+                {
+                    return Err("Xbox sweep exceeds fixture lifetime".into());
+                }
+                armed_start = None;
+                armed_family = None;
+                armed_touch = None;
+                armed_sweep = Some(begin);
+                println!(
+                    "armed-sweep: xbox; first cell at second={begin}; duration=100; siblings neutral"
+                );
+            }
             Some(control::Command::Arm) if armed_start.is_none() => {
                 let begin = seconds + options.start_after;
                 if !active[0] || begin + 40 > remove_at {
@@ -229,6 +260,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = Some(begin);
                 armed_family = None;
                 armed_touch = None;
+                armed_sweep = None;
                 println!("armed: first input at second={begin}");
             }
             Some(control::Command::ArmFamily(family)) => {
@@ -241,6 +273,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = Some(begin);
                 armed_family = Some(usize::from(family));
                 armed_touch = None;
+                armed_sweep = None;
                 println!(
                     "armed-family: family={family}; first input at second={begin}; siblings neutral"
                 );
@@ -255,6 +288,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = None;
                 armed_family = None;
                 armed_touch = Some((family, begin));
+                armed_sweep = None;
                 println!(
                     "armed-touch: family={family}; first contact at second={begin}; siblings neutral"
                 );
@@ -264,6 +298,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 armed_start = None;
                 armed_family = None;
                 armed_touch = None;
+                armed_sweep = None;
                 println!("paused: all families neutral");
             }
             _ => {}
@@ -334,6 +369,61 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
                 }
             };
         }
+        let sweep_cell = xbox_sweep_cell(seconds, armed_sweep);
+        if sweep_cell != previous_sweep_cell {
+            xbox.neutralize()?;
+            if let Some(cell) = sweep_cell {
+                match cell {
+                    0..=10 => {
+                        let button = [
+                            Xbox360Control::A,
+                            Xbox360Control::B,
+                            Xbox360Control::X,
+                            Xbox360Control::Y,
+                            Xbox360Control::LeftShoulder,
+                            Xbox360Control::RightShoulder,
+                            Xbox360Control::Back,
+                            Xbox360Control::Start,
+                            Xbox360Control::Guide,
+                            Xbox360Control::LeftStickPress,
+                            Xbox360Control::RightStickPress,
+                        ][usize::from(cell)];
+                        xbox.set_native(button, true)?;
+                    }
+                    11..=14 => xbox.set_digital(DigitalControlUpdate::Dpad {
+                        direction: [
+                            DpadDirection::Up,
+                            DpadDirection::Right,
+                            DpadDirection::Down,
+                            DpadDirection::Left,
+                        ][usize::from(cell - 11)],
+                        pressed: true,
+                    })?,
+                    15..=22 => {
+                        let index = cell - 15;
+                        let extreme =
+                            Xbox360Axis::new(if index % 2 == 0 { i16::MIN } else { i16::MAX });
+                        let zero = Xbox360Axis::new(0);
+                        let (x, y) = if index % 4 < 2 {
+                            (extreme, zero)
+                        } else {
+                            (zero, extreme)
+                        };
+                        if index < 4 {
+                            xbox.set_left_stick(x, y)?;
+                        } else {
+                            xbox.set_right_stick(x, y)?;
+                        }
+                    }
+                    23 => xbox.set_triggers(Xbox360Trigger::new(255), Xbox360Trigger::new(0))?,
+                    24 => xbox.set_triggers(Xbox360Trigger::new(0), Xbox360Trigger::new(255))?,
+                    _ => unreachable!("bounded sweep cell"),
+                }
+            }
+            xbox.commit()?;
+            previous_sweep_cell = sweep_cell;
+            println!("sweep: xbox second={seconds} cell={sweep_cell:?}");
+        }
         advance!(sony, 0);
         advance!(ds4, 1);
         advance!(switch, 2);
@@ -366,7 +456,7 @@ fn run(options: &Options) -> Result<(), Box<dyn Error>> {
     let truncated = observations.iter().any(|count| *count > 64);
     println!(
         "closed: all controllers; input-armed={}; output-counts={observations:?}; output-log-truncated={truncated}; consumer observations still required",
-        armed_start.is_some() || armed_touch.is_some()
+        armed_start.is_some() || armed_touch.is_some() || armed_sweep.is_some()
     );
     if truncated {
         return Err("output log limit exceeded; repeat the affected consumer check".into());
@@ -438,6 +528,7 @@ mod control {
         Arm,
         ArmFamily(u8),
         TouchFamily(u8),
+        XboxSweep,
         RemoveSony,
         Pause,
         Stop,
@@ -450,6 +541,7 @@ mod control {
             b"arm-ds4" => Ok(Command::ArmFamily(1)),
             b"arm-switch" => Ok(Command::ArmFamily(2)),
             b"arm-xbox360" => Ok(Command::ArmFamily(3)),
+            b"sweep-xbox360" => Ok(Command::XboxSweep),
             b"touch-dualsense" => Ok(Command::TouchFamily(0)),
             b"touch-ds4" => Ok(Command::TouchFamily(1)),
             b"remove-dualsense" => Ok(Command::RemoveSony),
@@ -484,6 +576,9 @@ mod control {
             assert_eq!(parse(b"remove-dualsense").unwrap(), Command::RemoveSony);
             assert!(parse(b"remove-ds4").is_err());
             assert!(parse(b"remove-dualsense extra").is_err());
+            assert_eq!(parse(b"sweep-xbox360").unwrap(), Command::XboxSweep);
+            assert!(parse(b"sweep-xbox360 extra").is_err());
+            assert!(parse(b"sweep-ds4").is_err());
             assert_eq!(parse(b"pause").unwrap(), Command::Pause);
             for bytes in [
                 b"arm-4".as_slice(),
@@ -834,5 +929,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(planned.remove_after, Some(600));
+    }
+}
+
+#[cfg(test)]
+mod xbox_sweep_tests {
+    use super::xbox_sweep_cell;
+    #[test]
+    fn every_cell_is_finite_and_has_a_neutral_release_boundary() {
+        assert_eq!(xbox_sweep_cell(0, None), None);
+        assert_eq!(xbox_sweep_cell(9, Some(10)), None);
+        for cell in 0..25u8 {
+            let start = 10 + u64::from(cell) * 4;
+            assert_eq!(xbox_sweep_cell(start, Some(10)), Some(cell));
+            assert_eq!(xbox_sweep_cell(start + 1, Some(10)), Some(cell));
+            assert_eq!(xbox_sweep_cell(start + 2, Some(10)), None);
+            assert_eq!(xbox_sweep_cell(start + 3, Some(10)), None);
+            assert_eq!(xbox_sweep_cell(start, None), None);
+        }
+        assert_eq!(xbox_sweep_cell(110, Some(10)), None);
+        assert_eq!(xbox_sweep_cell(u64::MAX, Some(10)), None);
     }
 }
