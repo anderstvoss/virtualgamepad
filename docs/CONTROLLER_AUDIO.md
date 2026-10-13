@@ -1,5 +1,7 @@
 # Initial Linux controller audio
 
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
+
 This is an opt-in pre-alpha implementation, not a completed fidelity or latency
 qualification. The intended API still needs the fresh API review after GUI
 integration. Existing constructors keep audio disabled by default.

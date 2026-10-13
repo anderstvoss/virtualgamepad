@@ -1,5 +1,7 @@
 # virtualgamepad
 
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
+
 `virtualgamepad` provides reviewed, compiled virtual controllers. There are no runtime profiles, descriptors, plugins, or generic controller constructors. Each controller selects one exact primary realization target; selection never falls back.
 
 - `linux.uinput`: controller-owned Linux evdev controls through uinput.

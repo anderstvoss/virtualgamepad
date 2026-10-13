@@ -1,6 +1,49 @@
 # Six-gate acceptance on the current VM
 
-Current gate disposition: **Gates 2 and 3 passed**. Gate 2's cell-by-cell
+## Binding alpha scope and execution plan — 2026-10-13
+
+The release owner's [final scope decision](https://github.com/anderstvoss/virtualgamepad/pull/133#issuecomment-6148689485)
+supersedes the broader historical acceptance requirements below. The user's
+subsequent instruction also defers Steam/FEX acceptance to x86-64 testing in
+[#144](https://github.com/anderstvoss/virtualgamepad/issues/144), **not a pass**.
+FEX's input-event ABI boundary is a credible contributor; Steam's selected backend
+and the cause of every consumer failure are not established. Native protocol and
+transport traces establish controller correctness; Steam is separate compatibility
+evidence. Preserve all historical failures without investigating deferred cells.
+
+Execute once on one frozen source/build candidate:
+
+1. Record source/tree, compiler/lockfile and demo/broker/worker hashes. Build once.
+2. GUI: four default-realization families; Tab/Shift-Tab visible creation, face,
+   stick, trigger and removal focus; face/stick input and neutral release;
+   middle removal with working neighbours; window close and owned cleanup.
+   Record lack of screen-reader support (eframe accesskit is not enabled).
+3. Changed controller cells only: native reviewed SDL Xbox all-control HID/evdev
+   sweeps, USB output EPIPE/no callback, DualSense companion contact movement/
+   release and both-node removal. Reuse DS4 rollback and Sony output passes.
+4. Run the existing seven provider phases once with owned restoration. Rerun
+   only affected checks if broker/worker/USB product code changes.
+5. USB audio: each of DualSense, DS4 and Xbox 360 delivers playback markers to
+   host ALSA and microphone markers to the application; close/repeated close,
+   untouched shared defaults/foreign resources and owned cleanup. Reuse applicable
+   worker-kill/route-disappearance passes. Record silence/gaps/loss as limitations;
+   do not investigate sustained continuity. Complete absence of flow is distinct
+   from occasional gaps and still requires a supported disposition.
+6. Steam is deferred by the user's later direction. Sustained audio/zero-loss/
+   latency are deferred by the release owner to #135/#145; physical comparisons
+   remain #136. Full control/accessibility and consumer/routing matrices move to
+   beta. No independent controls, timing diagnostics, 72-cell matrix, new tooling
+   unless needed to execute a listed check, or additional GUI soak. The accepted
+   `46be2bf` soak suffices for alpha.
+7. Run final automated checks and exact-head CI, including Windows, CodeQL,
+   Gitleaks and all workspace SBOMs. Publish one short result table and known
+   limitations in the PR, update #143/#144/#145, then mark ready for review when
+   required checks pass. Do not merge, tag or release.
+
+Historical whole-gate ratings and broader mandatory wording below are superseded
+by this scope. Keep raw receipts outside source; do not add more evidence ledgers.
+
+Historical disposition (superseded by the current scope correction and status ledger): **Gates 2 and 3 passed**. Gate 2's cell-by-cell
 receipts are in [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
 Gate 3 was revalidated at `4c3b6132d1fdede6dd384bf9dcf70cc9a406c523`;
 Gates 1, 4, 5 and 6 remain open.
@@ -13,7 +56,7 @@ Current closure criteria and verifier gaps are in
 entries below retain their original scope and may be superseded by that audit.
 
 Continue in PR #133 on its existing branch. Native timing and physical comparisons
-remain post-alpha #135/#136. These six gates remain alpha requirements. Compilation
+remain post-alpha #135/#136. Gates 1–4 and 6 remain alpha requirements; Gate 5 is deferred by user. Compilation
 and short functional trials close only their stated cells. Keep historical failures
 and raw artifacts outside tracked source.
 

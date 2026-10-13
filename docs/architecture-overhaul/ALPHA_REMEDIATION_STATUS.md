@@ -1,5 +1,48 @@
 # Alpha remediation status
 
+## Binding alpha scope and execution plan — 2026-10-13
+
+The release owner's [final scope decision](https://github.com/anderstvoss/virtualgamepad/pull/133#issuecomment-6148689485)
+supersedes the broader historical acceptance requirements below. The user's
+subsequent instruction also defers Steam/FEX acceptance to x86-64 testing in
+[#144](https://github.com/anderstvoss/virtualgamepad/issues/144), **not a pass**.
+FEX's input-event ABI boundary is a credible contributor; Steam's selected backend
+and the cause of every consumer failure are not established. Native protocol and
+transport traces establish controller correctness; Steam is separate compatibility
+evidence. Preserve all historical failures without investigating deferred cells.
+
+Execute once on one frozen source/build candidate:
+
+1. Record source/tree, compiler/lockfile and demo/broker/worker hashes. Build once.
+2. GUI: four default-realization families; Tab/Shift-Tab visible creation, face,
+   stick, trigger and removal focus; face/stick input and neutral release;
+   middle removal with working neighbours; window close and owned cleanup.
+   Record lack of screen-reader support (eframe accesskit is not enabled).
+3. Changed controller cells only: native reviewed SDL Xbox all-control HID/evdev
+   sweeps, USB output EPIPE/no callback, DualSense companion contact movement/
+   release and both-node removal. Reuse DS4 rollback and Sony output passes.
+4. Run the existing seven provider phases once with owned restoration. Rerun
+   only affected checks if broker/worker/USB product code changes.
+5. USB audio: each of DualSense, DS4 and Xbox 360 delivers playback markers to
+   host ALSA and microphone markers to the application; close/repeated close,
+   untouched shared defaults/foreign resources and owned cleanup. Reuse applicable
+   worker-kill/route-disappearance passes. Record silence/gaps/loss as limitations;
+   do not investigate sustained continuity. Complete absence of flow is distinct
+   from occasional gaps and still requires a supported disposition.
+6. Steam is deferred by the user's later direction. Sustained audio/zero-loss/
+   latency are deferred by the release owner to #135/#145; physical comparisons
+   remain #136. Full control/accessibility and consumer/routing matrices move to
+   beta. No independent controls, timing diagnostics, 72-cell matrix, new tooling
+   unless needed to execute a listed check, or additional GUI soak. The accepted
+   `46be2bf` soak suffices for alpha.
+7. Run final automated checks and exact-head CI, including Windows, CodeQL,
+   Gitleaks and all workspace SBOMs. Publish one short result table and known
+   limitations in the PR, update #143/#144/#145, then mark ready for review when
+   required checks pass. Do not merge, tag or release.
+
+Historical whole-gate ratings and broader mandatory wording below are superseded
+by this scope. Keep raw receipts outside source; do not add more evidence ledgers.
+
 Current disposition (2026-10-13): **alpha is not ready; PR #133 remains draft**.
 Production Rust source is unchanged since `708e758`; later commits record evidence.
 The Xbox generic-HID identity defect is corrected at `04943b1`, but its remaining
@@ -9,10 +52,10 @@ prior Sony contact/feedback passes within their pinned scope.
 | Gate | Current disposition | Next required evidence |
 | --- | --- | --- |
 | 1: keyboard/accessibility | Open; DualSense touch, lockout and motion subsets have native receipts | Complete remaining control/family cells; resolve the third wrapper's outer status 143; finish and interpret the current neutral-soak image, keeping its identity distinct from the ordinary demo image |
-| 2: controller outputs/isolation | Reopened; identity correction and native Xbox sweep/transition subsets pass | Changed-worker USB/profile lifecycle and default consumer matrix; classic-backend diagnostics do not supply default acceptance |
+| 2: controller outputs/isolation | Reopened; identity correction and native Xbox sweep/transition subsets pass | Changed-worker USB/profile lifecycle and remaining native transport/output cells; FEX-only consumer checks are deferred with Gate 5 |
 | 3: provider recovery/security | Pass pinned to `b817f48d7fc50ac38de21046144e4f55d1595e6d`; current changed worker not revalidated | Rebuild/stage a source-pinned worker and rerun affected provider phases with independent restoration receipts |
 | 4: USB/IP audio/routing | Open; prior short microphone marker cells failed | Complete native/sample ownership, routing, failure/isolation and cleanup cells with actual marker receipts |
-| 5: isolated Steam | Open; native and explicitly classic SDL subsets do not close it | Confirm the local FEX input-ABI mechanism, then obtain actual default Steam/consumer observations in the isolated profile |
+| 5: isolated Steam | Deferred by user to post-alpha x86-64 testing; not passed | Exact-candidate isolated consumer matrix on x86-64; preserve VM failures and investigate disagreement with native transport traces |
 | 6: continuity | Unqualified | Discriminating prebuilt controls, three passing 60-second trials per required control, then complete product/USB sustain and slow-consumer matrices |
 
 The current two-hour neutral GUI soak is pending, not accepted. Its frozen

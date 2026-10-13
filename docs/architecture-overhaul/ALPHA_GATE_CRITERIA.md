@@ -1,12 +1,55 @@
 # Alpha gate criteria audit
 
+## Binding alpha scope and execution plan — 2026-10-13
+
+The release owner's [final scope decision](https://github.com/anderstvoss/virtualgamepad/pull/133#issuecomment-6148689485)
+supersedes the broader historical acceptance requirements below. The user's
+subsequent instruction also defers Steam/FEX acceptance to x86-64 testing in
+[#144](https://github.com/anderstvoss/virtualgamepad/issues/144), **not a pass**.
+FEX's input-event ABI boundary is a credible contributor; Steam's selected backend
+and the cause of every consumer failure are not established. Native protocol and
+transport traces establish controller correctness; Steam is separate compatibility
+evidence. Preserve all historical failures without investigating deferred cells.
+
+Execute once on one frozen source/build candidate:
+
+1. Record source/tree, compiler/lockfile and demo/broker/worker hashes. Build once.
+2. GUI: four default-realization families; Tab/Shift-Tab visible creation, face,
+   stick, trigger and removal focus; face/stick input and neutral release;
+   middle removal with working neighbours; window close and owned cleanup.
+   Record lack of screen-reader support (eframe accesskit is not enabled).
+3. Changed controller cells only: native reviewed SDL Xbox all-control HID/evdev
+   sweeps, USB output EPIPE/no callback, DualSense companion contact movement/
+   release and both-node removal. Reuse DS4 rollback and Sony output passes.
+4. Run the existing seven provider phases once with owned restoration. Rerun
+   only affected checks if broker/worker/USB product code changes.
+5. USB audio: each of DualSense, DS4 and Xbox 360 delivers playback markers to
+   host ALSA and microphone markers to the application; close/repeated close,
+   untouched shared defaults/foreign resources and owned cleanup. Reuse applicable
+   worker-kill/route-disappearance passes. Record silence/gaps/loss as limitations;
+   do not investigate sustained continuity. Complete absence of flow is distinct
+   from occasional gaps and still requires a supported disposition.
+6. Steam is deferred by the user's later direction. Sustained audio/zero-loss/
+   latency are deferred by the release owner to #135/#145; physical comparisons
+   remain #136. Full control/accessibility and consumer/routing matrices move to
+   beta. No independent controls, timing diagnostics, 72-cell matrix, new tooling
+   unless needed to execute a listed check, or additional GUI soak. The accepted
+   `46be2bf` soak suffices for alpha.
+7. Run final automated checks and exact-head CI, including Windows, CodeQL,
+   Gitleaks and all workspace SBOMs. Publish one short result table and known
+   limitations in the PR, update #143/#144/#145, then mark ready for review when
+   required checks pass. Do not merge, tag or release.
+
+Historical whole-gate ratings and broader mandatory wording below are superseded
+by this scope. Keep raw receipts outside source; do not add more evidence ledgers.
+
 Current gate disposition: **Gate 3 passed with pinned evidence; Gate 2 reopened**.
 New Xbox standard-HID identity/consumer mismatch [#148](https://github.com/anderstvoss/virtualgamepad/issues/148)
 prevents its whole-gate closure. Preserve the prior 44bf06e Sony contact/feedback
 and other output passes within their recorded scope. See
 [controller output acceptance](ALPHA_CONTROLLER_OUTPUT_ACCEPTANCE.md).
 Gate 3 remains pinned to b817f48d7fc50ac38de21046144e4f55d1595e6d.
-Gates 1, 2, 4, 5 and 6 remain open. Alpha is not ready.
+Gates 1, 2, 4 and 6 remain open. Gate 5 is deferred by user, not passed. Alpha is not ready.
 This current evidence supersedes older whole-gate ratings below. Reopen affected
 cells after relevant code/binary changes. Alpha remains not ready.
 
@@ -25,7 +68,7 @@ on this VM remains mandatory; that deferral does not waive it.
 | 2. Controller outputs/isolation | Four families; every implemented representable output/report across HID, evdev and supported USB validation: exact values, replies, retained state and callback order; DS4 companion nodes, contact releases, partial second-node rollback, removal, siblings and repeated cleanup. Preserve accepted two-contact cells when their implementation and binary identity remain applicable. | A transport that cannot represent an operation must reject it explicitly with its technical reason and regression. Do not require invented rumble, RGB, motion or audio features on a family that does not implement them. |
 | 3. Provider security/recovery | Authorized positive attachment/FD handoff plus unauthorized/malformed/oversized/FD cases; client death before/after handoff; worker death during construction/after readiness; sibling failure, admission/capacity recovery; initiating and cleanup errors; pending/malformed/truncated/identity-changed restart records; bounded completion and identity-proven owned restoration. | Fail-closed stale-journal startup is expected. Require safe operator restoration; do not require automatic recovery from remembered PID/port/socket numbers. A negative startup pass alone does not prove restoration. |
 | 4. USB/IP audio/routing | DualSense, DS4 and Xbox 360 supported directions/layouts, direct ALSA functional markers and worker counters, supported duplex/ownership, route A/B/disconnected/reconnected, endpoint/client/worker failure, HID/audio isolation and teardown. Establish serial/VHCI-bound isolation before attachment; verify shared defaults and foreign resources are untouched. | Unavailable ownership/transport operations require explicit tested rejection. An ALSA command returning zero or short trial alone cannot prove sustained continuity. Unsupported dummy_hcd requires rejection before resource creation, not successful attachment. |
-| 5. Isolated Steam | Proven private home/bus/display/device isolation; exact-candidate recognition, available input/output, selection, removal and sibling survival for all four families and available realizations; complete owned process/device cleanup. Record ARM64/FEX scope. | Login/home-screen visibility is preparation, not controller acceptance. The user-authorized retained private test profile may be reused; never substitute the normal account profile. No unspecified-game compatibility claim. |
+| 5. Isolated Steam — deferred post-alpha to x86-64 | Future compatibility evidence: proven private home/bus/display/device isolation; exact-candidate recognition, available input/output, selection, removal and sibling survival for all four families and available realizations; complete owned process/device cleanup. Record ARM64/FEX scope. | Login/home-screen visibility is preparation, not controller acceptance. The user-authorized retained private test profile may be reused; never substitute the normal account profile. No unspecified-game compatibility claim. |
 | 6. Audio continuity | Three separate 60-second measured trials for each required independent C and Rust control, with complete production, zero missing/duplicate/corrupt measured markers, startup exclusion and bounded drain. Then 72 PipeWire trials: 3 families × (4 direction cells + 4 duplex ownership combinations) × 3 trials. Also supported sustained USB/IP direction/ownership cells and slow-consumer/routing/reconnect/failure/teardown checks. Deliberate stalls require bounded counted loss, observable discontinuity and recovery. | Preserve the C control's 1% production-rate envelope and application-to-application p99 <20 ms where the Rust/product test measures latency. The C control does not measure latency. Unavailable xrun instrumentation is unknown, not zero. A failed independent control blocks product qualification; successful compilation cannot override it. |
 
 Every receipt must identify its source revision, executable hashes, environment,
