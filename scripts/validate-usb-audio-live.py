@@ -113,6 +113,20 @@ def isolated_card(properties, objects, card, instance):
             raise ValueError('shared session manager imported the owned card: '+json.dumps({key:props.get(key) for key in ('api.alsa.card', 'api.alsa.pcm.card', 'device.name', 'node.name', 'device.bus-path', 'device.serial')},sort_keys=True))
 
 
+def isolated_graph(properties, card, instance, inspect=shared_graph, wait=time.sleep):
+    # A removed ALSA card's graph object can outlive its reused numeric index.
+    # Wait for withdrawal; never accept an imported object or mutate its profile.
+    for attempt in range(11):
+        objects = inspect()
+        try:
+            isolated_card(properties, objects, card, instance)
+            return objects
+        except ValueError:
+            if attempt == 10 or properties.get('ACP_IGNORE') != '1' or properties.get('VG_ALPHA_AUDIO_INSTANCE') != instance:
+                raise
+            wait(.1)
+
+
 def reserve_direct_alsa(card, bus, instance, generation):
     """Verify pre-attachment exclusion; never change a shared device profile."""
     serial = compiled_serial(instance, generation)
@@ -127,8 +141,10 @@ def reserve_direct_alsa(card, bus, instance, generation):
     if len(result.stdout) > 64 * 1024:
         raise ValueError('ALSA properties exceeded quota')
     properties = dict(line.split('=', 1) for line in result.stdout.decode().splitlines() if '=' in line)
-    objects = shared_graph()
-    isolated_card(properties, objects, card, instance)
+    objects = isolated_graph(properties, card, instance)
+    if ((device / 'serial').read_text().strip() != serial or
+            not (entry / 'device').resolve(strict=True).is_relative_to(device)):
+        raise ValueError('ALSA session identity changed while waiting for graph withdrawal')
     return dict(serial=serial, shared_defaults=shared_defaults(objects))
 
 

@@ -188,3 +188,18 @@ class LiveHarness(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GraphWithdrawal(unittest.TestCase):
+    def test_reused_card_index_waits_for_withdrawal_without_accepting_import(self):
+        properties={'ACP_IGNORE':'1','VG_ALPHA_AUDIO_INSTANCE':'lab'}
+        imported={'type':'PipeWire:Interface:Device','info':{'props':{'api.alsa.card':7}}}
+        reads=iter([[imported],[]]);waits=[]
+        self.assertEqual(lab.isolated_graph(properties,7,'lab',lambda:next(reads),waits.append),[])
+        self.assertEqual(waits,[.1])
+        calls=[]
+        with self.assertRaises(ValueError):
+            lab.isolated_graph(properties,7,'lab',lambda:(calls.append(1) or [imported]),lambda _:None)
+        self.assertEqual(len(calls),11)
+        with self.assertRaises(ValueError):
+            lab.isolated_graph({},7,'lab',lambda:[],lambda _:self.fail('missing rule must reject immediately'))
