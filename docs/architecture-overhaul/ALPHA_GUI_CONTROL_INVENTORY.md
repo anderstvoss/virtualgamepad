@@ -43,3 +43,13 @@ See the [creation keyboard checkpoint](ALPHA_REMEDIATION_STATUS.md#owned-display
 for the exact source/image, reviewed cells, retained harness failures and owned
 cleanup. This verifies creation and limited advanced-option UI cells only.
 Ownership selection, diagnostic access and full controller controls remain open.
+
+### Keyboard visibility defect from the owned display
+
+The `3d2100a` GUI's live W/D stick trace passed exact press/release/focus-loss
+values, but Tab traversal did not reveal controls below the viewport. The correction
+adds scroll-on-focus-transition for the live panel, controller rows and horizontal
+clusters. The 48-position nested-scroll regression covers wrap and complete target
+visibility; a second regression preserves manual scroll and ignores another panel.
+Repeat live touch/motion and the full inventory with the corrected installed image.
+These finite receipts do not close Gate 1 or replace its two-hour neutral soak.

@@ -176,13 +176,37 @@ impl InputUiState {
     }
 }
 
+// Each scroll area tracks focus separately; holding focus never undoes manual scrolling.
+fn changed_keyboard_focus_rect(ui: &mut egui::Ui) -> Option<egui::Rect> {
+    let focused = ui.memory(egui::Memory::focused);
+    let changed = ui.data_mut(|data| {
+        let key = ui.id().with("last-revealed-keyboard-focus");
+        let previous = data.get_temp::<Option<egui::Id>>(key).flatten();
+        data.insert_temp(key, focused);
+        previous != focused
+    });
+    if !changed {
+        return None;
+    }
+    let response = focused.and_then(|id| ui.ctx().read_response(id))?;
+    (response.has_focus() && ui.min_rect().contains(response.rect.center()))
+        .then_some(response.rect)
+}
+
+pub(super) fn reveal_keyboard_focus(ui: &mut egui::Ui) {
+    if let Some(rect) = changed_keyboard_focus_rect(ui) {
+        ui.scroll_to_rect(rect, None);
+    }
+}
+
 pub(super) fn horizontal_cards(
     ui: &mut egui::Ui,
     id: impl std::hash::Hash,
     bottom_aligned: bool,
     add: impl FnOnce(&mut egui::Ui),
 ) -> egui::scroll_area::ScrollAreaOutput<()> {
-    egui::ScrollArea::horizontal()
+    let mut focused_rect = None;
+    let output = egui::ScrollArea::horizontal()
         .id_salt(id)
         .max_height(CLUSTER_ROW_MAX_HEIGHT)
         .auto_shrink([false, true])
@@ -201,7 +225,17 @@ pub(super) fn horizontal_cards(
                 }),
                 add,
             );
-        })
+            focused_rect = changed_keyboard_focus_rect(ui);
+            if let Some(rect) = focused_rect {
+                ui.scroll_to_rect(rect, None);
+            }
+        });
+    // egui consumes both scroll targets even when this area only scrolls horizontally.
+    // Forward the focused child to the enclosing vertical area after that consumption.
+    if let Some(rect) = focused_rect {
+        ui.scroll_to_rect(rect, None);
+    }
+    output
 }
 
 pub(super) fn card(

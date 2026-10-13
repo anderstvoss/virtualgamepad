@@ -4348,3 +4348,20 @@ downloaded SBOM validates all 17 workspace identities. The separately provisione
 GUI keyboard scope uses the `3d2100a` demo image; fixture-only changes do not
 claim a different GUI image. Gate 2 remains open for affected USB/consumer
 acceptance, and Gates 1/4/5/6 remain incomplete. Gate 3 retains its pinned scope.
+
+### Review the keyboard viewport correction
+
+Check `reveal_keyboard_focus` and `horizontal_cards` in the demo input renderer,
+and their calls at the end of the live panel and controller list. The live symptom
+was invisible keyboard focus below the viewport. The nested horizontal area must
+forward the newly focused target after consuming its own scroll request; otherwise
+wrapping to a horizontally clipped control can leave the vertical area unchanged.
+Review containment, focus changes, manual-scroll preservation, and focus in an
+unrelated panel. Reproduce both new deterministic regressions, including all 48
+positions and wrap. Do not infer full interactive acceptance from those tests.
+
+The installed pre-correction GUI's kernel trace proves only W stick press/release
+and D stick press/Tab neutralization. Both owned-display trials ended with explicit
+termination and clean resource/rule receipts. Require graceful shutdown, touch,
+motion, full control inventory, routing/error presentation and the final byte-pinned
+two-hour soak separately. A changed GUI binary invalidates reuse of its old soak.

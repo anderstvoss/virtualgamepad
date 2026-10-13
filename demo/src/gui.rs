@@ -2257,6 +2257,7 @@ impl eframe::App for App {
                                             );
                                         }
                                     });
+                                    input_clusters::reveal_keyboard_focus(ui);
                                 });
                             let footer_height = sidebar_layout.footer;
                             let log_height = sidebar_layout.diagnostic_log;
@@ -2538,6 +2539,7 @@ impl eframe::App for App {
                                         }
                                     }
                                     self.polling_period_seconds = polling_period_seconds;
+                                    input_clusters::reveal_keyboard_focus(ui);
                                 });
                         });
                     });
@@ -3728,6 +3730,106 @@ fn draw_switch_pro(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tab_reveals_controls_beyond_both_scroll_viewports() {
+        let context = egui::Context::default();
+        context.style_mut(|style| {
+            style.animation_time = 0.0;
+            style.scroll_animation = egui::style::ScrollAnimation::none();
+        });
+        let mut seen = std::collections::BTreeSet::new();
+        for frame in 0..241 {
+            let _ = context.run(
+                egui::RawInput {
+                    time: Some(f64::from(frame) * 0.25),
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO, egui::vec2(360.0, 240.0),
+                    )),
+                    events: match frame % 3 {
+                        1 | 2 => vec![egui::Event::Key {
+                            key: egui::Key::Tab, physical_key: None,
+                            pressed: frame % 3 == 1, repeat: false,
+                            modifiers: egui::Modifiers::NONE,
+                        }],
+                        _ => vec![],
+                    },
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                        egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                            for row in 0..12 {
+                                input_clusters::horizontal_cards(ui, row, false, |ui| {
+                                    for column in 0..4 {
+                                        let response = ui.add_sized(
+                                            [150.0, 28.0], egui::Button::new(format!("{row}/{column}")),
+                                        );
+                                        if frame % 3 == 0 && response.has_focus() {
+                                            assert!(ui.clip_rect().contains_rect(response.rect),
+                                                "focused control {row}/{column} must be visible: {:?} in {:?}",
+                                                response.rect, ui.clip_rect());
+                                            seen.insert((row, column));
+                                        }
+                                    }
+                                });
+                            }
+                            input_clusters::reveal_keyboard_focus(ui);
+                        });
+                    });
+                },
+            );
+        }
+        assert_eq!(
+            seen.len(),
+            48,
+            "real Tab traversal must reach every row and column"
+        );
+    }
+
+    #[test]
+    fn focus_reveal_preserves_manual_scroll_and_ignores_other_panels() {
+        let context = egui::Context::default();
+        context.style_mut(|style| style.scroll_animation = egui::style::ScrollAnimation::none());
+        let mut target = None;
+        for frame in 0..4 {
+            let _ = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(360.0, 240.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default().show(context, |ui| {
+                    let outside = ui.button("Other panel");
+                    if frame == 3 { outside.request_focus(); }
+                    let area = egui::ScrollArea::vertical().max_height(70.0);
+                    let area = if frame >= 2 { area.vertical_scroll_offset(0.0) } else { area };
+                    let scroll = area
+                        .show(ui, |ui| {
+                            for row in 0..28 {
+                                let response = ui.button(format!("Controller {row}"));
+                                if row == 23 {
+                                    target = Some(response.id);
+                                    if frame == 0 { response.request_focus(); }
+                                }
+                            }
+                            input_clusters::reveal_keyboard_focus(ui);
+                        });
+                    if frame == 1 {
+                        assert!(scroll.state.offset.y > 0.0, "new off-viewport focus is revealed");
+                    } else if frame >= 2 {
+                        assert!(scroll.state.offset.y.abs() < f32::EPSILON,
+                            "unchanged focus or another panel must not override manual scrolling");
+                    }
+                    if frame < 3 { assert_eq!(context.memory(egui::Memory::focused), target); }
+                });
+                },
+            );
+        }
+    }
 
     #[test]
     fn neutral_soak_disables_inherited_audio_before_any_controller_creation() {

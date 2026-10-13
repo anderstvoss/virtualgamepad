@@ -4934,3 +4934,40 @@ downloaded SBOM validates all 17 workspace identities. The separately provisione
 GUI keyboard scope uses the `3d2100a` demo image; fixture-only changes do not
 claim a different GUI image. Gate 2 remains open for affected USB/consumer
 acceptance, and Gates 1/4/5/6 remain incomplete. Gate 3 retains its pinned scope.
+
+### Owned-display stick receipt and hidden keyboard focus correction
+
+The installed GUI image built at `3d2100a61c2abc3e45e715e131d8f7a1d187b348`
+(SHA-256 `1d7e75cf2b7f2fcc7b0075c5179c516cb8577d455e8f3acc4e4735015959d004`)
+was exercised in the registered private display with test-owned input isolation.
+A native kernel-event observer recorded left Y `0 -> 128` for W press/release,
+and left X `255 -> 128` for D press followed by Tab focus loss. These exactly
+match the displayed stick values. No active sibling input was generated. This
+accepts that finite momentary-stick scenario, not all GUI controls or shutdown.
+The coordinator deliberately terminated the image; its receipt reported no
+initiating/cleanup error, removal of the temporary input rule, and no remaining
+owned GUI/display processes. This is teardown evidence, not a graceful-close test.
+
+A second isolated traversal exposed a confirmed accessibility defect: Tab moved
+focus to controls below the visible input panel without scrolling them into view.
+The correction reveals newly focused controls in the live panel, controller list,
+and nested horizontal input rows. Nested rows forward the target after egui
+consumes it, so both axes scroll. Unchanged focus does not override manual scrolling;
+focus outside the area is ignored. No controller API or input encoding changes.
+
+Regression `tab_reveals_controls_beyond_both_scroll_viewports` traverses all 48
+controls across 12 rows and four columns using actual Tab events, including wrap,
+and requires the complete focused rectangle to become visible. Removing the fix
+fails on the third horizontal control. `focus_reveal_preserves_manual_scroll_and_ignores_other_panels`
+checks manual scrolling and unrelated focus. Prior touch, motion, release,
+selection and removal regressions remain. The corrected GUI requires a fresh
+immutable installed image and affected live checks, then a separate two-hour soak;
+the earlier image cannot supply those results. Gate 1 remains open.
+
+The second traversal also exercised keyboard selection of DualSense while an
+Xbox controller remained present. Audio-enabled creation failed visibly in this
+GUI scope without an audio session; disabling emulated audio allowed creation.
+This is not audio acceptance. The trial generated no contact/motion input and
+cleaned both owned controllers and the temporary rule. Private receipts and
+screenshots remain outside tracked source. Available VM memory stayed above
+17 GiB during these trials; compilation remains limited to two jobs.
