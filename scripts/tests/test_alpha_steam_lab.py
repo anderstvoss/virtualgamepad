@@ -95,7 +95,7 @@ class SteamNamespace(unittest.TestCase):
                         if len(children)==2 and children[1].poll() is None:os.killpg(children[1].pid,signal.SIGTERM)
                     return SimpleNamespace(returncode=0,stderr=b'')
                 account=SimpleNamespace(pw_uid=os.getuid(),pw_gid=os.getgid())
-                with patch.object(Path,'exists',exists),patch.object(lab,'display_command',return_value=server),patch.object(lab,'bootstrap_unit_command',return_value=worker),patch.object(lab.subprocess,'Popen',side_effect=spawn),patch.object(lab.subprocess,'run',side_effect=restore):
+                with patch.object(lab,'memory_sample',return_value=dict(total_bytes=16*1024**3, available_bytes=12*1024**3, full_avg10=0)),patch.object(Path,'exists',exists),patch.object(lab,'display_command',return_value=server),patch.object(lab,'bootstrap_unit_command',return_value=worker),patch.object(lab.subprocess,'Popen',side_effect=spawn),patch.object(lab.subprocess,'run',side_effect=restore):
                     result=lab.run_bootstrap(root,root/'synthetic-home',account,'.vg-alpha-sentinel-fake','marker',Path(sys.executable),30)
                 self.assertIn('SIGTERM',result['initiating'])
                 self.assertEqual(result['cleanup'],[])
