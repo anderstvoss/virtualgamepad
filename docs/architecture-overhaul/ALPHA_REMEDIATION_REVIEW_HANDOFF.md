@@ -4365,3 +4365,16 @@ and D stick press/Tab neutralization. Both owned-display trials ended with expli
 termination and clean resource/rule receipts. Require graceful shutdown, touch,
 motion, full control inventory, routing/error presentation and the final byte-pinned
 two-hour soak separately. A changed GUI binary invalidates reuse of its old soak.
+
+
+### Review the corrected GUI live checkpoint
+
+Review the `708e758` source/tree and executable identities recorded in the
+remediation status. Check actual native touch values and Hold/focus ordering,
+normal WM_DELETE_WINDOW shutdown, and root rule cleanup. Reject extrapolation
+from this finite subset to full GUI acceptance. In particular, the late motion
+observer captured only a neutral event; screenshots do not supply missing
+transport evidence. Preserve the pre-arm private harness failure alongside its
+successful exact Xbox sweep-transition retry. Windows exact-head CI remains
+unverified after two certificate-revocation network failures; do not count skipped
+tests or privileged CI as passing acceptance.

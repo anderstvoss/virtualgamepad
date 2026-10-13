@@ -4971,3 +4971,39 @@ This is not audio acceptance. The trial generated no contact/motion input and
 cleaned both owned controllers and the temporary rule. Private receipts and
 screenshots remain outside tracked source. Available VM memory stayed above
 17 GiB during these trials; compilation remains limited to two jobs.
+
+
+### Corrected GUI live touch and graceful shutdown checkpoint
+
+The isolated GUI built from `708e7583838581a609cf5b61052511664a37b06f`
+(tree `6879e42981e3664c0d361d0aa291c59ec3df0b9c`, executable SHA-256
+`f5df20428518ce46a79332f52f422edec19dd5d5d50ebc521f0ca18dc90761b2`)
+received actual keyboard events in its registered private display. Tab revealed
+controls beyond the viewport, including the touch canvas and motion fields.
+The native observer recorded contact activation, X movement from 0 to 19,
+release, Tab focus-loss release, and a held contact released by disabling Hold.
+Screenshots separately show Hold preserving the contact across key release and
+Tab traversal. The GUI explains that keyboard actions simulate virtual fingers
+and motion; these are not claims about physical sensor behavior.
+
+A WM_DELETE_WINDOW request closed the GUI normally. The immutable root runner
+returned zero, reported the temporary input rule removed, and reported no
+initiating or cleanup errors. RSS was approximately 124 MiB with 21 threads;
+available host memory remained above 17 GiB. This finite check does not replace
+the required two-hour workload or the remaining interactive inventory.
+
+The later observer captured only one neutral motion event. Lockout and motion
+screenshots show changes, but their complete transport correlation remains
+unaccepted. Preserve both traces; do not turn this incomplete observation into
+a pass. The earlier sweep-transition harness failed before arming because of
+node-permission readiness and a private socket argument error; identity-checked
+cleanup succeeded. Its corrected run on the same candidate passed exact Xbox
+South transitions for pulse-to-sweep, sweep rearm, and pause, with no remaining
+owned nodes. This closes those specific regressions, not the full output gate.
+
+Exact-head CI passed CodeQL, Gitleaks, provider contracts, and all 17 SBOM
+identities including the root. Privileged provider CI remained skipped. Windows
+CI and its failed-job retry both stopped at crates.io certificate-revocation
+checking (CRYPT_E_REVOCATION_OFFLINE); tests did not run there. Linux/macOS,
+MSRV and lint jobs passed. This remains missing exact-head Windows evidence;
+certificate verification has not been disabled.

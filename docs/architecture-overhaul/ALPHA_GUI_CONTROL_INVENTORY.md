@@ -53,3 +53,14 @@ clusters. The 48-position nested-scroll regression covers wrap and complete targ
 visibility; a second regression preserves manual scroll and ignores another panel.
 Repeat live touch/motion and the full inventory with the corrected installed image.
 These finite receipts do not close Gate 1 or replace its two-hour neutral soak.
+
+
+### Corrected-image live subset
+
+At `708e758`, actual keyboard traversal revealed touch and motion controls.
+Native events verified touch activation/movement/release, focus-loss release,
+and Hold-off release; screenshots verify persistence while Hold is enabled.
+Normal window close returned zero with owned-rule cleanup. Complete lockout
+and motion event correlation, all remaining inventory cells, and the separate
+final-image two-hour soak remain required. The late recorder captured only one
+neutral motion event and cannot establish those cells.
