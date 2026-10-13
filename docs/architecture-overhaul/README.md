@@ -1,6 +1,10 @@
 # Architecture overhaul execution kit
 
-Status: reviewed plan committed as `e3bd06f`; corpus and deterministic protocol foundation committed; production UHID integration and family migration are under review in PR #106 on `architecture/protocol-session-rewrite`. See [gate status](GATE_STATUS.md) for the distinction between implemented behavior and blocked live acceptance. The original code baseline remains recorded in [BASELINE.md](BASELINE.md).
+> **Historical architecture execution kit.** Current bounded alpha dispositions
+> and deferred work are in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The rewrite plan and evidence below retain their recorded scope.
+
+Historical status: reviewed plan committed as `e3bd06f`; corpus and deterministic protocol foundation committed; production UHID integration and family migration are under review in PR #106 on `architecture/protocol-session-rewrite`. See [gate status](GATE_STATUS.md) for the distinction between implemented behavior and blocked live acceptance. The original code baseline remains recorded in [BASELINE.md](BASELINE.md).
 
 ## Reading order and authority
 
@@ -13,7 +17,8 @@ Status: reviewed plan committed as `e3bd06f`; corpus and deterministic protocol 
 ## Operational files
 
 - [Baseline](BASELINE.md): inspected source, reusable tests/tools, and unknown evidence.
-- [Gate status](GATE_STATUS.md): the authoritative current execution status of A–P. Update it with links to actual run records; do not copy another status table into the handoffs.
+- [Alpha remediation status](ALPHA_REMEDIATION_STATUS.md): current bounded alpha dispositions.
+- [Gate status](GATE_STATUS.md): historical A–P execution evidence; preserve its dated verdicts.
 - [Initial work queue](INITIAL_WORK_QUEUE.md): concrete first deliverables and completion criteria.
 - [Host readiness](HOST_READINESS.md): environment survey to complete before live experiments.
 - [Settled decisions](decisions/ADR-0001-settled-scope.md): accepted product constraints, separated from untested technical hypotheses.

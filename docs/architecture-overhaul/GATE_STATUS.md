@@ -1,6 +1,11 @@
 # Architecture gate status
 
-**Current execution:** [Post-GUI root API audit](ALPHA_ROOT_API_AUDIT.md), merged
+> **Historical planning and evidence.** Current bounded alpha scope and
+> deferred work are recorded in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The dated instructions and verdicts below retain their original scope; they
+> are not the current closeout checklist.
+
+**Historical execution:** [Post-GUI root API audit](ALPHA_ROOT_API_AUDIT.md), merged
 baseline `ec4c2ff` (PRs #122–125, #127 and #128). Maintainer GUI findings and
 approval are recorded in [the checkpoint](ALPHA_DEMO_REFINEMENT.md); #126 retains
 checklist reconciliation. Final freeze, separate quality review and release remain

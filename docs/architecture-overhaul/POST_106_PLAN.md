@@ -1,6 +1,11 @@
 # Post-106 core refinement
 
-**Current execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
+> **Historical planning and evidence.** Current bounded alpha scope and
+> deferred work are recorded in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The dated instructions and verdicts below retain their original scope; they
+> are not the current closeout checklist.
+
+**Historical execution:** [pre-alpha stabilization ledger](PRE_ALPHA_STATUS.md), based
 on merged PR108. It supersedes the execution order below; historical experiment
 results remain unchanged. Gate T representation is required for alpha, while its
 unavailable physical evidence remains explicitly deferred. Final API review and

@@ -1,6 +1,11 @@
-# Alpha API refinement: current execution record
+# Alpha API refinement: historical execution record
 
-## Current continuation
+> **Historical planning and evidence.** Current bounded alpha scope and
+> deferred work are recorded in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The dated instructions and verdicts below retain their original scope; they
+> are not the current closeout checklist.
+
+## Historical continuation
 
 PRs #122–125, #127 and #128 are merged at baseline `ec4c2ff`. The GUI refinement
 scope is reviewed and accepted; see [the updated checkpoint](ALPHA_DEMO_REFINEMENT.md).

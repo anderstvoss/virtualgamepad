@@ -1,12 +1,14 @@
 # Deployment and validation
 
-Current pre-alpha API refinement is tracked in
-[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
-Emulated audio is implemented; USB/IP remains WIP pending installed
-security/recovery acceptance. The demo enables USB/IP audio and ALSA host routing
-by default; UHID/PipeWire audio remains available with `--features audio-pipewire`.
-Native-client continuity and matching fidelity remain open. Historical evidence
-below retains its original scope.
+Current bounded alpha dispositions are recorded in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+Seven scoped installed broker security/recovery phases passed (#115 closed);
+USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
+deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
+default; add `--features audio-pipewire` for UHID/PipeWire audio. Library defaults
+remain empty. Matching fidelity is unavailable (#116). Historical evidence below
+retains its original scope.
+
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
 The [application API](APPLICATION_API.md) exposes uinput and USB/UHID for the
 current controllers. Gadget sections below describe experimental research SPI,
@@ -184,8 +186,9 @@ For UHID/PipeWire, use the caller-session backend without privileged audio routi
 For USB/IP, follow the explicit administrator installer in the
 [audio guide](CONTROLLER_AUDIO.md) and retain dedicated worker/allowlisted-port
 ownership. Normal creation neither provisions modules nor changes permissions.
-The implementation remains opt-in WIP pending #115 installed security/recovery
-acceptance. Never recover by detaching a remembered port without verified ownership.
+Seven scoped installed broker security/recovery phases passed (#115 closed).
+Streaming remains opt-in WIP; this acceptance does not qualify continuity or the
+full routing matrix. Never detach a remembered port without verified ownership.
 
 The source-path root consumer check is `python3 scripts/check-root-consumers.py`.
 It compiles the feature matrix with cached dependencies and then rebuilds offline;

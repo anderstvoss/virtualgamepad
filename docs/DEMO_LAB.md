@@ -1,12 +1,14 @@
 # Manual lab work with the demo
 
-Current pre-alpha API refinement is tracked in
-[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
-Emulated audio is implemented; USB/IP remains WIP pending installed
-security/recovery acceptance. Plain `cargo run -p virtualgamepad-demo` enables
-USB/IP audio and ALSA host routing. Add `--features audio-pipewire` to enable
-UHID/PipeWire audio as well. Native-client continuity and matching fidelity remain
-open. Historical evidence below retains its original scope.
+Current bounded alpha dispositions are recorded in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+Seven scoped installed broker security/recovery phases passed (#115 closed);
+USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
+deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
+default; add `--features audio-pipewire` for UHID/PipeWire audio. Library defaults
+remain empty. Matching fidelity is unavailable (#116). Historical evidence below
+retains its original scope.
+
+Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
 Run `cargo run -p virtualgamepad-demo` as the ordinary user. First run
 `python3 scripts/host-preflight.py all` for a read-only prerequisite inventory;
@@ -71,16 +73,15 @@ and observe continuing service on the others. Keep each consumer selection exact
    USB/IP; UHID/PipeWire requires its feature and root defaults remain empty. See the
    [demo refinement checkpoint](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
    Native continuity/latency remains unresolved despite closed #112; installed
-   broker recovery/security (#115) and
-   microphone/matching fidelity (#116) remain separate acceptance gates. Confirmed
+   broker recovery/security passed seven scoped phases (#115 closed);
+   microphone/matching fidelity remains unavailable (#116). Confirmed
    physical output/reconnect observations stay credited. L/M Bluetooth work remains
    separately gated; no support is promoted by endpoint enumeration.
 
 Other families remain best-effort. See the [physical validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md)
-and [gate ledger](architecture-overhaul/GATE_STATUS.md). Deterministic worker tests
-and selected live UHID lifecycle checks have passed; interactive controller and
-consumer acceptance remains pending. See the
-[current refinement evidence](CURRENT_CONTROLLER_REFINEMENT.md).
+and the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md). Bounded four-family keyboard smoke
+and the accepted neutral soak are credited; broader hands-on review is post-alpha
+#126. See the [historical refinement evidence](CURRENT_CONTROLLER_REFINEMENT.md).
 
 Face buttons show printed labels and spatial positions (Nintendo B is South).
 Stick pads now reach both signed endpoints, and Sony unsigned conversions preserve

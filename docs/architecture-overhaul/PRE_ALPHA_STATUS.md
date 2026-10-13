@@ -1,6 +1,11 @@
 # Pre-alpha stabilization: historical implementation and acceptance ledger
 
-**Current execution:** [Alpha API refinement](ALPHA_API_REFINEMENT.md), baseline PR #121.
+> **Historical planning and evidence.** Current bounded alpha scope and
+> deferred work are recorded in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
+> The dated instructions and verdicts below retain their original scope; they
+> are not the current closeout checklist.
+
+**Historical execution:** [Alpha API refinement](ALPHA_API_REFINEMENT.md), baseline PR #121.
 The older baseline and batches below are retained historical records. Final API
 freeze, interactive audio feedback and release are pending.
 

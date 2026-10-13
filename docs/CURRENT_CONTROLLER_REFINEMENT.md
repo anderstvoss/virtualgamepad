@@ -1,5 +1,10 @@
 # Current-controller refinement checkpoint
 
+> **Historical checkpoint.** Current bounded alpha dispositions are in
+> [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+> The implementation and acceptance statements below describe their recorded
+> revision, not current demo or release status.
+
 Current pre-alpha API refinement is tracked in
 [the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
 Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed

@@ -2,9 +2,10 @@
 
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
-This is an opt-in pre-alpha implementation, not a completed fidelity or latency
-qualification. The intended API still needs the fresh API review after GUI
-integration. Existing constructors keep audio disabled by default.
+This is an opt-in alpha implementation with bounded functional acceptance, not
+a completed fidelity or latency qualification. The ordinary-root API review and
+110-item snapshot are complete. Existing constructors keep audio disabled by
+default. Current dispositions are in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
 | Family | Emulated playback / microphone channels | Controller matching |
 | --- | --- | --- |
@@ -92,11 +93,13 @@ Deterministic coverage includes queue bounds, partial transfers, state retries,
 exact HID acknowledgements, malformed IPC, descriptor rejection, connection-owned
 lifetime and rollback. Recorded live tests demonstrate ordinary-caller creation
 and selected streaming/lifecycle paths. They do not complete the sustained matrix
-or the complete privileged security/recovery acceptance.
+or physical fidelity. Separately, seven scoped installed broker security/recovery
+phases passed (#115 closed); this is not streaming qualification.
 
 Three consecutive 60-second full-duplex trials per family, transport and ownership
-mode, with exact patterns and directional p99 below 20 ms, remain the closure
-target. Native-client continuity and simultaneous latency failures persist on the
+mode, with exact patterns and directional p99 below 20 ms, remain a post-alpha
+closure target (#135/#145), not a bounded alpha requirement. Recorded
+native-client continuity and simultaneous latency failures persist on the
 Parallels test VM; isolated PipeWire failures justify native-host qualification,
 but do not prove the VM is the sole cause. Follow
 [closed issue #112](https://github.com/anderstvoss/virtualgamepad/issues/112),
@@ -111,8 +114,9 @@ readiness; adaptive-trigger actuation is excluded.
 The [execution ledger](architecture-overhaul/AUDIO_IMPLEMENTATION.md),
 [USB acceptance record](architecture-overhaul/USB_AUDIO_STOCK_LINUX.md) and
 [physical evidence](architecture-overhaul/experiments/EXP-0023-controller-audio.md)
-retain successful and failed runs. GUI integration, user feedback, final API
-review, the separate quality review and alpha release remain subsequent gates.
+retain successful and failed runs. GUI integration, API review and the separate
+quality review have landed. Broader hands-on feedback is post-alpha #126;
+exact release-SHA qualification and authorized tagging remain outstanding.
 
 
 ## Current candidate API
@@ -131,9 +135,10 @@ Direction ownership applies to every exposed group in that direction. Keep audio
 borrows and PCM batches short when sharing a controller owner between threads.
 HID readiness/deadlines still require caller service; PCM is worker-backed, and
 service detects required audio failure without promising a fixed polling cadence.
-USB/IP is opt-in WIP until installed security/recovery acceptance (#115) closes.
+USB/IP remains opt-in WIP despite the seven scoped broker security/recovery
+phases passing (#115 closed); streaming and full routing remain deferred.
 See [migration](ALPHA_API_MIGRATION.md) and the
-[current execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+[current remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
 ## Current release evidence boundary
 
@@ -141,7 +146,8 @@ The remediation native playback smoke test still loses synthetic markers. Graph
 discontinuities, queue drops and producer/client accounting are reported
 separately; timing observations do not explain away missing frames. No acceptance
 assertion is relaxed. Three measured 60-second trials per sustained cell and
-duplex/mixed ownership remain required. VM observations cannot establish native
+duplex/mixed ownership remain post-alpha requirements (#143/#145).
+VM observations cannot establish native
 host latency or physical microphone fidelity. See
 [the remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
 
