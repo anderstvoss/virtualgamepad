@@ -484,8 +484,8 @@ fn consumer_file() -> fs::File {
         } >= 0
     );
     let mut physical = [0_u8; 512];
-    // SAFETY: the held event FD is queried into bounded live byte storage.
     assert!(
+        // SAFETY: the held event FD is queried into bounded live byte storage.
         unsafe {
             libc::ioctl(
                 fd,
