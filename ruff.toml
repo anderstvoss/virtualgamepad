@@ -13,3 +13,10 @@ ignore = [
   "S606", # same, for os.exec*/spawn*
   "S607", # helpers deliberately resolve standard tools from PATH
 ]
+
+[lint.per-file-ignores]
+# A fragment the live USB tests append to validate-usb-audio-live.py and run as
+# one script; its names come from that validator, so it cannot import them.
+"scripts/validate-usb-public-samples.py" = ["F821"]
+# Loads those two repository-owned validators into one namespace to test the fragment.
+"scripts/tests/test_usb_public_samples.py" = ["S102"]
