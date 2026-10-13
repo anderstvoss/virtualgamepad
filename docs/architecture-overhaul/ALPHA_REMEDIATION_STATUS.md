@@ -14,28 +14,39 @@ No more timing/control diagnostics, 72-cell trials or GUI soaks. Reuse the accep
 `46be2bf` soak. Record audio gaps as limitations; require actual flow and cleanup.
 Historical failures remain visible; do not apply superseded whole-gate criteria.
 
-Current disposition (2026-10-13): **alpha is not ready; PR #133 remains draft**.
-Production Rust source is unchanged since `708e758`; later commits record evidence.
-The Xbox generic-HID identity defect is corrected at `04943b1`, but its remaining
-realization/consumer acceptance still prevents whole Gate 2 closure. Preserve
-prior Sony contact/feedback passes within their pinned scope.
+Current disposition (2026-10-13): **finite live checks completed; final-head validation pending; PR #133 remains draft**.
+The product was built once at `dfc1f603fd7331e2669305efe24c2f3990df574d`.
+Production Rust, manifests and lockfile remain identical to `708e758`;
+subsequent corrections affect receipt retrieval and lab readiness only.
 
-| Gate | Current disposition | Next required evidence |
+| Gate | Narrow alpha disposition | Evidence and limits |
 | --- | --- | --- |
-| 1: keyboard/accessibility | Open; DualSense touch, lockout and motion subsets have native receipts | One four-family keyboard smoke with neutral release, middle removal/siblings and owned shutdown; no further full-inventory or soak requirement |
-| 2: controller outputs/isolation | Reopened; identity correction and native Xbox sweep/transition subsets pass | Only changed Xbox HID/evdev sweep + USB EPIPE/no callback and DualSense companion contact/removal; reuse accepted Sony/DS4 cells |
-| 3: provider recovery/security | Pass pinned to `b817f48d7fc50ac38de21046144e4f55d1595e6d`; current changed worker not revalidated | Rebuild/stage a source-pinned worker and rerun affected provider phases with independent restoration receipts |
-| 4: USB/IP audio/routing | Open; prior short microphone marker cells failed | Three-family playback/capture marker flow and clean close/repeated close; reuse applicable worker/route-failure passes; record gaps without gating |
-| 5: isolated Steam | Deferred by user to post-alpha x86-64 testing; not passed | Exact-candidate isolated consumer matrix on x86-64; preserve VM failures and investigate disagreement with native transport traces |
-| 6: continuity | Deferred to post-alpha by release owner (#135/#145), not passed | Native-host sustained qualification later; no more VM diagnostics |
+| 1: keyboard/accessibility | Finite smoke passed | Four default HID families created; visible Tab/Shift-Tab creation/input/trigger/removal focus; keyboard face/stick release events; middle DualSense removal, Xbox/DS4 siblings operational; graceful close returned zero, owned nodes/display/rule removed. Separate affected DualSense input check passed. Screen-reader support remains unavailable. Reuse accepted `46be2bf` soak. |
+| 2: controller outputs/isolation | Changed cells passed | Reuse unchanged post-identity HID sweep and Sony contact/removal/DS4 rollback receipts. Fresh native SDL 3.2.10 evdev sweep matched all 50 press/neutral transitions; USB observer at `1899289` passed all 24 requests, including Xbox EPIPE/no callback. |
+| 3: provider recovery/security | Seven phases passed | Rejection, lifecycle and client-exit passed on frozen images; affected worker death, before-handoff death, broker death and sibling/admission phases passed after bounded graph withdrawal correction at `1899289`. Owned restoration completed; old failures retained. |
+| 4: USB/IP audio/routing | Required marker flow observed; strict continuity suite failed | All three families delivered playback markers to ALSA and microphone markers to the application in short cells; close/repeated close and final attachment/card restoration exercised. Recorded silence includes native duplex playback 0/1632/5168 frames and microphone 16/224/480 frames for DualSense/DS4/Xbox. Original zero-loss assertions remain failed, not relabelled. Applicable route/worker-failure receipts reused. |
+| 5: isolated Steam | Deferred, not passed | User-directed x86-64 follow-up #144; preserve VM/FEX failures. |
+| 6: continuity | Deferred, not passed | Owner-directed post-alpha #135/#145; physical comparisons #136. No more diagnostics or sustained trials. |
 
-The additional two-hour neutral GUI fixture completed: 119 cycles, exit zero and owned process/display cleanup. Its memory rose from about 122 to 141 MiB with 16 descriptors and 23 threads; it is recorded within fixture scope, not substituted for ordinary demo image identity. No further soak is required; the release owner accepts the earlier `46be2bf` pass. Its frozen
-executable is `1212f5ca3a8fad8b6def50dd186e68862b1c966e1309beb9ba273eb7d8b6d936`.
-No compilation, audio trials or Steam overlap this workload. Finite isolated GUI
-checks occurred during it and are recorded separately. Exact-head Windows
-acceptance remains missing after certificate-revocation network failures; no
-verification was disabled. Current evidence supersedes older whole-gate ratings
-below; affected cells must be reopened after relevant source/image changes.
+Frozen executable SHA-256 values:
+
+- Demo: `fa4163b85bab40700b9757a2d621435607451844adf34b0214af56fd02265f36`.
+- Broker: `e895c2063f659ac4be682f7af05465711f7949d8997b15239a206abd5daf6807`.
+- Worker: `9c086e9cc5d4bbf1fbbb8a4f91b39fc0b740a15cb1f5b147c146c8092e7e03c2`.
+
+The GUI smoke first encountered invalid coordinator actions/setup focus assumptions;
+those attempts remain failed with owned cleanup. The completed interaction used
+verified focus and native input observations. Switch kernel calibration is not
+physical-fidelity evidence; the GUI released its stick state to neutral.
+The provider harness corrections preserve isolation and the one-MiB command cap:
+fixed terminal width avoids padded socket inventory overflow, oversized receipts
+return bounded hashed previews, and a removed ALSA graph object gets one second
+to withdraw before the unchanged isolation assertion fails.
+All 475 deterministic Python tests passed. The signal-cleanup regression now uses
+synthetic healthy memory counters; live memory protection remains unchanged.
+At `dfc1f60`, platform CI including Windows, MSRV, CodeQL, Gitleaks and SBOM generation
+passed. These are historical until final-head workflows and downloaded SBOM identity
+verification complete. Raw receipts remain outside tracked source.
 
 Current closure criteria and verifier gaps are in
 [the acceptance criteria audit](ALPHA_GATE_CRITERIA.md). Historical progress

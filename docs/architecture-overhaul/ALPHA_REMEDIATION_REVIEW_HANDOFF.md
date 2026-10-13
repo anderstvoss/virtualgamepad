@@ -14,6 +14,8 @@ No more timing/control diagnostics, 72-cell trials or GUI soaks. Reuse the accep
 `46be2bf` soak. Record audio gaps as limitations; require actual flow and cleanup.
 Historical failures remain visible; do not apply superseded whole-gate criteria.
 
+The finite live results and frozen executable identities are in [the current status](ALPHA_REMEDIATION_STATUS.md). Final-head validation remains pending. Review receipt termination races, unchanged isolation assertions, sibling/removal cleanup and the explicit distinction between marker flow and failed continuity assertions. Do not require deferred Steam, physical, latency or sustained matrices to pass this narrowed alpha boundary.
+
 ## Reviewer reporting and current Steam namespace correction
 
 Post follow-up findings and recommendations directly on PR #133. Pin the reviewed
