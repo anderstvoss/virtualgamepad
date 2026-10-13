@@ -64,3 +64,12 @@ Normal window close returned zero with owned-rule cleanup. Complete lockout
 and motion event correlation, all remaining inventory cells, and the separate
 final-image two-hour soak remain required. The late recorder captured only one
 neutral motion event and cannot establish those cells.
+
+
+The focus-verified retry on the same `708e758` image adds live one-second
+lockout/recovery, gyro press/release/focus-loss/Hold, all three gyro axes, and
+all three acceleration axes returning to neutral. Sensor-node fuzz 16 explains
+why raw acceleration one generated no native event; the retained failed
+assertion must not be presented as passing. Larger keyboard movements supply
+functional native evidence. Full inventory/family checks and soak completion
+remain open.

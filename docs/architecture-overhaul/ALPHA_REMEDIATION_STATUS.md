@@ -5007,3 +5007,29 @@ CI and its failed-job retry both stopped at crates.io certificate-revocation
 checking (CRYPT_E_REVOCATION_OFFLINE); tests did not run there. Linux/macOS,
 MSRV and lint jobs passed. This remains missing exact-head Windows evidence;
 certificate verification has not been disabled.
+
+
+### Focus-verified lockout and motion retry
+
+The same immutable `708e758` GUI image passed a second finite, isolated trial.
+The earlier lockout screenshot actually focused Accel Z rather than the touch
+canvas; its absent touch trace was a harness targeting error. The retry retained
+single-step focus screenshots and started its native observer before activation.
+Contact tracking IDs were `0, -1, 1, -1`: the first release occurred 1.008143751
+seconds after activation with the timer set to one second, and a fresh press
+recovered the contact. Motion X produced native ABS_RX `64 -> 0` on key release,
+Tab focus loss, and disabling Hold; screenshots confirm Hold persistence after
+key release. Individual gyro axes produced ABS_RX `64 -> 0`, ABS_RZ `-64 -> 0`,
+and ABS_RY `64 -> 0`, matching the encoder's X/Z/-Y coordinate transformation
+and synthetic calibration.
+
+An initial acceleration assertion incorrectly expected a native event for raw
+value one. The owned sensor nodes report fuzz 16 for all six axes; retain that
+failed assertion and trace. Longer keyboard holds produced monotonic native
+acceleration movement on ABS_Z, ABS_Y and ABS_X, each reaching 70 and returning
+to zero on release. This accepts those functional movement/release cells; it
+is not a claim of raw/native numerical identity or physical sensor fidelity.
+The retry closed normally with root status zero, its input rule removed, and
+no initiating/cleanup errors. No production code or dependencies changed.
+Remaining interactive controls/families and final soak completion are still
+required; neither this subset nor the ongoing soak closes the whole GUI gate.

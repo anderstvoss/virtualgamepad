@@ -4378,3 +4378,12 @@ transport evidence. Preserve the pre-arm private harness failure alongside its
 successful exact Xbox sweep-transition retry. Windows exact-head CI remains
 unverified after two certificate-revocation network failures; do not count skipped
 tests or privileged CI as passing acceptance.
+
+
+The subsequent focus-verified `708e758` retry supplies the previously missing
+lockout and motion subset. Verify tracking ID order, measured 1.008143751-second
+release, gyro native axis/sign/calibration values, focus-loss and Hold ordering,
+and acceleration neutral release. Inspect the owned node's fuzz-16 receipt:
+raw/native equality at value one was an incorrect harness assumption, whose
+failed trace remains preserved. Larger-movement evidence must not be extrapolated
+to physical fidelity or full GUI acceptance. No whole-gate disposition changed.
