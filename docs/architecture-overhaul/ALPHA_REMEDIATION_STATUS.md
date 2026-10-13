@@ -69,15 +69,6 @@ verified. Exact consumer evidence for a PR head is not merge-SHA qualification.
 
 The committed Git-consumer report is historical evidence for `76b7b3fc`; the
 #133 final report tested `bc4f60ca`. Neither is a main revision. No main-SHA
-consumer evidence existed at the start of this closeout. After the docs PR
-merges, pin that merge SHA, require all 13 protected-branch checks to succeed,
-and rerun all eight external Git-consumer feature combinations plus the cached
-locked offline rebuild. Keep the JSON and lockfile out of tree, record their
-hashes/compiler/features in #117, and attach them to the release once it exists.
-
-Dependency review is a PR-only check; record the producing PR results rather
-than treating the main-push skip as pass or failure. Keep Dependabot #139/#140/#142
-unmerged through tagging; a later main commit invalidates the pinned candidate.
-Final sign-off combines the gate table, consumer hashes, Steam confirmation and
-exact-SHA tag authorization request in one #117 comment. No release workflow
-creates the tag; after authorization the maintainer tags the approved SHA.
+consumer evidence existed at the start of this closeout. Release qualification
+for the eventual tagged SHA remains pending; [#117](https://github.com/anderstvoss/virtualgamepad/issues/117)
+tracks the exact-revision evidence and release procedure.

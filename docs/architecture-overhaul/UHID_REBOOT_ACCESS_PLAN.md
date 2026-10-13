@@ -4,7 +4,8 @@
 UHID creation and cleanup work with the installed boot policy. This removes the
 reboot issue from active blockers. That confirmation is separate from the original
 agent observations below; this update did not perform another reboot.
-See the [active pre-alpha ledger](PRE_ALPHA_STATUS.md).
+See [alpha remediation status](ALPHA_REMEDIATION_STATUS.md) for the current
+bounded alpha disposition; the [pre-alpha ledger](PRE_ALPHA_STATUS.md) is historical.
 
 ## Historical diagnosis before maintainer reboot acceptance
 
