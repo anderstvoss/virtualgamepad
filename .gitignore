@@ -54,3 +54,6 @@ dist/
 build/
 out/
 /bom.json
+
+# Local checkout of the private protocol corpus (pinned by protocol-corpus.rev)
+/protocol-corpus/

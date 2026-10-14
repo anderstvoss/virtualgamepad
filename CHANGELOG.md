@@ -24,7 +24,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 - Broader GUI review (#126), physical fidelity (#136), controller matching (#116)
   and native timing (#135) remain deferred. No screen-reader support is provided.
-  Steam is deferred to x86-64 #144 with release-owner confirmation outstanding.
+  Steam is deferred to x86-64 #144, confirmed by the release owner.
+- The private protocol corpus is pinned by `protocol-corpus.rev` instead of a Git
+  submodule, so Git consumers of the tag need no access to the corpus.
 - See [release notes](docs/ALPHA_RELEASE_NOTES.md) and
   [current dispositions](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
   Final merge-SHA qualification and separate tag authorization remain pending.

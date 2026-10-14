@@ -28,8 +28,10 @@ class CorpusWorkflow(unittest.TestCase):
         git(self.corpus, 'init')
         git(self.corpus, 'add', '.')
         git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture')
-        revision = git(self.corpus, 'rev-parse', 'HEAD')
-        git(self.root, 'update-index', '--add', '--cacheinfo', '160000,' + revision + ',protocol-corpus')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
+
+    def pin(self, revision):
+        (self.root / 'protocol-corpus.rev').write_text(revision + '\n')
 
     def test_regeneration_and_stale_output(self):
         MODULE.check(self.root, write=True)
@@ -48,12 +50,11 @@ class CorpusWorkflow(unittest.TestCase):
         git(self.corpus, 'add', '.')
         git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
             'commit', '-m', 'wrong shape with valid hash')
-        revision = git(self.corpus, 'rev-parse', 'HEAD')
-        git(self.root, 'update-index', '--cacheinfo', '160000,' + revision + ',protocol-corpus')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
         with self.assertRaisesRegex(ValueError, 'unexpected fixture size: sony-contact-pair'):
             MODULE.check(self.root, write=True)
 
-    def test_missing_and_mismatched_submodule(self):
+    def test_missing_and_mismatched_checkout(self):
         (self.corpus / '.git').rename(self.root / 'saved-git')
         with self.assertRaisesRegex(ValueError, 'absent'):
             MODULE.check(self.root)
@@ -70,24 +71,33 @@ class CorpusWorkflow(unittest.TestCase):
         MODULE.check(self.root, write=True, verify_remote=True)
         git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
             'commit', '--allow-empty', '-m', 'unpublished')
-        revision = git(self.corpus, 'rev-parse', 'HEAD')
-        git(self.root, 'update-index', '--cacheinfo', '160000,' + revision + ',protocol-corpus')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
         with self.assertRaises(subprocess.CalledProcessError):
             MODULE.check(self.root, write=True, verify_remote=True)
 
-    def test_recursive_checkout_regenerates(self):
+    def test_missing_or_malformed_pin(self):
+        (self.root / 'protocol-corpus.rev').unlink()
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            MODULE.check(self.root)
+        for bad in ('', 'a1789d6', 'A' * 40, 'g' * 40, ('0' * 40 + '\n') * 2):
+            (self.root / 'protocol-corpus.rev').write_text(bad)
+            with self.assertRaisesRegex(ValueError, 'full lowercase commit SHA'):
+                MODULE.check(self.root)
+
+    def test_clone_needs_no_corpus_access(self):
+        # Git consumers clone this repository recursively (Cargo always does);
+        # the corpus must not be a submodule they are forced to fetch.
         MODULE.check(self.root, write=True)
-        (self.root / '.gitmodules').write_text(
-            '[submodule "protocol-corpus"]\n'
-            '\tpath = protocol-corpus\n'
-            '\turl = ' + str(self.corpus) + '\n')
-        git(self.root, 'add', '.gitmodules', 'tests')
+        (self.root / '.gitignore').write_text('/protocol-corpus/\n')
+        git(self.root, 'add', '.gitignore', 'protocol-corpus.rev', 'tests')
         git(self.root, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
             'commit', '-m', 'synthetic superproject')
+        self.assertEqual(git(self.root, 'ls-files', '--stage', 'protocol-corpus'), '')
         clone = self.root / 'recursive-clone'
-        git(self.root, '-c', 'protocol.file.allow=always', 'clone', '--recurse-submodules',
-            str(self.root), str(clone))
-        MODULE.check(clone)
+        git(self.root, 'clone', '--recurse-submodules', str(self.root), str(clone))
+        self.assertFalse((clone / 'protocol-corpus').exists())
+        with self.assertRaisesRegex(ValueError, 'absent'):
+            MODULE.check(clone)
 
     def test_dirty_corpus(self):
         (self.corpus / 'untracked.txt').write_text('synthetic')

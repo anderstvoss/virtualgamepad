@@ -1,5 +1,9 @@
 # Protocol Corpus Git Submodule Workflow
 
+> **Historical.** The corpus is no longer a submodule: Cargo fetches a Git
+> dependency's submodules, which forced every consumer to need corpus access.
+> It is now pinned by `protocol-corpus.rev`; see [CONTRIBUTING](../../CONTRIBUTING.md).
+
 ## Current authority and rewrite freedom — 2026-09-05
 
 Development memories and imported conversation/context files are non-authoritative research leads. They cannot establish current implementation, physical truth, a gate pass, or fresh permission. Verify implementation against exact code revisions and merge/content history; verify host/protocol claims with scoped primary sources or experiment artifacts. Current user direction and reviewed decisions govern product scope.

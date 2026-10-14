@@ -70,6 +70,6 @@ By contributing, you agree your contributions are licensed under
 
 ## Protocol corpus checks
 
-The private protocol corpus is pinned at `protocol-corpus/`. Contributors with access initialize it using `git submodule update --init --recursive`. Install its `requirements-dev.txt` in an isolated Python environment, then run its validator and unit tests. Run `python3 scripts/check-protocol-corpus.py --verify-remote` and `python3 -m unittest discover -s scripts/tests` before adopting a corpus commit. `--write` regenerates checked-in test artifacts after a reviewed gitlink update.
+The private protocol corpus is pinned by the revision in `protocol-corpus.rev`; it is not a submodule, so Git consumers never need access to it. Contributors with access clone it into the ignored `protocol-corpus/` directory and check out that revision: `git clone https://github.com/anderstvoss/controller-protocol-corpus.git protocol-corpus && git -C protocol-corpus checkout "$(cat protocol-corpus.rev)"`. Install its `requirements-dev.txt` in an isolated Python environment, then run its validator and unit tests. Run `python3 scripts/check-protocol-corpus.py --verify-remote` and `python3 -m unittest discover -s scripts/tests` before adopting a corpus commit. `--write` regenerates checked-in test artifacts after a reviewed `protocol-corpus.rev` update.
 
 Normal Cargo builds do not require corpus access. CI retains the repository's existing private-job gating; authenticated corpus jobs require a read credential, and fork jobs do not establish corpus conformance.

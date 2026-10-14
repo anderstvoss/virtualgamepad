@@ -25,6 +25,6 @@ updates:
       pre-commit-toolchain:
         patterns: ["*"]
 
-  # protocol-corpus is deliberately absent: it is a private submodule whose
-  # pin only moves through the reviewed corpus workflow (see the
-  # protocol-corpus job in ci.yml).
+  # protocol-corpus is deliberately absent: the private corpus is pinned by
+  # protocol-corpus.rev, which only moves through the reviewed corpus
+  # workflow (see the protocol-corpus job in ci.yml).

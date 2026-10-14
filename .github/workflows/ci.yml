@@ -376,7 +376,7 @@ jobs:
     name: Python script tests
     # Host and lab helpers under scripts/ are lint-gated by the ruff hook in
     # the policy job. This runs their unit tests on every public PR; the
-    # corpus workflow tests need the private submodule and stay in the
+    # corpus workflow tests need the private corpus checkout and stay in the
     # protocol-corpus job below. static.rust-lang.org lets rustup install
     # the pinned toolchain for the rustdoc-based API snapshot test.
     if: ${{ !github.event.repository.private }}
@@ -445,11 +445,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: git diff --exit-code "$BASE_SHA" "$HEAD_SHA" -- protocol-corpus
+        run: git diff --exit-code "$BASE_SHA" "$HEAD_SHA" -- protocol-corpus.rev
       - name: Read adopted corpus revision
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         id: corpus-revision
-        run: echo "revision=$(git rev-parse HEAD:protocol-corpus)" >> "$GITHUB_OUTPUT"
+        run: echo "revision=$(cat protocol-corpus.rev)" >> "$GITHUB_OUTPUT"
       - name: Checkout pinned corpus with repository-only read access
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
