@@ -15,11 +15,6 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
     }
 
     fn preflight(&self, request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
-        if !cfg!(target_os = "linux") {
-            return Err(ProviderPreflightError::UnsupportedPlatform {
-                target: RealizationTarget::DummyHcd,
-            });
-        }
         require_dualsense(request)?;
         BrokerClient::connect().map(|_| ()).map_err(preflight_error)
     }
@@ -53,6 +48,12 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
 }
 
 fn require_dualsense(request: &ProviderOpenRequest) -> Result<(), ProviderPreflightError> {
+    if !cfg!(target_os = "linux") {
+        return Err(ProviderPreflightError::UnsupportedPlatform {
+            target: RealizationTarget::DummyHcd,
+        });
+    }
+
     if matches!(
         request.realization,
         NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
@@ -173,5 +174,39 @@ impl NativeProviderSession for Session {
             })?;
         self.state = ProviderState::Closed;
         Ok(())
+    }
+}
+
+#[cfg(all(test, not(target_os = "linux")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preflight_and_open_reject_unsupported_platforms() {
+        let request = ProviderOpenRequest {
+            session: RealizationSessionId(1),
+            selection: RealizationSelection {
+                controller: ControllerId::new("test.dualsense"),
+                target: RealizationTarget::DummyHcd,
+            },
+            requirements: ProviderRequirements::default(),
+            realization: NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
+                controller: CompiledControllerKind::DualSense,
+            }),
+        };
+        assert!(matches!(
+            LinuxDummyHcdProvider.preflight(&request),
+            Err(ProviderPreflightError::UnsupportedPlatform {
+                target: RealizationTarget::DummyHcd
+            })
+        ));
+        assert!(matches!(
+            LinuxDummyHcdProvider.open(request),
+            Err(ProviderError::Preflight(
+                ProviderPreflightError::UnsupportedPlatform {
+                    target: RealizationTarget::DummyHcd
+                }
+            ))
+        ));
     }
 }

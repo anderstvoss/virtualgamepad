@@ -9,10 +9,13 @@
 use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
+#[cfg(target_os = "linux")]
 use std::os::unix::net::UnixStream;
 use thiserror::Error;
 
+#[cfg(target_os = "linux")]
 pub mod btvirt_bridge;
+#[cfg(target_os = "linux")]
 pub mod dummy_hcd;
 
 /// Broker-owned host resource. Implementations are never constructed by an
@@ -57,14 +60,25 @@ pub struct BrokerSession(pub u64);
 /// Minimal, versioned client for the fixed local broker protocol.
 #[derive(Debug)]
 pub struct BrokerClient {
+    #[cfg(target_os = "linux")]
     stream: UnixStream,
 }
 
 impl BrokerClient {
     pub fn connect() -> Result<Self, BrokerClientError> {
-        UnixStream::connect(BROKER_SOCKET_PATH)
-            .map(|stream| Self { stream })
-            .map_err(BrokerClientError::Unavailable)
+        #[cfg(target_os = "linux")]
+        {
+            UnixStream::connect(BROKER_SOCKET_PATH)
+                .map(|stream| Self { stream })
+                .map_err(BrokerClientError::Unavailable)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Err(BrokerClientError::Unavailable(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "the privileged realization broker requires Linux",
+            )))
+        }
     }
 
     pub fn open(
@@ -118,6 +132,7 @@ impl BrokerClient {
         self.request(5, &session.0.to_le_bytes())
     }
 
+    #[cfg(target_os = "linux")]
     fn request(&mut self, tag: u8, body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
         write_message(&mut self.stream, tag, body).map_err(BrokerClientError::Unavailable)?;
         let (tag, body) = read_message(&mut self.stream).map_err(BrokerClientError::Unavailable)?;
@@ -128,6 +143,13 @@ impl BrokerClient {
             )),
             _ => Err(BrokerClientError::Protocol("unexpected response tag")),
         }
+    }
+    #[cfg(not(target_os = "linux"))]
+    fn request(&mut self, _tag: u8, _body: &[u8]) -> Result<Vec<u8>, BrokerClientError> {
+        Err(BrokerClientError::Unavailable(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the privileged realization broker requires Linux",
+        )))
     }
 }
 
@@ -441,6 +463,16 @@ impl BrokerPolicy {
 mod tests {
     use super::*;
     use std::sync::{Arc, Mutex};
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn client_rejects_unsupported_platforms_without_socket_io() {
+        assert!(matches!(
+            BrokerClient::connect(),
+            Err(BrokerClientError::Unavailable(error))
+                if error.kind() == io::ErrorKind::Unsupported
+        ));
+    }
 
     struct FakeHost {
         closed: Arc<Mutex<u8>>,
