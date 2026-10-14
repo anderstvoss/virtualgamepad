@@ -1,3 +1,0 @@
-[submodule "protocol-corpus"]
-	path = protocol-corpus
-	url = https://github.com/anderstvoss/controller-protocol-corpus.git

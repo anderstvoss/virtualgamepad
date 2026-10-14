@@ -33,7 +33,7 @@ main tree.
 | 2: controller outputs/isolation | Changed cells passed (Xbox HID/evdev sweep, USB output requests including Xbox EPIPE, Sony companion removal/contacts, DS4 rollback). |
 | 3: provider security/recovery | All seven scoped provider phases passed on the frozen broker/worker images (#115 closed); not streaming qualification. |
 | 4: USB/IP audio/routing | Playback and microphone marker flow observed for DualSense, DS4 and Xbox 360 with clean close; strict zero-loss assertions still fail and are a known limitation. |
-| 5: isolated Steam | Deferred to x86-64 follow-up #144; release-owner confirmation outstanding. |
+| 5: isolated Steam | Deferred to x86-64 follow-up #144; [confirmed by the release owner](https://github.com/anderstvoss/virtualgamepad/issues/144#issuecomment-6157276710). |
 | 6: sustained audio continuity | Deferred post-alpha (#135, #145). |
 
 Physical-controller comparisons are deferred to #136.
@@ -60,7 +60,7 @@ retains strict zero-loss failures, including native duplex playback silence of
 0/1632/5168 frames and microphone silence of 16/224/480 frames for
 DualSense/DS4/Xbox respectively. Functional marker flow does not turn these
 failed assertions into continuity passes. Steam is deferred, not passed; the
-release owner still needs to explicitly confirm the #144 deferral.
+release owner [confirmed the #144 deferral](https://github.com/anderstvoss/virtualgamepad/issues/144#issuecomment-6157276710).
 
 The proposed Git tag `0.1.0-alpha.1` carries workspace crate version `0.1.0`
 (`publish = false`). Consumers should pin by tag or full SHA. No release is

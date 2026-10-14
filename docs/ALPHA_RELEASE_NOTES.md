@@ -3,7 +3,8 @@
 Candidate tag for maintainer review: `0.1.0-alpha.1`. Workspace packages remain
 `0.1.0` and unpublished (`publish = false`). The proposed Git tag
 `0.1.0-alpha.1` carries crate version `0.1.0`; consumers should pin by tag or
-full SHA. This package prepares a Git-based alpha, not a published tag or
+full SHA. Consumers need no access to the private protocol corpus: it is pinned
+by `protocol-corpus.rev` for CI validation, not by a submodule. This package prepares a Git-based alpha, not a published tag or
 registry release. The exact release SHA and final acceptance are recorded only
 after review, merges and final validation.
 
@@ -45,8 +46,8 @@ Controller matching and physical microphone equivalence remain unavailable (#116
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
 No screen-reader support is provided. Broader hands-on GUI acceptance is
-post-alpha #126. Steam is deferred to x86-64 #144, with release-owner confirmation
-of that deferral outstanding; no Steam compatibility is claimed. Physical
+post-alpha #126. Steam is deferred to x86-64 #144, as confirmed by the release
+owner; no Steam compatibility is claimed. Physical
 comparisons (#136) and native-host timing (#135) remain deferred. Windows/macOS
 CI establishes build/test results, not functioning controller providers.
 `linux.dummy_hcd.usb-hid` creation is rejected before resource allocation because
