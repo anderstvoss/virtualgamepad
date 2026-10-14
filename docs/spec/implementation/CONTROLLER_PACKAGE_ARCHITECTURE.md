@@ -81,7 +81,7 @@ during `poll_output`. `ForceFeedback(ForceFeedbackEvent)` reports completed uplo
 erasures and playback commands with stored magnitudes and replay timing. Callers
 must remove the old manual force-feedback reply calls. Low-level provider users
 still reply explicitly to typed mechanism requests. See
-[ADR-0006](../../architecture-overhaul/decisions/ADR-0006-conventional-feedback.md)
+[ADR-0006](../../adr/ADR-0006-conventional-feedback.md)
 for bounded ownership, rejected fields and terminal error behavior.
 
 ## Explicit curated service entry point
@@ -108,7 +108,7 @@ prepare stable UHID `uniq`; shared creation always gives the physical path a fre
 instance suffix. The default constructors remain unchanged, and other targets
 reject supplied identities before opening resources. Compound component identity
 must later derive from one logical controller identity under its own accepted
-contract. See [ADR-0008](../../architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md).
+contract. See [ADR-0008](../../adr/ADR-0008-explicit-sony-identity.md).
 
 ## Post-106 controller-owned extensions
 

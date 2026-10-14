@@ -2,116 +2,90 @@
 
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
-`virtualgamepad` provides reviewed, compiled virtual controllers. There are no runtime profiles, descriptors, plugins, or generic controller constructors. Each controller selects one exact primary realization target; selection never falls back.
+`virtualgamepad` is a Rust library for creating reviewed, compiled virtual game
+controllers on Linux. Each controller keeps its own native controls, units and
+outputs; there is no generic gamepad model, runtime profile format or plugin
+system. The application picks one exact realization and the library never falls
+back to another.
 
-- `linux.uinput`: controller-owned Linux evdev controls through uinput.
-- `linux.uhid.usb`: local HID presentation with controller-owned stateful USB protocols.
-- `linux.usbip.usb-audio`: opt-in, initial emulated HID/UAC2 audio via the administrator-installed local broker.
-- `linux.dummy_hcd.usb-hid`: unavailable. The current Linux `f_hid` transport lacks complete GET_REPORT metadata and negative replies; provider and broker creation reject it before opening resources. It remains excluded from normal application constructors.
+Current release: [`0.1.0-alpha.1`](https://github.com/anderstvoss/virtualgamepad/releases/tag/0.1.0-alpha.1)
+(Git-only, `publish = false`). See [status](docs/STATUS.md) for what is and is not
+validated.
 
-The curated controllers are Xbox 360, DualSense, DualShock 4, and Switch Pro.
-Each retains a compiled experimental `DummyHcd` USB profile; the Xbox 360 profile is explicitly
-standard HID rather than a claim of proprietary XInput/xpad emulation.
-`DummyHcd` uses only the root-owned local broker at
-`/run/virtualgamepad/broker.sock`; applications cannot provide host paths,
-descriptors, modules, command lines, identities, or report formats. Bluetooth
-realizations remain gated research and are not currently available.
+## Controllers and realizations
 
-See [deployment](docs/DEPLOYMENT_AND_VALIDATION.md) for installation and the privilege boundary, and [architecture](docs/CORE_ARCHITECTURE.md) for the target model.
+| Controller | `linux.uinput` | `linux.uhid.usb` | Emulated audio (opt-in) |
+| --- | --- | --- | --- |
+| DualSense | WIP | WIP | UHID/PipeWire, USB/IP |
+| DualShock 4 | WIP | WIP | UHID/PipeWire, USB/IP |
+| Switch Pro | WIP | WIP | — |
+| Xbox 360 (standard HID, not XInput) | WIP | WIP | UHID/PipeWire, USB/IP |
 
-## Initial controller audio
+- `linux.uinput`: Linux evdev controls through `/dev/uinput`.
+- `linux.uhid.usb`: a HID device with USB bus metadata through `/dev/uhid`. It is
+  not an actual USB device.
+- `linux.usbip.usb-audio`: opt-in composite HID/UAC2 device through a root-owned
+  local broker.
+- `linux.dummy_hcd.usb-hid`: unavailable; creation is rejected before any
+  resources are opened.
 
-DS4, DualSense and standard-HID Xbox360 have creation-time emulated audio via
-UHID/PipeWire (`audio-pipewire`) or local USB/IP/VHCI (`audio-usbip`). The root
-library keeps both features opt-in; the demo enables USB/IP audio and ALSA host
-routing by default for `cargo run -p virtualgamepad-demo`. Add `audio-pipewire`
-to that command to enable UHID/PipeWire audio too. See the
-[audio guide](docs/CONTROLLER_AUDIO.md) for setup, access modes, examples and
-limitations. Controller-matching profiles remain unavailable; sustained native-client
-continuity and the complete sub-20 ms latency matrix are not accepted yet.
+No cell is promoted beyond WIP yet; see the [support matrix](docs/CONTROLLER_SUPPORT.md)
+for the status definitions. Wii Remote, Steam Controller (2026) and Xbox Series
+are planned.
 
-## Servicing controllers
+## Usage
 
-UHID personalities own calibration/feature replies, output validation, report timing, and Switch handshake behavior. Call `service` on `readiness()` and at `next_service_in()`, including while semantic state is unchanged. `commit()` accepts and submits edited state but is not the only service point. Submission is not proof that a host consumer observed the report. `dropped_output_events()` reports optional observation queue overflow. UHID transport identities distinguish repeated creations independently of application correlation IDs; oversized identity strings are rejected rather than truncated.
+```rust
+use virtualgamepad::{create_dualsense, CreationOptions, DualSenseControl, RealizationId};
+let mut pad = create_dualsense(CreationOptions::new(RealizationId::LINUX_UHID_USB))?;
+pad.set_native(DualSenseControl::Cross, true)?;
+pad.commit()?;
+pad.service(&mut |_output| {})?; // keep servicing, even while input is idle
+pad.close();
+```
 
-Curated uinput sessions also require polling while input is idle. They complete
-conventional force-feedback upload/erase requests internally and expose typed
-`ForceFeedbackEvent` observations and replay commands. Applications no longer
-send manual force-feedback replies. See the [ownership contract](docs/architecture-overhaul/decisions/ADR-0006-conventional-feedback.md).
+A controller is a live protocol endpoint: call `service` when its readiness
+descriptor is readable and at `next_service_in()`, even when nothing changed.
+See [`examples/controller_loop.rs`](examples/controller_loop.rs) and the
+[application API guide](docs/APPLICATION_API.md).
 
-Use `CreationOptions::new(RealizationId::LINUX_UINPUT)` or `CreationOptions::new(RealizationId::LINUX_UHID_USB)`. The root API generates fresh session IDs internally. Ambiguous target aliases and `poll_output` are removed from the application contract. Required replies remain controller-owned; applications observe native outputs rather than sending manual replies.
+Features: `audio-pipewire` and `audio-usbip` enable emulated controller audio
+(off by default; see the [audio guide](docs/CONTROLLER_AUDIO.md)). `experimental`
+exposes unstable research interfaces outside the API stability boundary.
 
-See the [application API and migration guide](docs/APPLICATION_API.md),
-[public inventory](docs/architecture-overhaul/API_INVENTORY.md), and
-[current alpha remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
-The [pre-alpha ledger](docs/architecture-overhaul/PRE_ALPHA_STATUS.md) is historical.
-The former broad root surface is available only under `virtualgamepad::experimental`
-with the `experimental` feature, outside the intended alpha stability boundary.
+## Host setup
 
+Building needs no device permissions. Creating controllers needs access to
+`/dev/uinput` or `/dev/uhid`; USB/IP audio needs the administrator-installed
+broker. Inspect a host without changing it:
 
-For explicit DualSense/DS4 USB/UHID recreation, generate a `DualSenseIdentity` or
-`DualShock4Identity`, store its `to_bytes()` in your application, and restore it
-with `from_bytes()`. Pass it to `create_dualsense_with_identity` or
-`create_dualshock4_with_identity`. The pairing identity and UHID `uniq` stay stable;
-transport sessions are fresh. Other targets reject this option. Existing creation
-functions remain ephemeral. See the [identity contract](docs/architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md)
-for consumer-association limits and concurrent-identity policy.
+```bash
+python3 scripts/host-preflight.py all
+```
 
-The [controller support matrix](docs/CONTROLLER_SUPPORT.md) currently marks all
-entries WIP. The ordinary root signature snapshot is frozen; the
-[remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) records
-the alpha gate dispositions and known limitations.
+See [deployment and validation](docs/DEPLOYMENT_AND_VALIDATION.md).
 
-The [alpha remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md)
-records current bounded acceptance; the
-[architecture gate ledger](docs/architecture-overhaul/GATE_STATUS.md) is historical.
-Seven scoped installed broker security/recovery phases passed (#115 closed).
-Native continuity, matching fidelity and Bluetooth remain unqualified.
+## Demo
+
+```bash
+cargo run -p virtualgamepad-demo
+```
+
+The demo creates and drives controllers interactively; see the
+[demo lab guide](docs/DEMO_LAB.md).
 
 ## Development
 
 ```bash
 cargo fmt --all -- --check
-cargo check --locked --workspace --all-targets --all-features
 cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 cargo test --locked --workspace --all-features
-gitleaks detect
 ```
 
-Host access can be inspected without changes using
-`python3 scripts/host-preflight.py all` (or a complete realization ID). Builds do
-not need device permissions. Opt-in creation access, consumer access, and the
-optional gadget broker have separate [deployment requirements](docs/DEPLOYMENT_AND_VALIDATION.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture](docs/CORE_ARCHITECTURE.md)
+and the [decision records](docs/adr/). Alpha 1 planning and evidence records are
+kept in [docs/history/alpha-1](docs/history/alpha-1/README.md).
 
-The [core acceptance matrix](docs/architecture-overhaul/CORE_ACCEPTANCE.md) records
-measured family/provider results. SDL evdev controls and conventional rumble pass
-for DualSense, Switch Pro and Xbox on the recorded profile. DS4 now creates an
-associated gamepad node and touch companion transactionally, retaining both
-contacts and gamepad feedback. Deterministic composition tests pass; production
-SDL discovery, isolated touch consumption and physical fidelity still require
-live acceptance. See the [remediation status](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+## License
 
-Physical reference testing currently targets the available DualSense, Xbox Series
-and Steam Controller hardware. Other families remain best-effort with explicit
-limitations and deterministic/virtual tests. Xbox Series hardware does not
-validate Xbox 360 protocol fidelity. See the
-[physical validation policy](docs/architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
-
-The demo services controllers on background workers even while the window is not
-repainting. Each worker owns its controller; the GUI submits bounded native edits
-and waits for an applied snapshot before accepting another batch. Its output log is bounded; older optional display messages can be
-omitted during UI stalls. Removing a controller stops its worker and closes its
-session independently of the remaining controllers.
-
-For repeatable manual experiments, see the [demo lab guide](docs/DEMO_LAB.md).
-The GUI assigns each controller a session-local controller ID, exposes service timing
-counters, writes state dumps on demand, and supports stop-all cleanup. “Release all
-inputs” uses the acknowledged edit queue; measurements remain separate from physical
-acceptance.
-
-The [historical API refinement record](docs/architecture-overhaul/ALPHA_API_REFINEMENT.md)
-and [migration notes](docs/ALPHA_API_MIGRATION.md) describe the pre-freeze changes.
-
-Audio demo opt-ins and the recorded refinement checkpoint are described in
-[the demo refinement record](docs/architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
-Broader hands-on GUI/audio review remains post-alpha #126.
+AGPL-3.0-only. See [LICENSE](LICENSE).

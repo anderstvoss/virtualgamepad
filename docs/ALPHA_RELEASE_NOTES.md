@@ -58,10 +58,10 @@ limits. The existing unmaintained ttf-parser dependency warning is retained for
 review; no new advisory suppression was added.
 
 Alpha gate dispositions and known limitations are in the
-[remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+[remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
-Review [the historical acceptance handoff](architecture-overhaul/ALPHA_FINAL_REVIEW.md),
-[API disposition](architecture-overhaul/ALPHA_ROOT_API_AUDIT.md),
-[freeze candidate](architecture-overhaul/ALPHA_FREEZE_CANDIDATE.md),
-[quality review](architecture-overhaul/ALPHA_QUALITY_REVIEW.md),
+Review [the historical acceptance handoff](history/alpha-1/ALPHA_FINAL_REVIEW.md),
+[API disposition](history/alpha-1/ALPHA_ROOT_API_AUDIT.md),
+[freeze candidate](history/alpha-1/ALPHA_FREEZE_CANDIDATE.md),
+[quality review](history/alpha-1/ALPHA_QUALITY_REVIEW.md),
 [support](CONTROLLER_SUPPORT.md) and [audio](CONTROLLER_AUDIO.md).

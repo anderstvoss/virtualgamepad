@@ -74,13 +74,13 @@ created by this work.
 
 The DS4 gamepad/contact prototype currently exists only in tests. An interrupted
 live experiment coincided with a reported display-session crash; see
-[EXP-0012](../../architecture-overhaul/experiments/EXP-0012-ds4-compound-interruption.md).
+[EXP-0012](../../history/alpha-1/experiments/EXP-0012-ds4-compound-interruption.md).
 Shared-desktop contact injection must not be repeated as acceptance. Production
 adoption requires isolated consumer validation of both nodes and their cleanup.
 
 ## Required-component failure policy
 
-[ADR-0009](../../architecture-overhaul/decisions/ADR-0009-compound-terminal-failure.md)
+[ADR-0009](../../adr/ADR-0009-compound-terminal-failure.md)
 defines fail-closed ownership for the existing native compound helper. Close
 attempts run in reverse order even after cleanup errors; diagnostics preserve
 those errors without replacing the initiating failure. Repeated close and all
@@ -101,7 +101,7 @@ identity can survive recreation; the creation token must not. Diagnostics expose
 both requested association and an optional observed host path. Verify the kernel
 physical label and ancestry before selecting child event/hidraw nodes. Uinput
 transports prepared physical labels and queries its own kernel sysname. See
-[ADR-0010](../../architecture-overhaul/decisions/ADR-0010-compound-association.md).
+[ADR-0010](../../adr/ADR-0010-compound-association.md).
 This is a native association prerequisite, not the protocol-group scheduler or
 production DS4 split adoption.
 

@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location('inventory', ROOT/'scripts/generate-api-inventory.py')
 inventory = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(inventory)
-BASELINE = ROOT/'docs/architecture-overhaul/ALPHA_API_SNAPSHOT.json'
+BASELINE = ROOT/'docs/api/ALPHA_API_SNAPSHOT.json'
 
 
 def snapshot(doc_root, manifest):

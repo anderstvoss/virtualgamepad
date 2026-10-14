@@ -6,7 +6,7 @@
 
 Applications select an exact primary controller realization. Typed creation options
 explicitly request associated required components; association metadata describes
-the resulting component set. See [ADR-0017](architecture-overhaul/decisions/ADR-0017-primary-realization-and-audio-components.md).
+the resulting component set. See [ADR-0017](adr/ADR-0017-primary-realization-and-audio-components.md).
 
 | ID | Mechanism | Implemented meaning |
 | --- | --- | --- |
@@ -33,7 +33,7 @@ The UHID provider handles CREATE2, INPUT2, output, GET/SET requests and replies,
 
 Input/output/feature classes remain distinct. Logical payloads exclude a numbered report ID; serialization includes it once. Unnumbered reports use no logical ID. START flags are the runtime authority for numbering. STOP, START, consumer OPEN/CLOSE, and terminal library close have distinct meanings. Each request receives a session-scoped ordinal independently of a reusable kernel transaction ID.
 
-The uinput path retains transactional evdev encoding. Curated controller sessions own conventional force-feedback acceptance, 64 stored effects, bounded completion retries and typed playback observations; uinput only decodes native ABI fields and executes replies. Applications no longer acknowledge curated upload/erase callbacks. See [ADR-0006](architecture-overhaul/decisions/ADR-0006-conventional-feedback.md). The earlier compiled dummy_hcd startup prototype remains in deterministic tests, but every construction entrypoint now rejects its incomplete request contract. Gate G preparation cannot enable that transport. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
+The uinput path retains transactional evdev encoding. Curated controller sessions own conventional force-feedback acceptance, 64 stored effects, bounded completion retries and typed playback observations; uinput only decodes native ABI fields and executes replies. Applications no longer acknowledge curated upload/erase callbacks. See [ADR-0006](adr/ADR-0006-conventional-feedback.md). The earlier compiled dummy_hcd startup prototype remains in deterministic tests, but every construction entrypoint now rejects its incomplete request contract. Gate G preparation cannot enable that transport. The USB report encoders remain shared; a second mutable broker personality must not be introduced.
 
 ## State, scheduling, and delivery
 
@@ -59,7 +59,7 @@ HID audio controls alone do not create PCM endpoints. Opt-in emulated audio is i
 
 The independent private protocol corpus is pinned by `protocol-corpus.rev` (a revision file, not a submodule) and checked out locally at `protocol-corpus/` only for corpus validation. Records distinguish source support, synthetic fixtures, compatibility policy, physical observations, and conflicts. Checked-in test artifacts carry revision and input hashes. Ordinary Cargo builds require no corpus checkout, credentials, or network access to that repository.
 
-Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](architecture-overhaul/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
+Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](history/alpha-1/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
 
 Descriptor-based callers must watch readability and add writability while `wants_write()` is true, as well as servicing `next_service_in()`. This retries a blocked required reply before its terminal deadline. Polling callers may continue regular bounded service.
 
@@ -69,7 +69,7 @@ controller-owned compound gamepad/touch presentation must be validated before
 that acceptance gap closes. The provider must not classify, drop or reroute
 controller controls implicitly. Native button codes and mapping revisions remain
 controller-owned; Xbox's legacy assignment differs from Sony/Nintendo. See
-[EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).
+[EXP-0011](history/alpha-1/experiments/EXP-0011-evdev-sdl.md).
 
 The demo runs one service worker per controller, including Xbox and evdev.
 Workers poll required output while the UI is idle, honor earlier protocol service
@@ -87,7 +87,7 @@ queued input at the next worker cycle. Removal joins the closed owner.
 This is not a hard realtime guarantee: OS scheduling and provider I/O still matter.
 Repaint timing is purely a display concern. Physical reference availability and
 best-effort family scope are recorded in the
-[validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md).
+[validation policy](PHYSICAL_VALIDATION_POLICY.md).
 
 ### Service ownership and optional observers
 
@@ -116,7 +116,7 @@ instance suffix, personality, semantic state, timers and request queues are new.
 Existing creation functions retain their fresh policy. Providers do not interpret
 identity, storage remains caller-owned, and unsupported restoration targets fail
 before open. This is the deterministic contract in
-[ADR-0008](architecture-overhaul/decisions/ADR-0008-explicit-sony-identity.md), not a
+[ADR-0008](adr/ADR-0008-explicit-sony-identity.md), not a
 claim that every consumer preserves association after reconnect. Compound identity
 and other realization policies remain unimplemented.
 
@@ -125,7 +125,7 @@ all inputs transactionally without resetting identity, battery metadata, protoco
 state or host-owned outputs. Optional output order is service-observation order,
 not cross-device hardware chronology. All handles expose retained transport and
 cleanup diagnostics; terminal library state alone does not prove host removal.
-See [ADR-0011](architecture-overhaul/decisions/ADR-0011-neutralization-and-observation.md).
+See [ADR-0011](adr/ADR-0011-neutralization-and-observation.md).
 
 ## Post-106 extension seams
 
@@ -133,19 +133,19 @@ Native HID specifications carry a complete realization target. The shared UHID
 provider can be configured for `linux.uhid.usb` or `linux.uhid.bluetooth`, validating
 exact selection and controller-owned bus metadata before preflight/open. Existing
 curated controllers retain their USB manifests. Bluetooth metadata over UHID is
-not radio/link/pairing support. See [ADR-0012](architecture-overhaul/decisions/ADR-0012-multiple-uhid-targets.md).
+not radio/link/pairing support. See [ADR-0012](adr/ADR-0012-multiple-uhid-targets.md).
 
 `gr_hid::Runtime::update_protocol` supports transactional caller-driven protocol
 configuration. It clones, edits and validates before installation, rejects closed
 sessions, and preserves accepted report/reply bytes. Controller-owned attachments
 and bounded status queues remain personality concerns, separate from compound
-host components. [ADR-0014](architecture-overhaul/decisions/ADR-0014-protocol-edits.md)
+host components. [ADR-0014](adr/ADR-0014-protocol-edits.md)
 is supported by a synthetic test-only Wii-like prototype.
 
 A synthetic resource experiment establishes a controller-owned typed value and
 explicit snapshot/discard pattern after terminal cleanup; no generic memory API
 or filesystem helper is introduced. Implicit teardown never persists resources.
-See [ADR-0013](architecture-overhaul/decisions/ADR-0013-persistent-resources.md).
+See [ADR-0013](adr/ADR-0013-persistent-resources.md).
 
 Native independent controls, target visibility and consumer mapping are separate
 facts. Unknown raw visibility cannot be inferred from macro functionality. The

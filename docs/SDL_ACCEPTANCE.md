@@ -89,12 +89,12 @@ This services the production personality, checks its process-owned playstation
 binding and input children, and verifies removal after repeated close. It does
 not launch SDL or Steam, alter permissions, or substitute for the acceptance
 steps above. Three repetitions passed on the recorded host; see
-[EXP-0006](architecture-overhaul/experiments/EXP-0006-dualsense-live-startup.md).
+[EXP-0006](history/alpha-1/experiments/EXP-0006-dualsense-live-startup.md).
 
 A test-only USB/virtual-bus baseline comparison is also available via
 `cargo test -p gr-curated-controllers controlled_bus_startup_probe -- --ignored --nocapture`.
 Its Linux enumeration results are documented in
-[EXP-0007](architecture-overhaul/experiments/EXP-0007-bus-baseline-comparison.md).
+[EXP-0007](history/alpha-1/experiments/EXP-0007-bus-baseline-comparison.md).
 It submits changing motion but does not measure SDL sensor events or Steam behavior.
 
 ## Automated consumer assertions
@@ -108,7 +108,7 @@ the ignored Rust acceptance runner verifies typed rumble/RGB output and device
 cleanup separately. Consumer close in probe JSON does not mean the virtual device
 has been destroyed.
 
-See [EXP-0008](architecture-overhaul/experiments/EXP-0008-sdl-core.md) for the
+See [EXP-0008](history/alpha-1/experiments/EXP-0008-sdl-core.md) for the
 baseline/rewrite measurements, private build recipe and fault tests. These results
 do not promote Steam or physical-fidelity status.
 
@@ -124,7 +124,7 @@ and RGB feedback separately from successful SDL submissions.
 The shared ignored integration harness in `dualsense_uhid_live.rs` selects the
 exact run-owned hidraw node for Sony/Switch and event node for standard-HID Xbox.
 It performs three sequential ten-second runs and verifies repeated close and
-removal after each. See [family results](architecture-overhaul/experiments/EXP-0009-family-sdl.md).
+removal after each. See [family results](history/alpha-1/experiments/EXP-0009-family-sdl.md).
 No SDL dependency is added to ordinary Cargo builds.
 
 The evdev `--gamepad-rumble-script` profile requires standard controls and rumble,
@@ -133,4 +133,4 @@ with the Rust parent verifying typed playback magnitudes. It scopes
 match counts to explain discovery failures. DS4 currently fails gamepad discovery
 because its combined touch node is classified as a touchscreen; do not suppress
 touch capabilities or change global udev policy to count a pass. See
-[EXP-0011](architecture-overhaul/experiments/EXP-0011-evdev-sdl.md).
+[EXP-0011](history/alpha-1/experiments/EXP-0011-evdev-sdl.md).

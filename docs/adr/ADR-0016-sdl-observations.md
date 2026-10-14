@@ -1,7 +1,7 @@
 # ADR-0016 — Versioned SDL consumer comparison
 
 Accepted for the harness after
-[EXP-0022](../experiments/EXP-0022-sdl-differential.md); source claims are adopted from
+[EXP-0022](../history/alpha-1/experiments/EXP-0022-sdl-differential.md); source claims are adopted from
 published corpus main. Physical references are separate acceptance work.
 
 Reuse the existing exact-path C probe for physical and virtual observations.

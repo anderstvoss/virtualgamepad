@@ -1,6 +1,6 @@
 # ADR-0012 — Exact target configuration for shared UHID
 
-Accepted after [EXP-0018](../experiments/EXP-0018-multi-uhid.md).
+Accepted after [EXP-0018](../history/alpha-1/experiments/EXP-0018-multi-uhid.md).
 
 Carry the complete realization ID in native HID specifications. Configure each
 UHID provider for one supported exact ID. Validate selection/capability/native

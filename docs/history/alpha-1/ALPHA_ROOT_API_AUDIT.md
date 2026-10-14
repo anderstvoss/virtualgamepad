@@ -16,7 +16,7 @@ maintainer's GUI findings and reviewed approval are recorded in
 controller, realization and audio contracts. Earlier inventories are inputs, not
 approval of the current contract. No hard freeze or release is declared.
 
-The regenerated [inventory](API_INVENTORY.md) lists all 110 ordinary root items,
+The regenerated [inventory](../../api/API_INVENTORY.md) lists all 110 ordinary root items,
 including re-exported methods, public fields, associated constants and concrete/
 auto trait implementations. Group decisions below apply to every member of their
 listed inventory groups. Supporting crates and `experimental` remain unstable SPI.

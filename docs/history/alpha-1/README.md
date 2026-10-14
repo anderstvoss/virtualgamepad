@@ -1,5 +1,10 @@
 # Architecture overhaul execution kit
 
+> **Alpha 1 history (moved 2026-10-14 from `docs/architecture-overhaul/`).**
+> These records are frozen. Current state is in [STATUS.md](../../STATUS.md);
+> decision records now live in [docs/adr](../../adr/). Paths quoted in code
+> spans below keep their original `docs/architecture-overhaul/` form.
+
 > **Historical architecture execution kit.** Current bounded alpha dispositions
 > and deferred work are in [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
 > The rewrite plan and evidence below retain their recorded scope.
@@ -21,7 +26,7 @@ Historical status: reviewed plan committed as `e3bd06f`; corpus and deterministi
 - [Gate status](GATE_STATUS.md): historical A–P execution evidence; preserve its dated verdicts.
 - [Initial work queue](INITIAL_WORK_QUEUE.md): concrete first deliverables and completion criteria.
 - [Host readiness](HOST_READINESS.md): environment survey to complete before live experiments.
-- [Settled decisions](decisions/ADR-0001-settled-scope.md): accepted product constraints, separated from untested technical hypotheses.
+- [Settled decisions](../../adr/ADR-0001-settled-scope.md): accepted product constraints, separated from untested technical hypotheses.
 - [Experiment template](templates/EXPERIMENT.md) and [ADR template](templates/ADR.md): records for evidence and resulting decisions.
 - [Experiment index](experiments/README.md): where sanitized, reproducible run summaries belong.
 
@@ -33,4 +38,4 @@ No blanket implementation, publishing, host-policy, or hardware-operation permis
 
 ## Reassessment — 2026-09-05
 
-Read [context reassessment](CONTEXT_REASSESSMENT.md), [branch review](BRANCH_REVIEW.md), and [early-development rewrite ADR](decisions/ADR-0002-early-development-rewrite.md). These reconcile newly supplied historical notes, establish memory authority limits, and remove unnecessary API/dual-runtime compatibility constraints. Source context remains unchanged in its original local files; it is not copied into the normative plan.
+Read [context reassessment](CONTEXT_REASSESSMENT.md), [branch review](BRANCH_REVIEW.md), and [early-development rewrite ADR](../../adr/ADR-0002-early-development-rewrite.md). These reconcile newly supplied historical notes, establish memory authority limits, and remove unnecessary API/dual-runtime compatibility constraints. Source context remains unchanged in its original local files; it is not copied into the normative plan.

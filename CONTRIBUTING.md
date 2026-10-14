@@ -3,9 +3,15 @@
 Thanks for your interest. This project is in early WIP — expect APIs to
 shift. Please read this file end-to-end before opening a PR.
 
-## Architecture overhaul
+## Where things are documented
 
-For protocol/corpus rewrite work, begin with the [architecture execution kit](docs/architecture-overhaul/README.md). Its gate register owns implementation sequencing; its status ledger distinguishes planned work from validated results. Existing repository and PR rules still apply.
+- [Status](docs/STATUS.md): current dispositions and known limitations.
+- [Architecture](docs/CORE_ARCHITECTURE.md) and [decision records](docs/adr/):
+  the current model. Record a significant technical decision as a new ADR rather
+  than rewriting an accepted one; mark superseded parts explicitly.
+- [Support matrix](docs/CONTROLLER_SUPPORT.md): status definitions and promotion rules.
+- [Alpha 1 history](docs/history/alpha-1/README.md): the architecture rewrite plan,
+  gate ledgers, experiments and evidence. Historical; do not extend it for new work.
 
 ## Development setup
 

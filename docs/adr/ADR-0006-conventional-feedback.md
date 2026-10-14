@@ -49,7 +49,7 @@ instead of ABI bytes. Existing HID behavior is unchanged.
 Fake-provider tests cover all families, exact positive/negative replies, repeated
 polls, playback/stop, all effect slots, updates, same-ID independent sessions,
 backpressure, exhausted retries, partial reads, overflow, uncertain completion and
-terminal cleanup. [EXP-0010](../experiments/EXP-0010-evdev-feedback.md) records the
+terminal cleanup. [EXP-0010](../history/alpha-1/experiments/EXP-0010-evdev-feedback.md) records the
 separate live kernel evidence. This does not establish complete SDL evdev parity,
 physical motor fidelity, trigger synthesis or a new realization.
 

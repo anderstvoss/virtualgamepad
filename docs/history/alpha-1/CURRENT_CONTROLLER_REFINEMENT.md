@@ -1,12 +1,12 @@
 # Current-controller refinement checkpoint
 
 > **Historical checkpoint.** Current bounded alpha dispositions are in
-> [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+> [alpha remediation status](ALPHA_REMEDIATION_STATUS.md).
 > The implementation and acceptance statements below describe their recorded
 > revision, not current demo or release status.
 
 Current pre-alpha API refinement is tracked in
-[the execution record](architecture-overhaul/ALPHA_API_REFINEMENT.md).
+[the execution record](ALPHA_API_REFINEMENT.md).
 Emulated audio is implemented and opt-in; USB/IP remains WIP pending installed
 security/recovery acceptance. Native-client continuity and matching fidelity remain
 open. The demo does not yet enable audio; its audio integration and actual
@@ -61,5 +61,5 @@ cases remain skipped. DS4 touch/compound isolation, physical reference parity,
 Switch compressed-rumble fidelity and backend-specific consumer comparisons
 remain named follow-ups, not fabricated passes.
 
-The [active ledger](architecture-overhaul/PRE_ALPHA_STATUS.md) owns the refinement
+The [active ledger](PRE_ALPHA_STATUS.md) owns the refinement
 checkpoint and release sequence. The final API/quality passes have not occurred.
