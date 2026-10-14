@@ -44,7 +44,7 @@ introduced to satisfy the test.
 
 ## Assessment and next work
 
-[ADR-0006](../decisions/ADR-0006-conventional-feedback.md) defines bounded
+[ADR-0006](../../../adr/ADR-0006-conventional-feedback.md) defines bounded
 controller-owned completion and the public API migration. Provider ABI parsing
 is generic, and native libc structures replace fixed-size effect byte buffers.
 The demo reports playback activity rather than inferring it from storage uploads.

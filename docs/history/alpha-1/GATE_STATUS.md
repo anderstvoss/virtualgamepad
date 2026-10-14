@@ -41,30 +41,30 @@ This is the current status ledger. Definitions and dependencies live in [the gat
 
 | Gate | Question | Execution batch | Status | Owner | EXP / ADR evidence |
 | --- | --- | --- | --- | --- | --- |
-| A | Corpus evidence model | E1 | passed | Codex | [EXP-0001](experiments/EXP-0001-corpus-seed.md), [ADR-0003](decisions/ADR-0003-corpus-boundary.md); source/synthetic scope only |
+| A | Corpus evidence model | E1 | passed | Codex | [EXP-0001](experiments/EXP-0001-corpus-seed.md), [ADR-0003](../../adr/ADR-0003-corpus-boundary.md); source/synthetic scope only |
 | B | Controlled bus/host comparison | E3 | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux baseline/bus startup comparison passes; controlled consumer/driver evidence outstanding |
-| C | Stateful synchronous protocol contract | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
-| D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
+| C | Stateful synchronous protocol contract | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](../../adr/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
+| D | HID framing boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](../../adr/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | E | Compound UHID usefulness | E6 compound | not_run | unassigned | None |
 | F | Host audio coherence | E6 host audio | blocked | Codex | [EXP-0023](experiments/EXP-0023-controller-audio.md): short PipeWire checks pass; sustained failures and routing/fidelity work remain |
 | G | Broker capability/startup/latency | Early probe; E5 replacement | blocked | Codex | [EXP-0004](experiments/EXP-0004-gadget-capability.md); source API lacks full control metadata/completion, live profile unprovisioned |
 | H | USB Audio implementation depth | E6 USB audio | blocked | Codex | [EXP-0025](experiments/EXP-0025-local-usbip-audio.md): scoped DualSense stock-VHCI duplex feasibility; production implemented; full acceptance remains |
-| I | Realization variant granularity | Primary + explicit components | passed | Codex | [ADR-0017](decisions/ADR-0017-primary-realization-and-audio-components.md): architecture/deterministic scope only |
-| J | Required replies and deadlines | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
-| K | Corpus generation boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
+| I | Realization variant granularity | Primary + explicit components | passed | Codex | [ADR-0017](../../adr/ADR-0017-primary-realization-and-audio-components.md): architecture/deterministic scope only |
+| J | Required replies and deadlines | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](../../adr/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
+| K | Corpus generation boundary | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](../../adr/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | L | BT personality over UHID | E6 BT protocol | not_run | unassigned | None |
 | M | Actual BT realization viability | E6 BT bus after L | not_run | unassigned | None |
 | N | Curated compatibility variants | Affected E6 family | not_run | unassigned | None |
-| O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](decisions/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
+| O | Autonomous cadence and delivery | E2 | passed | Codex | [EXP-0002](experiments/EXP-0002-protocol-contract.md), [ADR-0004](../../adr/ADR-0004-synchronous-hid-session.md); deterministic prototype scope |
 | P | Specialized driver behavior | E3 with B | blocked | Codex | [EXP-0003](experiments/EXP-0003-uhid-migration.md); Linux baseline/bus startup comparison passes; controlled consumer/driver evidence outstanding |
 
 ## Post-106 gates
 
 | Gate | Status | Evidence and boundary |
 | --- | --- | --- |
-| Q | passed | [EXP-0018](experiments/EXP-0018-multi-uhid.md), [ADR-0012](decisions/ADR-0012-multiple-uhid-targets.md): deterministic exact-target/CREATE2 scope only |
-| R | passed | [EXP-0019](experiments/EXP-0019-persistent-resources.md), [ADR-0013](decisions/ADR-0013-persistent-resources.md): synthetic memory lifecycle, not file durability |
-| S | passed | [EXP-0020](experiments/EXP-0020-internal-topology.md), [ADR-0014](decisions/ADR-0014-protocol-edits.md): synthetic Wii-like topology, not production support |
+| Q | passed | [EXP-0018](experiments/EXP-0018-multi-uhid.md), [ADR-0012](../../adr/ADR-0012-multiple-uhid-targets.md): deterministic exact-target/CREATE2 scope only |
+| R | passed | [EXP-0019](experiments/EXP-0019-persistent-resources.md), [ADR-0013](../../adr/ADR-0013-persistent-resources.md): synthetic memory lifecycle, not file durability |
+| S | passed | [EXP-0020](experiments/EXP-0020-internal-topology.md), [ADR-0014](../../adr/ADR-0014-protocol-edits.md): synthetic Wii-like topology, not production support |
 | T | blocked | [EXP-0021](experiments/EXP-0021-control-exposure.md): representation and scoped Edge mapping/parser research pass; contrasting exposure/remap-only evidence pending; corpus claims adopted |
 | U | passed | [EXP-0022](experiments/EXP-0022-sdl-differential.md): harness/schema and bounded source-derived backend identification pass; source claims adopted from published corpus main `a1789d6`. Physical acceptance is separate |
 | Production Wii Remote | blocked | Requires explicit later maintainer authorization even after Q/R/S; no package, manifest or demo enablement |
@@ -151,7 +151,7 @@ acceptance exposed and fixed unsigned-axis/routing errors. Current evdev
 acceptance, remaining family concurrency/failure tests and Switch rumble fidelity
 remain outstanding. [EXP-0010](experiments/EXP-0010-evdev-feedback.md) closes
 the measured conventional FF completion path for all four families;
-[ADR-0006](decisions/ADR-0006-conventional-feedback.md) records bounded ownership
+[ADR-0006](../../adr/ADR-0006-conventional-feedback.md) records bounded ownership
 and the callback API migration. Full evdev SDL parity remains outstanding.
 G stays blocked on both reserved setup and the recorded protocol-interface gap;
 no kernel replacement or broad provisioning was attempted.
@@ -198,7 +198,7 @@ The demo now requests repaint at an earlier service deadline instead of always
 waiting 4 ms. This preserves bounded polling fallback; it does not establish
 hard realtime scheduling or service while the GUI thread is blocked.
 
-[Physical validation policy](PHYSICAL_VALIDATION_POLICY.md) records the available
+[Physical validation policy](../../PHYSICAL_VALIDATION_POLICY.md) records the available
 DualSense, Xbox Series and Steam Controller references. Other families are
 best-effort; absent physical hardware does not block independent development.
 DualSense physical fidelity, H audio topology and L BT fixtures remain separate
@@ -225,7 +225,7 @@ checks cover busy editing, ID wrap/reuse and measurement records.
 
 Read-only preflight on 6.12.107 still finds UHID/uinput creation access ready and
 consumer access unvalidated; gadget ConfigFS availability, UDC authorization and
-broker socket are missing. No host changes were made. [The lab guide](../DEMO_LAB.md)
+broker socket are missing. No host changes were made. [The lab guide](../../DEMO_LAB.md)
 provides the next controlled experiments for B/P, isolated compound touch, G and
 F/H/L/M. No gate is promoted from GUI tooling or socket reachability.
 
@@ -277,7 +277,7 @@ mutex limitation is removed. No live GUI/touch or physical claim follows; those
 acceptance boundaries and Gate G remain unchanged. Persistent typed identity and
 logical compound failure/association are the next independent architecture work.
 
-[ADR-0007](decisions/ADR-0007-demo-service-ownership.md) records the integration
+[ADR-0007](../../adr/ADR-0007-demo-service-ownership.md) records the integration
 contract and its explicit input, rejection and timing limits.
 
 ### Pinned compatibility references and physical framing
@@ -293,7 +293,7 @@ No Gate G, isolated touch, full B/P, audio or Bluetooth acceptance is promoted.
 
 ### Explicit Sony identity restoration
 
-[ADR-0008](decisions/ADR-0008-explicit-sony-identity.md) separates controller-typed
+[ADR-0008](../../adr/ADR-0008-explicit-sony-identity.md) separates controller-typed
 persistent pairing identity from fresh transport/session state for USB/UHID.
 All-byte flag validation, unsupported-target rejection, stable/fresh label tests,
 neutral recreation and pending-reply cancellation pass deterministically.
@@ -337,7 +337,7 @@ selection and cleanup. Eden/Steam retesting remains separate and pending.
 The [landing and alpha plan](LANDING_AND_ALPHA_PLAN.md) prioritizes current-core
 hardening and review in #106. Remaining extension gates retain their blockers and
 must pass before dependent features ship; they are not silently required to add
-new controllers before the core can land. The [support matrix](../CONTROLLER_SUPPORT.md)
+new controllers before the core can land. The [support matrix](../../CONTROLLER_SUPPORT.md)
 starts every cell at WIP, independently of experiment-level passes. Alpha
 versioning and new-controller issues follow landing; no merge or release occurred.
 

@@ -36,7 +36,7 @@ release workflow, host permission or physical-device change is made. The unpubli
   live in supporting-crate SPI, which the normal root does not export. Small
   numeric/spatial leaf values remain ordinary values. GUI pixel sizing is renderer
   policy and has deterministic label/viewport regression coverage.
-- [ADR-0017](decisions/ADR-0017-primary-realization-and-audio-components.md) defines
+- [ADR-0017](../../adr/ADR-0017-primary-realization-and-audio-components.md) defines
   exact primary realization plus explicit required associated components.
 - Component kinds are typed. HID requested identities do not contain audio node
   or ALSA card identities. Endpoint selectors are valid only for their creation.

@@ -1,7 +1,7 @@
 # ADR-0013 — Controller-owned resource values and explicit snapshots
 
 Accepted for the tested lifecycle pattern after
-[EXP-0019](../experiments/EXP-0019-persistent-resources.md).
+[EXP-0019](../history/alpha-1/experiments/EXP-0019-persistent-resources.md).
 
 A protocol personality may own typed persistent resource values. Validate import
 before opening its provider, isolate protocol clones, and apply host writes once

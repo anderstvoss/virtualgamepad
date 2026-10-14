@@ -5,7 +5,7 @@ Sustained audio continuity and latency are not validated in alpha; occasional au
 This is an opt-in alpha implementation with bounded functional acceptance, not
 a completed fidelity or latency qualification. The ordinary-root API review and
 110-item snapshot are complete. Existing constructors keep audio disabled by
-default. Current dispositions are in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+default. Current dispositions are in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 | Family | Emulated playback / microphone channels | Controller matching |
 | --- | --- | --- |
@@ -74,7 +74,7 @@ On Debian these are provided by `libpipewire-0.3-dev`, `libspa-0.2-dev`,
 
 For UHID, use the existing [UHID access setup](DEPLOYMENT_AND_VALIDATION.md) and
 a running caller-session PipeWire server. For USB, follow the
-[explicit broker installation procedure](architecture-overhaul/USB_AUDIO_STOCK_LINUX.md#explicit-audio-broker-installation-and-ordinary-user-probe).
+[explicit broker installation procedure](history/alpha-1/USB_AUDIO_STOCK_LINUX.md#explicit-audio-broker-installation-and-ordinary-user-probe).
 Administrator-selected VHCI ports must be reserved for this broker. Provisioning
 is separate from ordinary-user controller creation. The lab executable is not the
 installed production worker. Do not grant broad sound-device or sudo access.
@@ -111,9 +111,9 @@ microphone routing/fidelity and physical-versus-virtual equivalence remain open.
 Matching profiles stay unavailable. Further physical tests require operator
 readiness; adaptive-trigger actuation is excluded.
 
-The [execution ledger](architecture-overhaul/AUDIO_IMPLEMENTATION.md),
-[USB acceptance record](architecture-overhaul/USB_AUDIO_STOCK_LINUX.md) and
-[physical evidence](architecture-overhaul/experiments/EXP-0023-controller-audio.md)
+The [execution ledger](history/alpha-1/AUDIO_IMPLEMENTATION.md),
+[USB acceptance record](history/alpha-1/USB_AUDIO_STOCK_LINUX.md) and
+[physical evidence](history/alpha-1/experiments/EXP-0023-controller-audio.md)
 retain successful and failed runs. GUI integration, API review and the separate
 quality review have landed. Broader hands-on feedback is post-alpha #126;
 exact release-SHA qualification and authorized tagging remain outstanding.
@@ -138,7 +138,7 @@ service detects required audio failure without promising a fixed polling cadence
 USB/IP remains opt-in WIP despite the seven scoped broker security/recovery
 phases passing (#115 closed); streaming and full routing remain deferred.
 See [migration](ALPHA_API_MIGRATION.md) and the
-[current remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+[current remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 ## Current release evidence boundary
 
@@ -149,7 +149,7 @@ assertion is relaxed. Three measured 60-second trials per sustained cell and
 duplex/mixed ownership remain post-alpha requirements (#143/#145).
 VM observations cannot establish native
 host latency or physical microphone fidelity. See
-[the remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+[the remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 Host-device discovery belongs to the GUI coordinator, with one active command
 and one coalesced refresh, generation filtering, a two-second per-command deadline

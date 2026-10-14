@@ -1,6 +1,6 @@
 # Deployment and validation
 
-Current bounded alpha dispositions are recorded in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+Current bounded alpha dispositions are recorded in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 Seven scoped installed broker security/recovery phases passed (#115 closed);
 USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
 deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
@@ -94,7 +94,7 @@ indicators show host activity.
 The retained ignored gadget tests describe the earlier prototype, not current
 successful construction. Do not blanket-enable them. Require the deterministic
 rejection regressions and installed candidate rejection instead. Installed USB/IP
-audio acceptance remains a separate gate; see [the remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+audio acceptance remains a separate gate; see [the remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 Root-only integration tests are intentionally ignored in normal test runs.
 DummyHcd validation covers USB enumeration, HID feature exchange, motion input,
@@ -107,7 +107,7 @@ behavior remain controller-specific acceptance criteria. Bluetooth realizations 
 
 Applications must call `service` on controller readiness and the next deadline even with unchanged semantic state. Required GET/SET requests are handled internally; user reply callbacks are not part of startup. A malformed request is rejected, and a transport whose delivery becomes uncertain is closed. Optional notifications can overflow only with an explicit dropped-event count.
 
-The broker still uses its compiled startup feature path. Gate G must prove staged startup, control metadata/completion support, and latency before replacing it with unprivileged dynamic protocol handling. Do not infer gadget control-request parity from UHID tests. See [host prerequisites](architecture-overhaul/HOST_READINESS.md) and the [reviewable provisioning proposal](architecture-overhaul/HOST_PROVISIONING.md).
+The broker still uses its compiled startup feature path. Gate G must prove staged startup, control metadata/completion support, and latency before replacing it with unprivileged dynamic protocol handling. Do not infer gadget control-request parity from UHID tests. See [host prerequisites](history/alpha-1/HOST_READINESS.md) and the [reviewable provisioning proposal](history/alpha-1/HOST_PROVISIONING.md).
 
 ## Permission boundaries
 
@@ -128,7 +128,7 @@ reviewed rather than silently overwritten. The VM experiments use temporary
 ACLs instead of persistent group enrollment.
 
 For access lost after reboot, see the
-[UHID research review and resolution plan](architecture-overhaul/UHID_REBOOT_ACCESS_PLAN.md).
+[UHID research review and resolution plan](history/alpha-1/UHID_REBOOT_ACCESS_PLAN.md).
 It separates registration, persistent authorization and temporary helper leases,
 and defines the reboot evidence required before claiming a fix.
 
@@ -164,7 +164,7 @@ not a validated default. Test it on the reserved UDC after administrator setup,
 then remove CAP_SYS_ADMIN from the default only when that test passes. No
 permission increase can restore missing gadget control metadata/completion.
 
-An optional [local development helper](architecture-overhaul/LOCAL_HOST_HELPER.md)
+An optional [local development helper](history/alpha-1/LOCAL_HOST_HELPER.md)
 provides temporary creation-device ACLs, approved module loading, and configured
 root-owned validation jobs. It is installed once by an administrator and is not a
 product dependency or a general passwordless-sudo grant.

@@ -134,7 +134,7 @@ def render(root):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--doc-root', type=Path, default=Path('target/doc/virtualgamepad'))
-    parser.add_argument('--output', type=Path, default=Path('docs/architecture-overhaul/API_INVENTORY.md'))
+    parser.add_argument('--output', type=Path, default=Path('docs/api/API_INVENTORY.md'))
     parser.add_argument('--check', action='store_true', help='fail if the saved inventory differs; do not write')
     parser.add_argument('--compare-doc-root', type=Path,
                         help='compare ordinary declarations/traits with another rustdoc root; do not write')

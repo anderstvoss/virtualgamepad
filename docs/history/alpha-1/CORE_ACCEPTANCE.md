@@ -4,7 +4,7 @@ The agreed review threshold is deterministic tests plus Linux and SDL evidence.
 Steam consumer and physical fidelity remain separate. The available physical
 references are DualSense, Xbox Series and Steam Controller; all other families
 are best-effort for now. Missing reference hardware does not block independent
-implementation or virtual testing. See [physical validation policy](PHYSICAL_VALIDATION_POLICY.md)
+implementation or virtual testing. See [physical validation policy](../../PHYSICAL_VALIDATION_POLICY.md)
 for the precise DualSense dependencies and model distinctions. No ignored test counts as a pass.
 This matrix does not promote manifest support levels. Earlier UHID/SDL results
 were recorded on kernel 6.12.105; EXP-0010 uses the currently running 6.12.107.
@@ -78,7 +78,7 @@ and PR readiness decision.
 USB framing/GET/topology observations. Broken triggers and stick drift preclude
 affected mechanical-fidelity claims; DS4 remains source-backed without hardware.
 
-[ADR-0008](decisions/ADR-0008-explicit-sony-identity.md) adds explicit DualSense/DS4
+[ADR-0008](../../adr/ADR-0008-explicit-sony-identity.md) adds explicit DualSense/DS4
 USB/UHID identity restoration with deterministic fresh-session regressions. Live
 reconnect and consumer association remain pending. The physical DualSense is now
 unplugged; prior EXP-0015 observations remain scoped to that recorded run.

@@ -2,6 +2,11 @@
 
 Status: accepted product/design constraints from the September 4 planning discussion; not an experimental result.
 
+> **Partially superseded (2026-10-14):** the corpus is no longer a Git submodule.
+> PR #152 replaced it with the one-line `protocol-corpus.rev` pin, read only by CI,
+> so Git consumers need no corpus access. The corpus remains an independent
+> repository and is still not a runtime controller definition language.
+
 ## Decision
 
 - Keep virtualgamepad a standalone curated Rust library, independent of Gamepad Manager slot/routing policy.

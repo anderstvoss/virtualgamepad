@@ -6,7 +6,7 @@ Generated from Linux all-feature rustdoc. Supporting crates and
 This is the post-GUI working inventory; no hard freeze is declared.
 Ordinary-root declarations are available with every feature set on all
 compiling platforms. Provider creation is separately gated by Linux,
-features and host prerequisites; see [the audit](ALPHA_ROOT_API_AUDIT.md).
+features and host prerequisites; see [the audit](../history/alpha-1/ALPHA_ROOT_API_AUDIT.md).
 
 ## Review decisions
 

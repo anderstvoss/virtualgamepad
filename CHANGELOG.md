@@ -6,9 +6,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Proposed Git alpha `0.1.0-alpha.1`
+### Changed
 
-- Proposed source tag only; no tag/release is published by this closeout. The Git
+- Documentation reorganized after Alpha 1: decision records moved to `docs/adr/`,
+  the API snapshot and inventory to `docs/api/`, and Alpha 1 planning, gate and
+  evidence records to `docs/history/alpha-1/`. Added `docs/STATUS.md` and a
+  user-facing README.
+
+## [0.1.0-alpha.1] - 2026-10-14
+
+- Git-only pre-release on `ae9e87b`. The Git
   tag `0.1.0-alpha.1` carries crate version `0.1.0` (`publish = false`). Consumers
   should pin by tag or full SHA; no crates.io publication is planned.
 - Reviewed 110-item ordinary-root API for DualSense, DualShock 4, Switch Pro and
@@ -28,8 +35,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The private protocol corpus is pinned by `protocol-corpus.rev` instead of a Git
   submodule, so Git consumers of the tag need no access to the corpus.
 - See [release notes](docs/ALPHA_RELEASE_NOTES.md) and
-  [current dispositions](docs/architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
-  Final merge-SHA qualification and separate tag authorization remain pending.
+  [current dispositions](docs/history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 
 ### Security
 

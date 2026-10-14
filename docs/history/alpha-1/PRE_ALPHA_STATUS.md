@@ -50,7 +50,7 @@ first matching profile. Audio GUI integration remains a separate later PR.
 
 | Package | Status | Evidence / exit |
 | --- | --- | --- |
-| Baseline and contract | Complete | Baseline above; [API inventory](API_INVENTORY.md), [application contract](../APPLICATION_API.md) |
+| Baseline and contract | Complete | Baseline above; [API inventory](../../api/API_INVENTORY.md), [application contract](../../APPLICATION_API.md) |
 | Application API contraction | Implemented; preliminary | Opaque creation options; controller handles, errors, diagnostics, identity and component metadata in root; old machinery under opt-in experimental module |
 | Consumer and exposure stress | Deterministic scope complete | Root consumer lifecycle tests; executable negative/positive doctests; existing Gate T, memory, topology and compound regressions; benchmark conclusions below |
 | Current controllers and demo | Initial refinement complete; focused task pending | Migrated demo; native state readback and DS4/Switch labels; deterministic regressions; selected live tests recorded in completion evidence |
@@ -120,8 +120,8 @@ merged `main`. Keep further controller or GUI increments focused and land them
 before returning to the alpha gate checks. The preliminary implementation commit
 is `e50b9ba`.
 
-For the separate refinement task, start from the merged baseline and read [current functions and evidence](../CURRENT_CONTROLLER_REFINEMENT.md)
-and the [demo lab guide](../DEMO_LAB.md) before making focused changes. Preserve
+For the separate refinement task, start from the merged baseline and read [current functions and evidence](CURRENT_CONTROLLER_REFINEMENT.md)
+and the [demo lab guide](../../DEMO_LAB.md) before making focused changes. Preserve
 existing lifecycle, input-ordering and bounded-worker regressions. Record each
 reproduction, fix, deterministic regression and actual user feedback in this
 ledger (or a linked refinement record). Carry any public signature or behavior

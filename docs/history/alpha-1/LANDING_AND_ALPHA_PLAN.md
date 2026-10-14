@@ -99,7 +99,7 @@ Record architectural friction as core follow-up work, not silent exceptions.
 
 ## Support reporting
 
-[CONTROLLER_SUPPORT.md](../CONTROLLER_SUPPORT.md) is the public-facing controller
+[CONTROLLER_SUPPORT.md](../../CONTROLLER_SUPPORT.md) is the public-facing controller
 (vertical) by realization (horizontal) planning matrix. Every cell starts WIP.
 Gate results describe measured experiments; they do not automatically promote a
 support cell. Per-controller function matrices will record partial capabilities

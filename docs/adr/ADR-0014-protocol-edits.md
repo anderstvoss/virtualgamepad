@@ -1,6 +1,6 @@
 # ADR-0014 — Transactional caller-driven protocol edits
 
-Accepted after [EXP-0020](../experiments/EXP-0020-internal-topology.md).
+Accepted after [EXP-0020](../history/alpha-1/experiments/EXP-0020-internal-topology.md).
 
 `Runtime::update_protocol` supplies a fallible closure over an isolated personality
 clone. It rejects closed sessions, validates current semantic state against the

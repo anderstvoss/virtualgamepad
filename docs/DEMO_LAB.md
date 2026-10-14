@@ -1,6 +1,6 @@
 # Manual lab work with the demo
 
-Current bounded alpha dispositions are recorded in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
+Current bounded alpha dispositions are recorded in the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md).
 Seven scoped installed broker security/recovery phases passed (#115 closed);
 USB/IP audio remains opt-in WIP, with full routing and zero-loss qualification
 deferred to #143/#145. The demo enables USB/IP audio and ALSA host routing by
@@ -71,24 +71,24 @@ and observe continuing service on the others. Keep each consumer selection exact
    Keep compiled profiles; permissions cannot add missing GET/SET metadata.
 5. Gate F/H emulated audio implementations exist. Audio GUI integration is implemented. Demo defaults enable ALSA and WIP
    USB/IP; UHID/PipeWire requires its feature and root defaults remain empty. See the
-   [demo refinement checkpoint](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
+   [demo refinement checkpoint](history/alpha-1/ALPHA_DEMO_REFINEMENT.md).
    Native continuity/latency remains unresolved despite closed #112; installed
    broker recovery/security passed seven scoped phases (#115 closed);
    microphone/matching fidelity remains unavailable (#116). Confirmed
    physical output/reconnect observations stay credited. L/M Bluetooth work remains
    separately gated; no support is promoted by endpoint enumeration.
 
-Other families remain best-effort. See the [physical validation policy](architecture-overhaul/PHYSICAL_VALIDATION_POLICY.md)
-and the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md). Bounded four-family keyboard smoke
+Other families remain best-effort. See the [physical validation policy](PHYSICAL_VALIDATION_POLICY.md)
+and the [alpha remediation status](history/alpha-1/ALPHA_REMEDIATION_STATUS.md). Bounded four-family keyboard smoke
 and the accepted neutral soak are credited; broader hands-on review is post-alpha
-#126. See the [historical refinement evidence](CURRENT_CONTROLLER_REFINEMENT.md).
+#126. See the [historical refinement evidence](history/alpha-1/CURRENT_CONTROLLER_REFINEMENT.md).
 
 Face buttons show printed labels and spatial positions (Nintendo B is South).
 Stick pads now reach both signed endpoints, and Sony unsigned conversions preserve
 0/128/255. For mapping investigations, test one control at a time and record its
 observed consumer label/direction; a sweep pressing every button cannot establish
 that each individual mapping is correct. See
-[EXP-0013](architecture-overhaul/experiments/EXP-0013-mapping-audit.md) for the latest
+[EXP-0013](history/alpha-1/experiments/EXP-0013-mapping-audit.md) for the latest
 source-backed trigger/contact and range corrections.
 
 ## Identity restoration experiments
@@ -146,4 +146,4 @@ separate flush actions. Recreate to change immutable choices. Native clients use
 exact creation-scoped selectors; no automatic physical audio routing occurs.
 
 Actual maintainer feedback remains required before the independent whole-root API
-review. Follow the [hands-on checklist](architecture-overhaul/ALPHA_DEMO_REFINEMENT.md).
+review. Follow the [hands-on checklist](history/alpha-1/ALPHA_DEMO_REFINEMENT.md).

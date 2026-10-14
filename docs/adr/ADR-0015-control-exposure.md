@@ -1,7 +1,7 @@
 # ADR-0015 — Separate native-control admission and target exposure
 
 Accepted for representation after
-[EXP-0021](../experiments/EXP-0021-control-exposure.md); full evidence Gate T remains blocked.
+[EXP-0021](../history/alpha-1/experiments/EXP-0021-control-exposure.md); full evidence Gate T remains blocked.
 
 Controller-native typed state may preserve independently evidenced controls even
 when a target cannot expose them. Target-specific missing presentation belongs in

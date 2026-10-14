@@ -1,12 +1,7 @@
 # Controller support matrix
 
-Current bounded alpha dispositions are recorded in the [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md).
-The reviewed ordinary-root API snapshot contains 110 items. Emulated audio is
-implemented and opt-in; seven scoped installed broker security/recovery phases
-passed (#115 closed). USB/IP streaming remains WIP: full routing, continuity and
-latency are deferred to #143/#145; matching fidelity remains unavailable (#116).
-Demo defaults enable ALSA routing and WIP USB/IP; UHID/PipeWire requires its
-feature. Root defaults remain empty. Historical evidence retains its original scope.
+Current dispositions and known limitations are on the [status page](STATUS.md).
+Emulated audio is opt-in WIP; see the [audio guide](CONTROLLER_AUDIO.md).
 
 Sustained audio continuity and latency are not validated in alpha; occasional audio dropouts may occur.
 
@@ -50,8 +45,8 @@ enable it. Existing protocol prototypes remain historical/test evidence.
   and remaining limitations. Testing a virtual device alone does not qualify.
 
 No cells are promoted yet, including those with successful Linux/SDL experiments.
-See the [historical gate ledger](architecture-overhaul/GATE_STATUS.md) and
-[acceptance evidence](architecture-overhaul/CORE_ACCEPTANCE.md) for those results.
+See the historical [gate ledger](history/alpha-1/GATE_STATUS.md) and
+[acceptance evidence](history/alpha-1/CORE_ACCEPTANCE.md) for those results.
 
 ## Per-controller function matrices
 
@@ -62,12 +57,9 @@ accessories and lifecycle. Link each accepted cell to evidence and technical
 limitations. Do not mark a whole controller accepted because one function works,
 or require an absent native function merely because another controller has it.
 
-The [alpha remediation status](architecture-overhaul/ALPHA_REMEDIATION_STATUS.md) supersedes older release checklists.
-API review, snapshot enforcement and the separate quality review have landed;
-broader maintainer GUI acceptance remains post-alpha #126. Normal root constructors
-reject dummy_hcd before resource creation. Historical prototype evidence remains
-experimental SPI. No WIP cell is promoted. See the
-[historical function review](CURRENT_CONTROLLER_REFINEMENT.md).
+Normal root constructors reject dummy_hcd before resource creation. The
+[historical function review](history/alpha-1/CURRENT_CONTROLLER_REFINEMENT.md)
+records the Alpha 1 per-function assessment.
 
 Production Wii Remote remains positively gated on later maintainer authorization.
 The test-only Wii-like topology experiment does not enable a controller package,
@@ -82,5 +74,3 @@ demo entry, Bluetooth personality, or any support cell.
 | USB/IP HID/UAC2 | Yes, opt-in WIP | Framing/personality/IPC/ownership/rollback | Selected installed sample/lifecycle trials | Native continuity/full latency matrix deferred (#135/#145); seven scoped broker security/recovery phases passed (#115 closed) | Unavailable; UAC2 differs from reference UAC1 |
 
 No support cell is promoted by compilation, issue closure or API signature freeze.
-PR #149 landed the remediation. Bounded alpha dispositions and deferred work
-are recorded in the remediation status; exact release-SHA qualification remains pending.

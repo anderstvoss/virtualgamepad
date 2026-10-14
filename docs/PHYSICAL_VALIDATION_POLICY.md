@@ -48,7 +48,7 @@ this policy was recorded.
 
 ## Attached reference update
 
-[EXP-0015](experiments/EXP-0015-reference-layouts.md) confirms a USB DualSense
+[EXP-0015](history/alpha-1/experiments/EXP-0015-reference-layouts.md) confirms a USB DualSense
 attachment and read-only report/topology observations. The user reports broken
 trigger modules and stick drift: exclude trigger actuation/response and neutral
 stick fidelity from this device's acceptance role. It can still provide protocol
