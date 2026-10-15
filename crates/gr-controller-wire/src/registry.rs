@@ -17,6 +17,8 @@ pub struct FamilySpec {
     pub id: ControllerId,
     pub worker_name: &'static str,
     pub broker_tag: Option<u8>,
+    pub dummy_hcd_tag: Option<u8>,
+    pub dummy_hcd_report_length: Option<usize>,
     pub usb_profile: Option<UsbProfileSpec>,
 }
 const fn usb(
@@ -48,6 +50,8 @@ pub const DUALSENSE: FamilySpec = FamilySpec {
     id: ControllerId::new("virtualgamepad.dualsense"),
     worker_name: "dualsense",
     broker_tag: Some(1),
+    dummy_hcd_tag: Some(1),
+    dummy_hcd_report_length: Some(64),
     usb_profile: Some(usb(
         0x054c,
         0x0ce6,
@@ -62,6 +66,8 @@ pub const DUALSHOCK4: FamilySpec = FamilySpec {
     id: ControllerId::new("virtualgamepad.dualshock4"),
     worker_name: "dualshock4",
     broker_tag: Some(2),
+    dummy_hcd_tag: Some(2),
+    dummy_hcd_report_length: Some(64),
     usb_profile: Some(usb(
         0x054c,
         0x05c4,
@@ -76,12 +82,16 @@ pub const SWITCH_PRO: FamilySpec = FamilySpec {
     id: ControllerId::new("virtualgamepad.switch-pro"),
     worker_name: "switch-pro",
     broker_tag: None,
+    dummy_hcd_tag: Some(3),
+    dummy_hcd_report_length: Some(64),
     usb_profile: None,
 };
 pub const XBOX360: FamilySpec = FamilySpec {
     id: ControllerId::new("virtualgamepad.xbox360"),
     worker_name: "xbox360",
     broker_tag: Some(3),
+    dummy_hcd_tag: Some(4),
+    dummy_hcd_report_length: Some(9),
     usb_profile: Some(usb(
         crate::STANDARD_GAMEPAD_VIRTUAL_IDENTITY.0,
         crate::STANDARD_GAMEPAD_VIRTUAL_IDENTITY.1,

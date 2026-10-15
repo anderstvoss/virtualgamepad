@@ -6,7 +6,8 @@
 
 #![allow(clippy::missing_errors_doc)]
 
-use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
+pub use gr_controller_wire::registry::ids;
+use gr_realization_api::{ControllerId, RealizationSessionId, RealizationTarget};
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 #[cfg(unix)]
@@ -62,7 +63,7 @@ pub trait HostSessionFactory: Send + Sync {
     fn open(
         &self,
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
         session: RealizationSessionId,
     ) -> Result<Box<dyn HostSession>, BrokerError>;
 }
@@ -136,11 +137,12 @@ impl BrokerClient {
     pub fn open(
         &mut self,
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
     ) -> Result<BrokerSession, BrokerClientError> {
         let target =
             target_tag(target).ok_or(BrokerClientError::Protocol("not a broker target"))?;
-        let controller = controller_tag(controller);
+        let controller = controller_tag(controller)
+            .ok_or(BrokerClientError::Protocol("unknown compiled controller"))?;
         let response = self.request(1, &[target, controller])?;
         if response.len() != 8 {
             return Err(BrokerClientError::Protocol("invalid open response"));
@@ -225,13 +227,16 @@ fn target_tag(target: RealizationTarget) -> Option<u8> {
     }
 }
 
-fn controller_tag(controller: CompiledControllerKind) -> u8 {
-    match controller {
-        CompiledControllerKind::DualSense => 1,
-        CompiledControllerKind::DualShock4 => 2,
-        CompiledControllerKind::SwitchPro => 3,
-        CompiledControllerKind::Xbox360 => 4,
-    }
+fn controller_tag(controller: ControllerId) -> Option<u8> {
+    gr_controller_wire::registry::find(controller).and_then(|family| family.dummy_hcd_tag)
+}
+/// Decode only the unchanged compiled gadget wire tags.
+#[must_use]
+pub fn controller_from_tag(tag: u8) -> Option<ControllerId> {
+    gr_controller_wire::registry::FAMILIES
+        .iter()
+        .find(|family| family.dummy_hcd_tag == Some(tag))
+        .map(|family| family.id)
 }
 
 /// Encode one bounded protocol message. Exposed for deterministic daemon tests.
@@ -309,7 +314,7 @@ pub enum BrokerError {
     #[error("{target} does not support controller {controller:?}")]
     UnsupportedController {
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
     },
     #[error("session {session:?} is owned by another peer")]
     WrongOwner { session: RealizationSessionId },
@@ -359,7 +364,7 @@ impl BrokerRegistry {
         &mut self,
         peer: u32,
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
         factory: &dyn HostSessionFactory,
     ) -> Result<RealizationSessionId, BrokerError> {
         let session = RealizationSessionId(self.next);
@@ -479,7 +484,7 @@ impl Drop for BrokerRegistry {
 struct Session {
     peer: u32,
     target: RealizationTarget,
-    controller: CompiledControllerKind,
+    controller: ControllerId,
 }
 
 /// In-memory authorization and lifecycle policy used by the socket daemon.
@@ -506,7 +511,7 @@ impl BrokerPolicy {
         peer: u32,
         session: RealizationSessionId,
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
     ) -> Result<(), BrokerError> {
         if self.allowed_peers.binary_search(&peer).is_err() {
             return Err(BrokerError::Unauthorized { peer });
@@ -580,21 +585,16 @@ impl BrokerPolicy {
     }
 }
 
-fn compiled_report_length(
+/// Exact report length for a compiled gadget family; unknown targets/IDs fail closed.
+#[must_use]
+pub fn compiled_report_length(
     target: RealizationTarget,
-    controller: CompiledControllerKind,
+    controller: ControllerId,
 ) -> Option<usize> {
     if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
         return None;
     }
-    match controller {
-        CompiledControllerKind::DualSense
-        | CompiledControllerKind::DualShock4
-        | CompiledControllerKind::SwitchPro => Some(64),
-        // This is a standard HID fallback under the Xbox USB identity. It is
-        // deliberately not presented as the proprietary xpad/XInput wire protocol.
-        CompiledControllerKind::Xbox360 => Some(9),
-    }
+    gr_controller_wire::registry::find(controller).and_then(|family| family.dummy_hcd_report_length)
 }
 
 #[cfg(test)]
@@ -635,7 +635,7 @@ mod tests {
         fn open(
             &self,
             _: RealizationTarget,
-            _: CompiledControllerKind,
+            _: ControllerId,
             _: RealizationSessionId,
         ) -> Result<Box<dyn HostSession>, BrokerError> {
             Ok(Box::new(FakeHost {
@@ -686,7 +686,7 @@ mod tests {
         let mut first = BrokerRegistry::with_admission(vec![10, 11], quota.clone());
         let mut second = BrokerRegistry::with_admission(vec![10, 11], quota.clone());
         let target = RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
-        let kind = CompiledControllerKind::DualSense;
+        let kind = gr_controller_wire::registry::ids::DUALSENSE;
         let id = first.open(10, target, kind, &factory).unwrap();
         assert!(matches!(
             second.diagnostics(10, id),
@@ -715,7 +715,7 @@ mod tests {
             fn open(
                 &self,
                 _: RealizationTarget,
-                _: CompiledControllerKind,
+                _: ControllerId,
                 _: RealizationSessionId,
             ) -> Result<Box<dyn HostSession>, BrokerError> {
                 Err(BrokerError::Host {
@@ -726,7 +726,7 @@ mod tests {
         let quota = admission::Admission::new(1, 1);
         let mut registry = BrokerRegistry::with_admission(vec![10], quota.clone());
         let target = RealizationTarget::LINUX_DUMMY_HCD_USB_HID;
-        let kind = CompiledControllerKind::DualSense;
+        let kind = gr_controller_wire::registry::ids::DUALSENSE;
         assert!(registry.open(10, target, kind, &Fails).is_err());
         assert!(quota.reserve(10).is_ok());
         assert!(registry.policy.sessions.is_empty());
@@ -767,7 +767,7 @@ mod tests {
                 2000,
                 session,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense
+                gr_controller_wire::registry::ids::DUALSENSE
             ),
             Err(BrokerError::Unauthorized { .. })
         ));
@@ -776,7 +776,7 @@ mod tests {
                 1000,
                 session,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
             )
             .unwrap();
         assert!(matches!(
@@ -793,10 +793,10 @@ mod tests {
     #[test]
     fn policy_accepts_only_exact_lengths_for_each_compiled_profile() {
         let cases = [
-            (CompiledControllerKind::DualSense, 64),
-            (CompiledControllerKind::DualShock4, 64),
-            (CompiledControllerKind::SwitchPro, 64),
-            (CompiledControllerKind::Xbox360, 9),
+            (gr_controller_wire::registry::ids::DUALSENSE, 64),
+            (gr_controller_wire::registry::ids::DUALSHOCK4, 64),
+            (gr_controller_wire::registry::ids::SWITCH_PRO, 64),
+            (gr_controller_wire::registry::ids::XBOX360, 9),
         ];
         for (offset, (controller, report_length)) in cases.into_iter().enumerate() {
             let mut broker = BrokerPolicy::new(vec![1000]);
@@ -830,7 +830,7 @@ mod tests {
                 1000,
                 session,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
             )
             .unwrap();
         assert!(matches!(
@@ -851,7 +851,7 @@ mod tests {
             fn open(
                 &self,
                 _: RealizationTarget,
-                _: CompiledControllerKind,
+                _: ControllerId,
                 _: RealizationSessionId,
             ) -> Result<Box<dyn HostSession>, BrokerError> {
                 panic!("unauthorized request reached the host");
@@ -862,7 +862,7 @@ mod tests {
             registry.open(
                 43,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
                 &Untouchable
             ),
             Err(BrokerError::Unauthorized { .. })
@@ -881,7 +881,7 @@ mod tests {
             .open(
                 1000,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
                 &factory,
             )
             .unwrap();
@@ -930,7 +930,7 @@ mod tests {
             .open(
                 1000,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
                 &factory,
             )
             .unwrap();
@@ -964,7 +964,7 @@ mod tests {
                 1000,
                 session,
                 RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
-                CompiledControllerKind::DualSense,
+                gr_controller_wire::registry::ids::DUALSENSE,
             )
             .unwrap();
         registry.sessions.insert(
