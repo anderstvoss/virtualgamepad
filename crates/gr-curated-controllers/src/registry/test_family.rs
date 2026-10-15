@@ -20,8 +20,8 @@ static SPEC: FamilySpec = FamilySpec {
     id: ControllerId::new("test.fifth"),
     worker_name: "test-fifth",
     broker_tag: None,
-    dummy_hcd_tag: 0,
-    dummy_hcd_report_length: 0,
+    dummy_hcd_tag: None,
+    dummy_hcd_report_length: None,
     usb_profile: None,
 };
 static TOPOLOGY: InputTopology = InputTopology::EMPTY;
