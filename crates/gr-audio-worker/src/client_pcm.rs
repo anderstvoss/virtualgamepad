@@ -8,7 +8,7 @@ use gr_audio_contract::{
 use gr_curated_controllers::audio;
 use gr_usbip::{
     pcm_ipc::{Direction, Format, Receiver, Sender},
-    profile::ProfileId,
+    profile::ControllerId,
 };
 use std::{
     io,
@@ -90,15 +90,16 @@ pub struct SampleStreams {
 }
 impl SampleStreams {
     pub fn new(
-        profile: ProfileId,
+        profile: ControllerId,
         generation: u64,
         playback: UnixStream,
         microphone: UnixStream,
     ) -> io::Result<Self> {
         let definition = match profile {
-            ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
-            ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
-            ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+            gr_usbip::profile::ids::DUALSENSE => audio::dualsense(AudioExposure::Emulated),
+            gr_usbip::profile::ids::DUALSHOCK4 => audio::dualshock4(AudioExposure::Emulated),
+            gr_usbip::profile::ids::XBOX360 => audio::xbox360(AudioExposure::Emulated),
+            _ => return Err(io::Error::other("unknown compiled PCM profile")),
         }
         .map_err(io::Error::other)?;
         let playback_format = definition.streams()[0].format();
@@ -355,16 +356,17 @@ mod tests {
     #[test]
     fn microphone_pump_drains_coalesced_writes_within_existing_capacity() {
         for profile in [
-            ProfileId::DualSenseEmulated,
-            ProfileId::DualShock4Emulated,
-            ProfileId::Xbox360HidEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
+            gr_usbip::profile::ids::DUALSHOCK4,
+            gr_usbip::profile::ids::XBOX360,
         ] {
             let format = Format::new(profile, Direction::Microphone, 7).unwrap();
             let channels = format.channels();
             let definition = match profile {
-                ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
-                ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
-                ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+                gr_usbip::profile::ids::DUALSENSE => audio::dualsense(AudioExposure::Emulated),
+                gr_usbip::profile::ids::DUALSHOCK4 => audio::dualshock4(AudioExposure::Emulated),
+                gr_usbip::profile::ids::XBOX360 => audio::xbox360(AudioExposure::Emulated),
+                _ => unreachable!("test covers only compiled profiles"),
             }
             .unwrap();
             let (mut writer, mut reader) =
@@ -414,13 +416,14 @@ mod tests {
 
     #[test]
     fn microphone_pump_retains_packet_on_backpressure_and_terminal_error() {
-        let profile = ProfileId::Xbox360HidEmulated;
+        let profile = gr_usbip::profile::ids::XBOX360;
         let format = Format::new(profile, Direction::Microphone, 7).unwrap();
         let channels = format.channels();
         let definition = match profile {
-            ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
-            ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
-            ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
+            gr_usbip::profile::ids::DUALSENSE => audio::dualsense(AudioExposure::Emulated),
+            gr_usbip::profile::ids::DUALSHOCK4 => audio::dualshock4(AudioExposure::Emulated),
+            gr_usbip::profile::ids::XBOX360 => audio::xbox360(AudioExposure::Emulated),
+            _ => unreachable!("test covers only compiled profiles"),
         }
         .unwrap();
         let (mut writer, mut reader) =
@@ -529,9 +532,9 @@ mod tests {
     fn coordinated_close_keeps_channels_until_acknowledgement_and_is_idempotent() {
         use std::io::Read;
         for profile in [
-            ProfileId::DualSenseEmulated,
-            ProfileId::DualShock4Emulated,
-            ProfileId::Xbox360HidEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
+            gr_usbip::profile::ids::DUALSHOCK4,
+            gr_usbip::profile::ids::XBOX360,
         ] {
             for worker_failure in [false, true] {
                 let (mut playback, client_playback) = UnixStream::pair().unwrap();
@@ -572,7 +575,7 @@ mod tests {
         let (playback, client_playback) = UnixStream::pair().unwrap();
         let (_microphone, client_microphone) = UnixStream::pair().unwrap();
         let mut client = SampleStreams::new(
-            ProfileId::DualShock4Emulated,
+            gr_usbip::profile::ids::DUALSHOCK4,
             9,
             client_playback,
             client_microphone,
@@ -606,9 +609,9 @@ mod tests {
     #[test]
     fn all_compiled_profiles_transfer_both_directions_and_close_terminally() {
         for profile in [
-            ProfileId::DualSenseEmulated,
-            ProfileId::DualShock4Emulated,
-            ProfileId::Xbox360HidEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
+            gr_usbip::profile::ids::DUALSHOCK4,
+            gr_usbip::profile::ids::XBOX360,
         ] {
             let (worker_playback, client_playback) = UnixStream::pair().unwrap();
             let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
@@ -673,7 +676,7 @@ mod tests {
 
     #[test]
     fn slow_sample_reader_loses_bounded_frames_with_an_observable_gap() {
-        let profile = ProfileId::DualShock4Emulated;
+        let profile = gr_usbip::profile::ids::DUALSHOCK4;
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (_worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let mut client =
@@ -721,7 +724,7 @@ mod tests {
 
     #[test]
     fn bounded_playback_reader_pause_preserves_order_without_prefill() {
-        let profile = ProfileId::DualShock4Emulated;
+        let profile = gr_usbip::profile::ids::DUALSHOCK4;
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (_worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let mut client =
@@ -770,7 +773,7 @@ mod tests {
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (_worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let mut client = SampleStreams::new(
-            ProfileId::Xbox360HidEmulated,
+            gr_usbip::profile::ids::XBOX360,
             11,
             client_playback,
             client_microphone,

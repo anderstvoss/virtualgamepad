@@ -1,14 +1,15 @@
 //! Golden bytes recorded before replacing the closed USB profile enum.
-use gr_usbip::profile::{Profile, ProfileId};
+use gr_usbip::profile::Profile;
+use std::fmt::Write;
 
 fn profiles() -> Vec<Profile> {
     [
-        ProfileId::DualSenseEmulated,
-        ProfileId::DualShock4Emulated,
-        ProfileId::Xbox360HidEmulated,
+        gr_usbip::profile::ids::DUALSENSE,
+        gr_usbip::profile::ids::DUALSHOCK4,
+        gr_usbip::profile::ids::XBOX360,
     ]
     .into_iter()
-    .map(|id| Profile::for_session(id, "fixture", 1).unwrap())
+    .map(|id| Profile::for_session(gr_usbip::profile::spec(id).unwrap(), "fixture", 1).unwrap())
     .collect()
 }
 fn encoded(profile: &Profile) -> String {
@@ -23,9 +24,10 @@ fn encoded(profile: &Profile) -> String {
     parts
         .into_iter()
         .map(|part| {
-            part.iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
+            part.iter().fold(String::new(), |mut text, byte| {
+                write!(text, "{byte:02x}").unwrap();
+                text
+            })
         })
         .collect::<Vec<_>>()
         .join("|")

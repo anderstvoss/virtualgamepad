@@ -1,5 +1,5 @@
 use super::*;
-use crate::{profile::ProfileId, put, word};
+use crate::{put, word};
 use gr_audio_contract::{AudioChannel, PcmFormat, queue::pcm_queue};
 use gr_hid::{ReplyError, ReportType};
 use std::io::Write;
@@ -67,7 +67,7 @@ impl Fixture {
         let worker = Worker::new(
             socket,
             1,
-            Profile::new(ProfileId::DualSenseEmulated),
+            Profile::new(crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap()),
             Echo {
                 input_kind: Some(ReportType::Input),
             },
@@ -378,7 +378,7 @@ fn mismatched_profile_rejects_creation_and_closes_both_queue_endpoints() {
     let result = Worker::new(
         socket,
         1,
-        Profile::new(ProfileId::DualShock4Emulated),
+        Profile::new(crate::profile::spec(crate::profile::ids::DUALSHOCK4).unwrap()),
         Echo {
             input_kind: Some(ReportType::Input),
         },

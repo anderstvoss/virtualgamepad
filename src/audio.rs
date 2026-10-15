@@ -445,21 +445,26 @@ pub(crate) fn open(
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 pub(crate) fn usb_audio(
     options: AudioOptions,
-    id: gr_usbip::profile::ProfileId,
+    id: gr_usbip::profile::ControllerId,
     card_id: &str,
     bus_id: &str,
     caller_nodes: &[Option<String>; 2],
     session: crate::usb_audio::Pcm,
 ) -> Result<ControllerAudio, ControllerError> {
     let profile = match id {
-        gr_usbip::profile::ProfileId::DualSenseEmulated => {
+        gr_usbip::profile::ids::DUALSENSE => {
             gr_curated_controllers::audio::dualsense(options.exposure())
         }
-        gr_usbip::profile::ProfileId::DualShock4Emulated => {
+        gr_usbip::profile::ids::DUALSHOCK4 => {
             gr_curated_controllers::audio::dualshock4(options.exposure())
         }
-        gr_usbip::profile::ProfileId::Xbox360HidEmulated => {
+        gr_usbip::profile::ids::XBOX360 => {
             gr_curated_controllers::audio::xbox360(options.exposure())
+        }
+        _ => {
+            return Err(ControllerError::Unsupported {
+                reason: "unknown compiled audio profile".into(),
+            });
         }
     }
     .map_err(|error| ControllerError::Unsupported {
@@ -527,7 +532,6 @@ mod tests {
     #[test]
     fn usb_endpoints_share_declared_clock_and_retain_alsa_identity() {
         use crate::{AudioExposure, AudioOptions};
-        use gr_usbip::profile::ProfileId;
         use std::{
             os::unix::net::UnixStream,
             sync::{Arc, Mutex, atomic::AtomicU64},
@@ -556,7 +560,7 @@ mod tests {
             }
             gr_privileged_broker::write_message(&mut worker_control, 3, &response).unwrap();
         });
-        let id = ProfileId::DualSenseEmulated;
+        let id = gr_usbip::profile::ids::DUALSENSE;
         let streams = gr_audio_worker::client_pcm::SampleStreams::new(
             id,
             7,
