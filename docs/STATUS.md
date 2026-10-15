@@ -46,3 +46,5 @@ cell, public-root API, broker wire bytes or live acceptance claim.
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
   with static uinput capability supersets and neutralization of absent controls.
   The production seam remains internal; public additions await owner approval.
+- [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
+  outputs and typed surface kinds; public additions remain gated by D2.
