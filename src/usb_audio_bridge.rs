@@ -729,7 +729,6 @@ fn run(
 mod tests {
     use super::*;
     use crate::{AudioExposure, AudioOptions};
-    use gr_usbip::profile::ProfileId;
     use std::os::unix::net::UnixStream;
     fn test_control(progress: bool) -> (Arc<Mutex<Control>>, thread::JoinHandle<()>) {
         let (mut server, client) = UnixStream::pair().unwrap();
@@ -1156,7 +1155,7 @@ mod tests {
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let streams = SampleStreams::new(
-            ProfileId::DualSenseEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
             7,
             client_playback,
             client_microphone,
@@ -1196,7 +1195,7 @@ mod tests {
         let (worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (_worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let streams = SampleStreams::new(
-            ProfileId::DualSenseEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
             7,
             client_playback,
             client_microphone,
@@ -1247,7 +1246,7 @@ mod tests {
         });
         let mut sender = Sender::new(
             worker_playback,
-            Format::new(ProfileId::DualSenseEmulated, Direction::Playback, 7).unwrap(),
+            Format::new(gr_usbip::profile::ids::DUALSENSE, Direction::Playback, 7).unwrap(),
         )
         .unwrap();
         let block = [101_i16, -202, 303, -404].repeat(128);
@@ -1289,7 +1288,7 @@ mod tests {
         let (_worker_playback, client_playback) = UnixStream::pair().unwrap();
         let (worker_microphone, client_microphone) = UnixStream::pair().unwrap();
         let streams = SampleStreams::new(
-            ProfileId::DualSenseEmulated,
+            gr_usbip::profile::ids::DUALSENSE,
             7,
             client_playback,
             client_microphone,
@@ -1340,7 +1339,7 @@ mod tests {
         });
         let mut receiver = Receiver::new(
             worker_microphone,
-            Format::new(ProfileId::DualSenseEmulated, Direction::Microphone, 7).unwrap(),
+            Format::new(gr_usbip::profile::ids::DUALSENSE, Direction::Microphone, 7).unwrap(),
         )
         .unwrap();
         let mut samples = [0_i16; 128 * 2];

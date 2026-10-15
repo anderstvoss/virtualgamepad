@@ -1,11 +1,12 @@
 //! Reviewed family metadata, shared below the broker/controller dependency boundary.
 use gr_audio_contract::AudioChannel;
-use gr_realization_api::ControllerId;
+pub use gr_realization_api::ControllerId;
 
 /// Functional composite USB specification; never accepted from an application.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UsbProfileSpec {
     pub device: [u8; 18],
+    pub numbered_reports: bool,
     pub report: &'static [u8],
     pub product_name: &'static str,
     pub playback: &'static [AudioChannel],
@@ -25,10 +26,12 @@ const fn usb(
     product_name: &'static str,
     playback: &'static [AudioChannel],
     microphone: &'static [AudioChannel],
+    numbered_reports: bool,
 ) -> UsbProfileSpec {
     let [vl, vh] = vendor.to_le_bytes();
     let [pl, ph] = product.to_le_bytes();
     UsbProfileSpec {
+        numbered_reports,
         device: [
             18, 1, 0, 2, 0xef, 2, 1, 64, vl, vh, pl, ph, 0, 1, 1, 2, 0, 1,
         ],
@@ -52,6 +55,7 @@ pub const DUALSENSE: FamilySpec = FamilySpec {
         "Virtualgamepad DualSense emulated audio",
         &[AudibleLeft, AudibleRight, HapticLeft, HapticRight],
         &[MicrophoneLeft, MicrophoneRight],
+        true,
     )),
 };
 pub const DUALSHOCK4: FamilySpec = FamilySpec {
@@ -65,6 +69,7 @@ pub const DUALSHOCK4: FamilySpec = FamilySpec {
         "Virtualgamepad DS4 emulated audio",
         &[AudibleLeft, AudibleRight],
         &[Microphone],
+        true,
     )),
 };
 pub const SWITCH_PRO: FamilySpec = FamilySpec {
@@ -84,6 +89,7 @@ pub const XBOX360: FamilySpec = FamilySpec {
         "Virtualgamepad Xbox 360 HID emulated audio",
         &[AudibleLeft, AudibleRight],
         &[Microphone],
+        false,
     )),
 };
 /// One source list for metadata and typed implementation dispatch. The callback
@@ -105,3 +111,16 @@ macro_rules! metadata {
     };
 }
 crate::compiled_families!(metadata);
+
+pub mod ids {
+    use super::ControllerId;
+    macro_rules! constants {
+        ($(($module:ident, $definition:ident, $spec:ident),)*) => { $(pub const $spec: ControllerId = super::$spec.id;)* };
+    }
+    crate::compiled_families!(constants);
+}
+/// Look up only a compiled family; never constructs caller-defined profiles.
+#[must_use]
+pub fn find(id: ControllerId) -> Option<&'static FamilySpec> {
+    FAMILIES.iter().find(|family| family.id == id)
+}

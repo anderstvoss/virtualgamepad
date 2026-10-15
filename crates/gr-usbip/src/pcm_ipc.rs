@@ -1,7 +1,7 @@
 //! Implementation-only, versioned PCM channels between the client and worker.
 //! One anonymous stream socket per direction; no broker messages or descriptors.
 //! Buffers are fixed at construction and sample operations never allocate.
-use crate::profile::ProfileId;
+use crate::profile::ControllerId;
 use std::{
     io::{self, Read, Write},
     net::Shutdown,
@@ -20,35 +20,44 @@ pub enum Direction {
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Format {
-    profile: ProfileId,
+    profile: ControllerId,
+    channels: usize,
+    tag: u8,
     direction: Direction,
     generation: u64,
 }
 impl Format {
-    pub fn new(profile: ProfileId, direction: Direction, generation: u64) -> io::Result<Self> {
+    pub fn new(profile: ControllerId, direction: Direction, generation: u64) -> io::Result<Self> {
         if generation == 0 {
             return Err(invalid("zero PCM generation"));
         }
+        let family = gr_controller_wire::registry::find(profile)
+            .ok_or_else(|| invalid("unknown PCM family"))?;
+        let spec = family
+            .usb_profile
+            .as_ref()
+            .ok_or_else(|| invalid("family has no PCM profile"))?;
+        let tag = family
+            .broker_tag
+            .ok_or_else(|| invalid("family has no PCM tag"))?;
+        let channels = match direction {
+            Direction::Playback => spec.playback.len(),
+            Direction::Microphone => spec.microphone.len(),
+        };
         Ok(Self {
             profile,
+            channels,
+            tag,
             direction,
             generation,
         })
     }
     #[must_use]
     pub const fn channels(self) -> usize {
-        match (self.profile, self.direction) {
-            (ProfileId::DualSenseEmulated, Direction::Playback) => 4,
-            (ProfileId::DualSenseEmulated, Direction::Microphone) | (_, Direction::Playback) => 2,
-            (_, Direction::Microphone) => 1,
-        }
+        self.channels
     }
     fn tag(self) -> u8 {
-        match self.profile {
-            ProfileId::DualSenseEmulated => 1,
-            ProfileId::DualShock4Emulated => 2,
-            ProfileId::Xbox360HidEmulated => 3,
-        }
+        self.tag
     }
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -344,14 +353,26 @@ impl Receiver {
 mod tests {
     use super::*;
     fn format() -> Format {
-        Format::new(ProfileId::DualSenseEmulated, Direction::Playback, 7).unwrap()
+        Format::new(crate::profile::ids::DUALSENSE, Direction::Playback, 7).unwrap()
     }
+    #[test]
+    fn unknown_and_non_audio_families_cannot_open_pcm_channels() {
+        for id in [
+            ControllerId::new("test.unknown"),
+            crate::profile::ids::SWITCH_PRO,
+        ] {
+            for direction in [Direction::Playback, Direction::Microphone] {
+                assert!(Format::new(id, direction, 1).is_err());
+            }
+        }
+    }
+
     #[test]
     fn all_profiles_and_directions_preserve_samples_and_positions() {
         for profile in [
-            ProfileId::DualSenseEmulated,
-            ProfileId::DualShock4Emulated,
-            ProfileId::Xbox360HidEmulated,
+            crate::profile::ids::DUALSENSE,
+            crate::profile::ids::DUALSHOCK4,
+            crate::profile::ids::XBOX360,
         ] {
             for direction in [Direction::Playback, Direction::Microphone] {
                 let format = Format::new(profile, direction, 7).unwrap();
@@ -438,7 +459,7 @@ pub struct Inbound {
     next_frame: u64,
 }
 fn validate_queue(format: Format, pcm: &gr_audio_contract::PcmFormat) -> io::Result<()> {
-    let profile = crate::profile::Profile::new(format.profile);
+    let profile = crate::profile::Profile::new(crate::profile::spec(format.profile).unwrap());
     let valid = match format.direction {
         Direction::Playback => profile.accepts_playback(pcm),
         Direction::Microphone => profile.accepts_microphone(pcm),
@@ -579,7 +600,7 @@ mod pump_tests {
     #[test]
     fn inbound_readiness_wakes_for_pcm_and_peer_closure() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
-        let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
+        let format = Format::new(crate::profile::ids::XBOX360, Direction::Microphone, 1).unwrap();
         let (a, b) = UnixStream::pair().unwrap();
         let mut sender = Sender::new(a, format).unwrap();
         let (destination, mut consumer) = pcm_queue(&pcm, 128).unwrap();
@@ -598,7 +619,7 @@ mod pump_tests {
     #[test]
     fn stalled_consumer_counts_loss_and_recovers_after_host_resumes() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
-        let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
+        let format = Format::new(crate::profile::ids::XBOX360, Direction::Microphone, 1).unwrap();
         let (a, b) = UnixStream::pair().unwrap();
         let mut sender = Sender::new(a, format).unwrap();
         let (destination, mut consumer) = pcm_queue(&pcm, 1).unwrap();
@@ -625,7 +646,7 @@ mod pump_tests {
     #[test]
     fn queue_backpressure_preserves_every_suffix_and_gap() {
         let pcm = PcmFormat::new(48_000, &[AudioChannel::Microphone]).unwrap();
-        let format = Format::new(ProfileId::Xbox360HidEmulated, Direction::Microphone, 1).unwrap();
+        let format = Format::new(crate::profile::ids::XBOX360, Direction::Microphone, 1).unwrap();
         let (mut producer, source) = pcm_queue(&pcm, 256).unwrap();
         let (destination, mut consumer) = pcm_queue(&pcm, 128).unwrap();
         let (a, b) = UnixStream::pair().unwrap();

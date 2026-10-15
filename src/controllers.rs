@@ -1109,12 +1109,12 @@ fn create_dualsense_usb(
     identity: DualSenseIdentity,
 ) -> Result<DualSenseController, ControllerError> {
     use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ProfileId;
+    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) = crate::usb_audio::open(
         Profile::DualSense,
-        ProfileId::DualSenseEmulated,
+        gr_usbip::profile::ids::DUALSENSE,
         1,
         identity.to_bytes(),
         audio_options,
@@ -1159,12 +1159,12 @@ fn create_dualshock4_usb(
     identity: DualShock4Identity,
 ) -> Result<DualShock4Controller, ControllerError> {
     use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ProfileId;
+    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
     let (bridge, mut audio) = crate::usb_audio::open(
         Profile::DualShock4,
-        ProfileId::DualShock4Emulated,
+        gr_usbip::profile::ids::DUALSHOCK4,
         2,
         identity.to_bytes(),
         audio_options,
@@ -1206,13 +1206,13 @@ fn create_dualshock4_usb(
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
     use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ProfileId;
+    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
     let identity = DualSenseIdentity::generate()?.to_bytes();
     let (bridge, mut audio) = crate::usb_audio::open(
         Profile::Xbox360,
-        ProfileId::Xbox360HidEmulated,
+        gr_usbip::profile::ids::XBOX360,
         3,
         identity,
         audio_options,
