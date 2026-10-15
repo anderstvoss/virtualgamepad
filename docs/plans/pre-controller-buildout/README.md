@@ -21,6 +21,8 @@ Each numbered file is a self-contained agent brief. To dispatch one, give an age
 | 10 | [Facade, crate tidy, demo](10-facade-tidy-demo.md) (steps 2, 3, 5) | #176 | Core | 02; D5 for dummy_hcd |
 | 11 | [Research ledgers](11-research-ledgers.md) (Wii, Steam, Xbox Series) | #167 | Research | D1 (evidence start) |
 | 12 | [Windows CI downloads](12-windows-ci-downloads.md) | #150 | Fixes | D8 |
+| 13 | [Wii Remote package](13-wii-remote-package.md) (checkpoint C5) | #158 | Controller | C1, D6, D7; C2 for extensions and EEPROM |
+| 14 | [Steam Controller 2026, wired](14-steam-controller-wired-package.md) (checkpoint C6) | #159 | Controller | C1, step 16 = UHID accepted, 11c |
 
 ## Order
 
