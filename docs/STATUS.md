@@ -81,3 +81,11 @@ The deterministic fake backend is CI-tested; Linux uses public constructors and
 creation-associated sysfs nodes. First-neutral remains unmeasured until a
 consumer oracle exists; SDL probe completion is an upper bound, not its exact
 discovery instant. Live evidence remains separate.
+
+## Internal live topology
+
+An opt-in retained topology sidecar validates compiled subsets, counts accepted
+shape changes and guards absent controls without adding fields to ordinary
+sessions. The fifth synthetic family covers attach/detach, atomic rejection,
+terminal failure and static-superset uinput neutralization. Public topology
+accessors remain deferred until a real consumer family and owner API approval.
