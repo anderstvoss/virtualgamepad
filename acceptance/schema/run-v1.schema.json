@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Virtual controller timing run (not physical evidence)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "controller",
+    "realization",
+    "tier",
+    "permission",
+    "config",
+    "environment",
+    "resources",
+    "samples",
+    "summaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "virtual_host_run"
+    },
+    "controller": {
+      "type": "string"
+    },
+    "realization": {
+      "type": "string"
+    },
+    "tier": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    },
+    "config": {
+      "type": "object"
+    },
+    "environment": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "cycle",
+          "index",
+          "temperature",
+          "stages",
+          "observations",
+          "errors"
+        ]
+      }
+    },
+    "summaries": {
+      "type": "object"
+    }
+  }
+}
