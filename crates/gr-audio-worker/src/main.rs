@@ -66,12 +66,9 @@ mod linux {
         if args.len() != 8 {
             return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY INSTANCE CONTROL_FD PLAYBACK_FD MICROPHONE_FD".into());
         }
-        let profile = match args[0].as_str() {
-            "dualsense" => gr_usbip::profile::ids::DUALSENSE,
-            "dualshock4" => gr_usbip::profile::ids::DUALSHOCK4,
-            "xbox360" => gr_usbip::profile::ids::XBOX360,
-            _ => return Err("unknown compiled worker profile".into()),
-        };
+        let profile = gr_curated_controllers::registry::worker_id(&args[0])
+            .ok_or("unknown compiled worker profile")?;
+
         if args[3].len() != 12 || !args[3].bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("invalid persistent identity".into());
         }

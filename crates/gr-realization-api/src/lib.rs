@@ -267,18 +267,10 @@ pub struct NativeHidReportKey {
     pub report_id: u8,
     pub report_type: u8,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CompiledControllerKind {
-    DualSense,
-    DualShock4,
-    SwitchPro,
-    Xbox360,
-}
-
 /// A privileged broker creates the fixed USB gadget for this controller kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeDummyHcdRealization {
-    pub controller: CompiledControllerKind,
+    pub controller: ControllerId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

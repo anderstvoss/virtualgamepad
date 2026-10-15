@@ -181,48 +181,41 @@ pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
     ] {
         socket.peer_addr()?;
     }
-    match setup.profile {
-        gr_usbip::profile::ids::DUALSENSE => run_typed(
-            usb_personality::dualsense(setup.identity),
-            NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
-            |s| {
-                if let NativeState::DualSense(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
-        gr_usbip::profile::ids::DUALSHOCK4 => run_typed(
-            usb_personality::dualshock4(setup.identity),
-            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
-            |s| {
-                if let NativeState::DualShock4(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
-        gr_usbip::profile::ids::XBOX360 => run_typed(
-            usb_personality::xbox360(),
-            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
-            |s| {
-                if let NativeState::Xbox360(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
-        _ => Err(io::Error::other("unknown compiled worker profile")),
+    macro_rules! protocol {
+        (xbox360, $identity:expr) => {
+            usb_personality::xbox360()
+        };
+        ($module:ident, $identity:expr) => {
+            usb_personality::$module($identity)
+        };
     }
+    macro_rules! attempt {
+        ($module:ident, $spec:ident, []) => {};
+        ($module:ident, $spec:ident, [$variant:ident]) => {
+            if setup.profile == gr_usbip::profile::ids::$spec {
+                return run_typed(
+                    protocol!($module, setup.identity),
+                    NativeState::$variant(Default::default()),
+                    |state| {
+                        if let NativeState::$variant(state) = state {
+                            Some(state.clone())
+                        } else {
+                            None
+                        }
+                    },
+                    setup,
+                    channels,
+                );
+            }
+        };
+    }
+    macro_rules! dispatch {
+        ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
+            $(attempt!($module, $spec, [$($variant)?]);)*
+        };
+    }
+    gr_curated_controllers::compiled_families!(dispatch);
+    Err(io::Error::other("unknown compiled worker profile"))
 }
 fn run_typed<P, F>(
     protocol: P,
@@ -236,13 +229,8 @@ where
     P::State: Send,
     F: Fn(&NativeState) -> Option<P::State> + Send + 'static,
 {
-    let profile = match setup.profile {
-        gr_usbip::profile::ids::DUALSENSE => audio::dualsense(AudioExposure::Emulated),
-        gr_usbip::profile::ids::DUALSHOCK4 => audio::dualshock4(AudioExposure::Emulated),
-        gr_usbip::profile::ids::XBOX360 => audio::xbox360(AudioExposure::Emulated),
-        _ => return Err(io::Error::other("unknown compiled audio profile")),
-    }
-    .map_err(io::Error::other)?;
+    let profile =
+        audio::for_controller(setup.profile, AudioExposure::Emulated).map_err(io::Error::other)?;
     let (playback, reader) =
         pcm_queue(profile.streams()[0].format(), 2048).map_err(io::Error::other)?;
     let (writer, microphone) =
@@ -268,7 +256,7 @@ where
         state: Transactions::new(setup.generation, neutral)
             .map_err(|e| io::Error::other(format!("{e:?}")))?,
         extract,
-        numbered: setup.profile != gr_usbip::profile::ids::XBOX360,
+        numbered: gr_usbip::profile::spec(setup.profile)?.numbered_reports,
         updates: receive_updates,
         acknowledgements,
         events,
