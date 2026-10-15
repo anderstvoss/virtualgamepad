@@ -1,0 +1,172 @@
+//! Typed family metadata; no application-facing root exports.
+use crate::common::HidDriver;
+use gr_controller_contract::{ControllerSurface, InputTopology, RealizationManifest};
+pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec};
+use gr_realization_api::ControllerId;
+#[cfg(test)]
+use gr_realization_api::RealizationTarget;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealizationTier {
+    PlayableReduced,
+    PlayableFull,
+    FaithfulUsb,
+    FaithfulRadio,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionClass {
+    Uinput,
+    Uhid,
+    RootBroker,
+}
+#[derive(Debug, Clone, Copy)]
+pub struct FamilyRealization {
+    pub surface: &'static ControllerSurface,
+    pub tier: RealizationTier,
+    pub permission: PermissionClass,
+}
+impl FamilyRealization {
+    pub(crate) const fn new(
+        surface: &'static ControllerSurface,
+        tier: RealizationTier,
+        permission: PermissionClass,
+    ) -> Self {
+        Self {
+            surface,
+            tier,
+            permission,
+        }
+    }
+}
+pub(crate) trait ControllerFamily: HidDriver {
+    const SPEC: &'static FamilySpec;
+    const ID: ControllerId = Self::SPEC.id;
+    const BROKER_TAG: Option<u8> = Self::SPEC.broker_tag;
+    fn usb_profile() -> Option<UsbProfileSpec> {
+        Self::SPEC.usb_profile
+    }
+    fn topology() -> &'static InputTopology;
+    fn realizations() -> &'static [FamilyRealization];
+    fn manifest() -> RealizationManifest;
+}
+#[allow(dead_code)] // Reserved crate-internal contracts for steps 5-9; no runtime allocation.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum FamilyKind {
+    Controller,
+    Receiver,
+}
+pub struct FamilyEntry {
+    pub id: ControllerId,
+    pub spec: &'static FamilySpec,
+    pub broker_tag: Option<u8>,
+    pub usb_profile: fn() -> Option<UsbProfileSpec>,
+    pub topology: fn() -> &'static InputTopology,
+    pub realizations: fn() -> &'static [FamilyRealization],
+    pub manifest: fn() -> RealizationManifest,
+    #[allow(dead_code)]
+    pub(crate) max_topology: fn() -> &'static InputTopology,
+    #[allow(dead_code)]
+    pub(crate) output_kinds: &'static [&'static str],
+    #[allow(dead_code)]
+    pub(crate) subsystems: &'static [&'static str],
+    #[allow(dead_code)]
+    pub(crate) persistent_resources: &'static [&'static str],
+    #[allow(dead_code)]
+    pub(crate) refused_operations: &'static [&'static str],
+    #[allow(dead_code)]
+    pub(crate) kind: FamilyKind,
+}
+pub(crate) const fn family_entry<F: ControllerFamily>() -> FamilyEntry {
+    FamilyEntry {
+        id: F::ID,
+        spec: F::SPEC,
+        broker_tag: F::BROKER_TAG,
+        usb_profile: F::usb_profile,
+        topology: F::topology,
+        realizations: F::realizations,
+        manifest: F::manifest,
+        max_topology: F::topology,
+        output_kinds: &[],
+        subsystems: &[],
+        persistent_resources: &[],
+        refused_operations: &[],
+        kind: FamilyKind::Controller,
+    }
+}
+macro_rules! typed_registry {
+    ($(($module:ident, $definition:ident, $spec:ident),)*) => {
+        pub static FAMILIES: &[FamilyEntry] = &[
+            $(family_entry::<crate::$module::$definition>(),)*
+            #[cfg(test)] family_entry::<test_family::Fifth>(),
+        ];
+    };
+}
+gr_controller_wire::compiled_families!(typed_registry);
+#[cfg(test)]
+mod test_family;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn compiled_metadata_agrees_with_controller_definitions() {
+        use gr_controller_contract::RealizationControllerDefinition;
+        macro_rules! check_definitions {
+            ($(($module:ident, $definition:ident, $spec:ident),)*) => {
+                $(assert_eq!(crate::$module::$definition.controller_id(), gr_controller_wire::registry::$spec.id);)*
+            };
+        }
+        gr_controller_wire::compiled_families!(check_definitions);
+    }
+
+    #[test]
+    fn unique_ids_tags_and_consistent_surface_manifest_pairs() {
+        let mut ids = std::collections::HashSet::new();
+        let mut tags = std::collections::HashSet::new();
+        for family in FAMILIES {
+            assert!(ids.insert(family.id));
+            assert_eq!(family.spec.id, family.id);
+            assert_eq!(family.spec.broker_tag, family.broker_tag);
+            if let Some(tag) = family.broker_tag {
+                assert!(tags.insert(tag));
+            }
+            (family.topology)().validate().unwrap();
+            assert_eq!((family.max_topology)(), (family.topology)());
+            assert!(
+                family.output_kinds.is_empty()
+                    && family.subsystems.is_empty()
+                    && family.persistent_resources.is_empty()
+                    && family.refused_operations.is_empty()
+            );
+            assert!(matches!(family.kind, FamilyKind::Controller));
+            let manifest = (family.manifest)();
+            let surfaces = (family.realizations)();
+            assert_eq!(manifest.entries().len(), surfaces.len());
+            for entry in manifest.entries() {
+                let matches: Vec<_> = surfaces
+                    .iter()
+                    .filter(|s| s.surface.target() == entry.target)
+                    .collect();
+                assert_eq!(matches.len(), 1);
+                let realization = matches[0];
+                let (tier, permission) = match entry.target {
+                    RealizationTarget::LINUX_UINPUT => {
+                        (RealizationTier::PlayableReduced, PermissionClass::Uinput)
+                    }
+                    RealizationTarget::LINUX_UHID_USB | RealizationTarget::LINUX_UHID_BLUETOOTH => {
+                        (RealizationTier::PlayableFull, PermissionClass::Uhid)
+                    }
+                    RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+                    | RealizationTarget::LINUX_USBIP_USB_AUDIO => {
+                        (RealizationTier::FaithfulUsb, PermissionClass::RootBroker)
+                    }
+                    _ => panic!("unknown tier"),
+                };
+                assert_eq!(
+                    (realization.tier, realization.permission),
+                    (tier, permission)
+                );
+            }
+        }
+        assert_eq!(tags.len(), 3);
+    }
+}

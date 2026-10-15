@@ -99,3 +99,6 @@ mod tests {
         );
     }
 }
+
+/// Compiled metadata shared without importing provider or controller implementations.
+pub mod registry;
