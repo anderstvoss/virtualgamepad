@@ -1010,6 +1010,7 @@ dependencies = [
  "gr-realization-api",
  "libc",
  "proptest",
+ "toml",
 ]
 
 [[package]]

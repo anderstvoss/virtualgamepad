@@ -1,0 +1,134 @@
+schema_version = 1
+controller = "virtualgamepad.dualsense"
+research_revision = "abffb5db67032d3661436a209d1310da89ca0f17"
+realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid", "linux.usbip.usb-audio"]
+refused_operations = []
+persistent_resources = []
+
+[[functions]]
+id = "buttons"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "sticks"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "triggers"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "identity"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/identity", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "lifecycle"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "touchpad"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/touchpad", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "motion"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/motion", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "battery"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/battery", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "rumble"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "lightbar"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/lightbar", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "player-indicators"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "microphone-led"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/microphone-led", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "adaptive-triggers"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/adaptive-triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "headset-audio"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/headset-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "speaker-audio"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/speaker-audio", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+
+[[functions]]
+id = "calibration"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+"linux.usbip.usb-audio" = { status = "wip", test_id = "acceptance/dualsense/calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }

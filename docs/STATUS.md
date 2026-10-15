@@ -68,3 +68,9 @@ profile/controller enums are replaced by compiled IDs, without changing the
 ordinary-root snapshot, broker wire versions or existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
 review. The unavailable dummy_hcd path is retained while D5 is open.
+
+## Acceptance manifests
+
+The four compiled families have per-function TOML manifests under `acceptance/`,
+checked against actual declared realizations. All usable cells remain WIP; the
+dummy_hcd refusal is explicit. Empty pending evidence is not acceptance.
