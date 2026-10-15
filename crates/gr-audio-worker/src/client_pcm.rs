@@ -95,13 +95,8 @@ impl SampleStreams {
         playback: UnixStream,
         microphone: UnixStream,
     ) -> io::Result<Self> {
-        let definition = match profile {
-            gr_usbip::profile::ids::DUALSENSE => audio::dualsense(AudioExposure::Emulated),
-            gr_usbip::profile::ids::DUALSHOCK4 => audio::dualshock4(AudioExposure::Emulated),
-            gr_usbip::profile::ids::XBOX360 => audio::xbox360(AudioExposure::Emulated),
-            _ => return Err(io::Error::other("unknown compiled PCM profile")),
-        }
-        .map_err(io::Error::other)?;
+        let definition =
+            audio::for_controller(profile, AudioExposure::Emulated).map_err(io::Error::other)?;
         let playback_format = definition.streams()[0].format();
         let microphone_format = definition.streams()[1].format();
         let (playback_writer, playback_reader) =

@@ -17,11 +17,10 @@ use gr_controller_contract::{
 };
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget, RealizationTargetSet,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
+    RealizationSelection, RealizationSessionId, RealizationTarget, RealizationTargetSet,
 };
 use std::collections::BTreeMap;
 
@@ -1588,7 +1587,7 @@ fn create_dualsense_inner(
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::DualSense,
+                controller: gr_controller_wire::registry::ids::DUALSENSE,
             })
         }
         _ => {

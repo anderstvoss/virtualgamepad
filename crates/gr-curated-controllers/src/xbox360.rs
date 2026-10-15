@@ -12,10 +12,9 @@ use gr_controller_contract::{
     TriggerInput, TriggerInputKind, TriggerStack,
 };
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
-    RealizationSelection, RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, ProviderError,
+    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
 
 /// Xbox 360 signed thumb-stick value (`-32768..=32767`).
@@ -933,7 +932,7 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
         RealizationTarget::LINUX_UHID_USB => hid_realization(),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::Xbox360,
+                controller: gr_controller_wire::registry::ids::XBOX360,
             })
         }
         _ => {

@@ -1,7 +1,7 @@
 //! Typed family metadata; no application-facing root exports.
 use crate::common::HidDriver;
 use gr_controller_contract::{ControllerSurface, InputTopology, RealizationManifest};
-pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec};
+pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec, worker_id};
 use gr_realization_api::ControllerId;
 #[cfg(test)]
 use gr_realization_api::RealizationTarget;
@@ -94,7 +94,7 @@ pub(crate) const fn family_entry<F: ControllerFamily>() -> FamilyEntry {
     }
 }
 macro_rules! typed_registry {
-    ($(($module:ident, $definition:ident, $spec:ident),)*) => {
+    ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
         pub static FAMILIES: &[FamilyEntry] = &[
             $(family_entry::<crate::$module::$definition>(),)*
             #[cfg(test)] family_entry::<test_family::Fifth>(),
@@ -111,7 +111,7 @@ mod tests {
     fn compiled_metadata_agrees_with_controller_definitions() {
         use gr_controller_contract::RealizationControllerDefinition;
         macro_rules! check_definitions {
-            ($(($module:ident, $definition:ident, $spec:ident),)*) => {
+            ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
                 $(assert_eq!(crate::$module::$definition.controller_id(), gr_controller_wire::registry::$spec.id);)*
             };
         }

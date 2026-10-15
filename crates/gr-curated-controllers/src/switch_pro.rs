@@ -17,11 +17,10 @@ mod protocol;
 
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationSessionId, RealizationTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1134,7 +1133,7 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
         RealizationTarget::LINUX_UHID_USB => hid(o.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::SwitchPro,
+                controller: gr_controller_wire::registry::ids::SWITCH_PRO,
             })
         }
         _ => {
