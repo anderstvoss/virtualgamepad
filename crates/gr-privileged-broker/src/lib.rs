@@ -228,14 +228,14 @@ fn target_tag(target: RealizationTarget) -> Option<u8> {
 }
 
 fn controller_tag(controller: ControllerId) -> Option<u8> {
-    gr_controller_wire::registry::find(controller).map(|family| family.dummy_hcd_tag)
+    gr_controller_wire::registry::find(controller).and_then(|family| family.dummy_hcd_tag)
 }
 /// Decode only the unchanged compiled gadget wire tags.
 #[must_use]
 pub fn controller_from_tag(tag: u8) -> Option<ControllerId> {
     gr_controller_wire::registry::FAMILIES
         .iter()
-        .find(|family| family.dummy_hcd_tag == tag)
+        .find(|family| family.dummy_hcd_tag == Some(tag))
         .map(|family| family.id)
 }
 
@@ -594,7 +594,7 @@ pub fn compiled_report_length(
     if target != RealizationTarget::LINUX_DUMMY_HCD_USB_HID {
         return None;
     }
-    gr_controller_wire::registry::find(controller).map(|family| family.dummy_hcd_report_length)
+    gr_controller_wire::registry::find(controller).and_then(|family| family.dummy_hcd_report_length)
 }
 
 #[cfg(test)]
