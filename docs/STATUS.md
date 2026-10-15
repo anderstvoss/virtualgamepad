@@ -48,3 +48,5 @@ cell, public-root API, broker wire bytes or live acceptance claim.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
   outputs and typed surface kinds; public additions remain gated by D2.
+- [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
+  typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
