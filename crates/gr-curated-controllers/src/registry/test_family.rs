@@ -11,6 +11,8 @@ use std::sync::{Arc, Mutex};
 #[derive(Default)]
 struct Record {
     opened: Option<ProviderOpenRequest>,
+    opens: usize,
+    fail_read: bool,
     sent: Vec<ProviderFrame>,
     closed: usize,
     events: std::collections::VecDeque<RawReverseEvent>,
@@ -24,7 +26,42 @@ static SPEC: FamilySpec = FamilySpec {
     dummy_hcd_report_length: None,
     usb_profile: None,
 };
-static TOPOLOGY: InputTopology = InputTopology::EMPTY;
+const OPTIONAL: gr_controller_contract::InputControlId =
+    gr_controller_contract::InputControlId::new("extension.a");
+const BASE_BUTTON: gr_controller_contract::InputControlId =
+    gr_controller_contract::InputControlId::new("base.b");
+const BASE_BUTTONS: &[gr_controller_contract::AuxiliaryButtonInput] =
+    &[gr_controller_contract::AuxiliaryButtonInput {
+        id: BASE_BUTTON,
+        label: "B",
+    }];
+const ALL_BUTTONS: &[gr_controller_contract::AuxiliaryButtonInput] = &[
+    gr_controller_contract::AuxiliaryButtonInput {
+        id: BASE_BUTTON,
+        label: "B",
+    },
+    gr_controller_contract::AuxiliaryButtonInput {
+        id: OPTIONAL,
+        label: "A",
+    },
+];
+const MODULES: &[gr_controller_contract::CustomInputModule] =
+    &[gr_controller_contract::CustomInputModule {
+        id: gr_controller_contract::InputControlId::new("extension"),
+        title: "Synthetic extension",
+    }];
+const fn shape(attached: bool) -> InputTopology {
+    gr_controller_contract::construction::InputTopologySpec {
+        auxiliary_buttons: if attached { ALL_BUTTONS } else { BASE_BUTTONS },
+        custom_modules: if attached { MODULES } else { &[] },
+        ..gr_controller_contract::construction::InputTopologySpec::from_descriptor(
+            InputTopology::EMPTY,
+        )
+    }
+    .build()
+}
+static TOPOLOGY: InputTopology = shape(true);
+static BASE_TOPOLOGY: InputTopology = shape(false);
 const fn surface(target: RealizationTarget) -> ControllerSurface {
     gr_controller_contract::construction::ControllerSurfaceSpec {
         target,
@@ -84,16 +121,52 @@ impl TargetAwareControllerDriver for Fifth {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<Self::Frame, ControlError> {
-        Xbox360Definition.encode(selection, state)
+        if selection.target == RealizationTarget::LINUX_UINPUT {
+            Ok(ProviderFrame::Evdev(vec![
+                EvdevEvent {
+                    event_type: 1,
+                    code: 304,
+                    value: i32::from(state.native_pressed(crate::Xbox360Control::A)),
+                },
+                EvdevEvent {
+                    event_type: 1,
+                    code: 305,
+                    value: i32::from(state.native_pressed(crate::Xbox360Control::B)),
+                },
+                EvdevEvent {
+                    event_type: 0,
+                    code: 0,
+                    value: 0,
+                },
+            ]))
+        } else {
+            Xbox360Definition.encode(selection, state)
+        }
     }
 }
 impl HidDriver for Fifth {
-    type Hid = <Xbox360Definition as HidDriver>::Hid;
+    type Hid = FifthProtocol;
     fn neutralize_state(state: &mut Self::State) {
         Xbox360Definition::neutralize_state(state);
     }
     fn hid_protocol(&self, session: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
-        Xbox360Definition.hid_protocol(session, identity)
+        FifthProtocol {
+            inner: Xbox360Definition.hid_protocol(session, identity),
+            attached: false,
+        }
+    }
+    fn open_native(
+        &self,
+        request: ProviderOpenRequest,
+        _: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn NativeProviderSession>, ProviderError> {
+        assert_eq!(request.selection.target, RealizationTarget::LINUX_UINPUT);
+        {
+            let mut record = self.0.lock().unwrap();
+            record.opened = Some(request);
+            record.opens += 1;
+        }
+        Ok(Box::new(Fake(self.0.clone())))
     }
     fn open_hid(
         &self,
@@ -106,7 +179,11 @@ impl HidDriver for Fifth {
         assert_eq!(spec.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
         assert_eq!(spec.bus_type, 5);
         let id = request.session;
-        self.0.lock().unwrap().opened = Some(request);
+        {
+            let mut record = self.0.lock().unwrap();
+            record.opened = Some(request);
+            record.opens += 1;
+        }
         Ok(gr_provider_linux_uhid::HidTransport::from_session(
             Box::new(Fake(self.0.clone())),
             id,
@@ -149,6 +226,11 @@ impl NativeProviderSession for Fake {
         out: &mut dyn ProviderReverseEventSink,
     ) -> Result<(), ProviderError> {
         let mut record = self.0.lock().unwrap();
+        if record.fail_read {
+            return Err(ProviderError::Read {
+                reason: "synthetic transport failure".into(),
+            });
+        }
         if let Some(event) = record.events.pop_front() {
             out.push(ProviderReverseEvent {
                 session: RealizationSessionId(7),
@@ -220,3 +302,54 @@ fn fifth_family_creates_bluetooth_bus_through_curated_session_and_closes_once() 
     drop(session);
     assert_eq!(record.lock().unwrap().closed, 1);
 }
+
+#[derive(Clone)]
+pub(super) struct FifthProtocol {
+    inner: <Xbox360Definition as HidDriver>::Hid,
+    attached: bool,
+}
+impl gr_hid::Protocol for FifthProtocol {
+    type State = <Xbox360Definition as TargetAwareControllerDriver>::State;
+    type Output = RawReverseEvent;
+    fn neutral(&self) -> Self::State {
+        self.inner.neutral()
+    }
+    fn validate(&self, state: &Self::State) -> Result<(), gr_hid::Error> {
+        self.inner.validate(state)?;
+        if !self.attached && state.native_pressed(crate::Xbox360Control::A) {
+            return Err(gr_hid::Error::InvalidState);
+        }
+        Ok(())
+    }
+    fn input(
+        &mut self,
+        state: &Self::State,
+        now: u64,
+    ) -> Result<Vec<gr_hid::Report>, gr_hid::Error> {
+        self.inner.input(state, now)
+    }
+    fn deadline(&self) -> Option<u64> {
+        self.inner.deadline()
+    }
+    fn request(
+        &mut self,
+        kind: &gr_hid::RequestKind,
+        now: u64,
+    ) -> (gr_hid::Reply, Option<Self::Output>) {
+        self.inner.request(kind, now)
+    }
+    fn output(
+        &mut self,
+        report: gr_hid::Report,
+        now: u64,
+    ) -> Result<Option<Self::Output>, gr_hid::Error> {
+        self.inner.output(report, now)
+    }
+    fn lifecycle(&mut self, event: gr_hid::Lifecycle, now: u64) -> Option<Self::Output> {
+        self.inner.lifecycle(event, now)
+    }
+    fn delivered(&mut self, command: &gr_hid::Command, delivery: gr_hid::Delivery) {
+        self.inner.delivered(command, delivery);
+    }
+}
+mod topology_tests;
