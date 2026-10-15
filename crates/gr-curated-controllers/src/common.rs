@@ -1,4 +1,6 @@
 mod feedback;
+#[allow(dead_code)] // Opt-in typed resource seam; first production consumer is Wii.
+pub(crate) mod resources;
 mod snapshot;
 pub(crate) use snapshot::{SnapshotProtocol, logical_input};
 mod session;

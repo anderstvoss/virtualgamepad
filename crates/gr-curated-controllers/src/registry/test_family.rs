@@ -13,6 +13,11 @@ struct Record {
     opened: Option<ProviderOpenRequest>,
     opens: usize,
     fail_read: bool,
+    initial: Option<resource_tests::Image>,
+    send_results: std::collections::VecDeque<Result<(), ProviderError>>,
+    attempts: Vec<ProviderFrame>,
+    fail_close: bool,
+    snapshots: Arc<std::sync::atomic::AtomicUsize>,
     sent: Vec<ProviderFrame>,
     closed: usize,
     events: std::collections::VecDeque<RawReverseEvent>,
@@ -150,9 +155,18 @@ impl HidDriver for Fifth {
         Xbox360Definition::neutralize_state(state);
     }
     fn hid_protocol(&self, session: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
+        let initial = self.0.lock().unwrap().initial.clone();
+        let resource_mode = initial.is_some();
+        let mut inner = Xbox360Definition.hid_protocol(session, identity);
+        inner.numbered[2] = resource_mode;
         FifthProtocol {
-            inner: Xbox360Definition.hid_protocol(session, identity),
+            inner,
             attached: false,
+            resource_mode,
+            snapshots: self.0.lock().unwrap().snapshots.clone(),
+            resources: resource_tests::DeviceState::new(
+                initial.unwrap_or_else(resource_tests::Image::reference),
+            ),
         }
     }
     fn open_native(
@@ -187,7 +201,7 @@ impl HidDriver for Fifth {
         Ok(gr_provider_linux_uhid::HidTransport::from_session(
             Box::new(Fake(self.0.clone())),
             id,
-            [false; 3],
+            [false, false, self.0.lock().unwrap().initial.is_some()],
         ))
     }
 }
@@ -218,7 +232,10 @@ impl ControllerFamily for Fifth {
 struct Fake(Arc<Mutex<Record>>);
 impl NativeProviderSession for Fake {
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
-        self.0.lock().unwrap().sent.push(frame);
+        let mut record = self.0.lock().unwrap();
+        record.attempts.push(frame.clone());
+        record.send_results.pop_front().unwrap_or(Ok(()))?;
+        record.sent.push(frame);
         Ok(())
     }
     fn drain_reverse_events(
@@ -259,6 +276,11 @@ impl NativeProviderSession for Fake {
         let mut record = self.0.lock().unwrap();
         if record.closed == 0 {
             record.closed += 1;
+        }
+        if record.fail_close {
+            return Err(ProviderError::Write {
+                reason: "synthetic cleanup failure".into(),
+            });
         }
         Ok(())
     }
@@ -307,6 +329,9 @@ fn fifth_family_creates_bluetooth_bus_through_curated_session_and_closes_once() 
 pub(super) struct FifthProtocol {
     inner: <Xbox360Definition as HidDriver>::Hid,
     attached: bool,
+    resource_mode: bool,
+    resources: resource_tests::DeviceState,
+    snapshots: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl gr_hid::Protocol for FifthProtocol {
     type State = <Xbox360Definition as TargetAwareControllerDriver>::State;
@@ -316,6 +341,7 @@ impl gr_hid::Protocol for FifthProtocol {
     }
     fn validate(&self, state: &Self::State) -> Result<(), gr_hid::Error> {
         self.inner.validate(state)?;
+        self.resources.validate()?;
         if !self.attached && state.native_pressed(crate::Xbox360Control::A) {
             return Err(gr_hid::Error::InvalidState);
         }
@@ -326,7 +352,16 @@ impl gr_hid::Protocol for FifthProtocol {
         state: &Self::State,
         now: u64,
     ) -> Result<Vec<gr_hid::Report>, gr_hid::Error> {
-        self.inner.input(state, now)
+        if self.resource_mode {
+            self.resources.generate()?;
+        }
+        let mut reports = self.inner.input(state, now)?;
+        if self.resource_mode && self.resources.overflow {
+            self.resources.overflow_image();
+            let report = gr_hid::Report::new(gr_hid::ReportType::Input, None, vec![0]).unwrap();
+            reports.resize(33, report);
+        }
+        Ok(reports)
     }
     fn deadline(&self) -> Option<u64> {
         self.inner.deadline()
@@ -336,6 +371,11 @@ impl gr_hid::Protocol for FifthProtocol {
         kind: &gr_hid::RequestKind,
         now: u64,
     ) -> (gr_hid::Reply, Option<Self::Output>) {
+        if self.resource_mode {
+            if let Some(reply) = self.resources.request(kind) {
+                return (reply, None);
+            }
+        }
         self.inner.request(kind, now)
     }
     fn output(
@@ -353,3 +393,5 @@ impl gr_hid::Protocol for FifthProtocol {
     }
 }
 mod topology_tests;
+
+mod resource_tests;
