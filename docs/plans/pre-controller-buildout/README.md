@@ -52,7 +52,7 @@ Wave 3 (after 1e)      └─► 10 step 2 ──► 05 Outputs ──► 10 ste
 
 | ID | Decision | Recommendation | Unblocks |
 | --- | --- | --- | --- |
-| D1 | Lift the hold on code changes ("wait before beginning changes", 2026-10-14), per lane or all at once | Start Fixes, Core (02), Design (04) and Research (11) now | 01, 02, 04, 11, then everything |
+| D1 | **Cleared 2026-10-15 05:54 UTC.** Lift the hold on code changes ("wait before beginning changes", 2026-10-14), per lane or all at once | Start Fixes, Core (02), Design (04) and Research (11) now | 01, 02, 04, 11, then everything |
 | D2 | Grow the API snapshot for `host_outputs()` and the typed output/input kinds (`OutputSurface`, `InputTopology` are in the snapshot today) | Yes | 05b, 05c |
 | D3 | Accept the logical-controller vs presentation split (epochs) for mode switching | Yes | ADR-0021, 08 |
 | D4 | Displays and bulk subsystems: ADR now, or wait for a controller that needs them | ADR now, no code | ADR-0023 |
@@ -61,6 +61,7 @@ Wave 3 (after 1e)      └─► 10 step 2 ──► 05 Outputs ──► 10 ste
 | D7 | Wii first realizations now that Bluetooth-bus UHID is available | uinput (playable, reduced) **and** `linux.uhid.bluetooth` (the only path that binds `hid-wiimote`) together; drop USB-bus UHID to a fixture-only experiment | Wii package plan; updates the #158 proposal, which predates the 04:08 decision |
 | D8 | Authorize the `.github/` change for #150 (cache plus bounded retry on Windows only) | Yes | 12 |
 | D9 | Which host runs live lab work (Steam probe P1, acceptance runs): your machine through a session on your device, or another prepared x86-64 host | Your machine, if it has `/dev/uhid` and a kernel with `hid-steam` IBEX support | 03-P1, 09 live runs |
+| D10 | Let the executing agent merge its own PRs when the merge gate in IMPLEMENTATION_PLAN.md 1.6 passes (owner-merge list excepted) | Yes, so the work does not stall when reviewers are unavailable | merge mode B |
 
 Not blocking now: Wii vs Steam order (the table above suggests Xbox Series, then Wii, then wired Steam once 03 reports); Steam Machine receiver `1305` scope (default listed, out of scope); reference hardware for each controller.
 
