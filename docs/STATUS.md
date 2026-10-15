@@ -40,3 +40,9 @@ families are wired in.
 The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
+
+## Proposed runtime contracts
+
+- [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
+  with static uinput capability supersets and neutralization of absent controls.
+  The production seam remains internal; public additions await owner approval.
