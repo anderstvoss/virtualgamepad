@@ -42,6 +42,8 @@ pub mod audio_journal;
 pub mod audio_launch;
 #[cfg(target_os = "linux")]
 pub mod audio_session;
+#[cfg(all(test, target_os = "linux"))]
+mod registry_tests;
 /// Strict Linux socket framing.
 #[cfg(target_os = "linux")]
 pub mod socket_wire;
