@@ -36,3 +36,7 @@ per-controller acceptance issues and new Wii Remote, Steam Controller (2026)
 and Xbox Series families. Work is sequenced to land the compiled controller
 registry (#173) and a repeatable acceptance and timing harness (#166) before new
 families are wired in.
+
+The C1 registry checkpoint adds compiled family metadata and a typed registry,
+with deterministic Bluetooth-bus fake-provider coverage. It changes no support
+cell, public-root API, broker wire bytes or live acceptance claim.

@@ -1626,6 +1626,41 @@ pub fn test_controller(
     common::injected(DualSenseDefinition, session).map(DualSenseController)
 }
 
+impl crate::registry::ControllerFamily for DualSenseDefinition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSENSE;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

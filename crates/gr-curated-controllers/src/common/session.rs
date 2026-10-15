@@ -27,6 +27,9 @@ pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
             }),
         }
     }
+    fn open_hid(&self, request: ProviderOpenRequest) -> Result<HidTransport, ProviderError> {
+        LinuxUhidProvider::for_target(request.selection.target)?.open_transport(request)
+    }
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         Ok([0; 6])
     }
@@ -118,7 +121,7 @@ impl<D: HidDriver> ControllerSession<D> {
         };
         let protocol = driver.hid_protocol(request.session, identity);
         let id = request.session.0;
-        let transport = LinuxUhidProvider::for_target(selection.target)?.open_transport(request)?;
+        let transport = driver.open_hid(request)?;
         let runtime =
             Runtime::new(protocol, transport, id, Limits::default()).map_err(provider_error)?;
         Ok(Self {

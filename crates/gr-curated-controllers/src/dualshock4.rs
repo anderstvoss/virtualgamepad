@@ -1388,6 +1388,41 @@ pub fn test_controller(
     common::injected(DualShock4Definition, session).map(DualShock4Controller)
 }
 
+impl crate::registry::ControllerFamily for DualShock4Definition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSHOCK4;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &EVDEV_SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
