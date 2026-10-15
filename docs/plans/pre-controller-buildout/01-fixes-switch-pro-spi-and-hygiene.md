@@ -26,6 +26,6 @@ Done when: the PR merges, #174 closes with a comment, #156 gets a one-line comme
 ## 01b. Hygiene (one small PR)
 
 - Add `__pycache__/` and `*.pyc` to `.gitignore` (pulled forward from cleanup step 3, which then skips it).
-- Bump the `protocol-research` submodule from `64196c5` to the research repo's current `main` (`259ff98` at time of writing, "Accept evdev trace fixtures from gamepadcapture (#6)"). Run `scripts/tests/test_protocol_research_pin.py` and whatever pin check the repo's docs name. If the bump needs a `.github/` change, stop and ask.
+- Bump the `protocol-research` submodule from `64196c5` to the research repo's current `main` (`abffb5d` at time of writing, which adds the controller registry from research PR #7). Run `scripts/tests/test_protocol_research_pin.py` and whatever pin check the repo's docs name. If the bump needs a `.github/` change, stop and ask.
 
 Done when: merged, and #176 has a one-line comment.

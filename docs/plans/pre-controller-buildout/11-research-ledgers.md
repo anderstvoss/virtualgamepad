@@ -3,15 +3,11 @@
 Read `ground-rules.md` first, then `controller-protocol-research`'s `README.md` and `CONTRIBUTING.md`.
 
 **Lane:** Research (research repo only; touches no virtualgamepad code). **Blocked by:** nothing beyond Anders's word that evidence work starts (it is background work by his guidance, so ask once in D1 whether this lane may run now). Each sub-brief is one research-repo PR.
-**Needed by:** every controller package's source-evidence cells. Research repo `main` (`259ff98`) has no Wii or Xbox Series records and only 2 SC2 sources and a few Puck claims.
+**Needed by:** every controller package's source-evidence cells. Research repo `main` (`abffb5d`) has no Wii or Xbox Series records and only 2 SC2 sources and a few Puck claims.
 
-## 11a. Schema gaps first (from #167 comment 6163642205, still open)
+## 11a. Schema gaps (mostly done)
 
-`applicability.controller` and `applicability.transport` in `schemas/claim.schema.json` are free text.
-- Add a `records/controller/` registry (id, display name, family, known VID/PID per transport) and validate `applicability.controller` against it.
-- Make `transport` an enum (`usb`, `bluetooth`, `receiver`, `source_only`, `not_measured`), keeping the free-text `scope`. Migrate existing records.
-- Add a consumer-evidence marker (kernel commit, driver, file:line) if the schema has no way to express it, per the rule on #167 comment 6173997992.
-- Optional: `tools/status.py` printing each controller's category from its claims.
+Research PR #7 (`abffb5d`, merged 2026-10-15) added the `records/controller/` registry, the fixed transport set (`usb`, `bluetooth`, `receiver`, `source_only`, `not_measured`) and `tools/status.py`. What remains: the schema has a `kernel_source` source kind but no explicit consumer-evidence marker on claims (rule on #167 comment 6173997992). Add one only if 11b to 11d can't express "consumer evidence, never promotes device-side status" with the existing fields; otherwise skip 11a.
 
 ## 11b. Wii Remote L0 ledger (#158, plan comment 6173815463 section C and L0)
 

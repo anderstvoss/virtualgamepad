@@ -1,6 +1,6 @@
 # Pre-controller buildout: implementation plan for an executing agent
 
-Date: 2026-10-15. Repositories: `anderstvoss/virtualgamepad` (base `main` at `5a0a7dd`) and `anderstvoss/controller-protocol-research` (base `259ff98`).
+Date: 2026-10-15. Repositories: `anderstvoss/virtualgamepad` (base `main` at `5a0a7dd`) and `anderstvoss/controller-protocol-research` (base `abffb5d`).
 Tracking issue: **#176**. Detailed briefs: `docs/plans/pre-controller-buildout/01-…12-*.md` next to this file. When this plan and a brief disagree, this plan wins on order and process, and the brief wins on technical content.
 
 You are the implementing agent. You build each step, validate it, open a PR, and act on feedback that arrives through GitHub issues and PRs. Project threads watch your work and review it there. You never get feedback any other way, so GitHub is your only inbox.
@@ -215,7 +215,7 @@ The critical path. Each PR leaves all four families working.
 
 ### Step 11. Research ledgers (#167) — brief 11 *(parallel, research repo; one PR each)*
 
-11a schema gaps (controller registry, transport enum, consumer-evidence marker) · 11b Wii L0 ledger · 11c Steam migration from #159 · 11d Xbox Series L0 inventory.
+11a consumer-evidence marker only if needed (registry, transports and `tools/status.py` landed in research PR #7) · 11b Wii L0 ledger · 11c Steam migration from #159 · 11d Xbox Series L0 inventory.
 **Validate:** guard, validator and tests pass; every kernel fact cites commit and file:line with no excerpt; Wii revisions and Xbox GIP vs Bluetooth kept apart.
 **Feedback:** research PR plus the controller issue. **Done:** submodule pin bumped in virtualgamepad afterwards.
 

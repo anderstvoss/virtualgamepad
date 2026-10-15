@@ -1,6 +1,6 @@
 # Pre-controller buildout: plan index
 
-Date: 2026-10-15. Base: virtualgamepad `main` at `5a0a7dd`; research repo `main` at `259ff98`.
+Date: 2026-10-15. Base: virtualgamepad `main` at `5a0a7dd`; research repo `main` at `abffb5d`.
 Tracking issue: #176. **A single executing agent should follow [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**, which orders these briefs and defines validation and the issue/PR feedback loop. Canonical copy: `docs/plans/pre-controller-buildout/` in virtualgamepad. This folder extends `plans/post-alpha-1-cleanup-agent-plan.md`; it does not replace it.
 
 Each numbered file is a self-contained agent brief. To dispatch one, give an agent this sentence: *"Execute `docs/plans/pre-controller-buildout/<file>` in anderstvoss/virtualgamepad (or controller-protocol-research), following `ground-rules.md`; stop and ask on #176 at any open decision."* Briefs say what blocks them; nothing with an open blocker should be started.
