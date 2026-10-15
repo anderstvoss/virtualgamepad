@@ -17,11 +17,10 @@ use gr_controller_contract::{
 };
 use gr_dualsense_wire::USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget, RealizationTargetSet,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
+    RealizationSelection, RealizationSessionId, RealizationTarget, RealizationTargetSet,
 };
 use std::collections::BTreeMap;
 
@@ -1588,7 +1587,7 @@ fn create_dualsense_inner(
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::DualSense,
+                controller: gr_controller_wire::registry::ids::DUALSENSE,
             })
         }
         _ => {
@@ -1624,6 +1623,41 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualSenseController, ProviderError> {
     common::injected(DualSenseDefinition, session).map(DualSenseController)
+}
+
+impl crate::registry::ControllerFamily for DualSenseDefinition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSENSE;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

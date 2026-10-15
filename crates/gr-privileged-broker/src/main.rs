@@ -13,7 +13,7 @@ use gr_privileged_broker::{
     write_message,
 };
 #[cfg(target_os = "linux")]
-use gr_realization_api::{CompiledControllerKind, RealizationSessionId, RealizationTarget};
+use gr_realization_api::{ControllerId, RealizationSessionId, RealizationTarget};
 use std::io;
 #[cfg(target_os = "linux")]
 use std::{
@@ -145,7 +145,7 @@ impl HostSessionFactory for DaemonFactory {
     fn open(
         &self,
         target: RealizationTarget,
-        controller: CompiledControllerKind,
+        controller: ControllerId,
         _session: RealizationSessionId,
     ) -> Result<Box<dyn gr_privileged_broker::HostSession>, BrokerError> {
         match target {
@@ -233,13 +233,8 @@ fn dispatch(
                 1 => RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
                 _ => return Err(BrokerError::MalformedRequest),
             };
-            let controller = match controller {
-                1 => CompiledControllerKind::DualSense,
-                2 => CompiledControllerKind::DualShock4,
-                3 => CompiledControllerKind::SwitchPro,
-                4 => CompiledControllerKind::Xbox360,
-                _ => return Err(BrokerError::MalformedRequest),
-            };
+            let controller = gr_privileged_broker::controller_from_tag(*controller)
+                .ok_or(BrokerError::MalformedRequest)?;
             let session = registry.open(peer, target, controller, factory)?;
             Ok(session.0.to_le_bytes().to_vec())
         }

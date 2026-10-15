@@ -4,7 +4,6 @@
 #[allow(unsafe_code)]
 mod linux {
     use gr_audio_worker::{Channels, Setup};
-    use gr_usbip::profile::ProfileId;
     use std::{
         io,
         os::{
@@ -67,12 +66,9 @@ mod linux {
         if args.len() != 8 {
             return Err("expected compiled PROFILE DEVICE GENERATION IDENTITY INSTANCE CONTROL_FD PLAYBACK_FD MICROPHONE_FD".into());
         }
-        let profile = match args[0].as_str() {
-            "dualsense" => ProfileId::DualSenseEmulated,
-            "dualshock4" => ProfileId::DualShock4Emulated,
-            "xbox360" => ProfileId::Xbox360HidEmulated,
-            _ => return Err("unknown compiled worker profile".into()),
-        };
+        let profile = gr_curated_controllers::registry::worker_id(&args[0])
+            .ok_or("unknown compiled worker profile")?;
+
         if args[3].len() != 12 || !args[3].bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("invalid persistent identity".into());
         }
@@ -87,7 +83,11 @@ mod linux {
             generation: args[2].parse()?,
             identity,
         };
-        gr_usbip::profile::Profile::for_session(profile, &setup.instance, setup.generation)?;
+        gr_usbip::profile::Profile::for_session(
+            gr_usbip::profile::spec(profile).unwrap(),
+            &setup.instance,
+            setup.generation,
+        )?;
         let slots = args[5..]
             .iter()
             .map(|s| s.parse::<libc::c_int>())

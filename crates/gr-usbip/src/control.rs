@@ -1,5 +1,5 @@
 //! Standard USB/UAC2 controls and forwarding into controller-owned HID semantics.
-use crate::profile::{Profile, ProfileId};
+use crate::profile::Profile;
 use gr_hid::{Report, ReportType, RequestKind};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Completion {
@@ -73,14 +73,14 @@ impl ControlState {
             (0xa1, 1 | 2) if self.configured() && index == 0x1000 => clock(setup[1], value),
             (0xa1, 1) if self.configured() && index == 3 && (1..=4096).contains(&length) => {
                 let (kind, id) = report_type(value);
-                if (profile.id() != ProfileId::Xbox360HidEmulated) != id.is_some() {
+                if (profile.numbered_reports()) != id.is_some() {
                     return Completion::Stall;
                 }
                 return Completion::Hid(RequestKind::Get { kind, id });
             }
             (0x21, 9) if self.configured() && index == 3 && (1..=4096).contains(&length) => {
                 let (kind, id) = report_type(value);
-                let numbered = profile.id() != ProfileId::Xbox360HidEmulated;
+                let numbered = profile.numbered_reports();
                 if numbered != id.is_some() {
                     return Completion::Stall;
                 }
@@ -150,7 +150,7 @@ fn descriptor(profile: &Profile, value: u16, language: u16) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
     fn configured() -> (Profile, ControlState) {
-        let profile = Profile::new(ProfileId::DualSenseEmulated);
+        let profile = Profile::new(crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap());
         let mut state = ControlState::default();
         assert_eq!(
             state.handle(&profile, [0, 9, 1, 0, 0, 0, 0, 0], &[]),
@@ -160,7 +160,12 @@ mod tests {
     }
     #[test]
     fn session_string_requests_reply_exactly_and_reject_wrong_metadata() {
-        let profile = Profile::for_session(ProfileId::DualSenseEmulated, "lab", 7).unwrap();
+        let profile = Profile::for_session(
+            crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap(),
+            "lab",
+            7,
+        )
+        .unwrap();
         let mut state = ControlState::default();
         let serial = profile.string(3).unwrap();
         for language in [0_u16, 0x0409] {
@@ -180,7 +185,7 @@ mod tests {
         }
         assert_eq!(
             state.handle(
-                &Profile::new(ProfileId::DualSenseEmulated),
+                &Profile::new(crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap()),
                 [0x80, 6, 3, 3, 9, 4, 255, 0],
                 &[]
             ),

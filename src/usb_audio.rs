@@ -8,7 +8,7 @@ use gr_curated_controllers::{
 };
 use gr_privileged_broker::{audio_client::Client, audio_launch::Profile};
 use gr_realization_api::{ProviderDiagnostics, ProviderError, ProviderState, RawReverseEvent};
-use gr_usbip::profile::ProfileId;
+use gr_usbip::profile::ControllerId;
 use std::{
     fs, io,
     marker::PhantomData,
@@ -508,7 +508,7 @@ impl Drop for Pcm {
 
 pub(crate) fn open<S: Send + 'static>(
     profile: Profile,
-    id: ProfileId,
+    id: ControllerId,
     family: u8,
     identity: [u8; 6],
     options: AudioOptions,
@@ -540,14 +540,19 @@ pub(crate) fn open<S: Send + 'static>(
         let streams = SampleStreams::new(id, broker.generation(), playback, microphone)
             .map_err(|error| io_open(&error))?;
         let definition = match id {
-            ProfileId::DualSenseEmulated => {
+            gr_usbip::profile::ids::DUALSENSE => {
                 gr_curated_controllers::audio::dualsense(options.exposure())
             }
-            ProfileId::DualShock4Emulated => {
+            gr_usbip::profile::ids::DUALSHOCK4 => {
                 gr_curated_controllers::audio::dualshock4(options.exposure())
             }
-            ProfileId::Xbox360HidEmulated => {
+            gr_usbip::profile::ids::XBOX360 => {
                 gr_curated_controllers::audio::xbox360(options.exposure())
+            }
+            _ => {
+                return Err(ControllerError::Unsupported {
+                    reason: "unknown compiled audio profile".into(),
+                });
             }
         }
         .map_err(|error| ControllerError::Unsupported {
@@ -668,17 +673,17 @@ mod tests {
         use std::{io::Read, os::unix::net::UnixStream, thread};
         for (id, family, profile) in [
             (
-                ProfileId::DualSenseEmulated,
+                gr_usbip::profile::ids::DUALSENSE,
                 1,
                 gr_curated_controllers::audio::dualsense(crate::AudioExposure::Emulated).unwrap(),
             ),
             (
-                ProfileId::DualShock4Emulated,
+                gr_usbip::profile::ids::DUALSHOCK4,
                 2,
                 gr_curated_controllers::audio::dualshock4(crate::AudioExposure::Emulated).unwrap(),
             ),
             (
-                ProfileId::Xbox360HidEmulated,
+                gr_usbip::profile::ids::XBOX360,
                 3,
                 gr_curated_controllers::audio::xbox360(crate::AudioExposure::Emulated).unwrap(),
             ),

@@ -1,9 +1,13 @@
 mod feedback;
+#[allow(dead_code)] // Opt-in typed resource seam; first production consumer is Wii.
+pub(crate) mod resources;
 mod snapshot;
 pub(crate) use snapshot::{SnapshotProtocol, logical_input};
 mod session;
 #[cfg(test)]
 mod session_tests;
+#[allow(dead_code)] // Internal opt-in seam; first production consumer is Wii.
+pub(crate) mod topology;
 use crate::CreationOptions;
 use gr_controller_contract::{
     CommitError, ControlError, DpadDirection, FaceButton, PreparedRealization,

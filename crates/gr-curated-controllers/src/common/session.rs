@@ -27,6 +27,9 @@ pub(crate) trait HidDriver: TargetAwareControllerDriver<Frame = ProviderFrame> {
             }),
         }
     }
+    fn open_hid(&self, request: ProviderOpenRequest) -> Result<HidTransport, ProviderError> {
+        LinuxUhidProvider::for_target(request.selection.target)?.open_transport(request)
+    }
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         Ok([0; 6])
     }
@@ -118,7 +121,7 @@ impl<D: HidDriver> ControllerSession<D> {
         };
         let protocol = driver.hid_protocol(request.session, identity);
         let id = request.session.0;
-        let transport = LinuxUhidProvider::for_target(selection.target)?.open_transport(request)?;
+        let transport = driver.open_hid(request)?;
         let runtime =
             Runtime::new(protocol, transport, id, Limits::default()).map_err(provider_error)?;
         Ok(Self {
@@ -153,6 +156,60 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Native(r) => r.is_dirty(),
             Backend::Hid { runtime, .. } => runtime.is_dirty(),
             Backend::Worker { dirty, .. } => *dirty,
+        }
+    }
+    #[allow(dead_code)] // Used by opt-in topology/resource wrappers.
+    pub(crate) fn is_closed(&self) -> bool {
+        match &self.backend {
+            Backend::Native(runtime) => runtime.is_closed(),
+            Backend::Hid { runtime, .. } => runtime.is_closed(),
+            Backend::Worker { closed, .. } => *closed,
+        }
+    }
+    /// Stage both candidates, validating before either is installed. The old
+    /// protocol must also accept the neutralized state (detach policy). No I/O
+    /// occurs between installation calls; `Protocol::validate` must be pure.
+    #[allow(dead_code)] // Opt-in topology seam; no fields added to fixed families.
+    pub(crate) fn update_configuration(
+        &mut self,
+        edit_state: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+        edit_protocol: impl FnOnce(&mut D::Hid) -> Result<(), gr_hid::Error>,
+    ) -> Result<(), ControlError> {
+        match &mut self.backend {
+            Backend::Hid { driver, runtime } => {
+                if runtime.is_closed() {
+                    return Err(ControlError::Closed);
+                }
+                let invalid = |_| ControlError::UnsupportedControl {
+                    control: "invalid protocol topology edit",
+                };
+                let mut state = runtime.state().clone();
+                let mut protocol = runtime.protocol().clone();
+                edit_state(&mut state)?;
+                edit_protocol(&mut protocol).map_err(invalid)?;
+                driver.validate_state(self.selection, &state)?;
+                runtime.protocol().validate(&state).map_err(invalid)?;
+                protocol.validate(&state).map_err(invalid)?;
+                // Both operations are now prevalidated and cannot fail under
+                // the pure validation/clone contract; accepted queue bytes stay intact.
+                runtime
+                    .update(|s| {
+                        *s = state;
+                        Ok(())
+                    })
+                    .map_err(invalid)?;
+                runtime
+                    .update_protocol(|p| {
+                        *p = protocol;
+                        Ok(())
+                    })
+                    .map_err(invalid)
+            }
+            Backend::Native(runtime) => runtime.update_state(edit_state),
+            Backend::Worker { .. } => Err(ControlError::UnavailableInRealization {
+                selected_target: self.selection.target,
+                available_in: gr_realization_api::RealizationTargetSet::EMPTY,
+            }),
         }
     }
     pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {

@@ -12,10 +12,9 @@ use gr_controller_contract::{
     TriggerInput, TriggerInputKind, TriggerStack,
 };
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
-    RealizationSelection, RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, ProviderError,
+    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
 
 /// Xbox 360 signed thumb-stick value (`-32768..=32767`).
@@ -933,7 +932,7 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
         RealizationTarget::LINUX_UHID_USB => hid_realization(),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::Xbox360,
+                controller: gr_controller_wire::registry::ids::XBOX360,
             })
         }
         _ => {
@@ -1009,6 +1008,41 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<Xbox360Controller, ProviderError> {
     common::injected(Xbox360Definition, session).map(Xbox360Controller)
+}
+
+impl crate::registry::ControllerFamily for Xbox360Definition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::XBOX360;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &DUMMY_HCD_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

@@ -17,6 +17,27 @@ the resulting component set. See [ADR-0017](adr/ADR-0017-primary-realization-and
 
 `RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 
+## Compiled family registry and broker allowlist
+
+The four existing families are declared in one compile-time list in
+`gr-controller-wire`; its immutable metadata can be consumed below the
+broker/provider dependency boundary. The typed curated `FAMILIES` registry
+attaches each definition's manifest, topology and target surfaces, including
+intended realization tier and permission class. New test-only families can use
+the same curated orchestration without editing production dispatch arms.
+
+USB/IP profiles take a compiled `UsbProfileSpec`; semantic channel layouts,
+report numbering, descriptors and strings remain controller metadata. Broker
+and worker audio dispatch is generated from the same family list. The broker
+accepts only its compiled IDs/tags; descriptor injection and arbitrary worker
+executables are not interfaces. See [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md)
+(Proposed) for the boundary and rejected transport-only alternative.
+
+No ordinary-root API item, broker wire format or existing descriptor byte is
+changed by this registry. Tiers are intended mechanisms, not validation results.
+The shared UHID transport supports Bluetooth bus metadata, with curated fake-I/O
+coverage on bus 5; that is separate from real Bluetooth radio/pairing support.
+
 ## Ownership and data flow
 
 ```text
