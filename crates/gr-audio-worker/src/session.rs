@@ -10,7 +10,7 @@ use gr_hid::{Protocol, Reply, Report, ReportType, RequestKind};
 use gr_realization_api::RawReverseEvent;
 use gr_usbip::{
     pcm_ipc::{Direction, Format, Inbound, Outbound},
-    profile::{Profile, ProfileId},
+    profile::{ControllerId, Profile},
     worker::{Counters, HidHandler, Worker},
 };
 use std::{
@@ -30,7 +30,7 @@ use std::{
 pub struct Setup {
     /// Validated administrator-owned broker instance used in the USB serial.
     pub instance: String,
-    pub profile: ProfileId,
+    pub profile: ControllerId,
     pub generation: u64,
     pub device: u32,
     pub identity: [u8; 6],
@@ -165,7 +165,11 @@ impl Drop for Threads {
 }
 
 pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
-    Profile::for_session(setup.profile, &setup.instance, setup.generation)?;
+    Profile::for_session(
+        gr_usbip::profile::spec(setup.profile)?,
+        &setup.instance,
+        setup.generation,
+    )?;
     if setup.device == 0 || setup.generation == 0 {
         return Err(io::Error::other("invalid worker setup"));
     }
@@ -177,47 +181,41 @@ pub fn run(setup: Setup, channels: Channels) -> io::Result<()> {
     ] {
         socket.peer_addr()?;
     }
-    match setup.profile {
-        ProfileId::DualSenseEmulated => run_typed(
-            usb_personality::dualsense(setup.identity),
-            NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
-            |s| {
-                if let NativeState::DualSense(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
-        ProfileId::DualShock4Emulated => run_typed(
-            usb_personality::dualshock4(setup.identity),
-            NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
-            |s| {
-                if let NativeState::DualShock4(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
-        ProfileId::Xbox360HidEmulated => run_typed(
-            usb_personality::xbox360(),
-            NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
-            |s| {
-                if let NativeState::Xbox360(s) = s {
-                    Some(s.clone())
-                } else {
-                    None
-                }
-            },
-            setup,
-            channels,
-        ),
+    macro_rules! protocol {
+        (xbox360, $identity:expr) => {
+            usb_personality::xbox360()
+        };
+        ($module:ident, $identity:expr) => {
+            usb_personality::$module($identity)
+        };
     }
+    macro_rules! attempt {
+        ($module:ident, $spec:ident, []) => {};
+        ($module:ident, $spec:ident, [$variant:ident]) => {
+            if setup.profile == gr_usbip::profile::ids::$spec {
+                return run_typed(
+                    protocol!($module, setup.identity),
+                    NativeState::$variant(Default::default()),
+                    |state| {
+                        if let NativeState::$variant(state) = state {
+                            Some(state.clone())
+                        } else {
+                            None
+                        }
+                    },
+                    setup,
+                    channels,
+                );
+            }
+        };
+    }
+    macro_rules! dispatch {
+        ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
+            $(attempt!($module, $spec, [$($variant)?]);)*
+        };
+    }
+    gr_curated_controllers::compiled_families!(dispatch);
+    Err(io::Error::other("unknown compiled worker profile"))
 }
 fn run_typed<P, F>(
     protocol: P,
@@ -231,12 +229,8 @@ where
     P::State: Send,
     F: Fn(&NativeState) -> Option<P::State> + Send + 'static,
 {
-    let profile = match setup.profile {
-        ProfileId::DualSenseEmulated => audio::dualsense(AudioExposure::Emulated),
-        ProfileId::DualShock4Emulated => audio::dualshock4(AudioExposure::Emulated),
-        ProfileId::Xbox360HidEmulated => audio::xbox360(AudioExposure::Emulated),
-    }
-    .map_err(io::Error::other)?;
+    let profile =
+        audio::for_controller(setup.profile, AudioExposure::Emulated).map_err(io::Error::other)?;
     let (playback, reader) =
         pcm_queue(profile.streams()[0].format(), 2048).map_err(io::Error::other)?;
     let (writer, microphone) =
@@ -262,7 +256,7 @@ where
         state: Transactions::new(setup.generation, neutral)
             .map_err(|e| io::Error::other(format!("{e:?}")))?,
         extract,
-        numbered: setup.profile != ProfileId::Xbox360HidEmulated,
+        numbered: gr_usbip::profile::spec(setup.profile)?.numbered_reports,
         updates: receive_updates,
         acknowledgements,
         events,
@@ -271,7 +265,11 @@ where
     let worker = Worker::new(
         channels.usb,
         setup.device,
-        Profile::for_session(setup.profile, setup.instance, setup.generation)?,
+        Profile::for_session(
+            gr_usbip::profile::spec(setup.profile)?,
+            setup.instance,
+            setup.generation,
+        )?,
         handler,
         playback,
         microphone,
@@ -583,7 +581,7 @@ mod tests {
         let error = run(
             Setup {
                 instance: "../escape".into(),
-                profile: ProfileId::DualSenseEmulated,
+                profile: gr_usbip::profile::ids::DUALSENSE,
                 generation: 1,
                 device: 1,
                 identity: [0; 6],
@@ -639,15 +637,15 @@ mod tests {
     fn every_family_updates_without_host_polling_and_closes_owned_channels() {
         for (profile, state) in [
             (
-                ProfileId::DualSenseEmulated,
+                gr_usbip::profile::ids::DUALSENSE,
                 NativeState::DualSense(gr_curated_controllers::DualSenseState::default()),
             ),
             (
-                ProfileId::DualShock4Emulated,
+                gr_usbip::profile::ids::DUALSHOCK4,
                 NativeState::DualShock4(gr_curated_controllers::DualShock4State::default()),
             ),
             (
-                ProfileId::Xbox360HidEmulated,
+                gr_usbip::profile::ids::XBOX360,
                 NativeState::Xbox360(gr_curated_controllers::Xbox360State::default()),
             ),
         ] {
@@ -723,7 +721,7 @@ mod tests {
             run(
                 Setup {
                     instance: "test".into(),
-                    profile: ProfileId::Xbox360HidEmulated,
+                    profile: gr_usbip::profile::ids::XBOX360,
                     generation: 9,
                     device: 1,
                     identity: [0; 6],
@@ -755,7 +753,7 @@ mod tests {
             run(
                 Setup {
                     instance: "test".into(),
-                    profile: ProfileId::DualSenseEmulated,
+                    profile: gr_usbip::profile::ids::DUALSENSE,
                     generation: 17,
                     device: 1,
                     identity: [0; 6],

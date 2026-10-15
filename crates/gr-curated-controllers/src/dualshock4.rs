@@ -15,11 +15,10 @@ use gr_controller_contract::{
 };
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
+    RealizationSelection, RealizationSessionId, RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -1296,7 +1295,7 @@ fn create_dualshock4_inner(
         RealizationTarget::LINUX_UHID_USB => hid(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::DualShock4,
+                controller: gr_controller_wire::registry::ids::DUALSHOCK4,
             })
         }
         _ => {
@@ -1386,6 +1385,41 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualShock4Controller, ProviderError> {
     common::injected(DualShock4Definition, session).map(DualShock4Controller)
+}
+
+impl crate::registry::ControllerFamily for DualShock4Definition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSHOCK4;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &EVDEV_SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

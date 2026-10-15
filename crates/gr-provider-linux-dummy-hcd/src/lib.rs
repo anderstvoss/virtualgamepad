@@ -65,9 +65,20 @@ impl NativeProviderFactory for LinuxDummyHcdProvider {
 
 fn compiled_controller(
     request: &ProviderOpenRequest,
-) -> Result<CompiledControllerKind, ProviderPreflightError> {
+) -> Result<ControllerId, ProviderPreflightError> {
     match &request.realization {
         NativeControllerRealization::DummyHcd(NativeDummyHcdRealization { controller }) => {
+            if gr_privileged_broker::compiled_report_length(
+                RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                *controller,
+            )
+            .is_none()
+            {
+                return Err(ProviderPreflightError::Unavailable {
+                    target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+                    reason: "unknown compiled controller".into(),
+                });
+            }
             Ok(*controller)
         }
         _ => Err(ProviderPreflightError::MissingDeviceNode {
@@ -77,13 +88,12 @@ fn compiled_controller(
     }
 }
 
-const fn report_length(controller: CompiledControllerKind) -> usize {
-    match controller {
-        CompiledControllerKind::DualSense
-        | CompiledControllerKind::DualShock4
-        | CompiledControllerKind::SwitchPro => 64,
-        CompiledControllerKind::Xbox360 => 9,
-    }
+fn report_length(controller: ControllerId) -> usize {
+    gr_privileged_broker::compiled_report_length(
+        RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+        controller,
+    )
+    .unwrap_or(0)
 }
 
 fn preflight_error(error: BrokerClientError) -> ProviderPreflightError {
@@ -235,10 +245,10 @@ mod tests {
     #[test]
     fn every_compiled_controller_is_rejected_before_broker_connection() {
         for controller in [
-            CompiledControllerKind::DualSense,
-            CompiledControllerKind::DualShock4,
-            CompiledControllerKind::SwitchPro,
-            CompiledControllerKind::Xbox360,
+            gr_privileged_broker::ids::DUALSENSE,
+            gr_privileged_broker::ids::DUALSHOCK4,
+            gr_privileged_broker::ids::SWITCH_PRO,
+            gr_privileged_broker::ids::XBOX360,
         ] {
             let request = ProviderOpenRequest {
                 session: RealizationSessionId(42),
