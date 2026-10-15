@@ -89,3 +89,12 @@ shape changes and guards absent controls without adding fields to ordinary
 sessions. The fifth synthetic family covers attach/detach, atomic rejection,
 terminal failure and static-superset uinput neutralization. Public topology
 accessors remain deferred until a real consumer family and owner API approval.
+
+## Internal persistent resources
+
+The opt-in typed resource wrapper validates terminal disposition independently
+of transport cleanup. The synthetic fifth family proves pre-open import
+validation, isolated working values, sticky resource dirty, exact ACK retries and
+kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
+The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
+minimum regressions; Wii semantics and an optional file helper remain separate.
