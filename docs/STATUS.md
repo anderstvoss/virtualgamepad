@@ -26,7 +26,9 @@ an API freeze do not promote a cell.
 - Controller-matching audio profiles are unavailable (#116).
 - `linux.dummy_hcd.usb-hid` is unavailable: Linux `f_hid` lacks complete
   GET_REPORT metadata and negative replies.
-- Bluetooth personalities and actual Bluetooth are not available.
+- Shared UHID Bluetooth-bus transport is available, with deterministic curated
+  fake-provider coverage; no shipped family declares that personality yet.
+  Actual Bluetooth radio, pairing and BlueZ remain deferred.
 - Steam acceptance is deferred (#144). Broader GUI review is deferred (#126).
 
 ## Next release
@@ -40,3 +42,13 @@ families are wired in.
 The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
+
+## Registry checkpoint C1
+
+The compiled family registry now links the four existing definitions to their
+realization surfaces, intended tiers and permission classes. USB/IP descriptors
+and audio worker/broker dispatch derive from shared compiled metadata. Closed
+profile/controller enums are replaced by compiled IDs, without changing the
+ordinary-root snapshot, broker wire versions or existing descriptor bytes.
+[ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
+review. The unavailable dummy_hcd path is retained while D5 is open.
