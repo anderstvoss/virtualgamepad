@@ -5,7 +5,7 @@ Tracking issue: **#176**. Detailed briefs: `docs/plans/pre-controller-buildout/0
 
 You are the implementing agent, and you drive this work. You build each step, prove it meets the step's objective, open a PR, review it yourself, and move on. Project Claude threads may check in and review on GitHub when they are available, but **they are not a gate**. They can be unavailable for days. Plan as if no reviewer will ever answer, and treat a review that does arrive as a bonus to act on.
 
-Anders is the only gate, and only for the things listed in 1.6 and 1.8. GitHub is your only inbox.
+Anders is the only gate: he merges checkpoint PRs (1.6) and clears the decisions in 1.8. GitHub is your only inbox.
 
 ---
 
@@ -77,33 +77,58 @@ Agent self-review (step N)
 
 A box you cannot tick blocks the merge unless the line says why it does not apply. Be honest: the self-review is what Anders and later reviewers read instead of watching you work.
 
-### 1.6 Merging
+### 1.6 Checkpoints and merging
 
-There are two merge modes. **D10** on #176 decides which applies.
+Large feature work accumulates on **checkpoint branches**. Anders reviews and merges one checkpoint PR into `main` instead of every step PR, so `main` only moves at reviewed milestones and you never wait on a single step's merge.
 
-**Mode A (until D10 is granted): Anders merges.** Mark the PR ready when the merge gate below passes, and keep working. If the next step depends on the unmerged one, branch from the unmerged step's branch (a stack) rather than waiting. Keep stacks at most **three PRs deep**; when a stack is full, work a step that does not depend on it (Part 2 marks parallel steps). When a parent merges, merge `main` into the child and re-validate.
+| Checkpoint | Branch | Steps it accumulates | Done when |
+| --- | --- | --- | --- |
+| C1 Registry | `buildout/c1-registry` | 4a to 4e | #173's work is complete |
+| C2 Runtime seams | `buildout/c2-runtime-seams` | 5a, 5b, 5d (ADRs 0019, 0020, 0022), 6, 7a, 7b, 8, 9 | topology, resources and the runner are in |
+| C3 Outputs and tidy | `buildout/c3-outputs-tidy` | 10a, 10b, 10c (only if D2), 12a, 12b (only if D5) | outputs retained, facade and crates tidied |
+| C4 Epochs, receivers, demo | `buildout/c4-epochs-demo` | 5c, 5e, 13a, 13b, 14 | presentation and receivers in, demo driven by topology |
 
-**Mode B (after D10 is granted): you merge your own PRs** with a squash merge when the merge gate passes, except for the owner-merge list.
+Outside the checkpoints, as their own PRs: steps 1 and 2 (already open as #180 and #181), research-repo steps 3 and 11, the live runs 7c and 16 (research-repo experiments), and step 17.
 
-Merge gate (both modes):
+**Inside a checkpoint (you merge).**
 
-1. Every required check is green on the current head, and the branch is up to date with `main`.
-2. The "Agent self-review" comment is posted and complete.
-3. No unresolved blocking item from a "Claude review", a human comment, or a red-circle bot finding.
-4. The PR has been marked ready for at least **2 hours**, or a "Claude review" on the current head says it is ready to merge. This gives a check-in the chance to catch something without making it a gate.
+1. When you start a checkpoint's first step, create its branch from `main` (or from the previous checkpoint branch, see 4 below) and push it.
+2. Each step is still its own PR, targeting the checkpoint branch, with the self-review from 1.5. Merge it yourself (squash) once the step gate passes:
+   - CI green on the step PR's head (the CI workflow runs on every pull request; CodeQL runs only at the checkpoint PR);
+   - the "Agent self-review" comment is complete;
+   - no unresolved blocking item from a "Claude review", a human comment or a red-circle bot finding.
+3. Keep the checkpoint branch current: when `main` moves, merge `main` into it (never force-push or rebase it) and re-validate.
+4. You may start the next checkpoint while one waits for Anders: branch it from the waiting checkpoint's branch, and merge `main` into it after the waiting one lands. Have at most **two** checkpoints unmerged at once; beyond that, work on steps outside the checkpoints or stop and say so in the status comment.
 
-Owner-merge list (Anders merges these in either mode; mark them ready and move on):
+**The checkpoint PR (Anders merges).** When every step of a checkpoint is merged into its branch, or skipped because a decision is open:
 
-- any change to the API snapshot (step 10c);
-- marking an ADR "Accepted" (ADRs may self-merge as "Proposed");
-- removing a provider or realization (step 12b, dummy_hcd);
-- anything touching `.github/`, `SECURITY.md`, the license or release files (step 17);
-- any PR that edits or deletes an existing test.
+1. Merge `main` into the branch and run the full suite (1.10) on it.
+2. Open a PR from the checkpoint branch to `main` titled `Checkpoint Cn: <name>`, and mark it ready only when every required check, including CodeQL, is green. Its body is the checkpoint report:
+   - Before/After for the whole checkpoint;
+   - each step PR with its one-line result and its Objective evidence link;
+   - every judgement call from the step PRs, in one list;
+   - a **Needs your attention** section listing anything on the owner list below;
+   - skipped steps and the decision that holds each;
+   - known environment failures.
+3. Post an **"Agent checkpoint"** comment on #176 linking the PR, then continue with the next checkpoint (step 4 above).
+4. Anders merges it with a merge commit (so the step PRs stay traceable), or asks for changes. Fix requested changes with new step PRs into the same checkpoint branch.
+
+**Owner list.** These can enter a checkpoint branch, but must appear under "Needs your attention" in the checkpoint PR:
+
+- any change to the API snapshot (only with D2; without it, keep that work out of the branch as a draft PR);
+- marking an ADR "Accepted" (ADRs enter as "Proposed");
+- removing a provider or realization (12b, only with D5);
+- any edit or deletion of an existing test.
+
+Changes to `.github/`, `SECURITY.md`, the license or release files never go into a checkpoint; they are separate PRs that need the owner approval in 1.1.
+
+**PRs outside a checkpoint.** Anders merges them, unless **D10** lets you merge them yourself once CI is green, your self-review is complete, nothing blocking is open and the PR has been ready for 2 hours. Research-repo PRs (steps 3 and 11) follow the same rule. While D10 is open, mark them ready and keep working.
 
 ### 1.7 When something you merged is wrong
 
-- `main` red after your merge: open a revert PR at once and merge it under the same rules (in Mode A, flag it on #176 as **"Agent question (revert)"**). Then fix forward on a new branch.
-- A review arrives after the merge: treat its blocking items as a follow-up PR in your next session, linked from the original PR.
+- A checkpoint branch goes red after your merge: revert that step PR on the branch at once, then fix forward with a new step PR.
+- `main` red after a checkpoint lands: open a revert PR of the checkpoint merge and flag it on #176 as **"Agent question (revert)"**, then fix on the checkpoint branch.
+- A review arrives after a step merged into a checkpoint: fix its blocking items with a new step PR into the same checkpoint branch, or, once the checkpoint has landed, into the next one.
 
 ### 1.8 Gates and decisions
 
@@ -118,7 +143,7 @@ Owner-merge list (Anders merges these in either mode; mark them ready and move o
 | D7 | Wii first realizations | after this plan | Nothing in this plan. |
 | D8 | `.github/` change for #150 | 17 | Skip 17; re-run Windows once per failure as in 1.10. |
 | D9 | Host for live lab runs | 7c, 16 | Use the machine you run on if it meets the step's host requirements, and record the host in the PR. Otherwise skip, and say why in the status comment. |
-| D10 | You may merge your own PRs (Mode B) | merge mode | Mode A (stack and keep going). |
+| D10 | You may merge PRs outside checkpoints yourself | 1.6, last paragraph | Anders merges them; mark ready and keep working. |
 
 Record skipped steps and why in the status comment. Never wait idle on a decision.
 
@@ -136,7 +161,7 @@ Cloud agents prepare some steps ahead of you (specs, ADR drafts, manifests, rese
 | 11 ledgers | research-repo PRs | #167 comment 6185726279 |
 | 16 Steam P1 | live-run procedure, Valve udev rules | #159 comment 6185727138 |
 
-Prep is a head start, not a spec you must follow. Verify it against the code (cloud agents cannot build the workspace); where it is wrong, do what the brief and the code require and note the difference in the PR. If a lane's docs PR covers your step (for example an ADR), review and merge it under 1.6 instead of writing a second one, or supersede it with yours and close it with a link. Never edit a lane's branch.
+Prep is a head start, not a spec you must follow. Verify it against the code (cloud agents cannot build the workspace); where it is wrong, do what the brief and the code require and note the difference in the PR. If a lane's docs PR covers your step (for example an ADR), review it and bring it into the right checkpoint branch (or research `main`) under 1.6 instead of writing a second one, or supersede it with yours and close it with a link. Never edit a lane's branch.
 
 ### 1.10 Validation you run on every step
 
@@ -160,11 +185,11 @@ Known environment failures: on a bare host about five Python tests (`test_broker
 
 Label everything you post **"Agent (implementer)"** and end with the Claude Code footer the repository already uses.
 
-- **Status comment.** Keep one comment on #176 starting `<!-- agent-status -->`, edited in place: merge mode, current step, open PRs with state (`developing`, `ready`, `waiting on Anders`, `stacked on #N`), skipped steps and why, and judgement calls you want a check-in to look at. Edit it whenever state changes.
-- **PRs.** Draft while developing; ready when the merge gate items 1 to 3 pass. Use the template in 1.12.
+- **Status comment.** Keep one comment on #176 starting `<!-- agent-status -->`, edited in place: current checkpoint and its branch, current step, open PRs with state (`developing`, `ready`, `merged into Cn`, `waiting on Anders`), skipped steps and why, and judgement calls you want a check-in to look at. Edit it whenever state changes.
+- **PRs.** Draft while developing; ready when the step gate in 1.6 passes. Use the template in 1.12.
 - **Questions.** Only for Part 3 conditions: one comment on #176 starting **"Agent question (step N / Dn)"** with options and your recommendation, then work on something else.
 - **Merged step.** Tick its #176 checklist line and post a one-line comment linking the PR.
-- **Checkpoints.** After steps **4e**, **9**, **10b** and **14**, post one comment on #176 starting **"Agent checkpoint"**: the PRs merged since the last checkpoint, every judgement call in them, anything you would like reviewed, and what comes next. Check-ins review in batches from these, so make them complete.
+- **Checkpoints.** When a checkpoint PR opens (1.6), post one comment on #176 starting **"Agent checkpoint"** linking it, with what comes next. Check-ins review in batches from these, so make the checkpoint report complete.
 - **Controller issues.** When a step changes what a controller can do, post one line on that controller's issue (#154 to #160) linking the PR.
 
 ### 1.12 PR template
@@ -175,7 +200,7 @@ The PR body opens with **Before:** and **After:** paragraphs in plain language, 
 Step: <N> (<brief file>)   Tracking: #176   Issue: #<n>
 Decisions relied on: <Dn and the comment link, or "none">
 Prep used: <lane comment or PR link, and where you departed from it, or "none">
-Stacked on: <#PR, or "main">
+Base: <checkpoint branch, or "main">
 
 How:
 <short paragraph>
@@ -197,7 +222,7 @@ Completion Summary (AGENTS.md format)
 
 ## Part 2. Steps
 
-Each step lists an **Objective**: checks you can run yourself that prove the step is done. If every Objective line holds and the merge gate passes, the step is done without anyone else's review. Steps marked *(parallel)* do not touch the Core lane's files and are what you work on while a stack is full or a gate is closed.
+Each step lists an **Objective**: checks you can run yourself that prove the step is done. If every Objective line holds and the step gate passes, the step is done without anyone else's review. Each heading names its checkpoint (1.6). Steps marked *(parallel)* do not touch the Core lane's files and are what you work on while a gate is closed.
 
 Progress at this revision: steps 1 and 2 are ready (#180, #181, waiting on Anders's merge); step 3 is in progress (Puck test question answered on #176 comment 6189359458: assert per transport).
 
@@ -218,7 +243,7 @@ Progress at this revision: steps 1 and 2 are ready (#180, #181, waiting on Ander
 **Objective:** research checks pass; no GPL excerpts; every kernel and SDL fact cites commit and file:line; registry tests assert per transport rather than on whole dicts.
 **Report:** one line on #159 with the provisional answer (UHID likely accepted or not), labelled as an inference until step 16.
 
-### Step 4. Registry (#173) — brief 02, five PRs in order (Core, stackable)
+### Step 4. Registry (#173) — brief 02, five PRs in order (Core) · checkpoint C1
 
 The critical path. Each PR leaves all four families working. Prep: #173 comment 6185758742.
 
@@ -237,21 +262,21 @@ Objective: the enum no longer exists (grep); dummy_hcd creation returns the same
 **4e. ADR-0018, broker allowlist.** ADR in `docs/adr/`; update `docs/STATUS.md` and `docs/CORE_ARCHITECTURE.md`.
 Objective: the 4a test family needs only its module plus one registry line (diff shown); ADR merged as "Proposed" unless Anders accepts it.
 
-**Report:** #173 closed; #176 lines ticked; **checkpoint** after 4e.
+**Report:** checkpoint C1 PR opened; #173 closed when it lands.
 
-### Step 5. Contract ADRs — brief 04 *(parallel, docs only; one PR each)*
+### Step 5. Contract ADRs — brief 04 *(parallel, docs only; one PR each)* · 5a, 5b, 5d in C2; 5c, 5e in C4
 
 5a ADR-0019 live topology · 5b ADR-0020 retained outputs and kinds · 5c ADR-0021 epochs (D3 for "Accepted") · 5d ADR-0022 receivers · 5e ADR-0023 subsystems (stays draft until D4).
-Prep: the ADR lane may already have PRs open. Review them against brief 04 and the code, fix or supersede them, and merge as "Proposed".
+Prep: the ADR lane may already have PRs open. Review them against brief 04 and the code, fix or supersede them, and merge as "Proposed" into the checkpoint branch.
 **Objective:** each ADR answers every question brief 04 lists for it (checklist in the PR); links resolve; `docs/STATUS.md` links each ADR; any proposed root API addition is listed explicitly.
 
-### Step 6. Live topology seam audit (#163) — brief 06a *(parallel after 4a)*
+### Step 6. Live topology seam audit (#163) — brief 06a · checkpoint C2
 
 **Develop:** tests in `crates/gr-hid/tests/internal_topology.rs` for #163's cases: queued bytes never rewritten, rapid plug/unplug, edge saturation, invalid transitions, malicious register writes, probe overlap, close mid-change, no ambiguous retry of non-repeatable sends. Change core code only for a failing test. Prep: #163 comment 6191783744.
 **Objective:** one named test per #163 case (table in the PR mapping case to test); any core change has its failing test shown first.
 **Report:** #163 comment saying "no core change needed" with the test list, or naming the fix.
 
-### Step 7. Acceptance manifests and runner (#166) — brief 09 *(parallel after 4a)*
+### Step 7. Acceptance manifests and runner (#166) — brief 09 · 7a and 7b in C2; 7c outside
 
 Prep: #166 comment 6185734497.
 **7a. Manifests.** `acceptance/<id>.toml` per family, cells in the four evidence categories with research record IDs. Objective: a test that every family has a manifest and every cell names a declared realization.
@@ -259,42 +284,42 @@ Prep: #166 comment 6185734497.
 **7c. Live runs (D9).** At least two existing controllers on the recorded host, 1 and N concurrent, repeated cycles. Objective: run JSON filed as research-repo experiments; missing cells marked honestly; no budgets set.
 **Report:** `docs/STATUS.md` updated; #166 comment with results.
 
-### Step 8. Live topology generations — brief 06b *(after 4e and 5a)*
+### Step 8. Live topology generations — brief 06b *(after 5a)* · checkpoint C2
 
 **Develop:** crate-internal `topology_generation()`, `current_topology()` and a retained counter; edits to absent controls fail with `UnavailableInRealization`.
 **Objective:** a test family with one optional module covers attach, detach, rejected edit while absent, monotonic counter, the ADR's uinput policy, and close during a change; API check unchanged.
 
-### Step 9. Persistent resources seam (#162) — brief 07 *(after 4a; agree file ownership with step 8 in the PR)*
+### Step 9. Persistent resources seam (#162) — brief 07 *(agree file ownership with step 8 in the PR)* · checkpoint C2
 
 Prep: #162 comment 6191791649.
 **Develop:** validated import before any provider opens; explicit `KeepSnapshot` / `Discard` after deliberate or error close; first disposition wins; resource-dirty separate from `is_dirty()`.
 **Objective:** every item on #162's "Minimum regressions" list (comment 6163240564, minus Wii address maps) has a named test; a rejected import opens nothing (fake provider asserts it); `Drop` never exports; a stateless family carries no new fields at runtime (test or size assertion).
-**Report:** #162 comment with the integration recipe Wii will follow; **checkpoint** after 9.
+**Report:** #162 comment with the integration recipe Wii will follow; checkpoint C2 PR opened.
 
-### Step 10. Root facade, then retained outputs — briefs 10 (step 2) and 05 (Core)
+### Step 10. Root facade, then retained outputs — briefs 10 (step 2) and 05 (Core) · checkpoint C3
 
 **10a. Facade.** Crate-private `Controller<F>`, newtype public types, `macro_rules!` forwarding. Objective: API check passes (doc comments identical); `src/controllers/tests.rs` unchanged (`git diff` empty) and green; line count before/after reported.
-**10b. Retained outputs below the root (05a).** Objective: a burst larger than the 32-entry queue keeps the latest value; the revision increases once per accepted change; malformed outputs leave it unchanged. **Checkpoint** after 10b.
-**10c. Root `host_outputs()` and typed kinds (05b, 05c).** Needs D2 and is on the owner-merge list. Objective: the snapshot is regenerated and every added item listed in the PR body; new types are `#[non_exhaustive]`.
+**10b. Retained outputs below the root (05a).** Objective: a burst larger than the 32-entry queue keeps the latest value; the revision increases once per accepted change; malformed outputs leave it unchanged.
+**10c. Root `host_outputs()` and typed kinds (05b, 05c).** Needs D2; listed under "Needs your attention" in the C3 PR. Objective: the snapshot is regenerated and every added item listed in the PR body; new types are `#[non_exhaustive]`.
 
 ### Step 11. Research ledgers (#167) — brief 11 *(parallel, research repo)*
 
-Prep: the research-ledgers lane opens these PRs (#167 comment 6185726279). Your part: review each lane PR against brief 11 and merge it under 1.6, write any ledger the lane has not started, then bump the `protocol-research` pin in virtualgamepad.
+Prep: the research-ledgers lane opens these PRs (#167 comment 6185726279). Your part: review each lane PR against brief 11 and merge it into research `main` under 1.6, write any ledger the lane has not started, then bump the `protocol-research` pin in virtualgamepad.
 **Objective:** guard, validator and tests pass; every kernel fact cites commit and file:line with no excerpt; Wii revisions and Xbox GIP vs Bluetooth kept apart; the pin bump passes `test_protocol_research_pin.py`.
 
-### Step 12. Crate tidy — brief 10 (step 3)
+### Step 12. Crate tidy — brief 10 (step 3) · checkpoint C3
 
 **12a.** `gr-root-audio` crate and wire-crate fold. Objective: API check unchanged; `--no-default-features`, each feature alone and `--all-features` all build.
-**12b. dummy_hcd (D5 = park; owner-merge).** Create `archive/dummy-hcd` from `main` first; remove the provider, broker module, per-family surfaces and docs rows; keep `RealizationId::LINUX_DUMMY_HCD_USB_HID` rejecting. Objective: creation with that ID returns the same error (test).
+**12b. dummy_hcd (D5 = park; owner list).** Create `archive/dummy-hcd` from `main` first; remove the provider, broker module, per-family surfaces and docs rows; keep `RealizationId::LINUX_DUMMY_HCD_USB_HID` rejecting. Objective: creation with that ID returns the same error (test).
 
-### Step 13. Presentation epochs and receivers (#165) — brief 08 *(needs 5c, 5d and a Steam tier answer from step 3 or 16)*
+### Step 13. Presentation epochs and receivers (#165) — brief 08 *(needs 5c, 5d and a Steam tier answer from step 3 or 16)* · checkpoint C4
 
 **13a. Epochs (D3).** Objective: tests for swap success, prepare failure leaving the old presentation intact, failure mid-swap, close during swap, identity kept, counters reset.
 **13b. Receiver aggregate.** Objective: #165's completion evidence as tests: deterministic 0-to-4-slot fixture with optional companions, simultaneous changes, rollback, required requests, close/failure, sibling survival.
 
-### Step 14. Demo from topology — brief 10 (step 5)
+### Step 14. Demo from topology — brief 10 (step 5) · checkpoint C4
 
-**Objective:** GUI lifecycle tests unchanged and green; a new test that every registry family produces an editor; `grep` shows no per-family branches left in `demo/src/gui.rs` except declared-output panels. **Checkpoint** after 14.
+**Objective:** GUI lifecycle tests unchanged and green; a new test that every registry family produces an editor; `grep` shows no per-family branches left in `demo/src/gui.rs` except declared-output panels.
 
 ### Step 15. Readiness report (no PR)
 
@@ -305,7 +330,7 @@ Post one comment on #176 and on each of #158, #159, #160: what is now in place f
 Host needs `/dev/uhid` and kernel **v7.3-rc1 or newer** (first release with the IBEX ID). Throwaway probe on a branch, never merged. Cases: `28de:1302` UHID USB bus, `28de:1304` single node, DualSense control. Prep: #159 comment 6185727138.
 **Objective:** experiment record in the research repo with driver binding, hidraw, hidapi interface number and bus, SDL3 detection, Steam client listing and first report delivery per case; brief 03's decision rule applied in one line on #159 and #176.
 
-### Step 17. Windows CI downloads (#150) — brief 12 *(D8; owner-merge)*
+### Step 17. Windows CI downloads (#150) — brief 12 *(D8; own PR, Anders merges)*
 
 **Objective:** a cold-cache and a warm-cache run linked in the PR; revocation checking untouched; egress allowlist changes listed.
 
@@ -327,4 +352,4 @@ A judgement call (1.4), a missing review, or prep that disagrees with the code i
 
 ## Part 4. For project threads checking in
 
-Check-ins are optional and asynchronous. To check in: read the `<!-- agent-status -->` comment and the latest "Agent checkpoint" on #176, then post "Claude review" comments on the PRs or checkpoint. Blocking items on a merged PR become a follow-up PR (1.7). Do not ask the agent to wait for a review, and do not use a review to clear a decision.
+Check-ins are optional and asynchronous. To check in: read the `<!-- agent-status -->` comment and the latest "Agent checkpoint" on #176, then post "Claude review" comments, preferably on the open checkpoint PR, which carries every step and judgement call since the last one. Blocking items become new step PRs into the checkpoint branch (1.7). Do not ask the agent to wait for a review, and do not use a review to clear a decision.
