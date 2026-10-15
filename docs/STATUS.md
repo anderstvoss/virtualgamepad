@@ -53,6 +53,12 @@ cell, public-root API, broker wire bytes or live acceptance claim.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
 
+The step 6 synthetic topology audit covers queued bytes/replies, saturation,
+malformed writes, probe/edit overlap, terminal close, delivery uncertainty,
+observation eviction, delivery feedback after edits and explicit host STOP.
+Seventeen low-seam tests pass with no `gr-hid` runtime change. Production Wii
+integration and live-topology generations remain separate work.
+
 ## Registry checkpoint C1
 
 The compiled family registry now links the four existing definitions to their
