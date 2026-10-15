@@ -74,3 +74,10 @@ review. The unavailable dummy_hcd path is retained while D5 is open.
 The four compiled families have per-function TOML manifests under `acceptance/`,
 checked against actual declared realizations. All usable cells remain WIP; the
 dummy_hcd refusal is explicit. Empty pending evidence is not acceptance.
+
+The acceptance `xtask` records monotonic API/node/consumer/removal stages,
+raw failures, cold/warm samples and nearest-rank summaries without budgets.
+The deterministic fake backend is CI-tested; Linux uses public constructors and
+creation-associated sysfs nodes. First-neutral remains unmeasured until a
+consumer oracle exists; SDL probe completion is an upper bound, not its exact
+discovery instant. Live evidence remains separate.

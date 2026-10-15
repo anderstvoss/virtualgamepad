@@ -7,6 +7,7 @@ use std::{
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +15,14 @@ use virtualgamepad::{
     ControllerAssociation, ControllerSurfaceInfo, CreationOptions, DigitalControlUpdate,
     InputTopology, RealizationId,
 };
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+struct Capture(PathBuf);
+impl Drop for Capture {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
 
 macro_rules! controllers {
     ($(($variant:ident,$ty:ident,$create:ident,$id:literal)),+ $(,)?) => {
@@ -104,9 +113,20 @@ fn bound_driver(node: &Path) -> Option<String> {
             .map(|s| s.to_string_lossy().into_owned())
     })
 }
-fn wait_child(child: &mut Child, controller: &mut Controller) -> Result<(), String> {
+fn wait_child(
+    child: &mut Child,
+    controller: &mut Controller,
+    peers: &mut [&mut Session],
+) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
+        for peer in peers.iter_mut() {
+            if let Err(error) = peer.controller.service() {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        }
         match child.try_wait() {
             Ok(Some(status)) => {
                 return if status.success() {
@@ -159,11 +179,17 @@ impl Backend for Linux {
             consumers: Vec::new(),
         })
     }
-    fn observe(&mut self, s: &mut Session, stage: &str) -> Result<Value, String> {
+    fn observe(
+        &mut self,
+        s: &mut Session,
+        stage: &str,
+        peers: &mut [&mut Session],
+    ) -> Result<Value, String> {
         match stage {
             "node_present"|"node_gone"=>{
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
+                    for peer in peers.iter_mut() { peer.controller.service()?; }
                     let nodes=matching_nodes(&s.physical_paths);
                     if stage=="node_present" && !nodes.is_empty(){
                         s.nodes=nodes;
@@ -184,11 +210,18 @@ impl Backend for Linux {
             "sdl_ready"=>{
                 if !self.sdl{return Err("SDL probe not requested".into());}
                 let node=s.nodes.iter().find(|p|p.starts_with("/dev/input")).or_else(||s.nodes.first()).ok_or("no owned node for SDL")?;
-                // Keep complete SDL observations outside the timing record; never claim
-                // script exit alone proves the exact controller was opened.
-                let mut child=Command::new("bash").arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh")).arg(node).arg("100").stdout(Stdio::null()).stderr(Stdio::null()).spawn().map_err(|e|e.to_string())?;
-                wait_child(&mut child,&mut s.controller)?;
-                Err("probe executed; SDL discovery timestamp not observed by this process".into())
+                let path = std::env::temp_dir().join(format!("virtualgamepad-acceptance-{}-{}.json", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+                let file = OpenOptions::new().write(true).create_new(true).open(&path).map_err(|e|e.to_string())?;
+                let capture = Capture(path);
+                let mut child = Command::new("bash")
+                    .arg(self.root.join("scripts/run-sdl3-gamepad-probe.sh"))
+                    .arg(node).arg("100").stdout(Stdio::from(file)).stderr(Stdio::null())
+                    .spawn().map_err(|e|e.to_string())?;
+                wait_child(&mut child, &mut s.controller, peers)?;
+                let text = fs::read_to_string(&capture.0).map_err(|e|e.to_string())?;
+                let record = text.lines().filter_map(|line|serde_json::from_str::<Value>(line).ok()).find(|r|r["consumer"]=="SDL").ok_or("SDL probe emitted no observation")?;
+                if record["opened"]["value"] != true { return Err("SDL did not observe this exact device opened".into()); }
+                Ok(json!({"consumer":"SDL","timestamp_scope":"probe completion upper bound; discovery may occur earlier","observation":record}))
             }
             _=>Err("unknown stage".into()),
         }

@@ -41,7 +41,12 @@ pub trait Backend {
     fn create(&mut self, family: &str, realization: &str) -> Result<Self::Session, String>;
     /// # Errors
     /// Returns why this stage could not be observed.
-    fn observe(&mut self, session: &mut Self::Session, stage: &str) -> Result<Value, String>;
+    fn observe(
+        &mut self,
+        session: &mut Self::Session,
+        stage: &str,
+        peers: &mut [&mut Self::Session],
+    ) -> Result<Value, String>;
     /// # Errors
     /// Returns the first scripted input/service failure.
     fn drive(&mut self, session: &mut Self::Session) -> Result<(), String>;
@@ -113,7 +118,7 @@ pub fn run<B: Backend, C: Clock>(
                     stages.insert("api_returned".into(), measured(clock.now_ns()));
                     let mut observations = BTreeMap::new();
                     for stage in ["node_present", "consumer_open", "first_neutral", "sdl_ready"] {
-                        match backend.observe(&mut session, stage) {
+                        match backend.observe(&mut session, stage, &mut active.iter_mut().map(|entry: &mut (B::Session, _, _, _, _)| &mut entry.0).collect::<Vec<_>>()) {
                             Ok(value) => { stages.insert(stage.into(), measured(clock.now_ns())); observations.insert(stage, value); }
                             Err(reason) => { stages.insert(stage.into(), missing(&reason)); }
                         }
@@ -124,12 +129,20 @@ pub fn run<B: Backend, C: Clock>(
                 Err(error) => samples.push(json!({"cycle":cycle,"index":index,"temperature":if cycle==0 {"cold"}else{"warm"},"stages":stages,"observations":{},"errors":[error]})),
             }
         }
-        for (mut session, mut stages, mut observations, mut errors, index) in active {
+        while !active.is_empty() {
+            let (mut session, mut stages, mut observations, mut errors, index) = active.remove(0);
             stages.insert("close_call".into(), measured(clock.now_ns()));
             backend.close(&mut session);
             stages.insert("close_returned".into(), measured(clock.now_ns()));
             backend.close(&mut session); // idempotence exercised on every creation
-            match backend.observe(&mut session, "node_gone") {
+            match backend.observe(
+                &mut session,
+                "node_gone",
+                &mut active
+                    .iter_mut()
+                    .map(|entry| &mut entry.0)
+                    .collect::<Vec<_>>(),
+            ) {
                 Ok(value) => {
                     stages.insert("node_gone".into(), measured(clock.now_ns()));
                     observations.insert("node_gone", value);
@@ -213,6 +226,7 @@ pub struct Fake {
     pub opened: usize,
     pub peak: usize,
     pub closes: usize,
+    pub observed_peers: usize,
     pub fail_create: Option<usize>,
     pub fail_observation: Option<&'static str>,
     creates: usize,
@@ -228,7 +242,14 @@ impl Backend for Fake {
         self.peak = self.peak.max(self.opened);
         Ok(true)
     }
-    fn observe(&mut self, _: &mut bool, stage: &str) -> Result<Value, String> {
+    fn observe(
+        &mut self,
+        _: &mut bool,
+        stage: &str,
+        peers: &mut [&mut bool],
+    ) -> Result<Value, String> {
+        assert!(peers.iter().all(|peer| **peer));
+        self.observed_peers = self.observed_peers.max(peers.len());
         if self.fail_observation == Some(stage) {
             Err("scripted missing observation".into())
         } else {
@@ -253,6 +274,85 @@ impl Backend for Fake {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Small validator for the exact schema vocabulary used by this artifact.
+    fn schema_matches(schema: &Value, value: &Value) -> bool {
+        if let Some(one) = schema.get("oneOf") {
+            return one
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|s| schema_matches(s, value))
+                .count()
+                == 1;
+        }
+        if schema.get("const").is_some_and(|c| c != value) {
+            return false;
+        }
+        if schema
+            .get("enum")
+            .is_some_and(|a| !a.as_array().unwrap().contains(value))
+        {
+            return false;
+        }
+        if let Some(kind) = schema.get("type").and_then(Value::as_str) {
+            if !match kind {
+                "object" => value.is_object(),
+                "array" => value.is_array(),
+                "string" => value.is_string(),
+                "integer" => value.is_u64(),
+                "null" => value.is_null(),
+                _ => false,
+            } {
+                return false;
+            }
+        }
+        if let Some(properties) = schema.get("properties").and_then(Value::as_object) {
+            let Some(object) = value.as_object() else {
+                return false;
+            };
+            if schema.get("required").is_some_and(|r| {
+                r.as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|k| !object.contains_key(k.as_str().unwrap()))
+            }) {
+                return false;
+            }
+            if schema["additionalProperties"] == false
+                && object.keys().any(|k| !properties.contains_key(k))
+            {
+                return false;
+            }
+            if properties
+                .iter()
+                .any(|(key, s)| object.get(key).is_some_and(|v| !schema_matches(s, v)))
+            {
+                return false;
+            }
+        }
+        if let Some(items) = schema.get("items") {
+            if !value
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|v| schema_matches(items, v))
+            {
+                return false;
+            }
+        }
+        if schema
+            .get("minimum")
+            .is_some_and(|min| value.as_u64() < min.as_u64())
+        {
+            return false;
+        }
+        if schema.get("minLength").is_some_and(|min| {
+            value.as_str().unwrap().len() < usize::try_from(min.as_u64().unwrap()).unwrap()
+        }) {
+            return false;
+        }
+        true
+    }
     struct Tick(u64);
     impl Clock for Tick {
         fn now_ns(&mut self) -> u64 {
@@ -279,6 +379,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(fake.peak, 4);
+        assert_eq!(fake.observed_peers, 3);
         assert_eq!(fake.closes, 8);
         assert_eq!(fake.opened, 0);
         assert_eq!(
@@ -298,9 +399,11 @@ mod tests {
         let schema: Value =
             serde_json::from_str(include_str!("../../acceptance/schema/run-v1.schema.json"))
                 .unwrap();
-        for key in schema["required"].as_array().unwrap() {
-            assert!(result.get(key.as_str().unwrap()).is_some());
-        }
+        assert!(schema_matches(&schema, &result));
+        let mut malformed = result.clone();
+        malformed["samples"][0]["stages"]["api_call"]["reason"] =
+            json!("contradicts measured value");
+        assert!(!schema_matches(&schema, &malformed));
         assert_eq!(result["samples"].as_array().unwrap().len(), 8);
         for sample in result["samples"].as_array().unwrap() {
             assert_eq!(sample["stages"].as_object().unwrap().len(), STAGES.len());
@@ -326,6 +429,33 @@ mod tests {
         assert_eq!(result["samples"][1]["errors"][0], "scripted open failure");
         assert!(result["samples"][0]["stages"]["first_neutral"]["value_ns"].is_null());
         assert!(result["samples"][0]["stages"]["first_neutral"]["reason"].is_string());
+    }
+    #[test]
+    fn nearest_rank_statistics_preserve_raw_distribution_and_missing_count() {
+        let result = statistics(&[1, 2, 3, 4, 5], 2);
+        assert_eq!(result["p50_ns"], 3);
+        assert_eq!(result["p90_ns"], 5);
+        assert_eq!(result["p99_ns"], 5);
+        assert_eq!(result["mad_ns"], 1);
+        assert_eq!(result["mean_ns"], 3.0);
+        assert_eq!(result["missing"], 2);
+        assert_eq!(statistics(&[], 3), json!({"n":0,"missing":3}));
+    }
+    #[test]
+    fn missing_disappearance_is_an_error_without_leaking_fake_sessions() {
+        let mut fake = Fake {
+            fail_observation: Some("node_gone"),
+            ..Fake::default()
+        };
+        let result = run(&mut fake, &mut Tick(0), &config(), &json!({})).unwrap();
+        assert_eq!(fake.opened, 0);
+        assert!(
+            result["samples"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|s| !s["errors"].as_array().unwrap().is_empty())
+        );
     }
     #[test]
     fn invalid_pair_or_workload_opens_nothing() {

@@ -20,6 +20,8 @@ fn environment(root: &Path, backend: &str) -> Value {
         "dirty":output("git",&["status","--porcelain","--untracked-files=no"],root).map(|s|!s.is_empty()),
         "research_revision":output("git",&["rev-parse","HEAD:protocol-research"],root),
         "kernel":output("uname",&["-r"],root),"cpu_arch":std::env::consts::ARCH,
+        "probe_binary_sha256":{"value":null,"reason":"wrapper uses temporary binary; source hash recorded separately"},
+        "cpu_model":std::fs::read_to_string("/proc/cpuinfo").ok().and_then(|s|s.lines().find_map(|l|l.strip_prefix("model name").and_then(|s|s.split_once(':')).map(|(_,s)|s.trim().to_owned()))),
         "cpu_count":std::thread::available_parallelism().ok().map(std::num::NonZeroUsize::get),
         "rustc":output("rustc",&["--version"],root),"sdl_version":output("pkg-config",&["--modversion","sdl3"],root),
         "probe_source_sha256":output("sha256sum",&["scripts/sdl3-gamepad-probe.c"],root).and_then(|s|s.split_whitespace().next().map(str::to_owned)),
@@ -106,7 +108,7 @@ fn execute() -> Result<(), String> {
     config.family()?;
     let env = environment(&root, &backend);
     let mut clock = Monotonic::default();
-    let result = match backend.as_str() {
+    let mut result = match backend.as_str() {
         "fake" => run(&mut Fake::default(), &mut clock, &config, &env)?,
         "linux" => {
             #[cfg(target_os = "linux")]
@@ -126,13 +128,12 @@ fn execute() -> Result<(), String> {
         }
         _ => return Err("backend must be fake or linux".into()),
     };
-    let result = if let Some(reference) = reference {
+    if let Some(reference) = reference {
         let text = std::fs::read_to_string(reference).map_err(|e| e.to_string())?;
         let reference: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-        json!({"run":result,"reference":reference,"verdict":null,"reason":"no acceptance budgets"})
-    } else {
-        result
-    };
+        result["reference_comparison"] =
+            json!({"reference":reference,"verdict":null,"reason":"no acceptance budgets"});
+    }
     let text = serde_json::to_string_pretty(&result).map_err(|e| e.to_string())?;
     if let Some(path) = out {
         std::fs::write(path, text + "\n").map_err(|e| e.to_string())?;
