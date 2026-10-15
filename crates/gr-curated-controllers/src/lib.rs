@@ -197,3 +197,6 @@ mod battery_tests {
 
 /// Compiled family registry, for workspace consumers only.
 pub mod registry;
+
+#[doc(hidden)]
+pub use gr_controller_wire::compiled_families;

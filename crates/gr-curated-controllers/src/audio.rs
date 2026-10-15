@@ -51,6 +51,30 @@ pub fn xbox360(exposure: AudioExposure) -> Result<AudioProfile, AudioError> {
         "Functional stereo playback/mono microphone at 48 kHz signed-16 beside the standard-HID personality; not proprietary Xbox headset/XInput compatibility.",
     )
 }
+/// Resolve only compiled family audio policy, independently of transport.
+/// # Errors
+/// Unknown or non-audio families are unsupported; family exposure rules apply.
+pub fn for_controller(
+    id: gr_realization_api::ControllerId,
+    exposure: AudioExposure,
+) -> Result<AudioProfile, AudioError> {
+    macro_rules! attempt {
+        ($module:ident, $spec:ident, []) => {};
+        ($module:ident, $spec:ident, [$variant:ident]) => {
+            if id == gr_controller_wire::registry::$spec.id {
+                return $module(exposure);
+            }
+        };
+    }
+    macro_rules! dispatch {
+        ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
+            $(attempt!($module, $spec, [$($variant)?]);)*
+        };
+    }
+    gr_controller_wire::compiled_families!(dispatch);
+    Err(AudioError::Unsupported)
+}
+
 fn functional(
     id: &'static str,
     exposure: AudioExposure,
@@ -81,6 +105,32 @@ fn functional(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn registry_audio_dispatch_preserves_profiles_and_rejects_non_audio_families() {
+        use gr_controller_wire::registry::ids;
+        for (id, make) in [
+            (ids::DUALSENSE, dualsense as fn(_) -> _),
+            (ids::DUALSHOCK4, dualshock4),
+            (ids::XBOX360, xbox360),
+        ] {
+            let actual = for_controller(id, AudioExposure::Emulated).unwrap();
+            let expected = make(AudioExposure::Emulated).unwrap();
+            assert_eq!(actual.streams(), expected.streams());
+            assert_eq!(
+                actual.onboard_speaker_source(),
+                expected.onboard_speaker_source()
+            );
+        }
+        assert!(for_controller(ids::SWITCH_PRO, AudioExposure::Emulated).is_err());
+        assert!(
+            for_controller(
+                gr_realization_api::ControllerId::new("test.unknown"),
+                AudioExposure::Emulated
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn profiles_keep_native_grouping_and_explicit_functional_limits() {
         for (builder, playback, mic) in [

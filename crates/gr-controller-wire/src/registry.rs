@@ -98,15 +98,15 @@ pub const XBOX360: FamilySpec = FamilySpec {
 macro_rules! compiled_families {
     ($callback:ident) => {
         $callback! {
-            (dualsense, DualSenseDefinition, DUALSENSE),
-            (dualshock4, DualShock4Definition, DUALSHOCK4),
-            (switch_pro, SwitchProDefinition, SWITCH_PRO),
-            (xbox360, Xbox360Definition, XBOX360),
+            (dualsense, DualSenseDefinition, DUALSENSE, [DualSense]),
+            (dualshock4, DualShock4Definition, DUALSHOCK4, [DualShock4]),
+            (switch_pro, SwitchProDefinition, SWITCH_PRO, []),
+            (xbox360, Xbox360Definition, XBOX360, [Xbox360]),
         }
     };
 }
 macro_rules! metadata {
-    ($(($module:ident, $definition:ident, $spec:ident),)*) => {
+    ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
         pub static FAMILIES: &[FamilySpec] = &[$($spec,)*];
     };
 }
@@ -115,7 +115,7 @@ crate::compiled_families!(metadata);
 pub mod ids {
     use super::ControllerId;
     macro_rules! constants {
-        ($(($module:ident, $definition:ident, $spec:ident),)*) => { $(pub const $spec: ControllerId = super::$spec.id;)* };
+        ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => { $(pub const $spec: ControllerId = super::$spec.id;)* };
     }
     crate::compiled_families!(constants);
 }
@@ -123,4 +123,17 @@ pub mod ids {
 #[must_use]
 pub fn find(id: ControllerId) -> Option<&'static FamilySpec> {
     FAMILIES.iter().find(|family| family.id == id)
+}
+
+/// Resolve an installed worker name only when the family declares audio.
+#[must_use]
+pub fn worker_id(name: &str) -> Option<ControllerId> {
+    FAMILIES
+        .iter()
+        .find(|family| {
+            family.worker_name == name
+                && family.usb_profile.is_some()
+                && family.broker_tag.is_some()
+        })
+        .map(|family| family.id)
 }
