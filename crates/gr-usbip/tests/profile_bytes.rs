@@ -40,5 +40,12 @@ fn compiled_descriptor_and_session_string_bytes_remain_identical() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    assert_eq!(actual, include_str!("fixtures/profile_bytes.hex"));
+    // Git may check text fixtures out with CRLF. Compare every complete hex
+    // record byte-for-byte while keeping text-file line endings out of the oracle.
+    assert_eq!(
+        actual.lines().collect::<Vec<_>>(),
+        include_str!("fixtures/profile_bytes.hex")
+            .lines()
+            .collect::<Vec<_>>()
+    );
 }
