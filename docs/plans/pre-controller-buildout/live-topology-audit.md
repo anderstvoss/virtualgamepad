@@ -1,8 +1,8 @@
 # Live internal topology seam — source audit and step 6 test recipe
 
-**Scope:** brief 06a, issue #163; preparation for the local agent's step 6, **not** completion of step 6 or brief 06b.  
-**Source revision:** `fac473d9ae7263706c01aae23b38b2cf15fdb966` (`main` read 2026-10-15).  
-**Verification:** source-reviewed; Rust test sketches below **written, not run** (no Rust toolchain in isolated environment); no workspace, Linux host, transport or hardware qualification; no CI result at authoring.  
+**Scope:** brief 06a, issue #163; preparation for the local agent's step 6, **not** completion of step 6 or brief 06b.
+**Source revision:** `fac473d9ae7263706c01aae23b38b2cf15fdb966` (`main` read 2026-10-15).
+**Verification:** source-reviewed; Rust test sketches below **written, not run** (no Rust toolchain in isolated environment); no workspace, Linux host, transport or hardware qualification; no CI result at authoring.
 **Provisional verdict:** no demonstrated reason to change `gr-hid` core; retain ADR-0014's transactional seam unless the local agent obtains a reproducible failing test. This is **not** a claim that the new cases pass.
 
 ## Sources and present implementation
