@@ -55,5 +55,6 @@ build/
 out/
 /bom.json
 
-# Local checkout of the private protocol corpus (pinned by protocol-corpus.rev)
+# Former local checkout of the private protocol corpus, replaced by the
+# protocol-research submodule
 /protocol-corpus/

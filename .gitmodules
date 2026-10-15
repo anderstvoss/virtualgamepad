@@ -1,0 +1,5 @@
+[submodule "protocol-research"]
+	path = protocol-research
+	url = https://github.com/anderstvoss/controller-protocol-research.git
+	branch = main
+	update = none

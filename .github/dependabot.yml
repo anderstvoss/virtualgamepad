@@ -25,6 +25,6 @@ updates:
       pre-commit-toolchain:
         patterns: ["*"]
 
-  # protocol-corpus is deliberately absent: the private corpus is pinned by
-  # protocol-corpus.rev, which only moves through the reviewed corpus
-  # workflow (see the protocol-corpus job in ci.yml).
+  # gitsubmodule is deliberately absent: the protocol-research gitlink only
+  # moves through the reviewed research workflow, which regenerates the
+  # checked-in fixtures (see the protocol-research job in ci.yml).

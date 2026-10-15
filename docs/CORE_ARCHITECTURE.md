@@ -57,7 +57,7 @@ HID audio controls alone do not create PCM endpoints. Opt-in emulated audio is i
 
 ## Evidence and development
 
-The independent private protocol corpus is pinned by `protocol-corpus.rev` (a revision file, not a submodule) and checked out locally at `protocol-corpus/` only for corpus validation. Records distinguish source support, synthetic fixtures, compatibility policy, physical observations, and conflicts. Checked-in test artifacts carry revision and input hashes. Ordinary Cargo builds require no corpus checkout, credentials, or network access to that repository.
+The independent public protocol research repository ([controller-protocol-research](https://github.com/anderstvoss/controller-protocol-research)) is pinned by the `protocol-research/` submodule, marked `update = none` so Cargo and recursive clones skip it; it is checked out explicitly only for research validation. Records distinguish source support, synthetic fixtures, compatibility policy, physical observations, and conflicts. Checked-in test artifacts carry revision and input hashes. Ordinary Cargo builds require no research checkout, credentials, or network access to that repository.
 
 Private fake-I/O seams and the deterministic protocol harness cover request sequences, exact replies, framing, delivery failures, lifecycle, and cleanup. Kernel, physical, SDL, Steam, audio, and Bluetooth acceptance are separate axes. See the [gate ledger](history/alpha-1/GATE_STATUS.md), [deployment guide](DEPLOYMENT_AND_VALIDATION.md), and [supported-host procedure](SDL_ACCEPTANCE.md) for current limitations and reproducible validation.
 

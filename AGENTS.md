@@ -87,7 +87,7 @@ If the task touched Python under `scripts/`, also run:
 
 ```bash
 ruff check .
-(cd scripts/tests && python3 -m unittest $(ls test_*.py | grep -vx test_protocol_corpus.py | sed 's/\.py$//'))
+(cd scripts/tests && python3 -m unittest $(ls test_*.py | grep -vx test_protocol_research.py | sed 's/\.py$//'))
 ```
 
 ## Required Completion Summary

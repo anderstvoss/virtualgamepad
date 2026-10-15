@@ -74,8 +74,25 @@ vulnerability reporting (see [SECURITY.md](SECURITY.md)).
 By contributing, you agree your contributions are licensed under
 [AGPL-3.0-only](LICENSE).
 
-## Protocol corpus checks
+## Protocol research checks
 
-The private protocol corpus is pinned by the revision in `protocol-corpus.rev`; it is not a submodule, so Git consumers never need access to it. Contributors with access clone it into the ignored `protocol-corpus/` directory and check out that revision: `git clone https://github.com/anderstvoss/controller-protocol-corpus.git protocol-corpus && git -C protocol-corpus checkout "$(cat protocol-corpus.rev)"`. Install its `requirements-dev.txt` in an isolated Python environment, then run its validator and unit tests. Run `python3 scripts/check-protocol-corpus.py --verify-remote` and `python3 -m unittest discover -s scripts/tests` before adopting a corpus commit. `--write` regenerates checked-in test artifacts after a reviewed `protocol-corpus.rev` update.
+Controller protocol evidence lives in the public
+[controller-protocol-research](https://github.com/anderstvoss/controller-protocol-research)
+repository, pinned here as the `protocol-research/` submodule. New controller
+research (sources, claims, experiments, synthetic fixtures and consumer
+evidence) goes there as a pull request against that repository, following its
+README and CONTRIBUTING; issue comments here link to the research records rather
+than carrying the evidence themselves.
 
-Normal Cargo builds do not require corpus access. CI retains the repository's existing private-job gating; authenticated corpus jobs require a read credential, and fork jobs do not establish corpus conformance.
+The submodule is marked `update = none` in `.gitmodules`, so Cargo and
+`git clone --recurse-submodules` skip it and Git consumers never fetch it.
+Check it out explicitly with `git submodule update --init --checkout protocol-research`.
+Install its `requirements-dev.txt` in an isolated Python environment, then run
+its publication guard, validator and unit tests. To adopt a newer research
+commit, check it out in `protocol-research/` (it must already be on the
+research repository's `main`), run `python3 scripts/check-protocol-research.py --write --verify-remote`,
+then `git add protocol-research tests/fixtures/protocol-research` and run
+`python3 -m unittest discover -s scripts/tests`.
+
+Normal Cargo builds do not require the research checkout. CI's
+`protocol-research` job needs no credentials and also runs for fork PRs.
