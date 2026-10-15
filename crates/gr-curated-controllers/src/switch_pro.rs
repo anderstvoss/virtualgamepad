@@ -728,19 +728,12 @@ fn switch_spi_byte(address: u32) -> u8 {
         0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87, 0x70,
         0x08, 0x87, 0x70,
     ];
-    if let Some(offset) = address
-        .checked_sub(0x6020)
-        .and_then(|offset| usize::try_from(offset).ok())
-    {
-        return IMU_CAL.get(offset).copied().unwrap_or(0xff);
+    match address {
+        0x6020..=0x6037 => IMU_CAL[(address - 0x6020) as usize],
+        0x603d..=0x604e => STICK_CAL[(address - 0x603d) as usize],
+        // This includes colors (0x6050..0x605b): no source-backed retail set is recorded.
+        _ => 0xff,
     }
-    if let Some(offset) = address
-        .checked_sub(0x603d)
-        .and_then(|offset| usize::try_from(offset).ok())
-    {
-        return STICK_CAL.get(offset).copied().unwrap_or(0xff);
-    }
-    0xff
 }
 
 fn switch_subcommand_reply(
@@ -758,7 +751,7 @@ fn switch_subcommand_reply(
             bytes[14..18].copy_from_slice(&[3, 0x48, 3, 2]);
             bytes[18..24].copy_from_slice(&[2, 0, 0, 0, 0, 1]);
             bytes[24] = 1;
-            bytes[25] = 1;
+            bytes[25] = 0; // Colors are not available in SPI.
         }
         0x10 if arguments.len() >= 5 => {
             bytes[12] = 0x90;
@@ -1496,6 +1489,91 @@ mod tests {
                 .any(|restriction| restriction.feature == "HD rumble")
         );
         assert_eq!(realization.identity.version, 0x0220);
+    }
+
+    fn assert_spi_reply(address: u32, expected: &[u8]) {
+        let state = SwitchProState::default();
+        let mut arguments = address.to_le_bytes().to_vec();
+        arguments.push(u8::try_from(expected.len()).unwrap());
+        let (reply, enabled) = switch_subcommand_reply(&state, 0x10, &arguments);
+        assert!(!enabled);
+        let mut bytes = vec![0; 63];
+        bytes[..12].copy_from_slice(&switch_input_prefix(&state));
+        bytes[12] = 0x90;
+        bytes[13] = 0x10;
+        bytes[14..19].copy_from_slice(&arguments);
+        bytes[19..19 + expected.len()].copy_from_slice(expected);
+        assert_eq!(
+            reply,
+            ProviderFrame::HidInput {
+                report_id: Some(0x21),
+                bytes,
+            },
+            "SPI read at {address:#x}"
+        );
+    }
+
+    #[test]
+    fn spi_reads_return_imu_and_factory_stick_calibration() {
+        assert_spi_reply(
+            0x6020,
+            &[
+                0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0x40, 0, 0x40, 0, 0, 0, 0, 0, 0, 0x3b, 0x34, 0x3b,
+                0x34, 0x3b, 0x34,
+            ],
+        );
+        assert_spi_reply(
+            0x603d,
+            &[
+                0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87, 0x70, 0x00, 0x08, 0x80, 0x08, 0x87,
+                0x70, 0x08, 0x87, 0x70,
+            ],
+        );
+    }
+
+    #[test]
+    fn spi_reads_respect_range_boundaries_and_erased_gaps() {
+        for (address, expected) in [
+            (0x601f, 0xff),
+            (0x6020, 0),
+            (0x6037, 0x34),
+            (0x6038, 0xff),
+            (0x603c, 0xff),
+            (0x603d, 0x08),
+            (0x604e, 0x70),
+            (0x604f, 0xff),
+            (0x6050, 0xff),
+            (0x605a, 0xff),
+            (0x605b, 0xff),
+        ] {
+            assert_spi_reply(address, &[expected]);
+        }
+        assert_spi_reply(0x6038, &[0xff; 5]);
+        assert_spi_reply(0x6050, &[0xff; 11]);
+        assert_spi_reply(0x7000, &[0xff; 16]);
+        assert_spi_reply(
+            0x6036,
+            &[0x3b, 0x34, 0xff, 0xff, 0xff, 0xff, 0xff, 0x08, 0x87],
+        );
+        assert_spi_reply(0x604d, &[0x87, 0x70, 0xff, 0xff, 0xff]);
+    }
+
+    #[test]
+    fn device_info_does_not_advertise_erased_spi_colors() {
+        assert_spi_reply(0x6050, &[0xff; 11]);
+        let state = SwitchProState::default();
+        let (reply, enabled) = switch_subcommand_reply(&state, 0x02, &[]);
+        assert!(!enabled);
+        let mut bytes = vec![0; 63];
+        bytes[..12].copy_from_slice(&switch_input_prefix(&state));
+        bytes[12..25].copy_from_slice(&[0x82, 0x02, 3, 0x48, 3, 2, 2, 0, 0, 0, 0, 1, 1]);
+        assert_eq!(
+            reply,
+            ProviderFrame::HidInput {
+                report_id: Some(0x21),
+                bytes,
+            }
+        );
     }
 
     #[test]
