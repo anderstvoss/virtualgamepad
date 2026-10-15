@@ -1,7 +1,7 @@
 # Pre-controller buildout: plan index
 
 Date: 2026-10-15. Base: virtualgamepad `main` at `5a0a7dd`; research repo `main` at `abffb5d`.
-Tracking issue: #176. **A single executing agent should follow [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**, which orders these briefs and defines validation and the issue/PR feedback loop. Canonical copy: `docs/plans/pre-controller-buildout/` in virtualgamepad. This folder extends `plans/post-alpha-1-cleanup-agent-plan.md`; it does not replace it.
+Tracking issue: #176. **A single executing agent should follow [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**, which orders these briefs, defines validation, and groups feature work into checkpoint branches C1 to C4 that land on `main` as one reviewed PR each. Canonical copy: `docs/plans/pre-controller-buildout/` in virtualgamepad. This folder extends `plans/post-alpha-1-cleanup-agent-plan.md`; it does not replace it.
 
 Each numbered file is a self-contained agent brief. To dispatch one, give an agent this sentence: *"Execute `docs/plans/pre-controller-buildout/<file>` in anderstvoss/virtualgamepad (or controller-protocol-research), following `ground-rules.md`; stop and ask on #176 at any open decision."* Briefs say what blocks them; nothing with an open blocker should be started.
 
@@ -52,7 +52,7 @@ Wave 3 (after 1e)      └─► 10 step 2 ──► 05 Outputs ──► 10 ste
 
 | ID | Decision | Recommendation | Unblocks |
 | --- | --- | --- | --- |
-| D1 | Lift the hold on code changes ("wait before beginning changes", 2026-10-14), per lane or all at once | Start Fixes, Core (02), Design (04) and Research (11) now | 01, 02, 04, 11, then everything |
+| D1 | **Cleared 2026-10-15 05:54 UTC.** Lift the hold on code changes ("wait before beginning changes", 2026-10-14), per lane or all at once | Start Fixes, Core (02), Design (04) and Research (11) now | 01, 02, 04, 11, then everything |
 | D2 | Grow the API snapshot for `host_outputs()` and the typed output/input kinds (`OutputSurface`, `InputTopology` are in the snapshot today) | Yes | 05b, 05c |
 | D3 | Accept the logical-controller vs presentation split (epochs) for mode switching | Yes | ADR-0021, 08 |
 | D4 | Displays and bulk subsystems: ADR now, or wait for a controller that needs them | ADR now, no code | ADR-0023 |
@@ -61,6 +61,7 @@ Wave 3 (after 1e)      └─► 10 step 2 ──► 05 Outputs ──► 10 ste
 | D7 | Wii first realizations now that Bluetooth-bus UHID is available | uinput (playable, reduced) **and** `linux.uhid.bluetooth` (the only path that binds `hid-wiimote`) together; drop USB-bus UHID to a fixture-only experiment | Wii package plan; updates the #158 proposal, which predates the 04:08 decision |
 | D8 | Authorize the `.github/` change for #150 (cache plus bounded retry on Windows only) | Yes | 12 |
 | D9 | Which host runs live lab work (Steam probe P1, acceptance runs): your machine through a session on your device, or another prepared x86-64 host | Your machine, if it has `/dev/uhid` and a kernel with `hid-steam` IBEX support | 03-P1, 09 live runs |
+| D10 | Let the executing agent merge PRs outside checkpoints (research repo, small fixes) when CI is green and its self-review is complete. Feature work merges into checkpoint branches C1 to C4 that you review as one PR each (IMPLEMENTATION_PLAN.md 1.6) | Yes, so small PRs do not stall when reviewers are unavailable | PRs outside checkpoints |
 
 Not blocking now: Wii vs Steam order (the table above suggests Xbox Series, then Wii, then wired Steam once 03 reports); Steam Machine receiver `1305` scope (default listed, out of scope); reference hardware for each controller.
 

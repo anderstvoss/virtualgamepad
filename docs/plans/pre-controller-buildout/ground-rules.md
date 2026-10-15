@@ -40,7 +40,7 @@ Host setup: `--all-features` and the API check (it runs `cargo doc --all-feature
 
 - All 13 required checks green, branch up to date with `main` (strict).
 - The Windows job sometimes fails crate downloads with `CRYPT_E_REVOCATION_OFFLINE` (#150). Re-run it once. Never disable revocation checks.
-- Anders merges unless he has said a Claude thread may merge that PR.
+- Merge modes, the merge gate and the owner-merge list are in `IMPLEMENTATION_PLAN.md` section 1.6. Claude reviews are optional check-ins, not a merge gate.
 
 ## Reporting
 
