@@ -111,7 +111,83 @@ jobs:
         # keeps the run fast.
         run: cargo build --locked --all-targets --all-features
 
+      # Analysis results are uploaded together by the `upload` job
+      # below, not here. Code scanning posts its "CodeQL" PR check on
+      # the first upload for a commit; the actions analysis finishes
+      # minutes before Rust, so uploading per job left that check
+      # "neutral" ("1 configuration not found: /language:rust") until
+      # Rust caught up, and for good on runs cancelled in between.
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
         with:
           category: "/language:${{ matrix.language }}"
+          upload: never
+          output: sarif-results
+
+      - name: Keep SARIF for upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: sarif-results/${{ matrix.language }}.sarif
+          if-no-files-found: error
+          retention-days: 1
+
+  upload:
+    name: CodeQL upload
+    needs: analyze
+    # Upload only when every language analysed, so the PR comparison
+    # always sees both configurations at once. A failed analysis is
+    # already red on its own CodeQL (<language>) job.
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          # The analyze job's GitHub endpoints, in case upload-sarif
+          # fetches the CodeQL bundle to process the SARIF.
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            raw.githubusercontent.com:443
+            uploads.github.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            release-assets.githubusercontent.com:443
+
+      # upload-sarif reads the checkout to fill in any missing alert
+      # fingerprints.
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch SARIF
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: codeql-sarif-*
+          path: ${{ runner.temp }}/sarif
+          merge-multiple: true
+
+      # Same categories as before, so PRs keep comparing against the
+      # existing configurations on main.
+      - name: Upload Rust results
+        uses: github/codeql-action/upload-sarif@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/rust.sarif
+          category: "/language:rust"
+
+      - name: Upload actions results
+        uses: github/codeql-action/upload-sarif@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/actions.sarif
+          category: "/language:actions"
