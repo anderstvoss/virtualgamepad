@@ -87,6 +87,8 @@ Large feature work accumulates on **checkpoint branches**. Anders reviews and me
 | C2 Runtime seams | `buildout/c2-runtime-seams` | 5a, 5b, 5d (ADRs 0019, 0020, 0022), 6, 7a, 7b, 8, 9 | topology, resources and the runner are in |
 | C3 Outputs and tidy | `buildout/c3-outputs-tidy` | 10a, 10b, 10c (only if D2), 12a, 12b (only if D5) | outputs retained, facade and crates tidied |
 | C4 Epochs, receivers, demo | `buildout/c4-epochs-demo` | 5c, 5e, 13a, 13b, 14 | presentation and receivers in, demo driven by topology |
+| C5 Wii Remote | `buildout/c5-wii-remote` | 18 (brief 13) | playable Wii Remote on uinput and `linux.uhid.bluetooth` |
+| C6 Steam Controller, wired | `buildout/c6-steam-wired` | 19 (brief 14) | playable wired Steam Controller on `linux.uhid.usb` and uinput |
 
 Outside the checkpoints, as their own PRs: steps 1 and 2 (already open as #180 and #181), research-repo steps 3 and 11, the live runs 7c and 16 (research-repo experiments), and step 17.
 
@@ -321,9 +323,11 @@ Prep: the research-ledgers lane opens these PRs (#167 comment 6185726279). Your 
 
 **Objective:** GUI lifecycle tests unchanged and green; a new test that every registry family produces an editor; `grep` shows no per-family branches left in `demo/src/gui.rs` except declared-output panels.
 
-### Step 15. Readiness report (no PR)
+### Step 15. Controller readiness check (no PR)
 
-Post one comment on #176 and on each of #158, #159, #160: what is now in place for that controller, what remains from the "What each new controller needs first" table in `README.md`, and which decisions are still open. This hands off to controller work.
+Before starting steps 18 and 19, check each brief's "Blocked by" list against #176 and the merged checkpoints. Post one comment on #176 and on each of #158, #159, #160: what is in place for that controller, what still blocks its brief, and which decisions are open (D6, D7 for Wii; D9 and step 16 for Steam). Then start whichever of steps 18 and 19 is unblocked, Wii first if both are.
+
+Briefs 13 and 14 are written so you can run them without a reviewer. Every byte comes from a research record, a feature with no evidence is left unimplemented and marked, and each sub-step has a deterministic golden-shape objective plus a live host objective.
 
 ### Step 16. Steam probe on a host (P1) — brief 03 *(D9; any time after step 3)*
 
@@ -333,6 +337,16 @@ Host needs `/dev/uhid` and kernel **v7.3-rc1 or newer** (first release with the 
 ### Step 17. Windows CI downloads (#150) — brief 12 *(D8; own PR, Anders merges)*
 
 **Objective:** a cold-cache and a warm-cache run linked in the PR; revocation checking untouched; egress allowlist changes listed.
+
+### Step 18. Wii Remote package (#158) — brief 13 · checkpoint C5
+
+Needs C1 merged, D6 and D7; 13c needs C2. Sub-steps 13a to 13e, one PR each into `buildout/c5-wii-remote`.
+**Objective:** as listed per sub-step in brief 13. The key oracles are a golden evdev shape generated from the `hid-wiimote` consumer records, and on a host, `hid-wiimote` binding to the `linux.uhid.bluetooth` node with matching devices.
+
+### Step 19. Steam Controller 2026, wired (#159) — brief 14 · checkpoint C6
+
+Needs C1 merged, step 16 saying UHID is accepted, and ledger 11c. Sub-steps 14a to 14d into `buildout/c6-steam-wired`.
+**Objective:** as listed per sub-step in brief 14. The key oracles are a golden shape from the `hid-steam` records, and on a kernel v7.3-rc1 or later host, `hid-steam` binding and SDL3 opening the controller. The Steam client check stays manual for Anders. The Puck is out of scope; the C6 PR carries a feasibility note.
 
 ---
 
