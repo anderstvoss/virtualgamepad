@@ -1834,7 +1834,7 @@ mod tests {
     #[test]
     fn active_report_matches_pinned_openpuck_field_layout() {
         let expected = common::fixture_bytes(include_str!(
-            "../../../tests/fixtures/protocol-corpus/ds4-active-layout.hex"
+            "../../../tests/fixtures/protocol-research/ds4-active-layout.hex"
         ));
         let mut state = DualShock4State {
             left: (DualShock4Axis::new(10), DualShock4Axis::new(20)),

@@ -6,6 +6,10 @@ Status: accepted product/design constraints from the September 4 planning discus
 > PR #152 replaced it with the one-line `protocol-corpus.rev` pin, read only by CI,
 > so Git consumers need no corpus access. The corpus remains an independent
 > repository and is still not a runtime controller definition language.
+>
+> **Updated (2026-10-15):** the public `controller-protocol-research` repository
+> replaces the private corpus. It is a submodule again, at `protocol-research/`,
+> marked `update = none` so Cargo and recursive clones skip it.
 
 ## Decision
 

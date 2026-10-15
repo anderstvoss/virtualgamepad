@@ -195,11 +195,11 @@ mod tests {
         for (cross, bytes) in [
             (
                 false,
-                include_str!("../../../../tests/fixtures/protocol-corpus/ds-neutral.hex"),
+                include_str!("../../../../tests/fixtures/protocol-research/ds-neutral.hex"),
             ),
             (
                 true,
-                include_str!("../../../../tests/fixtures/protocol-corpus/ds-cross.hex"),
+                include_str!("../../../../tests/fixtures/protocol-research/ds-cross.hex"),
             ),
         ] {
             let mut p = DualSenseUsbProtocol::new([2, 1, 2, 3, 4, 5]);

@@ -1875,7 +1875,7 @@ mod tests {
     #[test]
     fn contact_packing_matches_pinned_hhd_and_openpuck_field_fixture() {
         let expected = common::fixture_bytes(include_str!(
-            "../../../tests/fixtures/protocol-corpus/sony-contact-pair.hex"
+            "../../../tests/fixtures/protocol-research/sony-contact-pair.hex"
         ));
         let mut actual = [0; 8];
         encode_hid_touches(

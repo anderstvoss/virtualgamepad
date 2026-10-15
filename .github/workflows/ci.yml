@@ -376,8 +376,8 @@ jobs:
     name: Python script tests
     # Host and lab helpers under scripts/ are lint-gated by the ruff hook in
     # the policy job. This runs their unit tests on every public PR; the
-    # corpus workflow tests need the private corpus checkout and stay in the
-    # protocol-corpus job below. static.rust-lang.org lets rustup install
+    # research workflow tests need the protocol-research checkout and stay in
+    # the protocol-research job below. static.rust-lang.org lets rustup install
     # the pinned toolchain for the rustdoc-based API snapshot test.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
@@ -409,64 +409,42 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Run script unit tests (excluding private-corpus workflow)
+      - name: Run script unit tests (excluding protocol-research workflow)
         working-directory: scripts/tests
         run: |
-          modules=$(ls test_*.py | grep -vx 'test_protocol_corpus.py' | sed 's/\.py$//')
+          modules=$(ls test_*.py | grep -vx 'test_protocol_research.py' | sed 's/\.py$//')
           python -m unittest -v $modules
 
-  protocol-corpus:
-    name: Pinned protocol corpus
-    # Private execution remains local. Fork PRs have no corpus credentials;
-    # their ordinary Rust jobs still use checked-in artifacts.
-    if: >-
-      ${{ !github.event.repository.private &&
-          (github.event_name != 'pull_request' ||
-           github.event.pull_request.head.repo.full_name == github.repository) }}
+  protocol-research:
+    name: Pinned protocol research
+    # The research repository is public, so this job needs no credentials and
+    # runs for fork PRs too. Its submodule is marked `update = none`, so the
+    # checkout initializes it explicitly at the pinned gitlink.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Require explicit corpus access
-        if: github.event.pull_request.user.login != 'dependabot[bot]'
-        env:
-          CORPUS_KEY: ${{ secrets.PROTOCOL_CORPUS_SSH_KEY }}
-        run: |
-          if [ -z "$CORPUS_KEY" ]; then
-            echo '::error::Private corpus validation requires the read-only PROTOCOL_CORPUS_SSH_KEY deploy key.'
-            exit 1
-          fi
       - name: Checkout ordinary build artifacts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Verify Dependabot leaves the private corpus pin unchanged
+      - name: Verify Dependabot leaves the research pin unchanged
         if: github.event.pull_request.user.login == 'dependabot[bot]'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: git diff --exit-code "$BASE_SHA" "$HEAD_SHA" -- protocol-corpus.rev
-      - name: Read adopted corpus revision
+        run: git diff --exit-code "$BASE_SHA" "$HEAD_SHA" -- .gitmodules protocol-research
+      - name: Checkout pinned protocol research
         if: github.event.pull_request.user.login != 'dependabot[bot]'
-        id: corpus-revision
-        run: echo "revision=$(cat protocol-corpus.rev)" >> "$GITHUB_OUTPUT"
-      - name: Checkout pinned corpus with repository-only read access
-        if: github.event.pull_request.user.login != 'dependabot[bot]'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: anderstvoss/controller-protocol-corpus
-          ref: ${{ steps.corpus-revision.outputs.revision }}
-          path: protocol-corpus
-          fetch-depth: 0
-          ssh-key: ${{ secrets.PROTOCOL_CORPUS_SSH_KEY }}
-          # Needed for the publication check's fetch; checkout removes it post-job.
-          persist-credentials: true
+        run: git submodule update --init --checkout protocol-research
       - name: Validate evidence and adopted revision
         if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
-          python3 -m venv .corpus-venv
-          .corpus-venv/bin/pip install -r protocol-corpus/requirements-dev.txt
-          .corpus-venv/bin/python protocol-corpus/tools/validate.py
-          .corpus-venv/bin/python -m unittest discover -s protocol-corpus/tests
-          python3 scripts/check-protocol-corpus.py --verify-remote
+          python3 -m venv .research-venv
+          .research-venv/bin/pip install --require-hashes --no-deps -r protocol-research/requirements-dev.txt
+          .research-venv/bin/python protocol-research/tools/publication_guard.py
+          .research-venv/bin/python protocol-research/tools/validate.py
+          .research-venv/bin/python -m unittest discover -s protocol-research/tests
+          python3 scripts/check-protocol-research.py --verify-remote
           python3 -m unittest discover -s scripts/tests

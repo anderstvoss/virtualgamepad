@@ -2,6 +2,11 @@
 
 Status: accepted for minimal corpus and development fixtures. Evidence: EXP-0001.
 
+> **Updated (2026-10-15):** the evidence now lives in the public
+> `controller-protocol-research` repository, pinned by the `protocol-research/`
+> submodule (`update = none`). No credential is needed, so the CI job runs for
+> fork PRs too. The paragraphs below describe the private corpus they replaced.
+
 Use an independent private corpus pinned by a Git submodule. Source-derived and synthetic records permit deterministic architecture experiments. They do not establish physical fidelity. Retain conflicting hypotheses and source lineage; require controlled evidence for physical promotion.
 
 Generation initially copies only reviewed synthetic test fixtures and records corpus commit, schema version, generator version, and input hashes. Runtime protocol behavior remains handwritten. Ordinary Rust builds and downstream source packages require neither Git metadata nor private corpus access.

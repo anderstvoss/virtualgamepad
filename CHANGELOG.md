@@ -12,6 +12,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the API snapshot and inventory to `docs/api/`, and Alpha 1 planning, gate and
   evidence records to `docs/history/alpha-1/`. Added `docs/STATUS.md` and a
   user-facing README.
+- The public `controller-protocol-research` repository replaces the private
+  protocol corpus. It is pinned by the `protocol-research/` submodule, marked
+  `update = none` so Cargo and recursive clones skip it; `protocol-corpus.rev`
+  and the corpus deploy key are no longer used. Checked-in fixtures moved to
+  `tests/fixtures/protocol-research/` with identical bytes.
 
 ## [0.1.0-alpha.1] - 2026-10-14
 
