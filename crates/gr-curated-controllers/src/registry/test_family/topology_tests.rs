@@ -364,3 +364,48 @@ fn native_topology_without_opt_in_configuration_fails_closed() {
     ));
     assert_eq!(view.topology_generation(), 0);
 }
+
+#[test]
+fn same_shape_reinitialization_validates_configuration_without_advancing_generation() {
+    for target in [
+        RealizationTarget::LINUX_UINPUT,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ] {
+        let (mut session, record, mut view) = open(target);
+        session.commit().unwrap();
+        let state = session.state().clone();
+        let dirty = session.is_dirty();
+        let sent = record.lock().unwrap().sent.len();
+        let called = std::cell::Cell::new(false);
+        assert!(
+            view.change(
+                &mut session,
+                &BASE_TOPOLOGY,
+                |_| Ok(()),
+                |_| {
+                    called.set(true);
+                    Err(gr_hid::Error::InvalidState)
+                }
+            )
+            .is_err()
+        );
+        assert!(called.get());
+        assert_eq!(session.state(), &state);
+        assert_eq!(session.is_dirty(), dirty);
+        assert_eq!(view.topology_generation(), 0);
+        assert_eq!(record.lock().unwrap().sent.len(), sent);
+        called.set(false);
+        view.change(
+            &mut session,
+            &BASE_TOPOLOGY,
+            |_| Ok(()),
+            |_| {
+                called.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(called.get());
+        assert_eq!(view.topology_generation(), 0);
+    }
+}

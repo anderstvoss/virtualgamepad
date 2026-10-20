@@ -50,10 +50,13 @@ impl<P: gr_hid::Protocol> LiveTopology<P> {
             return Err(ControlError::Closed);
         }
         validate_subset(self.maximum, next)?;
-        if self.current == next {
-            return Ok(());
-        }
-        let generation = self.generation.checked_add(1).ok_or_else(invalid)?;
+        // Reinitialization can change controller configuration without changing
+        // its shape. Always validate/install it; only shape changes count.
+        let generation = if self.current == next {
+            self.generation
+        } else {
+            self.generation.checked_add(1).ok_or_else(invalid)?
+        };
         if let Some(protocol) = &mut self.native_protocol {
             session.update_native_configuration(protocol, neutralize_removed, edit_protocol)?;
         } else {
