@@ -164,3 +164,49 @@ fn rejected_revision_overflow_does_not_partially_replace_a_snapshot() {
     );
     assert_eq!(state, before);
 }
+
+#[test]
+fn unavailable_snapshot_realizations_explain_the_limitation_in_their_surface() {
+    for family in crate::registry::FAMILIES {
+        for realization in (family.realizations)() {
+            if matches!(
+                realization.surface.target(),
+                gr_realization_api::RealizationTarget::LINUX_USBIP_USB_AUDIO
+                    | gr_realization_api::RealizationTarget::LINUX_DUMMY_HCD_USB_HID
+            ) {
+                assert!(
+                    realization
+                        .surface
+                        .restrictions()
+                        .iter()
+                        .any(|r| r.feature == "retained host outputs" && !r.reason.is_empty())
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn worker_personalities_keep_their_acceptance_policy_without_retention() {
+    let mut ds = crate::dualsense::DualSenseDefinition
+        .hid_protocol(RealizationSessionId(7), [2; 6])
+        .without_retention();
+    let mut ds4 = crate::dualshock4::DualShock4Definition
+        .hid_protocol(RealizationSessionId(7), [2; 6])
+        .without_retention();
+    let mut b = vec![0; 47];
+    b[1] = 4;
+    b[44] = 9;
+    assert_eq!(set(&mut ds, Some(2), b), Reply::Set(Ok(())));
+    assert_eq!(set(&mut ds4, Some(5), vec![0; 31]), Reply::Set(Ok(())));
+    assert_eq!(*ds.retained(), ());
+    assert_eq!(*ds4.retained(), ());
+    assert_eq!(
+        set(&mut ds, Some(2), vec![0; 46]),
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+    assert_eq!(
+        set(&mut ds4, Some(5), vec![0; 30]),
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+}

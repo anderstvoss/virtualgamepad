@@ -10,8 +10,10 @@ use gr_hid::{
 };
 
 #[derive(Clone)]
-pub(crate) struct DualSenseUsbProtocol {
-    retained: crate::retained::DualSenseOutputState,
+pub(crate) struct DualSenseUsbProtocol<
+    R: crate::retained::OutputState = crate::retained::DualSenseOutputState,
+> {
+    retained: R,
     features: BTreeMap<NativeHidReportKey, Vec<u8>>,
     sequence: u8,
     next_input: u64,
@@ -31,6 +33,20 @@ impl DualSenseUsbProtocol {
             last_input: None,
         }
     }
+}
+impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
+    /// Worker factories reuse acceptance but opt out of snapshot bookkeeping.
+    pub(crate) fn without_retention(self) -> DualSenseUsbProtocol<()> {
+        DualSenseUsbProtocol {
+            retained: (),
+            features: self.features,
+            sequence: self.sequence,
+            next_input: self.next_input,
+            active: self.active,
+            numbering_valid: self.numbering_valid,
+            last_input: self.last_input,
+        }
+    }
     fn accept_output(report: &Report) -> Result<(), ReplyError> {
         if report.kind != ReportType::Output || report.id() != Some(2) {
             return Err(ReplyError::Unsupported);
@@ -48,7 +64,7 @@ impl DualSenseUsbProtocol {
         }
     }
 }
-impl Protocol for DualSenseUsbProtocol {
+impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
     type State = DualSenseState;
     type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
@@ -168,8 +184,10 @@ impl common::HidDriver for DualSenseDefinition {
     }
 }
 
-impl crate::retained::RetainedProtocol for DualSenseUsbProtocol {
-    type Outputs = crate::retained::DualSenseOutputState;
+impl<R: crate::retained::OutputState> crate::retained::RetainedProtocol
+    for DualSenseUsbProtocol<R>
+{
+    type Outputs = R;
     fn retained(&self) -> &Self::Outputs {
         &self.retained
     }

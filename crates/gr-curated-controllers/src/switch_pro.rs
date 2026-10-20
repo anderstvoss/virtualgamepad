@@ -476,6 +476,8 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -483,7 +485,7 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),

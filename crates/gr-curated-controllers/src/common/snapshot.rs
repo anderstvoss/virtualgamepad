@@ -23,6 +23,23 @@ pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     retained: R,
 }
 impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
+    /// Preserve the same personality while omitting worker-side retention.
+    pub(crate) fn without_retention(self) -> SnapshotProtocol<S> {
+        SnapshotProtocol {
+            retained: (),
+            neutral: self.neutral,
+            encode: self.encode,
+            validate_output: self.validate_output,
+            features: self.features,
+            numbered: self.numbered,
+            period: self.period,
+            sequence: self.sequence,
+            next: self.next,
+            active: self.active,
+            valid: self.valid,
+            last: self.last,
+        }
+    }
     pub(crate) fn new(
         neutral: S,
         encode: fn(&S, u64, u8) -> Report,
