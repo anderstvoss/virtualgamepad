@@ -33,7 +33,8 @@ USB-worker getters return `UnavailableInRealization` before and after close,
 never a silently incomplete reconstruction: the 128-entry observation channel
 drops reports and the current IPC has no retained-state/revision query. #203
 tracks a separately approved recovery feature. No IPC/broker frame or version
-changes are made. Native dummy_hcd remains unavailable for a complete curated
+changes are made. Worker factories explicitly omit snapshot bookkeeping while
+reusing the same controller acceptance policy. Native dummy_hcd remains unavailable for a complete curated
 view under its existing f_hid protocol-ownership limitation; its experimental
 raw event stream is not relabeled as validated retained state.
 

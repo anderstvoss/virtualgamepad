@@ -236,10 +236,14 @@ fn reply_retry_uses_exact_bytes_without_advancing_revision_twice() {
     ));
 }
 fn native<D: HidDriver>(driver: D) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
+    native_target(driver, RealizationTarget::LINUX_UINPUT)
+}
+fn native_target<D: HidDriver>(
+    driver: D,
+    target: RealizationTarget,
+) -> (ControllerSession<D>, Arc<Mutex<Record>>) {
     let record = Arc::new(Mutex::new(Record::default()));
-    let prepared =
-        gr_controller_contract::prepare_realization(&driver, RealizationTarget::LINUX_UINPUT)
-            .unwrap();
+    let prepared = gr_controller_contract::prepare_realization(&driver, target).unwrap();
     let runtime = ControllerRuntime::new(
         driver,
         ProviderSessionSink {
@@ -391,4 +395,26 @@ fn worker_retained_views_are_explicitly_unavailable_before_and_after_close() {
     check!(create_dualsense_usb_worker);
     check!(create_dualshock4_usb_worker);
     check!(create_xbox360_usb_worker);
+}
+
+#[test]
+fn incomplete_dummy_hcd_protocol_ownership_cannot_claim_retained_snapshots() {
+    fn check<D: HidDriver>(driver: D)
+    where
+        D::Hid: RetainedProtocol,
+    {
+        let (mut session, record) =
+            native_target(driver, RealizationTarget::LINUX_DUMMY_HCD_USB_HID);
+        assert!(matches!(
+            session.retained_outputs(),
+            Err(ControlError::UnavailableInRealization { .. })
+        ));
+        session.close();
+        session.close();
+        assert_eq!(record.lock().unwrap().closes, 1);
+    }
+    check(DualSenseDefinition);
+    check(DualShock4Definition);
+    check(SwitchProDefinition);
+    check(Xbox360Definition);
 }

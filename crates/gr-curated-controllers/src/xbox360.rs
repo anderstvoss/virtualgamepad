@@ -491,6 +491,13 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 5] = [
+    DUMMY_HCD_RESTRICTIONS[0],
+    DUMMY_HCD_RESTRICTIONS[1],
+    DUMMY_HCD_RESTRICTIONS[2],
+    DUMMY_HCD_RESTRICTIONS[3],
+    crate::retained::DUMMY_RESTRICTION,
+];
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -498,11 +505,17 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &DUMMY_HCD_RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 4] = [
+    USBIP_RESTRICTIONS[0],
+    USBIP_RESTRICTIONS[1],
+    USBIP_RESTRICTIONS[2],
+    crate::retained::WORKER_RESTRICTION,
+];
 static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -510,7 +523,7 @@ static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &USBIP_RESTRICTIONS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),

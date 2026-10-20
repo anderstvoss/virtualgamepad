@@ -194,5 +194,16 @@ impl OutputState for Xbox360OutputState {
     }
 }
 
+pub(crate) const WORKER_RESTRICTION: gr_controller_contract::TargetRestriction =
+    gr_controller_contract::TargetRestriction {
+        feature: "retained host outputs",
+        reason: "USB worker observations can drop and the unchanged IPC has no retained-state/revision query",
+    };
+pub(crate) const DUMMY_RESTRICTION: gr_controller_contract::TargetRestriction =
+    gr_controller_contract::TargetRestriction {
+        feature: "retained host outputs",
+        reason: "f_hid lacks complete request metadata and negative replies; raw observations cannot establish validated retained state",
+    };
+
 #[cfg(test)]
 mod tests;

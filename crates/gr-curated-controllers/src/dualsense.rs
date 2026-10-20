@@ -695,6 +695,11 @@ static USBIP_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "controller-matching audio",
     reason: "functional UAC2 emulation is not the reference DualSense UAC1 topology; physical comparison remains pending",
 }];
+static RETAINED_DUMMY: [TargetRestriction; 3] = [
+    USB_RESTRICTIONS[0],
+    USB_RESTRICTIONS[1],
+    crate::retained::DUMMY_RESTRICTION,
+];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -702,11 +707,13 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USB_RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 2] =
+    [USBIP_RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -714,7 +721,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USBIP_RESTRICTIONS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
