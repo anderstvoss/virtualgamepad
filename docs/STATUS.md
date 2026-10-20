@@ -43,6 +43,11 @@ The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
 
+The C3 facade step consolidates application-handle lifecycle and audio-failure
+ownership behind private generic state and shared forwarding. Public signatures
+and docs remain frozen; existing regression construction changes are mechanical,
+as authorized on #176. This refactor changes no support or acceptance cell.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
