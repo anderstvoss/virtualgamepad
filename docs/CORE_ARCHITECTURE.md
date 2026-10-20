@@ -184,3 +184,19 @@ validation stay in curated code. Crate-private `from_parts` constructors support
 the same deterministic provider-injection tests without exposing a public
 construction bypass. Creation rollback continues to preserve the initiating
 error together with all cleanup failures.
+
+### Opt-in live topology validation
+
+Native topology consumers retain a controller-owned configuration in their
+opt-in topology owner; fixed-family sessions gain no fields. Configuration and
+state candidates are validated before either is installed or the generation
+advances. Native callers without that configuration fail closed rather than
+silently dropping protocol edits. Both current and candidate configurations
+must accept neutralized state, so removing a held optional control requires
+neutralization. No provider I/O occurs during acceptance.
+
+Topology edits use controller-owned typed operations deriving their control ID;
+an independent ID cannot authorize an arbitrary edit closure. Full candidate
+validation additionally prevents an operation from leaving an absent control
+active. The fifth-family fake-provider tests cover this on native uinput and
+HID; production Wii still owns its legal attachment combinations and mappings.
