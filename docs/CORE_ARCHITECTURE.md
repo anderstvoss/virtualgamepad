@@ -173,3 +173,14 @@ facts. Unknown raw visibility cannot be inferred from macro functionality. The
 [SDL differential workflow](SDL_DIFFERENTIAL.md) reports missing measurements and
 expected/unexpected differences without converting source evidence into physical
 truth. Production Wii Remote remains positively gated on later authorization.
+
+### Application facade ownership
+
+The four typed root handles are newtypes around a private `Controller<F>`. Its
+compiled family adapter supplies typed service dispatch; one owner coordinates
+audio failure, deadlines, diagnostics and audio-first terminal cleanup. Shared
+forwarding is generated with `macro_rules!`; controller-native edits and protocol
+validation stay in curated code. Crate-private `from_parts` constructors support
+the same deterministic provider-injection tests without exposing a public
+construction bypass. Creation rollback continues to preserve the initiating
+error together with all cleanup failures.
