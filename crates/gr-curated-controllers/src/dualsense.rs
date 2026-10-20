@@ -695,6 +695,11 @@ static USBIP_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "controller-matching audio",
     reason: "functional UAC2 emulation is not the reference DualSense UAC1 topology; physical comparison remains pending",
 }];
+static RETAINED_DUMMY: [TargetRestriction; 3] = [
+    USB_RESTRICTIONS[0],
+    USB_RESTRICTIONS[1],
+    crate::retained::DUMMY_RESTRICTION,
+];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -702,11 +707,13 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USB_RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 2] =
+    [USBIP_RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -714,7 +721,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USBIP_RESTRICTIONS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1126,7 +1133,10 @@ pub enum DualSenseHidOutput {
     },
 }
 
-fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSenseHidOutput {
+pub(crate) fn decode_dualsense_hid_output(
+    report_id: Option<u8>,
+    raw: Vec<u8>,
+) -> DualSenseHidOutput {
     if report_id == Some(0x02) && raw.len() >= 47 {
         let mut right_trigger_effect = [0_u8; 11];
         right_trigger_effect.copy_from_slice(&raw[10..21]);
@@ -1163,6 +1173,12 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
 }
 pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualSenseOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {

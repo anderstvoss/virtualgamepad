@@ -54,6 +54,11 @@ rejected transitions, missing neutralization and absent-control edits on both
 backends. This is an internal seam repair, not a Wii implementation or acceptance
 claim; fixed-family runtime layout and provider identity remain unchanged.
 
+C3 retained-output snapshots are available below the root for in-process UHID
+and uinput. USB-worker views return `UnavailableInRealization` under the owner
+scoping decision; recovery is tracked in #203 and needs separate protocol
+approval. No root API growth or physical-output acceptance is implied.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,

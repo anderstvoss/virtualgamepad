@@ -10,6 +10,7 @@ use std::collections::VecDeque;
 
 #[derive(Clone)]
 pub(crate) struct SwitchUsbProtocol {
+    retained: crate::retained::SwitchProOutputState,
     state: SwitchProState,
     pub(crate) timer: u8,
     pub(crate) stream_enabled: bool,
@@ -22,6 +23,7 @@ impl SwitchUsbProtocol {
     fn new() -> Self {
         Self {
             state: SwitchProState::default(),
+            retained: crate::retained::SwitchProOutputState::default(),
             timer: 0,
             stream_enabled: false,
             pending: VecDeque::new(),
@@ -31,6 +33,13 @@ impl SwitchUsbProtocol {
         }
     }
     fn process(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
+        let mut next = self.clone();
+        next.process_inner(report, now)?;
+        crate::retained::OutputState::apply(&mut next.retained, report)?;
+        *self = next;
+        Ok(())
+    }
+    fn process_inner(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
         if report.kind != ReportType::Output {
             return Err(ReplyError::Unsupported);
         }
@@ -143,5 +152,12 @@ impl common::HidDriver for SwitchProDefinition {
     type Hid = SwitchUsbProtocol;
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         SwitchUsbProtocol::new()
+    }
+}
+
+impl crate::retained::RetainedProtocol for SwitchUsbProtocol {
+    type Outputs = crate::retained::SwitchProOutputState;
+    fn retained(&self) -> &Self::Outputs {
+        &self.retained
     }
 }
