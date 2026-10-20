@@ -48,6 +48,12 @@ ownership behind private generic state and shared forwarding. Public signatures
 and docs remain frozen; existing regression construction changes are mechanical,
 as authorized on #176. This refactor changes no support or acceptance cell.
 
+The C3 pre-C5 follow-up validates native attachment configuration atomically and
+uses typed topology operations with derived IDs. Deterministic regressions cover
+rejected transitions, missing neutralization and absent-control edits on both
+backends. This is an internal seam repair, not a Wii implementation or acceptance
+claim; fixed-family runtime layout and provider identity remain unchanged.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
