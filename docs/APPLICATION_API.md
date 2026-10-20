@@ -160,3 +160,10 @@ The supporting `gr_hid::Protocol::lifecycle` hook now returns `Option<Output>`;
 custom implementations must return their observation or `None` after state
 handling. Supporting `ControllerAssociation` constructors also need the new
 `companions` field. These SPI changes leave ordinary root signatures unchanged.
+
+Retained accepted host outputs are a supporting curated-controller interface, not
+a new ordinary-root method. Optional observation callbacks remain bounded and
+lossy. The internal retained view survives event eviction and terminal close,
+and revisions count semantic accepted changes rather than delivery or physical
+playback. USB-worker snapshots are explicitly unavailable because the lossy
+worker channel has no recovery query (tracked separately in #203).

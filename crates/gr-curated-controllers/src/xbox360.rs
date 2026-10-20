@@ -709,6 +709,12 @@ pub enum Xbox360OutputEvent {
 }
 pub struct Xbox360Controller(common::ControllerSession<Xbox360Definition>);
 impl Xbox360Controller {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::Xbox360OutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -968,7 +974,7 @@ impl common::HidDriver for Xbox360Definition {
         };
     }
 
-    type Hid = common::SnapshotProtocol<Xbox360State>;
+    type Hid = common::SnapshotProtocol<Xbox360State, crate::retained::Xbox360OutputState>;
     fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
             common::logical_input(xbox_hid_frame(state))

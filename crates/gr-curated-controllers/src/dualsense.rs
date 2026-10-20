@@ -1126,7 +1126,10 @@ pub enum DualSenseHidOutput {
     },
 }
 
-fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSenseHidOutput {
+pub(crate) fn decode_dualsense_hid_output(
+    report_id: Option<u8>,
+    raw: Vec<u8>,
+) -> DualSenseHidOutput {
     if report_id == Some(0x02) && raw.len() >= 47 {
         let mut right_trigger_effect = [0_u8; 11];
         right_trigger_effect.copy_from_slice(&raw[10..21]);
@@ -1163,6 +1166,12 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
 }
 pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualSenseOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {

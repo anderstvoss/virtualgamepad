@@ -1006,6 +1006,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualShock4OutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -1345,7 +1351,7 @@ impl common::HidDriver for DualShock4Definition {
         };
     }
 
-    type Hid = common::SnapshotProtocol<DualShock4State>;
+    type Hid = common::SnapshotProtocol<DualShock4State, crate::retained::DualShock4OutputState>;
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         common::creation_identity()
     }

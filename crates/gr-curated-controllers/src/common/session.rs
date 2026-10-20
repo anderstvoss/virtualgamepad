@@ -504,6 +504,33 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Worker { closed, .. } => (!closed).then_some(gr_hid::Readiness::Poll),
         }
     }
+    pub(crate) fn retained_outputs(
+        &self,
+    ) -> Result<<D::Hid as crate::retained::RetainedProtocol>::Outputs, ControlError>
+    where
+        D::Hid: crate::retained::RetainedProtocol,
+    {
+        use crate::retained::{OutputState, RetainedProtocol};
+        match &self.backend {
+            Backend::Hid { runtime, .. } => Ok(runtime.protocol().retained().clone()),
+            Backend::Native(_)
+                if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT =>
+            {
+                Ok(<D::Hid as RetainedProtocol>::Outputs::from_native(
+                    self.feedback.playback,
+                ))
+            }
+            Backend::Native(_) | Backend::Worker { .. } => {
+                Err(ControlError::UnavailableInRealization {
+                    selected_target: self.selection.target,
+                    available_in: gr_realization_api::RealizationTargetSet::new(&[
+                        gr_realization_api::RealizationTarget::LINUX_UINPUT,
+                        gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                    ]),
+                })
+            }
+        }
+    }
     pub(crate) fn dropped_observations(&self) -> u64 {
         self.dropped.saturating_add(match &self.backend {
             Backend::Native(_) => 0,
@@ -570,3 +597,6 @@ mod identity_tests {
         assert!(read_identity(&mut &[1, 2][..]).is_err());
     }
 }
+
+#[cfg(test)]
+mod retained_tests;

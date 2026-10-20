@@ -11,6 +11,7 @@ use gr_hid::{
 
 #[derive(Clone)]
 pub(crate) struct DualSenseUsbProtocol {
+    retained: crate::retained::DualSenseOutputState,
     features: BTreeMap<NativeHidReportKey, Vec<u8>>,
     sequence: u8,
     next_input: u64,
@@ -22,6 +23,7 @@ impl DualSenseUsbProtocol {
     pub(crate) fn new(identity: [u8; 6]) -> Self {
         Self {
             features: dualsense_feature_responses(identity),
+            retained: crate::retained::DualSenseOutputState::default(),
             sequence: 1,
             next_input: 0,
             active: true,
@@ -103,7 +105,9 @@ impl Protocol for DualSenseUsbProtocol {
                 None,
             ),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
-            RequestKind::Set(report) => match Self::accept_output(report) {
+            RequestKind::Set(report) => match Self::accept_output(report)
+                .and_then(|()| crate::retained::OutputState::apply(&mut self.retained, report))
+            {
                 Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(report))),
                 Err(error) => (Reply::Set(Err(error)), None),
             },
@@ -111,6 +115,10 @@ impl Protocol for DualSenseUsbProtocol {
     }
     fn output(&mut self, report: Report, _: u64) -> Result<Option<Self::Output>, Error> {
         // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
+        if Self::accept_output(&report).is_ok() {
+            crate::retained::OutputState::apply(&mut self.retained, &report)
+                .map_err(|_| Error::InvalidState)?;
+        }
         Ok(Some(Self::decode(&report)))
     }
     fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
@@ -157,6 +165,13 @@ impl common::HidDriver for DualSenseDefinition {
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
         DualSenseUsbProtocol::new(identity)
+    }
+}
+
+impl crate::retained::RetainedProtocol for DualSenseUsbProtocol {
+    type Outputs = crate::retained::DualSenseOutputState;
+    fn retained(&self) -> &Self::Outputs {
+        &self.retained
     }
 }
 

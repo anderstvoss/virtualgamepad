@@ -834,6 +834,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct SwitchProController(common::ControllerSession<SwitchProDefinition>);
 impl SwitchProController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::SwitchProOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     #[must_use]
     pub fn stream_enabled(&self) -> bool {
         self.0
