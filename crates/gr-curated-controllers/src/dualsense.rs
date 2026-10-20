@@ -15,7 +15,7 @@ use gr_controller_contract::{
     RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
     TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
 };
-use gr_dualsense_wire::USB_DESCRIPTOR;
+use gr_controller_wire::dualsense::USB_DESCRIPTOR;
 use gr_realization_api::{
     ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
     NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,

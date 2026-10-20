@@ -1,5 +1,6 @@
 //! Typed application handles. Runtime and protocol ownership stays in curated code.
 use crate::application::{controller_error, readiness};
+use crate::audio::AudioLifecycle;
 use crate::{
     BatteryLevel, CommitError, ControlError, ControllerAssociation, ControllerDiagnostics,
     ControllerError, ControllerId, CreationOptions, DigitalControlUpdate, DualSenseAxis,
@@ -727,19 +728,10 @@ fn create_dualsense_usb(
     options: CreationOptions,
     identity: DualSenseIdentity,
 ) -> Result<DualSenseController, ControllerError> {
-    use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
-    let (bridge, mut audio) = crate::usb_audio::open(
-        Profile::DualSense,
-        gr_usbip::profile::ids::DUALSENSE,
-        1,
-        identity.to_bytes(),
-        audio_options,
-        options.session.0,
-        crate::usb_audio::dualsense,
-    )?;
+    let (bridge, mut audio) =
+        crate::usb_audio::dualsense(identity.to_bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -777,19 +769,10 @@ fn create_dualshock4_usb(
     options: CreationOptions,
     identity: DualShock4Identity,
 ) -> Result<DualShock4Controller, ControllerError> {
-    use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
-    let (bridge, mut audio) = crate::usb_audio::open(
-        Profile::DualShock4,
-        gr_usbip::profile::ids::DUALSHOCK4,
-        2,
-        identity.to_bytes(),
-        audio_options,
-        options.session.0,
-        crate::usb_audio::dualshock4,
-    )?;
+    let (bridge, mut audio) =
+        crate::usb_audio::dualshock4(identity.to_bytes(), audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
@@ -824,20 +807,11 @@ fn create_dualshock4_usb(
 
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 fn create_xbox360_usb(options: CreationOptions) -> Result<Xbox360Controller, ControllerError> {
-    use gr_privileged_broker::audio_launch::Profile;
-    use gr_usbip::profile::ControllerId;
     let audio_options = options.audio();
     let options = options.internal()?;
     let identity = DualSenseIdentity::generate()?.to_bytes();
-    let (bridge, mut audio) = crate::usb_audio::open(
-        Profile::Xbox360,
-        gr_usbip::profile::ids::XBOX360,
-        3,
-        identity,
-        audio_options,
-        options.session.0,
-        crate::usb_audio::xbox360,
-    )?;
+    let (bridge, mut audio) =
+        crate::usb_audio::xbox360(identity, audio_options, options.session.0)?;
     let mut inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
     if let Err(error) = inner.commit() {
         audio.close();
