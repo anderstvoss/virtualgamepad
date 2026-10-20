@@ -17,11 +17,10 @@ mod protocol;
 
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationSessionId, RealizationTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1134,7 +1133,7 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
         RealizationTarget::LINUX_UHID_USB => hid(o.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::SwitchPro,
+                controller: gr_controller_wire::registry::ids::SWITCH_PRO,
             })
         }
         _ => {
@@ -1162,6 +1161,36 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<SwitchProController, ProviderError> {
     common::injected(SwitchProDefinition, session).map(SwitchProController)
+}
+
+impl crate::registry::ControllerFamily for SwitchProDefinition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::SWITCH_PRO;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &EVDEV_SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

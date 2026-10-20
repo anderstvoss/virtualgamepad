@@ -1,16 +1,18 @@
 //! Compiled functional UAC2/HID profiles. These are deliberately not physical
 //! controller-matching descriptors; notably the reference `DualSense` uses UAC1.
-use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, STANDARD_GAMEPAD_DESCRIPTOR, dualsense};
+#[cfg(test)]
+use gr_controller_wire::STANDARD_GAMEPAD_DESCRIPTOR;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProfileId {
-    DualSenseEmulated,
-    DualShock4Emulated,
-    Xbox360HidEmulated,
+pub use gr_controller_wire::registry::{ControllerId, UsbProfileSpec, ids};
+
+pub fn spec(id: ControllerId) -> std::io::Result<&'static UsbProfileSpec> {
+    gr_controller_wire::registry::find(id)
+        .and_then(|family| family.usb_profile.as_ref())
+        .ok_or_else(|| std::io::Error::other("unknown compiled USB profile"))
 }
 /// Compiled descriptors; session identity is restricted to a validated broker instance.
 pub struct Profile {
-    id: ProfileId,
+    spec: UsbProfileSpec,
     device: [u8; 18],
     configuration: Vec<u8>,
     report: &'static [u8],
@@ -23,51 +25,26 @@ impl Profile {
     /// order matters as well as sample count: haptics must never become speakers.
     #[must_use]
     pub fn accepts_playback(&self, format: &gr_audio_contract::PcmFormat) -> bool {
-        use gr_audio_contract::AudioChannel as C;
-        let channels: &[C] = if self.id == ProfileId::DualSenseEmulated {
-            &[
-                C::AudibleLeft,
-                C::AudibleRight,
-                C::HapticLeft,
-                C::HapticRight,
-            ]
-        } else {
-            &[C::AudibleLeft, C::AudibleRight]
-        };
-        format.sample_rate_hz() == 48_000 && format.channels() == channels
+        format.sample_rate_hz() == 48_000 && format.channels() == self.spec.playback
     }
     #[must_use]
     pub fn accepts_microphone(&self, format: &gr_audio_contract::PcmFormat) -> bool {
-        use gr_audio_contract::AudioChannel as C;
-        let channels: &[C] = if self.id == ProfileId::DualSenseEmulated {
-            &[C::MicrophoneLeft, C::MicrophoneRight]
-        } else {
-            &[C::Microphone]
-        };
-        format.sample_rate_hz() == 48_000 && format.channels() == channels
+        format.sample_rate_hz() == 48_000 && format.channels() == self.spec.microphone
     }
     #[must_use]
-    pub fn new(id: ProfileId) -> Self {
-        let (vendor, product, report, playback, microphone) = match id {
-            ProfileId::DualSenseEmulated => {
-                (0x054c_u16, 0x0ce6_u16, dualsense::USB_DESCRIPTOR, 4, 2)
-            }
-            ProfileId::DualShock4Emulated => (0x054c, 0x05c4, DUALSHOCK4_USB_DESCRIPTOR, 2, 1),
-            ProfileId::Xbox360HidEmulated => {
-                let (vendor, product) = gr_controller_wire::STANDARD_GAMEPAD_VIRTUAL_IDENTITY;
-                (vendor, product, STANDARD_GAMEPAD_DESCRIPTOR, 2, 1)
-            }
-        };
-        let [vl, vh] = vendor.to_le_bytes();
-        let [pl, ph] = product.to_le_bytes();
-        let device = [
-            18, 1, 0, 2, 0xef, 2, 1, 64, vl, vh, pl, ph, 0, 1, 1, 2, 0, 1,
-        ];
+    /// Build a reviewed compiled composite profile.
+    ///
+    /// # Panics
+    /// Panics if a compiled channel layout or descriptor exceeds USB limits.
+    pub fn new(spec: &UsbProfileSpec) -> Self {
+        let playback = u8::try_from(spec.playback.len()).expect("compiled playback layout fits");
+        let microphone =
+            u8::try_from(spec.microphone.len()).expect("compiled microphone layout fits");
         Self {
-            id,
-            device,
-            configuration: configuration(report.len(), playback, microphone),
-            report,
+            spec: *spec,
+            device: spec.device,
+            configuration: configuration(spec.report.len(), playback, microphone),
+            report: spec.report,
             playback,
             microphone,
             serial: None,
@@ -77,7 +54,7 @@ impl Profile {
     /// must come from administrator-owned broker configuration, never a client.
     /// Static profiles created by `new` retain their original descriptors.
     pub fn for_session(
-        id: ProfileId,
+        spec: &UsbProfileSpec,
         instance: impl AsRef<str>,
         generation: u64,
     ) -> std::io::Result<Self> {
@@ -93,14 +70,14 @@ impl Profile {
                 "invalid compiled USB session identity",
             ));
         }
-        let mut profile = Self::new(id);
+        let mut profile = Self::new(spec);
         profile.serial = Some(format!("vg-{instance}-{generation:016x}"));
         profile.device[16] = 3;
         Ok(profile)
     }
     #[must_use]
-    pub const fn id(&self) -> ProfileId {
-        self.id
+    pub const fn numbered_reports(&self) -> bool {
+        self.spec.numbered_reports
     }
     #[must_use]
     pub fn device(&self) -> &[u8] {
@@ -129,11 +106,7 @@ impl Profile {
         }
         let text = match index {
             1 => "Virtualgamepad",
-            2 => match self.id {
-                ProfileId::DualSenseEmulated => "Virtualgamepad DualSense emulated audio",
-                ProfileId::DualShock4Emulated => "Virtualgamepad DS4 emulated audio",
-                ProfileId::Xbox360HidEmulated => "Virtualgamepad Xbox 360 HID emulated audio",
-            },
+            2 => self.spec.product_name,
             3 => self.serial.as_deref()?,
             _ => return None,
         };
@@ -212,14 +185,30 @@ fn configuration(report_length: usize, playback: u8, microphone: u8) -> Vec<u8> 
 mod tests {
     use super::*;
     #[test]
+    fn only_compiled_audio_families_have_usb_specs() {
+        assert!(spec(ControllerId::new("test.unknown")).is_err());
+        assert!(spec(ids::SWITCH_PRO).is_err());
+        for family in gr_controller_wire::registry::FAMILIES {
+            if let Some(usb) = &family.usb_profile {
+                assert!(std::ptr::eq(spec(family.id).unwrap(), usb));
+            }
+        }
+    }
+
+    #[test]
     fn standard_hid_usb_identity_cannot_claim_the_native_xbox_wire_protocol() {
         for profile in [
-            Profile::new(ProfileId::Xbox360HidEmulated),
-            Profile::for_session(ProfileId::Xbox360HidEmulated, "test-lab", 9).unwrap(),
+            Profile::new(crate::profile::spec(crate::profile::ids::XBOX360).unwrap()),
+            Profile::for_session(
+                crate::profile::spec(crate::profile::ids::XBOX360).unwrap(),
+                "test-lab",
+                9,
+            )
+            .unwrap(),
         ] {
             assert_eq!(&profile.device()[8..12], &[0, 0, 0, 0]);
             assert_eq!(profile.report(), STANDARD_GAMEPAD_DESCRIPTOR);
-            let other = Profile::new(ProfileId::DualSenseEmulated);
+            let other = Profile::new(crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap());
             assert_eq!(&other.device()[8..12], &[0x4c, 0x05, 0xe6, 0x0c]);
         }
     }
@@ -227,12 +216,13 @@ mod tests {
     #[test]
     fn session_serial_is_exact_and_invalid_identity_is_rejected() {
         for id in [
-            ProfileId::DualSenseEmulated,
-            ProfileId::DualShock4Emulated,
-            ProfileId::Xbox360HidEmulated,
+            crate::profile::ids::DUALSENSE,
+            crate::profile::ids::DUALSHOCK4,
+            crate::profile::ids::XBOX360,
         ] {
-            let static_profile = Profile::new(id);
-            let profile = Profile::for_session(id, "lab-test", 0x123).unwrap();
+            let static_profile = Profile::new(crate::profile::spec(id).unwrap());
+            let profile =
+                Profile::for_session(crate::profile::spec(id).unwrap(), "lab-test", 0x123).unwrap();
             assert_eq!(static_profile.device()[16], 0);
             assert_eq!(profile.device()[16], 3);
             assert_eq!(profile.configuration(), static_profile.configuration());
@@ -254,19 +244,33 @@ mod tests {
             "a\n",
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         ] {
-            assert!(Profile::for_session(ProfileId::DualSenseEmulated, instance, 1).is_err());
+            assert!(
+                Profile::for_session(
+                    crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap(),
+                    instance,
+                    1
+                )
+                .is_err()
+            );
         }
-        assert!(Profile::for_session(ProfileId::DualSenseEmulated, "lab", 0).is_err());
+        assert!(
+            Profile::for_session(
+                crate::profile::spec(crate::profile::ids::DUALSENSE).unwrap(),
+                "lab",
+                0
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn all_profiles_have_complete_lengths_and_separate_hid_audio_endpoints() {
         for (id, playback, microphone) in [
-            (ProfileId::DualSenseEmulated, 4, 2),
-            (ProfileId::DualShock4Emulated, 2, 1),
-            (ProfileId::Xbox360HidEmulated, 2, 1),
+            (crate::profile::ids::DUALSENSE, 4, 2),
+            (crate::profile::ids::DUALSHOCK4, 2, 1),
+            (crate::profile::ids::XBOX360, 2, 1),
         ] {
-            let p = Profile::new(id);
+            let p = Profile::new(crate::profile::spec(id).unwrap());
             let bytes = p.configuration();
             assert_eq!(
                 usize::from(u16::from_le_bytes([bytes[2], bytes[3]])),

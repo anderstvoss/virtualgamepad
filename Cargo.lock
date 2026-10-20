@@ -989,7 +989,9 @@ dependencies = [
 name = "gr-controller-wire"
 version = "0.1.0"
 dependencies = [
+ "gr-audio-contract",
  "gr-dualsense-wire",
+ "gr-realization-api",
 ]
 
 [[package]]

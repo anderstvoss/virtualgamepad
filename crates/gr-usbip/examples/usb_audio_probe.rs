@@ -7,7 +7,7 @@ mod probe {
     use gr_curated_controllers::{audio, usb_personality};
     use gr_hid::{Protocol, Reply, Report, ReportType, RequestKind};
     use gr_usbip::{
-        profile::{Profile, ProfileId},
+        profile::{ControllerId, Profile},
         worker::{Counters, HidHandler, Worker},
     };
     use std::{
@@ -64,7 +64,7 @@ mod probe {
         match args[0].as_str() {
             "dualsense" => run(
                 usb_personality::dualsense(identity),
-                ProfileId::DualSenseEmulated,
+                gr_usbip::profile::ids::DUALSENSE,
                 &audio::dualsense(AudioExposure::Emulated)?,
                 device,
                 seconds,
@@ -73,7 +73,7 @@ mod probe {
             ),
             "dualshock4" => run(
                 usb_personality::dualshock4(identity),
-                ProfileId::DualShock4Emulated,
+                gr_usbip::profile::ids::DUALSHOCK4,
                 &audio::dualshock4(AudioExposure::Emulated)?,
                 device,
                 seconds,
@@ -82,7 +82,7 @@ mod probe {
             ),
             "xbox360" => run(
                 usb_personality::xbox360(),
-                ProfileId::Xbox360HidEmulated,
+                gr_usbip::profile::ids::XBOX360,
                 &audio::xbox360(AudioExposure::Emulated)?,
                 device,
                 seconds,
@@ -131,7 +131,7 @@ mod probe {
 
     fn run<P: Protocol>(
         protocol: P,
-        id: ProfileId,
+        id: ControllerId,
         audio: &AudioProfile,
         device: u32,
         seconds: u64,
@@ -164,7 +164,7 @@ mod probe {
         let worker = Worker::new(
             socket,
             device,
-            Profile::new(id),
+            Profile::new(gr_usbip::profile::spec(id).unwrap()),
             Personality {
                 protocol,
                 state,
