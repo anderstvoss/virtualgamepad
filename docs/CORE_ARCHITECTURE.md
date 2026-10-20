@@ -200,3 +200,18 @@ an independent ID cannot authorize an arbitrary edit closure. Full candidate
 validation additionally prevents an operation from leaving an absent control
 active. The fifth-family fake-provider tests cover this on native uinput and
 HID; production Wii still owns its legal attachment combinations and mappings.
+
+### Root audio crate boundary
+
+`gr-root-audio` owns controller audio objects, backends, USB worker sessions and
+the optional native PCM bridge. It depends on supporting contracts and curated
+controllers, never on `virtualgamepad`. The application root retains typed
+controller selection, association and initiating/cleanup error mapping through
+thin adapters. Private lifecycle extension methods call supporting integration
+functions so extracting ownership adds no public inherent method to the frozen
+root audio types. Fake backend support is opt-in for deterministic tests.
+
+USB audio factories resolve existing compiled profile tags through registry
+metadata; the root no longer supplies magic tag bytes. Broker/worker protocol
+framing and version constants do not change. Wire fixtures formerly housed in
+`gr-dualsense-wire` live verbatim under `gr_controller_wire::dualsense`.

@@ -1,0 +1,29 @@
+[package]
+name = "gr-root-audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
+gr-curated-controllers = { path = "../gr-curated-controllers", version = "0.1" }
+gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
+gr-controller-wire = { path = "../gr-controller-wire", version = "0.1" }
+
+[features]
+default = []
+experimental = []
+test-support = []
+audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
+audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+gr-audio-linux = { path = "../gr-audio-linux", version = "0.1", optional = true }
+gr-audio-worker = { path = "../gr-audio-worker", version = "0.1", optional = true }
+gr-privileged-broker = { path = "../gr-privileged-broker", version = "0.1", optional = true }
+gr-usbip = { path = "../gr-usbip", version = "0.1", optional = true }
+
+[lints]
+workspace = true

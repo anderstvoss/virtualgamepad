@@ -59,6 +59,11 @@ and uinput. USB-worker views return `UnavailableInRealization` under the owner
 scoping decision; recovery is tracked in #203 and needs separate protocol
 approval. No root API growth or physical-output acceptance is implied.
 
+C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
+root reexports and root-specific creation error mapping. The wire crate fold
+keeps `gr_controller_wire::dualsense` and its exact bytes. Feature behavior and
+dummy_hcd disposition are preserved; no new external dependencies are added.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,

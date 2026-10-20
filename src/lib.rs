@@ -56,12 +56,6 @@ mod audio;
 mod creation;
 #[cfg(all(target_os = "linux", feature = "audio-usbip"))]
 mod usb_audio;
-#[cfg(all(
-    target_os = "linux",
-    feature = "audio-usbip",
-    feature = "audio-pipewire"
-))]
-mod usb_audio_bridge;
 pub use audio::{
     AudioDiagnostics, AudioEndpoint, AudioEndpointSelector, AudioRead, ControllerAudio,
 };

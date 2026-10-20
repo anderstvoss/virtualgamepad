@@ -49,5 +49,5 @@ pub use crate::audio::{
 };
 #[must_use]
 pub fn audio_instrumentation(audio: &crate::ControllerAudio) -> AudioInstrumentation<'_> {
-    AudioInstrumentation::new(audio)
+    crate::audio::instrumentation(audio)
 }
