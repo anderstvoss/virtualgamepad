@@ -43,6 +43,22 @@ The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
 
+## Proposed runtime contracts
+
+- [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
+  with static uinput capability supersets and neutralization of absent controls.
+  The production seam remains internal; public additions await owner approval.
+- [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
+  outputs and typed surface kinds; public additions remain gated by D2.
+- [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
+  typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+
+The step 6 synthetic topology audit covers queued bytes/replies, saturation,
+malformed writes, probe/edit overlap, terminal close, delivery uncertainty,
+observation eviction, delivery feedback after edits and explicit host STOP.
+Seventeen low-seam tests pass with no `gr-hid` runtime change. Production Wii
+integration and live-topology generations remain separate work.
+
 ## Registry checkpoint C1
 
 The compiled family registry now links the four existing definitions to their
@@ -52,3 +68,33 @@ profile/controller enums are replaced by compiled IDs, without changing the
 ordinary-root snapshot, broker wire versions or existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
 review. The unavailable dummy_hcd path is retained while D5 is open.
+
+## Acceptance manifests
+
+The four compiled families have per-function TOML manifests under `acceptance/`,
+checked against actual declared realizations. All usable cells remain WIP; the
+dummy_hcd refusal is explicit. Empty pending evidence is not acceptance.
+
+The acceptance `xtask` records monotonic API/node/consumer/removal stages,
+raw failures, cold/warm samples and nearest-rank summaries without budgets.
+The deterministic fake backend is CI-tested; Linux uses public constructors and
+creation-associated sysfs nodes. First-neutral remains unmeasured until a
+consumer oracle exists; SDL probe completion is an upper bound, not its exact
+discovery instant. Live evidence remains separate.
+
+## Internal live topology
+
+An opt-in retained topology sidecar validates compiled subsets, counts accepted
+shape changes and guards absent controls without adding fields to ordinary
+sessions. The fifth synthetic family covers attach/detach, atomic rejection,
+terminal failure and static-superset uinput neutralization. Public topology
+accessors remain deferred until a real consumer family and owner API approval.
+
+## Internal persistent resources
+
+The opt-in typed resource wrapper validates terminal disposition independently
+of transport cleanup. The synthetic fifth family proves pre-open import
+validation, isolated working values, sticky resource dirty, exact ACK retries and
+kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
+The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
+minimum regressions; Wii semantics and an optional file helper remain separate.
