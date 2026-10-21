@@ -6,7 +6,7 @@ fn generated_audio_table_preserves_exact_wire_tags() {
         (Profile::DualShock4, 2, "dualshock4"),
         (Profile::Xbox360, 3, "xbox360"),
     ] {
-        assert_eq!(profile.tag(), tag);
+        assert_eq!(profile.tag().unwrap(), tag);
         assert_eq!(Profile::from_tag(tag).unwrap(), profile);
         assert_eq!(profile.name(), name);
         let id = gr_controller_wire::registry::worker_id(name).unwrap();

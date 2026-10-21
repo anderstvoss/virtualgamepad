@@ -99,8 +99,15 @@ integration and live-topology generations remain separate work.
 The compiled family registry now links the four existing definitions to their
 realization surfaces, intended tiers and permission classes. USB/IP descriptors
 and audio worker/broker dispatch derive from shared compiled metadata. Closed
-profile/controller enums are replaced by compiled IDs, without changing the
-ordinary-root snapshot, broker wire versions or existing descriptor bytes.
+profile/controller enums are replaced by compiled IDs. Follow-up regressions check
+gadget-tag uniqueness and gadget report lengths against metadata. Audio tag
+selection reports missing metadata as an error, and curated UHID creation derives
+the bus from its selected USB or Bluetooth realization. These checks do not enable
+any undeclared family realization or claim physical Bluetooth. The ignored DualSense
+startup probe now checks the kernel HID_ID bus before accepting a rerun; its
+BUS_VIRTUAL comparison arm is retired because USB selection owns BUS_USB.
+Historical measurements are unchanged. This preserves the
+ordinary-root snapshot, broker wire versions and existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
 review. The unavailable dummy_hcd path is retained while D5 is open.
 

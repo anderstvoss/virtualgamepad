@@ -221,6 +221,18 @@ where
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
+        // The selected, declared realization owns the bus. Family builders may
+        // share descriptor/identity defaults; callers must not patch bus bytes.
+        specification.bus_type = match options.target {
+            RealizationTarget::LINUX_UHID_USB => 0x03,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => 0x05,
+            _ => {
+                return Err(ProviderError::Unsupported {
+                    reason: "HID specification requires a UHID realization".into(),
+                });
+            }
+        };
+        specification.target = options.target;
         (specification.physical_path, specification.unique_id) = creation_labels(
             &specification.physical_path,
             &specification.unique_id,

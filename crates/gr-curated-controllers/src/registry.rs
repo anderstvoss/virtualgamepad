@@ -219,3 +219,16 @@ mod receiver_metadata_tests {
         assert!((receiver.manifest)().entries().is_empty());
     }
 }
+
+#[cfg(test)]
+mod gadget_tag_tests {
+    #[test]
+    fn compiled_gadget_tags_are_unique() {
+        let mut tags = std::collections::HashSet::new();
+        for family in super::FAMILIES {
+            if let Some(tag) = family.spec.dummy_hcd_tag {
+                assert!(tags.insert(tag), "duplicate gadget tag {tag}");
+            }
+        }
+    }
+}

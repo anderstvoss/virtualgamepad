@@ -1431,3 +1431,17 @@ mod tests {
         assert!(!root.exists(), "cleanup left Xbox ConfigFS resources");
     }
 }
+
+#[cfg(test)]
+mod registry_length_tests {
+    #[test]
+    fn every_gadget_report_length_matches_compiled_metadata() {
+        for family in gr_controller_wire::registry::FAMILIES {
+            match (super::profile(family.id), family.dummy_hcd_report_length) {
+                (Some(profile), Some(length)) => assert_eq!(profile.report_length, length),
+                (None, None) => {}
+                _ => panic!("gadget/registry availability differs for {}", family.id),
+            }
+        }
+    }
+}
