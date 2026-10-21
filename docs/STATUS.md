@@ -75,6 +75,8 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
   presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+- [ADR-0023](adr/ADR-0023-controller-subsystems.md): controller-owned bounded
+  in-band subsystems, adopted under D4; no subsystem implementation or public API.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
@@ -161,4 +163,4 @@ promote missing live, consumer or physical acceptance cells.
 Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
 isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
 The receiver still exists only as a synthetic fixture, so #165 remains open.
-ADR-0023 (#211) remains draft under D4. C5 and C6 have not started.
+ADR-0023 is adopted under D4. C5 and C6 have not started.
