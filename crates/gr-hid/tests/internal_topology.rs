@@ -512,7 +512,6 @@ fn host_memory_reads_and_activation_replies_follow_live_topology() {
     assert_eq!(io.0.borrow().closes, 1);
 }
 
-// Paste into crates/gr-hid/tests/internal_topology.rs after the existing tests.
 // The module's existing imports, Remote/Port/node, runtime, Fake and enqueue apply.
 
 #[test]

@@ -98,6 +98,19 @@ not an arbitrary controller/provider plugin contract. The `test-support` feature
 of the curated crate supplies fake-provider construction only for workspace tests;
 ordinary builds do not enable it.
 
+The experimental re-exports include the curated handles' public `host_outputs()`
+methods. They retain accepted in-process host output values independently of the
+bounded observation queue, including after close. These methods are outside the
+ordinary-root 110-item snapshot; D2 still gates adding them to ordinary-root handles.
+On UHID, Xbox 360 retains no supported host outputs (an empty snapshot at revision
+zero), and `evdev_rumble` is `None` for every family because evdev playback belongs
+to the uinput realization. USB-worker retained views explicitly return
+`UnavailableInRealization`: their lossy observation channel has no recovery query.
+
+Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
+restriction on USB/IP and `dummy_hcd` surfaces. This is visible restriction metadata,
+not a new ordinary-root method or an approval of the D2 API additions.
+
 Gadget creation is rejected by normal root constructors with its Gate G reason.
 Research implementations/tests remain available; no supported function was
 silently mapped to a lower-fidelity realization. USB gadget, Bluetooth and audio
