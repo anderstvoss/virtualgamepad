@@ -425,27 +425,41 @@ impl Receiver {
         if self.closed {
             return Err(Error::Closed);
         }
-        let mut result = self.primary.service(now);
-        if result.is_ok() {
-            for group in self.companions.iter_mut().flatten() {
-                match group.service(now) {
-                    Ok(cycle) if cycle.failures.is_empty() => {}
-                    Ok(cycle) => {
-                        result = Err(cycle.failures[0].1);
-                        break;
-                    }
-                    Err(error) => {
-                        result = Err(error);
-                        break;
-                    }
+        // The primary owns the shared presentation: only its failure is
+        // inherently receiver-wide. Each companion group belongs to one slot.
+        let outputs = match self.primary.service(now) {
+            Ok(outputs) => outputs,
+            Err(error) => {
+                self.close();
+                return Err(error);
+            }
+        };
+        let mut first_failure = None;
+        for slot in SLOTS {
+            let failure = match self.companions[slot.index()].as_mut() {
+                Some(group) => match group.service(now) {
+                    Ok(cycle) => cycle.failures.first().map(|(_, error)| *error),
+                    Err(error) => Some(error),
+                },
+                None => None,
+            };
+            if let Some(error) = failure {
+                first_failure.get_or_insert(error);
+                let mut slots = self.primary.protocol().slots;
+                slots[slot.index()] = None;
+                // Reuse the validated disconnect transaction: neutralize only
+                // this slot, retain accepted queue bytes and collect close errors.
+                // If that transaction cannot be represented (e.g. generation
+                // overflow), the shared presentation can no longer stay valid.
+                if let Err(error) = self.change(slots) {
+                    self.close();
+                    return Err(error);
                 }
             }
         }
-        if result.is_err() {
-            self.close();
-        }
-        result
+        first_failure.map_or(Ok(outputs), Err)
     }
+
     fn close(&mut self) {
         if self.closed {
             return;
@@ -894,7 +908,7 @@ fn uncertain_shared_reply_closes_every_owned_component_without_replay() {
     );
 }
 #[test]
-fn companion_failure_and_close_errors_preserve_shared_failure_diagnostics_and_cleanup() {
+fn companion_failure_is_slot_local_and_preserves_close_error_diagnostics() {
     let (mut receiver, factory) = rig();
     let mut slot = attached(1);
     slot.companions = Companions {
@@ -921,6 +935,12 @@ fn companion_failure_and_close_errors_preserve_shared_failure_diagnostics_and_cl
         .outcomes
         .push_back(Delivery::Uncertain);
     assert_eq!(receiver.service(1), Err(Error::UncertainDelivery));
+    assert_eq!(receiver.cleanup, vec![(10, Error::Transport)]);
+    assert!(!receiver.closed);
+    assert_eq!(receiver.primary.protocol().slots[0], None);
+    assert_eq!(receiver.primary.protocol().slots[1], Some(attached(2)));
+    assert_eq!(factory.borrow().io[&0].1.0.borrow().closes, 0);
+    receiver.service(2).unwrap();
     assert_eq!(receiver.cleanup, vec![(10, Error::Transport)]);
     receiver.close();
     drop(receiver);
@@ -1106,4 +1126,129 @@ fn receiver_creation_failures_preflight_before_opening_without_owned_leaks() {
     );
     assert!(factory.borrow().io.is_empty());
     assert!(factory.borrow().close_order.borrow().is_empty());
+}
+
+#[test]
+fn failed_slot_preserves_sibling_service_replies_state_and_reconnect() {
+    let (mut receiver, factory) = rig();
+    let mut a = attached(1);
+    a.companions.pointer = true;
+    let mut b = attached(2);
+    b.companions.keyboard = true;
+    receiver.change([Some(a), Some(b), None, None]).unwrap();
+    receiver.press(SlotId::A, 17).unwrap();
+    receiver.press(SlotId::B, 23).unwrap();
+    receiver.service(0).unwrap();
+    let primary = factory.borrow().io[&0].1.clone();
+    let failed = factory.borrow().io[&11].1.clone();
+    let sibling = factory.borrow().io[&12].1.clone();
+    factory.borrow().request(
+        0,
+        30,
+        RequestKind::Set(Report::new(ReportType::Output, Some(2), vec![1, 42]).unwrap()),
+    );
+    factory.borrow().request(
+        11,
+        31,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(9),
+        },
+    );
+    factory.borrow().request(
+        12,
+        32,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(9),
+        },
+    );
+    // An accepted primary reply remains queued while a different slot fails.
+    primary
+        .0
+        .borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    failed
+        .0
+        .borrow_mut()
+        .outcomes
+        .push_back(Delivery::Uncertain);
+    assert_eq!(receiver.service(1), Err(Error::UncertainDelivery));
+    assert!(!receiver.closed);
+    assert_eq!(receiver.primary.state().0, [0, 23, 0, 0]);
+    assert_eq!(
+        receiver.primary.protocol().slots,
+        [None, Some(b), None, None]
+    );
+    assert_eq!(
+        receiver.primary.protocol().rumble,
+        [None, Some(42), None, None]
+    );
+    assert_eq!(failed.0.borrow().closes, 1);
+    assert_eq!(sibling.0.borrow().closes, 0);
+    assert_eq!(primary.0.borrow().closes, 0);
+    assert!(sibling.0.borrow().submitted.iter().any(|c| matches!(c,
+        Command::Reply { token, reply } if token.ordinal == 32 && *reply == Reply::Get(Ok(
+            Report::new(ReportType::Feature, Some(9), vec![0]).unwrap())))));
+    receiver.service(2).unwrap();
+    receiver.service(3).unwrap();
+    assert_eq!(
+        primary
+            .0
+            .borrow()
+            .submitted
+            .iter()
+            .filter(|c| matches!(c,
+        Command::Reply { token, reply: Reply::Set(Ok(())) } if token.ordinal == 30))
+            .count(),
+        1
+    );
+    assert_eq!(receiver.press(SlotId::A, 1), Err(Error::InvalidState));
+    let mut replacement = attached(3);
+    replacement.companions.pointer = true;
+    receiver
+        .change([Some(replacement), Some(b), None, None])
+        .unwrap();
+    receiver.press(SlotId::A, 41).unwrap();
+    receiver.service(4).unwrap();
+    assert_eq!(receiver.primary.state().0, [41, 23, 0, 0]);
+    assert_eq!(sibling.0.borrow().closes, 0);
+    receiver.close();
+    receiver.close();
+    assert_eq!(failed.0.borrow().closes, 1);
+    assert_eq!(sibling.0.borrow().closes, 1);
+    assert_eq!(primary.0.borrow().closes, 1);
+}
+
+#[test]
+fn failed_slot_disconnect_overflow_is_explicitly_receiver_wide() {
+    let (mut receiver, factory) = rig();
+    let mut a = attached(1);
+    a.companions.pointer = true;
+    receiver
+        .change([Some(a), Some(attached(2)), None, None])
+        .unwrap();
+    receiver.service(0).unwrap();
+    receiver.generation = u64::MAX;
+    factory.borrow().request(
+        11,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(9),
+        },
+    );
+    factory.borrow().io[&11]
+        .1
+        .0
+        .borrow_mut()
+        .outcomes
+        .push_back(Delivery::Uncertain);
+    assert_eq!(receiver.service(1), Err(Error::InvalidState));
+    assert!(receiver.closed);
+    receiver.close();
+    for (_, io) in factory.borrow().io.values() {
+        assert_eq!(io.0.borrow().closes, 1);
+    }
 }
