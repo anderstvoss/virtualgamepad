@@ -57,6 +57,7 @@ pub struct Session {
     physical_paths: Vec<String>,
     nodes: BTreeSet<PathBuf>,
     consumers: Vec<File>,
+    service: crate::PeerService,
 }
 
 fn matching_nodes(physical_paths: &[String]) -> BTreeSet<PathBuf> {
@@ -121,11 +122,7 @@ fn wait_child(
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         for peer in peers.iter_mut() {
-            if let Err(error) = peer.controller.service() {
-                let _ = child.kill();
-                let _ = child.wait();
-                return Err(error);
-            }
+            peer.service.service(|| peer.controller.service());
         }
         match child.try_wait() {
             Ok(Some(status)) => {
@@ -177,6 +174,7 @@ impl Backend for Linux {
             physical_paths,
             nodes: BTreeSet::new(),
             consumers: Vec::new(),
+            service: crate::PeerService::default(),
         })
     }
     fn observe(
@@ -189,7 +187,7 @@ impl Backend for Linux {
             "node_present"|"node_gone"=>{
                 let deadline=Instant::now()+Duration::from_secs(2);
                 loop {
-                    for peer in peers.iter_mut() { peer.controller.service()?; }
+                    for peer in peers.iter_mut() { peer.service.service(|| peer.controller.service()); }
                     let nodes=matching_nodes(&s.physical_paths);
                     if stage=="node_present" && !nodes.is_empty(){
                         s.nodes=nodes;
@@ -248,6 +246,9 @@ impl Backend for Linux {
     fn close(&mut self, s: &mut Session) {
         s.consumers.clear();
         s.controller.close();
+    }
+    fn take_service_errors(&mut self, session: &mut Session) -> Vec<String> {
+        session.service.take_errors()
     }
     fn resources(&mut self) -> Value {
         fn count(path: &str) -> Option<usize> {

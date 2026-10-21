@@ -51,7 +51,28 @@ pub trait Backend {
     /// Returns the first scripted input/service failure.
     fn drive(&mut self, session: &mut Self::Session) -> Result<(), String>;
     fn close(&mut self, session: &mut Self::Session);
+    /// Drain service failures belonging to this creation, including failures
+    /// observed while a different creation was being measured.
+    fn take_service_errors(&mut self, _: &mut Self::Session) -> Vec<String> {
+        Vec::new()
+    }
     fn resources(&mut self) -> Value;
+}
+
+/// A failed peer is not serviced again while another sample is observed.
+#[derive(Default)]
+pub(crate) struct PeerService {
+    failure: Option<String>,
+}
+impl PeerService {
+    pub(crate) fn service(&mut self, operation: impl FnOnce() -> Result<(), String>) {
+        if self.failure.is_none() {
+            self.failure = operation().err();
+        }
+    }
+    pub(crate) fn take_errors(&mut self) -> Vec<String> {
+        self.failure.take().into_iter().collect()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -152,6 +173,7 @@ pub fn run<B: Backend, C: Clock>(
                     errors.push(error);
                 }
             }
+            errors.extend(backend.take_service_errors(&mut session));
             drop(session);
             samples.push(json!({"cycle":cycle,"index":index,"temperature":if cycle==0 {"cold"}else{"warm"},"stages":stages,"observations":observations,"errors":errors}));
         }
@@ -467,5 +489,111 @@ mod tests {
         c.cycles = 0;
         assert!(run(&mut fake, &mut Tick(0), &c, &json!({})).is_err());
         assert_eq!(fake.creates, 0);
+    }
+}
+
+#[cfg(test)]
+mod peer_failure_tests {
+    use super::*;
+    struct OwnedSession {
+        id: usize,
+        open: bool,
+        service: PeerService,
+    }
+    struct Peers {
+        created: usize,
+        open: usize,
+        failed_stage: &'static str,
+        failed_id: usize,
+        failure_attempts: usize,
+    }
+    impl Backend for Peers {
+        type Session = OwnedSession;
+        fn create(&mut self, _: &str, _: &str) -> Result<OwnedSession, String> {
+            let id = self.created;
+            self.created += 1;
+            self.open += 1;
+            Ok(OwnedSession {
+                id,
+                open: true,
+                service: PeerService::default(),
+            })
+        }
+        fn observe(
+            &mut self,
+            _: &mut OwnedSession,
+            stage: &str,
+            peers: &mut [&mut OwnedSession],
+        ) -> Result<Value, String> {
+            if stage == self.failed_stage {
+                for _ in 0..3 {
+                    for peer in peers.iter_mut() {
+                        peer.service.service(|| {
+                            if peer.id == self.failed_id {
+                                self.failure_attempts += 1;
+                                Err(format!("session {} service failed", peer.id))
+                            } else {
+                                Ok(())
+                            }
+                        });
+                    }
+                }
+            }
+            Ok(json!({"synthetic": true}))
+        }
+        fn drive(&mut self, _: &mut OwnedSession) -> Result<(), String> {
+            Ok(())
+        }
+        fn close(&mut self, session: &mut OwnedSession) {
+            if session.open {
+                self.open -= 1;
+                session.open = false;
+            }
+        }
+        fn take_service_errors(&mut self, session: &mut OwnedSession) -> Vec<String> {
+            session.service.take_errors()
+        }
+        fn resources(&mut self) -> Value {
+            json!({"open":self.open})
+        }
+    }
+    struct Tick(u64);
+    impl Clock for Tick {
+        fn now_ns(&mut self) -> u64 {
+            self.0 += 1;
+            self.0
+        }
+    }
+    #[test]
+    fn peer_service_failure_belongs_to_its_sample_not_the_observed_sample() {
+        for (stage, failed_id) in [("node_present", 0), ("node_gone", 1), ("sdl_ready", 0)] {
+            let mut backend = Peers {
+                created: 0,
+                open: 0,
+                failed_stage: stage,
+                failed_id,
+                failure_attempts: 0,
+            };
+            let config = Config {
+                controller: "virtualgamepad.dualsense".into(),
+                realization: "linux.uinput".into(),
+                cycles: 1,
+                concurrency: 3,
+            };
+            let result = run(&mut backend, &mut Tick(0), &config, &json!({})).unwrap();
+            for index in 0..3 {
+                assert_eq!(
+                    result["samples"][index]["errors"],
+                    if index == failed_id {
+                        json!([format!("session {failed_id} service failed")])
+                    } else {
+                        json!([])
+                    }
+                );
+                assert!(result["samples"][index]["stages"][stage]["value_ns"].is_u64());
+            }
+            assert_eq!(backend.failure_attempts, 1);
+            assert_eq!(backend.open, 0);
+        }
     }
 }
