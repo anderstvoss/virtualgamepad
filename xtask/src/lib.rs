@@ -60,10 +60,12 @@ pub trait Backend {
 }
 
 /// A failed peer is not serviced again while another sample is observed.
+#[cfg(any(target_os = "linux", test))]
 #[derive(Default)]
 pub(crate) struct PeerService {
     failure: Option<String>,
 }
+#[cfg(any(target_os = "linux", test))]
 impl PeerService {
     pub(crate) fn service(&mut self, operation: impl FnOnce() -> Result<(), String>) {
         if self.failure.is_none() {
