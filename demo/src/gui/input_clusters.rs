@@ -1984,6 +1984,286 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
     })
 }
 
+/// One layout for every native adapter. Fixed families supply their selected
+/// surface; a family with live attachments supplies its retained current shape.
+pub(super) fn draw_editor(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    editor: &mut dyn super::native_editor::InputEditor,
+    state: &mut InputUiState,
+) {
+    let topology = editor.current_topology();
+    state.reconcile_topology(topology);
+    let mut events = Vec::new();
+    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), state, &mut events);
+    if !topology.sticks().is_empty() {
+        horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+            for stick in topology.sticks() {
+                if let Some(value) = editor.stick_value(stick.id()) {
+                    draw_stick(ui, stick, value, state, &mut events);
+                } else {
+                    ui.label(format!(
+                        "{}: native stick editor unavailable",
+                        stick.id().as_str()
+                    ));
+                }
+            }
+        });
+    }
+    if !topology.dpads().is_empty() || !topology.face_button_clusters().is_empty() {
+        horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
+            for dpad in topology.dpads() {
+                draw_dpad_cluster(ui, dpad, state, &mut events);
+            }
+            for cluster in topology.face_button_clusters() {
+                draw_face_cluster(ui, cluster, state, &mut events);
+            }
+        });
+    }
+    if !topology.trigger_stacks().is_empty() {
+        let values = editor.trigger_values();
+        horizontal_cards(ui, (controller_id, "triggers"), false, |ui| {
+            for stack in topology.trigger_stacks() {
+                draw_trigger_stack(ui, stack, &values, state, &mut events);
+            }
+        });
+    }
+    if !topology.touchpads().is_empty() {
+        horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
+            for touchpad in topology.touchpads() {
+                let current = editor.touch_points(touchpad.id());
+                draw_touchpad(ui, controller_id, touchpad, &current, state, &mut events);
+            }
+        });
+    }
+    if !topology.motion().is_empty() {
+        horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
+            for motion in topology.motion() {
+                if let Some((gyroscope, accelerometer)) = editor.motion_values(motion.id()) {
+                    draw_motion(ui, motion, gyroscope, accelerometer, state, &mut events);
+                } else {
+                    ui.label(format!(
+                        "{}: native motion editor unavailable",
+                        motion.id().as_str()
+                    ));
+                }
+            }
+        });
+    }
+    if !topology.extra_axes().is_empty() {
+        horizontal_cards(ui, (controller_id, "extra-axes"), false, |ui| {
+            for axis in topology.extra_axes() {
+                let id = match axis {
+                    ExtraAxisInput::OneDimensional { id, .. }
+                    | ExtraAxisInput::TwoDimensional { id, .. } => *id,
+                };
+                if let Some(value) = editor.extra_axis(id) {
+                    draw_extra_axis(ui, axis, value, &mut events);
+                } else {
+                    ui.label(format!("{}: native axis editor unavailable", id.as_str()));
+                }
+            }
+        });
+    }
+    for module in topology.custom_modules() {
+        ui.label(format!(
+            "{}: custom module requires a declared native editor",
+            module.title
+        ));
+    }
+    editor.apply_events(events);
+}
+
+impl InputUiState {
+    fn reconcile_topology(&mut self, topology: &virtualgamepad::InputTopology) {
+        let mut ids = HashSet::from([AUXILIARY_HOLD]);
+        for input in topology.auxiliary_buttons() {
+            ids.insert(input.id);
+        }
+        for cluster in topology.face_button_clusters() {
+            ids.insert(cluster.id());
+        }
+        for dpad in topology.dpads() {
+            ids.insert(dpad.id());
+        }
+        for stick in topology.sticks() {
+            ids.insert(stick.id());
+            if let Some(button) = stick.press() {
+                ids.insert(button.id);
+            }
+            if let Some(button) = stick.capacitive() {
+                ids.insert(button.id);
+            }
+        }
+        for stack in topology.trigger_stacks() {
+            ids.insert(stack.id());
+            for control in stack.controls() {
+                let (TriggerInputKind::Button { id } | TriggerInputKind::Axis { id, .. }) =
+                    control.kind;
+                ids.insert(id);
+            }
+        }
+        for touchpad in topology.touchpads() {
+            ids.insert(touchpad.id());
+            match touchpad.actuation() {
+                TouchpadActuation::Button(button) => {
+                    ids.insert(button.id);
+                }
+                TouchpadActuation::Deflection { id, .. } => {
+                    ids.insert(id);
+                }
+                TouchpadActuation::None => {}
+            }
+        }
+        for motion in topology.motion() {
+            ids.insert(motion.id());
+        }
+        for axis in topology.extra_axes() {
+            let (ExtraAxisInput::OneDimensional { id, .. }
+            | ExtraAxisInput::TwoDimensional { id, .. }) = axis;
+            ids.insert(*id);
+        }
+        for module in topology.custom_modules() {
+            ids.insert(module.id);
+        }
+        let faces: HashSet<_> = topology
+            .face_button_clusters()
+            .iter()
+            .flat_map(|c| c.buttons().iter().map(|b| b.button))
+            .collect();
+        let available = |key: &HoldKey| match key {
+            HoldKey::Control(id) => ids.contains(id),
+            HoldKey::Face(button) => faces.contains(button),
+            HoldKey::Dpad(_) => !topology.dpads().is_empty(),
+        };
+        self.holds.retain(|id, _| ids.contains(id));
+        self.latched_buttons.retain(available);
+        self.momentary_buttons.retain(available);
+        self.snapping_dpads
+            .retain(|id, _| topology.dpads().iter().any(|d| d.id() == *id));
+        self.touchpads
+            .retain(|id, _| topology.touchpads().iter().any(|t| t.id() == *id));
+    }
+}
+
+#[cfg(test)]
+mod live_topology_tests {
+    use super::*;
+    use gr_controller_contract::construction::InputTopologySpec;
+    use virtualgamepad::InputTopology;
+    const PRESENT: InputControlId = InputControlId::new("live-button");
+    const REMOVED: InputControlId = InputControlId::new("removed-button");
+    static SHAPE: InputTopology = InputTopologySpec {
+        auxiliary_buttons: &[AuxiliaryButtonInput {
+            id: PRESENT,
+            label: "Live fixture button",
+        }],
+        ..InputTopologySpec::from_descriptor(InputTopology::EMPTY)
+    }
+    .build();
+
+    #[test]
+    fn topology_reconciliation_drops_removed_holds_and_contacts_without_reviving_them() {
+        let mut state = InputUiState::default();
+        for id in [PRESENT, REMOVED] {
+            state.holds.insert(id, true);
+            state.latched_buttons.insert(HoldKey::Control(id));
+            state.momentary_buttons.insert(HoldKey::Control(id));
+        }
+        state
+            .latched_buttons
+            .insert(HoldKey::Face(FaceButton::South));
+        state
+            .latched_buttons
+            .insert(HoldKey::Dpad(DpadDirection::Up));
+        state
+            .snapping_dpads
+            .insert(REMOVED, SnappingDpadState::default());
+        state.touchpads.insert(REMOVED, TouchpadState::default());
+        state.reconcile_topology(&SHAPE);
+        assert_eq!(state.holds.len(), 1);
+        assert!(state.holds[&PRESENT]);
+        assert_eq!(
+            state.latched_buttons,
+            HashSet::from([HoldKey::Control(PRESENT)])
+        );
+        assert_eq!(
+            state.momentary_buttons,
+            HashSet::from([HoldKey::Control(PRESENT)])
+        );
+        assert!(state.snapping_dpads.is_empty());
+        assert!(state.touchpads.is_empty());
+        state.reconcile_topology(&InputTopology::EMPTY);
+        state.reconcile_topology(&SHAPE);
+        assert!(state.holds.is_empty());
+        assert!(state.latched_buttons.is_empty());
+        assert!(state.momentary_buttons.is_empty());
+    }
+
+    #[test]
+    fn declared_motion_hold_survives_reconciliation_and_removed_motion_stays_released() {
+        let family = gr_curated_controllers::registry::FAMILIES
+            .iter()
+            .find(|f| f.id.as_str() == "virtualgamepad.dualsense")
+            .unwrap();
+        let topology = (family.topology)();
+        let motion = topology.motion()[0].id();
+        let mut state = InputUiState::default();
+        state.holds.insert(motion, true);
+        state.reconcile_topology(topology);
+        assert!(
+            state.held(motion),
+            "reconciliation cleared a still-declared motion hold"
+        );
+        state.reconcile_topology(&InputTopology::EMPTY);
+        state.reconcile_topology(topology);
+        assert!(!state.held(motion));
+    }
+
+    struct LiveEditor {
+        current: &'static InputTopology,
+    }
+    impl super::super::native_editor::InputEditor for LiveEditor {
+        fn current_topology(&self) -> &'static InputTopology {
+            self.current
+        }
+        fn stick_value(&self, _: InputControlId) -> Option<(i32, i32)> {
+            None
+        }
+        fn trigger_values(&self) -> Vec<(InputControlId, InputValue)> {
+            Vec::new()
+        }
+        fn apply_events(&mut self, _: Vec<InputEvent>) {}
+    }
+    #[test]
+    fn shared_renderer_reads_the_current_shape_instead_of_a_cached_maximum() {
+        let mut editor = LiveEditor { current: &SHAPE };
+        let mut state = InputUiState::default();
+        let context = egui::Context::default();
+        let render = |editor: &mut LiveEditor, state: &mut InputUiState| {
+            let output = context.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        Pos2::ZERO,
+                        Vec2::new(800.0, 600.0),
+                    )),
+                    ..Default::default()
+                },
+                |context| {
+                    egui::CentralPanel::default()
+                        .show(context, |ui| draw_editor(ui, 0, editor, state));
+                },
+            );
+            output.shapes.into_iter().any(|shape| matches!(shape.shape, egui::epaint::Shape::Text(text) if text.galley.job.text == "Live fixture button"))
+        };
+        assert!(render(&mut editor, &mut state));
+        editor.current = &InputTopology::EMPTY;
+        assert!(!render(&mut editor, &mut state));
+        editor.current = &SHAPE;
+        assert!(render(&mut editor, &mut state));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
