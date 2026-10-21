@@ -78,7 +78,9 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
-shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+slot-local companion failure, sibling survival and shared failure/cleanup.
+A companion failure disconnects its slot; a primary failure closes the receiver.
+No Puck bytes, public receiver API or epoch implementation
 is advertised; D3 still defers step 13a.
 
 C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
@@ -108,6 +110,15 @@ Historical measurements are unchanged. This preserves the
 ordinary-root snapshot, broker wire versions and existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
 review. The unavailable dummy_hcd path is retained while D5 is open.
+
+## Acceptance runner failure ownership
+
+Peer service failures observed during another creation's node or SDL wait are
+retained on the failed creation and drained into its own sample's errors. They do
+not become the observed sibling's missing stage or disappearance failure. Failed
+peers are not repeatedly serviced; every creation still receives terminal cleanup.
+This deterministic harness repair does not rerun or amend historical measurements.
+LiveTopology is already non-Copy in the integrated C3 implementation.
 
 ## Acceptance manifests
 
