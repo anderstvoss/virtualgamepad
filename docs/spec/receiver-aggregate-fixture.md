@@ -62,3 +62,13 @@ presentation epochs. D3 continues to defer step 13a.
 No existing test or core delivery implementation changes. A real receiver package
 must provide evidence-backed bytes, identities, slot validation and its declared
 realizations; these fixtures do not supply physical or consumer acceptance.
+
+## Slot failure boundary
+
+A failed required companion group disconnects and neutralizes only its owning
+slot. The service call returns the slot error after servicing siblings; a caller
+may continue polling the surviving receiver. Accepted primary replies and sibling
+state stay owned, and failed-slot cleanup diagnostics survive reconnect and close.
+A primary transport failure is receiver-wide. Failure to install a validated
+slot disconnect (for example generation overflow) also terminates the receiver.
+This remains a synthetic fixture; no crate receiver handle is implemented yet.

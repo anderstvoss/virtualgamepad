@@ -78,7 +78,9 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
-shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+slot-local companion failure, sibling survival and shared failure/cleanup.
+A companion failure disconnects its slot; a primary failure closes the receiver.
+No Puck bytes, public receiver API or epoch implementation
 is advertised; D3 still defers step 13a.
 
 C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
