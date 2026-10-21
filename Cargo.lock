@@ -2834,6 +2834,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "gr-controller-contract",
+ "gr-curated-controllers",
  "rustix 1.1.5",
  "virtualgamepad",
 ]

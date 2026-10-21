@@ -71,8 +71,20 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
   outputs and typed surface kinds; public additions remain gated by D2.
+- [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
+  presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+
+C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
+typed zero-to-four slots, transactional companions, exact required replies and
+shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+is advertised; D3 still defers step 13a.
+
+C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
+Native conversion stays in typed adapters; current-shape cache reconciliation
+preserves present holds and drops removed controls. Existing GUI lifecycle test
+modules remain unchanged; no public API or live acceptance claim is added.
 
 The step 6 synthetic topology audit covers queued bytes/replies, saturation,
 malformed writes, probe/edit overlap, terminal close, delivery uncertainty,

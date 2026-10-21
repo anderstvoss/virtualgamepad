@@ -11,6 +11,8 @@ name = "virtualgamepad-demo"
 path = "src/main.rs"
 
 [dependencies]
+# Compiled family metadata for the topology-driven demo catalog; no runtime profiles.
+gr-curated-controllers = { path = "../crates/gr-curated-controllers", version = "0.1" }
 # Safe cancellation of discovery process groups; already present transitively.
 rustix = { version = "1.1.5", features = ["process"] }
 eframe = { version = "0.32", default-features = false, features = ["default_fonts", "glow", "x11"] }
