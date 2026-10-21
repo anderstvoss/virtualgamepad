@@ -538,6 +538,7 @@ fn validate_range(id: InputControlId, range: InputAxisRange) -> Result<(), Input
 }
 
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum InputTopologyError {
     #[error("input topology contains an empty identifier")]
     EmptyIdentifier,

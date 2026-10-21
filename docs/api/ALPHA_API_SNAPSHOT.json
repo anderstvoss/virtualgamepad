@@ -527,7 +527,7 @@
         },
         "enum.InputTopologyError.html": {
           "declarations": [
-            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
+            "#[non_exhaustive]pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
           ],
           "traits": [
             "impl Clone for InputTopologyError",
@@ -2816,7 +2816,7 @@
         },
         "enum.InputTopologyError.html": {
           "declarations": [
-            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
+            "#[non_exhaustive]pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
           ],
           "traits": [
             "impl Clone for InputTopologyError",

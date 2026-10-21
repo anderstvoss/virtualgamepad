@@ -149,7 +149,9 @@ Descriptors retain native ranges and load-cell units; controller-native state
 and operations own values. The current four families leave this new slice empty.
 Future controller packages can declare these kinds without hiding them in custom
 modules. New kind and retained-state types are non-exhaustive; consumers must
-allow future variants/fields. The reviewed D2 snapshot grows from 110 to 122
+allow future variants/fields. `InputTopologyError` is also non-exhaustive;
+downstream matches must include a wildcard arm to handle future validation errors.
+The reviewed D2 snapshot grows from 110 to 122
 items with four handle methods, two descriptor accessors and a typed-input
 validation error; no old signature is removed.
 
