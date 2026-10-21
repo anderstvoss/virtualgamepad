@@ -762,7 +762,28 @@ fn supported_and_rejected_requests_complete_exactly_without_a_callback() {
             Reply::Set(Err(ReplyError::Unsupported)),
         ),
     ];
-    for (i, (kind, expected)) in cases.into_iter().enumerate() {
+    let extra = [
+        (
+            RequestKind::Get {
+                kind: ReportType::Feature,
+                id: Some(9),
+            },
+            Reply::Get(Err(ReplyError::Unsupported)),
+        ),
+        (
+            RequestKind::Set(Report::new(ReportType::Input, Some(1), vec![0]).unwrap()),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            RequestKind::Set(Report::new(ReportType::Other(99), None, vec![0]).unwrap()),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+        (
+            RequestKind::Set(Report::new(ReportType::Output, Some(1), vec![0, 9]).unwrap()),
+            Reply::Set(Err(ReplyError::Unsupported)),
+        ),
+    ];
+    for (i, (kind, expected)) in cases.into_iter().chain(extra).enumerate() {
         factory.borrow().request(0, i as u64 + 1, kind);
         receiver.service(i as u64).unwrap();
         assert_eq!(replies(&factory.borrow().io[&0].1).last(), Some(&expected));
