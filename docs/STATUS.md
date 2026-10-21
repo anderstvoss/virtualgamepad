@@ -133,3 +133,16 @@ validation, isolated working values, sticky resource dirty, exact ACK retries an
 kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
 The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
 minimum regressions; Wii semantics and an optional file helper remain separate.
+
+## Post-checkpoint follow-ups
+
+C3 [#209](https://github.com/anderstvoss/virtualgamepad/pull/209) landed as
+`c82193e`, C4 [#215](https://github.com/anderstvoss/virtualgamepad/pull/215) as
+`964038c`, and the research pin [#214](https://github.com/anderstvoss/virtualgamepad/pull/214)
+as `7a809e1`. The pinned research revision is `f22d6ef`; these merges do not
+promote missing live, consumer or physical acceptance cells.
+
+Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
+isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
+The receiver still exists only as a synthetic fixture, so #165 remains open.
+ADR-0023 (#211) remains draft under D4. C5 and C6 have not started.
