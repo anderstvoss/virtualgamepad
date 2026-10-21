@@ -211,6 +211,26 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Windows runners intermittently fail crate downloads with schannel
+      # CRYPT_E_REVOCATION_OFFLINE (#150). Fetch with a bounded retry before
+      # building. Revocation checking stays on: never set
+      # CARGO_HTTP_CHECK_REVOCATION=false or use a mirror here.
+      - name: Fetch crates (bounded retry)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if cargo fetch --locked; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::cargo fetch attempt $attempt of 3 failed; retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::cargo fetch failed after 3 attempts"
+          exit 1
+
       - name: Check build
         run: cargo check --locked --workspace --all-targets --all-features
 
