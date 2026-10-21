@@ -18,6 +18,16 @@ Read `ground-rules.md` first.
 - (`.gitignore` for `__pycache__` already landed in brief 01b.)
 - **dummy_hcd, only if D5 says park:** create `archive/dummy-hcd` from current `main`, then remove `gr-provider-linux-dummy-hcd`, `gr-privileged-broker/src/dummy_hcd.rs`, the per-family `DUMMY_HCD_*` surfaces and restrictions, and the docs rows. `RealizationId::LINUX_DUMMY_HCD_USB_HID` stays (it is in the snapshot) and creation keeps rejecting it. If D5 is "keep", skip this part.
 
+### D5 disposition (owner decision, 2026-10-21)
+
+[#176 comment 6325079527](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6325079527)
+chooses **keep**, so step 12b is skipped: no archive or removal. dummy_hcd remains
+experimental and not recommended because it needs root and host provisioning.
+It stays outside ordinary-root constructors with the existing refusal reason.
+Near feature-complete UHID is the supported controller-buildout target; dummy_hcd
+and USB/IP are optional faithful tiers, never defaults. This disposition changes
+no runtime behavior, surface metadata or acceptance claim.
+
 ## Step 5. Demo draws from topology
 
 - `demo/src/gui/editor.rs` and `input_clusters.rs` render controls from `InputTopology` and the registry (and from live topology once brief 06b lands).

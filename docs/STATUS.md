@@ -24,8 +24,12 @@ an API freeze do not promote a cell.
 - Physical-reference fidelity is not validated (#136). Xbox 360 is a standard-HID
   presentation, not XInput/xpad emulation.
 - Controller-matching audio profiles are unavailable (#116).
-- `linux.dummy_hcd.usb-hid` is unavailable: Linux `f_hid` lacks complete
-  GET_REPORT metadata and negative replies.
+- `linux.dummy_hcd.usb-hid` is retained as experimental and not recommended
+  under owner decision D5 (#176 comment 6325079527): it requires root and host
+  provisioning, and remains unavailable through ordinary-root constructors
+  because Linux `f_hid` lacks complete GET_REPORT metadata and negative replies.
+  Near feature-complete UHID realizations are the supported target for controller
+  buildout; dummy_hcd and USB/IP are optional faithful tiers, never defaults.
 - Shared UHID Bluetooth-bus transport is available, with deterministic curated
   fake-provider coverage; no shipped family declares that personality yet.
   Actual Bluetooth radio, pairing and BlueZ remain deferred.
@@ -111,7 +115,8 @@ BUS_VIRTUAL comparison arm is retired because USB selection owns BUS_USB.
 Historical measurements are unchanged. This preserves the
 ordinary-root snapshot, broker wire versions and existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
-review. The unavailable dummy_hcd path is retained while D5 is open.
+review. D5 keeps the unavailable dummy_hcd path experimental and not recommended;
+its root/provisioning requirements do not change.
 
 ## Acceptance runner failure ownership
 
