@@ -102,6 +102,15 @@ ordinary-root snapshot, broker wire versions or existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
 review. The unavailable dummy_hcd path is retained while D5 is open.
 
+## Acceptance runner failure ownership
+
+Peer service failures observed during another creation's node or SDL wait are
+retained on the failed creation and drained into its own sample's errors. They do
+not become the observed sibling's missing stage or disappearance failure. Failed
+peers are not repeatedly serviced; every creation still receives terminal cleanup.
+This deterministic harness repair does not rerun or amend historical measurements.
+LiveTopology is already non-Copy in the integrated C3 implementation.
+
 ## Acceptance manifests
 
 The four compiled families have per-function TOML manifests under `acceptance/`,
@@ -131,12 +140,3 @@ validation, isolated working values, sticky resource dirty, exact ACK retries an
 kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
 The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
 minimum regressions; Wii semantics and an optional file helper remain separate.
-
-## Acceptance runner failure ownership
-
-Peer service failures observed during another creation's node or SDL wait are
-retained on the failed creation and drained into its own sample's errors. They do
-not become the observed sibling's missing stage or disappearance failure. Failed
-peers are not repeatedly serviced; every creation still receives terminal cleanup.
-This deterministic harness repair does not rerun or amend historical measurements.
-LiveTopology is already non-Copy in the integrated C3 implementation.
