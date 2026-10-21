@@ -1,10 +1,17 @@
 use super::*;
-use crate::common::{ControllerSession, topology::LiveTopology};
+use crate::common::{
+    ControllerSession,
+    topology::{ControlEdit, LiveTopology},
+};
 use gr_controller_contract::{FaceButton, InputControlId};
 
-fn open(target: RealizationTarget) -> (ControllerSession<Fifth>, Arc<Mutex<Record>>, LiveTopology) {
-    let view = LiveTopology::new(&TOPOLOGY, &BASE_TOPOLOGY).unwrap(); // before I/O
+type View = LiveTopology<FifthProtocol>;
+
+fn open(target: RealizationTarget) -> (ControllerSession<Fifth>, Arc<Mutex<Record>>, View) {
     let record = Arc::new(Mutex::new(Record::default()));
+    let native_protocol = (target == RealizationTarget::LINUX_UINPUT)
+        .then(|| Fifth(record.clone()).hid_protocol(RealizationSessionId(7), [0; 6]));
+    let view = View::new(&TOPOLOGY, &BASE_TOPOLOGY, native_protocol).unwrap(); // before I/O
     let realization = if target == RealizationTarget::LINUX_UINPUT {
         NativeControllerRealization::Evdev(NativeEvdevRealization {
             physical_path: None,
@@ -43,7 +50,7 @@ fn open(target: RealizationTarget) -> (ControllerSession<Fifth>, Arc<Mutex<Recor
     (session, record, view)
 }
 fn transition(
-    view: &mut LiveTopology,
+    view: &mut View,
     session: &mut ControllerSession<Fifth>,
     attached: bool,
 ) -> Result<(), ControlError> {
@@ -68,21 +75,45 @@ fn transition(
         },
     )
 }
+struct ButtonEdit {
+    button: FaceButton,
+}
+impl ButtonEdit {
+    fn new(id: InputControlId, button: FaceButton) -> Result<Self, ControlError> {
+        let edit = Self { button };
+        if edit.control_id() != id {
+            return Err(ControlError::UnsupportedControl {
+                control: "control ID does not match operation",
+            });
+        }
+        Ok(edit)
+    }
+}
+impl ControlEdit<crate::Xbox360State> for ButtonEdit {
+    fn control_id(&self) -> InputControlId {
+        match self.button {
+            FaceButton::South => OPTIONAL,
+            FaceButton::East => BASE_BUTTON,
+            _ => InputControlId::new("unsupported"),
+        }
+    }
+    fn apply(self, state: &mut crate::Xbox360State) -> Result<(), ControlError> {
+        Xbox360Definition.apply_digital(
+            state,
+            DigitalControlUpdate::FaceButton {
+                button: self.button,
+                pressed: true,
+            },
+        )
+    }
+}
 fn press(
-    view: &LiveTopology,
+    view: &View,
     session: &mut ControllerSession<Fifth>,
     id: InputControlId,
     button: FaceButton,
 ) -> Result<(), ControlError> {
-    view.edit(session, id, |state| {
-        Xbox360Definition.apply_digital(
-            state,
-            DigitalControlUpdate::FaceButton {
-                button,
-                pressed: true,
-            },
-        )
-    })
+    view.edit(session, ButtonEdit::new(id, button)?)
 }
 #[test]
 fn fifth_optional_module_generations_are_retained_and_absent_edits_fail() {
@@ -204,7 +235,7 @@ fn invalid_subsets_do_not_run_edits() {
         )
     }
     .build();
-    assert!(LiveTopology::new(&TOPOLOGY, &FOREIGN).is_err());
+    assert!(View::new(&TOPOLOGY, &FOREIGN, None).is_err());
     let (mut session, _, mut view) = open(RealizationTarget::LINUX_UHID_BLUETOOTH);
     assert!(
         view.change(
@@ -235,4 +266,146 @@ fn transport_failure_during_pending_topology_work_keeps_terminal_generation() {
     session.close();
     drop(session);
     assert_eq!(record.lock().unwrap().closed, 1);
+}
+
+#[test]
+fn native_rejected_protocol_edit_preserves_state_dirty_and_generation() {
+    let (mut session, _, mut view) = open(RealizationTarget::LINUX_UINPUT);
+    let state = session.state().clone();
+    let dirty = session.is_dirty();
+    assert!(
+        view.change(
+            &mut session,
+            &TOPOLOGY,
+            |_| Ok(()),
+            |_| Err(gr_hid::Error::InvalidState)
+        )
+        .is_err()
+    );
+    assert_eq!(session.state(), &state);
+    assert_eq!(session.is_dirty(), dirty);
+    assert_eq!(view.topology_generation(), 0);
+    assert_eq!(view.current_topology(), &BASE_TOPOLOGY);
+}
+
+#[test]
+fn native_detach_without_neutralization_rejects_the_candidate() {
+    let (mut session, _, mut view) = open(RealizationTarget::LINUX_UINPUT);
+    transition(&mut view, &mut session, true).unwrap();
+    press(&view, &mut session, OPTIONAL, FaceButton::South).unwrap();
+    let state = session.state().clone();
+    assert!(
+        view.change(
+            &mut session,
+            &BASE_TOPOLOGY,
+            |_| Ok(()),
+            |p| {
+                p.attached = false;
+                Ok(())
+            }
+        )
+        .is_err()
+    );
+    assert_eq!(session.state(), &state);
+    assert_eq!(view.topology_generation(), 1);
+}
+
+#[test]
+fn present_id_cannot_authorize_a_different_absent_control() {
+    for target in [
+        RealizationTarget::LINUX_UINPUT,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ] {
+        let (mut session, _, view) = open(target);
+        assert!(press(&view, &mut session, BASE_BUTTON, FaceButton::South).is_err());
+        assert!(!session.state().native_pressed(crate::Xbox360Control::A));
+        assert_eq!(view.topology_generation(), 0);
+    }
+}
+
+#[test]
+fn dishonest_typed_operation_cannot_leave_an_absent_control_active() {
+    struct Forged;
+    impl ControlEdit<crate::Xbox360State> for Forged {
+        fn control_id(&self) -> InputControlId {
+            BASE_BUTTON
+        }
+        fn apply(self, state: &mut crate::Xbox360State) -> Result<(), ControlError> {
+            Xbox360Definition.apply_digital(
+                state,
+                DigitalControlUpdate::FaceButton {
+                    button: FaceButton::South,
+                    pressed: true,
+                },
+            )
+        }
+    }
+    for target in [
+        RealizationTarget::LINUX_UINPUT,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ] {
+        let (mut session, _, view) = open(target);
+        let before = session.state().clone();
+        let dirty = session.is_dirty();
+        assert!(view.edit(&mut session, Forged).is_err());
+        assert_eq!(session.state(), &before);
+        assert_eq!(session.is_dirty(), dirty);
+        assert_eq!(view.topology_generation(), 0);
+    }
+}
+
+#[test]
+fn native_topology_without_opt_in_configuration_fails_closed() {
+    let (mut session, _, _) = open(RealizationTarget::LINUX_UINPUT);
+    let mut view = View::new(&TOPOLOGY, &BASE_TOPOLOGY, None).unwrap();
+    assert!(matches!(
+        transition(&mut view, &mut session, true),
+        Err(ControlError::UnavailableInRealization { .. })
+    ));
+    assert_eq!(view.topology_generation(), 0);
+}
+
+#[test]
+fn same_shape_reinitialization_validates_configuration_without_advancing_generation() {
+    for target in [
+        RealizationTarget::LINUX_UINPUT,
+        RealizationTarget::LINUX_UHID_BLUETOOTH,
+    ] {
+        let (mut session, record, mut view) = open(target);
+        session.commit().unwrap();
+        let state = session.state().clone();
+        let dirty = session.is_dirty();
+        let sent = record.lock().unwrap().sent.len();
+        let called = std::cell::Cell::new(false);
+        assert!(
+            view.change(
+                &mut session,
+                &BASE_TOPOLOGY,
+                |_| Ok(()),
+                |_| {
+                    called.set(true);
+                    Err(gr_hid::Error::InvalidState)
+                }
+            )
+            .is_err()
+        );
+        assert!(called.get());
+        assert_eq!(session.state(), &state);
+        assert_eq!(session.is_dirty(), dirty);
+        assert_eq!(view.topology_generation(), 0);
+        assert_eq!(record.lock().unwrap().sent.len(), sent);
+        called.set(false);
+        view.change(
+            &mut session,
+            &BASE_TOPOLOGY,
+            |_| Ok(()),
+            |_| {
+                called.set(true);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(called.get());
+        assert_eq!(view.topology_generation(), 0);
+    }
 }

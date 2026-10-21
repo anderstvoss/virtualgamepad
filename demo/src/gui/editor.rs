@@ -7,8 +7,7 @@ use super::{
     Xbox360Control, Xbox360Trigger,
 };
 use virtualgamepad::{
-    ControllerDiagnostics, DualSenseState, DualSenseSurface, DualShock4State, DualShock4Surface,
-    SwitchProState, SwitchProSurface, Xbox360State, Xbox360Surface,
+    ControllerDiagnostics, DualSenseState, DualShock4State, SwitchProState, Xbox360State,
 };
 
 pub(super) const EDIT_LIMIT: usize = 64;
@@ -18,7 +17,7 @@ pub(super) type EditBatch = Vec<Edit>;
 
 pub(super) struct Editor<S, T: 'static> {
     state: S,
-    surface: &'static T,
+    surface: T,
     edits: EditBatch,
     overflow: bool,
     diagnostics: Option<ControllerDiagnostics>,
@@ -28,8 +27,8 @@ impl<S, T> Editor<S, T> {
     pub(super) fn state(&self) -> &S {
         &self.state
     }
-    pub(super) fn surface(&self) -> &'static T {
-        self.surface
+    pub(super) fn surface(&self) -> &T {
+        &self.surface
     }
     pub(super) fn queue(&mut self, edit: Edit) -> Result<(), String> {
         if self.edits.len() == EDIT_LIMIT {
@@ -46,51 +45,83 @@ impl<S, T> Editor<S, T> {
         Ok(std::mem::take(&mut self.edits))
     }
 }
-pub(super) type Xbox360Editor = Editor<Xbox360State, Xbox360Surface>;
-pub(super) type DualSenseEditor = Editor<DualSenseState, DualSenseSurface>;
-pub(super) type DualShock4Editor = Editor<DualShock4State, DualShock4Surface>;
-pub(super) type SwitchProEditor = Editor<SwitchProState, SwitchProSurface>;
+pub(super) struct Surface(pub(super) &'static virtualgamepad::ControllerSurface);
+impl Surface {
+    pub(super) const fn common(&self) -> &'static virtualgamepad::ControllerSurface {
+        self.0
+    }
+}
+impl virtualgamepad::ControllerSurfaceInfo for Surface {
+    fn common_surface(&self) -> &virtualgamepad::ControllerSurface {
+        self.0
+    }
+}
+pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
+pub(super) type DualSenseEditor = Editor<DualSenseState, Surface>;
+pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
+pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
     DualSense(DualSenseEditor),
     DualShock4(DualShock4Editor),
     SwitchPro(SwitchProEditor),
 }
+impl<S> Editor<S, Surface> {
+    fn new(
+        state: S,
+        surface: &'static virtualgamepad::ControllerSurface,
+        diagnostics: Option<ControllerDiagnostics>,
+        association: Option<virtualgamepad::ControllerAssociation>,
+    ) -> Self {
+        Self {
+            state,
+            surface: Surface(surface),
+            edits: Vec::new(),
+            overflow: false,
+            diagnostics,
+            association,
+        }
+    }
+}
 impl Controller {
     pub(super) fn snapshot(&mut self) -> ControllerView {
+        macro_rules! view {
+            ($c:ident, $variant:ident) => {
+                ControllerView::$variant(Editor::new(
+                    $c.state().clone(),
+                    $c.surface().common(),
+                    Some($c.diagnostics()),
+                    Some($c.association().clone()),
+                ))
+            };
+        }
         match self {
-            Self::Xbox(c) => ControllerView::Xbox(Editor {
-                state: c.state().clone(),
-                surface: c.surface(),
-                edits: Vec::new(),
-                overflow: false,
-                diagnostics: Some(c.diagnostics()),
-                association: Some(c.association().clone()),
-            }),
-            Self::DualSense(c) => ControllerView::DualSense(Editor {
-                state: c.state().clone(),
-                surface: c.surface(),
-                edits: Vec::new(),
-                overflow: false,
-                diagnostics: Some(c.diagnostics()),
-                association: Some(c.association().clone()),
-            }),
-            Self::DualShock4(c) => ControllerView::DualShock4(Editor {
-                state: c.state().clone(),
-                surface: c.surface(),
-                edits: Vec::new(),
-                overflow: false,
-                diagnostics: Some(c.diagnostics()),
-                association: Some(c.association().clone()),
-            }),
-            Self::SwitchPro(c) => ControllerView::SwitchPro(Editor {
-                state: c.state().clone(),
-                surface: c.surface(),
-                edits: Vec::new(),
-                overflow: false,
-                diagnostics: Some(c.diagnostics()),
-                association: Some(c.association().clone()),
-            }),
+            Self::Xbox(c) => view!(c, Xbox),
+            Self::DualSense(c) => view!(c, DualSense),
+            Self::DualShock4(c) => view!(c, DualShock4),
+            Self::SwitchPro(c) => view!(c, SwitchPro),
+        }
+    }
+}
+#[cfg(test)]
+pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
+    let surface = (kind.entry().realizations)()
+        .iter()
+        .find(|r| r.surface.target() == virtualgamepad::RealizationId::LINUX_UINPUT)
+        .expect("compiled uinput surface")
+        .surface;
+    match kind {
+        super::Kind::Xbox360 => {
+            ControllerView::Xbox(Editor::new(Xbox360State::default(), surface, None, None))
+        }
+        super::Kind::DualSense => {
+            ControllerView::DualSense(Editor::new(DualSenseState::default(), surface, None, None))
+        }
+        super::Kind::DualShock4 => {
+            ControllerView::DualShock4(Editor::new(DualShock4State::default(), surface, None, None))
+        }
+        super::Kind::SwitchPro => {
+            ControllerView::SwitchPro(Editor::new(SwitchProState::default(), surface, None, None))
         }
     }
 }

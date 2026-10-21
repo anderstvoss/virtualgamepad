@@ -10,7 +10,10 @@ use gr_hid::{
 };
 
 #[derive(Clone)]
-pub(crate) struct DualSenseUsbProtocol {
+pub(crate) struct DualSenseUsbProtocol<
+    R: crate::retained::OutputState = crate::retained::DualSenseOutputState,
+> {
+    retained: R,
     features: BTreeMap<NativeHidReportKey, Vec<u8>>,
     sequence: u8,
     next_input: u64,
@@ -22,11 +25,26 @@ impl DualSenseUsbProtocol {
     pub(crate) fn new(identity: [u8; 6]) -> Self {
         Self {
             features: dualsense_feature_responses(identity),
+            retained: crate::retained::DualSenseOutputState::default(),
             sequence: 1,
             next_input: 0,
             active: true,
             numbering_valid: true,
             last_input: None,
+        }
+    }
+}
+impl<R: crate::retained::OutputState> DualSenseUsbProtocol<R> {
+    /// Worker factories reuse acceptance but opt out of snapshot bookkeeping.
+    pub(crate) fn without_retention(self) -> DualSenseUsbProtocol<()> {
+        DualSenseUsbProtocol {
+            retained: (),
+            features: self.features,
+            sequence: self.sequence,
+            next_input: self.next_input,
+            active: self.active,
+            numbering_valid: self.numbering_valid,
+            last_input: self.last_input,
         }
     }
     fn accept_output(report: &Report) -> Result<(), ReplyError> {
@@ -46,7 +64,7 @@ impl DualSenseUsbProtocol {
         }
     }
 }
-impl Protocol for DualSenseUsbProtocol {
+impl<R: crate::retained::OutputState> Protocol for DualSenseUsbProtocol<R> {
     type State = DualSenseState;
     type Output = RawReverseEvent;
     fn neutral(&self) -> Self::State {
@@ -103,7 +121,9 @@ impl Protocol for DualSenseUsbProtocol {
                 None,
             ),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
-            RequestKind::Set(report) => match Self::accept_output(report) {
+            RequestKind::Set(report) => match Self::accept_output(report)
+                .and_then(|()| crate::retained::OutputState::apply(&mut self.retained, report))
+            {
                 Ok(()) => (Reply::Set(Ok(())), Some(Self::decode(report))),
                 Err(error) => (Reply::Set(Err(error)), None),
             },
@@ -111,6 +131,10 @@ impl Protocol for DualSenseUsbProtocol {
     }
     fn output(&mut self, report: Report, _: u64) -> Result<Option<Self::Output>, Error> {
         // Interrupt output has no acknowledgement; preserve unknown bytes for diagnostics.
+        if Self::accept_output(&report).is_ok() {
+            crate::retained::OutputState::apply(&mut self.retained, &report)
+                .map_err(|_| Error::InvalidState)?;
+        }
         Ok(Some(Self::decode(&report)))
     }
     fn lifecycle(&mut self, event: Lifecycle, now: u64) -> Option<Self::Output> {
@@ -157,6 +181,15 @@ impl common::HidDriver for DualSenseDefinition {
     }
     fn hid_protocol(&self, _: RealizationSessionId, identity: [u8; 6]) -> Self::Hid {
         DualSenseUsbProtocol::new(identity)
+    }
+}
+
+impl<R: crate::retained::OutputState> crate::retained::RetainedProtocol
+    for DualSenseUsbProtocol<R>
+{
+    type Outputs = R;
+    fn retained(&self) -> &Self::Outputs {
+        &self.retained
     }
 }
 

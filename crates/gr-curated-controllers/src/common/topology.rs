@@ -3,16 +3,24 @@ use super::{ControllerSession, HidDriver};
 use gr_controller_contract::{ControlError, InputControlId, InputTopology};
 use gr_realization_api::{RealizationTarget, RealizationTargetSet};
 
-#[derive(Clone, Copy)]
-pub(crate) struct LiveTopology {
+/// A compiled controller operation derives its ID; callers cannot authorize an
+/// unrelated arbitrary closure by supplying a second, independent ID.
+pub(crate) trait ControlEdit<S> {
+    fn control_id(&self) -> InputControlId;
+    fn apply(self, state: &mut S) -> Result<(), ControlError>;
+}
+
+pub(crate) struct LiveTopology<P: gr_hid::Protocol> {
     maximum: &'static InputTopology,
     current: &'static InputTopology,
     generation: u64,
+    native_protocol: Option<P>,
 }
-impl LiveTopology {
+impl<P: gr_hid::Protocol> LiveTopology<P> {
     pub(crate) fn new(
         maximum: &'static InputTopology,
         current: &'static InputTopology,
+        native_protocol: Option<P>,
     ) -> Result<Self, ControlError> {
         maximum.validate().map_err(|_| invalid())?;
         validate_subset(maximum, current)?;
@@ -20,6 +28,7 @@ impl LiveTopology {
             maximum,
             current,
             generation: 0,
+            native_protocol,
         })
     }
     pub(crate) const fn current_topology(&self) -> &'static InputTopology {
@@ -30,7 +39,7 @@ impl LiveTopology {
     }
     /// Validate the shape/counter before running a typed, transactional protocol edit.
     /// Callers retain controller-native attachment rules and bounded status edges.
-    pub(crate) fn change<D: HidDriver>(
+    pub(crate) fn change<D: HidDriver<Hid = P, State = P::State>>(
         &mut self,
         session: &mut ControllerSession<D>,
         next: &'static InputTopology,
@@ -41,28 +50,40 @@ impl LiveTopology {
             return Err(ControlError::Closed);
         }
         validate_subset(self.maximum, next)?;
-        if self.current == next {
-            return Ok(());
+        // Reinitialization can change controller configuration without changing
+        // its shape. Always validate/install it; only shape changes count.
+        let generation = if self.current == next {
+            self.generation
+        } else {
+            self.generation.checked_add(1).ok_or_else(invalid)?
+        };
+        if let Some(protocol) = &mut self.native_protocol {
+            session.update_native_configuration(protocol, neutralize_removed, edit_protocol)?;
+        } else {
+            session.update_configuration(neutralize_removed, edit_protocol)?;
         }
-        let generation = self.generation.checked_add(1).ok_or_else(invalid)?;
-        session.update_configuration(neutralize_removed, edit_protocol)?;
         self.current = next;
         self.generation = generation;
         Ok(())
     }
-    pub(crate) fn edit<D: HidDriver>(
+    pub(crate) fn edit<D: HidDriver<Hid = P, State = P::State>>(
         &self,
         session: &mut ControllerSession<D>,
-        id: InputControlId,
-        edit: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+        edit: impl ControlEdit<D::State>,
     ) -> Result<(), ControlError> {
         if session.is_closed() {
             return Err(ControlError::Closed);
         }
-        if !contains(self.current, id) {
+        if !contains(self.current, edit.control_id()) {
             return Err(unavailable(session.selection().target));
         }
-        session.update_state(edit)
+        session.update_state(|state| {
+            edit.apply(state)?;
+            if let Some(protocol) = &self.native_protocol {
+                protocol.validate(state).map_err(|_| invalid())?;
+            }
+            Ok(())
+        })
     }
 }
 fn invalid() -> ControlError {

@@ -43,6 +43,27 @@ The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
 
+The C3 facade step consolidates application-handle lifecycle and audio-failure
+ownership behind private generic state and shared forwarding. Public signatures
+and docs remain frozen; existing regression construction changes are mechanical,
+as authorized on #176. This refactor changes no support or acceptance cell.
+
+The C3 pre-C5 follow-up validates native attachment configuration atomically and
+uses typed topology operations with derived IDs. Deterministic regressions cover
+rejected transitions, missing neutralization and absent-control edits on both
+backends. This is an internal seam repair, not a Wii implementation or acceptance
+claim; fixed-family runtime layout and provider identity remain unchanged.
+
+C3 retained-output snapshots are available below the root for in-process UHID
+and uinput. USB-worker views return `UnavailableInRealization` under the owner
+scoping decision; recovery is tracked in #203 and needs separate protocol
+approval. No root API growth or physical-output acceptance is implied.
+
+C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
+root reexports and root-specific creation error mapping. The wire crate fold
+keeps `gr_controller_wire::dualsense` and its exact bytes. Feature behavior and
+dummy_hcd disposition are preserved; no new external dependencies are added.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,
@@ -50,8 +71,20 @@ cell, public-root API, broker wire bytes or live acceptance claim.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
   outputs and typed surface kinds; public additions remain gated by D2.
+- [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
+  presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+
+C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
+typed zero-to-four slots, transactional companions, exact required replies and
+shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+is advertised; D3 still defers step 13a.
+
+C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
+Native conversion stays in typed adapters; current-shape cache reconciliation
+preserves present holds and drops removed controls. Existing GUI lifecycle test
+modules remain unchanged; no public API or live acceptance claim is added.
 
 The step 6 synthetic topology audit covers queued bytes/replies, saturation,
 malformed writes, probe/edit overlap, terminal close, delivery uncertainty,

@@ -205,12 +205,48 @@ impl<D: HidDriver> ControllerSession<D> {
                     })
                     .map_err(invalid)
             }
-            Backend::Native(runtime) => runtime.update_state(edit_state),
-            Backend::Worker { .. } => Err(ControlError::UnavailableInRealization {
+            Backend::Native(_) | Backend::Worker { .. } => {
+                Err(ControlError::UnavailableInRealization {
+                    selected_target: self.selection.target,
+                    available_in: gr_realization_api::RealizationTargetSet::EMPTY,
+                })
+            }
+        }
+    }
+    /// Native topology is opt-in: its controller-owned protocol/configuration
+    /// lives in the topology owner, not every fixed-family runtime.
+    pub(crate) fn update_native_configuration(
+        &mut self,
+        protocol: &mut D::Hid,
+        edit_state: impl FnOnce(&mut D::State) -> Result<(), ControlError>,
+        edit_protocol: impl FnOnce(&mut D::Hid) -> Result<(), gr_hid::Error>,
+    ) -> Result<(), ControlError> {
+        let Backend::Native(runtime) = &mut self.backend else {
+            return Err(ControlError::UnavailableInRealization {
                 selected_target: self.selection.target,
                 available_in: gr_realization_api::RealizationTargetSet::EMPTY,
-            }),
+            });
+        };
+        if runtime.is_closed() {
+            return Err(ControlError::Closed);
         }
+        let invalid = |_| ControlError::UnsupportedControl {
+            control: "invalid protocol topology edit",
+        };
+        let mut state = runtime.state().clone();
+        let mut next = protocol.clone();
+        edit_state(&mut state)?;
+        edit_protocol(&mut next).map_err(invalid)?;
+        protocol.validate(&state).map_err(invalid)?;
+        next.validate(&state).map_err(invalid)?;
+        // Driver validation happens before runtime mutation. No provider I/O or
+        // fallible work occurs between state acceptance and config installation.
+        runtime.update_state(|s| {
+            *s = state;
+            Ok(())
+        })?;
+        *protocol = next;
+        Ok(())
     }
     pub(crate) fn neutralize(&mut self) -> Result<(), ControlError> {
         self.update_state(|state| {
@@ -468,6 +504,33 @@ impl<D: HidDriver> ControllerSession<D> {
             Backend::Worker { closed, .. } => (!closed).then_some(gr_hid::Readiness::Poll),
         }
     }
+    pub(crate) fn retained_outputs(
+        &self,
+    ) -> Result<<D::Hid as crate::retained::RetainedProtocol>::Outputs, ControlError>
+    where
+        D::Hid: crate::retained::RetainedProtocol,
+    {
+        use crate::retained::{OutputState, RetainedProtocol};
+        match &self.backend {
+            Backend::Hid { runtime, .. } => Ok(runtime.protocol().retained().clone()),
+            Backend::Native(_)
+                if self.selection.target == gr_realization_api::RealizationTarget::LINUX_UINPUT =>
+            {
+                Ok(<D::Hid as RetainedProtocol>::Outputs::from_native(
+                    self.feedback.playback,
+                ))
+            }
+            Backend::Native(_) | Backend::Worker { .. } => {
+                Err(ControlError::UnavailableInRealization {
+                    selected_target: self.selection.target,
+                    available_in: gr_realization_api::RealizationTargetSet::new(&[
+                        gr_realization_api::RealizationTarget::LINUX_UINPUT,
+                        gr_realization_api::RealizationTarget::LINUX_UHID_USB,
+                    ]),
+                })
+            }
+        }
+    }
     pub(crate) fn dropped_observations(&self) -> u64 {
         self.dropped.saturating_add(match &self.backend {
             Backend::Native(_) => 0,
@@ -534,3 +597,6 @@ mod identity_tests {
         assert!(read_identity(&mut &[1, 2][..]).is_err());
     }
 }
+
+#[cfg(test)]
+mod retained_tests;

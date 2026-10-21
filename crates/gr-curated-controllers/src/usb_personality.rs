@@ -9,17 +9,23 @@ use gr_realization_api::{RawReverseEvent, RealizationSessionId};
 pub fn dualsense(
     identity: [u8; 6],
 ) -> impl Protocol<State = dualsense::DualSenseState, Output = RawReverseEvent> {
-    dualsense::DualSenseDefinition.hid_protocol(RealizationSessionId(0), identity)
+    dualsense::DualSenseDefinition
+        .hid_protocol(RealizationSessionId(0), identity)
+        .without_retention()
 }
 #[must_use]
 pub fn dualshock4(
     identity: [u8; 6],
 ) -> impl Protocol<State = dualshock4::DualShock4State, Output = RawReverseEvent> {
-    dualshock4::DualShock4Definition.hid_protocol(RealizationSessionId(0), identity)
+    dualshock4::DualShock4Definition
+        .hid_protocol(RealizationSessionId(0), identity)
+        .without_retention()
 }
 #[must_use]
 pub fn xbox360() -> impl Protocol<State = xbox360::Xbox360State, Output = RawReverseEvent> {
-    xbox360::Xbox360Definition.hid_protocol(RealizationSessionId(0), [0; 6])
+    xbox360::Xbox360Definition
+        .hid_protocol(RealizationSessionId(0), [0; 6])
+        .without_retention()
 }
 
 #[cfg(test)]
