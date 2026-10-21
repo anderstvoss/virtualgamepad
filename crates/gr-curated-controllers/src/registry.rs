@@ -53,7 +53,9 @@ pub(crate) trait ControllerFamily: HidDriver {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum FamilyKind {
     Controller,
-    Receiver,
+    Receiver {
+        hosted_families: &'static [ControllerId],
+    },
 }
 pub struct FamilyEntry {
     pub id: ControllerId,
@@ -168,5 +170,52 @@ mod tests {
             }
         }
         assert_eq!(tags.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod receiver_metadata_tests {
+    use super::*;
+    #[test]
+    fn receiver_metadata_declares_hosted_families_without_advertising_a_real_device() {
+        // Metadata-only synthetic receiver. No production surface, provider or
+        // Puck identity is advertised by the lifecycle fixture.
+        static SPEC: FamilySpec = FamilySpec {
+            id: ControllerId::new("test.receiver"),
+            worker_name: "test-receiver",
+            broker_tag: None,
+            dummy_hcd_tag: None,
+            dummy_hcd_report_length: None,
+            usb_profile: None,
+        };
+        let receiver = FamilyEntry {
+            id: SPEC.id,
+            spec: &SPEC,
+            broker_tag: None,
+            usb_profile: || None,
+            topology: || &InputTopology::EMPTY,
+            realizations: || &[],
+            manifest: || RealizationManifest::new(&[]),
+            max_topology: || &InputTopology::EMPTY,
+            output_kinds: &[],
+            subsystems: &[],
+            persistent_resources: &[],
+            refused_operations: &[],
+            kind: FamilyKind::Receiver {
+                hosted_families: &[test_family::Fifth::ID],
+            },
+        };
+        let FamilyKind::Receiver { hosted_families } = receiver.kind else {
+            panic!("receiver kind lost")
+        };
+        assert_eq!(hosted_families, &[test_family::Fifth::ID]);
+        assert!(
+            hosted_families
+                .iter()
+                .all(|id| FAMILIES.iter().any(|family| family.id == *id))
+        );
+        assert!(FAMILIES.iter().all(|family| family.id != receiver.id));
+        assert!((receiver.realizations)().is_empty());
+        assert!((receiver.manifest)().entries().is_empty());
     }
 }
