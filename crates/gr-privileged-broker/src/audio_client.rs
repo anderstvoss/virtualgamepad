@@ -28,7 +28,7 @@ impl Client {
         identity: [u8; 6],
     ) -> io::Result<(Self, [UnixStream; 3])> {
         broker.set_write_timeout(Some(Duration::from_secs(1)))?;
-        let mut request = vec![profile.tag()];
+        let mut request = vec![profile.tag()?];
         request.extend(identity);
         crate::write_versioned_message(&mut broker, 2, 1, &request)?;
         let (version, tag, body) =

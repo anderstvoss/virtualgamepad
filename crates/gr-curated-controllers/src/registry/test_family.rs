@@ -395,3 +395,27 @@ impl gr_hid::Protocol for FifthProtocol {
 mod topology_tests;
 
 mod resource_tests;
+
+#[test]
+fn selected_bluetooth_realization_derives_bus_without_test_overrides() {
+    let record = Arc::new(Mutex::new(Record::default()));
+    let mut session = common::create(
+        Fifth(record.clone()),
+        common::hid_realization("synthetic-fifth", 1, 2),
+        crate::CreationOptions {
+            target: RealizationTarget::LINUX_UHID_BLUETOOTH,
+            session: RealizationSessionId(73),
+        },
+    )
+    .unwrap();
+    let opened = record.lock().unwrap().opened.clone().unwrap();
+    let NativeControllerRealization::Uhid(spec) = opened.realization else {
+        unreachable!()
+    };
+    assert_eq!(spec.target, RealizationTarget::LINUX_UHID_BLUETOOTH);
+    assert_eq!(spec.bus_type, 5);
+    session.drain(&mut |_| {}).unwrap();
+    session.close();
+    session.close();
+    assert_eq!(record.lock().unwrap().closed, 1);
+}
