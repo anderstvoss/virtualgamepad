@@ -71,6 +71,8 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
   outputs and typed surface kinds; public additions remain gated by D2.
+- [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
+  presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
 
