@@ -3,8 +3,9 @@ use super::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ControllerSurface, CustomInputModule,
     DigitalControlSurface, DpadCluster, DpadHoldBehavior, DpadPresentation, ExtraAxisInput,
     FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology,
-    MotionInput, OutputSurface, RealizationTarget, RealizationValidationStatus, StickInput,
-    TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput, TriggerStack,
+    MotionInput, OutputKind, OutputSurface, RealizationTarget, RealizationValidationStatus,
+    StickInput, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput, TriggerStack,
+    TypedInput,
 };
 
 /// Construction record for `FaceButtonCluster`; outside the application contract.
@@ -202,6 +203,7 @@ pub struct InputTopologySpec {
     pub motion: &'static [MotionInput],
     pub extra_axes: &'static [ExtraAxisInput],
     pub custom_modules: &'static [CustomInputModule],
+    pub typed_inputs: &'static [TypedInput],
 }
 impl InputTopologySpec {
     #[must_use]
@@ -216,6 +218,7 @@ impl InputTopologySpec {
             motion: self.motion,
             extra_axes: self.extra_axes,
             custom_modules: self.custom_modules,
+            typed_inputs: self.typed_inputs,
         }
     }
     #[must_use]
@@ -230,6 +233,7 @@ impl InputTopologySpec {
             motion: value.motion,
             extra_axes: value.extra_axes,
             custom_modules: value.custom_modules,
+            typed_inputs: value.typed_inputs,
         }
     }
 }
@@ -242,6 +246,7 @@ pub struct ControllerSurfaceSpec {
     pub digital_controls: &'static [DigitalControlSurface],
     pub axes: &'static [AbsoluteAxisSurface],
     pub outputs: &'static [OutputSurface],
+    pub output_kinds: &'static [OutputKind],
     pub restrictions: &'static [TargetRestriction],
     pub input_topology: &'static InputTopology,
 }
@@ -254,6 +259,7 @@ impl ControllerSurfaceSpec {
             digital_controls: self.digital_controls,
             axes: self.axes,
             outputs: self.outputs,
+            output_kinds: self.output_kinds,
             restrictions: self.restrictions,
             input_topology: self.input_topology,
         }
@@ -266,8 +272,27 @@ impl ControllerSurfaceSpec {
             digital_controls: value.digital_controls,
             axes: value.axes,
             outputs: value.outputs,
+            output_kinds: value.output_kinds,
             restrictions: value.restrictions,
             input_topology: value.input_topology,
+        }
+    }
+}
+
+/// Construction record for a typed native input; outside the application contract.
+#[derive(Clone, Copy)]
+pub struct TypedInputSpec {
+    pub id: InputControlId,
+    pub title: &'static str,
+    pub kind: super::InputKind,
+}
+impl TypedInputSpec {
+    #[must_use]
+    pub const fn build(self) -> TypedInput {
+        TypedInput {
+            id: self.id,
+            title: self.title,
+            kind: self.kind,
         }
     }
 }

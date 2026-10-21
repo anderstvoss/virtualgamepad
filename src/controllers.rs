@@ -184,6 +184,16 @@ macro_rules! shared {
             self.controller.inner.dropped_output_events()
         }
     };
+    (host_outputs, $state:ty) => {
+        /// Snapshot of latest accepted host outputs and revision, independent of lossy events.
+        /// Remains readable after close; this is not proof of physical delivery.
+        ///
+        /// # Errors
+        /// Returns `UnavailableInRealization` when the transport has no retained-state query.
+        pub fn host_outputs(&self) -> Result<$state, ControlError> {
+            self.controller.inner.host_outputs()
+        }
+    };
     (state, $state:ty) => {
         /// Borrow the current accepted native state.
         #[must_use]
@@ -311,6 +321,7 @@ impl DualSenseController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualSenseState);
+    shared!(host_outputs, crate::DualSenseOutputState);
     shared!(surface, DualSenseSurface);
     shared!(is_dirty);
     edits! { fn set_digital(update: DigitalControlUpdate); }
@@ -465,6 +476,7 @@ impl DualShock4Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, DualShock4State);
+    shared!(host_outputs, crate::DualShock4OutputState);
     shared!(is_dirty);
     shared!(surface, DualShock4Surface);
     edits! { fn set_digital(u: DigitalControlUpdate); }
@@ -619,6 +631,7 @@ impl SwitchProController {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, SwitchProState);
+    shared!(host_outputs, crate::SwitchProOutputState);
     shared!(is_dirty);
     shared!(surface, SwitchProSurface);
     edits! { fn set_digital(u: DigitalControlUpdate); }
@@ -677,6 +690,7 @@ impl Xbox360Controller {
     shared!(next_service_in);
     shared!(dropped_output_events);
     shared!(state, Xbox360State);
+    shared!(host_outputs, crate::Xbox360OutputState);
     shared!(surface, Xbox360Surface);
     shared!(is_dirty);
     edits! { fn set_digital(update: DigitalControlUpdate); }

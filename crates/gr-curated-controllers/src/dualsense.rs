@@ -10,10 +10,11 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
-    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
-    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, LedKind,
+    MotionInput, MotorRole, OutputKind, OutputSurface, RealizationControllerDefinition,
+    RealizationManifest, RealizationManifestEntry, RealizationValidationStatus, StickInput,
+    TargetAwareControllerDriver, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
+    TriggerInputKind, TriggerStack,
 };
 use gr_controller_wire::dualsense::USB_DESCRIPTOR;
 use gr_realization_api::{
@@ -439,6 +440,20 @@ static AXES: [AbsoluteAxisSurface; 12] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[
+    OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    },
+    OutputKind::Led { kind: LedKind::Rgb },
+    OutputKind::Led {
+        kind: LedKind::Mono,
+    },
+    OutputKind::PlayerIndicator { count: 5 },
+    OutputKind::AdaptiveTrigger,
+];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "conventional-rumble",
     event_type: 21,
@@ -649,6 +664,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
@@ -664,6 +680,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -676,6 +693,7 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &HID_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -707,6 +725,7 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -721,6 +740,7 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -1643,6 +1663,7 @@ pub fn test_controller(
 
 impl crate::registry::ControllerFamily for DualSenseDefinition {
     const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSENSE;
+    const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY_WITH_MOTION
     }

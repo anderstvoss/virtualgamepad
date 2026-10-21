@@ -8,10 +8,11 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
-    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
-    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, LedKind,
+    MotionInput, MotorRole, OutputKind, OutputSurface, RealizationControllerDefinition,
+    RealizationManifest, RealizationManifestEntry, RealizationValidationStatus, StickInput,
+    TargetAwareControllerDriver, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
+    TriggerInputKind, TriggerStack,
 };
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
@@ -396,6 +397,15 @@ static AXES: [AbsoluteAxisSurface; 12] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[
+    OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    },
+    OutputKind::Led { kind: LedKind::Rgb },
+];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "dualshock4-rumble",
     event_type: 0,
@@ -601,6 +611,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
@@ -616,6 +627,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &EVDEV_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -628,6 +640,7 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -642,6 +655,7 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -656,6 +670,7 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -1399,6 +1414,7 @@ pub fn test_controller(
 
 impl crate::registry::ControllerFamily for DualShock4Definition {
     const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSHOCK4;
+    const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY_WITH_MOTION
     }

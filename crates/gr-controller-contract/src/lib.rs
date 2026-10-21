@@ -3,6 +3,8 @@
 //! Controller-semantic contracts with no controller-family or provider logic.
 
 pub mod construction;
+mod kinds;
+pub use kinds::*;
 
 use gr_audio_contract::AudioSidecarRequirement;
 use gr_realization_api::{
@@ -357,6 +359,7 @@ pub struct InputTopology {
     motion: &'static [MotionInput],
     extra_axes: &'static [ExtraAxisInput],
     custom_modules: &'static [CustomInputModule],
+    typed_inputs: &'static [TypedInput],
 }
 impl InputTopology {
     #[must_use]
@@ -392,6 +395,10 @@ impl InputTopology {
         self.extra_axes
     }
     #[must_use]
+    pub const fn typed_inputs(&self) -> &'static [TypedInput] {
+        self.typed_inputs
+    }
+    #[must_use]
     pub const fn custom_modules(&self) -> &'static [CustomInputModule] {
         self.custom_modules
     }
@@ -408,6 +415,7 @@ impl InputTopology {
         motion: &[],
         extra_axes: &[],
         custom_modules: &[],
+        typed_inputs: &[],
     };
 
     #[allow(clippy::missing_errors_doc)]
@@ -483,15 +491,7 @@ impl InputTopology {
         }
         for motion in self.motion {
             add_id(motion.id)?;
-            validate_range(motion.id, motion.range)?;
-            if motion
-                .gyroscope_scale
-                .iter()
-                .chain(&motion.accelerometer_scale)
-                .any(|scale| scale.denominator == 0)
-            {
-                return Err(InputTopologyError::InvalidScale(motion.id));
-            }
+            validate_motion(motion)?;
         }
         for axis in self.extra_axes {
             match *axis {
@@ -506,11 +506,28 @@ impl InputTopology {
                 }
             }
         }
+        for input in self.typed_inputs {
+            add_id(input.id())?;
+            input.validate()?;
+        }
         for module in self.custom_modules {
             add_id(module.id)?;
         }
         Ok(())
     }
+}
+
+fn validate_motion(motion: &MotionInput) -> Result<(), InputTopologyError> {
+    validate_range(motion.id, motion.range)?;
+    if motion
+        .gyroscope_scale
+        .iter()
+        .chain(&motion.accelerometer_scale)
+        .any(|scale| scale.denominator == 0)
+    {
+        return Err(InputTopologyError::InvalidScale(motion.id));
+    }
+    Ok(())
 }
 
 fn validate_range(id: InputControlId, range: InputAxisRange) -> Result<(), InputTopologyError> {
@@ -534,6 +551,8 @@ pub enum InputTopologyError {
     InvalidAxisRange(InputControlId),
     #[error("touchpad `{0:?}` has invalid dimensions or contact count")]
     InvalidTouchpad(InputControlId),
+    #[error("typed input `{0:?}` has invalid geometry, count or units")]
+    InvalidTypedInput(InputControlId),
     #[error("motion input `{0:?}` has a zero scaling denominator")]
     InvalidScale(InputControlId),
 }
@@ -740,6 +759,7 @@ pub struct ControllerSurface {
     digital_controls: &'static [DigitalControlSurface],
     axes: &'static [AbsoluteAxisSurface],
     outputs: &'static [OutputSurface],
+    output_kinds: &'static [OutputKind],
     restrictions: &'static [TargetRestriction],
     input_topology: &'static InputTopology,
 }
@@ -759,6 +779,10 @@ impl ControllerSurface {
     #[must_use]
     pub const fn axes(&self) -> &'static [AbsoluteAxisSurface] {
         self.axes
+    }
+    #[must_use]
+    pub const fn output_kinds(&self) -> &'static [OutputKind] {
+        self.output_kinds
     }
     #[must_use]
     pub const fn outputs(&self) -> &'static [OutputSurface] {

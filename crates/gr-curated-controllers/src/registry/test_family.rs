@@ -74,6 +74,7 @@ const fn surface(target: RealizationTarget) -> ControllerSurface {
         digital_controls: &[],
         axes: &[],
         outputs: &[],
+        output_kinds: &[],
         restrictions: &[],
         input_topology: &TOPOLOGY,
     }

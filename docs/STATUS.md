@@ -58,10 +58,13 @@ rejected transitions, missing neutralization and absent-control edits on both
 backends. This is an internal seam repair, not a Wii implementation or acceptance
 claim; fixed-family runtime layout and provider identity remain unchanged.
 
-C3 retained-output snapshots are available below the root for in-process UHID
-and uinput. USB-worker views return `UnavailableInRealization` under the owner
+Step 10c exposes retained-output snapshots on ordinary handles for in-process
+UHID and uinput under D2 (#176 comments 6325147128 and 6328169640). The API
+snapshot grows from 110 to 122 items with non-exhaustive retained-state and kind
+types; selected output metadata respects realization limits. The new native input
+kinds remain unused by the four current families. USB-worker views return `UnavailableInRealization` under the owner
 scoping decision; recovery is tracked in #203 and needs separate protocol
-approval. No root API growth or physical-output acceptance is implied.
+approval. No physical-output acceptance is implied.
 
 C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
 root reexports and root-specific creation error mapping. The wire crate fold
@@ -74,7 +77,8 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
   with static uinput capability supersets and neutralization of absent controls.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
-  outputs and typed surface kinds; public additions remain gated by D2.
+  outputs and typed surface kinds. D2 was granted on #176; step 10c exposes
+  ordinary-handle snapshots and read-only typed capability descriptors.
 - [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
   presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,

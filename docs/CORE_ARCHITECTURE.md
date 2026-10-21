@@ -226,3 +226,21 @@ The [demo topology editor](spec/demo-topology-editors.md) uses compiled registry
 membership and one current-shape renderer. Typed native conversion and family
 output decoding live in adapters; the GUI coordinator has no per-family branches.
 This internal workspace SPI does not expand the ordinary-root API.
+
+### D2 retained outputs and typed capabilities
+
+Step 10c (#176 owner comments 6325147128 and 6328169640) forwards
+`host_outputs()` from the curated session through the ordinary family facade.
+Accepted output state and revisions survive observation loss and close; required
+request/reply handling remains controller-owned. USB-worker snapshots remain
+unavailable because the unchanged wire protocol has no recovery query (#203).
+
+`ControllerSurface::output_kinds()` describes the selected realization alongside
+legacy event-code outputs. Registry kinds describe native family capabilities
+(Xbox uses evdev rumble); uinput exposes only conventional rumble and Xbox UHID
+exposes none. `InputTopology::typed_inputs()` adds native pressure, capacitive,
+relative 2D, point-set and load-cell metadata, validated with the existing topology
+and immutable live-subset rules. Existing families declare no new inputs. These
+are read-only compiled descriptors, not runtime profiles or mutable generic state.
+Display/speaker vocabulary declares no implementation or subsystem; ADR-0023
+continues to govern future in-band subsystems.
