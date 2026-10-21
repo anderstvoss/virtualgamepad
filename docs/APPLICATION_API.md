@@ -111,7 +111,11 @@ Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
 restriction on USB/IP and `dummy_hcd` surfaces. This is visible restriction metadata,
 not a new ordinary-root method or an approval of the D2 API additions.
 
-Gadget creation is rejected by normal root constructors with its Gate G reason.
+Under owner decision D5 (#176 comment 6325079527), `dummy_hcd` stays in the tree
+as experimental and not recommended because it needs root and host provisioning.
+Controller buildout targets near feature-complete UHID realizations; `dummy_hcd`
+and USB/IP remain optional faithful tiers, never default paths. Gadget creation
+is rejected by normal root constructors with its Gate G reason.
 Research implementations/tests remain available; no supported function was
 silently mapped to a lower-fidelity realization. USB gadget, Bluetooth and audio
 support are not promoted by API cleanup. The demo disables gadget selection and
