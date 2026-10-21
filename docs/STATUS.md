@@ -76,6 +76,11 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
 
+C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
+typed zero-to-four slots, transactional companions, exact required replies and
+shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+is advertised; D3 still defers step 13a.
+
 The step 6 synthetic topology audit covers queued bytes/replies, saturation,
 malformed writes, probe/edit overlap, terminal close, delivery uncertainty,
 observation eviction, delivery feedback after edits and explicit host STOP.

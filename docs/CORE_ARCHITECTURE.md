@@ -215,3 +215,9 @@ USB audio factories resolve existing compiled profile tags through registry
 metadata; the root no longer supplies magic tag bytes. Broker/worker protocol
 framing and version constants do not change. Wire fixtures formerly housed in
 `gr-dualsense-wire` live verbatim under `gr_controller_wire::dualsense`.
+
+The [synthetic receiver fixture](spec/receiver-aggregate-fixture.md) proves
+controller-owned slot/companion transitions over existing stateful HID runtimes
+and RequiredGroup. Receiver registry metadata names hosted families; the test
+entry advertises no target. Actual Puck wire policy and presentation epochs remain
+separate scoped work.
