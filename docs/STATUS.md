@@ -78,7 +78,9 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
-shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
+slot-local companion failure, sibling survival and shared failure/cleanup.
+A companion failure disconnects its slot; a primary failure closes the receiver.
+No Puck bytes, public receiver API or epoch implementation
 is advertised; D3 still defers step 13a.
 
 C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
@@ -140,3 +142,16 @@ validation, isolated working values, sticky resource dirty, exact ACK retries an
 kept/discarded terminal snapshots. Ordinary stateless sessions gain no fields.
 The [integration recipe](spec/persistent-resource-integration.md) maps all scoped
 minimum regressions; Wii semantics and an optional file helper remain separate.
+
+## Post-checkpoint follow-ups
+
+C3 [#209](https://github.com/anderstvoss/virtualgamepad/pull/209) landed as
+`c82193e`, C4 [#215](https://github.com/anderstvoss/virtualgamepad/pull/215) as
+`964038c`, and the research pin [#214](https://github.com/anderstvoss/virtualgamepad/pull/214)
+as `7a809e1`. The pinned research revision is `f22d6ef`; these merges do not
+promote missing live, consumer or physical acceptance cells.
+
+Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
+isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
+The receiver still exists only as a synthetic fixture, so #165 remains open.
+ADR-0023 (#211) remains draft under D4. C5 and C6 have not started.
