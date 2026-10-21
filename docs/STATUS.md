@@ -81,6 +81,11 @@ typed zero-to-four slots, transactional companions, exact required replies and
 shared failure/cleanup. No Puck bytes, public receiver API or epoch implementation
 is advertised; D3 still defers step 13a.
 
+C4 step 14 uses a [compiled demo catalog and shared topology editor](spec/demo-topology-editors.md).
+Native conversion stays in typed adapters; current-shape cache reconciliation
+preserves present holds and drops removed controls. Existing GUI lifecycle test
+modules remain unchanged; no public API or live acceptance claim is added.
+
 The step 6 synthetic topology audit covers queued bytes/replies, saturation,
 malformed writes, probe/edit overlap, terminal close, delivery uncertainty,
 observation eviction, delivery feedback after edits and explicit host STOP.
