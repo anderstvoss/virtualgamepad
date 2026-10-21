@@ -1,5 +1,5 @@
 //! Retained accepted host requests, not proof of motor, LED or audio delivery.
-//! Supporting implementation API only; the application root exports no view.
+//! Typed snapshots are also exposed by the ordinary application handles.
 use gr_hid::{ReplyError, Report};
 
 /// Latest accepted conventional evdev playback request. Zero repetitions stops

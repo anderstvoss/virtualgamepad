@@ -2299,3 +2299,6 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         );
     }
 }
+
+#[path = "retained_tests.rs"]
+mod retained_outputs;

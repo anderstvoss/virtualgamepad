@@ -70,11 +70,12 @@ pub mod experimental;
 pub use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, CustomInputModule, DigitalControlSurface,
-    DigitalControlUpdate, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
-    ExtraAxisInput, FaceButton, FaceButtonCluster, FaceButtonInput, InputAxisRange, InputControlId,
-    InputScale, InputTopology, InputTopologyError, MotionInput, OutputSurface,
-    RealizationValidationStatus, StickInput, TargetRestriction, TouchpadActuation, TouchpadInput,
-    TriggerInput, TriggerInputKind, TriggerStack,
+    DigitalControlUpdate, DisplayFormat, DpadCluster, DpadDirection, DpadHoldBehavior,
+    DpadPresentation, ExtraAxisInput, FaceButton, FaceButtonCluster, FaceButtonInput,
+    InputAxisRange, InputControlId, InputKind, InputScale, InputTopology, InputTopologyError,
+    LedKind, MotionInput, MotorRole, OutputKind, OutputSurface, RealizationValidationStatus,
+    SpeakerFormat, StickInput, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
+    TriggerInputKind, TriggerStack, TypedInput,
 };
 pub use gr_curated_controllers::{
     BatteryLevel, BatteryState, DualSenseAudioPath, DualSenseAxis, DualSenseControl,
@@ -92,4 +93,9 @@ pub use gr_realization_api::{
 
 pub use gr_audio_contract::{
     AudioAccess, AudioChannel, AudioError, AudioExposure, AudioOptions, PcmFormat, SampleDirection,
+};
+
+pub use gr_curated_controllers::retained::{
+    DualSenseOutputState, DualShock4OutputState, RumblePlayback, SwitchProOutputState,
+    Xbox360OutputState,
 };
