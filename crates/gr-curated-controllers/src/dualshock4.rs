@@ -633,6 +633,8 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -640,11 +642,13 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -652,7 +656,7 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1006,6 +1010,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualShock4OutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -1345,7 +1355,7 @@ impl common::HidDriver for DualShock4Definition {
         };
     }
 
-    type Hid = common::SnapshotProtocol<DualShock4State>;
+    type Hid = common::SnapshotProtocol<DualShock4State, crate::retained::DualShock4OutputState>;
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         common::creation_identity()
     }

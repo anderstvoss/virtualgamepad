@@ -476,6 +476,8 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -483,7 +485,7 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -834,6 +836,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct SwitchProController(common::ControllerSession<SwitchProDefinition>);
 impl SwitchProController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::SwitchProOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     #[must_use]
     pub fn stream_enabled(&self) -> bool {
         self.0

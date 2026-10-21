@@ -1,5 +1,6 @@
 //! Creation rollback keeps the initiating typed error and every cleanup failure.
 use crate::ControllerError;
+use crate::audio::AudioLifecycle;
 
 pub(crate) fn finish<T>(
     result: Result<T, ControllerError>,

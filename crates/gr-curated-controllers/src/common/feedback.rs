@@ -14,6 +14,7 @@ const EINVAL: i32 = -22;
 const EOPNOTSUPP: i32 = -95;
 
 pub(super) struct Feedback {
+    pub(crate) playback: crate::retained::NativePlayback,
     effects: [Option<RumbleEffect>; EFFECTS],
     events: VecDeque<RawReverseEvent>,
     pending: Option<(ProviderFrame, ForceFeedbackEvent)>,
@@ -22,6 +23,7 @@ pub(super) struct Feedback {
 impl Default for Feedback {
     fn default() -> Self {
         Self {
+            playback: crate::retained::NativePlayback::default(),
             effects: [None; EFFECTS],
             events: VecDeque::new(),
             pending: None,
@@ -34,7 +36,11 @@ impl Feedback {
         self.pending.is_some() || !self.events.is_empty()
     }
     pub(super) fn clear(&mut self) {
-        *self = Self::default();
+        let playback = self.playback;
+        *self = Self {
+            playback,
+            ..Self::default()
+        };
     }
     pub(super) fn service(
         &mut self,
@@ -118,6 +124,22 @@ impl Feedback {
                     for event in &events {
                         if event.event_type == super::EV_FF && event.value >= 0 {
                             if let Some(Some(effect)) = self.effects.get(usize::from(event.code)) {
+                                let repetitions =
+                                    u32::try_from(event.value).expect("nonnegative count");
+                                let latest = crate::retained::RumblePlayback {
+                                    strong: if repetitions == 0 { 0 } else { effect.strong },
+                                    weak: if repetitions == 0 { 0 } else { effect.weak },
+                                    repetitions,
+                                };
+                                if self.playback.latest != Some(latest) {
+                                    self.playback.revision =
+                                        self.playback.revision.checked_add(1).ok_or_else(|| {
+                                            ProviderError::Read {
+                                                reason: "retained output revision exhausted".into(),
+                                            }
+                                        })?;
+                                    self.playback.latest = Some(latest);
+                                }
                                 callback(RawReverseEvent::ForceFeedback(
                                     ForceFeedbackEvent::Playback {
                                         effect: *effect,

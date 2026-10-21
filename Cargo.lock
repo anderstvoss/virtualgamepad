@@ -990,7 +990,6 @@ name = "gr-controller-wire"
 version = "0.1.0"
 dependencies = [
  "gr-audio-contract",
- "gr-dualsense-wire",
  "gr-realization-api",
 ]
 
@@ -1002,7 +1001,6 @@ dependencies = [
  "gr-controller-contract",
  "gr-controller-runtime",
  "gr-controller-wire",
- "gr-dualsense-wire",
  "gr-hid",
  "gr-provider-linux-dummy-hcd",
  "gr-provider-linux-uhid",
@@ -1014,10 +1012,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gr-dualsense-wire"
-version = "0.1.0"
-
-[[package]]
 name = "gr-hid"
 version = "0.1.0"
 
@@ -1026,7 +1020,6 @@ name = "gr-privileged-broker"
 version = "0.1.0"
 dependencies = [
  "gr-controller-wire",
- "gr-dualsense-wire",
  "gr-realization-api",
  "libc",
  "thiserror 2.0.21",
@@ -1063,6 +1056,20 @@ version = "0.1.0"
 dependencies = [
  "gr-hid",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "gr-root-audio"
+version = "0.1.0"
+dependencies = [
+ "gr-audio-contract",
+ "gr-audio-linux",
+ "gr-audio-worker",
+ "gr-controller-wire",
+ "gr-curated-controllers",
+ "gr-privileged-broker",
+ "gr-realization-api",
+ "gr-usbip",
 ]
 
 [[package]]
@@ -2811,7 +2818,6 @@ version = "0.1.0"
 dependencies = [
  "alsa",
  "gr-audio-contract",
- "gr-audio-linux",
  "gr-audio-worker",
  "gr-controller-contract",
  "gr-controller-runtime",
@@ -2819,7 +2825,7 @@ dependencies = [
  "gr-hid",
  "gr-privileged-broker",
  "gr-realization-api",
- "gr-usbip",
+ "gr-root-audio",
 ]
 
 [[package]]

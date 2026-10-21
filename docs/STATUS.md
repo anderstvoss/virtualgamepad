@@ -43,6 +43,27 @@ The C1 registry checkpoint adds compiled family metadata and a typed registry,
 with deterministic Bluetooth-bus fake-provider coverage. It changes no support
 cell, public-root API, broker wire bytes or live acceptance claim.
 
+The C3 facade step consolidates application-handle lifecycle and audio-failure
+ownership behind private generic state and shared forwarding. Public signatures
+and docs remain frozen; existing regression construction changes are mechanical,
+as authorized on #176. This refactor changes no support or acceptance cell.
+
+The C3 pre-C5 follow-up validates native attachment configuration atomically and
+uses typed topology operations with derived IDs. Deterministic regressions cover
+rejected transitions, missing neutralization and absent-control edits on both
+backends. This is an internal seam repair, not a Wii implementation or acceptance
+claim; fixed-family runtime layout and provider identity remain unchanged.
+
+C3 retained-output snapshots are available below the root for in-process UHID
+and uinput. USB-worker views return `UnavailableInRealization` under the owner
+scoping decision; recovery is tracked in #203 and needs separate protocol
+approval. No root API growth or physical-output acceptance is implied.
+
+C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
+root reexports and root-specific creation error mapping. The wire crate fold
+keeps `gr_controller_wire::dualsense` and its exact bytes. Feature behavior and
+dummy_hcd disposition are preserved; no new external dependencies are added.
+
 ## Proposed runtime contracts
 
 - [ADR-0019](adr/ADR-0019-live-topology.md): retained live-topology generations,

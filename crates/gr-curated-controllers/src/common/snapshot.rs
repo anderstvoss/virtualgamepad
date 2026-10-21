@@ -1,5 +1,6 @@
 //! Shared mechanics for controller-owned snapshot USB personalities.
 use super::{ProviderFrame, RawReverseEvent};
+use crate::retained::{OutputState, RetainedProtocol};
 use gr_hid::{
     Command, Delivery, Error, Lifecycle, Protocol, Reply, ReplyError, Report, ReportType,
     RequestKind,
@@ -7,7 +8,7 @@ use gr_hid::{
 use std::collections::BTreeMap;
 
 #[derive(Clone)]
-pub(crate) struct SnapshotProtocol<S: Clone> {
+pub(crate) struct SnapshotProtocol<S: Clone, R: OutputState = ()> {
     pub neutral: S,
     pub encode: fn(&S, u64, u8) -> Report,
     pub validate_output: fn(&Report) -> Result<(), ReplyError>,
@@ -19,8 +20,26 @@ pub(crate) struct SnapshotProtocol<S: Clone> {
     active: bool,
     valid: bool,
     last: Option<Report>,
+    retained: R,
 }
-impl<S: Clone> SnapshotProtocol<S> {
+impl<S: Clone, R: OutputState> SnapshotProtocol<S, R> {
+    /// Preserve the same personality while omitting worker-side retention.
+    pub(crate) fn without_retention(self) -> SnapshotProtocol<S> {
+        SnapshotProtocol {
+            retained: (),
+            neutral: self.neutral,
+            encode: self.encode,
+            validate_output: self.validate_output,
+            features: self.features,
+            numbered: self.numbered,
+            period: self.period,
+            sequence: self.sequence,
+            next: self.next,
+            active: self.active,
+            valid: self.valid,
+            last: self.last,
+        }
+    }
     pub(crate) fn new(
         neutral: S,
         encode: fn(&S, u64, u8) -> Report,
@@ -41,10 +60,11 @@ impl<S: Clone> SnapshotProtocol<S> {
             active: true,
             valid: true,
             last: None,
+            retained: R::default(),
         }
     }
 }
-impl<S: Clone> Protocol for SnapshotProtocol<S> {
+impl<S: Clone, R: OutputState> Protocol for SnapshotProtocol<S, R> {
     type State = S;
     type Output = RawReverseEvent;
     fn neutral(&self) -> S {
@@ -100,7 +120,8 @@ impl<S: Clone> Protocol for SnapshotProtocol<S> {
             ),
             RequestKind::Get { .. } => (Reply::Get(Err(ReplyError::Unsupported)), None),
             RequestKind::Set(report) => {
-                let result = (self.validate_output)(report);
+                let result =
+                    (self.validate_output)(report).and_then(|()| self.retained.apply(report));
                 let output = result.is_ok().then(|| RawReverseEvent::HidOutput {
                     report_id: report.id(),
                     bytes: report.payload().to_vec(),
@@ -110,6 +131,11 @@ impl<S: Clone> Protocol for SnapshotProtocol<S> {
         }
     }
     fn output(&mut self, report: Report, _: u64) -> Result<Option<Self::Output>, Error> {
+        if (self.validate_output)(&report).is_ok() {
+            self.retained
+                .apply(&report)
+                .map_err(|_| Error::InvalidState)?;
+        }
         Ok(Some(RawReverseEvent::HidOutput {
             report_id: report.id(),
             bytes: report.payload().to_vec(),
@@ -143,4 +169,11 @@ pub(crate) fn logical_input(frame: ProviderFrame) -> Report {
     };
     Report::new(ReportType::Input, report_id, bytes)
         .expect("compiled controller report fits HID limit")
+}
+
+impl<S: Clone, R: OutputState> RetainedProtocol for SnapshotProtocol<S, R> {
+    type Outputs = R;
+    fn retained(&self) -> &R {
+        &self.retained
+    }
 }
