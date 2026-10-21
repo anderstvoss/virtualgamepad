@@ -108,7 +108,7 @@ to the uinput realization. USB-worker retained views explicitly return
 `UnavailableInRealization`: their lossy observation channel has no recovery query.
 
 Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
-restriction on USB/IP and dummy_hcd surfaces. This is visible restriction metadata,
+restriction on USB/IP and `dummy_hcd` surfaces. This is visible restriction metadata,
 not a new ordinary-root method or an approval of the D2 API additions.
 
 Gadget creation is rejected by normal root constructors with its Gate G reason.
