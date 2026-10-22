@@ -261,6 +261,9 @@ impl WiiProtocol {
             }
             _ => unreachable!(),
         }
+        // Validate the complete candidate before accepting a host transition.
+        // An ACK must never be queued behind an unencodable input frame.
+        data(self.mode, &self.state, self.ir_enabled[0]).map_err(|_| ReplyError::Invalid)?;
         self.outputs.rumble = p[0] & 1 != 0;
         if self.outputs.leds != before.leds || self.outputs.rumble != before.rumble {
             self.outputs.revision = before.revision.checked_add(1).ok_or(ReplyError::Busy)?;

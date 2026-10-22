@@ -359,3 +359,21 @@ fn interleaved_acceleration_preserves_the_two_z_halves_and_alternates_modes() {
     assert_eq!(p.input(&state, 0).unwrap().last().unwrap().id(), Some(0x3e));
     assert_eq!(p.input(&state, 1).unwrap().last().unwrap().id(), Some(0x3f));
 }
+
+#[test]
+fn ir_enable_cannot_accept_a_transition_that_strands_its_reply() {
+    let mut p = WiiProtocol::default();
+    p.output(output(0x12, &[0, 0x33]), 0).unwrap();
+    let mut state = WiiRemoteState::default();
+    state.set_ir([Some(WiiIrPoint::new(1, 2).unwrap()), None, None, None]);
+    p.input(&state, 0).unwrap(); // IR is still disabled, so no blob metadata needed.
+    let before = p.clone();
+    assert_eq!(
+        p.request(&RequestKind::Set(output(0x13, &[6])), 1).0,
+        Reply::Set(Err(ReplyError::Invalid))
+    );
+    assert_eq!(p.ir_enabled, before.ir_enabled);
+    assert_eq!(p.outputs, before.outputs);
+    assert_eq!(p.pending, before.pending);
+    assert!(p.input(&state, 1).is_ok());
+}
