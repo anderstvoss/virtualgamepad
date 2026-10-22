@@ -10,8 +10,8 @@ use gr_controller_contract::{
     construction::{ControllerSurfaceSpec, InputTopologySpec, TypedInputSpec},
 };
 use gr_realization_api::{
-    ControllerId, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
-    RealizationSessionId, RealizationTarget,
+    ControllerId, ProviderFrame, ProviderRequirements, RealizationSelection, RealizationSessionId,
+    RealizationTarget,
 };
 
 pub struct WiiRemoteDefinition;
@@ -156,57 +156,13 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
         Err(common::unavailable(selection.target))
     }
 }
-// A skeleton cannot produce invented wire bytes or open a provider. Step 13b
-// replaces this rejecting protocol with the source-record-backed codec.
-#[derive(Clone)]
-pub struct WiiProtocol;
-impl gr_hid::Protocol for WiiProtocol {
-    type State = WiiRemoteState;
-    type Output = RawReverseEvent;
-    fn neutral(&self) -> Self::State {
-        WiiRemoteState::default()
-    }
-    fn validate(&self, _: &Self::State) -> Result<(), gr_hid::Error> {
-        Err(gr_hid::Error::InvalidState)
-    }
-    fn input(&mut self, _: &Self::State, _: u64) -> Result<Vec<gr_hid::Report>, gr_hid::Error> {
-        Err(gr_hid::Error::InvalidState)
-    }
-    fn deadline(&self) -> Option<u64> {
-        None
-    }
-    fn request(
-        &mut self,
-        kind: &gr_hid::RequestKind,
-        _: u64,
-    ) -> (gr_hid::Reply, Option<RawReverseEvent>) {
-        let reply = match kind {
-            gr_hid::RequestKind::Get { .. } => {
-                gr_hid::Reply::Get(Err(gr_hid::ReplyError::Unsupported))
-            }
-            gr_hid::RequestKind::Set(_) => gr_hid::Reply::Set(Err(gr_hid::ReplyError::Unsupported)),
-        };
-        (reply, None)
-    }
-    fn output(
-        &mut self,
-        _: gr_hid::Report,
-        _: u64,
-    ) -> Result<Option<RawReverseEvent>, gr_hid::Error> {
-        Err(gr_hid::Error::InvalidState)
-    }
-    fn lifecycle(&mut self, _: gr_hid::Lifecycle, _: u64) -> Option<RawReverseEvent> {
-        None
-    }
-    fn delivered(&mut self, _: &gr_hid::Command, _: gr_hid::Delivery) {}
-}
 impl common::HidDriver for WiiRemoteDefinition {
-    type Hid = WiiProtocol;
+    type Hid = super::codec::WiiProtocol;
     fn neutralize_state(state: &mut Self::State) {
         *state = WiiRemoteState::new(state.revision());
     }
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        WiiProtocol
+        super::codec::WiiProtocol::default()
     }
 }
 impl ControllerFamily for WiiRemoteDefinition {
