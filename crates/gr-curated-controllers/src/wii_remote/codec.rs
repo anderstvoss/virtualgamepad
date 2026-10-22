@@ -35,6 +35,8 @@ pub(crate) struct WiiProtocol {
     pending: VecDeque<Report>,
     next: Option<u64>,
     active: bool,
+    // Coalesce Start notifications outside the bounded accepted-reply queue.
+    start_status: bool,
     valid: bool,
 }
 impl Default for WiiProtocol {
@@ -49,6 +51,7 @@ impl Default for WiiProtocol {
             pending: VecDeque::new(),
             next: None,
             active: true,
+            start_status: false,
             valid: true,
         }
     }
@@ -191,11 +194,16 @@ impl WiiProtocol {
         now: u64,
     ) -> Result<(), Error> {
         super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
-        // wii-kernel-status-ack-flow: replacement needs a disconnect edge,
-        // otherwise the consumer retains the old extension's input device.
-        let replacement = self.memory.present(&self.state)
-            && !matches!(extension, super::WiiExtension::None)
-            && std::mem::discriminant(self.state.extension()) != std::mem::discriminant(&extension);
+        // wii-kernel-status-ack-flow: resetting an already-present downstream
+        // device needs both edges, including insertion/removal of MotionPlus.
+        // The controller's same-kind/same-MP fast path never resets init here.
+        let replacement =
+            self.memory.present(&self.state) && !matches!(extension, super::WiiExtension::None);
+        if !self.active {
+            // Stop discarded old host work. Keep only current configuration;
+            // Start will publish one current status, without an edit backlog.
+            return self.install_attachment(extension, motion_plus);
+        }
         let count = if replacement { 2 } else { 1 };
         if self.pending.len() + count > MAX_PENDING {
             return Err(Error::QueueFull);
@@ -262,7 +270,10 @@ impl WiiProtocol {
         if p.len() != size {
             return Err(ReplyError::Invalid);
         }
-        if self.pending.len() >= MAX_PENDING {
+        // 0x16 can change MotionPlus mode: reserve its ACK and status atomically.
+        // Other accepted reports enqueue at most one reply.
+        let replies = if id == 0x16 { 2 } else { 1 };
+        if self.pending.len() + replies > MAX_PENDING {
             return Err(ReplyError::Busy);
         }
         let before = self.outputs;
@@ -346,9 +357,14 @@ impl Protocol for WiiProtocol {
         self.validate(state)?;
         self.state = state.clone();
         if !self.active {
+            self.next = None;
             return Ok(Vec::new());
         }
-        let mut reports: Vec<_> = self.pending.drain(..).collect();
+        let mut reports = Vec::new();
+        if std::mem::take(&mut self.start_status) {
+            reports.push(self.status());
+        }
+        reports.extend(self.pending.drain(..));
         if let Some(mut read) = self.read.take() {
             let (bytes, done) = self.memory.read_chunk(state, &mut read);
             reports.push(input(0x21, bytes));
@@ -411,10 +427,12 @@ impl Protocol for WiiProtocol {
             } => {
                 self.valid = numbered_input && numbered_output && !numbered_feature;
                 self.active = true;
+                self.start_status = true;
                 self.next = Some(now);
             }
             Lifecycle::Stop => {
                 self.active = false;
+                self.start_status = false;
                 self.pending.clear();
                 self.read = None;
                 self.next = None;

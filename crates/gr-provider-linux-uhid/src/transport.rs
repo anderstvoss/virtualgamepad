@@ -11,6 +11,7 @@ pub struct HidTransport {
     ordinal: u64,
     pending: Option<(RequestId, u32)>,
     numbered: [bool; 3],
+    closed: bool,
 }
 impl HidTransport {
     #[must_use]
@@ -25,6 +26,7 @@ impl HidTransport {
             ordinal: 0,
             pending: None,
             numbered,
+            closed: false,
         }
     }
     #[must_use]
@@ -217,6 +219,9 @@ impl Transport for HidTransport {
         }
     }
     fn close(&mut self) -> Result<(), Error> {
+        if std::mem::replace(&mut self.closed, true) {
+            return Ok(());
+        }
         self.pending = None;
         self.session.close().map_err(|_| Error::Transport)
     }

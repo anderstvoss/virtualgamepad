@@ -22,6 +22,10 @@ IR points, Nunchuk/Classic inputs, and fourteen-bit MotionPlus inputs. `attach`
 changes the compiled live subset; `current_topology` and `topology_generation`
 report it. Same-kind input edits preserve initialization. Extension replacement
 emits a disconnect/reconnect status sequence so the kernel re-probes its ID.
+Inserting or removing MotionPlus while a downstream extension stays attached
+also emits both edges, because it resets that extension's initialization.
+Host Stop retains attachment edits without queuing notices or arming deadlines;
+Start reports the current status once, without replaying stopped edits.
 Native uinput companions prepare before installation; a failed prepare leaves
 the old attachment intact. Required host requests are handled before optional
 observations. Call `service` while inputs are idle, and recompute
@@ -89,6 +93,15 @@ The source and virtual-host records are in
 `wii-c5-bt-host-binding`, `wii-c5-evdev-native-values` and the four
 `wii-c5-*-host-run` experiments. The acceptance manifest pins their reviewed
 research revision. No fixture is a physical capture.
+
+The C5 review fixes were checked on the same Linux6.12 host at tracked-clean
+`1b431cd5eabdf55c5c84091311c15f8105a25c87`. The unchanged ignored probe passed
+once, including kernel rumble and owned-node cleanup; all four LED writes remained
+permission-denied. A separate temporary supporting-API harness observed Nunchuk,
+then both Nunchuk and MotionPlus after insertion, then Nunchuk without MotionPlus
+after removal, and disappearance of the owned HID object on close. This bounded
+interface observation does not establish sensor or application acceptance. No
+research record or historical timing sample was changed.
 
 ## Creation and removal timing
 

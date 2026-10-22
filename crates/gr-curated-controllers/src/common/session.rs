@@ -332,7 +332,7 @@ impl<D: HidDriver> ControllerSession<D> {
             }
         }
     }
-    fn now(&self) -> u64 {
+    pub(crate) fn now(&self) -> u64 {
         u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX)
     }
     fn service_hid(&mut self) -> Result<(), ProviderError> {
