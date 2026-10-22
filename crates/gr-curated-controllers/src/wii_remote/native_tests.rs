@@ -278,3 +278,29 @@ fn native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity() {
         assert!(UINPUT.restrictions().iter().any(|r| r.feature == feature));
     }
 }
+
+#[test]
+fn repeated_native_attachment_changes_do_not_accumulate_hid_only_status_notices() {
+    let factory = Factory::default();
+    let mut c = create(&factory);
+    for index in 0..100 {
+        c.attach(
+            if index % 2 == 0 {
+                WiiExtension::Nunchuk(WiiNunchukState::default())
+            } else {
+                WiiExtension::None
+            },
+            false,
+        )
+        .unwrap();
+        c.commit().unwrap();
+        c.service(&mut |_| {}).unwrap();
+        assert_eq!(
+            c.current_topology().auxiliary_buttons().len(),
+            if index % 2 == 0 { 13 } else { 11 }
+        );
+    }
+    c.close();
+    let record = factory.0.lock().unwrap();
+    assert_eq!(record.closed.len(), record.requests.len());
+}
