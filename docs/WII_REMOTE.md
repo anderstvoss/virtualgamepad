@@ -22,6 +22,10 @@ IR points, Nunchuk/Classic inputs, and fourteen-bit MotionPlus inputs. `attach`
 changes the compiled live subset; `current_topology` and `topology_generation`
 report it. Same-kind input edits preserve initialization. Extension replacement
 emits a disconnect/reconnect status sequence so the kernel re-probes its ID.
+Inserting or removing MotionPlus while a downstream extension stays attached
+also emits both edges, because it resets that extension's initialization.
+Host Stop retains attachment edits without queuing notices or arming deadlines;
+Start reports the current status once, without replaying stopped edits.
 Native uinput companions prepare before installation; a failed prepare leaves
 the old attachment intact. Required host requests are handled before optional
 observations. Call `service` while inputs are idle, and recompute

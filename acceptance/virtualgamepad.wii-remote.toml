@@ -165,7 +165,7 @@ id = "live-axis-ranges-and-sensor-delivery"
 id = "extension-hot-swap"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Prepare failure preserves old nodes; removed companions close without affecting siblings." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_init", evidence = ["wii-kernel-status-ack-flow", "wii-c5-bt-host-binding"], reason = "Disconnect/reconnect edges and same-kind init retention tested; live Nunchuk-to-Classic replacement observed." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::motion_plus_changes_reprobe_initialized_downstream_extensions", evidence = ["wii-kernel-status-ack-flow", "wii-c5-bt-host-binding"], reason = "Initialized Nunchuk/Classic MotionPlus insertion/removal emits disconnect/reconnect edges. Separate controller regressions retain same-kind initialization and bound stopped/restart work. Historical live Nunchuk-to-Classic replacement remains a separate observation." }
 
 [[functions]]
 id = "creation-removal-n1"

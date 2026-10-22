@@ -202,7 +202,7 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
                 WiiExtension::Classic(c) | WiiExtension::ClassicPro(c) => c.clone(),
                 _ => super::WiiClassicState::default(),
             };
-            // Consumer key order differs from native packed button order.
+            // Consumer keys follow the native button array's order.
             let order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14];
             (
                 order.map(|i| c.buttons[i]).to_vec(),

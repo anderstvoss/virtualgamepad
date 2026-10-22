@@ -58,7 +58,7 @@ impl NativeProviderSession for Fake {
         }
     }
     fn close(&mut self) -> Result<(), ProviderError> {
-        self.0.lock().unwrap().closed = 1;
+        self.0.lock().unwrap().closed += 1;
         Ok(())
     }
 }
@@ -469,4 +469,59 @@ fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_ini
         c.session.protocol().unwrap().memory.initialized,
         [true, true]
     );
+}
+
+#[test]
+fn stopped_controller_accepts_repeated_attachments_and_restarts_without_backlog() {
+    let (mut c, fake) = create(WiiEepromImage::default());
+    fake.0
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Stop));
+    c.service(&mut |_| {}).unwrap();
+    fake.0.lock().unwrap().sent.clear();
+    for i in 0..100 {
+        let extension = if i % 2 == 0 {
+            WiiExtension::None
+        } else {
+            WiiExtension::Nunchuk(WiiNunchukState::default())
+        };
+        c.attach(extension, i % 3 == 0).unwrap();
+    }
+    c.service(&mut |_| {}).unwrap();
+    assert_eq!(c.next_service_in(), None);
+    assert!(fake.0.lock().unwrap().sent.is_empty());
+    fake.0
+        .lock()
+        .unwrap()
+        .events
+        .push_back(RawReverseEvent::HidLifecycle(gr_hid::Lifecycle::Start {
+            numbered_input: true,
+            numbered_output: true,
+            numbered_feature: false,
+        }));
+    for _ in 0..3 {
+        c.service(&mut |_| {}).unwrap();
+    }
+    let record = fake.0.lock().unwrap();
+    let statuses: Vec<_> = record
+        .sent
+        .iter()
+        .filter_map(|frame| match frame {
+            ProviderFrame::HidInput {
+                report_id: Some(0x20),
+                bytes,
+            } => Some(bytes),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0][2] & 2, 2);
+    assert_eq!(c.next_service_in(), None);
+    drop(record);
+    c.close();
+    c.close();
+    drop(c);
+    assert_eq!(fake.0.lock().unwrap().closed, 1);
 }

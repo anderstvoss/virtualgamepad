@@ -377,3 +377,146 @@ fn ir_enable_cannot_accept_a_transition_that_strands_its_reply() {
     assert_eq!(p.pending, before.pending);
     assert!(p.input(&state, 1).is_ok());
 }
+
+fn register_write(slave: u8, offset: u8, value: u8) -> Report {
+    let mut bytes = [0; 21];
+    bytes[..6].copy_from_slice(&[4, slave << 1, 0, offset, 1, value]);
+    output(0x16, &bytes)
+}
+
+#[test]
+fn motion_plus_changes_reprobe_initialized_downstream_extensions() {
+    use crate::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+    for (extension, passthrough) in [
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), 5),
+        (WiiExtension::Classic(WiiClassicState::default()), 7),
+    ] {
+        let mut p = WiiProtocol::default();
+        p.change_attachment(extension.clone(), false, 7).unwrap();
+        for (offset, value) in [(0xf0, 0x55), (0xfb, 0)] {
+            p.output(register_write(0x52, offset, value), 8).unwrap();
+        }
+        p.output(output(0x12, &[0, 0x32]), 8).unwrap();
+        let before = p.input(&p.state.clone(), 8).unwrap();
+        assert_eq!(p.memory.initialized, [true, true]);
+        assert_ne!(&before.last().unwrap().payload()[2..8], &[0xff; 6]);
+
+        p.change_attachment(extension.clone(), true, 37).unwrap();
+        assert_eq!(p.deadline(), Some(37));
+        let reports = p.input(&p.state.clone(), 37).unwrap();
+        let flags: Vec<_> = reports
+            .iter()
+            .filter(|r| r.id() == Some(0x20))
+            .map(|r| r.payload()[2] & 2)
+            .collect();
+        assert_eq!(flags, [0, 2], "adding MotionPlus must disconnect/reconnect");
+        assert_eq!(p.memory.initialized, [false, false]);
+
+        for (offset, value) in [(0xf0, 0x55), (0xfb, 0)] {
+            p.output(register_write(0x52, offset, value), 38).unwrap();
+        }
+        p.output(register_write(0x53, 0xfe, passthrough), 38)
+            .unwrap();
+        p.input(&p.state.clone(), 38).unwrap();
+        assert_eq!(p.memory.mp_mode, Some(passthrough));
+        p.change_attachment(extension, false, 73).unwrap();
+        let reports = p.input(&p.state.clone(), 73).unwrap();
+        let flags: Vec<_> = reports
+            .iter()
+            .filter(|r| r.id() == Some(0x20))
+            .map(|r| r.payload()[2] & 2)
+            .collect();
+        assert_eq!(flags, [0, 2], "removing active MotionPlus must re-probe");
+        assert_eq!(p.memory.mp_mode, None);
+    }
+}
+
+#[test]
+fn plain_attachment_add_and_remove_keep_single_status_edges() {
+    use crate::wii_remote::{WiiExtension, WiiNunchukState};
+    let mut p = WiiProtocol::default();
+    for (extension, flag) in [
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), 2),
+        (WiiExtension::None, 0),
+    ] {
+        p.change_attachment(extension, false, 3).unwrap();
+        let reports = p.input(&p.state.clone(), 3).unwrap();
+        let flags: Vec<_> = reports
+            .iter()
+            .filter(|r| r.id() == Some(0x20))
+            .map(|r| r.payload()[2] & 2)
+            .collect();
+        assert_eq!(flags, [flag]);
+    }
+}
+
+#[test]
+fn stopped_attachment_edits_restart_with_one_current_status_and_no_backlog() {
+    use crate::wii_remote::{WiiExtension, WiiNunchukState};
+    let mut p = WiiProtocol::default();
+    p.lifecycle(Lifecycle::Stop, 1);
+    for i in 0..100 {
+        let extension = if i % 2 == 0 {
+            WiiExtension::None
+        } else {
+            WiiExtension::Nunchuk(WiiNunchukState::default())
+        };
+        p.change_attachment(extension, i % 3 == 0, 2).unwrap();
+    }
+    assert!(p.pending.is_empty());
+    assert!(p.input(&p.state.clone(), 3).unwrap().is_empty());
+    assert_eq!(p.deadline(), None);
+    let current = p.status();
+    for _ in 0..2 {
+        p.lifecycle(
+            Lifecycle::Start {
+                numbered_input: true,
+                numbered_output: true,
+                numbered_feature: false,
+            },
+            4,
+        );
+    }
+    let reports = p.input(&p.state.clone(), 4).unwrap();
+    let statuses: Vec<_> = reports.iter().filter(|r| r.id() == Some(0x20)).collect();
+    assert_eq!(statuses, [&current]);
+    assert_eq!(p.deadline(), None);
+    assert!(
+        p.input(&p.state.clone(), 5)
+            .unwrap()
+            .iter()
+            .all(|r| r.id() != Some(0x20))
+    );
+}
+
+#[test]
+fn inactive_input_clears_any_stale_deadline() {
+    let mut p = WiiProtocol::default();
+    p.lifecycle(Lifecycle::Stop, 1);
+    p.next = Some(0);
+    assert!(p.input(&p.state.clone(), 2).unwrap().is_empty());
+    assert_eq!(p.deadline(), None);
+}
+
+#[test]
+fn motion_plus_write_reserves_ack_and_status_without_exceeding_pending_bound() {
+    let mut p = WiiProtocol::default();
+    p.change_attachment(crate::wii_remote::WiiExtension::None, true, 0)
+        .unwrap();
+    p.input(&p.state.clone(), 0).unwrap();
+    for _ in 0..MAX_PENDING - 1 {
+        p.output(output(0x15, &[0]), 1).unwrap();
+    }
+    let write = register_write(0x53, 0xfe, 4);
+    assert_eq!(
+        p.request(&RequestKind::Set(write.clone()), 2).0,
+        Reply::Set(Err(ReplyError::Busy))
+    );
+    assert_eq!(p.memory.mp_mode, None);
+    assert_eq!(p.pending.len(), MAX_PENDING - 1);
+    p.pending.pop_front();
+    assert_eq!(p.request(&RequestKind::Set(write), 3).0, Reply::Set(Ok(())));
+    assert_eq!(p.pending.len(), MAX_PENDING);
+    let replies: Vec<_> = p.pending.iter().rev().take(2).map(Report::id).collect();
+    assert_eq!(replies, [Some(0x20), Some(0x22)]);
+}

@@ -188,6 +188,10 @@ LED/rumble intent, raw battery and live attachment generations. The source-backe
 codec services legal modes and status/write/read replies; malformed edits reject
 atomically. Imported EEPROM has an explicit caller-defined extent and terminal
 snapshot/discard policy; no retail size or calibration defaults are invented.
+The C5 review follow-up adds MotionPlus-only disconnect/reconnect edges, bounded
+Stop/Start attachment handling and atomic ACK/status queue reservation. Repeated
+close and Drop call the UHID provider's close only once; focused regressions cover
+these fixes. Research records and historical timing measurements are unchanged.
 
 Native evdev creates separate core/accel/IR nodes and prepares optional extension
 and MP companions before changing shape. Its source conversions preserve values

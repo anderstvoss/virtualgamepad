@@ -156,6 +156,7 @@ impl WiiRemoteController {
         let shape = super::topology::current(&extension, motion_plus);
         let next = extension.clone();
         let native = self.native.is_some();
+        let now = self.session.now();
         self.live.change(
             &mut self.session,
             shape,
@@ -171,7 +172,7 @@ impl WiiRemoteController {
                 if native {
                     protocol.install_attachment(next, motion_plus)
                 } else {
-                    protocol.change_attachment(next, motion_plus, 0)
+                    protocol.change_attachment(next, motion_plus, now)
                 }
             },
         )?;
