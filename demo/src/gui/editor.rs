@@ -120,6 +120,22 @@ impl WiiRemoteEditor {
             _ => Err("Wii editor mismatch".into()),
         }));
     }
+    fn attach_wii(
+        &mut self,
+        value: gr_curated_controllers::wii_remote::WiiExtension,
+        mp: bool,
+    ) -> Result<(), String> {
+        let mut candidate = self.state.clone();
+        candidate
+            .set_attachment(value.clone(), mp)
+            .map_err(|e| e.to_string())?;
+        self.queue(Box::new(move |c| match c {
+            Controller::WiiRemote(c) => c.attach(value, mp).map_err(|e| e.to_string()),
+            _ => Err("Wii editor mismatch".into()),
+        }))?;
+        self.state = candidate;
+        Ok(())
+    }
     pub(super) fn draw_wii(&mut self, ui: &mut super::egui::Ui) {
         use gr_curated_controllers::wii_remote::{
             WiiClassicState, WiiExtension, WiiIrPoint, WiiNunchukState,
@@ -145,10 +161,7 @@ impl WiiRemoteEditor {
                 2 => WiiExtension::Classic(WiiClassicState::default()),
                 _ => WiiExtension::None,
             };
-            let _ = self.queue(Box::new(move |c| match c {
-                Controller::WiiRemote(c) => c.attach(value, mp).map_err(|e| e.to_string()),
-                _ => Err("Wii editor mismatch".into()),
-            }));
+            let _ = self.attach_wii(value, mp);
         }
         let mut points = *self.state.ir();
         let old = points;
@@ -223,7 +236,7 @@ impl ControllerView {
             Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
-            Self::WiiRemote(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::WiiRemote(_) => "Wii supporting-package diagnostics and association are unavailable in this ordinary-root lab view.".into(),
         }
     }
     pub(super) fn release_inputs(&mut self) -> Result<(), String> {
@@ -600,6 +613,45 @@ impl SwitchProEditor {
 mod tests {
     use super::*;
 
+    #[test]
+    fn wii_attachment_projection_precedes_same_frame_native_edits() {
+        use gr_curated_controllers::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+        let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
+        else {
+            unreachable!()
+        };
+        editor
+            .attach_wii(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+            .unwrap();
+        assert!(matches!(editor.state.extension(), WiiExtension::Nunchuk(_)));
+        assert!(editor.state.motion_plus().attached);
+        editor.edit_wii(&super::super::InputEvent::Axis1 {
+            id: virtualgamepad::InputControlId::new("nunchuk.accel.x"),
+            value: 321,
+        });
+        editor.edit_wii(&super::super::InputEvent::Axis1 {
+            id: virtualgamepad::InputControlId::new("gyro.x"),
+            value: 1234,
+        });
+        let WiiExtension::Nunchuk(nunchuk) = editor.state.extension() else {
+            unreachable!()
+        };
+        assert_eq!(nunchuk.accelerometer[0], 321);
+        assert_eq!(editor.state.motion_plus().gyroscope[0], 1234);
+        assert_eq!(editor.edits.len(), 3);
+        // Rejected attachments and a full queue must not change the projection.
+        let before = editor.state.clone();
+        assert!(
+            editor
+                .attach_wii(WiiExtension::ClassicPro(WiiClassicState::default()), false)
+                .is_err()
+        );
+        for _ in editor.edits.len()..EDIT_LIMIT {
+            editor.queue(Box::new(|_| Ok(()))).unwrap();
+        }
+        assert!(editor.attach_wii(WiiExtension::None, false).is_err());
+        assert_eq!(editor.state, before);
+    }
     #[test]
     fn detached_editor_bounds_work_and_never_changes_its_native_snapshot() {
         let mut editor = Editor {

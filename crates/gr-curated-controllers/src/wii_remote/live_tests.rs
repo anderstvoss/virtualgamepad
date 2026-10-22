@@ -10,7 +10,11 @@ fn pump(c: &mut WiiRemoteController, duration: Duration) {
     while Instant::now() < until {
         c.service(&mut |_| {}).unwrap();
         if c.is_dirty() {
-            c.commit().unwrap();
+            if let Err(error) = c.commit() {
+                assert!(!c.is_closed(), "fatal commit while pumping: {error}");
+                // A live HID input can remain queued under backpressure. Service
+                // and retry on the next bounded iteration instead of panicking.
+            }
         }
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -133,7 +137,6 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
     )
     .unwrap();
     c.set_battery_raw(0xc0).unwrap();
-    c.commit().unwrap();
     pump(&mut c, Duration::from_secs(2));
     let root = owned_hid(&c).expect("exact owned HID object");
     let driver = fs::read_link(root.join("driver"))
@@ -143,22 +146,43 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
     let rumble = rumble_probe(&mut c, &root);
     c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
         .unwrap();
-    c.commit().unwrap();
     pump(&mut c, Duration::from_secs(2));
     let nunchuk = inputs(&root);
     c.attach(WiiExtension::Classic(WiiClassicState::default()), false)
         .unwrap();
-    c.commit().unwrap();
     pump(&mut c, Duration::from_secs(2));
     let classic = inputs(&root);
     c.attach(WiiExtension::None, true).unwrap();
-    c.commit().unwrap();
     pump(&mut c, Duration::from_secs(2));
     let mp = inputs(&root);
     let power_supply = fs::read_dir(root.join("power_supply"))
         .ok()
         .map_or(0, Iterator::count);
-    let leds=fs::read_dir(root.join("leds")).ok().map(|entries|entries.flatten().map(|entry|{let result=fs::write(entry.path().join("brightness"),"1");serde_json::json!({"write":result.as_ref().map_or("failed",|()|"ok"),"error":result.err().map(|e|e.to_string())})}).collect::<Vec<_>>()).unwrap_or_default();
+    let capacity_path = fs::read_dir(root.join("power_supply"))
+        .unwrap()
+        .flatten()
+        .next()
+        .expect("owned battery")
+        .path()
+        .join("capacity");
+    let capacity_read = std::thread::spawn(move || fs::read_to_string(capacity_path));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !capacity_read.is_finished() && Instant::now() < deadline {
+        pump(&mut c, Duration::from_millis(1));
+    }
+    assert!(
+        capacity_read.is_finished(),
+        "bounded battery read timed out"
+    );
+    let capacity = capacity_read.join().unwrap().unwrap();
+    let raw_battery = c.state().battery_raw();
+    let leds = fs::read_dir(root.join("leds")).unwrap().flatten().map(|entry| {
+        let result = fs::write(entry.path().join("brightness"), "1");
+        if let Err(error) = &result {
+            assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied, "unexpected LED failure: {error}");
+        }
+        serde_json::json!({"write": if result.is_ok() {"ok"} else {"permission_denied"}, "errno": result.err().and_then(|e| e.raw_os_error())})
+    }).collect::<Vec<_>>();
     pump(&mut c, Duration::from_millis(100));
     let outputs = c.host_outputs().unwrap();
     let before_close = Instant::now();
@@ -168,7 +192,7 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
     let gone = !root.exists();
     println!(
         "C5_HOST_OBSERVATION {}",
-        serde_json::json!({"driver":driver,"base":base,"nunchuk":nunchuk,"classic":classic,"motion_plus":mp,"power_supply_count":power_supply,"led_writes":leds,"retained_leds":outputs.leds,"retained_rumble":outputs.rumble,"rumble_live":rumble,"close_ns":close_ns,"node_gone":gone})
+        serde_json::json!({"driver":driver,"base":base,"nunchuk":nunchuk,"classic":classic,"motion_plus":mp,"power_supply_count":power_supply,"battery_raw":raw_battery,"capacity":capacity.trim(),"led_writes":leds,"retained_leds":outputs.leds,"retained_rumble":outputs.rumble,"rumble_live":rumble,"close_ns":close_ns,"node_gone":gone})
     );
     assert_eq!(driver.as_deref(), Some("wiimote"));
     assert!(gone);
@@ -179,4 +203,21 @@ fn bluetooth_host_binding_extensions_outputs_and_battery_probe() {
     assert_shape(&classic, 4);
     assert_shape(&mp, 5);
     assert!(power_supply > 0);
+    assert_eq!(raw_battery, 0xc0);
+    // wii-kernel-outputs-battery: consumer conversion, not calibration.
+    assert_eq!(capacity.trim(), "75");
+    assert_eq!(rumble["exit_success"], true);
+    assert_eq!(rumble["native_rumble_seen"], true);
+    for action in ["opened", "uploaded", "played", "stopped", "erased"] {
+        assert_eq!(rumble["result"][action], true, "rumble {action}");
+    }
+    assert!(
+        classic
+            .iter()
+            .all(|n| n["name"] != "Nintendo Wii Remote Nunchuk")
+    );
+    assert_eq!(leds.len(), 4);
+    if leds.iter().all(|led| led["write"] == "ok") {
+        assert_eq!(outputs.leds, [true; 4]);
+    }
 }

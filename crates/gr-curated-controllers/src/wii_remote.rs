@@ -216,6 +216,28 @@ impl WiiRemoteState {
     pub const fn extension(&self) -> &WiiExtension {
         &self.extension
     }
+    /// Edit a detached native snapshot's attachment without provider I/O.
+    ///
+    /// Use `WiiRemoteController::attach` to apply a live transition. A shape change
+    /// resets `MotionPlus` samples, matching the live attachment transaction.
+    pub fn set_attachment(
+        &mut self,
+        extension: WiiExtension,
+        motion_plus: bool,
+    ) -> Result<(), ControlError> {
+        extensions::validate(&extension)?;
+        if std::mem::discriminant(&extension) != std::mem::discriminant(&self.extension)
+            || motion_plus != self.motion_plus.attached
+        {
+            self.motion_plus = WiiMotionPlusState {
+                attached: motion_plus,
+                gyroscope: [8192; 3],
+                slow: [false; 3],
+            };
+        }
+        self.extension = extension;
+        Ok(())
+    }
     pub fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError> {
         if std::mem::discriminant(&value) != std::mem::discriminant(&self.extension) {
             return Err(ControlError::UnsupportedControl {

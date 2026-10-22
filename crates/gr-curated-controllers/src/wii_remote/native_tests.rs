@@ -9,6 +9,8 @@ struct Record {
     events: std::collections::VecDeque<RawReverseEvent>,
     fail_name: Option<String>,
     fail_read: bool,
+    fail_send: Option<ProviderError>,
+    last_error: Option<String>,
 }
 #[derive(Clone, Default)]
 struct Factory(Arc<Mutex<Record>>);
@@ -48,7 +50,14 @@ impl NativeProviderFactory for Factory {
 }
 impl NativeProviderSession for Session {
     fn send(&mut self, frame: ProviderFrame) -> Result<(), ProviderError> {
-        self.factory.0.lock().unwrap().frames.push((self.id, frame));
+        let mut record = self.factory.0.lock().unwrap();
+        if self.id == 0 {
+            if let Some(error) = record.fail_send.take() {
+                record.last_error = Some(error.to_string());
+                return Err(error);
+            }
+        }
+        record.frames.push((self.id, frame));
         Ok(())
     }
     fn drain_reverse_events(
@@ -87,7 +96,7 @@ impl NativeProviderSession for Session {
             reverse_events_drained: 0,
             write_failures: 0,
             lifecycle_events: 0,
-            last_error: None,
+            last_error: self.factory.0.lock().unwrap().last_error.clone(),
         }
     }
     fn close(&mut self) -> Result<(), ProviderError> {
@@ -303,4 +312,100 @@ fn repeated_native_attachment_changes_do_not_accumulate_hid_only_status_notices(
     c.close();
     let record = factory.0.lock().unwrap();
     assert_eq!(record.closed.len(), record.requests.len());
+}
+
+#[test]
+fn partially_prepared_attachment_rolls_back_without_touching_existing_nodes() {
+    let factory = Factory::default();
+    let mut c = create(&factory);
+    let state = c.state().clone();
+    let association = c.association().clone();
+    let generation = c.topology_generation();
+    factory.0.lock().unwrap().fail_name = Some("Nintendo Wii Remote Nunchuk".into());
+    assert!(
+        c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+            .is_err()
+    );
+    assert_eq!(c.state(), &state);
+    assert_eq!(c.association(), &association);
+    assert_eq!(c.topology_generation(), generation);
+    {
+        let r = factory.0.lock().unwrap();
+        assert_eq!(
+            r.requests.len(),
+            4,
+            "MotionPlus prepared before Nunchuk fails"
+        );
+        assert_eq!(r.closed, [3], "only the freshly prepared node closes");
+    }
+    c.set_button(WiiRemoteButton::A, true).unwrap();
+    c.commit().unwrap();
+    c.close();
+    c.close();
+    assert_eq!(factory.0.lock().unwrap().closed, [3, 0, 1, 2]);
+}
+
+#[test]
+fn fatal_core_commit_closes_companions_but_retryable_commit_preserves_them() {
+    let factory = Factory::default();
+    let sibling = Factory::default();
+    let mut c = create(&factory);
+    let mut other = create(&sibling);
+    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), true)
+        .unwrap();
+    factory.0.lock().unwrap().fail_send = Some(ProviderError::WouldBlock);
+    assert!(c.commit().is_err());
+    assert!(!c.is_closed());
+    assert!(c.is_dirty());
+    assert!(factory.0.lock().unwrap().closed.is_empty());
+    c.commit().unwrap();
+    assert!(c.diagnostics().last_error.is_some());
+    assert!(!c.is_closed(), "historical error is not terminal health");
+    c.set_button(WiiRemoteButton::A, true).unwrap();
+    factory.0.lock().unwrap().fail_send = Some(ProviderError::Write {
+        reason: "synthetic fatal write".into(),
+    });
+    assert!(c.commit().is_err());
+    assert!(c.is_closed());
+    assert_eq!(factory.0.lock().unwrap().closed, [0, 1, 2, 3, 4]);
+    assert!(sibling.0.lock().unwrap().closed.is_empty());
+    other.commit().unwrap();
+    other.service(&mut |_| {}).unwrap();
+    assert!(c.commit().is_err());
+    c.close();
+    drop(c);
+    assert_eq!(factory.0.lock().unwrap().closed.len(), 5);
+}
+
+#[test]
+fn native_eeprom_channels_refuse_without_opening_or_exporting_resources() {
+    let factory = Factory::default();
+    assert!(matches!(
+        controller::create(
+            RealizationTarget::LINUX_UINPUT,
+            7,
+            WiiRemoteRevision::Original,
+            WiiEepromImage::import(vec![0x42]).unwrap(),
+            Some(Arc::new(factory.clone()))
+        ),
+        Err(ProviderError::Unsupported { .. })
+    ));
+    assert!(factory.0.lock().unwrap().requests.is_empty());
+    let mut c = create(&factory);
+    assert!(!c.resource_dirty());
+    for choice in [
+        WiiResourceDisposition::KeepSnapshot,
+        WiiResourceDisposition::Discard,
+    ] {
+        assert!(matches!(
+            c.resolve_resource(choice),
+            Err(gr_controller_contract::ControlError::UnsupportedControl { .. })
+        ));
+    }
+    c.close();
+    assert!(
+        c.resolve_resource(WiiResourceDisposition::KeepSnapshot)
+            .is_err()
+    );
+    assert!(!c.resource_dirty());
 }

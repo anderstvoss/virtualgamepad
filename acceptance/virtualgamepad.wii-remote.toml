@@ -26,8 +26,9 @@ id = "ir-basic-points"
 [[functions]]
 id = "ir-extended-full-visible"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: evdev does not represent blob size/intensity metadata." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: evdev does not represent blob size/intensity metadata." }
 "linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::codec::tests::basic_ir_packs_coordinates_and_invisible_slots_without_conflating_them", evidence = ["wii-c5-report-layouts"], reason = "No evidence: typed point-set has no source-backed physical blob size/intensity representation; rejects visible33/3e/3f." }
+
 
 [[functions]]
 id = "nunchuk"
@@ -68,13 +69,13 @@ id = "motionplus-classic-passthrough"
 [[functions]]
 id = "player-led-intent"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: uinput has no Wii LED-class endpoint." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput has no Wii LED-class endpoint." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::retained_outputs_survive_more_than_observation_queue_capacity", evidence = ["wii-kernel-outputs-battery", "wii-c5-report-layouts"], reason = "Retained accepted four-bit host LED intent is independent of observation delivery. LED-class write acceptance remains a separate missing live cell." }
 
 [[functions]]
 id = "live-player-led-control"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: no Wii LED-class endpoint." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: no Wii LED-class endpoint." }
 "linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "untested: four owned LED brightness writes returned EACCES; kernel initialization LED intent alone is not LED-control acceptance." }
 
 [[functions]]
@@ -92,19 +93,20 @@ id = "live-rumble-consumer"
 [[functions]]
 id = "battery"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: uinput has no Wii power_supply endpoint." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput has no Wii power_supply endpoint." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-kernel-outputs-battery"], reason = "Raw status byte/low flag source-model behavior and power_supply presence tested; numeric live capacity conversion unmeasured." }
+
 
 [[functions]]
 id = "eeprom-import-read-write"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: evdev has no addressed memory channel; nonempty import rejects and resource resolution is unavailable." }
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_eeprom_channels_refuse_without_opening_or_exporting_resources", evidence = [], reason = "unavailable in this realization: evdev has no addressed memory channel; nonempty import rejects and resource resolution is unavailable." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-dolphin-memory-routing", "wii-c5-memory-errors"], reason = "Caller-supplied bounded image; chunked0x17 reads and0x16 writes/ACKs tested. Its extent is not a retail EEPROM-size claim." }
 
 [[functions]]
 id = "terminal-resource-disposition"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: no EEPROM resource channel." }
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_eeprom_channels_refuse_without_opening_or_exporting_resources", evidence = [], reason = "unavailable in this realization: no EEPROM resource channel." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-c5-memory-errors"], reason = "Sticky dirty state, terminal close, first KeepSnapshot/Discard wins, exact immutable bytes; Drop never exports." }
 
 [[functions]]
@@ -146,8 +148,9 @@ id = "early-plus-identity"
 [[functions]]
 id = "bluetooth-driver-binding"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = [], reason = "unavailable in this realization: evdev nodes have no HID parent for wiimote binding." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: evdev nodes have no HID parent for wiimote binding." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Exact creation-owned virtual bus5 device bound to wiimote on Linux6.12.113+deb13-arm64. No radio/pairing/BlueZ." }
+
 
 [[functions]]
 id = "evdev-golden-shape"

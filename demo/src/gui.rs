@@ -35,7 +35,8 @@ use virtualgamepad::{
     create_dualshock4, create_switch_pro, create_xbox360,
 };
 
-// Controller IDs are demo-local labels, never library/session identity.
+// Controller IDs are demo-local labels. The Wii supporting constructor also
+// receives this creation token; provider-generated association labels stay unique.
 #[derive(Clone, Copy)]
 struct ControllerOptions {
     target: RealizationId,

@@ -7,6 +7,11 @@ struct Record {
     sent: Vec<ProviderFrame>,
     events: std::collections::VecDeque<RawReverseEvent>,
     closed: usize,
+    #[cfg(unix)]
+    wake: Option<(
+        Arc<std::os::unix::net::UnixStream>,
+        std::os::unix::net::UnixStream,
+    )>,
 }
 #[derive(Clone, Default)]
 struct Fake(Arc<Mutex<Record>>);
@@ -45,6 +50,11 @@ impl NativeProviderSession for Fake {
         }
     }
     fn readiness(&self) -> EventReadiness {
+        #[cfg(unix)]
+        if let Some((reader, _)) = &self.0.lock().unwrap().wake {
+            use std::os::fd::AsRawFd;
+            return EventReadiness::Descriptor(reader.as_raw_fd());
+        }
         EventReadiness::AlwaysPoll
     }
     fn diagnostics(&self) -> ProviderDiagnostics {
@@ -105,6 +115,11 @@ fn output(fake: &Fake, id: u8, payload: &[u8]) {
             report_id: Some(id),
             bytes: payload.to_vec(),
         });
+    #[cfg(unix)]
+    if let Some((_, writer)) = &mut fake.0.lock().unwrap().wake {
+        use std::io::Write;
+        writer.write_all(&[1]).unwrap();
+    }
 }
 fn write(slave: u8, offset: u8, bytes: &[u8]) -> Vec<u8> {
     let mut p = vec![0; 21];
@@ -524,4 +539,69 @@ fn stopped_controller_accepts_repeated_attachments_and_restarts_without_backlog(
     c.close();
     drop(c);
     assert_eq!(fake.0.lock().unwrap().closed, 1);
+}
+
+#[test]
+#[cfg(unix)]
+fn idle_host_output_wakes_the_exposed_readiness_descriptor() {
+    use std::{
+        io::Read,
+        os::{fd::AsRawFd, unix::net::UnixStream},
+        time::Duration,
+    };
+    let (mut c, fake) = create(WiiEepromImage::default());
+    let (reader, writer) = UnixStream::pair().unwrap();
+    reader
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let reader = Arc::new(reader);
+    fake.0.lock().unwrap().wake = Some((reader.clone(), writer));
+    assert_eq!(
+        c.readiness(),
+        Some(gr_hid::Readiness::Descriptor(reader.as_raw_fd()))
+    );
+    assert!(!c.wants_write());
+    let host = std::thread::spawn(move || output(&fake, 0x11, &[0x11]));
+    // Block on the exact provider descriptor; do not call service to discover idle output.
+    let mut byte = [0];
+    (&*reader).read_exact(&mut byte).unwrap();
+    host.join().unwrap();
+    assert_eq!(byte, [1]);
+    assert!(!c.host_outputs().unwrap().rumble);
+    c.service(&mut |_| {}).unwrap();
+    assert!(c.host_outputs().unwrap().rumble);
+    assert_eq!(c.host_outputs().unwrap().leds, [true, false, false, false]);
+    assert_eq!(c.dropped_output_events(), 0);
+    c.close();
+    assert_eq!(c.readiness(), None);
+    assert!(!c.wants_write());
+}
+
+#[test]
+fn detached_attachment_projection_matches_live_state_and_rejects_atomically() {
+    let (mut c, _) = create(WiiEepromImage::default());
+    let mut projected = c.state().clone();
+    for (extension, mp) in [
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), true),
+        (WiiExtension::Nunchuk(WiiNunchukState::default()), true),
+        (WiiExtension::Classic(WiiClassicState::default()), false),
+        (WiiExtension::None, false),
+    ] {
+        projected.set_attachment(extension.clone(), mp).unwrap();
+        c.attach(extension, mp).unwrap();
+        assert_eq!(&projected, c.state());
+        if mp {
+            projected
+                .set_motion_plus_values([1, 2, 3], [true; 3])
+                .unwrap();
+            c.set_motion_plus([1, 2, 3], [true; 3]).unwrap();
+        }
+    }
+    let before = projected.clone();
+    assert!(
+        projected
+            .set_attachment(WiiExtension::ClassicPro(WiiClassicState::default()), true)
+            .is_err()
+    );
+    assert_eq!(projected, before);
 }

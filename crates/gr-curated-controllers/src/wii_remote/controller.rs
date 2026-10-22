@@ -142,8 +142,7 @@ impl WiiRemoteController {
             });
         }
         let mut candidate = self.state().clone();
-        candidate.extension = extension.clone();
-        candidate.motion_plus.attached = motion_plus;
+        candidate.set_attachment(extension.clone(), motion_plus)?;
         let prepared = if let Some(nodes) = &self.native {
             nodes
                 .prepare(&candidate)
@@ -305,7 +304,12 @@ impl WiiRemoteController {
         self.session.neutralize()
     }
     pub fn commit(&mut self) -> Result<(), CommitError> {
-        self.session.commit()?;
+        if let Err(error) = self.session.commit() {
+            if self.session.is_closed() || self.session.fatal_native_write() {
+                self.close();
+            }
+            return Err(error);
+        }
         if let Some(nodes) = &mut self.native {
             nodes.commit(self.session.state())?;
         }
@@ -341,6 +345,21 @@ impl WiiRemoteController {
     #[must_use]
     pub fn next_service_in(&self) -> Option<std::time::Duration> {
         self.session.next_service_in()
+    }
+    /// Whether the HID readiness descriptor should also be watched for writability.
+    #[must_use]
+    pub fn wants_write(&self) -> bool {
+        self.session.wants_write()
+    }
+    /// Service on this source and at `next_service_in`, including while input is idle.
+    #[must_use]
+    pub fn readiness(&self) -> Option<gr_hid::Readiness> {
+        self.session.readiness()
+    }
+    /// Optional output observations lost to bounded storage, separate from retained intent.
+    #[must_use]
+    pub fn dropped_output_events(&self) -> u64 {
+        self.session.dropped_observations()
     }
     pub fn close(&mut self) {
         self.session.close();
