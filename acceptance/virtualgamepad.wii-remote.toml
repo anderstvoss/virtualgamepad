@@ -1,12 +1,234 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "f22d6ef728689e7ef9cb8701e6f654caf8b1be75"
+research_revision = "4ed77d8e18761c7105c0b5f82dfe63f9540f468c"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
-refused_operations = ["speaker", "real-bluetooth", "early-plus-identity"]
-persistent_resources = []
+refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
+persistent_resources = ["caller-imported-eeprom"]
 
 [[functions]]
-id = "native-state"
+id = "buttons"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "wii_remote::tests", evidence = ["wii-kernel-evdev-base-keys"], reason = "Skeleton only; realizations land in step 13d. Live acceptance untested." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::tests", evidence = ["wii-kernel-bluetooth-match"], reason = "Skeleton only; realizations land in step 13d. Live acceptance untested." }
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::native_mapping_retains_all_keys_and_source_conversions", evidence = ["wii-kernel-evdev-base-keys"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::every_core_button_is_independent_of_embedded_acceleration", evidence = ["wii-c5-report-layouts"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+
+[[functions]]
+id = "accelerometer-raw"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::native_consumer_values_are_not_clipped_to_advertised_abs_bounds", evidence = ["wii-kernel-evdev-accelerometer", "wii-c5-evdev-native-values"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::every_core_button_is_independent_of_embedded_acceleration", evidence = ["wii-c5-report-layouts"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+
+[[functions]]
+id = "ir-basic-points"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::native_ir_missing_sentinel_keeps_all_slots_distinct_from_visible_edges", evidence = ["wii-kernel-evdev-ir", "wii-c5-evdev-native-values"], reason = "Native surface is a typed point set. Evdev carries coordinates with missing1023/1023 sentinel, without explicit visibility/blob metadata; fuzz unavailable." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::basic_ir_packs_coordinates_and_invisible_slots_without_conflating_them", evidence = ["wii-c5-report-layouts", "wii-c5-camera-no-points"], reason = "Basic modes preserve four visible/invisible point slots. Extended/full visible blobs reject; physical tracking untested." }
+
+[[functions]]
+id = "ir-extended-full-visible"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: evdev does not represent blob size/intensity metadata." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::codec::tests::basic_ir_packs_coordinates_and_invisible_slots_without_conflating_them", evidence = ["wii-c5-report-layouts"], reason = "No evidence: typed point-set has no source-backed physical blob size/intensity representation; rejects visible33/3e/3f." }
+
+[[functions]]
+id = "nunchuk"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-kernel-evdev-nunchuk", "wii-c5-evdev-native-values"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::extension_init_identity_motionplus_activation_and_passthrough_are_source_modelled", evidence = ["wii-c5-extension-identifiers", "wii-c5-extension-packing"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+
+[[functions]]
+id = "classic"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-kernel-evdev-classic", "wii-c5-evdev-native-values"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::extension_init_identity_motionplus_activation_and_passthrough_are_source_modelled", evidence = ["wii-c5-extension-identifiers", "wii-c5-extension-packing"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+
+[[functions]]
+id = "classic-pro"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "No evidence: wire revision/identity unresolved; attach rejects explicitly." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "No evidence: wire revision/identity unresolved; no fallback to Classic." }
+
+[[functions]]
+id = "motionplus"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::native_consumer_values_are_not_clipped_to_advertised_abs_bounds", evidence = ["wii-kernel-evdev-motionplus", "wii-c5-evdev-native-values"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::extensions::tests::motionplus_preserves_fourteen_bits_and_marks_passthrough_loss_explicitly", evidence = ["wii-c5-extension-packing"], reason = "Source/synthetic regression only; physical and consumer acceptance not inferred." }
+
+[[functions]]
+id = "motionplus-nunchuk-passthrough"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Independent MP and extension evdev companions preserve native inputs; no host register/activation channel in uinput." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::extension_init_identity_motionplus_activation_and_passthrough_are_source_modelled", evidence = ["wii-kernel-motionplus-pass-through", "wii-c5-extension-packing"], reason = "Source-model init, identity, mode5/7 and alternating packet flags tested; physical passthrough/sensor fidelity untested." }
+
+[[functions]]
+id = "motionplus-classic-passthrough"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Independent MP and extension evdev companions preserve native inputs; no host register/activation channel in uinput." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::extension_init_identity_motionplus_activation_and_passthrough_are_source_modelled", evidence = ["wii-kernel-motionplus-pass-through", "wii-c5-extension-packing"], reason = "Source-model init, identity, mode5/7 and alternating packet flags tested; physical passthrough/sensor fidelity untested." }
+
+[[functions]]
+id = "player-led-intent"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: uinput has no Wii LED-class endpoint." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::retained_outputs_survive_more_than_observation_queue_capacity", evidence = ["wii-kernel-outputs-battery", "wii-c5-report-layouts"], reason = "Retained accepted four-bit host LED intent is independent of observation delivery. LED-class write acceptance remains a separate missing live cell." }
+
+[[functions]]
+id = "live-player-led-control"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: no Wii LED-class endpoint." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "untested: four owned LED brightness writes returned EACCES; kernel initialization LED intent alone is not LED-control acceptance." }
+
+[[functions]]
+id = "rumble"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Conventional upload/erase ACKs and retained playback tested; both channels collapse to one native binary motor." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::malformed_outputs_are_atomic_and_identical_values_do_not_advance_revision", evidence = ["wii-c5-report-layouts"], reason = "Raw interrupt rumble and combined LED/rumble acceptance tested. No physical motor-delivery claim." }
+
+[[functions]]
+id = "live-rumble-consumer"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "untested: native uinput live rumble not run; deterministic fake-provider path covered." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Virtual bus5 kernel evdev upload/play/stop/erase succeeded and retained native rumble was seen. This is software intent delivery, not physical vibration." }
+
+[[functions]]
+id = "battery"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: uinput has no Wii power_supply endpoint." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-kernel-outputs-battery"], reason = "Raw status byte/low flag source-model behavior and power_supply presence tested; numeric live capacity conversion unmeasured." }
+
+[[functions]]
+id = "eeprom-import-read-write"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: evdev has no addressed memory channel; nonempty import rejects and resource resolution is unavailable." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-dolphin-memory-routing", "wii-c5-memory-errors"], reason = "Caller-supplied bounded image; chunked0x17 reads and0x16 writes/ACKs tested. Its extent is not a retail EEPROM-size claim." }
+
+[[functions]]
+id = "terminal-resource-disposition"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_rumble_gets_exact_replies_and_persists_beyond_observation_capacity", evidence = [], reason = "unavailable in this realization: no EEPROM resource channel." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-c5-memory-errors"], reason = "Sticky dirty state, terminal close, first KeepSnapshot/Discard wins, exact immutable bytes; Drop never exports." }
+
+[[functions]]
+id = "factory-calibration"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: factory calibration/register defaults not established; raw state and opaque caller bytes only." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: factory calibration/register defaults not established; raw state and opaque caller bytes only." }
+
+[[functions]]
+id = "encrypted-extension"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_run", evidence = ["wii-extension-encryption-gap"], reason = "No evidence: only unencrypted init is implemented; encrypted workflows reject unknown registers." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_run", evidence = ["wii-extension-encryption-gap"], reason = "No evidence: only unencrypted init is implemented; encrypted workflows reject unknown registers." }
+
+[[functions]]
+id = "retail-eeprom-size"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: 0x1700 remains a hypothesis; caller image length defines the emulated extent." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: 0x1700 remains a hypothesis; caller image length defines the emulated extent." }
+
+[[functions]]
+id = "original-identity"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = ["wii-original-remote-consumer-revision"], reason = "Source-backed name/VID/PID; provider bus isUSB3 instead of the kernel consumer Bluetooth5 and has no fuzz field." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Original name/identity on UHID bus5 with synthetic vendor-page descriptor; retail descriptor/physical fidelity unclaimed." }
+
+[[functions]]
+id = "tr-identity"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-tr-consumer-revision"], reason = "Source-backed distinct TR name/product; live TR consumer run not performed." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-tr-consumer-revision"], reason = "TR remains distinct from Original/early Plus; live TR or physical revision acceptance untested." }
+
+[[functions]]
+id = "early-plus-identity"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::tests::revisions_remain_distinct_and_unknown_identity_is_not_promoted", evidence = ["wii-early-plus-revision-gap"], reason = "No evidence: no source-backed discriminator; constructor rejects before opening provider resources." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::tests::revisions_remain_distinct_and_unknown_identity_is_not_promoted", evidence = ["wii-early-plus-revision-gap"], reason = "No evidence: no inferred Original/TR identity fallback." }
+
+[[functions]]
+id = "bluetooth-driver-binding"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = [], reason = "unavailable in this realization: evdev nodes have no HID parent for wiimote binding." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Exact creation-owned virtual bus5 device bound to wiimote on Linux6.12.113+deb13-arm64. No radio/pairing/BlueZ." }
+
+[[functions]]
+id = "evdev-golden-shape"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = ["wii-c5-evdev-golden", "wii-c5-evdev-consumer-shape"], reason = "All six fake-provider names/codes/min/max/flat sets match hash-verified kernel extraction. BUS_USB and missing fuzz are documented deviations." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-c5-evdev-golden"], reason = "All six live names and key/axis masks matched; live absinfo ranges/fuzz/resolution were not measured." }
+
+[[functions]]
+id = "live-axis-ranges-and-sensor-delivery"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: live numeric absinfo and sensor delivery not measured; source/fake shape is separate." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "untested: interface masks alone do not establish absinfo ranges, samples, calibration or IR tracking." }
+
+[[functions]]
+id = "extension-hot-swap"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::fake_provider_observes_source_shapes_and_dynamic_companions_with_rollback", evidence = ["wii-c5-evdev-consumer-shape"], reason = "Prepare failure preserves old nodes; removed companions close without affecting siblings." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_init", evidence = ["wii-kernel-status-ack-flow", "wii-c5-bt-host-binding"], reason = "Disconnect/reconnect edges and same-kind init retention tested; live Nunchuk-to-Classic replacement observed." }
+
+[[functions]]
+id = "creation-removal-n1"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "xtask::run", evidence = ["wii-c5-uinput-n1-host-run"], reason = "Ten repeated cycles at concurrency1 on tracked-clean ccb98dc; missing consumer/oracle cells retained. No latency budget." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "xtask::run", evidence = ["wii-c5-bt-n1-host-run"], reason = "Ten repeated cycles at concurrency1 on tracked-clean ccb98dc; early-initialization close can take seconds. No latency or whole-controller acceptance." }
+
+[[functions]]
+id = "creation-removal-n4"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "xtask::run", evidence = ["wii-c5-uinput-n4-host-run"], reason = "Ten repeated cycles at concurrency4 on tracked-clean ccb98dc; missing consumer/oracle cells retained. No latency budget." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "xtask::run", evidence = ["wii-c5-bt-n4-host-run"], reason = "Ten repeated cycles at concurrency4 on tracked-clean ccb98dc; early-initialization close can take seconds. No latency or whole-controller acceptance." }
+
+[[functions]]
+id = "cleanup-and-sibling-isolation"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "wii_remote::native_tests::failed_creation_rolls_back_prepared_nodes_and_fatal_service_closes_only_its_controller", evidence = ["wii-c5-uinput-n4-host-run"], reason = "Deterministic creation rollback/fatal-service sibling isolation/idempotent close plus bounded live resource restoration." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::codec::tests::transport_requests_are_replied_in_the_same_poll_and_cleanup_is_idempotent", evidence = ["wii-c5-bt-n4-host-run"], reason = "Required HID replies same-poll; bounded live close/disappearance and resource restoration." }
+
+[[functions]]
+id = "sdl-hidapi-wii"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "not_run", evidence = ["wii-sdl-extension-modes"], reason = "untested: SDL HIDAPI Wii driver not run; generic evdev/native support is not HIDAPI acceptance." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = ["wii-sdl-extension-modes"], reason = "untested: SDL HIDAPI Wii driver not run; wiimote binding does not prove HIDAPI acceptance." }
+
+[[functions]]
+id = "dolphin"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "not_run", evidence = ["wii-dolphin-hidapi-probe"], reason = "untested: Dolphin consumer not run; Real Wii Remote passthrough is outside D7 scope." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = ["wii-dolphin-hidapi-probe"], reason = "untested: Dolphin consumer not run; compatibility-source evidence is not application acceptance." }
+
+[[functions]]
+id = "speaker"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: separately gated in-band realization under D7/ADR0023." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: separately gated in-band realization under D7/ADR0023." }
+
+[[functions]]
+id = "real-bluetooth"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: radio, pairing and BlueZ deferred to #164." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: radio, pairing and BlueZ deferred to #164." }
+
+[[functions]]
+id = "usb-uhid"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: fixture-only experiment under D7; not a declared production realization." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: fixture-only experiment under D7; not a declared production realization." }
+
+[[functions]]
+id = "firmware-cadence"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: evdev reports follow application commits; no firmware report clock." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::codec::tests::interleaved_acceleration_preserves_the_two_z_halves_and_alternates_modes", evidence = ["wii-c5-report-layouts"], reason = "untested: no measured firmware interval invented; application commits and host requests drive source-model reports." }
+
+[[functions]]
+id = "first-valid-neutral"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: no validated neutral consumer-report oracle; commit success is not delivery." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: no validated neutral consumer-report oracle; node appearance is not delivery." }
+
+[[functions]]
+id = "demo-native-editing"
+[functions.cells]
+"linux.uinput" = { status = "source-evidence", test_id = "gui::native_editor::registry_tests::wii_native_edits_cover_all_core_positions_and_raw_sensor_domains", evidence = ["wii-c5-evdev-native-values"], reason = "Deterministic native core/raw sensor conversions; generic headless topology renderer and existing lifecycle suite. Interactive desktop/game acceptance untested." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "gui::native_editor::registry_tests::wii_native_edits_cover_all_core_positions_and_raw_sensor_domains", evidence = ["wii-c5-report-layouts"], reason = "Supporting constructor, typed IR editor and attachment commands wired; interactive desktop/game acceptance untested." }

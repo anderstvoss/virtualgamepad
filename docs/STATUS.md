@@ -200,7 +200,10 @@ matched all six interface names and key/axis masks, observed Nunchuk-to-Classic
 replacement and standalone MP, and verified power_supply presence and kernel
 evdev rumble reaching retained intent. LED-class writes failed permission checks.
 Live absinfo/fuzz and sensor delivery, SDL HIDAPI, Dolphin, physical fidelity and
-calibration remain unmeasured. Timing and feature acceptance are finalized in13e.
+calibration remain unmeasured. The [Wii report](WII_REMOTE.md) and acceptance manifest record38 feature rows
+across both realizations. Four10-cycle N1/N4 runs yielded100 creation/removal
+samples at ccb98dc with resource restoration; consumer/oracle gaps and slow
+early-initialization UHID removal remain explicit. There is no latency budget.
 
 Classic Pro wire identity, early Plus discrimination, encrypted/calibration
 register defaults, retail EEPROM size and visible extended/full IR blob metadata
