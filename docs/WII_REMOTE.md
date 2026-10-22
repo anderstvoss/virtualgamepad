@@ -169,11 +169,14 @@ was established. No ROM/emulation session was used; bounded timeout124 is
 termination, not application acceptance. Uinput has no HID endpoint for either
 of these HID-specific consumer cells.
 
-All runs kept `wiimote` bound. No root, installation, udev, unbind, permission or
-module-policy change occurred. Further hidraw/LED access awaits the exact per-node commands and Anders
-confirming his temporary grant under
+These historical runs kept `wiimote` bound and made no root, installation, udev,
+unbind, permission or module-policy change. Anders subsequently confirmed the
+five temporary per-node grants authorized by
 [the owner decision on176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6347519179).
-The acceptance manifest retains these blocks and the missing neutral oracle.
+The later granted reruns are separate new records in
+[research PR28](https://github.com/anderstvoss/controller-protocol-research/pull/28),
+not retained by this pin. The manifest preserves the historical blocked results
+and missing neutral oracle; it does not claim that grants are still pending.
 Research pin adoption does not adopt independent `wii-gap-*` protocol behavior:
 Classic Pro, early Plus, descriptor and other existing refusals remain unchanged.
 

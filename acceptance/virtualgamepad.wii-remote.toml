@@ -195,7 +195,7 @@ id = "sdl-hidapi-wii"
 id = "dolphin"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run"], reason = "untested: existing Flatpak2609a bounded startup sees owned hidraw inside sandbox but open denied. No internal backend connection, report modes, memory reads, extension init or MotionPlus activation observed. No ROM/emulation session; timeout is termination, not application acceptance. wiimote remains bound; host permission question on176." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run"], reason = "untested: existing Flatpak2609a bounded startup sees owned hidraw inside sandbox but open denied. No internal backend connection, report modes, memory reads, extension init or MotionPlus activation observed. No ROM/emulation session; timeout is termination, not application acceptance. wiimote remains bound. Historical pre-grant result; later human-granted reruns are separate records outside this pin." }
 
 [[functions]]
 id = "speaker"
