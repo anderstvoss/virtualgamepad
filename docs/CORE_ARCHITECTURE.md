@@ -250,5 +250,8 @@ continues to govern future in-band subsystems.
 The compiled `wii_remote` package keeps buttons, raw acceleration, IR point slots,
 accessory state and the independent MotionPlus bridge in typed native state.
 Host LED/rumble intent has a separate retained-state type. The ordinary-root API
-is unchanged; supporting package types are not a new root constructor. Skeleton
+is unchanged; supporting package types are not a new root constructor. Family
 registration grants no broker tag, USB/audio profile or gadget realization.
+The package owns dynamic evdev companions and Bluetooth-bus UHID semantics;
+providers remain generic transport endpoints. Typed EEPROM snapshots and live
+attachment subsets use the opt-in C2 seams without changing ordinary handles.

@@ -110,7 +110,7 @@ pub enum WiiExtension {
 }
 
 /// The bridge and its downstream accessory are independent topology facts.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiMotionPlusState {
     pub attached: bool,
     pub gyroscope: [u16; 3],
@@ -149,7 +149,7 @@ impl WiiRemoteState {
                     revision,
                     WiiRemoteRevision::Tr | WiiRemoteRevision::EarlyIntegratedPlus
                 ),
-                gyroscope: [0; 3],
+                gyroscope: [8192; 3],
                 slow: [false; 3],
             },
             battery: 0,
@@ -168,6 +168,10 @@ impl WiiRemoteState {
         };
         self.motion_plus.gyroscope = [8192; 3];
         self.motion_plus.slow = [false; 3];
+    }
+    #[must_use]
+    pub fn input_topology(&self) -> &'static gr_controller_contract::InputTopology {
+        topology::current(self.extension(), self.motion_plus.attached)
     }
     #[must_use]
     pub const fn revision(&self) -> WiiRemoteRevision {
@@ -203,6 +207,30 @@ impl WiiRemoteState {
     #[must_use]
     pub const fn extension(&self) -> &WiiExtension {
         &self.extension
+    }
+    pub fn set_extension_values(&mut self, value: WiiExtension) -> Result<(), ControlError> {
+        if std::mem::discriminant(&value) != std::mem::discriminant(&self.extension) {
+            return Err(ControlError::UnsupportedControl {
+                control: "extension kind requires attachment transition",
+            });
+        }
+        extensions::validate(&value)?;
+        self.extension = value;
+        Ok(())
+    }
+    pub fn set_motion_plus_values(
+        &mut self,
+        gyroscope: [u16; 3],
+        slow: [bool; 3],
+    ) -> Result<(), ControlError> {
+        if !self.motion_plus.attached || gyroscope.iter().any(|v| *v > 16383) {
+            return Err(ControlError::UnsupportedControl {
+                control: "MotionPlus absent or outside fourteen bits",
+            });
+        }
+        self.motion_plus.gyroscope = gyroscope;
+        self.motion_plus.slow = slow;
+        Ok(())
     }
     #[must_use]
     pub const fn motion_plus(&self) -> &WiiMotionPlusState {
@@ -295,7 +323,7 @@ mod definition;
 pub use definition::{BLUETOOTH, TOPOLOGY, UINPUT, WiiRemoteDefinition};
 
 mod controller;
-pub use controller::{WiiRemoteController, create_wii_remote};
+pub use controller::{WiiRemoteController, create_wii_remote, create_wii_remote_with_image};
 
 mod codec;
 
@@ -328,3 +356,24 @@ impl Default for WiiClassicState {
 }
 #[cfg(test)]
 mod lifecycle_tests;
+
+mod native;
+mod realizations;
+
+#[cfg(test)]
+mod native_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod live_tests;
+
+impl Default for WiiMotionPlusState {
+    fn default() -> Self {
+        // wii-kernel-motionplus-pass-through: nonrotating raw center is8192,
+        // independent of physical calibration or fast/slow selection.
+        Self {
+            attached: false,
+            gyroscope: [8192; 3],
+            slow: [false; 3],
+        }
+    }
+}

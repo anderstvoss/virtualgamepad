@@ -172,6 +172,18 @@ impl WiiProtocol {
             ..Self::default()
         }
     }
+    /// Native validation configuration has no HID host or reply queue.
+    pub(super) fn install_attachment(
+        &mut self,
+        extension: super::WiiExtension,
+        motion_plus: bool,
+    ) -> Result<(), Error> {
+        super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
+        self.state.extension = extension;
+        self.state.motion_plus.attached = motion_plus;
+        self.memory.reset_extension();
+        Ok(())
+    }
     pub(super) fn change_attachment(
         &mut self,
         extension: super::WiiExtension,
@@ -179,13 +191,23 @@ impl WiiProtocol {
         now: u64,
     ) -> Result<(), Error> {
         super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
-        if self.pending.len() >= MAX_PENDING {
+        // wii-kernel-status-ack-flow: replacement needs a disconnect edge,
+        // otherwise the consumer retains the old extension's input device.
+        let replacement = self.memory.present(&self.state)
+            && !matches!(extension, super::WiiExtension::None)
+            && std::mem::discriminant(self.state.extension()) != std::mem::discriminant(&extension);
+        let count = if replacement { 2 } else { 1 };
+        if self.pending.len() + count > MAX_PENDING {
             return Err(Error::QueueFull);
         }
-        self.state.extension = extension;
-        self.state.motion_plus.attached = motion_plus;
-        self.memory.reset_extension();
-        self.pending.push_back(self.status());
+        self.install_attachment(extension, motion_plus)?;
+        let status = self.status();
+        if replacement {
+            let mut bytes = status.payload().to_vec();
+            bytes[2] &= !2;
+            self.pending.push_back(input(0x20, bytes));
+        }
+        self.pending.push_back(status);
         self.next = Some(now);
         Ok(())
     }
@@ -416,3 +438,30 @@ impl crate::common::resources::ResourceProtocol for WiiProtocol {
 
 #[cfg(test)]
 mod tests;
+
+impl crate::retained::RetainedProtocol for WiiProtocol {
+    type Outputs = super::WiiRemoteOutputs;
+    fn retained(&self) -> &Self::Outputs {
+        &self.outputs
+    }
+}
+impl crate::retained::OutputState for super::WiiRemoteOutputs {
+    fn apply(&mut self, report: &Report) -> Result<(), ReplyError> {
+        let mut protocol = WiiProtocol {
+            outputs: *self,
+            ..Default::default()
+        };
+        protocol.accept(report, 0)?;
+        *self = protocol.outputs;
+        Ok(())
+    }
+    fn from_native(playback: crate::retained::NativePlayback) -> Self {
+        Self {
+            revision: playback.revision,
+            leds: [false; 4],
+            rumble: playback
+                .latest
+                .is_some_and(|p| p.repetitions != 0 && (p.strong != 0 || p.weak != 0)),
+        }
+    }
+}
