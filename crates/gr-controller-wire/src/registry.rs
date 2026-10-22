@@ -102,6 +102,15 @@ pub const XBOX360: FamilySpec = FamilySpec {
         false,
     )),
 };
+/// Wii has no broker/audio/gadget profile; bus-5 UHID and uinput only.
+pub const WII_REMOTE: FamilySpec = FamilySpec {
+    id: ControllerId::new("virtualgamepad.wii-remote"),
+    worker_name: "wii-remote",
+    broker_tag: None,
+    dummy_hcd_tag: None,
+    dummy_hcd_report_length: None,
+    usb_profile: None,
+};
 /// One source list for metadata and typed implementation dispatch. The callback
 /// expands only at compile time; this is not a runtime registration interface.
 #[macro_export]
@@ -112,6 +121,7 @@ macro_rules! compiled_families {
             (dualshock4, DualShock4Definition, DUALSHOCK4, [DualShock4]),
             (switch_pro, SwitchProDefinition, SWITCH_PRO, []),
             (xbox360, Xbox360Definition, XBOX360, [Xbox360]),
+            (wii_remote, WiiRemoteDefinition, WII_REMOTE, []),
         }
     };
 }

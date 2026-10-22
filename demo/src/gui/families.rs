@@ -16,13 +16,15 @@ pub(super) enum Kind {
     DualSense,
     DualShock4,
     SwitchPro,
+    WiiRemote,
 }
 impl Kind {
-    pub(super) const ALL: [Self; 4] = [
+    pub(super) const ALL: [Self; 5] = [
         Self::Xbox360,
         Self::DualSense,
         Self::DualShock4,
         Self::SwitchPro,
+        Self::WiiRemote,
     ];
     pub(super) const fn label(self) -> &'static str {
         match self {
@@ -30,6 +32,7 @@ impl Kind {
             Self::DualSense => "DualSense",
             Self::DualShock4 => "DualShock 4",
             Self::SwitchPro => "Switch Pro Controller",
+            Self::WiiRemote => "Wii Remote",
         }
     }
 
@@ -39,6 +42,7 @@ impl Kind {
             Self::DualSense => "DUALSENSE",
             Self::DualShock4 => "DS4",
             Self::SwitchPro => "SWITCHPRO",
+            Self::WiiRemote => "WII",
         }
     }
 
@@ -48,6 +52,7 @@ impl Kind {
             Self::DualSense => audio_topology::ControllerFamily::DualSense,
             Self::DualShock4 => audio_topology::ControllerFamily::DualShock4,
             Self::SwitchPro => audio_topology::ControllerFamily::SwitchPro,
+            Self::WiiRemote => audio_topology::ControllerFamily::WiiRemote,
         }
     }
 }
@@ -56,6 +61,7 @@ pub(super) enum Controller {
     DualSense(DualSenseController),
     DualShock4(DualShock4Controller),
     SwitchPro(SwitchProController),
+    WiiRemote(gr_curated_controllers::wii_remote::WiiRemoteController),
 }
 
 impl Kind {
@@ -65,6 +71,7 @@ impl Kind {
             Self::DualSense => "virtualgamepad.dualsense",
             Self::DualShock4 => "virtualgamepad.dualshock4",
             Self::SwitchPro => "virtualgamepad.switch-pro",
+            Self::WiiRemote => "virtualgamepad.wii-remote",
         })
     }
     pub(super) fn entry(self) -> &'static gr_curated_controllers::registry::FamilyEntry {
@@ -103,6 +110,13 @@ impl Kind {
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
             Self::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
             Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
+            Self::WiiRemote => {
+                gr_curated_controllers::wii_remote::create_wii_remote(options.target, 0)
+                    .map(Controller::WiiRemote)
+                    .map_err(|e| virtualgamepad::ControllerError::Open {
+                        reason: e.to_string(),
+                    })
+            }
         }
     }
     pub(super) const fn validation_soak() -> Self {
@@ -116,7 +130,7 @@ impl ServicedController for Controller {
             Self::Xbox(c) => c.audio(),
             Self::DualSense(c) => c.audio(),
             Self::DualShock4(c) => c.audio(),
-            Self::SwitchPro(_) => None,
+            Self::SwitchPro(_) | Self::WiiRemote(_) => None,
         }
     }
     fn backend_healthy(&mut self) -> bool {
@@ -129,6 +143,7 @@ impl ServicedController for Controller {
             Self::DualSense(c) => c.neutralize(),
             Self::DualShock4(c) => c.neutralize(),
             Self::SwitchPro(c) => c.neutralize(),
+            Self::WiiRemote(c) => c.neutralize(),
         }
         .map_err(|error| error.to_string())
     }
@@ -166,6 +181,7 @@ impl Controller {
             Self::DualSense(c) => c.diagnostics(),
             Self::DualShock4(c) => c.diagnostics(),
             Self::SwitchPro(c) => c.diagnostics(),
+            Self::WiiRemote(c) => return c.diagnostics().last_error,
         };
         diagnostics.last_error().map(str::to_owned)
     }
@@ -175,6 +191,9 @@ impl Controller {
             Self::DualSense(controller) => controller.diagnostics().status(),
             Self::DualShock4(controller) => controller.diagnostics().status(),
             Self::SwitchPro(controller) => controller.diagnostics().status(),
+            Self::WiiRemote(c) => {
+                return !c.is_closed() && c.diagnostics().last_error.is_none();
+            }
         };
         backend_status_is_healthy(status)
     }
@@ -185,6 +204,7 @@ impl Controller {
             Self::DualSense(controller) => controller.next_service_in(),
             Self::DualShock4(controller) => controller.next_service_in(),
             Self::SwitchPro(controller) => controller.next_service_in(),
+            Self::WiiRemote(controller) => controller.next_service_in(),
         }
     }
 
@@ -221,6 +241,7 @@ impl Controller {
             Self::DualSense(controller) => controller.commit(),
             Self::DualShock4(controller) => controller.commit(),
             Self::SwitchPro(controller) => controller.commit(),
+            Self::WiiRemote(controller) => controller.commit(),
         };
         result.map_err(|error| error.to_string())
     }
@@ -230,6 +251,7 @@ impl Controller {
             Self::DualSense(controller) => controller.close(),
             Self::DualShock4(controller) => controller.close(),
             Self::SwitchPro(controller) => controller.close(),
+            Self::WiiRemote(controller) => controller.close(),
         }
     }
     pub(super) fn is_dirty(&self) -> bool {
@@ -238,6 +260,7 @@ impl Controller {
             Self::DualSense(controller) => controller.is_dirty(),
             Self::DualShock4(controller) => controller.is_dirty(),
             Self::SwitchPro(controller) => controller.is_dirty(),
+            Self::WiiRemote(controller) => controller.is_dirty(),
         }
     }
     pub(super) fn poll_output(
@@ -301,6 +324,11 @@ impl Controller {
                     log.push(format!("DualShock 4: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
+            Self::WiiRemote(controller) => controller
+                .service(&mut |event| {
+                    log.push(format!("Wii Remote: {event:?}"));
+                })
+                .map_err(|e| e.to_string()),
             Self::SwitchPro(controller) => controller
                 .service(&mut |event| {
                     if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {
@@ -320,6 +348,7 @@ impl ControllerView {
             Self::DualSense(controller) => controller.surface(),
             Self::DualShock4(controller) => controller.surface(),
             Self::SwitchPro(controller) => controller.surface(),
+            Self::WiiRemote(controller) => controller.surface(),
         }
     }
 
@@ -329,6 +358,7 @@ impl ControllerView {
             Self::DualSense(c) => c,
             Self::DualShock4(c) => c,
             Self::SwitchPro(c) => c,
+            Self::WiiRemote(c) => c,
         }
     }
     pub(super) fn draw(
@@ -337,13 +367,18 @@ impl ControllerView {
         controller_id: u64,
         input_ui: &mut InputUiState,
     ) {
+        if let Self::WiiRemote(editor) = self {
+            editor.draw_wii(ui);
+        }
         input_clusters::draw_editor(ui, controller_id, self.input_editor(), input_ui);
     }
     pub(super) fn battery(&self) -> BatteryState {
         match self {
             Self::Xbox(controller) => controller.state().battery(),
             Self::DualSense(controller) => controller.state().battery(),
-            Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => {
+                BatteryState::default()
+            }
         }
     }
     pub(super) const fn supports_battery_emulation(&self) -> bool {
@@ -353,14 +388,14 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => controller.set_battery_exposed(exposed),
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
-            Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => Ok(()),
         }
     }
     pub(super) fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
-            Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => Ok(()),
         }
     }
 }

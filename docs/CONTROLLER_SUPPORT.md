@@ -8,8 +8,9 @@ Sustained audio continuity and latency are not validated in alpha; occasional au
 All support entries remain **WIP**; bounded alpha acceptance does not promote
 these cells. WIP includes implemented work under assessment and work not yet
 started. It does not
-promise that every combination will ship. The later-controller rows are planned
-future workflow exercises, not new controller APIs or current support.
+promise that every combination will ship. The Steam/Xbox Series rows are planned workflow exercises. Wii Remote has a
+WIP supporting package and an explicit per-feature matrix; no whole-controller
+support promotion is inferred.
 
 | Controller | Linux uinput / evdev | USB personality over Linux UHID | USB HID through dummy_hcd | Bluetooth personality over UHID¹ | Actual Bluetooth¹ |
 | --- | --- | --- | --- | --- | --- |
@@ -19,10 +20,12 @@ future workflow exercises, not new controller APIs or current support.
 | Xbox 360 | WIP | WIP | Unavailable² | WIP | WIP |
 | Steam Controller (2026) + Puck | WIP | WIP | WIP | WIP | WIP |
 | Xbox Series | WIP | WIP | WIP | WIP | WIP |
-| Wii Remote | WIP | WIP | WIP | WIP | WIP |
+| Wii Remote | WIP | Unavailable³ | Unavailable³ | WIP | Deferred³ |
 
-¹ Gated concepts, not production realization IDs. USB personality over UHID is a
-virtual HID presentation; dummy_hcd is a separate optional gadget realization.
+¹ `linux.uhid.bluetooth` is a local UHID node with Bluetooth bus5 metadata,
+available only where a compiled family manifest declares it. It provides no
+radio, pairing or BlueZ. Actual Bluetooth remains deferred to #164. USB
+personality over UHID is a virtual HID presentation; dummy_hcd is separate.
 The Xbox 360 HID profiles are standard HID, not USB XInput. This table does not
 claim hardware fidelity, full function parity, audio or composite USB support.
 
@@ -61,9 +64,12 @@ Normal root constructors reject dummy_hcd before resource creation. The
 [historical function review](history/alpha-1/CURRENT_CONTROLLER_REFINEMENT.md)
 records the Alpha 1 per-function assessment.
 
-Production Wii Remote remains positively gated on later maintainer authorization.
-The test-only Wii-like topology experiment does not enable a controller package,
-demo entry, Bluetooth personality, or any support cell.
+³ D6/D7 authorize the Wii supporting package on uinput and Bluetooth-bus UHID.
+USB-bus UHID remains a fixture-only experiment, dummy_hcd is not declared, and
+actual Bluetooth is deferred. See the [Wii package and qualification](WII_REMOTE.md)
+and its [38-row feature matrix](../acceptance/virtualgamepad.wii-remote.toml).
+Source-backed code and bounded virtual-host observations do not promote missing
+physical, SDL HIDAPI or Dolphin acceptance cells.
 
 
 ## Audio evidence axes

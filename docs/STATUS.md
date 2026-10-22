@@ -172,4 +172,45 @@ promote missing live, consumer or physical acceptance cells.
 Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
 isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
 The receiver still exists only as a synthetic fixture, so #165 remains open.
-ADR-0023 is adopted under D4. C5 and C6 have not started.
+ADR-0023 is adopted under D4. The owner-directed C5 session is described below.
+
+## C5 Wii Remote buildout
+
+The supporting `gr-curated-controllers::wii_remote` package opens explicit
+`linux.uinput` and Bluetooth-bus UHID (bus5) realizations under D6/D7. Original
+and TR identities remain distinct; early integrated Plus identity is No evidence.
+There is no USB-UHID fallback, radio/pairing/BlueZ or speaker realization.
+Speaker support stays separately gated under D7 and ADR-0023.
+
+The controller owns native buttons, raw accelerometer and typed IR point-set
+inputs, Nunchuk/Classic and external MotionPlus/pass-through, retained host
+LED/rumble intent, raw battery and live attachment generations. The source-backed
+codec services legal modes and status/write/read replies; malformed edits reject
+atomically. Imported EEPROM has an explicit caller-defined extent and terminal
+snapshot/discard policy; no retail size or calibration defaults are invented.
+The C5 review follow-up adds MotionPlus-only disconnect/reconnect edges, bounded
+Stop/Start attachment handling and atomic ACK/status queue reservation. Repeated
+close and Drop call the UHID provider's close only once; focused regressions cover
+these fixes. Research records and historical timing measurements are unchanged.
+
+Native evdev creates separate core/accel/IR nodes and prepares optional extension
+and MP companions before changing shape. Its source conversions preserve values
+beyond advertised ABS bounds and the missing-IR1023/1023 sentinel. Target surfaces
+and regression tests document provider bus/fuzz limits, IR metadata, LED/battery,
+EEPROM and Classic Pro restrictions. Demo creation and native editing are wired.
+
+On Linux6.12.113+deb13-arm64, the bounded host probe at ccb98dc bound `wiimote`,
+matched all six interface names and key/axis masks, observed Nunchuk-to-Classic
+replacement and standalone MP, and verified power_supply presence and kernel
+evdev rumble reaching retained intent. LED-class writes failed permission checks.
+Live absinfo/fuzz and sensor delivery, SDL HIDAPI, Dolphin, physical fidelity and
+calibration remain unmeasured. The [Wii report](WII_REMOTE.md) and acceptance manifest record38 feature rows
+across both realizations. Four10-cycle N1/N4 runs yielded100 creation/removal
+samples at ccb98dc with resource restoration; consumer/oracle gaps and slow
+early-initialization UHID removal remain explicit. There is no latency budget.
+
+Classic Pro wire identity, early Plus discrimination, encrypted/calibration
+register defaults, retail EEPROM size and visible extended/full IR blob metadata
+remain No evidence. No firmware cadence is guessed: application edits/commits and
+host requests drive reports. Research#16 is merged; research#17 publishes native
+conversion evidence and bounded host/timing records without physical promotion.

@@ -58,6 +58,42 @@ class ResearchWorkflow(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unexpected fixture size: sony-contact-pair'):
             MODULE.check(self.root, write=True)
 
+    def test_wii_fixtures_are_adopted_with_fixed_source_shapes(self):
+        MODULE.check(self.root, write=True)
+        generated = self.root / 'tests/fixtures/protocol-research'
+        manifest = json.loads((generated / 'manifest.json').read_text())
+        self.assertEqual(manifest['generator_version'], 4)
+        self.assertEqual(len(list(generated.glob('wii-c5-*.hex'))), 15)
+        self.assertEqual(len(bytes.fromhex((generated / 'wii-c5-neutral-37.hex').read_text())), 22)
+        path = self.corpus / 'fixtures/wii-c5-neutral-37.hex'
+        path.write_text('00' * 23 + '\n')
+        record_path = self.corpus / 'records/fixture/wii-c5-neutral-37.json'
+        record = json.loads(record_path.read_text())
+        record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        record_path.write_text(json.dumps(record))
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'wrong Wii shape with matching hash')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
+        with self.assertRaisesRegex(ValueError, 'unexpected fixture size: wii-c5-neutral-37'):
+            MODULE.check(self.root, write=True)
+
+    def test_consumer_shape_is_checked_independently_of_hash(self):
+        path = self.corpus / 'fixtures/wii-c5-evdev-golden.json'
+        shape = json.loads(path.read_text())
+        shape['controls'].pop()
+        path.write_text(json.dumps(shape))
+        record_path = self.corpus / 'records/fixture/wii-c5-evdev-golden.json'
+        record = json.loads(record_path.read_text())
+        record['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        record_path.write_text(json.dumps(record))
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'wrong consumer shape with matching hash')
+        self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
+        with self.assertRaisesRegex(ValueError, 'unexpected consumer shape'):
+            MODULE.check(self.root, write=True)
+
     def test_missing_and_mismatched_checkout(self):
         (self.corpus / '.git').rename(self.root / 'saved-git')
         with self.assertRaisesRegex(ValueError, 'absent'):

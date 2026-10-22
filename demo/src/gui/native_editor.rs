@@ -529,11 +529,277 @@ impl InputEditor for SwitchProEditor {
     }
 }
 
+impl InputEditor for super::editor::WiiRemoteEditor {
+    fn current_topology(&self) -> &'static InputTopology {
+        self.state().input_topology()
+    }
+    fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)> {
+        use gr_curated_controllers::wii_remote::WiiExtension;
+        match (self.state().extension(), id.as_str()) {
+            (WiiExtension::Nunchuk(n), "nunchuk.stick") => {
+                Some((i32::from(n.stick[0]), i32::from(n.stick[1])))
+            }
+            (WiiExtension::Classic(c), "classic.left-stick") => {
+                Some((i32::from(c.left[0]), i32::from(c.left[1])))
+            }
+            (WiiExtension::Classic(c), "classic.right-stick") => {
+                Some((i32::from(c.right[0]), i32::from(c.right[1])))
+            }
+            _ => None,
+        }
+    }
+    fn trigger_values(&self) -> Vec<(InputControlId, InputValue)> {
+        vec![]
+    }
+    fn extra_axis(&self, id: InputControlId) -> Option<(i32, i32)> {
+        use gr_curated_controllers::wii_remote::WiiExtension;
+        let name = id.as_str();
+        let value = if let Some(i) = wii_axis_index(name, "accel.") {
+            i32::from(self.state().accelerometer()[i])
+        } else if let Some(i) = wii_axis_index(name, "gyro.") {
+            i32::from(self.state().motion_plus().gyroscope[i])
+        } else {
+            match (self.state().extension(), name) {
+                (WiiExtension::Nunchuk(n), _) => {
+                    i32::from(n.accelerometer[wii_axis_index(name, "nunchuk.accel.")?])
+                }
+                (WiiExtension::Classic(c), "classic.lt") => i32::from(c.triggers[0]),
+                (WiiExtension::Classic(c), "classic.rt") => i32::from(c.triggers[1]),
+                _ => return None,
+            }
+        };
+        Some((value, 0))
+    }
+    fn apply_events(&mut self, events: Vec<InputEvent>) {
+        for event in events {
+            self.edit_wii(&event);
+        }
+    }
+}
+fn wii_axis_index(name: &str, prefix: &str) -> Option<usize> {
+    match name.strip_prefix(prefix)? {
+        "x" | "pitch" => Some(0),
+        "y" | "roll" => Some(1),
+        "z" | "yaw" => Some(2),
+        _ => None,
+    }
+}
+pub(super) fn apply_wii_event(
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    event: &InputEvent,
+) -> bool {
+    use gr_curated_controllers::wii_remote::WiiExtension;
+    match *event {
+        InputEvent::Button { id, pressed } => apply_wii_button(state, id, pressed),
+        InputEvent::Axis1 { id, value } => {
+            let Ok(value) = u16::try_from(value) else {
+                return false;
+            };
+            if let Some(i) = wii_axis_index(id.as_str(), "accel.") {
+                let mut v = state.accelerometer();
+                v[i] = value;
+                return state.set_accelerometer(v).is_ok();
+            }
+            if let Some(i) = wii_axis_index(id.as_str(), "gyro.") {
+                let m = state.motion_plus();
+                let mut v = m.gyroscope;
+                v[i] = value;
+                return state.set_motion_plus_values(v, m.slow).is_ok();
+            }
+            let mut extension = state.extension().clone();
+            match &mut extension {
+                WiiExtension::Nunchuk(n) => {
+                    let Some(i) = wii_axis_index(id.as_str(), "nunchuk.accel.") else {
+                        return false;
+                    };
+                    n.accelerometer[i] = value;
+                }
+                WiiExtension::Classic(c) => {
+                    let i = match id.as_str() {
+                        "classic.lt" => 0,
+                        "classic.rt" => 1,
+                        _ => return false,
+                    };
+                    let Ok(value) = u8::try_from(value) else {
+                        return false;
+                    };
+                    c.triggers[i] = value;
+                }
+                _ => return false,
+            }
+            state.set_extension_values(extension).is_ok()
+        }
+        InputEvent::Axis2 { id, x, y } => {
+            let (Ok(x), Ok(y)) = (u8::try_from(x), u8::try_from(y)) else {
+                return false;
+            };
+            let mut extension = state.extension().clone();
+            match (&mut extension, id.as_str()) {
+                (WiiExtension::Nunchuk(n), "nunchuk.stick") => n.stick = [x, y],
+                (WiiExtension::Classic(c), "classic.left-stick") => c.left = [x, y],
+                (WiiExtension::Classic(c), "classic.right-stick") => c.right = [x, y],
+                _ => return false,
+            }
+            state.set_extension_values(extension).is_ok()
+        }
+        _ => false,
+    }
+}
+
+fn wii_classic_button_index(id: InputControlId) -> Option<usize> {
+    [
+        "classic.a",
+        "classic.b",
+        "classic.x",
+        "classic.y",
+        "classic.zl",
+        "classic.zr",
+        "classic.plus",
+        "classic.minus",
+        "classic.home",
+        "classic.left",
+        "classic.right",
+        "classic.up",
+        "classic.down",
+        "classic.l",
+        "classic.r",
+    ]
+    .iter()
+    .position(|name| *name == id.as_str())
+}
+fn apply_wii_button(
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    id: InputControlId,
+    pressed: bool,
+) -> bool {
+    use gr_curated_controllers::wii_remote::{WiiExtension, WiiRemoteButton as B};
+    let button = match id.as_str() {
+        "left" => Some(B::Left),
+        "right" => Some(B::Right),
+        "up" => Some(B::Up),
+        "down" => Some(B::Down),
+        "plus" => Some(B::Plus),
+        "minus" => Some(B::Minus),
+        "a" => Some(B::A),
+        "b" => Some(B::B),
+        "one" => Some(B::One),
+        "two" => Some(B::Two),
+        "home" => Some(B::Home),
+        _ => None,
+    };
+    if let Some(button) = button {
+        state.set_button(button, pressed);
+        return true;
+    }
+    let mut extension = state.extension().clone();
+    match &mut extension {
+        WiiExtension::Nunchuk(n) => match id.as_str() {
+            "nunchuk.c" => n.c = pressed,
+            "nunchuk.z" => n.z = pressed,
+            _ => return false,
+        },
+        WiiExtension::Classic(c) => {
+            let Some(index) = wii_classic_button_index(id) else {
+                return false;
+            };
+            c.buttons[index] = pressed;
+        }
+        _ => return false,
+    }
+    state.set_extension_values(extension).is_ok()
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::super::{InputUiState, Kind, Pos2, RealizationId, Vec2, editor, egui};
     use super::*;
 
+    #[test]
+    fn wii_classic_lookup_covers_tail_positions_beyond_a_visible_row() {
+        // Fifteen native extension keys; positions are independent of layout
+        // viewport and incoming event order, including the tail R/L controls.
+        for (name, index) in [
+            ("classic.r", 14),
+            ("classic.home", 8),
+            ("classic.a", 0),
+            ("classic.left", 9),
+            ("classic.l", 13),
+            ("classic.b", 1),
+        ] {
+            assert_eq!(
+                wii_classic_button_index(InputControlId::new(name)),
+                Some(index)
+            );
+        }
+        assert_eq!(
+            wii_classic_button_index(InputControlId::new("classic.unknown")),
+            None
+        );
+        assert_eq!(wii_classic_button_index(InputControlId::new("home")), None);
+    }
+    #[test]
+    fn wii_native_edits_cover_all_core_positions_and_raw_sensor_domains() {
+        use gr_curated_controllers::wii_remote::{
+            WiiRemoteButton, WiiRemoteRevision, WiiRemoteState,
+        };
+        let names = [
+            "left", "right", "up", "down", "plus", "minus", "one", "two", "a", "b", "home",
+        ];
+        let buttons = [
+            WiiRemoteButton::Left,
+            WiiRemoteButton::Right,
+            WiiRemoteButton::Up,
+            WiiRemoteButton::Down,
+            WiiRemoteButton::Plus,
+            WiiRemoteButton::Minus,
+            WiiRemoteButton::One,
+            WiiRemoteButton::Two,
+            WiiRemoteButton::A,
+            WiiRemoteButton::B,
+            WiiRemoteButton::Home,
+        ];
+        for (index, name) in names.into_iter().enumerate() {
+            let mut state = WiiRemoteState::default();
+            assert!(apply_wii_event(
+                &mut state,
+                &InputEvent::Button {
+                    id: InputControlId::new(name),
+                    pressed: true
+                }
+            ));
+            for (i, button) in buttons.iter().enumerate() {
+                assert_eq!(state.pressed(*button), i == index);
+            }
+        }
+        let mut state = WiiRemoteState::new(WiiRemoteRevision::Tr);
+        for name in ["accel.x", "accel.y", "accel.z"] {
+            assert!(apply_wii_event(
+                &mut state,
+                &InputEvent::Axis1 {
+                    id: InputControlId::new(name),
+                    value: 1023
+                }
+            ));
+        }
+        assert_eq!(state.accelerometer(), [1023; 3]);
+        let before = state.clone();
+        assert!(!apply_wii_event(
+            &mut state,
+            &InputEvent::Axis1 {
+                id: InputControlId::new("accel.x"),
+                value: 1024
+            }
+        ));
+        assert_eq!(state, before);
+        assert!(apply_wii_event(
+            &mut state,
+            &InputEvent::Axis1 {
+                id: InputControlId::new("gyro.yaw"),
+                value: 16383
+            }
+        ));
+        assert_eq!(state.motion_plus().gyroscope, [8192, 8192, 16383]);
+    }
     #[test]
     fn every_compiled_family_produces_a_native_topology_editor() {
         let registered = Kind::registered();

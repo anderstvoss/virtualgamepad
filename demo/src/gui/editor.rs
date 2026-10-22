@@ -60,11 +60,14 @@ pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
 pub(super) type DualSenseEditor = Editor<DualSenseState, Surface>;
 pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
 pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
+pub(super) type WiiRemoteEditor =
+    Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
     DualSense(DualSenseEditor),
     DualShock4(DualShock4Editor),
     SwitchPro(SwitchProEditor),
+    WiiRemote(WiiRemoteEditor),
 }
 impl<S> Editor<S, Surface> {
     fn new(
@@ -100,9 +103,82 @@ impl Controller {
             Self::DualSense(c) => view!(c, DualSense),
             Self::DualShock4(c) => view!(c, DualShock4),
             Self::SwitchPro(c) => view!(c, SwitchPro),
+            Self::WiiRemote(c) => {
+                ControllerView::WiiRemote(Editor::new(c.state().clone(), c.surface(), None, None))
+            }
         }
     }
 }
+impl WiiRemoteEditor {
+    pub(super) fn edit_wii(&mut self, event: &super::InputEvent) {
+        if !super::native_editor::apply_wii_event(&mut self.state, event) {
+            return;
+        }
+        let state = self.state.clone();
+        let _ = self.queue(Box::new(move |c| match c {
+            Controller::WiiRemote(c) => c.set_inputs(state).map_err(|e| e.to_string()),
+            _ => Err("Wii editor mismatch".into()),
+        }));
+    }
+    pub(super) fn draw_wii(&mut self, ui: &mut super::egui::Ui) {
+        use gr_curated_controllers::wii_remote::{
+            WiiClassicState, WiiExtension, WiiIrPoint, WiiNunchukState,
+        };
+        let mut extension = match self.state.extension() {
+            WiiExtension::None => 0,
+            WiiExtension::Nunchuk(_) => 1,
+            _ => 2,
+        };
+        let before = extension;
+        let mut mp = self.state.motion_plus().attached;
+        let old_mp = mp;
+        ui.horizontal(|ui| {
+            ui.label("Extension");
+            ui.selectable_value(&mut extension, 0, "None");
+            ui.selectable_value(&mut extension, 1, "Nunchuk");
+            ui.selectable_value(&mut extension, 2, "Classic");
+            ui.checkbox(&mut mp, "MotionPlus");
+        });
+        if extension != before || mp != old_mp {
+            let value = match extension {
+                1 => WiiExtension::Nunchuk(WiiNunchukState::default()),
+                2 => WiiExtension::Classic(WiiClassicState::default()),
+                _ => WiiExtension::None,
+            };
+            let _ = self.queue(Box::new(move |c| match c {
+                Controller::WiiRemote(c) => c.attach(value, mp).map_err(|e| e.to_string()),
+                _ => Err("Wii editor mismatch".into()),
+            }));
+        }
+        let mut points = *self.state.ir();
+        let old = points;
+        ui.collapsing("IR points", |ui| {
+            for (i, point) in points.iter_mut().enumerate() {
+                let mut visible = point.is_some();
+                let (mut x, mut y) = point.map_or((0, 0), WiiIrPoint::coordinates);
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut visible, format!("Point {}", i + 1));
+                    ui.add(super::egui::DragValue::new(&mut x).range(0..=1023));
+                    ui.add(super::egui::DragValue::new(&mut y).range(0..=767));
+                });
+                *point = if visible {
+                    WiiIrPoint::new(x, y).ok()
+                } else {
+                    None
+                };
+            }
+        });
+        if old != points {
+            self.state.set_ir(points);
+            let _ = self.queue(Box::new(move |c| match c {
+                Controller::WiiRemote(c) => c.set_ir(points).map_err(|e| e.to_string()),
+                _ => Err("Wii editor mismatch".into()),
+            }));
+        }
+        ui.label("Source model: Classic Pro identity and physical calibration remain No evidence.");
+    }
+}
+
 #[cfg(test)]
 pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
     let surface = (kind.entry().realizations)()
@@ -120,6 +196,12 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         super::Kind::DualShock4 => {
             ControllerView::DualShock4(Editor::new(DualShock4State::default(), surface, None, None))
         }
+        super::Kind::WiiRemote => ControllerView::WiiRemote(Editor::new(
+            gr_curated_controllers::wii_remote::WiiRemoteState::default(),
+            surface,
+            None,
+            None,
+        )),
         super::Kind::SwitchPro => {
             ControllerView::SwitchPro(Editor::new(SwitchProState::default(), surface, None, None))
         }
@@ -132,6 +214,7 @@ impl ControllerView {
             Self::DualSense(c) => c.association.as_ref(),
             Self::DualShock4(c) => c.association.as_ref(),
             Self::SwitchPro(c) => c.association.as_ref(),
+            Self::WiiRemote(c) => c.association.as_ref(),
         }
     }
     pub(super) fn lab_details(&self) -> String {
@@ -140,6 +223,7 @@ impl ControllerView {
             Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::WiiRemote(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
         }
     }
     pub(super) fn release_inputs(&mut self) -> Result<(), String> {
@@ -149,6 +233,7 @@ impl ControllerView {
             Self::DualSense(c) => c.queue(edit),
             Self::DualShock4(c) => c.queue(edit),
             Self::SwitchPro(c) => c.queue(edit),
+            Self::WiiRemote(c) => c.queue(edit),
         }
     }
 
@@ -158,6 +243,7 @@ impl ControllerView {
             Self::DualSense(c) => c.take_edits(),
             Self::DualShock4(c) => c.take_edits(),
             Self::SwitchPro(c) => c.take_edits(),
+            Self::WiiRemote(c) => c.take_edits(),
         }
     }
 }

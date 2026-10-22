@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 4
 SUBMODULE = 'protocol-research'
 
 
@@ -51,7 +51,17 @@ def check(root, write=False, verify_remote=False):
     outputs = {}
     inputs = {}
     for name, expected_size in [('ds-neutral', 64), ('ds-cross', 64),
-                                ('ds4-active-layout', 64), ('sony-contact-pair', 8)]:
+                                ('ds4-active-layout', 64), ('sony-contact-pair', 8),
+                                ('wii-c5-neutral-30', 3), ('wii-c5-neutral-31', 6),
+                                ('wii-c5-neutral-32', 11), ('wii-c5-neutral-33', 18),
+                                ('wii-c5-neutral-34', 22), ('wii-c5-neutral-35', 22),
+                                ('wii-c5-neutral-36', 22), ('wii-c5-neutral-37', 22),
+                                ('wii-c5-neutral-3d', 22), ('wii-c5-neutral-3e', 22),
+                                ('wii-c5-neutral-3f', 22), ('wii-c5-status-low', 7),
+                                ('wii-c5-write-invalid-address', 5),
+                                ('wii-c5-read-invalid-address', 22),
+                                ('wii-c5-functional-descriptor', 191),
+                                ('wii-c5-evdev-golden', None)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)
@@ -61,11 +71,18 @@ def check(root, write=False, verify_remote=False):
         data = path.read_bytes()
         if hashlib.sha256(data).hexdigest() != record['sha256']:
             raise ValueError('fixture hash mismatch: ' + name)
-        if len(bytes.fromhex(data.decode().strip())) != expected_size:
+        extension = '.hex'
+        if expected_size is None:
+            extension = '.json'
+            shape = json.loads(data)
+            counts = [sum(c['source_index'] == i for c in shape['controls']) for i in range(6)]
+            if not shape['manifest']['synthetic'] or counts != [12, 3, 8, 7, 21, 3]:
+                raise ValueError('unexpected consumer shape: ' + name)
+        elif len(bytes.fromhex(data.decode().strip())) != expected_size:
             raise ValueError('unexpected fixture size: ' + name)
         inputs[record_path] = hashlib.sha256(record_bytes).hexdigest()
         inputs[record['path']] = record['sha256']
-        outputs[name + '.hex'] = data
+        outputs[name + extension] = data
     outputs['manifest.json'] = (json.dumps(dict(corpus_commit=revision, schema_version=1,
         generator_version=GENERATOR_VERSION, inputs=inputs), indent=2, sort_keys=True) + '\n').encode()
     target = root / 'tests/fixtures/protocol-research'
