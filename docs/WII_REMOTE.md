@@ -28,7 +28,11 @@ Host Stop retains attachment edits without queuing notices or arming deadlines;
 Start reports the current status once, without replaying stopped edits.
 Native uinput companions prepare before installation; a failed prepare leaves
 the old attachment intact. Required host requests are handled before optional
-observations. Call `service` while inputs are idle, and recompute
+observations. Wait on `readiness()` even while inputs are idle, also watching
+writability when `wants_write()` is true. Call `service` on readiness or deadline;
+use periodic service only for `Readiness::Poll`. The descriptor is borrowed until
+close. `dropped_output_events()` counts optional observation loss, without changing
+retained intent. Recompute
 `next_service_in` after edits, commits and service. No measured firmware cadence
 is invented.
 
@@ -49,7 +53,11 @@ memory channel and rejects a nonempty import.
 
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
-supporting API. Interactive desktop/game acceptance remains untested.
+supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
+project a queued transition before same-frame native edits. This changes only
+the snapshot; live nodes still require `WiiRemoteController::attach`. Wii
+association and provider diagnostics are explicitly unavailable in the demo
+ordinary-root lab view. Interactive desktop/game acceptance remains untested.
 
 ## Realization limits
 

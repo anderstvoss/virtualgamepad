@@ -61,6 +61,7 @@ pub(crate) fn injected<D: HidDriver>(
             session,
             closed: false,
             close_error: None,
+            fatal_write: false,
         },
         prepared,
     )
@@ -92,17 +93,20 @@ pub(crate) struct ProviderSessionSink {
     session: Box<dyn NativeProviderSession>,
     closed: bool,
     close_error: Option<String>,
+    fatal_write: bool,
 }
 
 impl FrameSink for ProviderSessionSink {
     type Frame = ProviderFrame;
 
     fn send(&mut self, frame: ProviderFrame) -> Result<(), CommitError> {
-        self.session
-            .send(frame)
-            .map_err(|error| CommitError::Backend {
-                reason: error.to_string(),
-            })
+        let result = self.session.send(frame);
+        self.fatal_write = result
+            .as_ref()
+            .is_err_and(|error| !matches!(error, ProviderError::WouldBlock));
+        result.map_err(|error| CommitError::Backend {
+            reason: error.to_string(),
+        })
     }
 }
 
@@ -260,6 +264,7 @@ where
             session,
             closed: false,
             close_error: None,
+            fatal_write: false,
         },
         prepared,
     )
@@ -478,6 +483,7 @@ mod tests {
             session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
             close_error: None,
+            fatal_write: false,
         };
         sink.close();
         drop(sink);
@@ -487,6 +493,7 @@ mod tests {
             session: Box::new(ClosingSession(Arc::clone(&closes), false)),
             closed: false,
             close_error: None,
+            fatal_write: false,
         };
         drop(dropped);
         assert_eq!(closes.load(Ordering::SeqCst), 2);
@@ -498,6 +505,7 @@ mod tests {
             session: Box::new(ClosingSession(closes.clone(), true)),
             closed: false,
             close_error: None,
+            fatal_write: false,
         };
         sink.close();
         sink.close();

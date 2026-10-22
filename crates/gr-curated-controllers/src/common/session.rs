@@ -394,6 +394,14 @@ impl<D: HidDriver> ControllerSession<D> {
         }
         Ok(())
     }
+    // Keep typed native failures distinct from retryable backpressure. Provider
+    // diagnostics may retain an error while still reporting Open.
+    pub(crate) fn fatal_native_write(&mut self) -> bool {
+        match &mut self.backend {
+            Backend::Native(runtime) => runtime.with_sink(|sink| sink.fatal_write),
+            Backend::Hid { .. } | Backend::Worker { .. } => false,
+        }
+    }
     pub(crate) fn with_sink<R>(&mut self, operation: impl FnOnce(&mut Self) -> R) -> R {
         operation(self)
     }

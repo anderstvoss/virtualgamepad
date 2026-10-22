@@ -110,13 +110,14 @@ impl Kind {
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
             Self::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
             Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
-            Self::WiiRemote => {
-                gr_curated_controllers::wii_remote::create_wii_remote(options.target, 0)
-                    .map(Controller::WiiRemote)
-                    .map_err(|e| virtualgamepad::ControllerError::Open {
-                        reason: e.to_string(),
-                    })
-            }
+            Self::WiiRemote => create_wii_session(
+                options,
+                gr_curated_controllers::wii_remote::create_wii_remote,
+            )
+            .map(Controller::WiiRemote)
+            .map_err(|e| virtualgamepad::ControllerError::Open {
+                reason: e.to_string(),
+            }),
         }
     }
     pub(super) const fn validation_soak() -> Self {
@@ -192,7 +193,7 @@ impl Controller {
             Self::DualShock4(controller) => controller.diagnostics().status(),
             Self::SwitchPro(controller) => controller.diagnostics().status(),
             Self::WiiRemote(c) => {
-                return !c.is_closed() && c.diagnostics().last_error.is_none();
+                return !c.is_closed();
             }
         };
         backend_status_is_healthy(status)
@@ -396,6 +397,38 @@ impl ControllerView {
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
             Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => Ok(()),
+        }
+    }
+}
+
+// Keep the application's actual creation token at the supporting-package boundary.
+fn create_wii_session<T, E>(
+    options: &ControllerOptions,
+    create: impl FnOnce(virtualgamepad::RealizationId, u64) -> Result<T, E>,
+) -> Result<T, E> {
+    create(options.target, options.id)
+}
+
+#[cfg(test)]
+mod wii_tests {
+    use super::*;
+    #[test]
+    fn each_wii_creation_receives_its_application_session_id_and_selected_target() {
+        for id in [1, 7, u64::MAX] {
+            let options = ControllerOptions {
+                target: virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH,
+                id,
+                audio: super::super::audio_lab::CreationAudio::default(),
+            };
+            let received = create_wii_session(&options, |target, session| {
+                Ok::<_, String>((target, session))
+            })
+            .unwrap();
+            assert_eq!(received, (options.target, id));
+            assert_eq!(
+                create_wii_session(&options, |_, _| Err::<(), _>("open failed")),
+                Err("open failed")
+            );
         }
     }
 }
