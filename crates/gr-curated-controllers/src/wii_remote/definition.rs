@@ -76,8 +76,8 @@ pub static TOPOLOGY: InputTopology = InputTopologySpec {
 .build();
 static RESTRICTIONS: &[TargetRestriction] = &[
     TargetRestriction {
-        feature: "production creation",
-        reason: "C5 skeleton; report codec and realizations land in subsequent step PRs",
+        feature: "source-only compatibility model",
+        reason: "synthetic descriptor; factory calibration, early Plus and Classic Pro identity remain No evidence",
     },
     TargetRestriction {
         feature: "speaker",
@@ -88,21 +88,69 @@ static RESTRICTIONS: &[TargetRestriction] = &[
         reason: "No evidence: wii-early-plus-revision-gap",
     },
 ];
-const fn surface(target: RealizationTarget) -> ControllerSurface {
+static NATIVE_OUTPUT_KINDS: &[gr_controller_contract::OutputKind] = &[
+    gr_controller_contract::OutputKind::Rumble {
+        motors: &[gr_controller_contract::MotorRole::Strong],
+    },
+    gr_controller_contract::OutputKind::PlayerIndicator { count: 4 },
+];
+static EVDEV_OUTPUT_KINDS: &[gr_controller_contract::OutputKind] =
+    &[gr_controller_contract::OutputKind::Rumble {
+        motors: &[
+            gr_controller_contract::MotorRole::Strong,
+            gr_controller_contract::MotorRole::Weak,
+        ],
+    }];
+static EVDEV_RESTRICTIONS: &[TargetRestriction] = &[
+    TargetRestriction {
+        feature: "bus and fuzz",
+        reason: "uinput provider declares BUS_USB and exposes no fuzz field; kernel consumer uses BUS_BLUETOOTH and nonzero fuzz",
+    },
+    TargetRestriction {
+        feature: "IR visibility and blob metadata",
+        reason: "evdev absolute axes carry coordinates only; an invisible point maps to clipped (1023,767)",
+    },
+    TargetRestriction {
+        feature: "LEDs and battery",
+        reason: "uinput has no Wii LED-class or power_supply endpoint; accepted rumble channels collapse to the one native motor",
+    },
+    TargetRestriction {
+        feature: "EEPROM and calibration",
+        reason: "evdev has no addressed memory channel; imported EEPROM is available only through Bluetooth-bus UHID",
+    },
+    TargetRestriction {
+        feature: "Classic Pro identity",
+        reason: "No evidence: Classic Pro wire revision is unresolved; attach explicitly rejects",
+    },
+    common::FEEDBACK_RESTRICTION,
+];
+const fn surface(target: RealizationTarget, evdev: bool) -> ControllerSurface {
     ControllerSurfaceSpec {
         target,
         validation_status: RealizationValidationStatus::ResearchBacked,
         digital_controls: &[],
         axes: &[],
-        outputs: &[],
-        output_kinds: &[],
-        restrictions: RESTRICTIONS,
-        input_topology: &TOPOLOGY,
+        outputs: if evdev {
+            &common::CONVENTIONAL_RUMBLE
+        } else {
+            &[]
+        },
+        output_kinds: if evdev {
+            EVDEV_OUTPUT_KINDS
+        } else {
+            NATIVE_OUTPUT_KINDS
+        },
+        restrictions: if evdev {
+            EVDEV_RESTRICTIONS
+        } else {
+            RESTRICTIONS
+        },
+        input_topology: &super::topology::BASE,
     }
     .build()
 }
-pub static UINPUT: ControllerSurface = surface(RealizationTarget::LINUX_UINPUT);
-pub static BLUETOOTH: ControllerSurface = surface(RealizationTarget::LINUX_UHID_BLUETOOTH);
+pub static UINPUT: ControllerSurface = surface(RealizationTarget::LINUX_UINPUT, true);
+pub static BLUETOOTH: ControllerSurface = surface(RealizationTarget::LINUX_UHID_BLUETOOTH, false);
 impl RealizationControllerDefinition for WiiRemoteDefinition {
     fn controller_id(&self) -> ControllerId {
         gr_controller_wire::registry::WII_REMOTE.id
@@ -147,8 +195,10 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<(), ControlError> {
-        if selection.target != RealizationTarget::LINUX_UHID_BLUETOOTH
-            || !state.revision().has_identity_evidence()
+        if !matches!(
+            selection.target,
+            RealizationTarget::LINUX_UHID_BLUETOOTH | RealizationTarget::LINUX_UINPUT
+        ) || !state.revision().has_identity_evidence()
         {
             return Err(common::unavailable(selection.target));
         }
@@ -157,9 +207,13 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
     fn encode(
         &self,
         selection: RealizationSelection,
-        _: &Self::State,
+        state: &Self::State,
     ) -> Result<ProviderFrame, ControlError> {
-        Err(common::unavailable(selection.target))
+        self.validate_state(selection, state)?;
+        Ok(super::realizations::frame(
+            super::realizations::Role::Core,
+            state,
+        ))
     }
 }
 impl common::HidDriver for WiiRemoteDefinition {
@@ -176,6 +230,7 @@ impl common::HidDriver for WiiRemoteDefinition {
     }
 }
 impl ControllerFamily for WiiRemoteDefinition {
+    const OUTPUT_KINDS: &'static [gr_controller_contract::OutputKind] = NATIVE_OUTPUT_KINDS;
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::WII_REMOTE;
     fn topology() -> &'static InputTopology {
         &super::topology::MAXIMUM
@@ -204,7 +259,7 @@ impl ControllerFamily for WiiRemoteDefinition {
 pub(super) struct Configured {
     pub(super) image: super::WiiEepromImage,
     pub(super) revision: super::WiiRemoteRevision,
-    #[cfg(test)]
+    pub(super) role: super::realizations::Role,
     pub(super) provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
 }
 impl RealizationControllerDefinition for Configured {
@@ -240,7 +295,8 @@ impl TargetAwareControllerDriver for Configured {
         selection: RealizationSelection,
         state: &Self::State,
     ) -> Result<ProviderFrame, ControlError> {
-        WiiRemoteDefinition.encode(selection, state)
+        self.validate_state(selection, state)?;
+        Ok(super::realizations::frame(self.role, state))
     }
 }
 impl common::HidDriver for Configured {
@@ -248,7 +304,18 @@ impl common::HidDriver for Configured {
     fn neutralize_state(state: &mut Self::State) {
         WiiRemoteDefinition::neutralize_state(state);
     }
-    #[cfg(test)]
+    fn open_native(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+        _: &mut crate::ControllerAssociation,
+    ) -> Result<Box<dyn gr_realization_api::NativeProviderSession>, gr_realization_api::ProviderError>
+    {
+        use gr_realization_api::NativeProviderFactory;
+        match &self.provider {
+            Some(factory) => factory.open(request),
+            None => gr_provider_linux_uinput::LinuxUinputProvider.open(request),
+        }
+    }
     fn open_hid(
         &self,
         request: gr_realization_api::ProviderOpenRequest,

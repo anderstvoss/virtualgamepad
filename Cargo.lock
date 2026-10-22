@@ -1008,6 +1008,7 @@ dependencies = [
  "gr-realization-api",
  "libc",
  "proptest",
+ "serde_json",
  "toml",
 ]
 

@@ -66,6 +66,7 @@ fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
     let fake = Fake::default();
     let driver = definition::Configured {
         image,
+        role: super::realizations::Role::Core,
         revision: WiiRemoteRevision::Original,
         provider: Some(Arc::new(fake.clone())),
     };
@@ -86,6 +87,7 @@ fn create(image: WiiEepromImage) -> (WiiRemoteController, Fake) {
     )
     .unwrap();
     let controller = WiiRemoteController {
+        native: None,
         session: Box::new(controller::Storage::Hid(
             common::resources::ResourceSession::new(session).unwrap(),
         )),
@@ -400,8 +402,17 @@ fn memory_boundaries_negative_ack_and_rejected_attachment_leave_resources_unchan
     assert_eq!(&reports[0].payload()[5..], &[0; 16]);
     assert_eq!(p.deadline(), None);
     let (mut controller, _) = create(WiiEepromImage::default());
-    for _ in 0..codec::MAX_PENDING {
-        controller.attach(WiiExtension::None, false).unwrap();
+    for index in 0..codec::MAX_PENDING {
+        controller
+            .attach(
+                if index % 2 == 0 {
+                    WiiExtension::Nunchuk(WiiNunchukState::default())
+                } else {
+                    WiiExtension::None
+                },
+                false,
+            )
+            .unwrap();
     }
     let before = controller.state().clone();
     let generation = controller.topology_generation();
@@ -412,4 +423,50 @@ fn memory_boundaries_negative_ack_and_rejected_attachment_leave_resources_unchan
     );
     assert_eq!(controller.state(), &before);
     assert_eq!(controller.topology_generation(), generation);
+}
+
+#[test]
+fn replacement_notifies_consumer_of_both_edges_and_repeated_attachment_keeps_init() {
+    use gr_hid::Protocol;
+    let mut p = codec::WiiProtocol::default();
+    p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), false, 0)
+        .unwrap();
+    p.input(&p.state.clone(), 0).unwrap();
+    p.change_attachment(WiiExtension::Classic(WiiClassicState::default()), false, 0)
+        .unwrap();
+    let statuses: Vec<_> = p
+        .input(&p.state.clone(), 0)
+        .unwrap()
+        .iter()
+        .filter(|r| r.id() == Some(0x20))
+        .map(|r| r.payload()[2] & 2)
+        .collect();
+    assert_eq!(statuses, [0, 2]);
+    let (mut c, fake) = create(WiiEepromImage::default());
+    c.attach(WiiExtension::Nunchuk(WiiNunchukState::default()), false)
+        .unwrap();
+    c.commit().unwrap();
+    for (offset, value) in [(0xf0, 0x55), (0xfb, 0)] {
+        output(&fake, 0x16, &write(0x52, offset, &[value]));
+        c.service(&mut |_| {}).unwrap();
+    }
+    assert_eq!(
+        c.session.protocol().unwrap().memory.initialized,
+        [true, true]
+    );
+    let generation = c.topology_generation();
+    c.attach(
+        WiiExtension::Nunchuk(WiiNunchukState {
+            c: true,
+            ..Default::default()
+        }),
+        false,
+    )
+    .unwrap();
+    c.commit().unwrap();
+    assert_eq!(c.topology_generation(), generation);
+    assert_eq!(
+        c.session.protocol().unwrap().memory.initialized,
+        [true, true]
+    );
 }

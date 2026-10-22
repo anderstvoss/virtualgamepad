@@ -31,14 +31,27 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             "virtualgamepad.dualshock4" => &[rumble, OutputKind::Led { kind: LedKind::Rgb }],
             "virtualgamepad.switch-pro" => &[rumble, OutputKind::PlayerIndicator { count: 4 }],
             "virtualgamepad.xbox360" => &[evdev],
-            "virtualgamepad.wii-remote" => &[],
+            "virtualgamepad.wii-remote" => &[
+                OutputKind::Rumble {
+                    motors: &[MotorRole::Strong],
+                },
+                OutputKind::PlayerIndicator { count: 4 },
+            ],
             _ => panic!("add explicit expectations for {id}"),
         };
         assert_eq!(family.output_kinds, expected, "{id}");
         for realization in (family.realizations)() {
             let surface = realization.surface;
+            let evdev_expected = [evdev];
             if id == "virtualgamepad.wii-remote" {
-                assert!(surface.output_kinds().is_empty());
+                assert_eq!(
+                    surface.output_kinds(),
+                    if surface.target() == RealizationTarget::LINUX_UINPUT {
+                        &evdev_expected
+                    } else {
+                        expected
+                    }
+                );
                 assert!(matches!(
                     surface.input_topology().typed_inputs()[0].kind(),
                     gr_controller_contract::InputKind::PointSet { points: 4, .. }

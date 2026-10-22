@@ -198,3 +198,16 @@ caller-imported EEPROM reads/writes with explicit terminal snapshot/discard.
 The EEPROM length is the caller's model boundary, not a retail size claim.
 Classic Pro identity, encrypted/calibration register defaults and early Plus
 identity remain No evidence. No timing or physical fidelity is promoted.
+
+C5 step13d enables supporting-package Wii constructors for uinput and Bluetooth-bus
+UHID (bus5), keeping USB UHID rejected. The latter uses the explicitly synthetic
+functional descriptor; original and TR identities remain distinct. Native evdev
+owns separate core/accel/IR nodes and prepares optional extension/MP companions
+before changing live shape. Target restrictions document bus/fuzz, IR metadata,
+LED/battery, EEPROM and Classic Pro limitations. Demo creation/native controls
+and extension/IR editing are wired. Host observation on Linux6.12.113+deb13-arm64
+bound `wiimote`, matched all six interface names and key/axis masks, observed
+Nunchuk→Classic replacement, MotionPlus, power_supply and kernel evdev rumble.
+LED-class writes were permission-denied; physical/calibration fidelity and
+consumer-specific SDL/Dolphin acceptance remain untested. The ignored live probe
+records partial outcomes explicitly; it does not assert that all live cells pass.
