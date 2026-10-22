@@ -172,6 +172,18 @@ impl WiiProtocol {
             ..Self::default()
         }
     }
+    /// Native validation configuration has no HID host or reply queue.
+    pub(super) fn install_attachment(
+        &mut self,
+        extension: super::WiiExtension,
+        motion_plus: bool,
+    ) -> Result<(), Error> {
+        super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
+        self.state.extension = extension;
+        self.state.motion_plus.attached = motion_plus;
+        self.memory.reset_extension();
+        Ok(())
+    }
     pub(super) fn change_attachment(
         &mut self,
         extension: super::WiiExtension,
@@ -188,9 +200,7 @@ impl WiiProtocol {
         if self.pending.len() + count > MAX_PENDING {
             return Err(Error::QueueFull);
         }
-        self.state.extension = extension;
-        self.state.motion_plus.attached = motion_plus;
-        self.memory.reset_extension();
+        self.install_attachment(extension, motion_plus)?;
         let status = self.status();
         if replacement {
             let mut bytes = status.payload().to_vec();
