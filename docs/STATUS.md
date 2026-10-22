@@ -191,3 +191,10 @@ match the synthetic C5 corpus fixtures. Reserved modes reject. Full/extended IR
 visible blob size/intensity are not modelled; basic point coordinates are.
 No firmware cadence is invented: application edits/commits and host requests
 currently drive reports. Speaker reports remain unsupported under D7.
+
+C5 step13c adds controller-owned Nunchuk/Classic and external MotionPlus
+init/ID/activation/pass-through modelling, live attachment subsets and bounded
+caller-imported EEPROM reads/writes with explicit terminal snapshot/discard.
+The EEPROM length is the caller's model boundary, not a retail size claim.
+Classic Pro identity, encrypted/calibration register defaults and early Plus
+identity remain No evidence. No timing or physical fidelity is promoted.
