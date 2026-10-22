@@ -14,8 +14,9 @@ use gr_realization_api::{
     RealizationTarget,
 };
 
+#[derive(Default)]
 pub struct WiiRemoteDefinition;
-static BUTTONS: &[AuxiliaryButtonInput] = &[
+pub(super) const BUTTONS: &[AuxiliaryButtonInput] = &[
     AuxiliaryButtonInput {
         id: InputControlId::new("left"),
         label: "Left",
@@ -144,9 +145,14 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
     fn validate_state(
         &self,
         selection: RealizationSelection,
-        _: &Self::State,
+        state: &Self::State,
     ) -> Result<(), ControlError> {
-        Err(common::unavailable(selection.target))
+        if selection.target != RealizationTarget::LINUX_UHID_BLUETOOTH
+            || !state.revision().has_identity_evidence()
+        {
+            return Err(common::unavailable(selection.target));
+        }
+        super::extensions::validate(state.extension())
     }
     fn encode(
         &self,
@@ -159,16 +165,20 @@ impl TargetAwareControllerDriver for WiiRemoteDefinition {
 impl common::HidDriver for WiiRemoteDefinition {
     type Hid = super::codec::WiiProtocol;
     fn neutralize_state(state: &mut Self::State) {
-        *state = WiiRemoteState::new(state.revision());
+        state.neutralize();
     }
     fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
-        super::codec::WiiProtocol::default()
+        {
+            let mut p = super::codec::WiiProtocol::default();
+            p.state = WiiRemoteState::default();
+            p
+        }
     }
 }
 impl ControllerFamily for WiiRemoteDefinition {
     const SPEC: &'static FamilySpec = &gr_controller_wire::registry::WII_REMOTE;
     fn topology() -> &'static InputTopology {
-        &TOPOLOGY
+        &super::topology::MAXIMUM
     }
     fn realizations() -> &'static [FamilyRealization] {
         static REALIZATIONS: &[FamilyRealization] = &[
@@ -190,6 +200,78 @@ impl ControllerFamily for WiiRemoteDefinition {
     }
 }
 
+/// Instance configuration stays in the controller package, outside registry metadata.
+pub(super) struct Configured {
+    pub(super) image: super::WiiEepromImage,
+    pub(super) revision: super::WiiRemoteRevision,
+    #[cfg(test)]
+    pub(super) provider: Option<std::sync::Arc<dyn gr_realization_api::NativeProviderFactory>>,
+}
+impl RealizationControllerDefinition for Configured {
+    fn controller_id(&self) -> ControllerId {
+        WiiRemoteDefinition.controller_id()
+    }
+    fn realization_manifest(&self) -> RealizationManifest {
+        WiiRemoteDefinition.realization_manifest()
+    }
+}
+impl TargetAwareControllerDriver for Configured {
+    type State = WiiRemoteState;
+    type Frame = ProviderFrame;
+    fn neutral_state(&self) -> Self::State {
+        WiiRemoteState::new(self.revision)
+    }
+    fn apply_digital(
+        &self,
+        state: &mut Self::State,
+        update: DigitalControlUpdate,
+    ) -> Result<(), ControlError> {
+        WiiRemoteDefinition.apply_digital(state, update)
+    }
+    fn validate_state(
+        &self,
+        selection: RealizationSelection,
+        state: &Self::State,
+    ) -> Result<(), ControlError> {
+        WiiRemoteDefinition.validate_state(selection, state)
+    }
+    fn encode(
+        &self,
+        selection: RealizationSelection,
+        state: &Self::State,
+    ) -> Result<ProviderFrame, ControlError> {
+        WiiRemoteDefinition.encode(selection, state)
+    }
+}
+impl common::HidDriver for Configured {
+    type Hid = super::codec::WiiProtocol;
+    fn neutralize_state(state: &mut Self::State) {
+        WiiRemoteDefinition::neutralize_state(state);
+    }
+    #[cfg(test)]
+    fn open_hid(
+        &self,
+        request: gr_realization_api::ProviderOpenRequest,
+    ) -> Result<gr_provider_linux_uhid::HidTransport, gr_realization_api::ProviderError> {
+        if let Some(provider) = &self.provider {
+            let session = request.session;
+            return Ok(gr_provider_linux_uhid::HidTransport::from_session(
+                provider.open(request)?,
+                session,
+                [true, true, false],
+            ));
+        }
+        gr_provider_linux_uhid::LinuxUhidProvider::for_target(
+            RealizationTarget::LINUX_UHID_BLUETOOTH,
+        )?
+        .open_transport(request)
+    }
+    fn hid_protocol(&self, _: RealizationSessionId, _: [u8; 6]) -> Self::Hid {
+        let mut protocol = super::codec::WiiProtocol::with_image(self.image.clone());
+        protocol.state = WiiRemoteState::new(self.revision);
+        protocol
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,7 +295,7 @@ mod tests {
             ]
         );
         (entry.topology)().validate().unwrap();
-        assert_eq!((entry.topology)().auxiliary_buttons().len(), 11);
+        assert_eq!((entry.topology)().auxiliary_buttons().len(), 28);
         assert_eq!(
             (entry.topology)().typed_inputs()[0].kind(),
             super::super::ir_kind()

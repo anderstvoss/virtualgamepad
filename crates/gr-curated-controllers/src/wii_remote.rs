@@ -7,9 +7,10 @@ use gr_controller_contract::{ControlError, InputKind};
 
 /// Revision boundaries are deliberately explicit. In particular, an early Plus
 /// is not inferred from the original Remote's product name.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum WiiRemoteRevision {
+    #[default]
     Original,
     EarlyIntegratedPlus,
     Tr,
@@ -82,14 +83,14 @@ impl WiiIrPoint {
 }
 
 /// Nunchuk values remain native; no cross-family normalized gamepad state.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiNunchukState {
     pub stick: [u8; 2],
     pub accelerometer: [u16; 3],
     pub c: bool,
     pub z: bool,
 }
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiClassicState {
     pub left: [u8; 2],
     pub right: [u8; 2],
@@ -153,6 +154,20 @@ impl WiiRemoteState {
             },
             battery: 0,
         }
+    }
+    /// Clear inputs while preserving attachment, revision and battery metadata.
+    pub fn neutralize(&mut self) {
+        self.buttons = [false; 11];
+        self.accelerometer = [0; 3];
+        self.ir = [None; 4];
+        self.extension = match self.extension {
+            WiiExtension::None => WiiExtension::None,
+            WiiExtension::Nunchuk(_) => WiiExtension::Nunchuk(WiiNunchukState::default()),
+            WiiExtension::Classic(_) => WiiExtension::Classic(WiiClassicState::default()),
+            WiiExtension::ClassicPro(_) => WiiExtension::ClassicPro(WiiClassicState::default()),
+        };
+        self.motion_plus.gyroscope = [8192; 3];
+        self.motion_plus.slow = [false; 3];
     }
     #[must_use]
     pub const fn revision(&self) -> WiiRemoteRevision {
@@ -283,3 +298,33 @@ mod controller;
 pub use controller::{WiiRemoteController, create_wii_remote};
 
 mod codec;
+
+mod extensions;
+mod memory;
+pub use memory::{WiiEepromImage, WiiResourceDisposition};
+
+mod topology;
+
+// Source coordinate midpoints, not factory calibration values.
+impl Default for WiiNunchukState {
+    fn default() -> Self {
+        Self {
+            stick: [128; 2],
+            accelerometer: [0; 3],
+            c: false,
+            z: false,
+        }
+    }
+}
+impl Default for WiiClassicState {
+    fn default() -> Self {
+        Self {
+            left: [32; 2],
+            right: [16; 2],
+            triggers: [0; 2],
+            buttons: [false; 15],
+        }
+    }
+}
+#[cfg(test)]
+mod lifecycle_tests;
