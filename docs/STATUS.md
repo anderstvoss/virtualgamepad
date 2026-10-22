@@ -24,8 +24,12 @@ an API freeze do not promote a cell.
 - Physical-reference fidelity is not validated (#136). Xbox 360 is a standard-HID
   presentation, not XInput/xpad emulation.
 - Controller-matching audio profiles are unavailable (#116).
-- `linux.dummy_hcd.usb-hid` is unavailable: Linux `f_hid` lacks complete
-  GET_REPORT metadata and negative replies.
+- `linux.dummy_hcd.usb-hid` is retained as experimental and not recommended
+  under owner decision D5 (#176 comment 6325079527): it requires root and host
+  provisioning, and remains unavailable through ordinary-root constructors
+  because Linux `f_hid` lacks complete GET_REPORT metadata and negative replies.
+  Near feature-complete UHID realizations are the supported target for controller
+  buildout; dummy_hcd and USB/IP are optional faithful tiers, never defaults.
 - Shared UHID Bluetooth-bus transport is available, with deterministic curated
   fake-provider coverage; no shipped family declares that personality yet.
   Actual Bluetooth radio, pairing and BlueZ remain deferred.
@@ -54,10 +58,13 @@ rejected transitions, missing neutralization and absent-control edits on both
 backends. This is an internal seam repair, not a Wii implementation or acceptance
 claim; fixed-family runtime layout and provider identity remain unchanged.
 
-C3 retained-output snapshots are available below the root for in-process UHID
-and uinput. USB-worker views return `UnavailableInRealization` under the owner
+Step 10c exposes retained-output snapshots on ordinary handles for in-process
+UHID and uinput under D2 (#176 comments 6325147128 and 6328169640). The API
+snapshot grows from 110 to 122 items with non-exhaustive retained-state and kind
+types; selected output metadata respects realization limits. The new native input
+kinds remain unused by the four current families. USB-worker views return `UnavailableInRealization` under the owner
 scoping decision; recovery is tracked in #203 and needs separate protocol
-approval. No root API growth or physical-output acceptance is implied.
+approval. No physical-output acceptance is implied.
 
 C3 crate tidy extracts audio implementation into `gr-root-audio`, with stable
 root reexports and root-specific creation error mapping. The wire crate fold
@@ -70,11 +77,14 @@ dummy_hcd disposition are preserved; no new external dependencies are added.
   with static uinput capability supersets and neutralization of absent controls.
   The production seam remains internal; public additions await owner approval.
 - [ADR-0020](adr/ADR-0020-retained-outputs-and-kinds.md): retained accepted host
-  outputs and typed surface kinds; public additions remain gated by D2.
+  outputs and typed surface kinds. D2 was granted on #176; step 10c exposes
+  ordinary-handle snapshots and read-only typed capability descriptors.
 - [ADR-0021](adr/ADR-0021-presentation-epochs.md): logical controller and host
   presentation epochs, Proposed under D3; step 13a remains deferred.
 - [ADR-0022](adr/ADR-0022-receiver-aggregates.md): receiver-owned presentation,
   typed protocol slots, rollback and sibling-safe teardown; no Puck implementation.
+- [ADR-0023](adr/ADR-0023-controller-subsystems.md): controller-owned bounded
+  in-band subsystems, adopted under D4; no subsystem implementation or public API.
 
 C4 step 13b adds a [synthetic receiver lifecycle fixture](spec/receiver-aggregate-fixture.md):
 typed zero-to-four slots, transactional companions, exact required replies and
@@ -109,7 +119,8 @@ BUS_VIRTUAL comparison arm is retired because USB selection owns BUS_USB.
 Historical measurements are unchanged. This preserves the
 ordinary-root snapshot, broker wire versions and existing descriptor bytes.
 [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md) is Proposed pending owner
-review. The unavailable dummy_hcd path is retained while D5 is open.
+review. D5 keeps the unavailable dummy_hcd path experimental and not recommended;
+its root/provisioning requirements do not change.
 
 ## Acceptance runner failure ownership
 
@@ -161,4 +172,4 @@ promote missing live, consumer or physical acceptance cells.
 Owner-directed small follow-ups precede any new checkpoint: receiver slot-failure
 isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
 The receiver still exists only as a synthetic fixture, so #165 remains open.
-ADR-0023 (#211) remains draft under D4. C5 and C6 have not started.
+ADR-0023 is adopted under D4. C5 and C6 have not started.

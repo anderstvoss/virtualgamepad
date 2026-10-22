@@ -6,8 +6,8 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, OutputSurface,
-    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, MotorRole, OutputKind,
+    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
     TriggerInput, TriggerInputKind, TriggerStack,
 };
@@ -270,6 +270,10 @@ static AXES: [AbsoluteAxisSurface; 8] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "conventional-rumble",
     event_type: 21,
@@ -465,6 +469,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static SURFACE: Xbox360Surface = Xbox360Surface {
@@ -474,6 +479,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -486,6 +492,7 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &HID_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -505,6 +512,7 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -523,6 +531,7 @@ static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -1031,6 +1040,7 @@ pub fn test_controller(
 
 impl crate::registry::ControllerFamily for Xbox360Definition {
     const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::XBOX360;
+    const OUTPUT_KINDS: &'static [OutputKind] = EVDEV_OUTPUT_KINDS;
     fn topology() -> &'static InputTopology {
         &INPUT_TOPOLOGY
     }

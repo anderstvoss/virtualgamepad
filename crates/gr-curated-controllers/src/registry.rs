@@ -1,6 +1,6 @@
 //! Typed family metadata; no application-facing root exports.
 use crate::common::HidDriver;
-use gr_controller_contract::{ControllerSurface, InputTopology, RealizationManifest};
+use gr_controller_contract::{ControllerSurface, InputTopology, OutputKind, RealizationManifest};
 pub use gr_controller_wire::registry::{FamilySpec, UsbProfileSpec, worker_id};
 use gr_realization_api::ControllerId;
 #[cfg(test)]
@@ -40,6 +40,7 @@ impl FamilyRealization {
 }
 pub(crate) trait ControllerFamily: HidDriver {
     const SPEC: &'static FamilySpec;
+    const OUTPUT_KINDS: &'static [OutputKind] = &[];
     const ID: ControllerId = Self::SPEC.id;
     const BROKER_TAG: Option<u8> = Self::SPEC.broker_tag;
     fn usb_profile() -> Option<UsbProfileSpec> {
@@ -68,7 +69,7 @@ pub struct FamilyEntry {
     #[allow(dead_code)]
     pub(crate) max_topology: fn() -> &'static InputTopology,
     #[allow(dead_code)]
-    pub(crate) output_kinds: &'static [&'static str],
+    pub output_kinds: &'static [OutputKind],
     #[allow(dead_code)]
     pub(crate) subsystems: &'static [&'static str],
     #[allow(dead_code)]
@@ -88,7 +89,7 @@ pub(crate) const fn family_entry<F: ControllerFamily>() -> FamilyEntry {
         realizations: F::realizations,
         manifest: F::manifest,
         max_topology: F::topology,
-        output_kinds: &[],
+        output_kinds: F::OUTPUT_KINDS,
         subsystems: &[],
         persistent_resources: &[],
         refused_operations: &[],
@@ -134,8 +135,7 @@ mod tests {
             (family.topology)().validate().unwrap();
             assert_eq!((family.max_topology)(), (family.topology)());
             assert!(
-                family.output_kinds.is_empty()
-                    && family.subsystems.is_empty()
+                family.subsystems.is_empty()
                     && family.persistent_resources.is_empty()
                     && family.refused_operations.is_empty()
             );
@@ -232,3 +232,7 @@ mod gadget_tag_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "registry/output_kind_tests.rs"]
+mod output_kind_tests;

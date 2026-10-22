@@ -577,6 +577,7 @@ mod tests {
                 digital_controls: &[],
                 axes: &[],
                 outputs: &[],
+                output_kinds: &[],
                 restrictions: &[],
                 input_topology: &crate::InputTopology::EMPTY,
             }
@@ -618,6 +619,7 @@ mod tests {
                 digital_controls: &[],
                 axes: &[],
                 outputs: &[],
+                output_kinds: &[],
                 restrictions: &[],
                 input_topology: &crate::InputTopology::EMPTY,
             }

@@ -111,7 +111,8 @@ fn validate_subset(maximum: &InputTopology, current: &InputTopology) -> Result<(
         touchpads,
         motion,
         extra_axes,
-        custom_modules
+        custom_modules,
+        typed_inputs
     );
     Ok(())
 }
@@ -150,5 +151,46 @@ fn contains(topology: &InputTopology, id: InputControlId) -> bool {
                 *other == id
             }
         })
+        || topology.typed_inputs().iter().any(|v| v.id() == id)
         || topology.custom_modules().iter().any(|v| v.id == id)
+}
+
+#[cfg(test)]
+mod typed_input_tests {
+    use super::*;
+    use gr_controller_contract::{
+        InputKind, TypedInput,
+        construction::{InputTopologySpec, TypedInputSpec},
+    };
+    const ID: InputControlId = InputControlId::new("synthetic.contact");
+    static CONTACT: &[TypedInput] = &[TypedInputSpec {
+        id: ID,
+        title: "Contact",
+        kind: InputKind::CapacitiveTouch,
+    }
+    .build()];
+    static SHAPE: InputTopology = InputTopologySpec {
+        typed_inputs: CONTACT,
+        ..InputTopologySpec::from_descriptor(InputTopology::EMPTY)
+    }
+    .build();
+    #[test]
+    fn typed_inputs_participate_in_presence_and_immutable_subset_validation() {
+        static REDEFINED: &[TypedInput] = &[TypedInputSpec {
+            id: ID,
+            title: "Different meaning",
+            kind: InputKind::CapacitiveTouch,
+        }
+        .build()];
+        assert!(!contains(&InputTopology::EMPTY, ID));
+        assert!(contains(&SHAPE, ID));
+        assert!(validate_subset(&SHAPE, &InputTopology::EMPTY).is_ok());
+        assert!(validate_subset(&InputTopology::EMPTY, &SHAPE).is_err());
+        let redefined = InputTopologySpec {
+            typed_inputs: REDEFINED,
+            ..InputTopologySpec::from_descriptor(InputTopology::EMPTY)
+        }
+        .build();
+        assert!(validate_subset(&SHAPE, &redefined).is_err());
+    }
 }
