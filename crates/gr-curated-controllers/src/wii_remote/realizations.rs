@@ -158,7 +158,8 @@ pub(super) fn roles(state: &WiiRemoteState) -> Vec<Role> {
     roles
 }
 // wii-c5-report-layouts / wii-kernel consumer decoders. Native units are kept
-// until this explicit consumer conversion, with declared evdev range clipping.
+// until this explicit consumer conversion. Advertised ABS limits are not clamps.
+// Record: wii-c5-evdev-native-values (source-only decoder/input-core semantics).
 pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
     let NativeControllerRealization::Evdev(spec) = specification(role, state.revision()) else {
         unreachable!()
@@ -175,7 +176,7 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
                 .ir()
                 .iter()
                 .flat_map(|p| {
-                    let (x, y) = p.map_or((1023, 767), super::WiiIrPoint::coordinates);
+                    let (x, y) = p.map_or((1023, 1023), super::WiiIrPoint::coordinates);
                     [i32::from(x), i32::from(y)]
                 })
                 .collect(),
@@ -250,7 +251,7 @@ pub(super) fn frame(role: Role, state: &WiiRemoteState) -> ProviderFrame {
             .map(|(a, v)| EvdevEvent {
                 event_type: 3,
                 code: a.code,
-                value: v.clamp(a.minimum, a.maximum),
+                value: v,
             }),
     );
     events.push(EvdevEvent {
@@ -404,7 +405,7 @@ mod tests {
         }
     }
     #[test]
-    fn native_mapping_retains_all_keys_and_clips_only_at_declared_consumer_ranges() {
+    fn native_mapping_retains_all_keys_and_source_conversions() {
         let mut s = WiiRemoteState {
             buttons: [true; 11],
             ..Default::default()
@@ -440,7 +441,7 @@ mod tests {
             .filter(|e| e.event_type == 3)
             .map(|e| e.value)
             .collect();
-        assert_eq!(axes, [-30, 30, -30, 30, 14, 6]);
+        assert_eq!(axes, [-32, 31, -32, 30, 14, 6]);
         s.motion_plus.gyroscope = [8193, 8194, 8195];
         s.motion_plus.slow = [true; 3];
         let ProviderFrame::Evdev(events) = frame(Role::MotionPlus, &s) else {
@@ -454,5 +455,59 @@ mod tests {
                 .collect::<Vec<_>>(),
             [27, 18, 9]
         );
+    }
+
+    #[test]
+    fn native_consumer_values_are_not_clipped_to_advertised_abs_bounds() {
+        fn values(role: Role, state: &WiiRemoteState) -> Vec<i32> {
+            let ProviderFrame::Evdev(events) = frame(role, state) else {
+                unreachable!()
+            };
+            events
+                .into_iter()
+                .filter(|e| e.event_type == 3)
+                .map(|e| e.value)
+                .collect()
+        }
+        let mut state = WiiRemoteState::default();
+        state.set_accelerometer([0, 512, 1023]).unwrap();
+        assert_eq!(values(Role::Accel, &state), [-512, 0, 511]);
+        state.extension = WiiExtension::Nunchuk(super::super::WiiNunchukState {
+            stick: [0, 255],
+            accelerometer: [0, 512, 1023],
+            ..Default::default()
+        });
+        assert_eq!(values(Role::Nunchuk, &state), [-128, 127, -512, 0, 511]);
+        state.extension = WiiExtension::Classic(super::super::WiiClassicState {
+            left: [0, 63],
+            right: [0, 31],
+            triggers: [31, 30],
+            ..Default::default()
+        });
+        assert_eq!(values(Role::Classic, &state), [-32, 31, -32, 30, 60, 62]);
+        state.motion_plus.gyroscope = [0, 8192, 16383];
+        state.motion_plus.slow = [true; 3];
+        assert_eq!(values(Role::MotionPlus, &state), [73719, 0, -73728]);
+    }
+    #[test]
+    fn native_ir_missing_sentinel_keeps_all_slots_distinct_from_visible_edges() {
+        for slot in 0..4 {
+            let mut state = WiiRemoteState::default();
+            let mut points = [None; 4];
+            points[slot] = Some(super::super::WiiIrPoint::new(1023, 767).unwrap());
+            state.set_ir(points);
+            let ProviderFrame::Evdev(events) = frame(Role::Ir, &state) else {
+                unreachable!()
+            };
+            let values: Vec<_> = events
+                .iter()
+                .filter(|e| e.event_type == 3)
+                .map(|e| e.value)
+                .collect();
+            for i in 0..4 {
+                assert_eq!(values[i * 2], 1023);
+                assert_eq!(values[i * 2 + 1], if i == slot { 767 } else { 1023 });
+            }
+        }
     }
 }

@@ -108,7 +108,7 @@ static EVDEV_RESTRICTIONS: &[TargetRestriction] = &[
     },
     TargetRestriction {
         feature: "IR visibility and blob metadata",
-        reason: "evdev absolute axes carry coordinates only; an invisible point maps to clipped (1023,767)",
+        reason: "evdev carries coordinates without explicit visibility/blob metadata; missing points retain the consumer sentinel (1023,1023), beyond advertised Y bounds",
     },
     TargetRestriction {
         feature: "LEDs and battery",
