@@ -28,7 +28,11 @@ Host Stop retains attachment edits without queuing notices or arming deadlines;
 Start reports the current status once, without replaying stopped edits.
 Native uinput companions prepare before installation; a failed prepare leaves
 the old attachment intact. Required host requests are handled before optional
-observations. Call `service` while inputs are idle, and recompute
+observations. Wait on `readiness()` even while inputs are idle, also watching
+writability when `wants_write()` is true. Call `service` on readiness or deadline;
+use periodic service only for `Readiness::Poll`. The descriptor is borrowed until
+close. `dropped_output_events()` counts optional observation loss, without changing
+retained intent. Recompute
 `next_service_in` after edits, commits and service. No measured firmware cadence
 is invented.
 
@@ -49,7 +53,11 @@ memory channel and rejects a nonempty import.
 
 The demo creates Wii handles and provides native controls, extension selection
 and typed IR editing. Advanced raw battery and EEPROM configuration use the
-supporting API. Interactive desktop/game acceptance remains untested.
+supporting API. Detached editors can use `WiiRemoteState::set_attachment` to
+project a queued transition before same-frame native edits. This changes only
+the snapshot; live nodes still require `WiiRemoteController::attach`. Wii
+association and provider diagnostics are explicitly unavailable in the demo
+ordinary-root lab view. Interactive desktop/game acceptance remains untested.
 
 ## Realization limits
 
@@ -110,7 +118,8 @@ implementation tested at clean `50161b913d0f82950c292465625e9cdd8854daf2`.
 [Research PR22](https://github.com/anderstvoss/controller-protocol-research/pull/22)
 retains five original `wii-w1-*` experiments, structured fixtures, executable and
 source hashes, and the original bounded probes under `tools/wii_w1`. The current
-manifest pins that research head. The earlier C5 paragraphs and timing table
+manifest pins research main `732ca43c397f710e1632d825dbc03ccaf5637ad9`, which
+retains the W1 records through merged research PR22. The earlier C5 paragraphs and timing table
 remain historical observations of their own exact revisions.
 
 On the same Linux6.12.113+deb13-arm64 aarch64 host, the W1 probes opened all six
@@ -161,8 +170,9 @@ termination, not application acceptance. Uinput has no HID endpoint for either
 of these HID-specific consumer cells.
 
 All runs kept `wiimote` bound. No root, installation, udev, unbind, permission or
-module-policy change occurred. Further hidraw/LED access is blocked on
-[the owner question on176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6345722357).
+module-policy change occurred. Further hidraw/LED access awaits the exact per-node commands and Anders
+confirming his temporary grant under
+[the owner decision on176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6347519179).
 The acceptance manifest retains these blocks and the missing neutral oracle.
 Research pin adoption does not adopt independent `wii-gap-*` protocol behavior:
 Classic Pro, early Plus, descriptor and other existing refusals remain unchanged.

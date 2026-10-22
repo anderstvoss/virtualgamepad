@@ -250,6 +250,7 @@ fn native_target<D: HidDriver>(
             session: Box::new(Fake(record.clone())),
             closed: false,
             close_error: None,
+            fatal_write: false,
         },
         prepared,
     )

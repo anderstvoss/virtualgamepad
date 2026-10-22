@@ -455,6 +455,7 @@ fn evdev_rig<D: HidDriver>(driver: D) -> (ControllerSession<D>, Arc<Mutex<Record
             session: Box::new(Fake(record.clone())),
             closed: false,
             close_error: None,
+            fatal_write: false,
         },
         prepared,
     )
