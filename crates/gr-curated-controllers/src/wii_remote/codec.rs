@@ -24,11 +24,18 @@ pub(crate) const MODES: &[(u8, usize)] = &[
 ];
 pub(super) const MAX_PENDING: usize = 28; // Reserve space for a read chunk, status and data.
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reporting {
+    Running,
+    AwaitingMode,
+}
+
 #[derive(Clone)]
 pub(crate) struct WiiProtocol {
     pub(super) state: WiiRemoteState,
     pub(super) outputs: WiiRemoteOutputs,
     mode: u8,
+    reporting: Reporting,
     pub(super) memory: super::memory::Memory,
     read: Option<super::memory::Read>,
     ir_enabled: [bool; 2],
@@ -45,6 +52,7 @@ impl Default for WiiProtocol {
             state: WiiRemoteState::default(),
             outputs: WiiRemoteOutputs::default(),
             mode: 0x30,
+            reporting: Reporting::Running,
             memory: super::memory::Memory::default(),
             read: None,
             ir_enabled: [false; 2],
@@ -202,13 +210,18 @@ impl WiiProtocol {
         if !self.active {
             // Stop discarded old host work. Keep only current configuration;
             // Start will publish one current status, without an edit backlog.
-            return self.install_attachment(extension, motion_plus);
+            self.install_attachment(extension, motion_plus)?;
+            self.reporting = Reporting::AwaitingMode;
+            return Ok(());
         }
         let count = if replacement { 2 } else { 1 };
         if self.pending.len() + count > MAX_PENDING {
             return Err(Error::QueueFull);
         }
         self.install_attachment(extension, motion_plus)?;
+        // wii-gap-wiibrew-status-20-resend: an attachment status pauses data,
+        // not command replies. Only a valid host0x12 reselects the data mode.
+        self.reporting = Reporting::AwaitingMode;
         let status = self.status();
         if replacement {
             let mut bytes = status.payload().to_vec();
@@ -272,7 +285,20 @@ impl WiiProtocol {
         }
         // 0x16 can change MotionPlus mode: reserve its ACK and status atomically.
         // Other accepted reports enqueue at most one reply.
-        let replies = if id == 0x16 { 2 } else { 1 };
+        let deactivating = id == 0x16
+            && self.memory.mp_mode.is_some()
+            && matches!((p[0] >> 2) & 3, 1 | 2)
+            && p[1] >> 1 == 0x52
+            && p[3..6] == [0xf0, 1, 0x55];
+        // wii-gap-wiibrew-motionplus-deactivation: ACK plus unplug/current-port
+        // statuses must all fit before any protocol or retained state changes.
+        let replies = if deactivating {
+            3
+        } else if id == 0x16 {
+            2
+        } else {
+            1
+        };
         if self.pending.len() + replies > MAX_PENDING {
             return Err(ReplyError::Busy);
         }
@@ -287,6 +313,7 @@ impl WiiProtocol {
                 // Do not accept a mode that would silently drop visible points.
                 data(p[1], &self.state, self.ir_enabled[0]).map_err(|_| ReplyError::Invalid)?;
                 self.mode = p[1];
+                self.reporting = Reporting::Running;
             }
             0x13 => self.ir_enabled[0] = p[0] & 4 != 0,
             0x1a => self.ir_enabled[1] = p[0] & 4 != 0,
@@ -302,7 +329,14 @@ impl WiiProtocol {
                 let code = self.memory.write(&self.state, p);
                 self.pending.push_back(self.ack(id, code));
                 if before != self.memory.mp_mode {
-                    self.pending.push_back(self.status());
+                    self.reporting = Reporting::AwaitingMode;
+                    let status = self.status();
+                    if deactivating {
+                        let mut unplugged = status.payload().to_vec();
+                        unplugged[2] &= !2;
+                        self.pending.push_back(input(0x20, unplugged));
+                    }
+                    self.pending.push_back(status);
                 }
             }
             0x17 => {
@@ -371,6 +405,10 @@ impl Protocol for WiiProtocol {
             if !done {
                 self.read = Some(read);
             }
+        }
+        if self.reporting == Reporting::AwaitingMode {
+            self.next = self.read.map(|_| now);
+            return Ok(reports);
         }
         let mut report = data(
             self.mode,
@@ -483,3 +521,6 @@ impl crate::retained::OutputState for super::WiiRemoteOutputs {
         }
     }
 }
+
+#[cfg(test)]
+mod part_c_tests;

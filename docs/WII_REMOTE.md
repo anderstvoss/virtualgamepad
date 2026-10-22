@@ -150,3 +150,43 @@ Bluetooth-bus case. The host probe requires appropriate UHID/event permissions
 and a C compiler; it never changes permissions or module policy. Generic timing
 runs currently commit the Wii neutral state; native press/release behavior has
 separate deterministic regressions and is not a first-neutral delivery oracle.
+
+## Part C documentary protocol adoption
+
+Research main `732ca43c397f710e1632d825dbc03ccaf5637ad9` separates documentary
+protocol descriptions from physical evidence. The following behaviours cite
+its records; none establishes retail fidelity or a firmware report clock.
+
+- Unsolicited extension-status notifications pause data until a valid host
+  report0x12 selects a mode again. ACKs and memory replies continue while
+  paused. Solicited status0x15 does not pause data
+  (`wii-gap-wiibrew-status-20-resend`, `wii-gap-wiibrew-data-report-powerup-default`).
+- MotionPlus deactivation0x55 at0xA400F0 ACKs and publishes unplug/current-port
+  statuses atomically. Initialized downstream state survives, data pauses, and
+  inactive0xA600FA retains the previous04/05/07 plus05 suffix
+  (`wii-gap-wiibrew-motionplus-deactivation`). No downstream means no plug flag.
+- EEPROM reads ignore the high address byte and intersect the caller image
+  with documented host window[0,0x1700). Out-of-window or straddling reads error;
+  the full imported image remains available for explicit terminal resolution.
+  Writes retain caller-image bounds and Dolphin-qualified0x22 errors; the
+  documentary0x21 error disagreement and physical write protection remain open
+  (`wii-gap-wiibrew-eeprom-address-mirroring`,
+  `wii-gap-dolphin-out-of-range-write-ack`, `wii-memory-size-hypothesis`).
+- Classic uses existing format01. Writes01/02/03 to0xA400FE explicitly return
+  error7 rather than accepting an unimplemented format
+  (`wii-gap-wiibrew-extension-data-format-selector`). MotionPlus pass-through
+  field moves and alternating records retain existing encoding and now have
+  independent decoders (`wii-gap-wiibrew-motionplus-passthrough-field-moves`).
+- Acceleration fragments remain restricted to acceleration-bearing modes,
+  including the interleaved Z fragments. Existing IR ACKs and opaque camera
+  setup do not accept visible extended/full IR or invent init delays
+  (`wii-gap-wiibrew-data-report-powerup-default`,
+  `wii-gap-wiibrew-ir-initialization-uncertainty`).
+
+Encrypted workflows and Classic Pro stay refused. EEPROM images remain
+opaque, length-validated caller imports, with no invented checksums or per-device
+factory values (`wii-gap-extension-calibration-checksum-unknown`,
+`wii-gap-classic-pro-full-id-physical-unknown`). The synthetic vendor-page
+collection stays unchanged pending the owner descriptor decision on#158.
+Permissions, consumer discovery and timing remain separate acceptance questions;
+the earlier C5/W1 measurements are never relabelled as Part C measurements.

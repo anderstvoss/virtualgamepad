@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "4ed77d8e18761c7105c0b5f82dfe63f9540f468c"
+research_revision = "732ca43c397f710e1632d825dbc03ccaf5637ad9"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
@@ -45,8 +45,8 @@ id = "classic"
 [[functions]]
 id = "classic-pro"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "No evidence: wire revision/identity unresolved; attach rejects explicitly." }
-"linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "No evidence: wire revision/identity unresolved; no fallback to Classic." }
+"linux.uinput" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "Documentary Classic Pro ID exists, but owner retains refusal pending physical wire evidence (wii-gap-classic-pro-full-id-physical-unknown); attach rejects explicitly." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::lifecycle_tests::live_attachment_swap_detach_preserves_core_and_counts_only_shape_changes", evidence = ["wii-c5-extension-identifiers"], reason = "Documentary Classic Pro ID exists, but physical wire identity remains unknown (wii-gap-classic-pro-full-id-physical-unknown); owner refusal and no fallback to Classic remain." }
 
 [[functions]]
 id = "motionplus"
@@ -101,7 +101,7 @@ id = "battery"
 id = "eeprom-import-read-write"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "wii_remote::native_tests::native_eeprom_channels_refuse_without_opening_or_exporting_resources", evidence = [], reason = "unavailable in this realization: evdev has no addressed memory channel; nonempty import rejects and resource resolution is unavailable." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-dolphin-memory-routing", "wii-c5-memory-errors"], reason = "Caller-supplied bounded image; chunked0x17 reads and0x16 writes/ACKs tested. Its extent is not a retail EEPROM-size claim." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::lifecycle_tests::imported_eeprom_is_read_in_chunks_and_terminal_snapshot_is_explicit_first_wins", evidence = ["wii-dolphin-memory-routing", "wii-c5-memory-errors", "wii-gap-wiibrew-eeprom-address-mirroring", "wii-gap-dolphin-out-of-range-write-ack"], reason = "Caller image retained in full; low16 mirrored reads intersect its extent with documented host window[0,0x1700). Writes retain caller-image bounds and source-qualified0x22 errors; physical writable size/protection is unresolved." }
 
 [[functions]]
 id = "terminal-resource-disposition"
@@ -124,8 +124,8 @@ id = "encrypted-extension"
 [[functions]]
 id = "retail-eeprom-size"
 [functions.cells]
-"linux.uinput" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: 0x1700 remains a hypothesis; caller image length defines the emulated extent." }
-"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "No evidence: 0x1700 remains a hypothesis; caller image length defines the emulated extent." }
+"linux.uinput" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "Physical chip capacity/writable protection remains unknown; documentary host read window[0,0x1700) is distinct from caller image length." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "not_run", evidence = ["wii-memory-size-hypothesis"], reason = "Physical chip capacity/writable protection remains unknown; documentary host read window[0,0x1700) is distinct from caller image length." }
 
 [[functions]]
 id = "original-identity"
