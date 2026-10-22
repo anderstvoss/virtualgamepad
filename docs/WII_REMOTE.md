@@ -94,6 +94,15 @@ The source and virtual-host records are in
 `wii-c5-*-host-run` experiments. The acceptance manifest pins their reviewed
 research revision. No fixture is a physical capture.
 
+The C5 review fixes were checked on the same Linux6.12 host at tracked-clean
+`1b431cd5eabdf55c5c84091311c15f8105a25c87`. The unchanged ignored probe passed
+once, including kernel rumble and owned-node cleanup; all four LED writes remained
+permission-denied. A separate temporary supporting-API harness observed Nunchuk,
+then both Nunchuk and MotionPlus after insertion, then Nunchuk without MotionPlus
+after removal, and disappearance of the owned HID object on close. This bounded
+interface observation does not establish sensor or application acceptance. No
+research record or historical timing sample was changed.
+
 ## Creation and removal timing
 
 Ten cycles were recorded at N1 and N4 for each realization, using the same
