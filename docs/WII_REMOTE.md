@@ -111,6 +111,75 @@ after removal, and disappearance of the owned HID object on close. This bounded
 interface observation does not establish sensor or application acceptance. No
 research record or historical timing sample was changed.
 
+## W1 bounded follow-up observations
+
+[Part A PR235](https://github.com/anderstvoss/virtualgamepad/pull/235) is the
+implementation tested at clean `50161b913d0f82950c292465625e9cdd8854daf2`.
+[Research PR22](https://github.com/anderstvoss/controller-protocol-research/pull/22)
+retains five original `wii-w1-*` experiments, structured fixtures, executable and
+source hashes, and the original bounded probes under `tools/wii_w1`. The current
+manifest pins research main `732ca43c397f710e1632d825dbc03ccaf5637ad9`, which
+retains the W1 records through merged research PR22. The earlier C5 paragraphs and timing table
+remain historical observations of their own exact revisions.
+
+On the same Linux6.12.113+deb13-arm64 aarch64 host, the W1 probes opened all six
+owned interface roles for each realization. Live minimum, maximum, flat and
+resolution matched the source table; kernel fuzz was2 for accelerometer/IR/
+Nunchuk,1 for Classic and4 for MotionPlus. Uinput reported fuzz0, its documented
+provider limitation. Selected explicit inputs delivered these consumer values:
+
+| Native input | Delivered event values |
+| --- | --- |
+| Accelerometer600/400/512 | 88/-112/0 |
+| IR point123/234; other points absent | 123/234; missing1023/1023 |
+| Nunchuk stick150/100; accel600/400/512 | 22/-28;88/-112/0 |
+| Classic left50/20, right20/10, triggers4/9 | 18/-12,8/-12,18/8 in source event order |
+| MotionPlus9000/8000/8192, all slow | 0/-1728/7272 in source event order |
+
+Explicit neutral transitions restored the expected native values, including
+accelerometer-512 and IR missing1023/1023 outside the advertised limits. This is
+selected-value virtual delivery, not physical calibration, a full-domain sensor
+test or a first-valid-neutral creation oracle. Unchanged core buttons have no
+evdev edge, and this probe opens nodes after initialization. Each helper's fd
+count returned4→4, owned nodes disappeared, and close remained idempotent.
+
+The strengthened ignored probe asserted raw battery192→kernel capacity75,
+rumble upload/play/stop/erase and retained native intent, replacement of Nunchuk
+by Classic, and owned-HID disappearance. All four LED brightness writes still
+returned EACCES13; initialization LED intent is not user LED-control acceptance.
+
+SDL's installed Debian3.2.10+ds-1 runtime was selected explicitly, avoiding the
+separate local3.5.0 installation. Both runs set HIDAPI=1, HIDAPI_WII=1,
+WII_PLAYER_LED=1 and ALLOW_BACKGROUND_EVENTS=1. With normal controller-only HID
+filtering the synthetic vendor-page collection was absent; setting
+HIDAPI_ENUMERATE_ONLY_CONTROLLERS=0 exposed it, but owned hidraw O_RDWR returned
+EACCES13. SDL instead opened the owned core through evdev:11 buttons,0 axes,
+0 hats and no accelerometer/gyro sensors. Rumble reached retained intent through
+that fallback. RGB LED failed; a successful player-index setter is not proof of
+LED delivery. The core stayed connected across extension edits, but this is no
+Wii HIDAPI extension or sensor acceptance.
+
+The existing Dolphin Flatpak2609a (commit
+`a22e93a81ac2898f9a4cd69bbcbaa7b8de52262f7b6f5cc4eb18211a3bd25d7e`)
+ran offscreen with a fresh in-sandbox profile, Real slot1, continuous scanning and
+controller-interface connection enabled. The exact owned hidraw existed inside
+its sandbox but could not be opened. No internal backend discovery/connection,
+report modes, memory reads, extension initialization or MotionPlus activation
+was established. No ROM/emulation session was used; bounded timeout124 is
+termination, not application acceptance. Uinput has no HID endpoint for either
+of these HID-specific consumer cells.
+
+These historical runs kept `wiimote` bound and made no root, installation, udev,
+unbind, permission or module-policy change. Anders subsequently confirmed the
+five temporary per-node grants authorized by
+[the owner decision on176](https://github.com/anderstvoss/virtualgamepad/issues/176#issuecomment-6347519179).
+The later granted reruns are separate new records in
+[research PR28](https://github.com/anderstvoss/controller-protocol-research/pull/28),
+not retained by this pin. The manifest preserves the historical blocked results
+and missing neutral oracle; it does not claim that grants are still pending.
+Research pin adoption does not adopt independent `wii-gap-*` protocol behavior:
+Classic Pro, early Plus, descriptor and other existing refusals remain unchanged.
+
 ## Creation and removal timing
 
 Ten cycles were recorded at N1 and N4 for each realization, using the same
