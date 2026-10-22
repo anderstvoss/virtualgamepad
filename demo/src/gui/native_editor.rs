@@ -529,6 +529,23 @@ impl InputEditor for SwitchProEditor {
     }
 }
 
+impl InputEditor for super::editor::WiiRemoteEditor {
+    fn current_topology(&self) -> &'static InputTopology {
+        self.surface().common().input_topology()
+    }
+    fn stick_value(&self, _: InputControlId) -> Option<(i32, i32)> {
+        None
+    }
+    fn trigger_values(&self) -> Vec<(InputControlId, InputValue)> {
+        Vec::new()
+    }
+    fn apply_events(&mut self, events: Vec<InputEvent>) {
+        if !events.is_empty() {
+            self.reject_pending_edit();
+        }
+    }
+}
+
 #[cfg(test)]
 mod registry_tests {
     use super::super::{InputUiState, Kind, Pos2, RealizationId, Vec2, editor, egui};

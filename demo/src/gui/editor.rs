@@ -60,11 +60,15 @@ pub(super) type Xbox360Editor = Editor<Xbox360State, Surface>;
 pub(super) type DualSenseEditor = Editor<DualSenseState, Surface>;
 pub(super) type DualShock4Editor = Editor<DualShock4State, Surface>;
 pub(super) type SwitchProEditor = Editor<SwitchProState, Surface>;
+pub(super) type WiiRemoteEditor =
+    Editor<gr_curated_controllers::wii_remote::WiiRemoteState, Surface>;
 pub(super) enum ControllerView {
     Xbox(Xbox360Editor),
     DualSense(DualSenseEditor),
     DualShock4(DualShock4Editor),
     SwitchPro(SwitchProEditor),
+    #[allow(dead_code)] // C5 skeleton: runtime creation is added in step 13d.
+    WiiRemote(WiiRemoteEditor),
 }
 impl<S> Editor<S, Surface> {
     fn new(
@@ -103,6 +107,14 @@ impl Controller {
         }
     }
 }
+impl WiiRemoteEditor {
+    pub(super) fn reject_pending_edit(&mut self) {
+        let _ = self.queue(Box::new(|_| {
+            Err("C5 skeleton: native editing waits for step 13d".into())
+        }));
+    }
+}
+
 #[cfg(test)]
 pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
     let surface = (kind.entry().realizations)()
@@ -120,6 +132,12 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         super::Kind::DualShock4 => {
             ControllerView::DualShock4(Editor::new(DualShock4State::default(), surface, None, None))
         }
+        super::Kind::WiiRemote => ControllerView::WiiRemote(Editor::new(
+            gr_curated_controllers::wii_remote::WiiRemoteState::default(),
+            surface,
+            None,
+            None,
+        )),
         super::Kind::SwitchPro => {
             ControllerView::SwitchPro(Editor::new(SwitchProState::default(), surface, None, None))
         }
@@ -132,6 +150,7 @@ impl ControllerView {
             Self::DualSense(c) => c.association.as_ref(),
             Self::DualShock4(c) => c.association.as_ref(),
             Self::SwitchPro(c) => c.association.as_ref(),
+            Self::WiiRemote(c) => c.association.as_ref(),
         }
     }
     pub(super) fn lab_details(&self) -> String {
@@ -140,6 +159,7 @@ impl ControllerView {
             Self::DualSense(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::DualShock4(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
             Self::SwitchPro(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
+            Self::WiiRemote(c) => format!("{:?}; {:?}", c.association, c.diagnostics),
         }
     }
     pub(super) fn release_inputs(&mut self) -> Result<(), String> {
@@ -149,6 +169,7 @@ impl ControllerView {
             Self::DualSense(c) => c.queue(edit),
             Self::DualShock4(c) => c.queue(edit),
             Self::SwitchPro(c) => c.queue(edit),
+            Self::WiiRemote(c) => c.queue(edit),
         }
     }
 
@@ -158,6 +179,7 @@ impl ControllerView {
             Self::DualSense(c) => c.take_edits(),
             Self::DualShock4(c) => c.take_edits(),
             Self::SwitchPro(c) => c.take_edits(),
+            Self::WiiRemote(c) => c.take_edits(),
         }
     }
 }
