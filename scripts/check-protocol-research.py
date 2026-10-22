@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-GENERATOR_VERSION = 2
+GENERATOR_VERSION = 3
 SUBMODULE = 'protocol-research'
 
 
@@ -51,7 +51,16 @@ def check(root, write=False, verify_remote=False):
     outputs = {}
     inputs = {}
     for name, expected_size in [('ds-neutral', 64), ('ds-cross', 64),
-                                ('ds4-active-layout', 64), ('sony-contact-pair', 8)]:
+                                ('ds4-active-layout', 64), ('sony-contact-pair', 8),
+                                ('wii-c5-neutral-30', 3), ('wii-c5-neutral-31', 6),
+                                ('wii-c5-neutral-32', 11), ('wii-c5-neutral-33', 18),
+                                ('wii-c5-neutral-34', 22), ('wii-c5-neutral-35', 22),
+                                ('wii-c5-neutral-36', 22), ('wii-c5-neutral-37', 22),
+                                ('wii-c5-neutral-3d', 22), ('wii-c5-neutral-3e', 22),
+                                ('wii-c5-neutral-3f', 22), ('wii-c5-status-low', 7),
+                                ('wii-c5-write-invalid-address', 5),
+                                ('wii-c5-read-invalid-address', 22),
+                                ('wii-c5-functional-descriptor', 191)]:
         record_path = 'records/fixture/' + name + '.json'
         record_bytes = (research / record_path).read_bytes()
         record = json.loads(record_bytes)

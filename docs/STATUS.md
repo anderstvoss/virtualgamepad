@@ -184,3 +184,10 @@ production creation remains explicitly unavailable until the realization step.
 The first intended targets are uinput and Bluetooth-bus UHID under D6/D7.
 The skeleton sends no report bytes and claims no host or physical acceptance.
 Speaker support remains a later, separately gated subsystem (ADR-0023).
+
+C5 step 13b implements source-backed legal data modes and host output decoding,
+status/write/read-error replies and retained LED/rumble intent. Neutral packets
+match the synthetic C5 corpus fixtures. Reserved modes reject. Full/extended IR
+visible blob size/intensity are not modelled; basic point coordinates are.
+No firmware cadence is invented: application edits/commits and host requests
+currently drive reports. Speaker reports remain unsupported under D7.

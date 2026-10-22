@@ -281,3 +281,5 @@ pub use definition::{BLUETOOTH, TOPOLOGY, UINPUT, WiiRemoteDefinition};
 
 mod controller;
 pub use controller::{WiiRemoteController, create_wii_remote};
+
+mod codec;
