@@ -1,0 +1,12 @@
+schema_version = 1
+controller = "virtualgamepad.wii-remote"
+research_revision = "f22d6ef728689e7ef9cb8701e6f654caf8b1be75"
+realizations = ["linux.uinput", "linux.uhid.bluetooth"]
+refused_operations = ["speaker", "real-bluetooth", "early-plus-identity"]
+persistent_resources = []
+
+[[functions]]
+id = "native-state"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "wii_remote::tests", evidence = ["wii-kernel-evdev-base-keys"], reason = "Skeleton only; realizations land in step 13d. Live acceptance untested." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::tests", evidence = ["wii-kernel-bluetooth-match"], reason = "Skeleton only; realizations land in step 13d. Live acceptance untested." }

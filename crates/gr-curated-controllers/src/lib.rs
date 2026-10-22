@@ -39,6 +39,7 @@ pub mod dualsense;
 pub mod dualshock4;
 pub mod switch_pro;
 pub mod usb_personality;
+pub mod wii_remote;
 pub mod xbox360;
 
 use gr_controller_contract::ControlError;
