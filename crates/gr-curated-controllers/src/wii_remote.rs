@@ -85,16 +85,22 @@ impl WiiIrPoint {
 /// Nunchuk values remain native; no cross-family normalized gamepad state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiNunchukState {
+    /// Raw X/Y,0..255; source coordinate midpoint128, not factory calibration.
     pub stick: [u8; 2],
+    /// Raw X/Y/Z ten-bit samples,0..1023.
     pub accelerometer: [u16; 3],
     pub c: bool,
     pub z: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiClassicState {
+    /// Raw left X/Y,0..63; source midpoint32.
     pub left: [u8; 2],
+    /// Raw right X/Y,0..31; source midpoint16.
     pub right: [u8; 2],
+    /// Raw left/right trigger values,0..31.
     pub triggers: [u8; 2],
+    /// A,B,X,Y,ZL,ZR,Plus,Minus,Home,Left,Right,Up,Down,L,R.
     pub buttons: [bool; 15],
 }
 
@@ -113,7 +119,9 @@ pub enum WiiExtension {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WiiMotionPlusState {
     pub attached: bool,
+    /// Raw pitch/roll/yaw,0..16383; source zero-rate center8192.
     pub gyroscope: [u16; 3],
+    /// Slow-range flags in the same pitch/roll/yaw order.
     pub slow: [bool; 3],
 }
 
