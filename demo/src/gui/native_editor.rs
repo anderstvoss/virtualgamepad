@@ -646,6 +646,27 @@ pub(super) fn apply_wii_event(
     }
 }
 
+fn wii_classic_button_index(id: InputControlId) -> Option<usize> {
+    [
+        "classic.a",
+        "classic.b",
+        "classic.x",
+        "classic.y",
+        "classic.zl",
+        "classic.zr",
+        "classic.plus",
+        "classic.minus",
+        "classic.home",
+        "classic.left",
+        "classic.right",
+        "classic.up",
+        "classic.down",
+        "classic.l",
+        "classic.r",
+    ]
+    .iter()
+    .position(|name| *name == id.as_str())
+}
 fn apply_wii_button(
     state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
     id: InputControlId,
@@ -678,25 +699,7 @@ fn apply_wii_button(
             _ => return false,
         },
         WiiExtension::Classic(c) => {
-            let Some(index) = [
-                "classic.a",
-                "classic.b",
-                "classic.x",
-                "classic.y",
-                "classic.zl",
-                "classic.zr",
-                "classic.plus",
-                "classic.minus",
-                "classic.home",
-                "classic.left",
-                "classic.right",
-                "classic.up",
-                "classic.down",
-                "classic.l",
-                "classic.r",
-            ]
-            .iter()
-            .position(|s| *s == id.as_str()) else {
+            let Some(index) = wii_classic_button_index(id) else {
                 return false;
             };
             c.buttons[index] = pressed;
@@ -711,6 +714,29 @@ mod registry_tests {
     use super::super::{InputUiState, Kind, Pos2, RealizationId, Vec2, editor, egui};
     use super::*;
 
+    #[test]
+    fn wii_classic_lookup_covers_tail_positions_beyond_a_visible_row() {
+        // Fifteen native extension keys; positions are independent of layout
+        // viewport and incoming event order, including the tail R/L controls.
+        for (name, index) in [
+            ("classic.r", 14),
+            ("classic.home", 8),
+            ("classic.a", 0),
+            ("classic.left", 9),
+            ("classic.l", 13),
+            ("classic.b", 1),
+        ] {
+            assert_eq!(
+                wii_classic_button_index(InputControlId::new(name)),
+                Some(index)
+            );
+        }
+        assert_eq!(
+            wii_classic_button_index(InputControlId::new("classic.unknown")),
+            None
+        );
+        assert_eq!(wii_classic_button_index(InputControlId::new("home")), None);
+    }
     #[test]
     fn wii_native_edits_cover_all_core_positions_and_raw_sensor_domains() {
         use gr_curated_controllers::wii_remote::{
