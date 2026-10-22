@@ -173,3 +173,14 @@ Owner-directed small follow-ups precede any new checkpoint: receiver slot-failur
 isolation (#165), remaining C1 registry checks, and documentation/harness repairs.
 The receiver still exists only as a synthetic fixture, so #165 remains open.
 ADR-0023 is adopted under D4. C5 and C6 have not started.
+
+## C5 Wii Remote buildout
+
+Step 13a introduces the compiled Wii family and native state for original,
+early integrated Plus, and TR revisions. The early Plus identity remains
+`No evidence` (`wii-early-plus-revision-gap`); no identity fallback is inferred.
+IR uses the merged typed `PointSet` kind. The demo has a detached topology editor;
+production creation remains explicitly unavailable until the realization step.
+The first intended targets are uinput and Bluetooth-bus UHID under D6/D7.
+The skeleton sends no report bytes and claims no host or physical acceptance.
+Speaker support remains a later, separately gated subsystem (ADR-0023).

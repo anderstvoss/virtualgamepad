@@ -31,19 +31,28 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             "virtualgamepad.dualshock4" => &[rumble, OutputKind::Led { kind: LedKind::Rgb }],
             "virtualgamepad.switch-pro" => &[rumble, OutputKind::PlayerIndicator { count: 4 }],
             "virtualgamepad.xbox360" => &[evdev],
+            "virtualgamepad.wii-remote" => &[],
             _ => panic!("add explicit expectations for {id}"),
         };
         assert_eq!(family.output_kinds, expected, "{id}");
         for realization in (family.realizations)() {
             let surface = realization.surface;
-            if surface.target() == RealizationTarget::LINUX_UINPUT {
+            if id == "virtualgamepad.wii-remote" {
+                assert!(surface.output_kinds().is_empty());
+                assert!(matches!(
+                    surface.input_topology().typed_inputs()[0].kind(),
+                    gr_controller_contract::InputKind::PointSet { points: 4, .. }
+                ));
+            } else if surface.target() == RealizationTarget::LINUX_UINPUT {
                 assert_eq!(surface.output_kinds(), &[evdev], "{id}");
             } else if id == "virtualgamepad.xbox360" {
                 assert!(surface.output_kinds().is_empty());
             } else {
                 assert_eq!(surface.output_kinds(), expected, "{id}");
             }
-            assert!(surface.input_topology().typed_inputs().is_empty());
+            if id != "virtualgamepad.wii-remote" {
+                assert!(surface.input_topology().typed_inputs().is_empty());
+            }
             assert!(!surface.output_kinds().iter().any(|kind| matches!(
                 kind,
                 OutputKind::Display { .. }
@@ -52,5 +61,5 @@ fn declared_family_and_selected_output_kinds_match_implemented_paths() {
             )));
         }
     }
-    assert_eq!(checked, 4);
+    assert_eq!(checked, 5);
 }

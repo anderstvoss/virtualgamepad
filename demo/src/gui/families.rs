@@ -16,13 +16,15 @@ pub(super) enum Kind {
     DualSense,
     DualShock4,
     SwitchPro,
+    WiiRemote,
 }
 impl Kind {
-    pub(super) const ALL: [Self; 4] = [
+    pub(super) const ALL: [Self; 5] = [
         Self::Xbox360,
         Self::DualSense,
         Self::DualShock4,
         Self::SwitchPro,
+        Self::WiiRemote,
     ];
     pub(super) const fn label(self) -> &'static str {
         match self {
@@ -30,6 +32,7 @@ impl Kind {
             Self::DualSense => "DualSense",
             Self::DualShock4 => "DualShock 4",
             Self::SwitchPro => "Switch Pro Controller",
+            Self::WiiRemote => "Wii Remote",
         }
     }
 
@@ -39,6 +42,7 @@ impl Kind {
             Self::DualSense => "DUALSENSE",
             Self::DualShock4 => "DS4",
             Self::SwitchPro => "SWITCHPRO",
+            Self::WiiRemote => "WII",
         }
     }
 
@@ -48,6 +52,7 @@ impl Kind {
             Self::DualSense => audio_topology::ControllerFamily::DualSense,
             Self::DualShock4 => audio_topology::ControllerFamily::DualShock4,
             Self::SwitchPro => audio_topology::ControllerFamily::SwitchPro,
+            Self::WiiRemote => audio_topology::ControllerFamily::WiiRemote,
         }
     }
 }
@@ -65,6 +70,7 @@ impl Kind {
             Self::DualSense => "virtualgamepad.dualsense",
             Self::DualShock4 => "virtualgamepad.dualshock4",
             Self::SwitchPro => "virtualgamepad.switch-pro",
+            Self::WiiRemote => "virtualgamepad.wii-remote",
         })
     }
     pub(super) fn entry(self) -> &'static gr_curated_controllers::registry::FamilyEntry {
@@ -103,6 +109,9 @@ impl Kind {
             Self::DualSense => create_dualsense(creation).map(Controller::DualSense),
             Self::DualShock4 => create_dualshock4(creation).map(Controller::DualShock4),
             Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
+            Self::WiiRemote => Err(virtualgamepad::ControllerError::Unsupported {
+                reason: "C5 skeleton: production creation waits for step 13d".into(),
+            }),
         }
     }
     pub(super) const fn validation_soak() -> Self {
@@ -320,6 +329,7 @@ impl ControllerView {
             Self::DualSense(controller) => controller.surface(),
             Self::DualShock4(controller) => controller.surface(),
             Self::SwitchPro(controller) => controller.surface(),
+            Self::WiiRemote(controller) => controller.surface(),
         }
     }
 
@@ -329,6 +339,7 @@ impl ControllerView {
             Self::DualSense(c) => c,
             Self::DualShock4(c) => c,
             Self::SwitchPro(c) => c,
+            Self::WiiRemote(c) => c,
         }
     }
     pub(super) fn draw(
@@ -343,7 +354,9 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => controller.state().battery(),
             Self::DualSense(controller) => controller.state().battery(),
-            Self::DualShock4(_) | Self::SwitchPro(_) => BatteryState::default(),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => {
+                BatteryState::default()
+            }
         }
     }
     pub(super) const fn supports_battery_emulation(&self) -> bool {
@@ -353,14 +366,14 @@ impl ControllerView {
         match self {
             Self::Xbox(controller) => controller.set_battery_exposed(exposed),
             Self::DualSense(controller) => controller.set_battery_exposed(exposed),
-            Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => Ok(()),
         }
     }
     pub(super) fn set_battery_level(&mut self, level: BatteryLevel) -> Result<(), String> {
         match self {
             Self::Xbox(controller) => controller.set_battery_level(level),
             Self::DualSense(controller) => controller.set_battery_level(level),
-            Self::DualShock4(_) | Self::SwitchPro(_) => Ok(()),
+            Self::DualShock4(_) | Self::SwitchPro(_) | Self::WiiRemote(_) => Ok(()),
         }
     }
 }
