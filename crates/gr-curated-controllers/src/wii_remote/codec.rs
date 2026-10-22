@@ -22,15 +22,13 @@ pub(crate) const MODES: &[(u8, usize)] = &[
     (0x3e, 21),
     (0x3f, 21),
 ];
-pub(super) const MAX_PENDING: usize = 28; // Reserve space for a read chunk, status and data.
+const MAX_PENDING: usize = 30;
 
 #[derive(Clone)]
 pub(crate) struct WiiProtocol {
     pub(super) state: WiiRemoteState,
     pub(super) outputs: WiiRemoteOutputs,
     mode: u8,
-    pub(super) memory: super::memory::Memory,
-    read: Option<super::memory::Read>,
     ir_enabled: [bool; 2],
     pending: VecDeque<Report>,
     next: Option<u64>,
@@ -43,8 +41,6 @@ impl Default for WiiProtocol {
             state: WiiRemoteState::default(),
             outputs: WiiRemoteOutputs::default(),
             mode: 0x30,
-            memory: super::memory::Memory::default(),
-            read: None,
             ir_enabled: [false; 2],
             pending: VecDeque::new(),
             next: None,
@@ -148,14 +144,7 @@ pub(super) fn data(mode: u8, state: &WiiRemoteState, ir: bool) -> Result<Report,
     }
     // No extension present in the codec step. Step13c fills these windows from
     // typed accessories; absent windows use the synthetic no-accessory fixture.
-    let extension = extension_window(mode);
-    if let Some((offset, size)) = extension {
-        bytes[offset..offset + size].fill(0xff);
-    }
-    Ok(input(mode, bytes))
-}
-fn extension_window(mode: u8) -> Option<(usize, usize)> {
-    match mode {
+    let extension = match mode {
         0x32 => Some((2, 8)),
         0x34 => Some((2, 19)),
         0x35 => Some((5, 16)),
@@ -163,32 +152,13 @@ fn extension_window(mode: u8) -> Option<(usize, usize)> {
         0x37 => Some((15, 6)),
         0x3d => Some((0, 21)),
         _ => None,
+    };
+    if let Some((offset, size)) = extension {
+        bytes[offset..offset + size].fill(0xff);
     }
+    Ok(input(mode, bytes))
 }
 impl WiiProtocol {
-    pub(super) fn with_image(image: super::memory::WiiEepromImage) -> Self {
-        Self {
-            memory: super::memory::Memory::with_image(image),
-            ..Self::default()
-        }
-    }
-    pub(super) fn change_attachment(
-        &mut self,
-        extension: super::WiiExtension,
-        motion_plus: bool,
-        now: u64,
-    ) -> Result<(), Error> {
-        super::extensions::validate(&extension).map_err(|_| Error::InvalidState)?;
-        if self.pending.len() >= MAX_PENDING {
-            return Err(Error::QueueFull);
-        }
-        self.state.extension = extension;
-        self.state.motion_plus.attached = motion_plus;
-        self.memory.reset_extension();
-        self.pending.push_back(self.status());
-        self.next = Some(now);
-        Ok(())
-    }
     pub(super) fn status(&self) -> Report {
         // wii-c5-report-layouts / wii-kernel-outputs-battery. Raw battery byte;
         // no invented conversion from an estimated charge percentage.
@@ -199,10 +169,8 @@ impl WiiProtocol {
             .iter()
             .enumerate()
             .fold(0, |bits, (i, on)| bits | (u8::from(*on) << (i + 4)));
-        let flags = u8::from(self.state.battery < 0x20)
-            | (u8::from(self.memory.present(&self.state)) << 1)
-            | (u8::from(self.ir_enabled[0]) << 3)
-            | leds;
+        let flags =
+            u8::from(self.state.battery < 0x20) | (u8::from(self.ir_enabled[0]) << 3) | leds;
         input(
             0x20,
             vec![buttons[0], buttons[1], flags, 0, 0, self.state.battery],
@@ -212,6 +180,12 @@ impl WiiProtocol {
         // wii-c5-memory-errors / wii-c5-report-layouts.
         let b = core(&self.state);
         input(0x22, vec![b[0], b[1], id, code])
+    }
+    fn memory_error(&self, address: [u8; 2], code: u8) -> Report {
+        let b = core(&self.state);
+        let mut bytes = vec![b[0], b[1], 0xf0 | code, address[0], address[1]];
+        bytes.resize(21, 0);
+        input(0x21, bytes)
     }
     fn accept(&mut self, report: &Report, now: u64) -> Result<(), ReplyError> {
         // Transactional admission: malformed input cannot change retained state,
@@ -265,18 +239,24 @@ impl WiiProtocol {
                 if p[4] == 0 || p[4] > 16 {
                     return Err(ReplyError::Invalid);
                 }
-                let before = self.memory.mp_mode;
-                let code = self.memory.write(&self.state, p);
+                let code = match (p[0] >> 2) & 3 {
+                    0 => 8,
+                    1 | 2 if p[1] >> 1 == 0x50 => 8,
+                    1 | 2 => 7,
+                    _ => 6,
+                };
                 self.pending.push_back(self.ack(id, code));
-                if before != self.memory.mp_mode {
-                    self.pending.push_back(self.status());
-                }
             }
             0x17 => {
-                if self.read.is_some() {
-                    self.pending.push_back(self.ack(id, 4));
-                } else {
-                    self.read = super::memory::Read::new(p);
+                if p[4] != 0 || p[5] != 0 {
+                    let code = match (p[0] >> 2) & 3 {
+                        0 => 8,
+                        1 | 2 if p[1] >> 1 == 0x50 => 8,
+                        1 | 2 => 7,
+                        _ => 6,
+                    };
+                    self.pending
+                        .push_back(self.memory_error([p[2], p[3]], code));
                 }
             }
             _ => unreachable!(),
@@ -314,42 +294,16 @@ impl Protocol for WiiProtocol {
         {
             return Err(Error::InvalidState);
         }
-        super::extensions::validate(state.extension()).map_err(|_| Error::InvalidState)?;
-        if state.motion_plus().gyroscope.iter().any(|v| *v > 16383) {
-            return Err(Error::InvalidState);
-        }
         data(self.mode, state, self.ir_enabled[0]).map(|_| ())
     }
-    fn input(&mut self, state: &Self::State, now: u64) -> Result<Vec<Report>, Error> {
+    fn input(&mut self, state: &Self::State, _: u64) -> Result<Vec<Report>, Error> {
         self.validate(state)?;
         self.state = state.clone();
         if !self.active {
             return Ok(Vec::new());
         }
         let mut reports: Vec<_> = self.pending.drain(..).collect();
-        if let Some(mut read) = self.read.take() {
-            let (bytes, done) = self.memory.read_chunk(state, &mut read);
-            reports.push(input(0x21, bytes));
-            if !done {
-                self.read = Some(read);
-            }
-        }
-        let mut report = data(
-            self.mode,
-            state,
-            self.ir_enabled[0] && self.memory.ir_ready(),
-        )?;
-        if let Some((offset, size)) = extension_window(self.mode) {
-            let present = self.memory.mp_mode.is_some() || self.memory.initialized == [true, true];
-            if present {
-                let packet = super::extensions::packet(state, &mut self.memory);
-                let mut bytes = report.payload().to_vec();
-                bytes[offset..offset + size].fill(0); // wii-c5-extension-packing: source register zero tail.
-                bytes[offset..offset + 6].copy_from_slice(&packet);
-                report = input(self.mode, bytes);
-            }
-        }
-        reports.push(report);
+        reports.push(data(self.mode, state, self.ir_enabled[0])?);
         if self.mode == 0x3e {
             self.mode = 0x3f;
         } else if self.mode == 0x3f {
@@ -357,7 +311,7 @@ impl Protocol for WiiProtocol {
         }
         // Cadence is not measured: no fabricated firmware interval is advertised.
         // Application edits/commits and protocol requests drive reports.
-        self.next = self.read.map(|_| now);
+        self.next = None;
         Ok(reports)
     }
     fn deadline(&self) -> Option<u64> {
@@ -394,7 +348,6 @@ impl Protocol for WiiProtocol {
             Lifecycle::Stop => {
                 self.active = false;
                 self.pending.clear();
-                self.read = None;
                 self.next = None;
             }
             Lifecycle::Open | Lifecycle::Close => {}
@@ -402,16 +355,6 @@ impl Protocol for WiiProtocol {
         Some(RawReverseEvent::HidLifecycle(event))
     }
     fn delivered(&mut self, _: &Command, _: Delivery) {}
-}
-
-impl crate::common::resources::ResourceProtocol for WiiProtocol {
-    type Snapshot = super::memory::WiiEepromImage;
-    fn resource_dirty(&self) -> bool {
-        self.memory.dirty
-    }
-    fn snapshot(&self) -> Self::Snapshot {
-        self.memory.image.clone()
-    }
 }
 
 #[cfg(test)]
