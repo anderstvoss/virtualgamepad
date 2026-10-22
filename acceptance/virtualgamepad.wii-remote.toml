@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "4ed77d8e18761c7105c0b5f82dfe63f9540f468c"
+research_revision = "732ca43c397f710e1632d825dbc03ccaf5637ad9"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
@@ -28,7 +28,6 @@ id = "ir-extended-full-visible"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: evdev does not represent blob size/intensity metadata." }
 "linux.uhid.bluetooth" = { status = "not-supported", test_id = "wii_remote::codec::tests::basic_ir_packs_coordinates_and_invisible_slots_without_conflating_them", evidence = ["wii-c5-report-layouts"], reason = "No evidence: typed point-set has no source-backed physical blob size/intensity representation; rejects visible33/3e/3f." }
-
 
 [[functions]]
 id = "nunchuk"
@@ -76,7 +75,7 @@ id = "player-led-intent"
 id = "live-player-led-control"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: no Wii LED-class endpoint." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "untested: four owned LED brightness writes returned EACCES; kernel initialization LED intent alone is not LED-control acceptance." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-w1-battery-rumble-led-host-run"], reason = "untested: all four owned LED writes still return EACCES13 on clean50161b9. Success or PermissionDenied asserted explicitly; further permission change awaits owner answer on176. Initialization LED intent is not user LED-control acceptance." }
 
 [[functions]]
 id = "rumble"
@@ -94,8 +93,7 @@ id = "live-rumble-consumer"
 id = "battery"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput has no Wii power_supply endpoint." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-kernel-outputs-battery"], reason = "Raw status byte/low flag source-model behavior and power_supply presence tested; numeric live capacity conversion unmeasured." }
-
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-kernel-outputs-battery", "wii-w1-battery-rumble-led-host-run"], reason = "Bounded virtual-host probe on clean50161b9 asserts raw192 yields kernel capacity75, plus power_supply presence. Consumer conversion only; no physical charge/calibration acceptance." }
 
 [[functions]]
 id = "eeprom-import-read-write"
@@ -151,7 +149,6 @@ id = "bluetooth-driver-binding"
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: evdev nodes have no HID parent for wiimote binding." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "Exact creation-owned virtual bus5 device bound to wiimote on Linux6.12.113+deb13-arm64. No radio/pairing/BlueZ." }
 
-
 [[functions]]
 id = "evdev-golden-shape"
 [functions.cells]
@@ -161,8 +158,8 @@ id = "evdev-golden-shape"
 [[functions]]
 id = "live-axis-ranges-and-sensor-delivery"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: live numeric absinfo and sensor delivery not measured; source/fake shape is separate." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding"], reason = "untested: interface masks alone do not establish absinfo ranges, samples, calibration or IR tracking." }
+"linux.uinput" = { status = "source-evidence", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_selected_native_values_reached_both_virtual_event_consumers", evidence = ["wii-w1-numeric-uinput-host-run", "wii-c5-evdev-native-values"], reason = "Bounded virtual-host run on clean50161b9: live min/max/fuzz/flat/resolution and selected accel/IR/Nunchuk/Classic/standalone MotionPlus values matched source conversions. Uinput fuzz0 remains a provider limitation. Out-of-range missing IR1023/1023 and raw accel-512 preserved. No calibration, physical fidelity or full-domain acceptance." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_selected_native_values_reached_both_virtual_event_consumers", evidence = ["wii-w1-numeric-bt-host-run", "wii-c5-evdev-native-values"], reason = "Bounded virtual-host run on clean50161b9: live min/max/fuzz/flat/resolution and selected accel/IR/Nunchuk/Classic/standalone MotionPlus values matched source conversions. Kernel fuzz2/1/4 recorded. Out-of-range missing IR1023/1023 and raw accel-512 preserved. No calibration, physical fidelity or full-domain acceptance." }
 
 [[functions]]
 id = "extension-hot-swap"
@@ -191,14 +188,14 @@ id = "cleanup-and-sibling-isolation"
 [[functions]]
 id = "sdl-hidapi-wii"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "not_run", evidence = ["wii-sdl-extension-modes"], reason = "untested: SDL HIDAPI Wii driver not run; generic evdev/native support is not HIDAPI acceptance." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = ["wii-sdl-extension-modes"], reason = "untested: SDL HIDAPI Wii driver not run; wiimote binding does not prove HIDAPI acceptance." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-sdl-extension-modes", "wii-w1-sdl-host-run"], reason = "untested: SDL3.2.10 Wii HIDAPI blocked by owned hidraw EACCES13. Explicit HIDAPI/Wii/player-LED/background hints recorded; enumerate-all sees synthetic vendor-page collection but cannot open. Core evdev fallback11 buttons/0 axes/no sensors and observed rumble do not establish HIDAPI, extension or LED acceptance. wiimote stays bound." }
 
 [[functions]]
 id = "dolphin"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "not_run", evidence = ["wii-dolphin-hidapi-probe"], reason = "untested: Dolphin consumer not run; Real Wii Remote passthrough is outside D7 scope." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = ["wii-dolphin-hidapi-probe"], reason = "untested: Dolphin consumer not run; compatibility-source evidence is not application acceptance." }
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-dolphin-hidapi-probe", "wii-w1-dolphin-host-run"], reason = "untested: existing Flatpak2609a bounded startup sees owned hidraw inside sandbox but open denied. No internal backend connection, report modes, memory reads, extension init or MotionPlus activation observed. No ROM/emulation session; timeout is termination, not application acceptance. wiimote remains bound. Historical pre-grant result; later human-granted reruns are separate records outside this pin." }
 
 [[functions]]
 id = "speaker"
@@ -227,8 +224,8 @@ id = "firmware-cadence"
 [[functions]]
 id = "first-valid-neutral"
 [functions.cells]
-"linux.uinput" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: no validated neutral consumer-report oracle; commit success is not delivery." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = [], reason = "untested: no validated neutral consumer-report oracle; node appearance is not delivery." }
+"linux.uinput" = { status = "wip", test_id = "not_run", evidence = ["wii-w1-numeric-uinput-host-run"], reason = "untested: explicit neutral transitions after consumer open observed; no first-valid-neutral creation timestamp/oracle. Unchanged core buttons emit no edge; initialization and event-node opening precede this probe." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "not_run", evidence = ["wii-w1-numeric-bt-host-run"], reason = "untested: explicit neutral transitions after consumer open observed; no first-valid-neutral creation timestamp/oracle. Unchanged core buttons emit no edge; initialization and event-node opening precede this probe." }
 
 [[functions]]
 id = "demo-native-editing"
