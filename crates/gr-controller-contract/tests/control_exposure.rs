@@ -26,6 +26,7 @@ fn restricted_target() -> EdgeSurface {
             digital_controls: &[],
             axes: &[],
             outputs: &[],
+            output_kinds: &[],
             restrictions: &[TargetRestriction {
                 feature: "left_paddle/right_paddle/left_fn/right_fn",
                 reason: "Synthetic target has no event mapping for these controls; real Linux mapping requires separate evidence.",

@@ -28,11 +28,7 @@ impl Client {
         identity: [u8; 6],
     ) -> io::Result<(Self, [UnixStream; 3])> {
         broker.set_write_timeout(Some(Duration::from_secs(1)))?;
-        let mut request = vec![match profile {
-            Profile::DualSense => 1,
-            Profile::DualShock4 => 2,
-            Profile::Xbox360 => 3,
-        }];
+        let mut request = vec![profile.tag()?];
         request.extend(identity);
         crate::write_versioned_message(&mut broker, 2, 1, &request)?;
         let (version, tag, body) =

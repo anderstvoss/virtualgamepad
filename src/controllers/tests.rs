@@ -163,7 +163,7 @@ macro_rules! consumer_case {
                 let options = CreationOptions::new(RealizationId::LINUX_UINPUT).internal().unwrap();
                 let inner = gr_curated_controllers::$module::test_controller(Box::new(Fake(record.clone()))).unwrap();
                 let association = ControllerAssociation::single(ControllerId::new($id), options, inner.association(), inner.surface().common());
-                ($controller { inner, association, $($field: $value,)* }, record)
+                ($controller::from_parts(association, inner, $($value,)*), record)
             }
             let (mut controller, record) = create();
             let (mut other, other_record) = create();
@@ -268,7 +268,7 @@ macro_rules! audio_consumer_case {
             let inner = gr_curated_controllers::$module::test_controller(Box::new(Fake(record.clone()))).unwrap();
             let (audio, audio_record) = crate::audio::fake::open(options.session.0, access);
             let association = ControllerAssociation::single(ControllerId::new($id), options, inner.association(), inner.surface().common()).with_audio(Some(&audio));
-            ($controller { inner, association, audio: Some(audio), $($field: $value,)* }, record, audio_record)
+            ($controller::from_parts(association, inner, $($value,)* Some(audio)), record, audio_record)
         }
         #[test]
         fn $test() {
@@ -397,7 +397,7 @@ fn mixed_audio_and_no_audio_root_consumers_service_independently() {
         inner.association(),
         inner.surface().common(),
     );
-    let mut switch = SwitchProController { inner, association };
+    let mut switch = SwitchProController::from_parts(association, inner);
     for _ in 0..64 {
         sony.service(&mut |_| {}).unwrap();
         ds4.service(&mut |_| {}).unwrap();
@@ -635,12 +635,12 @@ mod worker_outputs {
         let (outputs, expected) = dualsense_cases(false);
         let (bridge, record, task) = wire(1, outputs);
         let inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
-        let mut controller = DualSenseController {
-            association: association(inner.association(), inner.surface().common()),
+        let mut controller = DualSenseController::from_parts(
+            association(inner.association(), inner.surface().common()),
             inner,
-            audio: None,
-            identity: None,
-        };
+            None,
+            None,
+        );
         let mut observed = Vec::new();
         controller
             .service(&mut |event| observed.push(event))
@@ -693,12 +693,12 @@ mod worker_outputs {
         let (outputs, expected) = ds4_cases(false);
         let (bridge, record, task) = wire(2, outputs);
         let inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
-        let mut controller = DualShock4Controller {
-            association: association(inner.association(), inner.surface().common()),
+        let mut controller = DualShock4Controller::from_parts(
+            association(inner.association(), inner.surface().common()),
             inner,
-            audio: None,
-            identity: None,
-        };
+            None,
+            None,
+        );
         let mut observed = Vec::new();
         controller
             .service(&mut |event| observed.push(event))
@@ -722,11 +722,11 @@ mod worker_outputs {
             let malformed = response.len() != 1;
             let (bridge, record, task) = wire(3, vec![response]);
             let inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
-            let mut controller = Xbox360Controller {
-                association: association(inner.association(), inner.surface().common()),
+            let mut controller = Xbox360Controller::from_parts(
+                association(inner.association(), inner.surface().common()),
                 inner,
-                audio: None,
-            };
+                None,
+            );
             let result =
                 controller.service(&mut |_| panic!("rejected output reached root callback"));
             assert_eq!(result.is_err(), malformed);
@@ -883,12 +883,12 @@ mod worker_outputs {
                 let inner = gr_curated_controllers::create_dualsense_usb_worker(bridge);
                 (
                     LiveController::DualSense(
-                        DualSenseController {
-                            association: association(inner.association(), inner.surface().common()),
+                        DualSenseController::from_parts(
+                            association(inner.association(), inner.surface().common()),
                             inner,
-                            audio: None,
-                            identity: None,
-                        },
+                            None,
+                            None,
+                        ),
                         dualsense_cases(true).1,
                     ),
                     record,
@@ -900,12 +900,12 @@ mod worker_outputs {
                 let inner = gr_curated_controllers::create_dualshock4_usb_worker(bridge);
                 (
                     LiveController::Ds4(
-                        DualShock4Controller {
-                            association: association(inner.association(), inner.surface().common()),
+                        DualShock4Controller::from_parts(
+                            association(inner.association(), inner.surface().common()),
                             inner,
-                            audio: None,
-                            identity: None,
-                        },
+                            None,
+                            None,
+                        ),
                         ds4_cases(true).1,
                     ),
                     record,
@@ -916,11 +916,11 @@ mod worker_outputs {
                 let (bridge, record) = live_bridge(control);
                 let inner = gr_curated_controllers::create_xbox360_usb_worker(bridge);
                 (
-                    LiveController::Xbox(Xbox360Controller {
-                        association: association(inner.association(), inner.surface().common()),
+                    LiveController::Xbox(Xbox360Controller::from_parts(
+                        association(inner.association(), inner.surface().common()),
                         inner,
-                        audio: None,
-                    }),
+                        None,
+                    )),
                     record,
                     6,
                 )
@@ -2299,3 +2299,6 @@ assert sum(item.get('node.name')==sys.argv[1] for item in props)==1
         );
     }
 }
+
+#[path = "retained_tests.rs"]
+mod retained_outputs;

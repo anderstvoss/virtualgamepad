@@ -6,16 +6,15 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, OutputSurface,
-    RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
+    FaceButtonInput, InputAxisRange, InputControlId, InputTopology, MotorRole, OutputKind,
+    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
     RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
     TriggerInput, TriggerInputKind, TriggerStack,
 };
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
-    RealizationSelection, RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, ProviderError,
+    ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationTarget,
 };
 
 /// Xbox 360 signed thumb-stick value (`-32768..=32767`).
@@ -271,6 +270,10 @@ static AXES: [AbsoluteAxisSurface; 8] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "conventional-rumble",
     event_type: 21,
@@ -466,6 +469,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static SURFACE: Xbox360Surface = Xbox360Surface {
@@ -475,6 +479,7 @@ static SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -487,11 +492,19 @@ static HID_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &HID_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 5] = [
+    DUMMY_HCD_RESTRICTIONS[0],
+    DUMMY_HCD_RESTRICTIONS[1],
+    DUMMY_HCD_RESTRICTIONS[2],
+    DUMMY_HCD_RESTRICTIONS[3],
+    crate::retained::DUMMY_RESTRICTION,
+];
 static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -499,11 +512,18 @@ static DUMMY_HCD_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &DUMMY_HCD_RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 4] = [
+    USBIP_RESTRICTIONS[0],
+    USBIP_RESTRICTIONS[1],
+    USBIP_RESTRICTIONS[2],
+    crate::retained::WORKER_RESTRICTION,
+];
 static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -511,7 +531,8 @@ static USBIP_SURFACE: Xbox360Surface = Xbox360Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &USBIP_RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY,
     }
     .build(),
@@ -710,6 +731,12 @@ pub enum Xbox360OutputEvent {
 }
 pub struct Xbox360Controller(common::ControllerSession<Xbox360Definition>);
 impl Xbox360Controller {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::Xbox360OutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -933,7 +960,7 @@ pub fn create_xbox360(options: CreationOptions) -> Result<Xbox360Controller, Pro
         RealizationTarget::LINUX_UHID_USB => hid_realization(),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::Xbox360,
+                controller: gr_controller_wire::registry::ids::XBOX360,
             })
         }
         _ => {
@@ -969,7 +996,7 @@ impl common::HidDriver for Xbox360Definition {
         };
     }
 
-    type Hid = common::SnapshotProtocol<Xbox360State>;
+    type Hid = common::SnapshotProtocol<Xbox360State, crate::retained::Xbox360OutputState>;
     fn hid_protocol(&self, _: gr_realization_api::RealizationSessionId, _: [u8; 6]) -> Self::Hid {
         fn encode(state: &Xbox360State, _: u64, _: u8) -> gr_hid::Report {
             common::logical_input(xbox_hid_frame(state))
@@ -1009,6 +1036,42 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<Xbox360Controller, ProviderError> {
     common::injected(Xbox360Definition, session).map(Xbox360Controller)
+}
+
+impl crate::registry::ControllerFamily for Xbox360Definition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::XBOX360;
+    const OUTPUT_KINDS: &'static [OutputKind] = EVDEV_OUTPUT_KINDS;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &DUMMY_HCD_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

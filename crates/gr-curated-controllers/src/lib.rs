@@ -194,3 +194,12 @@ mod battery_tests {
         assert_eq!(battery.level().percent(), 100);
     }
 }
+
+/// Compiled family registry, for workspace consumers only.
+pub mod registry;
+
+#[doc(hidden)]
+pub use gr_controller_wire::compiled_families;
+
+/// Accepted output snapshots below the stable application root.
+pub mod retained;

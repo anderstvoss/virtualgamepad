@@ -12,7 +12,6 @@ publish = false
 gr-audio-contract = { path = "../gr-audio-contract", version = "0.1" }
 gr-hid = { path = "../gr-hid", version = "0.1" }
 gr-controller-wire = { path = "../gr-controller-wire", version = "0.1" }
-gr-dualsense-wire = { path = "../gr-dualsense-wire", version = "0.1" }
 gr-controller-contract = { path = "../gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "../gr-controller-runtime", version = "0.1" }
 gr-realization-api = { path = "../gr-realization-api", version = "0.1" }
@@ -21,6 +20,7 @@ gr-provider-linux-uhid = { path = "../gr-provider-linux-uhid", version = "0.1" }
 gr-provider-linux-dummy-hcd = { path = "../gr-provider-linux-dummy-hcd", version = "0.1" }
 
 [dev-dependencies]
+toml = "=1.1.6"
 libc.workspace = true
 proptest.workspace = true
 

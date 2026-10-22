@@ -204,6 +204,23 @@
             "impl UnwindSafe for DigitalControlUpdate"
           ]
         },
+        "enum.DisplayFormat.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DisplayFormat { Monochrome1, Rgb888, }"
+          ],
+          "traits": [
+            "impl Clone for DisplayFormat",
+            "impl Copy for DisplayFormat",
+            "impl Debug for DisplayFormat",
+            "impl Eq for DisplayFormat",
+            "impl PartialEq for DisplayFormat",
+            "impl RefUnwindSafe for DisplayFormat",
+            "impl Send for DisplayFormat",
+            "impl Sync for DisplayFormat",
+            "impl Unpin for DisplayFormat",
+            "impl UnwindSafe for DisplayFormat"
+          ]
+        },
         "enum.DpadDirection.html": {
           "declarations": [
             "pub enum DpadDirection { Up, Down, Left, Right, }"
@@ -491,9 +508,26 @@
             "impl UnwindSafe for HostLifecycle"
           ]
         },
+        "enum.InputKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum InputKind { PressureButton { range: InputAxisRange, }, CapacitiveTouch, Relative2D { x: InputAxisRange, y: InputAxisRange, }, PointSet { points: u8, x: InputAxisRange, y: InputAxisRange, }, LoadCell { range: InputAxisRange, unit: &'static str, }, }"
+          ],
+          "traits": [
+            "impl Clone for InputKind",
+            "impl Copy for InputKind",
+            "impl Debug for InputKind",
+            "impl Eq for InputKind",
+            "impl PartialEq for InputKind",
+            "impl RefUnwindSafe for InputKind",
+            "impl Send for InputKind",
+            "impl Sync for InputKind",
+            "impl Unpin for InputKind",
+            "impl UnwindSafe for InputKind"
+          ]
+        },
         "enum.InputTopologyError.html": {
           "declarations": [
-            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidScale(InputControlId), }"
+            "#[non_exhaustive]pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
           ],
           "traits": [
             "impl Clone for InputTopologyError",
@@ -508,6 +542,57 @@
             "impl Sync for InputTopologyError",
             "impl Unpin for InputTopologyError",
             "impl UnwindSafe for InputTopologyError"
+          ]
+        },
+        "enum.LedKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum LedKind { Mono, Rgb, }"
+          ],
+          "traits": [
+            "impl Clone for LedKind",
+            "impl Copy for LedKind",
+            "impl Debug for LedKind",
+            "impl Eq for LedKind",
+            "impl PartialEq for LedKind",
+            "impl RefUnwindSafe for LedKind",
+            "impl Send for LedKind",
+            "impl Sync for LedKind",
+            "impl Unpin for LedKind",
+            "impl UnwindSafe for LedKind"
+          ]
+        },
+        "enum.MotorRole.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+          ],
+          "traits": [
+            "impl Clone for MotorRole",
+            "impl Copy for MotorRole",
+            "impl Debug for MotorRole",
+            "impl Eq for MotorRole",
+            "impl PartialEq for MotorRole",
+            "impl RefUnwindSafe for MotorRole",
+            "impl Send for MotorRole",
+            "impl Sync for MotorRole",
+            "impl Unpin for MotorRole",
+            "impl UnwindSafe for MotorRole"
+          ]
+        },
+        "enum.OutputKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum OutputKind { Rumble { motors: &'static [MotorRole], }, ImpulseTrigger, Led { kind: LedKind, }, PlayerIndicator { count: u8, }, AdaptiveTrigger, Display { w: u32, h: u32, format: DisplayFormat, }, Speaker { format: SpeakerFormat, }, }"
+          ],
+          "traits": [
+            "impl Clone for OutputKind",
+            "impl Copy for OutputKind",
+            "impl Debug for OutputKind",
+            "impl Eq for OutputKind",
+            "impl PartialEq for OutputKind",
+            "impl RefUnwindSafe for OutputKind",
+            "impl Send for OutputKind",
+            "impl Sync for OutputKind",
+            "impl Unpin for OutputKind",
+            "impl UnwindSafe for OutputKind"
           ]
         },
         "enum.RealizationValidationStatus.html": {
@@ -555,6 +640,23 @@
             "impl<'a> Sync for ServiceReadiness<'a>",
             "impl<'a> Unpin for ServiceReadiness<'a>",
             "impl<'a> UnwindSafe for ServiceReadiness<'a>"
+          ]
+        },
+        "enum.SpeakerFormat.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SpeakerFormat { Signed16Le, Unsigned8, }"
+          ],
+          "traits": [
+            "impl Clone for SpeakerFormat",
+            "impl Copy for SpeakerFormat",
+            "impl Debug for SpeakerFormat",
+            "impl Eq for SpeakerFormat",
+            "impl PartialEq for SpeakerFormat",
+            "impl RefUnwindSafe for SpeakerFormat",
+            "impl Send for SpeakerFormat",
+            "impl Sync for SpeakerFormat",
+            "impl Unpin for SpeakerFormat",
+            "impl UnwindSafe for SpeakerFormat"
           ]
         },
         "enum.SwitchProControl.html": {
@@ -1012,6 +1114,7 @@
             "pub const fn validation_status(&self) -> RealizationValidationStatus",
             "pub const fn digital_controls(&self) -> &'static [DigitalControlSurface]",
             "pub const fn axes(&self) -> &'static [AbsoluteAxisSurface]",
+            "pub const fn output_kinds(&self) -> &'static [OutputKind]",
             "pub const fn outputs(&self) -> &'static [OutputSurface]",
             "pub const fn restrictions(&self) -> &'static [TargetRestriction]",
             "pub const fn input_topology(&self) -> &'static InputTopology"
@@ -1133,6 +1236,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualSenseState",
+            "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -1181,6 +1285,23 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOutputState {Show 13 fields pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub right_trigger: Option<[u8; 11]>, pub left_trigger: Option<[u8; 11]>, pub mute_led: Option<u8>, pub microphone_muted: Option<bool>, pub audio_path: Option<DualSenseAudioPath>, pub speaker_volume: Option<u8>, pub microphone_volume: Option<u8>, pub speaker_preamp: Option<u8>, pub player_leds: Option<u8>, pub lightbar_rgb: Option<[u8; 3]>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOutputState",
+            "impl Debug for DualSenseOutputState",
+            "impl Default for DualSenseOutputState",
+            "impl Eq for DualSenseOutputState",
+            "impl PartialEq for DualSenseOutputState",
+            "impl RefUnwindSafe for DualSenseOutputState",
+            "impl Send for DualSenseOutputState",
+            "impl Sync for DualSenseOutputState",
+            "impl Unpin for DualSenseOutputState",
+            "impl UnwindSafe for DualSenseOutputState"
           ]
         },
         "struct.DualSenseState.html": {
@@ -1295,6 +1416,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualShock4State",
+            "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
             "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -1357,6 +1479,23 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4OutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub lightbar_rgb: Option<[u8; 3]>, pub blink: Option<[u8; 2]>, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4OutputState",
+            "impl Debug for DualShock4OutputState",
+            "impl Default for DualShock4OutputState",
+            "impl Eq for DualShock4OutputState",
+            "impl PartialEq for DualShock4OutputState",
+            "impl RefUnwindSafe for DualShock4OutputState",
+            "impl Send for DualShock4OutputState",
+            "impl Sync for DualShock4OutputState",
+            "impl Unpin for DualShock4OutputState",
+            "impl UnwindSafe for DualShock4OutputState"
           ]
         },
         "struct.DualShock4State.html": {
@@ -1547,6 +1686,7 @@
             "pub const fn touchpads(&self) -> &'static [TouchpadInput]",
             "pub const fn motion(&self) -> &'static [MotionInput]",
             "pub const fn extra_axes(&self) -> &'static [ExtraAxisInput]",
+            "pub const fn typed_inputs(&self) -> &'static [TypedInput]",
             "pub const fn custom_modules(&self) -> &'static [CustomInputModule]",
             "pub const EMPTY: InputTopology",
             "pub fn validate(&self) -> Result<(), InputTopologyError>"
@@ -1721,6 +1861,23 @@
             "impl UnwindSafe for RumbleEffect"
           ]
         },
+        "struct.RumblePlayback.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct RumblePlayback { pub strong: u16, pub weak: u16, pub repetitions: u32, }"
+          ],
+          "traits": [
+            "impl Clone for RumblePlayback",
+            "impl Copy for RumblePlayback",
+            "impl Debug for RumblePlayback",
+            "impl Eq for RumblePlayback",
+            "impl PartialEq for RumblePlayback",
+            "impl RefUnwindSafe for RumblePlayback",
+            "impl Send for RumblePlayback",
+            "impl Sync for RumblePlayback",
+            "impl Unpin for RumblePlayback",
+            "impl UnwindSafe for RumblePlayback"
+          ]
+        },
         "struct.StickInput.html": {
           "declarations": [
             "pub struct StickInput { /* private fields */ }",
@@ -1772,6 +1929,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &SwitchProState",
+            "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
             "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -1810,6 +1968,23 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motor_words: Option<[[u8; 4]; 2]>, pub player_lights: Option<u8>, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOutputState",
+            "impl Debug for SwitchProOutputState",
+            "impl Default for SwitchProOutputState",
+            "impl Eq for SwitchProOutputState",
+            "impl PartialEq for SwitchProOutputState",
+            "impl RefUnwindSafe for SwitchProOutputState",
+            "impl Send for SwitchProOutputState",
+            "impl Sync for SwitchProOutputState",
+            "impl Unpin for SwitchProOutputState",
+            "impl UnwindSafe for SwitchProOutputState"
           ]
         },
         "struct.SwitchProRumble.html": {
@@ -1948,6 +2123,26 @@
             "impl UnwindSafe for TriggerStack"
           ]
         },
+        "struct.TypedInput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct TypedInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn kind(&self) -> InputKind"
+          ],
+          "traits": [
+            "impl Clone for TypedInput",
+            "impl Copy for TypedInput",
+            "impl Debug for TypedInput",
+            "impl Eq for TypedInput",
+            "impl PartialEq for TypedInput",
+            "impl RefUnwindSafe for TypedInput",
+            "impl Send for TypedInput",
+            "impl Sync for TypedInput",
+            "impl Unpin for TypedInput",
+            "impl UnwindSafe for TypedInput"
+          ]
+        },
         "struct.Xbox360Axis.html": {
           "declarations": [
             "pub struct Xbox360Axis(/* private fields */);",
@@ -1975,6 +2170,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &Xbox360State",
+            "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -1998,6 +2194,23 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360OutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360OutputState",
+            "impl Debug for Xbox360OutputState",
+            "impl Default for Xbox360OutputState",
+            "impl Eq for Xbox360OutputState",
+            "impl PartialEq for Xbox360OutputState",
+            "impl RefUnwindSafe for Xbox360OutputState",
+            "impl Send for Xbox360OutputState",
+            "impl Sync for Xbox360OutputState",
+            "impl Unpin for Xbox360OutputState",
+            "impl UnwindSafe for Xbox360OutputState"
           ]
         },
         "struct.Xbox360State.html": {
@@ -2280,6 +2493,23 @@
             "impl UnwindSafe for DigitalControlUpdate"
           ]
         },
+        "enum.DisplayFormat.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum DisplayFormat { Monochrome1, Rgb888, }"
+          ],
+          "traits": [
+            "impl Clone for DisplayFormat",
+            "impl Copy for DisplayFormat",
+            "impl Debug for DisplayFormat",
+            "impl Eq for DisplayFormat",
+            "impl PartialEq for DisplayFormat",
+            "impl RefUnwindSafe for DisplayFormat",
+            "impl Send for DisplayFormat",
+            "impl Sync for DisplayFormat",
+            "impl Unpin for DisplayFormat",
+            "impl UnwindSafe for DisplayFormat"
+          ]
+        },
         "enum.DpadDirection.html": {
           "declarations": [
             "pub enum DpadDirection { Up, Down, Left, Right, }"
@@ -2567,9 +2797,26 @@
             "impl UnwindSafe for HostLifecycle"
           ]
         },
+        "enum.InputKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum InputKind { PressureButton { range: InputAxisRange, }, CapacitiveTouch, Relative2D { x: InputAxisRange, y: InputAxisRange, }, PointSet { points: u8, x: InputAxisRange, y: InputAxisRange, }, LoadCell { range: InputAxisRange, unit: &'static str, }, }"
+          ],
+          "traits": [
+            "impl Clone for InputKind",
+            "impl Copy for InputKind",
+            "impl Debug for InputKind",
+            "impl Eq for InputKind",
+            "impl PartialEq for InputKind",
+            "impl RefUnwindSafe for InputKind",
+            "impl Send for InputKind",
+            "impl Sync for InputKind",
+            "impl Unpin for InputKind",
+            "impl UnwindSafe for InputKind"
+          ]
+        },
         "enum.InputTopologyError.html": {
           "declarations": [
-            "pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidScale(InputControlId), }"
+            "#[non_exhaustive]pub enum InputTopologyError { EmptyIdentifier, DuplicateIdentifier(InputControlId), DuplicatePlacement(InputControlId), InvalidPlacement(InputControlId), InvalidAxisRange(InputControlId), InvalidTouchpad(InputControlId), InvalidTypedInput(InputControlId), InvalidScale(InputControlId), }"
           ],
           "traits": [
             "impl Clone for InputTopologyError",
@@ -2584,6 +2831,57 @@
             "impl Sync for InputTopologyError",
             "impl Unpin for InputTopologyError",
             "impl UnwindSafe for InputTopologyError"
+          ]
+        },
+        "enum.LedKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum LedKind { Mono, Rgb, }"
+          ],
+          "traits": [
+            "impl Clone for LedKind",
+            "impl Copy for LedKind",
+            "impl Debug for LedKind",
+            "impl Eq for LedKind",
+            "impl PartialEq for LedKind",
+            "impl RefUnwindSafe for LedKind",
+            "impl Send for LedKind",
+            "impl Sync for LedKind",
+            "impl Unpin for LedKind",
+            "impl UnwindSafe for LedKind"
+          ]
+        },
+        "enum.MotorRole.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum MotorRole { Left, Right, Strong, Weak, }"
+          ],
+          "traits": [
+            "impl Clone for MotorRole",
+            "impl Copy for MotorRole",
+            "impl Debug for MotorRole",
+            "impl Eq for MotorRole",
+            "impl PartialEq for MotorRole",
+            "impl RefUnwindSafe for MotorRole",
+            "impl Send for MotorRole",
+            "impl Sync for MotorRole",
+            "impl Unpin for MotorRole",
+            "impl UnwindSafe for MotorRole"
+          ]
+        },
+        "enum.OutputKind.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum OutputKind { Rumble { motors: &'static [MotorRole], }, ImpulseTrigger, Led { kind: LedKind, }, PlayerIndicator { count: u8, }, AdaptiveTrigger, Display { w: u32, h: u32, format: DisplayFormat, }, Speaker { format: SpeakerFormat, }, }"
+          ],
+          "traits": [
+            "impl Clone for OutputKind",
+            "impl Copy for OutputKind",
+            "impl Debug for OutputKind",
+            "impl Eq for OutputKind",
+            "impl PartialEq for OutputKind",
+            "impl RefUnwindSafe for OutputKind",
+            "impl Send for OutputKind",
+            "impl Sync for OutputKind",
+            "impl Unpin for OutputKind",
+            "impl UnwindSafe for OutputKind"
           ]
         },
         "enum.RealizationValidationStatus.html": {
@@ -2631,6 +2929,23 @@
             "impl<'a> Sync for ServiceReadiness<'a>",
             "impl<'a> Unpin for ServiceReadiness<'a>",
             "impl<'a> UnwindSafe for ServiceReadiness<'a>"
+          ]
+        },
+        "enum.SpeakerFormat.html": {
+          "declarations": [
+            "#[non_exhaustive]pub enum SpeakerFormat { Signed16Le, Unsigned8, }"
+          ],
+          "traits": [
+            "impl Clone for SpeakerFormat",
+            "impl Copy for SpeakerFormat",
+            "impl Debug for SpeakerFormat",
+            "impl Eq for SpeakerFormat",
+            "impl PartialEq for SpeakerFormat",
+            "impl RefUnwindSafe for SpeakerFormat",
+            "impl Send for SpeakerFormat",
+            "impl Sync for SpeakerFormat",
+            "impl Unpin for SpeakerFormat",
+            "impl UnwindSafe for SpeakerFormat"
           ]
         },
         "enum.SwitchProControl.html": {
@@ -3088,6 +3403,7 @@
             "pub const fn validation_status(&self) -> RealizationValidationStatus",
             "pub const fn digital_controls(&self) -> &'static [DigitalControlSurface]",
             "pub const fn axes(&self) -> &'static [AbsoluteAxisSurface]",
+            "pub const fn output_kinds(&self) -> &'static [OutputKind]",
             "pub const fn outputs(&self) -> &'static [OutputSurface]",
             "pub const fn restrictions(&self) -> &'static [TargetRestriction]",
             "pub const fn input_topology(&self) -> &'static InputTopology"
@@ -3209,6 +3525,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualSenseState",
+            "pub fn host_outputs(&self) -> Result<DualSenseOutputState, ControlError>",
             "pub fn surface(&self) -> &'static DualSenseSurface",
             "pub fn is_dirty(&self) -> bool",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -3257,6 +3574,23 @@
             "impl Sync for DualSenseIdentity",
             "impl Unpin for DualSenseIdentity",
             "impl UnwindSafe for DualSenseIdentity"
+          ]
+        },
+        "struct.DualSenseOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualSenseOutputState {Show 13 fields pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub right_trigger: Option<[u8; 11]>, pub left_trigger: Option<[u8; 11]>, pub mute_led: Option<u8>, pub microphone_muted: Option<bool>, pub audio_path: Option<DualSenseAudioPath>, pub speaker_volume: Option<u8>, pub microphone_volume: Option<u8>, pub speaker_preamp: Option<u8>, pub player_leds: Option<u8>, pub lightbar_rgb: Option<[u8; 3]>, }"
+          ],
+          "traits": [
+            "impl Clone for DualSenseOutputState",
+            "impl Debug for DualSenseOutputState",
+            "impl Default for DualSenseOutputState",
+            "impl Eq for DualSenseOutputState",
+            "impl PartialEq for DualSenseOutputState",
+            "impl RefUnwindSafe for DualSenseOutputState",
+            "impl Send for DualSenseOutputState",
+            "impl Sync for DualSenseOutputState",
+            "impl Unpin for DualSenseOutputState",
+            "impl UnwindSafe for DualSenseOutputState"
           ]
         },
         "struct.DualSenseState.html": {
@@ -3371,6 +3705,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &DualShock4State",
+            "pub fn host_outputs(&self) -> Result<DualShock4OutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static DualShock4Surface",
             "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -3433,6 +3768,23 @@
             "impl Sync for DualShock4MotionSample",
             "impl Unpin for DualShock4MotionSample",
             "impl UnwindSafe for DualShock4MotionSample"
+          ]
+        },
+        "struct.DualShock4OutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct DualShock4OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motors: Option<[u8; 2]>, pub lightbar_rgb: Option<[u8; 3]>, pub blink: Option<[u8; 2]>, }"
+          ],
+          "traits": [
+            "impl Clone for DualShock4OutputState",
+            "impl Debug for DualShock4OutputState",
+            "impl Default for DualShock4OutputState",
+            "impl Eq for DualShock4OutputState",
+            "impl PartialEq for DualShock4OutputState",
+            "impl RefUnwindSafe for DualShock4OutputState",
+            "impl Send for DualShock4OutputState",
+            "impl Sync for DualShock4OutputState",
+            "impl Unpin for DualShock4OutputState",
+            "impl UnwindSafe for DualShock4OutputState"
           ]
         },
         "struct.DualShock4State.html": {
@@ -3623,6 +3975,7 @@
             "pub const fn touchpads(&self) -> &'static [TouchpadInput]",
             "pub const fn motion(&self) -> &'static [MotionInput]",
             "pub const fn extra_axes(&self) -> &'static [ExtraAxisInput]",
+            "pub const fn typed_inputs(&self) -> &'static [TypedInput]",
             "pub const fn custom_modules(&self) -> &'static [CustomInputModule]",
             "pub const EMPTY: InputTopology",
             "pub fn validate(&self) -> Result<(), InputTopologyError>"
@@ -3797,6 +4150,23 @@
             "impl UnwindSafe for RumbleEffect"
           ]
         },
+        "struct.RumblePlayback.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct RumblePlayback { pub strong: u16, pub weak: u16, pub repetitions: u32, }"
+          ],
+          "traits": [
+            "impl Clone for RumblePlayback",
+            "impl Copy for RumblePlayback",
+            "impl Debug for RumblePlayback",
+            "impl Eq for RumblePlayback",
+            "impl PartialEq for RumblePlayback",
+            "impl RefUnwindSafe for RumblePlayback",
+            "impl Send for RumblePlayback",
+            "impl Sync for RumblePlayback",
+            "impl Unpin for RumblePlayback",
+            "impl UnwindSafe for RumblePlayback"
+          ]
+        },
         "struct.StickInput.html": {
           "declarations": [
             "pub struct StickInput { /* private fields */ }",
@@ -3848,6 +4218,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &SwitchProState",
+            "pub fn host_outputs(&self) -> Result<SwitchProOutputState, ControlError>",
             "pub fn is_dirty(&self) -> bool",
             "pub fn surface(&self) -> &'static SwitchProSurface",
             "pub fn set_digital( &mut self, u: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -3886,6 +4257,23 @@
             "impl Sync for SwitchProMotionSample",
             "impl Unpin for SwitchProMotionSample",
             "impl UnwindSafe for SwitchProMotionSample"
+          ]
+        },
+        "struct.SwitchProOutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct SwitchProOutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, pub motor_words: Option<[[u8; 4]; 2]>, pub player_lights: Option<u8>, }"
+          ],
+          "traits": [
+            "impl Clone for SwitchProOutputState",
+            "impl Debug for SwitchProOutputState",
+            "impl Default for SwitchProOutputState",
+            "impl Eq for SwitchProOutputState",
+            "impl PartialEq for SwitchProOutputState",
+            "impl RefUnwindSafe for SwitchProOutputState",
+            "impl Send for SwitchProOutputState",
+            "impl Sync for SwitchProOutputState",
+            "impl Unpin for SwitchProOutputState",
+            "impl UnwindSafe for SwitchProOutputState"
           ]
         },
         "struct.SwitchProRumble.html": {
@@ -4024,6 +4412,26 @@
             "impl UnwindSafe for TriggerStack"
           ]
         },
+        "struct.TypedInput.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct TypedInput { /* private fields */ }",
+            "pub const fn id(&self) -> InputControlId",
+            "pub const fn title(&self) -> &'static str",
+            "pub const fn kind(&self) -> InputKind"
+          ],
+          "traits": [
+            "impl Clone for TypedInput",
+            "impl Copy for TypedInput",
+            "impl Debug for TypedInput",
+            "impl Eq for TypedInput",
+            "impl PartialEq for TypedInput",
+            "impl RefUnwindSafe for TypedInput",
+            "impl Send for TypedInput",
+            "impl Sync for TypedInput",
+            "impl Unpin for TypedInput",
+            "impl UnwindSafe for TypedInput"
+          ]
+        },
         "struct.Xbox360Axis.html": {
           "declarations": [
             "pub struct Xbox360Axis(/* private fields */);",
@@ -4051,6 +4459,7 @@
             "pub fn next_service_in(&self) -> Option<Duration>",
             "pub fn dropped_output_events(&self) -> u64",
             "pub fn state(&self) -> &Xbox360State",
+            "pub fn host_outputs(&self) -> Result<Xbox360OutputState, ControlError>",
             "pub fn surface(&self) -> &'static Xbox360Surface",
             "pub fn is_dirty(&self) -> bool",
             "pub fn set_digital( &mut self, update: DigitalControlUpdate, ) -> Result<(), ControlError>",
@@ -4074,6 +4483,23 @@
             "impl !UnwindSafe for Xbox360Controller",
             "impl Send for Xbox360Controller",
             "impl Unpin for Xbox360Controller"
+          ]
+        },
+        "struct.Xbox360OutputState.html": {
+          "declarations": [
+            "#[non_exhaustive]pub struct Xbox360OutputState { pub revision: u64, pub evdev_rumble: Option<RumblePlayback>, }"
+          ],
+          "traits": [
+            "impl Clone for Xbox360OutputState",
+            "impl Debug for Xbox360OutputState",
+            "impl Default for Xbox360OutputState",
+            "impl Eq for Xbox360OutputState",
+            "impl PartialEq for Xbox360OutputState",
+            "impl RefUnwindSafe for Xbox360OutputState",
+            "impl Send for Xbox360OutputState",
+            "impl Sync for Xbox360OutputState",
+            "impl Unpin for Xbox360OutputState",
+            "impl UnwindSafe for Xbox360OutputState"
           ]
         },
         "struct.Xbox360State.html": {

@@ -17,6 +17,27 @@ the resulting component set. See [ADR-0017](adr/ADR-0017-primary-realization-and
 
 `RealizationId` is an extensible compiled string identifier. `RealizationTarget` and its `Evdev`, `Uhid`, and `DummyHcd` constants remain supporting-crate SPI aliases. `RealizationTargetSet::new(&[...])` declares a static membership set without a closed global enum. Unknown or mismatched paths fail preparation; they do not select another provider. Mechanism potential is not evidence of implemented or tested support.
 
+## Compiled family registry and broker allowlist
+
+The four existing families are declared in one compile-time list in
+`gr-controller-wire`; its immutable metadata can be consumed below the
+broker/provider dependency boundary. The typed curated `FAMILIES` registry
+attaches each definition's manifest, topology and target surfaces, including
+intended realization tier and permission class. New test-only families can use
+the same curated orchestration without editing production dispatch arms.
+
+USB/IP profiles take a compiled `UsbProfileSpec`; semantic channel layouts,
+report numbering, descriptors and strings remain controller metadata. Broker
+and worker audio dispatch is generated from the same family list. The broker
+accepts only its compiled IDs/tags; descriptor injection and arbitrary worker
+executables are not interfaces. See [ADR-0018](adr/ADR-0018-compiled-broker-allowlist.md)
+(Proposed) for the boundary and rejected transport-only alternative.
+
+No ordinary-root API item, broker wire format or existing descriptor byte is
+changed by this registry. Tiers are intended mechanisms, not validation results.
+The shared UHID transport supports Bluetooth bus metadata, with curated fake-I/O
+coverage on bus 5; that is separate from real Bluetooth radio/pairing support.
+
 ## Ownership and data flow
 
 ```text
@@ -152,3 +173,74 @@ facts. Unknown raw visibility cannot be inferred from macro functionality. The
 [SDL differential workflow](SDL_DIFFERENTIAL.md) reports missing measurements and
 expected/unexpected differences without converting source evidence into physical
 truth. Production Wii Remote remains positively gated on later authorization.
+
+### Application facade ownership
+
+The four typed root handles are newtypes around a private `Controller<F>`. Its
+compiled family adapter supplies typed service dispatch; one owner coordinates
+audio failure, deadlines, diagnostics and audio-first terminal cleanup. Shared
+forwarding is generated with `macro_rules!`; controller-native edits and protocol
+validation stay in curated code. Crate-private `from_parts` constructors support
+the same deterministic provider-injection tests without exposing a public
+construction bypass. Creation rollback continues to preserve the initiating
+error together with all cleanup failures.
+
+### Opt-in live topology validation
+
+Native topology consumers retain a controller-owned configuration in their
+opt-in topology owner; fixed-family sessions gain no fields. Configuration and
+state candidates are validated before either is installed or the generation
+advances. Native callers without that configuration fail closed rather than
+silently dropping protocol edits. Both current and candidate configurations
+must accept neutralized state, so removing a held optional control requires
+neutralization. No provider I/O occurs during acceptance.
+
+Topology edits use controller-owned typed operations deriving their control ID;
+an independent ID cannot authorize an arbitrary edit closure. Full candidate
+validation additionally prevents an operation from leaving an absent control
+active. The fifth-family fake-provider tests cover this on native uinput and
+HID; production Wii still owns its legal attachment combinations and mappings.
+
+### Root audio crate boundary
+
+`gr-root-audio` owns controller audio objects, backends, USB worker sessions and
+the optional native PCM bridge. It depends on supporting contracts and curated
+controllers, never on `virtualgamepad`. The application root retains typed
+controller selection, association and initiating/cleanup error mapping through
+thin adapters. Private lifecycle extension methods call supporting integration
+functions so extracting ownership adds no public inherent method to the frozen
+root audio types. Fake backend support is opt-in for deterministic tests.
+
+USB audio factories resolve existing compiled profile tags through registry
+metadata; the root no longer supplies magic tag bytes. Broker/worker protocol
+framing and version constants do not change. Wire fixtures formerly housed in
+`gr-dualsense-wire` live verbatim under `gr_controller_wire::dualsense`.
+
+The [synthetic receiver fixture](spec/receiver-aggregate-fixture.md) proves
+controller-owned slot/companion transitions over existing stateful HID runtimes
+and RequiredGroup. Receiver registry metadata names hosted families; the test
+entry advertises no target. Actual Puck wire policy and presentation epochs remain
+separate scoped work.
+
+The [demo topology editor](spec/demo-topology-editors.md) uses compiled registry
+membership and one current-shape renderer. Typed native conversion and family
+output decoding live in adapters; the GUI coordinator has no per-family branches.
+This internal workspace SPI does not expand the ordinary-root API.
+
+### D2 retained outputs and typed capabilities
+
+Step 10c (#176 owner comments 6325147128 and 6328169640) forwards
+`host_outputs()` from the curated session through the ordinary family facade.
+Accepted output state and revisions survive observation loss and close; required
+request/reply handling remains controller-owned. USB-worker snapshots remain
+unavailable because the unchanged wire protocol has no recovery query (#203).
+
+`ControllerSurface::output_kinds()` describes the selected realization alongside
+legacy event-code outputs. Registry kinds describe native family capabilities
+(Xbox uses evdev rumble); uinput exposes only conventional rumble and Xbox UHID
+exposes none. `InputTopology::typed_inputs()` adds native pressure, capacitive,
+relative 2D, point-set and load-cell metadata, validated with the existing topology
+and immutable live-subset rules. Existing families declare no new inputs. These
+are read-only compiled descriptors, not runtime profiles or mutable generic state.
+Display/speaker vocabulary declares no implementation or subsystem; ADR-0023
+continues to govern future in-band subsystems.

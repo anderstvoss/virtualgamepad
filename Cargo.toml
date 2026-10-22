@@ -11,9 +11,10 @@ publish = false
 
 [workspace]
 members = [
+    "xtask",
     "crates/gr-hid",
     "crates/gr-realization-api",
-    "crates/gr-dualsense-wire",
+    "crates/gr-root-audio",
     "crates/gr-controller-wire",
     "crates/gr-audio-contract",
     "crates/gr-audio-linux",
@@ -52,6 +53,7 @@ pedantic = { level = "warn", priority = -1 }
 undocumented_unsafe_blocks = "deny"
 
 [dependencies]
+gr-root-audio = { path = "crates/gr-root-audio", version = "0.1" }
 gr-hid = { path = "crates/gr-hid", version = "0.1" }
 gr-controller-contract = { path = "crates/gr-controller-contract", version = "0.1" }
 gr-controller-runtime = { path = "crates/gr-controller-runtime", version = "0.1" }
@@ -65,11 +67,12 @@ workspace = true
 [features]
 default = []
 # Research/SPI only: excluded from the application API stability promise.
-experimental = []
-audio-pipewire = ["dep:gr-audio-linux", "gr-audio-linux/pipewire"]
-audio-usbip = ["dep:gr-audio-worker", "dep:gr-privileged-broker", "dep:gr-usbip"]
+experimental = ["gr-root-audio/experimental"]
+audio-pipewire = ["gr-root-audio/audio-pipewire"]
+audio-usbip = ["gr-root-audio/audio-usbip"]
 
 [dev-dependencies]
+gr-root-audio = { path = "crates/gr-root-audio", version = "0.1", features = ["test-support"] }
 gr-curated-controllers = { path = "crates/gr-curated-controllers", version = "0.1", features = ["test-support"] }
 
 [[example]]
@@ -96,11 +99,8 @@ required-features = ["audio-usbip"]
 name = "usb_audio_latency_alsa"
 required-features = ["audio-usbip"]
 
-[target.'cfg(target_os = "linux")'.dependencies]
-gr-audio-linux = { path = "crates/gr-audio-linux", version = "0.1", optional = true }
-gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1", optional = true }
-gr-privileged-broker = { path = "crates/gr-privileged-broker", version = "0.1", optional = true }
-gr-usbip = { path = "crates/gr-usbip", version = "0.1", optional = true }
-
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 alsa = "0.12.1"
+
+gr-audio-worker = { path = "crates/gr-audio-worker", version = "0.1" }
+gr-privileged-broker = { path = "crates/gr-privileged-broker", version = "0.1" }

@@ -98,7 +98,29 @@ not an arbitrary controller/provider plugin contract. The `test-support` feature
 of the curated crate supplies fake-provider construction only for workspace tests;
 ordinary builds do not enable it.
 
-Gadget creation is rejected by normal root constructors with its Gate G reason.
+Each ordinary family handle now exposes `host_outputs()` under owner D2
+(#176 comments 6325147128 and 6328169640). It returns a typed snapshot
+(`DualSenseOutputState`, `DualShock4OutputState`, `SwitchProOutputState`, or
+`Xbox360OutputState`) of accepted in-process host output values and a revision,
+independently of the bounded observation queue, including after close. The
+revision advances once per accepted value change; repeated identical values and
+malformed requests do not advance it. Read the snapshot for latest levels and
+use events for edges and diagnostics. These values do not prove physical delivery.
+The same views remain available through the experimental curated handles.
+On UHID, Xbox 360 retains no supported host outputs (an empty snapshot at revision
+zero), and `evdev_rumble` is `None` for every family because evdev playback belongs
+to the uinput realization. USB-worker retained views explicitly return
+`UnavailableInRealization`: their lossy observation channel has no recovery query.
+
+Ordinary-root `surface().restrictions()` also exposes the retained-host-outputs
+restriction on USB/IP and `dummy_hcd` surfaces. This is visible restriction metadata,
+independent of whether an application reads the new ordinary-root snapshot.
+
+Under owner decision D5 (#176 comment 6325079527), `dummy_hcd` stays in the tree
+as experimental and not recommended because it needs root and host provisioning.
+Controller buildout targets near feature-complete UHID realizations; `dummy_hcd`
+and USB/IP remain optional faithful tiers, never default paths. Gadget creation
+is rejected by normal root constructors with its Gate G reason.
 Research implementations/tests remain available; no supported function was
 silently mapped to a lower-fidelity realization. USB gadget, Bluetooth and audio
 support are not promoted by API cleanup. The demo disables gadget selection and
@@ -112,6 +134,26 @@ migration notes, not a promise of 1.0 compatibility.
 
 
 ## Audio and read-only metadata
+
+Selected surfaces expose `output_kinds()` alongside the existing `outputs()`
+event-code descriptors. Native kinds describe rumble motor roles, mono/RGB LEDs,
+player indicators and adaptive triggers. uinput exposes conventional rumble only;
+Xbox UHID has no output kinds. The compiled registry carries family-native kinds
+(Xbox uses its evdev rumble kind). Display, speaker and impulse-trigger vocabulary
+is available but undeclared by the current families; no capability is implied by
+an enum variant alone. Existing restriction reasons still apply.
+
+`InputTopology::typed_inputs()` describes pressure buttons, binary capacitive
+contact, signed relative 2D displacement, bounded point sets and load cells.
+Descriptors retain native ranges and load-cell units; controller-native state
+and operations own values. The current four families leave this new slice empty.
+Future controller packages can declare these kinds without hiding them in custom
+modules. New kind and retained-state types are non-exhaustive; consumers must
+allow future variants/fields. `InputTopologyError` is also non-exhaustive;
+downstream matches must include a wildcard arm to handle future validation errors.
+The reviewed D2 snapshot grows from 110 to 122
+items with four handle methods, two descriptor accessors and a typed-input
+validation error; no old signature is removed.
 
 Topology descriptors are read-only semantic metadata, not external controller
 construction or GUI sizing policy. Inspect their accessor slices and native ranges;
@@ -160,3 +202,10 @@ The supporting `gr_hid::Protocol::lifecycle` hook now returns `Option<Output>`;
 custom implementations must return their observation or `None` after state
 handling. Supporting `ControllerAssociation` constructors also need the new
 `companions` field. These SPI changes leave ordinary root signatures unchanged.
+
+Retained accepted host outputs are a supporting curated-controller interface, not
+a new ordinary-root method. Optional observation callbacks remain bounded and
+lossy. The internal retained view survives event eviction and terminal close,
+and revisions count semantic accepted changes rather than delivery or physical
+playback. USB-worker snapshots are explicitly unavailable because the lossy
+worker channel has no recovery query (tracked separately in #203).

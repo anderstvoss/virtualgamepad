@@ -9,19 +9,18 @@ use gr_controller_contract::{
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
     FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
-    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
-    TriggerInput, TriggerInputKind, TriggerStack,
+    MotorRole, OutputKind, OutputSurface, RealizationControllerDefinition, RealizationManifest,
+    RealizationManifestEntry, RealizationValidationStatus, StickInput, TargetAwareControllerDriver,
+    TargetRestriction, TriggerInput, TriggerInputKind, TriggerStack,
 };
 mod protocol;
 
 use gr_controller_wire::SWITCH_PRO_USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent, RealizationSelection,
+    RealizationSessionId, RealizationTarget,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -272,6 +271,15 @@ static AXES: [AbsoluteAxisSurface; 6] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[
+    OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    },
+    OutputKind::PlayerIndicator { count: 4 },
+];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "switch-hd-rumble",
     event_type: 0,
@@ -445,6 +453,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
@@ -460,6 +469,7 @@ static EVDEV_SURFACE: SwitchProSurface = SwitchProSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &EVDEV_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -472,11 +482,14 @@ static HID_SURFACE: SwitchProSurface = SwitchProSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: SwitchProSurface = SwitchProSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -484,7 +497,8 @@ static USB_SURFACE: SwitchProSurface = SwitchProSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -835,6 +849,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct SwitchProController(common::ControllerSession<SwitchProDefinition>);
 impl SwitchProController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::SwitchProOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     #[must_use]
     pub fn stream_enabled(&self) -> bool {
         self.0
@@ -1134,7 +1154,7 @@ pub fn create_switch_pro(o: CreationOptions) -> Result<SwitchProController, Prov
         RealizationTarget::LINUX_UHID_USB => hid(o.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::SwitchPro,
+                controller: gr_controller_wire::registry::ids::SWITCH_PRO,
             })
         }
         _ => {
@@ -1162,6 +1182,37 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<SwitchProController, ProviderError> {
     common::injected(SwitchProDefinition, session).map(SwitchProController)
+}
+
+impl crate::registry::ControllerFamily for SwitchProDefinition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::SWITCH_PRO;
+    const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &EVDEV_SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

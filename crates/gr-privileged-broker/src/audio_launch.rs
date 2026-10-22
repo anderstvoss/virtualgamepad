@@ -18,30 +18,50 @@ use std::{
 };
 const WORKER: &str = "/usr/libexec/virtualgamepad/gr-audio-worker";
 
-#[derive(Clone, Copy, Debug)]
-pub enum Profile {
-    DualSense,
-    DualShock4,
-    Xbox360,
+macro_rules! compiled_profiles {
+    ($(($module:ident, $definition:ident, $spec:ident, [$($variant:ident)?]),)*) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum Profile { $( $($variant,)? )* }
+        static PROFILES: &[(Profile, &gr_controller_wire::registry::FamilySpec)] = &[
+            $( $((Profile::$variant, &gr_controller_wire::registry::$spec),)? )*
+        ];
+    };
 }
+gr_controller_wire::compiled_families!(compiled_profiles);
 impl Profile {
     pub fn from_tag(tag: u8) -> io::Result<Self> {
-        match tag {
-            1 => Ok(Self::DualSense),
-            2 => Ok(Self::DualShock4),
-            3 => Ok(Self::Xbox360),
-            _ => Err(io::Error::other("unsupported compiled audio profile")),
-        }
+        PROFILES
+            .iter()
+            .find(|(_, family)| family.broker_tag == Some(tag))
+            .map(|(profile, _)| *profile)
+            .ok_or_else(|| io::Error::other("unsupported compiled audio profile"))
     }
     #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::DualSense => "dualsense",
-            Self::DualShock4 => "dualshock4",
-            Self::Xbox360 => "xbox360",
-        }
+    pub fn name(self) -> &'static str {
+        self.spec().worker_name
+    }
+    pub(crate) fn tag(self) -> io::Result<u8> {
+        self.tag_in(PROFILES)
+    }
+    fn tag_in(
+        self,
+        profiles: &[(Self, &gr_controller_wire::registry::FamilySpec)],
+    ) -> io::Result<u8> {
+        profiles
+            .iter()
+            .find(|(profile, _)| *profile == self)
+            .and_then(|(_, family)| family.broker_tag)
+            .ok_or_else(|| io::Error::other("compiled audio profile has no broker tag"))
+    }
+    fn spec(self) -> &'static gr_controller_wire::registry::FamilySpec {
+        PROFILES
+            .iter()
+            .find(|(profile, _)| *profile == self)
+            .expect("compiled profile is registered")
+            .1
     }
 }
+
 fn executable(path: &Path) -> io::Result<File> {
     for parent in path.ancestors().skip(1) {
         let m = fs::symlink_metadata(parent)?;
@@ -342,5 +362,24 @@ mod tests {
     fn writable_or_symlinked_parents_cannot_supply_worker_code() {
         assert!(executable(Path::new("/tmp/not-a-worker")).is_err());
         assert!(executable(Path::new("/proc/self/exe")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod missing_tag_tests {
+    use super::*;
+    #[test]
+    fn missing_audio_metadata_returns_error_instead_of_panicking() {
+        assert!(Profile::DualSense.tag_in(&[]).is_err());
+        let family = gr_controller_wire::registry::FamilySpec {
+            broker_tag: None,
+            ..gr_controller_wire::registry::DUALSENSE
+        };
+        assert!(
+            Profile::DualSense
+                .tag_in(&[(Profile::DualSense, &family)])
+                .is_err()
+        );
+        assert_eq!(Profile::DualSense.tag().unwrap(), 1);
     }
 }

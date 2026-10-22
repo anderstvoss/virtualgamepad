@@ -1,0 +1,453 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Virtual controller timing run (not physical evidence)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "controller",
+    "realization",
+    "tier",
+    "permission",
+    "config",
+    "environment",
+    "resources",
+    "samples",
+    "summaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "virtual_host_run"
+    },
+    "controller": {
+      "type": "string"
+    },
+    "realization": {
+      "type": "string"
+    },
+    "tier": {
+      "type": "string"
+    },
+    "permission": {
+      "type": "string"
+    },
+    "config": {
+      "type": "object"
+    },
+    "environment": {
+      "type": "object"
+    },
+    "resources": {
+      "type": "object"
+    },
+    "samples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cycle",
+          "index",
+          "temperature",
+          "stages",
+          "observations",
+          "errors"
+        ],
+        "properties": {
+          "cycle": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "temperature": {
+            "enum": [
+              "cold",
+              "warm"
+            ]
+          },
+          "stages": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "api_call",
+              "api_returned",
+              "node_present",
+              "consumer_open",
+              "first_neutral",
+              "sdl_ready",
+              "close_call",
+              "close_returned",
+              "node_gone"
+            ],
+            "properties": {
+              "api_call": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "api_returned": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "node_present": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "consumer_open": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "first_neutral": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "sdl_ready": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "close_call": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "close_returned": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              "node_gone": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "reason": {
+                        "type": "null"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "value_ns",
+                      "reason"
+                    ],
+                    "properties": {
+                      "value_ns": {
+                        "type": "null"
+                      },
+                      "reason": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "observations": {
+            "type": "object"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "summaries": {
+      "type": "object"
+    },
+    "reference_comparison": {
+      "type": "object"
+    }
+  }
+}

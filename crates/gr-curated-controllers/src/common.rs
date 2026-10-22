@@ -1,9 +1,13 @@
 mod feedback;
+#[allow(dead_code)] // Opt-in typed resource seam; first production consumer is Wii.
+pub(crate) mod resources;
 mod snapshot;
 pub(crate) use snapshot::{SnapshotProtocol, logical_input};
 mod session;
 #[cfg(test)]
 mod session_tests;
+#[allow(dead_code)] // Internal opt-in seam; first production consumer is Wii.
+pub(crate) mod topology;
 use crate::CreationOptions;
 use gr_controller_contract::{
     CommitError, ControlError, DpadDirection, FaceButton, PreparedRealization,
@@ -217,6 +221,18 @@ where
             }
         })?;
     if let NativeControllerRealization::Uhid(specification) = &mut realization {
+        // The selected, declared realization owns the bus. Family builders may
+        // share descriptor/identity defaults; callers must not patch bus bytes.
+        specification.bus_type = match options.target {
+            RealizationTarget::LINUX_UHID_USB => 0x03,
+            RealizationTarget::LINUX_UHID_BLUETOOTH => 0x05,
+            _ => {
+                return Err(ProviderError::Unsupported {
+                    reason: "HID specification requires a UHID realization".into(),
+                });
+            }
+        };
+        specification.target = options.target;
         (specification.physical_path, specification.unique_id) = creation_labels(
             &specification.physical_path,
             &specification.unique_id,

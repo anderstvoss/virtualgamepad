@@ -1,7 +1,7 @@
 //! Internal, compiled wire fixtures shared by curated controllers and the
 //! privileged USB-gadget broker. None of these values are caller supplied.
 
-pub use gr_dualsense_wire as dualsense;
+pub mod dualsense;
 
 /// Neutral identity for the virtual standard-HID presentation. It must not
 /// select a vendor-native wire decoder; these are not assigned physical USB IDs.
@@ -99,3 +99,6 @@ mod tests {
         );
     }
 }
+
+/// Compiled metadata shared without importing provider or controller implementations.
+pub mod registry;

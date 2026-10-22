@@ -13,7 +13,7 @@ use gr_controller_wire::{
     },
     dualshock4_feature_responses,
 };
-use gr_realization_api::CompiledControllerKind;
+use gr_realization_api::ControllerId;
 use std::{
     collections::BTreeSet,
     fs::{self, File, OpenOptions},
@@ -52,7 +52,7 @@ struct FeatureReply {
 
 #[derive(Clone, Copy)]
 struct ControllerProfile {
-    kind: CompiledControllerKind,
+    kind: ControllerId,
     vendor_id: &'static str,
     product_id: &'static str,
     device_bcd: &'static str,
@@ -63,11 +63,11 @@ struct ControllerProfile {
     report_length: usize,
 }
 
-fn profile(kind: CompiledControllerKind) -> ControllerProfile {
-    // These are compiled profiles, never client-controlled USB metadata.
-    match kind {
-        CompiledControllerKind::DualSense => ControllerProfile {
-            kind,
+fn profile(kind: ControllerId) -> Option<ControllerProfile> {
+    // Compiled allowlist only; no client-controlled descriptors or strings.
+    static PROFILES: &[ControllerProfile] = &[
+        ControllerProfile {
+            kind: gr_controller_wire::registry::ids::DUALSENSE,
             vendor_id: "0x054c",
             product_id: "0x0ce6",
             device_bcd: "0x0110",
@@ -77,8 +77,8 @@ fn profile(kind: CompiledControllerKind) -> ControllerProfile {
             descriptor: DUALSENSE_USB_DESCRIPTOR,
             report_length: 64,
         },
-        CompiledControllerKind::DualShock4 => ControllerProfile {
-            kind,
+        ControllerProfile {
+            kind: gr_controller_wire::registry::ids::DUALSHOCK4,
             vendor_id: "0x054c",
             product_id: "0x05c4",
             device_bcd: "0x0120",
@@ -88,8 +88,8 @@ fn profile(kind: CompiledControllerKind) -> ControllerProfile {
             descriptor: DUALSHOCK4_USB_DESCRIPTOR,
             report_length: 64,
         },
-        CompiledControllerKind::SwitchPro => ControllerProfile {
-            kind,
+        ControllerProfile {
+            kind: gr_controller_wire::registry::ids::SWITCH_PRO,
             vendor_id: "0x057e",
             product_id: "0x2009",
             device_bcd: "0x0220",
@@ -99,8 +99,8 @@ fn profile(kind: CompiledControllerKind) -> ControllerProfile {
             descriptor: SWITCH_PRO_USB_DESCRIPTOR,
             report_length: 64,
         },
-        CompiledControllerKind::Xbox360 => ControllerProfile {
-            kind,
+        ControllerProfile {
+            kind: gr_controller_wire::registry::ids::XBOX360,
             vendor_id: "0x0000",
             product_id: "0x0000",
             device_bcd: "0x0114",
@@ -110,22 +110,26 @@ fn profile(kind: CompiledControllerKind) -> ControllerProfile {
             descriptor: STANDARD_GAMEPAD_DESCRIPTOR,
             report_length: 9,
         },
-    }
+    ];
+    PROFILES
+        .iter()
+        .find(|profile| profile.kind == kind)
+        .copied()
 }
 
 fn profile_features(profile: ControllerProfile, serial: &str) -> Vec<(u8, Vec<u8>)> {
     match profile.kind {
-        CompiledControllerKind::DualSense => dualsense_features(
+        gr_controller_wire::registry::ids::DUALSENSE => dualsense_features(
             serial.as_bytes()[..5]
                 .try_into()
                 .expect("compiled DualSense serial prefix"),
         ),
-        CompiledControllerKind::DualShock4 => {
+        gr_controller_wire::registry::ids::DUALSHOCK4 => {
             let mut identity = [0; 6];
             identity.copy_from_slice(&serial.as_bytes()[..6]);
             dualshock4_feature_responses(identity)
         }
-        CompiledControllerKind::SwitchPro | CompiledControllerKind::Xbox360 => Vec::new(),
+        _ => Vec::new(),
     }
 }
 
@@ -260,19 +264,22 @@ impl HidGadgetIo for LinuxHidGadgetIo {
     }
 }
 impl DummyHcdSession {
-    pub fn open(_session: u64, controller: CompiledControllerKind) -> Result<Self, BrokerError> {
+    pub fn open(_session: u64, controller: ControllerId) -> Result<Self, BrokerError> {
         crate::require_dummy_hcd_contract().map_err(host)?;
         let config = HostConfig::load(Path::new("/etc/virtualgamepad/broker.conf")).map_err(io)?;
         let access = Arc::new(HostAccess::acquire(config).map_err(io)?);
         Self::open_authorized(controller, &access)
     }
     pub fn open_authorized(
-        controller: CompiledControllerKind,
+        controller: ControllerId,
         access: &Arc<HostAccess>,
     ) -> Result<Self, BrokerError> {
         crate::require_dummy_hcd_contract().map_err(host)?;
         let linux = LinuxDummyHcdHost;
-        let profile = profile(controller);
+        let profile = profile(controller).ok_or(BrokerError::UnsupportedController {
+            target: gr_realization_api::RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
+            controller,
+        })?;
         if !linux.is_dir(Path::new(CONFIGFS)) {
             return Err(host("ConfigFS USB gadget root is unavailable"));
         }
@@ -327,7 +334,8 @@ impl DummyHcdSession {
                 // Linux can reuse its name between sequential dummy sessions.
                 if matches!(
                     controller,
-                    CompiledControllerKind::DualSense | CompiledControllerKind::DualShock4
+                    gr_controller_wire::registry::ids::DUALSENSE
+                        | gr_controller_wire::registry::ids::DUALSHOCK4
                 ) {
                     session.service_initial_feature_requests()?;
                 }
@@ -362,9 +370,9 @@ impl DummyHcdSession {
 
     fn service_initial_feature_requests(&mut self) -> Result<(), BrokerError> {
         let window = match self.profile.kind {
-            CompiledControllerKind::DualSense => DUALSENSE_SETTLE_TIME,
-            CompiledControllerKind::DualShock4 => DUALSHOCK4_FEATURE_WINDOW,
-            CompiledControllerKind::SwitchPro | CompiledControllerKind::Xbox360 => return Ok(()),
+            gr_controller_wire::registry::ids::DUALSENSE => DUALSENSE_SETTLE_TIME,
+            gr_controller_wire::registry::ids::DUALSHOCK4 => DUALSHOCK4_FEATURE_WINDOW,
+            _ => return Ok(()),
         };
         let deadline = Instant::now() + window;
         while Instant::now() < deadline {
@@ -860,7 +868,7 @@ mod tests {
 
     #[test]
     fn standard_hid_gadget_identity_matches_the_generic_wire_profile() {
-        let profile = profile(CompiledControllerKind::Xbox360);
+        let profile = profile(gr_controller_wire::registry::ids::XBOX360).unwrap();
         assert_eq!(
             (
                 u16::from_str_radix(&profile.vendor_id[2..], 16).unwrap(),
@@ -876,13 +884,33 @@ mod tests {
     #[test]
     fn compiled_profiles_are_fixed_and_report_size_bound() {
         let expected = [
-            (CompiledControllerKind::DualSense, "0x054c", "0x0ce6", 64),
-            (CompiledControllerKind::DualShock4, "0x054c", "0x05c4", 64),
-            (CompiledControllerKind::SwitchPro, "0x057e", "0x2009", 64),
-            (CompiledControllerKind::Xbox360, "0x0000", "0x0000", 9),
+            (
+                gr_controller_wire::registry::ids::DUALSENSE,
+                "0x054c",
+                "0x0ce6",
+                64,
+            ),
+            (
+                gr_controller_wire::registry::ids::DUALSHOCK4,
+                "0x054c",
+                "0x05c4",
+                64,
+            ),
+            (
+                gr_controller_wire::registry::ids::SWITCH_PRO,
+                "0x057e",
+                "0x2009",
+                64,
+            ),
+            (
+                gr_controller_wire::registry::ids::XBOX360,
+                "0x0000",
+                "0x0000",
+                9,
+            ),
         ];
         for (kind, vendor_id, product_id, report_length) in expected {
-            let profile = profile(kind);
+            let profile = profile(kind).unwrap();
             assert_eq!(profile.vendor_id, vendor_id);
             assert_eq!(profile.product_id, product_id);
             assert_eq!(profile.report_length, report_length);
@@ -894,10 +922,10 @@ mod tests {
     #[test]
     fn direct_open_rejects_before_reading_policy_or_creating_host_resources() {
         for kind in [
-            CompiledControllerKind::DualSense,
-            CompiledControllerKind::DualShock4,
-            CompiledControllerKind::SwitchPro,
-            CompiledControllerKind::Xbox360,
+            gr_controller_wire::registry::ids::DUALSENSE,
+            gr_controller_wire::registry::ids::DUALSHOCK4,
+            gr_controller_wire::registry::ids::SWITCH_PRO,
+            gr_controller_wire::registry::ids::XBOX360,
         ] {
             for _ in 0..2 {
                 let error = DummyHcdSession::open(1, kind).err().unwrap();
@@ -995,7 +1023,7 @@ mod tests {
             &host,
             &root,
             "VG-POC-DS5-0000000000000001",
-            profile(CompiledControllerKind::DualSense),
+            profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
         )
         .unwrap();
         cleanup(&host, &root).unwrap();
@@ -1055,7 +1083,7 @@ mod tests {
                 &host,
                 &root,
                 "VG-POC-DS5-0000000000000001",
-                profile(CompiledControllerKind::DualSense),
+                profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
             )
             .is_err()
         );
@@ -1074,7 +1102,7 @@ mod tests {
             &host,
             &root,
             "synthetic-identity",
-            profile(CompiledControllerKind::DualSense),
+            profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
         )
         .unwrap_err();
         host.fail_write_suffix = Some("/UDC");
@@ -1102,7 +1130,7 @@ mod tests {
             hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(gadget.clone()),
             serial: "VG-DS5-0000000000000001".into(),
-            profile: profile(CompiledControllerKind::DualSense),
+            profile: profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
             udc: String::new(),
             closed: true,
             access: None,
@@ -1125,10 +1153,10 @@ mod tests {
     #[test]
     fn every_compiled_feature_id_replies_or_rejects_in_one_poll() {
         for kind in [
-            CompiledControllerKind::DualSense,
-            CompiledControllerKind::DualShock4,
-            CompiledControllerKind::SwitchPro,
-            CompiledControllerKind::Xbox360,
+            gr_controller_wire::registry::ids::DUALSENSE,
+            gr_controller_wire::registry::ids::DUALSHOCK4,
+            gr_controller_wire::registry::ids::SWITCH_PRO,
+            gr_controller_wire::registry::ids::XBOX360,
         ] {
             let gadget = FakeHidGadget::default();
             let mut session = DummyHcdSession {
@@ -1136,7 +1164,7 @@ mod tests {
                 hidg: PathBuf::from("/unused/hidg"),
                 io: Box::new(gadget.clone()),
                 serial: "synthetic-feature-identity".into(),
-                profile: profile(kind),
+                profile: profile(kind).unwrap(),
                 udc: String::new(),
                 closed: true,
                 access: None,
@@ -1183,7 +1211,7 @@ mod tests {
             hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(gadget.clone()),
             serial: "synthetic".into(),
-            profile: profile(CompiledControllerKind::DualSense),
+            profile: profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
             udc: String::new(),
             closed: true,
             access: None,
@@ -1206,7 +1234,7 @@ mod tests {
             hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(gadget.clone()),
             serial: "VG-POC-X36-0000000000000001".into(),
-            profile: profile(CompiledControllerKind::Xbox360),
+            profile: profile(gr_controller_wire::registry::ids::XBOX360).unwrap(),
             udc: String::new(),
             closed: true,
             access: None,
@@ -1243,7 +1271,7 @@ mod tests {
             hidg: PathBuf::from("/unused/hidg"),
             io: Box::new(FakeHidGadget::default()),
             serial: "VG-POC-DS5-0000000000000001".into(),
-            profile: profile(CompiledControllerKind::DualSense),
+            profile: profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap(),
             udc: String::new(),
             closed: true,
             access: None,
@@ -1259,7 +1287,7 @@ mod tests {
 
     #[test]
     fn configfs_usb_identity_uses_explicit_hexadecimal_values() {
-        let dualsense = profile(CompiledControllerKind::DualSense);
+        let dualsense = profile(gr_controller_wire::registry::ids::DUALSENSE).unwrap();
         assert_eq!(dualsense.vendor_id, "0x054c");
         assert_eq!(dualsense.product_id, "0x0ce6");
         assert_eq!(dualsense.device_bcd, "0x0110");
@@ -1314,8 +1342,9 @@ mod tests {
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
         let known_hidraw = nodes("hidraw").expect("list pre-existing hidraw nodes");
         let known_input_events = input_nodes("event").expect("list pre-existing input nodes");
-        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualSense)
-            .expect("open dummy_hcd session");
+        let mut session =
+            DummyHcdSession::open(0xdecaf, gr_controller_wire::registry::ids::DUALSENSE)
+                .expect("open dummy_hcd session");
         let root = session.root.clone();
         assert!(root.is_dir());
         session
@@ -1356,8 +1385,9 @@ mod tests {
     fn root_only_ds4_profile_accepts_its_exact_report() {
         // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
-        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::DualShock4)
-            .expect("open DualShock 4 profile");
+        let mut session =
+            DummyHcdSession::open(0xdecaf, gr_controller_wire::registry::ids::DUALSHOCK4)
+                .expect("open DualShock 4 profile");
         let root = session.root.clone();
         session
             .send_input(&[0; 64])
@@ -1377,8 +1407,9 @@ mod tests {
         // hid-nintendo's controller-info handshake is served by the
         // unprivileged Switch session after broker open; adapter-only coverage
         // therefore proves construction/teardown without manufacturing replies.
-        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::SwitchPro)
-            .expect("open Switch Pro profile");
+        let mut session =
+            DummyHcdSession::open(0xdecaf, gr_controller_wire::registry::ids::SWITCH_PRO)
+                .expect("open Switch Pro profile");
         let root = session.root.clone();
         session.close().expect("close Switch Pro profile");
         assert!(!root.exists(), "cleanup left Switch Pro ConfigFS resources");
@@ -1389,13 +1420,28 @@ mod tests {
     fn root_only_xbox_hid_profile_accepts_its_exact_report() {
         // SAFETY: geteuid has no preconditions and cannot fail.
         assert_eq!(unsafe { libc::geteuid() }, 0, "test requires root");
-        let mut session = DummyHcdSession::open(0xdecaf, CompiledControllerKind::Xbox360)
-            .expect("open Xbox HID profile");
+        let mut session =
+            DummyHcdSession::open(0xdecaf, gr_controller_wire::registry::ids::XBOX360)
+                .expect("open Xbox HID profile");
         let root = session.root.clone();
         session
             .send_input(&[0; 9])
             .expect("deliver exact Xbox standard HID report");
         session.close().expect("close Xbox HID profile");
         assert!(!root.exists(), "cleanup left Xbox ConfigFS resources");
+    }
+}
+
+#[cfg(test)]
+mod registry_length_tests {
+    #[test]
+    fn every_gadget_report_length_matches_compiled_metadata() {
+        for family in gr_controller_wire::registry::FAMILIES {
+            match (super::profile(family.id), family.dummy_hcd_report_length) {
+                (Some(profile), Some(length)) => assert_eq!(profile.report_length, length),
+                (None, None) => {}
+                _ => panic!("gadget/registry availability differs for {}", family.id),
+            }
+        }
     }
 }

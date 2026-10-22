@@ -10,18 +10,18 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
-    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
-    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, LedKind,
+    MotionInput, MotorRole, OutputKind, OutputSurface, RealizationControllerDefinition,
+    RealizationManifest, RealizationManifestEntry, RealizationValidationStatus, StickInput,
+    TargetAwareControllerDriver, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
+    TriggerInputKind, TriggerStack,
 };
-use gr_dualsense_wire::USB_DESCRIPTOR;
+use gr_controller_wire::dualsense::USB_DESCRIPTOR;
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget, RealizationTargetSet,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
+    RealizationSelection, RealizationSessionId, RealizationTarget, RealizationTargetSet,
 };
 use std::collections::BTreeMap;
 
@@ -440,6 +440,20 @@ static AXES: [AbsoluteAxisSurface; 12] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[
+    OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    },
+    OutputKind::Led { kind: LedKind::Rgb },
+    OutputKind::Led {
+        kind: LedKind::Mono,
+    },
+    OutputKind::PlayerIndicator { count: 5 },
+    OutputKind::AdaptiveTrigger,
+];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "conventional-rumble",
     event_type: 21,
@@ -650,6 +664,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
@@ -665,6 +680,7 @@ static SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -677,6 +693,7 @@ static HID_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &HID_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
@@ -696,6 +713,11 @@ static USBIP_RESTRICTIONS: [TargetRestriction; 1] = [TargetRestriction {
     feature: "controller-matching audio",
     reason: "functional UAC2 emulation is not the reference DualSense UAC1 topology; physical comparison remains pending",
 }];
+static RETAINED_DUMMY: [TargetRestriction; 3] = [
+    USB_RESTRICTIONS[0],
+    USB_RESTRICTIONS[1],
+    crate::retained::DUMMY_RESTRICTION,
+];
 static USB_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -703,11 +725,14 @@ static USB_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USB_RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 2] =
+    [USBIP_RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -715,7 +740,8 @@ static USBIP_SURFACE: DualSenseSurface = DualSenseSurface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &OUTPUTS,
-        restrictions: &USBIP_RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1127,7 +1153,10 @@ pub enum DualSenseHidOutput {
     },
 }
 
-fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSenseHidOutput {
+pub(crate) fn decode_dualsense_hid_output(
+    report_id: Option<u8>,
+    raw: Vec<u8>,
+) -> DualSenseHidOutput {
     if report_id == Some(0x02) && raw.len() >= 47 {
         let mut right_trigger_effect = [0_u8; 11];
         right_trigger_effect.copy_from_slice(&raw[10..21]);
@@ -1164,6 +1193,12 @@ fn decode_dualsense_hid_output(report_id: Option<u8>, raw: Vec<u8>) -> DualSense
 }
 pub struct DualSenseController(common::ControllerSession<DualSenseDefinition>);
 impl DualSenseController {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualSenseOutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -1588,7 +1623,7 @@ fn create_dualsense_inner(
         RealizationTarget::LINUX_UHID_USB => hid_realization(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::DualSense,
+                controller: gr_controller_wire::registry::ids::DUALSENSE,
             })
         }
         _ => {
@@ -1624,6 +1659,42 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualSenseController, ProviderError> {
     common::injected(DualSenseDefinition, session).map(DualSenseController)
+}
+
+impl crate::registry::ControllerFamily for DualSenseDefinition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSENSE;
+    const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]

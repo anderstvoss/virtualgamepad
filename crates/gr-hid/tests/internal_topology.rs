@@ -30,6 +30,7 @@ struct Remote {
     gyro_next: bool,
     deadline: Option<u64>,
     input_limit: u8,
+    delivery_trace: Vec<(Command, Delivery, u8)>,
 }
 impl Default for Remote {
     fn default() -> Self {
@@ -40,6 +41,7 @@ impl Default for Remote {
             gyro_next: true,
             deadline: None,
             input_limit: 100,
+            delivery_trace: Vec::new(),
         }
     }
 }
@@ -188,13 +190,16 @@ impl Protocol for Remote {
         };
         (reply, None)
     }
-    fn output(&mut self, _: Report, _: u64) -> Result<Option<()>, Error> {
-        Ok(None)
+    fn output(&mut self, report: Report, _: u64) -> Result<Option<()>, Error> {
+        Ok((report.id() == Some(0x70)).then_some(()))
     }
     fn lifecycle(&mut self, _: Lifecycle, _: u64) -> Option<Self::Output> {
         None
     }
-    fn delivered(&mut self, _: &Command, _: Delivery) {}
+    fn delivered(&mut self, command: &Command, outcome: Delivery) {
+        self.delivery_trace
+            .push((command.clone(), outcome, self.identity()));
+    }
 }
 fn node() -> Nunchuk {
     Nunchuk {
@@ -505,4 +510,417 @@ fn host_memory_reads_and_activation_replies_follow_live_topology() {
     }
     r.close().unwrap();
     assert_eq!(io.0.borrow().closes, 1);
+}
+
+// The module's existing imports, Remote/Port/node, runtime, Fake and enqueue apply.
+
+#[test]
+fn held_reply_keeps_bytes_and_original_deadline_across_repeated_edits() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(1).unwrap(); // Reply was accepted, but is held.
+    let original =
+        io.0.borrow()
+            .attempts
+            .iter()
+            .find(|c| matches!(c, Command::Reply { .. }))
+            .unwrap()
+            .clone();
+
+    for (at, port) in [(2, Port::Empty), (3, Port::Nunchuk(node()))] {
+        r.update_protocol(|p| p.attach(port)).unwrap();
+        io.0.borrow_mut()
+            .outcomes
+            .push_back(Delivery::DefinitelyUnsent);
+        r.service(at).unwrap();
+    }
+    let retries: Vec<_> =
+        io.0.borrow()
+            .attempts
+            .iter()
+            .filter(|c| matches!(c, Command::Reply { .. }))
+            .cloned()
+            .collect();
+    assert_eq!(retries, vec![original.clone(), original.clone(), original]);
+    // The request arrived at t=1; edits must not reset its t=100001 expiry.
+    assert_eq!(r.service(100_001), Err(Error::Deadline));
+    assert!(r.is_closed());
+    assert_eq!(io.0.borrow().closes, 1);
+}
+
+#[test]
+fn accepted_unsent_input_does_not_erase_bounded_topology_edges() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(0).unwrap();
+    let original = io.0.borrow().attempts[0].clone();
+    for port in [
+        Port::Nunchuk(node()),
+        Port::Empty,
+        Port::Nunchuk(node()),
+        Port::Empty,
+    ] {
+        r.update_protocol(|p| p.attach(port)).unwrap();
+    }
+    let before = r.protocol().clone();
+    assert_eq!(
+        r.update_protocol(|p| p.attach(Port::Nunchuk(node()))),
+        Err(Error::QueueFull)
+    );
+    assert_eq!(*r.protocol(), before);
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(1).unwrap();
+    assert_eq!(io.0.borrow().attempts[1], original);
+    r.service(2).unwrap();
+    assert_eq!(io.0.borrow().submitted[0], original);
+    assert_eq!(payloads(&io, 1), vec![vec![1], vec![0], vec![1], vec![0]]);
+    assert_eq!(payloads(&io, 2).last(), Some(&vec![0, 0]));
+}
+
+#[test]
+fn malformed_feature_writes_are_acknowledged_without_topology_mutation() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    assert_eq!(
+        Report::new(ReportType::Feature, Some(4), vec![0; 4096]),
+        Err(Error::Framing)
+    );
+    for (ordinal, id, data, expected) in [
+        (1, 4, vec![0], ReplyError::Invalid), // Empty: cannot activate.
+        (2, 5, vec![0], ReplyError::Unsupported), // Wrong ID.
+        (3, 4, vec![0; 100], ReplyError::Invalid),
+    ] {
+        enqueue(
+            &io,
+            ordinal,
+            RequestKind::Set(Report::new(ReportType::Feature, Some(id), data).unwrap()),
+        );
+        r.service(ordinal).unwrap();
+        assert_eq!(r.protocol().identity(), 0);
+        assert!(io.0.borrow().submitted.contains(&Command::Reply {
+            token: RequestId {
+                session: 42,
+                ordinal
+            },
+            reply: Reply::Set(Err(expected)),
+        }));
+    }
+    r.update_protocol(|p| {
+        p.attach(Port::MotionPlus {
+            active: false,
+            downstream: None,
+            passthrough: false,
+        })
+    })
+    .unwrap();
+    assert!(r.protocol().initializing);
+    enqueue(
+        &io,
+        4,
+        RequestKind::Set(Report::new(ReportType::Feature, Some(4), vec![1]).unwrap()),
+    );
+    r.service(4).unwrap();
+    assert_eq!(r.protocol().identity(), 2);
+    assert!(io.0.borrow().submitted.contains(&Command::Reply {
+        token: RequestId {
+            session: 42,
+            ordinal: 4
+        },
+        reply: Reply::Set(Err(ReplyError::Invalid)),
+    }));
+}
+
+#[test]
+fn host_probe_uses_dispatch_topology_and_held_reply_is_not_recomputed() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    r.service(1).unwrap(); // Request dispatched AFTER the edit.
+    let wanted = Reply::Get(Ok(Report::new(
+        ReportType::Feature,
+        Some(3),
+        vec![1, 0x11, 0x22],
+    )
+    .unwrap()));
+    assert!(io.0.borrow().submitted.contains(&Command::Reply {
+        token: RequestId {
+            session: 42,
+            ordinal: 1
+        },
+        reply: wanted.clone(),
+    }));
+    enqueue(
+        &io,
+        2,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(2).unwrap(); // Reply accepted, but not submitted.
+    r.update_protocol(|p| p.attach(Port::Empty)).unwrap();
+    r.service(3).unwrap(); // Retry original reply, not new Unsupported.
+    assert!(io.0.borrow().submitted.contains(&Command::Reply {
+        token: RequestId {
+            session: 42,
+            ordinal: 2
+        },
+        reply: wanted,
+    }));
+    assert_eq!(r.protocol().identity(), 0);
+}
+
+#[test]
+fn close_with_queued_edges_and_unsent_input_is_terminal() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(0).unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    r.update_protocol(|p| p.attach(Port::Empty)).unwrap();
+    let attempts = io.0.borrow().attempts.len();
+    let submitted = io.0.borrow().submitted.len();
+    r.close().unwrap();
+    r.close().unwrap();
+    assert_eq!(r.service(1), Err(Error::Closed));
+    assert_eq!(r.update(|_| panic!("edit after close")), Err(Error::Closed));
+    assert_eq!(
+        r.update_protocol(|_| panic!("protocol edit after close")),
+        Err(Error::Closed)
+    );
+    assert!(!r.wants_write());
+    assert_eq!(r.deadline(), None);
+    assert_eq!(io.0.borrow().attempts.len(), attempts);
+    assert_eq!(io.0.borrow().submitted.len(), submitted);
+    assert_eq!(io.0.borrow().closes, 1); // No assertion on external resources.
+}
+
+#[test]
+fn definitely_unsent_reply_retries_identical_bytes_once() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(1).unwrap();
+    r.update_protocol(|p| p.attach(Port::Empty)).unwrap();
+    r.service(2).unwrap(); // Retry succeeds by default.
+    r.service(3).unwrap();
+    let attempts: Vec<_> =
+        io.0.borrow()
+            .attempts
+            .iter()
+            .filter(|c| matches!(c, Command::Reply { .. }))
+            .cloned()
+            .collect();
+    let submitted: Vec<_> =
+        io.0.borrow()
+            .submitted
+            .iter()
+            .filter(|c| matches!(c, Command::Reply { .. }))
+            .cloned()
+            .collect();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0], attempts[1]);
+    assert_eq!(submitted, vec![attempts[0].clone()]);
+}
+
+#[test]
+fn uncertain_reply_while_topology_changes_terminates_without_replay() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    io.0.borrow_mut().outcomes.push_back(Delivery::Uncertain);
+    assert_eq!(r.service(1), Err(Error::UncertainDelivery));
+    assert!(r.is_closed());
+    assert_eq!(
+        r.update_protocol(|_| panic!("edit on terminal session")),
+        Err(Error::Closed)
+    );
+    assert_eq!(r.service(2), Err(Error::Closed));
+    r.close().unwrap();
+    assert_eq!(
+        io.0.borrow()
+            .attempts
+            .iter()
+            .filter(|c| matches!(c, Command::Reply { .. }))
+            .count(),
+        1
+    );
+    assert_eq!(io.0.borrow().closes, 1);
+}
+
+#[test]
+fn observation_eviction_does_not_consume_protocol_edges_on_generation_failure() {
+    let io = Fake::default();
+    let mut r = Runtime::new(
+        Remote::default(),
+        io.clone(),
+        42,
+        Limits {
+            input_queue: 2,
+            ..Limits::default()
+        },
+    )
+    .unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    r.update_protocol(|p| p.attach(Port::Empty)).unwrap();
+    let before = r.protocol().clone();
+    for at in 0..3 {
+        io.0.borrow_mut().events.push_back(HostEvent::Output(
+            Report::new(ReportType::Output, Some(0x70), vec![1]).unwrap(),
+        ));
+        assert_eq!(r.service(at), Err(Error::QueueFull));
+        assert_eq!(*r.protocol(), before);
+    }
+    assert_eq!(r.dropped_observations(), 1);
+    assert_eq!(r.take_observations().len(), 2);
+    assert!(io.0.borrow().submitted.is_empty());
+}
+#[test]
+fn delivery_of_old_bytes_reports_to_current_protocol_after_topology_edit() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(0).unwrap();
+    let original = io.0.borrow().attempts[0].clone();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    r.service(1).unwrap();
+    assert_eq!(
+        r.protocol().delivery_trace[0],
+        (original.clone(), Delivery::DefinitelyUnsent, 0)
+    );
+    assert_eq!(
+        r.protocol().delivery_trace[1],
+        (original, Delivery::Submitted, 1)
+    );
+}
+#[test]
+fn host_stop_explicitly_cancels_pending_input_before_regenerating_live_shape() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(0).unwrap();
+    let old = io.0.borrow().attempts[0].clone();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    io.0.borrow_mut()
+        .events
+        .push_back(HostEvent::Lifecycle(Lifecycle::Stop));
+    r.service(1).unwrap();
+    assert_eq!(
+        io.0.borrow()
+            .attempts
+            .iter()
+            .filter(|command| **command == old)
+            .count(),
+        1
+    );
+    assert_eq!(payloads(&io, 1), vec![vec![1]]);
+    assert_eq!(payloads(&io, 2), vec![vec![1, 0]]);
+    assert!(!r.is_closed());
+}
+
+#[test]
+fn queued_stop_cannot_displace_a_required_reply_accepted_before_detach() {
+    let io = Fake::default();
+    let mut r = runtime(&io);
+    r.service(0).unwrap();
+    r.update_protocol(|p| p.attach(Port::Nunchuk(node())))
+        .unwrap();
+    enqueue(
+        &io,
+        1,
+        RequestKind::Get {
+            kind: ReportType::Feature,
+            id: Some(3),
+        },
+    );
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(1).unwrap();
+    let wanted =
+        io.0.borrow()
+            .attempts
+            .iter()
+            .find(|command| matches!(command, Command::Reply { .. }))
+            .unwrap()
+            .clone();
+    r.update_protocol(|p| p.attach(Port::Empty)).unwrap();
+    io.0.borrow_mut()
+        .events
+        .push_back(HostEvent::Lifecycle(Lifecycle::Stop));
+    io.0.borrow_mut()
+        .outcomes
+        .push_back(Delivery::DefinitelyUnsent);
+    r.service(2).unwrap();
+    assert_eq!(io.0.borrow().events.len(), 1);
+    r.service(3).unwrap();
+    assert!(io.0.borrow().events.is_empty());
+    assert!(io.0.borrow().submitted.contains(&wanted));
+    assert_eq!(r.protocol().identity(), 0);
 }

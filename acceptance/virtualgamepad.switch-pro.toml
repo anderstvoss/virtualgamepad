@@ -1,0 +1,76 @@
+schema_version = 1
+controller = "virtualgamepad.switch-pro"
+research_revision = "abffb5db67032d3661436a209d1310da89ca0f17"
+realizations = ["linux.uinput", "linux.uhid.usb", "linux.dummy_hcd.usb-hid"]
+refused_operations = []
+persistent_resources = []
+
+[[functions]]
+id = "buttons"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/buttons", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "sticks"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/sticks", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "triggers"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/triggers", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "identity"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/identity", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "lifecycle"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/lifecycle", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "motion"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/motion", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "battery"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/battery", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "player-indicators"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/player-indicators", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "hd-rumble"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/hd-rumble", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }
+
+[[functions]]
+id = "spi-calibration"
+[functions.cells]
+"linux.uinput" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.uhid.usb" = { status = "wip", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "Per-function acceptance pending; implementation and historical tests do not promote this cell." }
+"linux.dummy_hcd.usb-hid" = { status = "not-supported", test_id = "acceptance/switch-pro/spi-calibration", evidence = [], reason = "f_hid lacks full GET_REPORT metadata and explicit negative replies; creation rejects before host resources." }

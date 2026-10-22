@@ -8,18 +8,18 @@ use gr_controller_contract::{
     AbsoluteAxisSurface, AuxiliaryButtonInput, ClusterPlacement, CommitError, ControlError,
     ControllerSurface, ControllerSurfaceInfo, DigitalControlSurface, DigitalControlUpdate,
     DpadCluster, DpadHoldBehavior, DpadPresentation, FaceButton, FaceButtonCluster,
-    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, MotionInput,
-    OutputSurface, RealizationControllerDefinition, RealizationManifest, RealizationManifestEntry,
-    RealizationValidationStatus, StickInput, TargetAwareControllerDriver, TargetRestriction,
-    TouchpadActuation, TouchpadInput, TriggerInput, TriggerInputKind, TriggerStack,
+    FaceButtonInput, InputAxisRange, InputControlId, InputScale, InputTopology, LedKind,
+    MotionInput, MotorRole, OutputKind, OutputSurface, RealizationControllerDefinition,
+    RealizationManifest, RealizationManifestEntry, RealizationValidationStatus, StickInput,
+    TargetAwareControllerDriver, TargetRestriction, TouchpadActuation, TouchpadInput, TriggerInput,
+    TriggerInputKind, TriggerStack,
 };
 use gr_controller_wire::{DUALSHOCK4_USB_DESCRIPTOR, dualshock4_feature_responses};
 use gr_realization_api::{
-    CompiledControllerKind, ControllerId, EvdevEvent, NativeAbsoluteAxis,
-    NativeControllerRealization, NativeDeviceIdentity, NativeDummyHcdRealization,
-    NativeEvdevRealization, NativeHidRealization, NativeHidReportKey, ProviderError, ProviderFrame,
-    ProviderRequirements, RawReverseEvent, RealizationSelection, RealizationSessionId,
-    RealizationTarget,
+    ControllerId, EvdevEvent, NativeAbsoluteAxis, NativeControllerRealization,
+    NativeDeviceIdentity, NativeDummyHcdRealization, NativeEvdevRealization, NativeHidRealization,
+    NativeHidReportKey, ProviderError, ProviderFrame, ProviderRequirements, RawReverseEvent,
+    RealizationSelection, RealizationSessionId, RealizationTarget,
 };
 use std::collections::BTreeMap;
 
@@ -397,6 +397,15 @@ static AXES: [AbsoluteAxisSurface; 12] = [
         flat: 0,
     },
 ];
+static NATIVE_OUTPUT_KINDS: &[OutputKind] = &[
+    OutputKind::Rumble {
+        motors: &[MotorRole::Left, MotorRole::Right],
+    },
+    OutputKind::Led { kind: LedKind::Rgb },
+];
+static EVDEV_OUTPUT_KINDS: &[OutputKind] = &[OutputKind::Rumble {
+    motors: &[MotorRole::Strong, MotorRole::Weak],
+}];
 static OUTPUTS: [OutputSurface; 1] = [OutputSurface {
     name: "dualshock4-rumble",
     event_type: 0,
@@ -602,6 +611,7 @@ static INPUT_TOPOLOGY: InputTopology = gr_controller_contract::construction::Inp
     motion: &[],
     extra_axes: &[],
     custom_modules: &[],
+    typed_inputs: &[],
 }
 .build();
 static INPUT_TOPOLOGY_WITH_MOTION: InputTopology =
@@ -617,6 +627,7 @@ static EVDEV_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &common::CONVENTIONAL_RUMBLE,
+        output_kinds: EVDEV_OUTPUT_KINDS,
         restrictions: &EVDEV_RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY,
     }
@@ -629,11 +640,14 @@ static HID_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
         restrictions: &RESTRICTIONS,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_DUMMY: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::DUMMY_RESTRICTION];
 static USB_SURFACE: DualShock4Surface = DualShock4Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_DUMMY_HCD_USB_HID,
@@ -641,11 +655,14 @@ static USB_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_DUMMY,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
 };
+static RETAINED_WORKER: [TargetRestriction; 2] =
+    [RESTRICTIONS[0], crate::retained::WORKER_RESTRICTION];
 static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
     common: gr_controller_contract::construction::ControllerSurfaceSpec {
         target: RealizationTarget::LINUX_USBIP_USB_AUDIO,
@@ -653,7 +670,8 @@ static USBIP_SURFACE: DualShock4Surface = DualShock4Surface {
         digital_controls: &DIGITAL,
         axes: &AXES,
         outputs: &HID_OUTPUTS,
-        restrictions: &RESTRICTIONS,
+        output_kinds: NATIVE_OUTPUT_KINDS,
+        restrictions: &RETAINED_WORKER,
         input_topology: &INPUT_TOPOLOGY_WITH_MOTION,
     }
     .build(),
@@ -1007,6 +1025,12 @@ fn evdev_realization() -> NativeControllerRealization {
 }
 pub struct DualShock4Controller(common::ControllerSession<DualShock4Definition>);
 impl DualShock4Controller {
+    /// Latest accepted host values and revision, retained after close. USB
+    /// workers are unavailable: their lossy event channel has no recovery query.
+    pub fn host_outputs(&self) -> Result<crate::retained::DualShock4OutputState, ControlError> {
+        self.0.retained_outputs()
+    }
+
     /// Whether the HID readiness descriptor should also be watched for writability.
     #[must_use]
     pub fn wants_write(&self) -> bool {
@@ -1296,7 +1320,7 @@ fn create_dualshock4_inner(
         RealizationTarget::LINUX_UHID_USB => hid(options.session),
         RealizationTarget::LINUX_DUMMY_HCD_USB_HID => {
             NativeControllerRealization::DummyHcd(NativeDummyHcdRealization {
-                controller: CompiledControllerKind::DualShock4,
+                controller: gr_controller_wire::registry::ids::DUALSHOCK4,
             })
         }
         _ => {
@@ -1346,7 +1370,7 @@ impl common::HidDriver for DualShock4Definition {
         };
     }
 
-    type Hid = common::SnapshotProtocol<DualShock4State>;
+    type Hid = common::SnapshotProtocol<DualShock4State, crate::retained::DualShock4OutputState>;
     fn hid_identity(&self) -> Result<[u8; 6], ProviderError> {
         common::creation_identity()
     }
@@ -1386,6 +1410,42 @@ pub fn test_controller(
     session: Box<dyn gr_realization_api::NativeProviderSession>,
 ) -> Result<DualShock4Controller, ProviderError> {
     common::injected(DualShock4Definition, session).map(DualShock4Controller)
+}
+
+impl crate::registry::ControllerFamily for DualShock4Definition {
+    const SPEC: &'static crate::registry::FamilySpec = &gr_controller_wire::registry::DUALSHOCK4;
+    const OUTPUT_KINDS: &'static [OutputKind] = NATIVE_OUTPUT_KINDS;
+    fn topology() -> &'static InputTopology {
+        &INPUT_TOPOLOGY_WITH_MOTION
+    }
+    fn manifest() -> RealizationManifest {
+        Self.realization_manifest()
+    }
+    fn realizations() -> &'static [crate::registry::FamilyRealization] {
+        static REALIZATIONS: &[crate::registry::FamilyRealization] = &[
+            crate::registry::FamilyRealization::new(
+                &EVDEV_SURFACE.common,
+                crate::registry::RealizationTier::PlayableReduced,
+                crate::registry::PermissionClass::Uinput,
+            ),
+            crate::registry::FamilyRealization::new(
+                &HID_SURFACE.common,
+                crate::registry::RealizationTier::PlayableFull,
+                crate::registry::PermissionClass::Uhid,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USB_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+            crate::registry::FamilyRealization::new(
+                &USBIP_SURFACE.common,
+                crate::registry::RealizationTier::FaithfulUsb,
+                crate::registry::PermissionClass::RootBroker,
+            ),
+        ];
+        REALIZATIONS
+    }
 }
 
 #[cfg(test)]
