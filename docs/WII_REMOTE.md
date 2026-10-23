@@ -284,3 +284,41 @@ The manifest adopts `wii-w1-granted-led-host-run` at retained research main
 and reached retained intent on the granted Part A virtual device. This supports
 bounded software LED intent, not physical light delivery or whole-controller
 acceptance. Earlier blocked W1 and C5 records remain historical.
+
+## W3 diagnosis and bounded evidence adoption
+
+Research main `c380e6b5dc8d2fa0289deb5711a8858541a7ae03` retains W2 and the
+WiiBrew subpage research. The manifest separates default HID enumeration/open
+and initial Wii-enabled HIDAPI claim from sustained SDL acceptance, which stays
+WIP after the observed disconnect. This changes evidence dispositions, not the
+interim descriptor or protocol model.
+
+The unchanged-main W3 trace observes unsolicited Nunchuk status, prompt host
+report0x12 reselection and resumed DATA. Repeating the bounded sequence with
+explicit application commits still disconnects the old HIDAPI joystick; the
+actual-default evdev control remains connected. Pinned SDL3.2.10 source
+`877399b2b2cf21e67554ed9046410f268ce1d1b2`, HandleStatus1350–1384, requests a
+mode reset and marks extension changes disconnected to reinitialize. Its
+UpdateDevice1511–1576 separately implements an inactivity heuristic. The trace
+and control support the explicit host reinitialization explanation rather than
+a DATA-pause deadlock. Reopening/sustained HIDAPI acceptance is not established.
+No firmware clock, workaround or conflicting protocol behavior is invented.
+
+The trace includes host reports from the bound kernel driver, SDL and the
+explicit owned-node MotionPlus deactivation probe; individual driver ownership
+of every host packet is not asserted. Report timestamps describe successful
+virtual UHID syscall boundaries, not physical delivery or latency acceptance.
+New W3 research records retain filtered report sequences and diagnostic limits;
+raw application logs and identifying metadata stay private.
+
+The historical W2 N1 input-class count26→29 is attributable to an unrelated
+USB-parent gamepad's input/event/joystick class entries: its retained udev
+initialization time falls within that run. It has non-UHID ancestry and does not
+match the virtual controller's association. Historical N1 remains blocked as
+directed; no harness ordering change or replacement timing run is made.
+
+The new Nunchuk six-byte and Classic format01 documentary claims corroborate
+existing packing only. Formats02/03 stay refused; Classic Pro digital-trigger
+documentation does not lift its identity refusal. Calibration/checksum and
+Classic Pro physical-identity unknowns remain unknown. #238 retains the retail
+descriptor work; Dolphin, radio, speaker and Balance Board are outside W3.

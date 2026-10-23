@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "16df95a3f8353a08cd12b81a24e15d67cdb4a6bf"
+research_revision = "c380e6b5dc8d2fa0289deb5711a8858541a7ae03"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
@@ -189,7 +189,7 @@ id = "cleanup-and-sibling-isolation"
 id = "sdl-hidapi-wii"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w1_host_runs.py::WiiW1HostRuns::test_permissions_and_fallback_never_become_hidapi_or_dolphin_acceptance", evidence = ["wii-sdl-extension-modes", "wii-w1-sdl-host-run"], reason = "untested: SDL3.2.10 Wii HIDAPI blocked by owned hidraw EACCES13. Explicit HIDAPI/Wii/player-LED/background hints recorded; enumerate-all sees synthetic vendor-page collection but cannot open. Core evdev fallback11 buttons/0 axes/no sensors and observed rumble do not establish HIDAPI, extension or LED acceptance. wiimote stays bound." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w2_host_runs.py::WiiW2HostRuns::test_initial_hidapi_claim_does_not_hide_later_disconnect", evidence = ["wii-sdl-extension-modes", "wii-w2-sdl-after-host-run"], reason = "Granted W2 initial owned HIDAPI open with Wii-enabled hints/default HID filtering:6axes/26buttons, accelerometer capability/no gyro, then disconnected during attachment changes. Initial claim only; sustained extension/sensor/game acceptance remains blocked. Actual-default joystick is evdev; no physical claim." }
 
 [[functions]]
 id = "dolphin"
@@ -232,3 +232,16 @@ id = "demo-native-editing"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "gui::native_editor::registry_tests::wii_native_edits_cover_all_core_positions_and_raw_sensor_domains", evidence = ["wii-c5-evdev-native-values"], reason = "Deterministic native core/raw sensor conversions; generic headless topology renderer and existing lifecycle suite. Interactive desktop/game acceptance untested." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "gui::native_editor::registry_tests::wii_native_edits_cover_all_core_positions_and_raw_sensor_domains", evidence = ["wii-c5-report-layouts"], reason = "Supporting constructor, typed IR editor and attachment commands wired; interactive desktop/game acceptance untested." }
+
+
+[[functions]]
+id = "sdl-default-hid-enumeration-open"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: event nodes have no HID parent/hidraw endpoint." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w2_host_runs.py::WiiW2HostRuns::test_default_filter_and_explicit_wii_profile_are_distinct", evidence = ["wii-w2-sdl-before-host-run", "wii-w2-sdl-after-host-run"], reason = "Bounded granted W2 default SDL3.2.10 HID enumeration0 to1 with interim Game Pad usage1/5; owned raw open succeeds. Default joystick remains evdev. Discovery/open is separate from HIDAPI claim or sustained acceptance." }
+
+[[functions]]
+id = "sdl-initial-hidapi-claim"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: event nodes have no HID parent/hidraw endpoint." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w2_host_runs.py::WiiW2HostRuns::test_initial_hidapi_claim_does_not_hide_later_disconnect", evidence = ["wii-w2-sdl-after-host-run"], reason = "Bounded W2 initial owned raw-path HIDAPI joystick with explicit Wii hints,6axes/26buttons and accelerometer capability. Later disconnect retained; no sustained sensor/hotplug/game acceptance or physical validation." }
