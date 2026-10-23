@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "c380e6b5dc8d2fa0289deb5711a8858541a7ae03"
+research_revision = "b4df2a3da3e35fdb517dd16908b0665d7c44f0a5"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
@@ -189,7 +189,7 @@ id = "cleanup-and-sibling-isolation"
 id = "sdl-hidapi-wii"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: uinput exposes event nodes without a HID parent or hidraw endpoint for a real-Wii HID backend. Generic evdev support is separate from this HID-specific consumer cell." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w2_host_runs.py::WiiW2HostRuns::test_initial_hidapi_claim_does_not_hide_later_disconnect", evidence = ["wii-sdl-extension-modes", "wii-w2-sdl-after-host-run"], reason = "Granted W2 initial owned HIDAPI open with Wii-enabled hints/default HID filtering:6axes/26buttons, accelerometer capability/no gyro, then disconnected during attachment changes. Initial claim only; sustained extension/sensor/game acceptance remains blocked. Actual-default joystick is evdev; no physical claim." }
+"linux.uhid.bluetooth" = { status = "wip", test_id = "research:tests/test_wii_w4_scope.py::WiiW4Scope::test_real_fixed_claims_do_not_promote_zero_gyro_or_advisory_led_flag", evidence = ["wii-w4-sdl-fixed-none-host-run", "wii-w4-sdl-fixed-nunchuk-host-run", "wii-w4-sdl-fixed-classic-host-run", "wii-w4-sdl-fixed-motionplus-host-run", "wii-w4-sdl-fixed-motionplus-nunchuk-host-run", "wii-w4-sdl-3-2-10-no-reattach"], reason = "W4 fixed-before-open owned HIDAPI claims held for 60 s with selected controls/acceleration and retained LED intent. Both MotionPlus profiles advertise/enable gyro but samples stay zero; no gyro delivery or full sensor/game acceptance. SDL 3.2.10 non-MotionPlus hotplug has a separate consumer no-reattach limitation. No physical claim." }
 
 [[functions]]
 id = "dolphin"
@@ -245,3 +245,16 @@ id = "sdl-initial-hidapi-claim"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: event nodes have no HID parent/hidraw endpoint." }
 "linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w2_host_runs.py::WiiW2HostRuns::test_initial_hidapi_claim_does_not_hide_later_disconnect", evidence = ["wii-w2-sdl-after-host-run"], reason = "Bounded W2 initial owned raw-path HIDAPI joystick with explicit Wii hints,6axes/26buttons and accelerometer capability. Later disconnect retained; no sustained sensor/hotplug/game acceptance or physical validation." }
+
+
+[[functions]]
+id = "sdl-fixed-extension-hidapi-claim"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: event nodes have no HID parent/hidraw endpoint for SDL Wii HIDAPI." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w4_scope.py::WiiW4Scope::test_real_fixed_claims_do_not_promote_zero_gyro_or_advisory_led_flag", evidence = ["wii-w4-sdl-fixed-none-host-run", "wii-w4-sdl-fixed-nunchuk-host-run", "wii-w4-sdl-fixed-classic-host-run", "wii-w4-sdl-fixed-motionplus-host-run", "wii-w4-sdl-fixed-motionplus-nunchuk-host-run"], reason = "Bounded SDL 3.2.10 Wii-enabled/default-filter raw-path claim held for 60 s with zero disconnected polls/removal for none/Nunchuk/Classic01/MotionPlus/MotionPlus+Nunchuk, attached before fresh app open with no topology changes. Selected buttons/applicable axes/accel and retained player-LED intent observed. Gyro remains zero in both MotionPlus profiles; this accepts claim-held only, not complete controls, calibrated values, gyro, hotplug, gameplay or physical fidelity. Application-driven commits, no firmware clock." }
+
+[[functions]]
+id = "sdl-non-motionplus-hotplug"
+[functions.cells]
+"linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: event nodes have no HID parent/hidraw endpoint for SDL Wii HIDAPI." }
+"linux.uhid.bluetooth" = { status = "not-supported", test_id = "research:tests/test_wii_w4_scope.py::WiiW4Scope::test_consumer_source_role_and_motionplus_disconnect_correction_stay_explicit", evidence = ["wii-w4-sdl-3-2-10-no-reattach", "wii-w4-sdl-3-2-10-motionplus-disconnect-path", "wii-w4-sdl-newer-no-reattach"], reason = "unavailable in this consumer configuration: SDL 3.2.10 removes the joystick on non-MotionPlus extension-presence change, retains its raw handle and does not re-add a still-enumerated standalone device. Consumer-specific not-supported, not a device-model refusal; full SDL restart/device removal is outside this cell. MotionPlus packet/availability changes can also disconnect, so active hotplug is not accepted. Same relevant path found at pinned 3.4.18/main, source-only, not run." }
