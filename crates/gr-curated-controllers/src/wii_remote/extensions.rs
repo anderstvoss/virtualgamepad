@@ -25,6 +25,7 @@ pub(super) fn validate(extension: &WiiExtension) -> Result<(), ControlError> {
 fn accessory(extension: &WiiExtension) -> [u8; 6] {
     match extension {
         WiiExtension::Nunchuk(n) => {
+            // wii-gap-wiibrew-nunchuk-six-byte-input corroborates this existing layout.
             let [x, y, z] = n.accelerometer;
             [
                 n.stick[0],
@@ -40,6 +41,7 @@ fn accessory(extension: &WiiExtension) -> [u8; 6] {
             ]
         }
         WiiExtension::Classic(c) => {
+            // wii-gap-wiibrew-classic-format-01; selectors02/03 remain refused.
             let [lx, ly] = c.left;
             let [rx, ry] = c.right;
             let [lt, rt] = c.triggers;
