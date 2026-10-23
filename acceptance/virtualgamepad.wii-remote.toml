@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "732ca43c397f710e1632d825dbc03ccaf5637ad9"
+research_revision = "16df95a3f8353a08cd12b81a24e15d67cdb4a6bf"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]
@@ -75,7 +75,7 @@ id = "player-led-intent"
 id = "live-player-led-control"
 [functions.cells]
 "linux.uinput" = { status = "not-supported", test_id = "not_applicable", evidence = [], reason = "unavailable in this realization: no Wii LED-class endpoint." }
-"linux.uhid.bluetooth" = { status = "wip", test_id = "wii_remote::live_tests::bluetooth_host_binding_extensions_outputs_and_battery_probe", evidence = ["wii-c5-bt-host-binding", "wii-w1-battery-rumble-led-host-run"], reason = "untested: all four owned LED writes still return EACCES13 on clean50161b9. Success or PermissionDenied asserted explicitly; further permission change awaits owner answer on176. Initialization LED intent is not user LED-control acceptance." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "research:tests/test_wii_w1_granted_runs.py::WiiW1GrantedRuns::test_granted_led_intent_and_exact_cleanup_scope", evidence = ["wii-w1-granted-led-host-run"], reason = "Human-granted bounded virtual-host run on merged Part A78e6673: all four owned brightness writes succeeded and all four retained LED intent bits became true. Historical blocked records unchanged. Software intent only, no physical LED delivery or whole-controller acceptance." }
 
 [[functions]]
 id = "rumble"
@@ -129,7 +129,7 @@ id = "retail-eeprom-size"
 id = "original-identity"
 [functions.cells]
 "linux.uinput" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::every_native_node_matches_the_independently_extracted_kernel_capability_set", evidence = ["wii-original-remote-consumer-revision"], reason = "Source-backed name/VID/PID; provider bus isUSB3 instead of the kernel consumer Bluetooth5 and has no fuzz field." }
-"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Original name/identity on UHID bus5 with synthetic vendor-page descriptor; retail descriptor/physical fidelity unclaimed." }
+"linux.uhid.bluetooth" = { status = "source-evidence", test_id = "wii_remote::realizations::tests::bluetooth_identity_numbering_and_synthetic_descriptor_are_exact", evidence = ["wii-original-remote-consumer-revision", "wii-c5-functional-descriptor"], reason = "Original identity on UHID bus5 with authored interim Generic Desktop/Game Pad collection and vendor-page fields (W2 option B); historical wii-c5-functional-descriptor supplies report table only. Retail-evidence successor238; no retail/physical claim." }
 
 [[functions]]
 id = "tr-identity"

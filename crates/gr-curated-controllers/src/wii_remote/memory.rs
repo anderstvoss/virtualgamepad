@@ -141,19 +141,11 @@ impl Memory {
                     self.mp_turn = false;
                     return 0;
                 }
-                self.mp_mode = None;
+                self.deactivate_motion_plus(slave);
                 return 0;
             }
             if offset == 0xf0 && data == [0x55] {
-                // wii-gap-wiibrew-motionplus-deactivation: retain the active
-                // format in the now-inactive A600FA suffix and expose the port.
-                if let Some(mode) = self.mp_mode.take() {
-                    self.mp_inactive_mode = mode;
-                }
-                self.mp_initialized = [true, false];
-                if slave == 0x52 && self.initialized != [true, true] {
-                    self.initialized = [true, false];
-                }
+                self.deactivate_motion_plus(slave);
                 return 0;
             }
             if offset == 0xfb && data == [0] && self.mp_initialized[0] {
@@ -183,6 +175,18 @@ impl Memory {
             // writes are explicitly refused; only the existing format01 packer
             // is modeled. This is a documented deviation, not immutable retail ID.
             _ => 7, // No encrypted workflow or arbitrary register storage.
+        }
+    }
+    fn deactivate_motion_plus(&mut self, slave: u8) {
+        // wii-gap-wiibrew-motionplus-deactivation; W2 handoff6354044408
+        // chooses the same transition for unsupported active A4FE selectors.
+        // This is an explicit software-model policy, not retail selector evidence.
+        if let Some(mode) = self.mp_mode.take() {
+            self.mp_inactive_mode = mode;
+        }
+        self.mp_initialized = [true, false];
+        if slave == 0x52 && self.initialized != [true, true] {
+            self.initialized = [true, false];
         }
     }
     pub(super) fn read(

@@ -298,3 +298,69 @@ fn ir_enable_ack_and_opaque_initialization_stay_separate_from_visible_full_ir() 
     send(&mut p, 0x12, &[0, 0x36]);
     assert_eq!(tick(&mut p).last().unwrap().id(), Some(0x36));
 }
+
+#[test]
+fn unsupported_active_motionplus_selectors_share_atomic_deactivation() {
+    // W2 handoff6354044408: unify unsupported A4FE with the
+    // wii-gap-wiibrew-motionplus-deactivation transition, no retail-mode claim.
+    for mode in [4, 5, 7] {
+        for selector in (0..=u8::MAX).filter(|b| !matches!(b, 4 | 5 | 7)) {
+            let mut p = WiiProtocol::default();
+            p.change_attachment(WiiExtension::Nunchuk(WiiNunchukState::default()), true, 1)
+                .unwrap();
+            tick(&mut p);
+            write(&mut p, 0x52, 0xf0, &[0x55]);
+            write(&mut p, 0x52, 0xfb, &[0]);
+            write(&mut p, 0x53, 0xfe, &[mode]);
+            send(&mut p, 0x12, &[0, 0x32]);
+            tick(&mut p);
+            let reports = write(&mut p, 0x52, 0xfe, &[selector]);
+            assert_eq!(
+                reports.iter().map(Report::id).collect::<Vec<_>>(),
+                [Some(0x22), Some(0x20), Some(0x20)]
+            );
+            assert_eq!(reports[0], input(0x22, vec![0, 0, 0x16, 0]));
+            assert_eq!(
+                [reports[1].payload()[2] & 2, reports[2].payload()[2] & 2],
+                [0, 2]
+            );
+            assert_eq!(
+                &read(&mut p, 4, 0xa6, 0xfa, 6)[5..11],
+                &[0, 0, 0xa6, 0x20, mode, 5]
+            );
+            assert_eq!(
+                &read(&mut p, 4, 0xa4, 0xfa, 6)[5..11],
+                &[0, 0, 0xa4, 0x20, 0, 0]
+            );
+            assert!(tick(&mut p).is_empty());
+            send(&mut p, 0x12, &[0, 0x32]);
+            assert_eq!(tick(&mut p).last().unwrap().id(), Some(0x32));
+        }
+    }
+    for selector in [0, 1, 0xff] {
+        let mut p = WiiProtocol::default();
+        p.change_attachment(WiiExtension::None, true, 1).unwrap();
+        tick(&mut p);
+        write(&mut p, 0x53, 0xfe, &[4]);
+        for _ in 0..MAX_PENDING - 2 {
+            send(&mut p, 0x15, &[0]);
+        }
+        let mut payload = [0; 21];
+        payload[..6].copy_from_slice(&[4, 0xa4, 0, 0xfe, 1, selector]);
+        assert_eq!(
+            p.request(&RequestKind::Set(output(0x16, &payload)), 1).0,
+            Reply::Set(Err(ReplyError::Busy))
+        );
+        assert_eq!(p.memory.mp_mode, Some(4));
+        p.pending.pop_front();
+        send(&mut p, 0x16, &payload);
+        let reports = tick(&mut p);
+        assert_eq!(p.memory.mp_mode, None);
+        assert_eq!(reports[reports.len() - 2].payload()[2] & 2, 0);
+        assert_eq!(
+            reports[reports.len() - 1].payload()[2] & 2,
+            0,
+            "no downstream, no invented plug"
+        );
+    }
+}
