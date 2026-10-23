@@ -171,6 +171,50 @@ mod tests {
         }
     }
     #[test]
+    fn motionplus_w5_drive_vectors_match_sdl_decode_and_passthrough_discriminators() {
+        // SDL 3.2.10 HandleMotionPlusData consumes yaw/roll/pitch in that order.
+        // Distinct W4/W5 drive values expose axis swaps that equal-axis vectors cannot.
+        for mode in [4, 5] {
+            for driven in [[9000_u16, 7000, 8500], [7000, 9000, 7800]] {
+                for mask in 0..8 {
+                    let slow = [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
+                    let mut state = WiiRemoteState::default();
+                    if mode == 5 {
+                        state.extension =
+                            WiiExtension::Nunchuk(super::super::WiiNunchukState::default());
+                    }
+                    state.motion_plus.attached = true;
+                    state.motion_plus.gyroscope = driven;
+                    state.motion_plus.slow = slow;
+                    let mut memory = super::super::memory::Memory::default();
+                    memory.mp_mode = Some(mode);
+                    for _ in 0..2 {
+                        let bytes = packet(&state, &mut memory);
+                        assert_eq!(bytes[5] & 3, 2, "valid gyro discriminator");
+                        let decoded = [
+                            u16::from(bytes[0]) | ((u16::from(bytes[3]) << 6) & 0xff00),
+                            u16::from(bytes[1]) | ((u16::from(bytes[4]) << 6) & 0xff00),
+                            u16::from(bytes[2]) | ((u16::from(bytes[5]) << 6) & 0xff00),
+                        ];
+                        assert_eq!(decoded, [driven[2], driven[1], driven[0]]);
+                        assert_eq!(
+                            [bytes[3] & 1 != 0, bytes[4] & 2 != 0, bytes[3] & 2 != 0],
+                            slow,
+                            "pitch/roll/yaw slow flags at the consumer seam"
+                        );
+                        assert_eq!(bytes[4] & 1 != 0, mode == 5);
+                        if mode == 5 {
+                            let downstream = packet(&state, &mut memory);
+                            assert_eq!(downstream[5] & 3, 0, "valid downstream discriminator");
+                            assert_eq!(downstream[4] & 1, 1, "downstream remains present");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn motionplus_preserves_fourteen_bits_and_marks_passthrough_loss_explicitly() {
         for bit in 0..14 {
             let mut state = WiiRemoteState::default();

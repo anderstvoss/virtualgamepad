@@ -84,7 +84,7 @@ ordinary-root lab view. Interactive desktop/game acceptance remains untested.
 
 ## Bounded host evidence
 
-On Linux6.12.113+deb13-arm64 aarch64, the ignored host probe at
+On Linux 6.12.113+deb13-arm64 aarch64, the ignored host probe at
 `ccb98dc1a4fd384a20bf0c7015fd0115c006798e` observed the exact owned UHID object bound
 to `wiimote`. All six interface names and key/axis masks matched the independently
 extracted golden. Nunchuk attachment, Nunchuk-to-Classic replacement and standalone
@@ -123,7 +123,7 @@ manifest pins research main `732ca43c397f710e1632d825dbc03ccaf5637ad9`, which
 retains the W1 records through merged research PR22. The earlier C5 paragraphs and timing table
 remain historical observations of their own exact revisions.
 
-On the same Linux6.12.113+deb13-arm64 aarch64 host, the W1 probes opened all six
+On the same Linux 6.12.113+deb13-arm64 aarch64 host, the W1 probes opened all six
 owned interface roles for each realization. Live minimum, maximum, flat and
 resolution matched the source table; kernel fuzz was2 for accelerometer/IR/
 Nunchuk,1 for Classic and4 for MotionPlus. Uinput reported fuzz0, its documented
@@ -358,5 +358,42 @@ Research records use `wii-w4-*` and preserve all historical/cloud claims. No
 protocol-model or descriptor change, gyro workaround, upstream report, physical
 or later-controller work was introduced. The corpus stores the explicit
 `evidence_role: consumer` marker in existing `applicability.scope`, preserving its
-v1 schema. The code pins merged W4 research
+v1 schema. W4 adoption pinned merged research
 `b4df2a3da3e35fdb517dd16908b0665d7c44f0a5` (research #33).
+
+## W5 gyro consumer boundary
+
+W5 runs on unchanged main `b23cb41` with the W4 Linux 6.12.113 / SDL3.2.10 tuple.
+Before SDL, two 20-second kernel-only MotionPlus evdev holders produce acknowledged
+map04/05 writes and changing ABS_RX/RY/RZ at the exact expected driven extrema.
+Captured active packets decode both distinct drive vectors with valid gyro bits,
+all slow flags and alternating Nunchuk pass-through. A new pure Rust regression
+also covers both vectors and all eight slow-flag combinations; no runtime change.
+The `kernel-motionplus-gyro` cell records this bounded kernel-consumer delivery.
+
+Fresh SDL holder/control arms produce zero gyro events; the explicit kernel
+holder is not a working SDL workaround. SDL-origin extension resets are observed
+around initialization/open. Linux's SDL activation path omits both restoration
+and cached-mode assignment. Kernel mapping/gyro can recover while SDL still
+produces no gyro, and disconnects must remain explicit. Public API boundaries and
+readbacks are not direct private InitDevice/cached-mode instrumentation; shared
+reader/reset timing prevents attributing every zero uniquely to cached mode.
+The `sdl-hidapi-wii-gyro` cell is consumer `not-supported` only for this recorded
+configuration, citing the new W5 claim and runs. No universal SDL/physical claim.
+
+The runtime requires creation-node access; the lab's temporary hidraw/LED grants
+serve consumer access and output testing. The provider does not change host
+permissions. No persistent setup, upstream SDL report, descriptor, radio, speaker,
+Steam or later-controller work is included. H2 newer SDL is not run. Prior
+research records and W4 acceptance boundaries are preserved.
+
+Anders also requested a direct Dolphin sanity check. Two 45-second no-ROM
+Flatpak 2609a runs with the correct WiimoteControllerInterface setting can open
+the owned raw node, but direct backend connection/gyro reception and decoded
+values remain unestablished. This is blocked, not measured zero gyro. Dolphin's
+direct Wii HIDAPI path bypasses SDL; its SDL gamepad path does use SDL sensors.
+No package, unbind, game, persistent profile or physical acceptance was added.
+
+W5 pins merged research #35 at
+`70606d91c124eaa40930a75d845286b66604c018`. Historical records and
+previous generated fixture bytes are unchanged; only the fixture manifest pin changes.
