@@ -36,6 +36,7 @@ pub(super) struct Memory {
     pub(super) dirty: bool,
     pub(super) initialized: [bool; 2],
     pub(super) mp_mode: Option<u8>,
+    mp_inactive_mode: u8,
     mp_initialized: [bool; 2],
     pub(super) mp_turn: bool,
     camera: [u8; 52],
@@ -66,6 +67,7 @@ impl Default for Memory {
             initialized: [false; 2],
             mp_initialized: [false; 2],
             mp_mode: None,
+            mp_inactive_mode: 0,
             mp_turn: false,
             camera: [0; 52],
         }
@@ -85,6 +87,7 @@ impl Memory {
         self.initialized = [false; 2];
         self.mp_initialized = [false; 2];
         self.mp_mode = None;
+        self.mp_inactive_mode = 0;
         self.mp_turn = false;
     }
     pub(super) fn present(&self, state: &WiiRemoteState) -> bool {
@@ -96,6 +99,9 @@ impl Memory {
         let address = usize::from(u16::from_be_bytes([p[2], p[3]]));
         let data = &p[5..5 + usize::from(p[4])];
         if space == 0 {
+            // wii-gap-dolphin-out-of-range-write-ack / wii-c5-memory-errors:
+            // retain caller-image write bounds and0x22 errors. Documentary read
+            // mirroring/window rules do not establish physical write protection.
             let Some(range) = self.image.bytes.get_mut(address..address + data.len()) else {
                 return 8;
             };
@@ -139,9 +145,13 @@ impl Memory {
                 return 0;
             }
             if offset == 0xf0 && data == [0x55] {
-                self.mp_mode = None;
+                // wii-gap-wiibrew-motionplus-deactivation: retain the active
+                // format in the now-inactive A600FA suffix and expose the port.
+                if let Some(mode) = self.mp_mode.take() {
+                    self.mp_inactive_mode = mode;
+                }
                 self.mp_initialized = [true, false];
-                if slave == 0x52 {
+                if slave == 0x52 && self.initialized != [true, true] {
                     self.initialized = [true, false];
                 }
                 return 0;
@@ -169,6 +179,9 @@ impl Memory {
                 self.initialized[1] = true;
                 0
             }
+            // wii-gap-wiibrew-extension-data-format-selector: Classic01/02/03
+            // writes are explicitly refused; only the existing format01 packer
+            // is modeled. This is a documented deviation, not immutable retail ID.
             _ => 7, // No encrypted workflow or arbitrary register storage.
         }
     }
@@ -180,6 +193,13 @@ impl Memory {
     ) -> Result<Vec<u8>, u8> {
         if read.space == 0 {
             let start = usize::from(read.address);
+            // wii-gap-wiibrew-eeprom-address-mirroring: only the low sixteen
+            // bits address reads. The documented host window ends before1700;
+            // intersect it with the caller image, never truncate that resource
+            // or infer the physical chip/writable extent from this read policy.
+            if start + usize::from(read.remaining) > 0x1700 {
+                return Err(8);
+            }
             // Reject the complete straddling request before returning a prefix.
             self.image
                 .bytes
@@ -208,7 +228,7 @@ impl Memory {
                 0,
                 if self.mp_mode.is_some() { 0xa4 } else { 0xa6 },
                 0x20,
-                self.mp_mode.unwrap_or(0),
+                self.mp_mode.unwrap_or(self.mp_inactive_mode),
                 5,
             ];
             if offset >= 0xfa {

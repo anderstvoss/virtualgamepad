@@ -9,7 +9,8 @@ pub(super) fn validate(extension: &WiiExtension) -> Result<(), ControlError> {
         WiiExtension::Classic(c) => {
             c.left.iter().all(|v| *v <= 63) && c.right.iter().chain(&c.triggers).all(|v| *v <= 31)
         }
-        // Identity discrimination is not established by the pinned sources.
+        // wii-gap-wiibrew-classic-pro-identity documents an ID, but the owner
+        // retains this refusal pending wii-gap-classic-pro-full-id-physical-unknown.
         WiiExtension::ClassicPro(_) => false,
     };
     if valid {
@@ -73,6 +74,8 @@ pub(super) fn packet(state: &WiiRemoteState, memory: &mut super::memory::Memory)
             (mode, state.extension()),
             (5, WiiExtension::Nunchuk(_)) | (7, WiiExtension::Classic(_))
         );
+        // wii-gap-wiibrew-motionplus-passthrough-field-moves corroborates the
+        // existing lossy field moves and gyro/extension discriminator below.
         memory.mp_turn = !memory.mp_turn;
         if passthrough && !memory.mp_turn {
             let mut b = accessory(state.extension());
@@ -180,6 +183,63 @@ mod tests {
             assert_eq!(b[3] & 3, 3);
             assert_eq!(b[4] & 3, 0);
             assert_eq!(b[5] & 3, 2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod part_c_tests {
+    use super::*;
+    #[test]
+    fn documented_passthrough_moves_preserve_decodable_bits_and_alternate_records() {
+        // wii-gap-wiibrew-motionplus-passthrough-field-moves, not physical gyro calibration.
+        for value in 0..1024_u16 {
+            let state = WiiRemoteState {
+                extension: WiiExtension::Nunchuk(super::super::WiiNunchukState {
+                    stick: [17, 239],
+                    accelerometer: [value; 3],
+                    c: value & 1 != 0,
+                    z: value & 2 != 0,
+                }),
+                ..WiiRemoteState::default()
+            };
+            let mut memory = super::super::memory::Memory::default();
+            memory.mp_mode = Some(5);
+            for _ in 0..2 {
+                assert_eq!(packet(&state, &mut memory)[5] & 2, 2, "gyro discriminator");
+                let b = packet(&state, &mut memory);
+                assert_eq!(b[5] & 3, 0, "extension discriminator/reserved bit");
+                assert_eq!(&b[..2], &[17, 239]);
+                let decoded = [
+                    u16::from(b[2]) * 4 + u16::from((b[5] >> 3) & 2),
+                    u16::from(b[3]) * 4 + u16::from((b[5] >> 4) & 2),
+                    u16::from(b[4] & !1) * 4 + u16::from((b[5] >> 5) & 6),
+                ];
+                assert_eq!(decoded, [value & !1; 3]);
+                assert_eq!(b[5] & 8 == 0, value & 1 != 0);
+                assert_eq!(b[5] & 4 == 0, value & 2 != 0);
+            }
+        }
+        for pressed in 0..15 {
+            let mut classic = super::super::WiiClassicState {
+                left: [63, 31],
+                ..Default::default()
+            };
+            classic.buttons[pressed] = true;
+            let original = accessory(&WiiExtension::Classic(classic.clone()));
+            let state = WiiRemoteState {
+                extension: WiiExtension::Classic(classic),
+                ..WiiRemoteState::default()
+            };
+            let mut memory = super::super::memory::Memory::default();
+            memory.mp_mode = Some(7);
+            assert_eq!(packet(&state, &mut memory)[5] & 2, 2);
+            let b = packet(&state, &mut memory);
+            assert_eq!([b[0] & 0x3e, b[1] & 0x3e], [62, 30]);
+            let restored_keys = [b[4] & !1, (b[5] & !3) | (b[0] & 1) | ((b[1] & 1) << 1)];
+            // Byte 4 bit 0 is the connection marker, not a Classic key.
+            assert_eq!(restored_keys, [original[4] & !1, original[5]]);
+            assert_eq!(b[5] & 3, 0);
         }
     }
 }
