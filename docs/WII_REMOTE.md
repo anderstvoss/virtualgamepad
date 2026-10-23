@@ -322,3 +322,41 @@ existing packing only. Formats02/03 stay refused; Classic Pro digital-trigger
 documentation does not lift its identity refusal. Calibration/checksum and
 Classic Pro physical-identity unknowns remain unknown. #238 retains the retail
 descriptor work; Dolphin, radio, speaker and Balance Board are outside W3.
+
+## W4 fixed-extension SDL scope
+
+W4 separates a held raw-path HIDAPI claim with fixed topology from full sensor
+and hotplug acceptance. On unchanged main `abb94e2` and SDL 3.2.10+ds-1, five fresh
+SDL processes each observed 60 seconds with none, Nunchuk, Classic format 01,
+MotionPlus, or MotionPlus+Nunchuk attached before open. All held their claims
+without disconnected polls/removal events. Selected buttons/applicable axes and
+core acceleration changed; Classic acceleration is not advertised by SDL.
+Player-index 1/2 requests reached retained LED bits despite SDL's capability flag
+being false. This is software intent, not physical light delivery.
+
+Both MotionPlus profiles advertised/enabled gyro but polled values stayed zero.
+Their full coverage experiments remain blocked; the fixed-claim cell supports
+claim-held only. No complete button/axis mapping, secondary Nunchuk acceleration,
+calibration, sensor rate, firmware cadence, game or physical acceptance follows.
+The application explicitly drives inputs/commits; no production model changes.
+
+The non-MotionPlus hotplug cell is `not-supported` for SDL 3.2.10, a pinned
+consumer restriction: extension status removes the joystick, while a retained
+raw handle prevents the unchanged still-enumerated device from being re-added.
+This is a known source-supported consumer restriction.
+It is separate from the overall SDL WIP cell and device realization refusals.
+
+MotionPlus-active hotplug is not presumed safe: although status takes a different
+branch, SDL `HandleButtonData` sets the same disconnect flag on downstream
+presence changes in MotionPlus packets, and `HandleResponse` can do so on sensor
+availability changes. Optional live active-hotplug was not run. The new consumer
+claims cite 3.2.10 source at `877399b`; separately inspected release 3.4.18 at
+`829a65d` and main at `8adc0f9` retain the relevant path. Neither newer runtime was run.
+Full SDL restart or actual node removal is outside the no-reattach claim.
+
+Research records use `wii-w4-*` and preserve all historical/cloud claims. No
+protocol-model or descriptor change, gyro workaround, upstream report, physical
+or later-controller work was introduced. The corpus stores the explicit
+`evidence_role: consumer` marker in existing `applicability.scope`, preserving its
+v1 schema. The code pins merged W4 research
+`b4df2a3da3e35fdb517dd16908b0665d7c44f0a5` (research #33).
