@@ -69,9 +69,10 @@ ordinary-root lab view. Interactive desktop/game acceptance remains untested.
   IR1023/1023 sentinel. There is no explicit evdev point-visibility/blob field.
 - Wii LED-class and `power_supply` endpoints belong to the HID kernel driver;
   plain uinput cannot provide them. Its target surface states this limitation.
-- Bluetooth-bus UHID uses Nintendo identity and an explicitly synthetic
-  vendor-page functional descriptor with source-backed report sizes. It is not
-  a retail descriptor. Bus5 is local kernel metadata: no radio, pairing or BlueZ.
+- Bluetooth-bus UHID uses Nintendo identity and an authored interim synthetic
+  Generic Desktop/Game Pad collection with vendor-page fields and source-backed
+  report sizes (W2 option B; retail-evidence successor#238). It is not a retail
+  descriptor. Bus5 is local kernel metadata: no radio, pairing or BlueZ.
 - Classic Pro wire identity, early Plus discrimination, encrypted extension
   workflows, factory calibration/default registers, retail EEPROM size and
   visible extended/full IR blob metadata remain **No evidence**. Basic point
@@ -255,7 +256,31 @@ its records; none establishes retail fidelity or a firmware report clock.
 Encrypted workflows and Classic Pro stay refused. EEPROM images remain
 opaque, length-validated caller imports, with no invented checksums or per-device
 factory values (`wii-gap-extension-calibration-checksum-unknown`,
-`wii-gap-classic-pro-full-id-physical-unknown`). The synthetic vendor-page
-collection stays unchanged pending the owner descriptor decision on#158.
+`wii-gap-classic-pro-full-id-physical-unknown`). The subsequent W2 owner decision on#158 authorizes only the interim synthetic
+Game Pad collection described below; the retail descriptor remains unknown.
 Permissions, consumer discovery and timing remain separate acceptance questions;
 the earlier C5/W1 measurements are never relabelled as Part C measurements.
+
+## W2 interim descriptor and Part C follow-up
+
+Owner option B on#158 comment6354044408 authorizes an independently authored
+synthetic Generic Desktop/Game Pad Application collection. Its byte fields stay
+on vendor page0xFF00 with the existing Variable flags. All report directions,
+IDs and payload lengths are unchanged; speaker IDs14/18/19 stay absent.
+The historical `wii-c5-functional-descriptor` fixture still records C5 and is
+used only to verify the unchanged report body. No rnconrad candidate bytes were
+copied or used as a template. Retail-evidence replacement is tracked in#238;
+this interim descriptor makes no retail authenticity claim.
+
+Unsupported active MotionPlus A4FE selectors now use the same atomic deactivation
+path as55 atA400F0: ACK, unplug/current-port statuses, data pause and preserved
+inactive suffix/downstream initialization. This is the explicit software policy
+chosen by the W2 handoff, not newly authenticated retail selector behavior.
+The regression covers every unsupported byte for all three active modes, plus
+queue admission and the no-downstream case.
+
+The manifest adopts `wii-w1-granted-led-host-run` at retained research main
+`16df95a3f8353a08cd12b81a24e15d67cdb4a6bf`. All four brightness writes succeeded
+and reached retained intent on the granted Part A virtual device. This supports
+bounded software LED intent, not physical light delivery or whole-controller
+acceptance. Earlier blocked W1 and C5 records remain historical.

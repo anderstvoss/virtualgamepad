@@ -289,7 +289,8 @@ impl WiiProtocol {
             && self.memory.mp_mode.is_some()
             && matches!((p[0] >> 2) & 3, 1 | 2)
             && p[1] >> 1 == 0x52
-            && p[3..6] == [0xf0, 1, 0x55];
+            && p[4] == 1
+            && ((p[3] == 0xf0 && p[5] == 0x55) || (p[3] == 0xfe && !matches!(p[5], 4 | 5 | 7)));
         // wii-gap-wiibrew-motionplus-deactivation: ACK plus unplug/current-port
         // statuses must all fit before any protocol or retained state changes.
         let replies = if deactivating {
