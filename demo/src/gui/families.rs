@@ -112,7 +112,7 @@ impl Kind {
             Self::SwitchPro => create_switch_pro(creation).map(Controller::SwitchPro),
             Self::WiiRemote => create_wii_session(
                 options,
-                gr_curated_controllers::wii_remote::create_wii_remote,
+                gr_curated_controllers::wii_remote::create_wii_remote_with_image,
             )
             .map(Controller::WiiRemote)
             .map_err(|e| virtualgamepad::ControllerError::Open {
@@ -404,14 +404,50 @@ impl ControllerView {
 // Keep the application's actual creation token at the supporting-package boundary.
 fn create_wii_session<T, E>(
     options: &ControllerOptions,
-    create: impl FnOnce(virtualgamepad::RealizationId, u64) -> Result<T, E>,
+    create: impl FnOnce(
+        virtualgamepad::RealizationId,
+        u64,
+        super::WiiRemoteRevision,
+        gr_curated_controllers::wii_remote::WiiEepromImage,
+    ) -> Result<T, E>,
 ) -> Result<T, E> {
-    create(options.target, options.id)
+    create(
+        options.target,
+        options.id,
+        options.wii_revision,
+        gr_curated_controllers::wii_remote::WiiEepromImage::default(),
+    )
 }
 
 #[cfg(test)]
 mod wii_tests {
     use super::*;
+    #[test]
+    fn w6_revision_reaches_the_constructor_with_an_empty_image_and_session_token() {
+        for revision in [
+            super::super::WiiRemoteRevision::Original,
+            super::super::WiiRemoteRevision::EarlyIntegratedPlus,
+            super::super::WiiRemoteRevision::Tr,
+        ] {
+            let options = ControllerOptions {
+                target: virtualgamepad::RealizationId::LINUX_UINPUT,
+                id: 37,
+                audio: super::super::audio_lab::CreationAudio::default(),
+                wii_revision: revision,
+            };
+            let state = create_wii_session(&options, |target, session, observed, image| {
+                assert_eq!(target, options.target);
+                assert_eq!(session, 37);
+                assert_eq!(observed, revision);
+                assert!(image.bytes().is_empty());
+                Ok::<_, String>(gr_curated_controllers::wii_remote::WiiRemoteState::new(
+                    observed,
+                ))
+            })
+            .unwrap();
+            assert_eq!(state.revision(), revision);
+        }
+    }
     #[test]
     fn each_wii_creation_receives_its_application_session_id_and_selected_target() {
         for id in [1, 7, u64::MAX] {
@@ -419,14 +455,17 @@ mod wii_tests {
                 target: virtualgamepad::RealizationId::LINUX_UHID_BLUETOOTH,
                 id,
                 audio: super::super::audio_lab::CreationAudio::default(),
+                wii_revision: super::super::WiiRemoteRevision::Original,
             };
-            let received = create_wii_session(&options, |target, session| {
+            let received = create_wii_session(&options, |target, session, revision, image| {
+                assert_eq!(revision, super::super::WiiRemoteRevision::Original);
+                assert!(image.bytes().is_empty());
                 Ok::<_, String>((target, session))
             })
             .unwrap();
             assert_eq!(received, (options.target, id));
             assert_eq!(
-                create_wii_session(&options, |_, _| Err::<(), _>("open failed")),
+                create_wii_session(&options, |_, _, _, _| Err::<(), _>("open failed")),
                 Err("open failed")
             );
         }

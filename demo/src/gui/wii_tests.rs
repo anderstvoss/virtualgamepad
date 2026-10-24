@@ -145,3 +145,42 @@ fn unknown_modules_keep_the_explicit_placeholder() {
             == "Unknown accessory: custom module requires a declared native editor")
     );
 }
+
+#[test]
+fn revision_is_wii_only_defaults_original_and_state_grid_uses_actual_revision() {
+    assert_eq!(App::default().wii_revision, WiiRemoteRevision::Original);
+    let mut revision = WiiRemoteRevision::Original;
+    let labels = render(|ui| draw_wii_revision_selector(ui, Kind::Xbox360, &mut revision));
+    assert!(!labels.iter().any(|(text, _)| text == "Wii revision"));
+    for choice in [
+        WiiRemoteRevision::Original,
+        WiiRemoteRevision::EarlyIntegratedPlus,
+        WiiRemoteRevision::Tr,
+    ] {
+        revision = choice;
+        let view = editor::neutral_wii_view(choice);
+        let labels = render(|ui| {
+            draw_wii_revision_selector(ui, Kind::WiiRemote, &mut revision);
+            egui::Grid::new("revision-state").show(ui, |ui| draw_wii_revision_state(ui, &view));
+        });
+        assert!(labels.iter().any(|(text, _)| text == "Revision"));
+        assert!(
+            labels
+                .iter()
+                .any(|(text, _)| text == wii_revision_label(choice))
+        );
+        assert_eq!(
+            labels
+                .iter()
+                .any(|(text, _)| text.contains("no identity evidence")),
+            choice == WiiRemoteRevision::EarlyIntegratedPlus
+        );
+    }
+    assert!(
+        validate_wii_recreation(Kind::WiiRemote, WiiRemoteRevision::EarlyIntegratedPlus).is_err()
+    );
+    assert!(validate_wii_recreation(Kind::WiiRemote, WiiRemoteRevision::Original).is_ok());
+    assert!(
+        validate_wii_recreation(Kind::DualSense, WiiRemoteRevision::EarlyIntegratedPlus).is_ok()
+    );
+}

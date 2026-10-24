@@ -14,6 +14,7 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{InputEvent, InputUiState, InputValue, card};
 
+use gr_curated_controllers::wii_remote::WiiRemoteRevision;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -44,6 +45,7 @@ struct ControllerOptions {
     target: RealizationId,
     id: u64,
     audio: audio_lab::CreationAudio,
+    wii_revision: WiiRemoteRevision,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -208,12 +210,61 @@ struct AdvancedOptionsLayout {
     content_height: f32,
 }
 
+fn wii_revision_label(revision: WiiRemoteRevision) -> &'static str {
+    match revision {
+        WiiRemoteRevision::Original => "Original",
+        WiiRemoteRevision::EarlyIntegratedPlus => "Early integrated Plus",
+        WiiRemoteRevision::Tr => "-TR",
+        _ => "Unknown revision",
+    }
+}
+fn draw_wii_revision_selector(ui: &mut egui::Ui, kind: Kind, revision: &mut WiiRemoteRevision) {
+    if kind != Kind::WiiRemote {
+        return;
+    }
+    ui.strong("Wii revision");
+    egui::ComboBox::from_id_salt("wii-creation-revision")
+        .selected_text(wii_revision_label(*revision))
+        .show_ui(ui, |ui| {
+            for choice in [
+                WiiRemoteRevision::Original,
+                WiiRemoteRevision::EarlyIntegratedPlus,
+                WiiRemoteRevision::Tr,
+            ] {
+                ui.selectable_value(revision, choice, wii_revision_label(choice));
+            }
+        });
+    if !revision.has_identity_evidence() {
+        ui.label("Early integrated Plus: no identity evidence");
+    }
+}
+fn draw_wii_revision_state(ui: &mut egui::Ui, view: &ControllerView) {
+    if let ControllerView::WiiRemote(editor) = view {
+        ui.label("Revision");
+        ui.label(wii_revision_label(editor.state().revision()));
+        ui.end_row();
+    }
+}
+fn validate_wii_recreation(
+    kind: Kind,
+    revision: WiiRemoteRevision,
+) -> Result<(), virtualgamepad::ControllerError> {
+    if kind == Kind::WiiRemote && !revision.has_identity_evidence() {
+        Err(virtualgamepad::ControllerError::Open {
+            reason: "Wii revision/target lacks source-backed identity".into(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
 fn draw_advanced_options(
     ui: &mut egui::Ui,
     next_controller_id: u64,
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
+    wii_revision: &mut WiiRemoteRevision,
 ) -> AdvancedOptionsLayout {
     let max_height = advanced_options_max_height(
         ui.available_height(),
@@ -247,6 +298,7 @@ fn draw_advanced_options(
                                 bottom: 2,
                             }),
                     );
+                    draw_wii_revision_selector(ui, kind, wii_revision);
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -1316,6 +1368,7 @@ pub struct App {
     kind: Kind,
     target: RealizationId,
     audio_creation: audio_lab::CreationAudio,
+    wii_revision: WiiRemoteRevision,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1337,6 +1390,7 @@ impl Default for App {
             kind: Kind::default(),
             target: audio_lab::default_creation_target(),
             audio_creation: audio_lab::CreationAudio::default(),
+            wii_revision: WiiRemoteRevision::Original,
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1515,6 +1569,7 @@ impl App {
             target: self.target,
             id: self.next_controller_id,
             audio: self.audio_creation,
+            wii_revision: self.wii_revision,
         };
         let result = self.kind.create(&options);
         match result {
@@ -1822,6 +1877,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
+                                    &mut self.wii_revision,
                                 )
                                 .panel_rect;
                             }
@@ -2272,6 +2328,7 @@ impl eframe::App for App {
                 if let Err(error) = self
                     .audio_creation
                     .options(self.target, named.kind.supports_audio())
+                    .and_then(|_| validate_wii_recreation(named.kind, self.wii_revision))
                 {
                     self.diagnostic_log.push(DiagnosticLogEntry {
                         message: format!("Recreation rejected; original stays open: {error}"),
@@ -2372,6 +2429,7 @@ fn draw_controller_state(
                 ui.label("Type");
                 ui.label(controller.kind.label());
                 ui.end_row();
+                draw_wii_revision_state(ui, &controller.view);
             });
         ui.collapsing("Component association", |ui| {
             if let Some(association) = controller.view.association() {
@@ -4151,6 +4209,7 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
+                                                &mut WiiRemoteRevision::Original,
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

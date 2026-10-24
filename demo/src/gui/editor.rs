@@ -345,6 +345,14 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         }
     }
 }
+#[cfg(test)]
+pub(super) fn neutral_wii_view(revision: super::WiiRemoteRevision) -> ControllerView {
+    let ControllerView::WiiRemote(mut editor) = neutral_view(super::Kind::WiiRemote) else {
+        unreachable!()
+    };
+    editor.state = gr_curated_controllers::wii_remote::WiiRemoteState::new(revision);
+    ControllerView::WiiRemote(editor)
+}
 impl ControllerView {
     pub(super) fn preserve_editor_feedback(&mut self, previous: &Self) {
         if let (Self::WiiRemote(next), Self::WiiRemote(previous)) = (self, previous) {
