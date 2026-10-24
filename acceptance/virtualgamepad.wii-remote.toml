@@ -1,6 +1,6 @@
 schema_version = 1
 controller = "virtualgamepad.wii-remote"
-research_revision = "b4df2a3da3e35fdb517dd16908b0665d7c44f0a5"
+research_revision = "8cad518c2d3961dbd332e9d6d94e975c9ca4f94c"
 realizations = ["linux.uinput", "linux.uhid.bluetooth"]
 refused_operations = ["speaker", "real-bluetooth", "usb-uhid", "early-plus-identity", "classic-pro-wire-identity", "encrypted-extensions", "factory-calibration-defaults", "visible-extended-full-ir"]
 persistent_resources = ["caller-imported-eeprom"]

@@ -139,6 +139,44 @@ class ResearchWorkflow(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'absent'):
             MODULE.check(clone)
 
+    def test_acceptance_evidence_must_exist_at_its_declared_revision(self):
+        previous = git(self.corpus, 'rev-parse', 'HEAD')
+        (self.corpus / 'records/claim/later-evidence.json').write_text('{}')
+        git(self.corpus, 'add', '.')
+        git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+            'commit', '-m', 'later evidence')
+        latest = git(self.corpus, 'rev-parse', 'HEAD')
+        self.pin(latest)
+        folder = self.root / 'acceptance'
+        folder.mkdir()
+        manifest = folder / 'virtualgamepad.fixture.toml'
+
+        def declare(revision, evidence):
+            manifest.write_text('research_revision = "' + revision + '"\n'
+                                '[[functions]]\nid = "fixture"\n[functions.cells.local]\n'
+                                'evidence = ["' + evidence + '"]\n')
+
+        declare(previous, 'later-evidence')
+        with self.assertRaisesRegex(ValueError, 'missing acceptance evidence.*later-evidence'):
+            MODULE.check(self.root, write=True)
+        declare(latest, 'later-evidence')
+        MODULE.check(self.root, write=True)
+        # An older revision remains valid when it contains its own evidence.
+        declare(previous, 'wii-w5-kernel-motionplus-gyro-delivery')
+        MODULE.check(self.root)
+        declare(previous.upper(), 'wii-w5-kernel-motionplus-gyro-delivery')
+        MODULE.check(self.root)
+        declare(latest, 'later-evidence')
+        git(self.corpus, 'checkout', previous)
+        self.pin(previous)
+        with self.assertRaisesRegex(ValueError, 'acceptance research revision'):
+            MODULE.check(self.root)
+        git(self.corpus, 'checkout', latest)
+        self.pin(latest)
+        declare('0' * 40, 'later-evidence')
+        with self.assertRaisesRegex(ValueError, 'acceptance research revision'):
+            MODULE.check(self.root)
+
     def test_dirty_corpus(self):
         (self.corpus / 'untracked.txt').write_text('synthetic')
         with self.assertRaisesRegex(ValueError, 'uncommitted'):

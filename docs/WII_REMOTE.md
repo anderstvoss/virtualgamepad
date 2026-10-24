@@ -403,9 +403,17 @@ previous generated fixture bytes are unchanged; only the fixture manifest pin ch
 W7 ran on unchanged Wii runtime at main `840db277` after the demo W6 merge, on
 Linux 6.12.113+deb13-arm64. The consumer survey supplied hypotheses, not passes.
 
-- **Cemu native Wii Remote: blocked before discovery.** No executable is installed
-  on this ARM64 host and Flathub has no aarch64 Cemu ref. MP/MP+Nunchuk with and
-  without a kernel holder are not run; no Cemu acceptance cell is added.
+- **Cemu ARM64 AppImage 29f2f1f: native transport works; gyro unestablished.**
+  The initial PATH/Flatpak lookup missed this non-PATH AppImage; its absence
+  inference is corrected by the additive follow-up. Four 35-second MP/MP+Nunchuk
+  by holder/no-holder profiles, repeated with byte capture, exchange raw status,
+  EEPROM, register and input reports. No-holder Cemu writes A600F0=55/A600FE=04;
+  holder runs show Cemu A400 resets alongside kernel 04/05 maps. MP-only selects 33;
+  Nunchuk also selects/receives 37. All arms receive EEPROM0016/8 error8 because
+  the default caller image is empty and no image was imported. Calibration and
+  decoded application gyro remain unestablished; raw 37 delivery is not a gyro
+  oracle. No Cemu gyro acceptance cell is added. See the
+  [AppImage follow-up](../protocol-research/docs/wii-w7-cemu-appimage.md).
 - **xwiishow/libxwiimote 2-4.3: bounded gyro/normalization pass.** The exact owned
   wiimote HID enumerates; MP+Nunchuk mode 05 and both driven gyro triples produce
   changing events. Static offsets 10/20/30 subtract exactly per axis. Nunchuk is
@@ -435,8 +443,8 @@ Linux 6.12.113+deb13-arm64. The consumer survey supplied hypotheses, not passes.
 Anders installed the requested packages and confirmed the five temporary grants
 supplied locally. The agent performed no grants, sudo, unbind, persistent policy
 change or game-content injection. The initial Dolphin pilot overlapped child
-lifetimes across profiles and cannot support independent comparison. A fresh, human-granted repeat verified exact-profile
-child cleanup between both 35-second arms (two TERM, no KILL). Both corrected traces
+lifetimes across profiles and cannot support independent comparison. A fresh,
+human-granted repeat verified exact-profile child cleanup between both 35-second arms (two TERM, no KILL). Both corrected traces
 stayed empty; separate raw-access and trace controls passed again. All owned
 consumers and sessions closed idempotently; HID, raw, LED and original uinput nodes
 were verified removed. Raw reports, paths, identities, terminal output and private
@@ -444,7 +452,23 @@ profiles are not public fixtures. No Wii model/codec/descriptor/API/dependency
 change or physical/calibration/radio/whole-controller promotion follows. The
 existing SDL gyro acceptance cell is unchanged.
 
-W7 pins merged research [#41](https://github.com/anderstvoss/controller-protocol-research/pull/41)
+Initial W7 evidence merged in research [#41](https://github.com/anderstvoss/controller-protocol-research/pull/41)
 at `b4b68006837540e128901226cc275e4727c97eb8`. The corpus provides five scoped
 `wii-w7-*-host-run` experiments, reduced fixtures, source/tool hashes and original
 probes; [W7 details](../protocol-research/docs/wii-w7-consumer-runs.md).
+
+The Cemu repeat used fresh app profiles on one reused UHID, with no cold-device
+isolation claim. All eight app instances and external holders closed between
+arms, then owned HID/raw/LED nodes were removed. No uinput device was created in
+this repeat. Temporary grants were supplied locally and confirmed by Anders;
+process-only raw-input/radio guards made no persistent host policy change.
+
+W7 Cemu follow-up pins merged research
+[#42](https://github.com/anderstvoss/controller-protocol-research/pull/42) at
+`8cad518c2d3961dbd332e9d6d94e975c9ca4f94c`. The Wii acceptance
+header is updated alongside its adopted corpus revision. The protocol-research
+checker now resolves every acceptance evidence ID at that manifest's declared
+revision and requires the revision to be within the adopted pin's history;
+older valid declarations remain allowed. The new deterministic regression rejects
+a newer record referenced by an older declaration, an unknown revision and a
+revision beyond the adopted pin. Existing SDL cell bytes remain unchanged.

@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 GENERATOR_VERSION = 4
@@ -34,6 +35,31 @@ def read_pin(root):
     return match.group(1)
 
 
+def check_acceptance_evidence(root, research, pin):
+    """Resolve evidence at each manifest's revision, not just current corpus HEAD."""
+    inventories = {}
+    for path in sorted((root / 'acceptance').glob('*.toml')):
+        manifest = tomllib.loads(path.read_text())
+        revision = manifest['research_revision']
+        if revision not in inventories:
+            try:
+                if not re.fullmatch(r'[0-9a-fA-F]{40}', revision):
+                    raise ValueError('expected a full commit hash')
+                git(research, 'merge-base', '--is-ancestor', revision, pin)
+                tree = git(research, 'ls-tree', '-r', '--name-only', revision, 'records')
+            except (ValueError, subprocess.CalledProcessError) as error:
+                raise ValueError('acceptance research revision unavailable or outside pin: '
+                                 + path.name + ': ' + revision) from error
+            inventories[revision] = {Path(name).stem for name in tree.splitlines()
+                                     if name.endswith('.json')}
+        references = {record for function in manifest['functions']
+                      for cell in function['cells'].values() for record in cell['evidence']}
+        missing = references - inventories[revision]
+        if missing:
+            raise ValueError('missing acceptance evidence at declared revision: '
+                             + path.name + ': ' + ', '.join(sorted(missing)))
+
+
 def check(root, write=False, verify_remote=False):
     root = Path(root).resolve()
     research = root / SUBMODULE
@@ -48,6 +74,7 @@ def check(root, write=False, verify_remote=False):
     if verify_remote:
         subprocess.run(['git', '-C', str(research), 'fetch', 'origin', 'main'], check=True)
         subprocess.run(['git', '-C', str(research), 'merge-base', '--is-ancestor', revision, 'FETCH_HEAD'], check=True)
+    check_acceptance_evidence(root, research, revision)
     outputs = {}
     inputs = {}
     for name, expected_size in [('ds-neutral', 64), ('ds-cross', 64),

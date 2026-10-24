@@ -21,3 +21,8 @@ these files are acceptance data, never runtime profiles or device configuration.
 
 `cargo test -p gr-curated-controllers --test acceptance_manifests` checks actual
 TOML against the compiled production registry, including complete cell coverage.
+
+The pinned protocol-research check also resolves each manifest's evidence IDs at
+its declared research_revision, which must be an ancestor of the adopted corpus
+pin. A record present only in a newer checkout cannot satisfy an older declaration;
+older declarations remain valid when they contain their referenced evidence.
