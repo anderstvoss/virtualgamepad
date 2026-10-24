@@ -5,6 +5,7 @@ use super::{
     native_editor::InputEditor,
     *,
 };
+use virtualgamepad::InputControlId;
 
 fn text_shapes(shape: &egui::epaint::Shape, out: &mut Vec<(String, egui::Rect)>) {
     match shape {
@@ -381,4 +382,88 @@ fn remote_button_order_matches_the_controller_and_power_cannot_emit() {
         );
     }
     assert!(view.take_edits().unwrap().is_empty());
+}
+
+#[test]
+fn wii_motion_uses_declared_sensor_ranges_and_round_trips_native_values() {
+    use gr_curated_controllers::wii_remote::WiiExtension;
+    let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+        unreachable!()
+    };
+    let remote = InputControlId::new("accel.x");
+    let nunchuk = InputControlId::new("nunchuk.accel.x");
+    let motion = view.motion_views()[0];
+    assert!(!motion.gyroscope.unwrap().enabled);
+    assert_eq!(motion.accelerometer.range.maximum, 1023);
+    assert_eq!(motion.accelerometer.range.neutral, 0);
+    assert_eq!(motion.gyroscope.unwrap().range.maximum, 16383);
+    assert_eq!(motion.gyroscope.unwrap().range.neutral, 8192);
+    view.apply_events(vec![InputEvent::Motion {
+        id: remote,
+        gyroscope: [1, 2, 3],
+        accelerometer: [0, 511, 1023],
+    }]);
+    assert_eq!(
+        view.motion_values(remote),
+        Some(([8192; 3], [0, 511, 1023]))
+    );
+    let labels = render(|ui| {
+        input_clusters::draw_editor(ui, 1, &mut view, &mut InputUiState::default());
+    });
+    assert!(labels.iter().any(|(text, _)| text == "needs MotionPlus"));
+    assert!(labels.iter().any(|(text, _)| text == "Motion"));
+    // Sensor axes are rendered only in Motion, never duplicate extra-axis cards.
+    assert_eq!(
+        labels.iter().filter(|(text, _)| text == "Accel X").count(),
+        1
+    );
+    view.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+    assert!(view.motion_views()[0].gyroscope.unwrap().enabled);
+    assert!(view.motion_views()[1].gyroscope.is_none());
+    view.apply_events(vec![
+        InputEvent::Motion {
+            id: remote,
+            gyroscope: [0, 8192, 16383],
+            accelerometer: [1023, 1, 0],
+        },
+        InputEvent::Motion {
+            id: nunchuk,
+            gyroscope: [0; 3],
+            accelerometer: [3, 700, 1023],
+        },
+    ]);
+    assert_eq!(
+        view.motion_values(remote),
+        Some(([0, 8192, 16383], [1023, 1, 0]))
+    );
+    assert_eq!(view.motion_values(nunchuk), Some(([0; 3], [3, 700, 1023])));
+    let WiiExtension::Nunchuk(n) = view.state().extension() else {
+        unreachable!()
+    };
+    assert_eq!(n.accelerometer, [3, 700, 1023]);
+    // Reject either invalid sensor atomically: no partial accelerometer update.
+    for (gyro, accel) in [
+        ([16384, 0, 0], [7; 3]),
+        ([0; 3], [1024, 0, 0]),
+        ([-1, 0, 0], [9; 3]),
+    ] {
+        let before = view.state().clone();
+        assert!(!native_editor::apply_wii_event(
+            &mut before.clone(),
+            &InputEvent::Motion {
+                id: remote,
+                gyroscope: gyro,
+                accelerometer: accel
+            }
+        ));
+        view.apply_events(vec![InputEvent::Motion {
+            id: remote,
+            gyroscope: gyro,
+            accelerometer: accel,
+        }]);
+        assert_eq!(view.state(), &before);
+    }
+    view.select_wii_attachment(WiiExtensionChoice::None, false);
+    assert_eq!(view.motion_values(nunchuk), None);
+    assert_eq!(view.motion_values(remote), Some(([8192; 3], [1023, 1, 0])));
 }

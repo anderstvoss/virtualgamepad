@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use virtualgamepad::{
     AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
     ExtraAxisInput, FaceButton, FaceButtonCluster, InputAxisRange, InputControlId, InputScale,
-    MotionInput, StickInput, TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
+    StickInput, TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
 };
 
 pub(super) const CARD_MAX_WIDTH: f32 = 240.0;
@@ -1418,58 +1418,70 @@ fn clamp_touch_coordinate(value: i64, extent: u32) -> u32 {
 
 pub(super) fn draw_motion(
     ui: &mut egui::Ui,
-    input: &MotionInput,
+    input: &super::native_editor::MotionView,
     gyroscope: [i32; 3],
     accelerometer: [i32; 3],
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(
-        ui,
-        input.title(),
-        input.id(),
-        state,
-        |ui, state, released| {
-            ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
+    hold_card(ui, input.title, input.id, state, |ui, state, released| {
+        ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
                 .on_hover_text("The sliders inject virtual sensor values. Releasing a keyboard adjustment or leaving the slider resets momentary input to the demo's neutral value; this does not model a physical controller's resting sensor readings.");
-            let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale());
-            let mut accel = unscale_vector(accelerometer, input.accelerometer_scale());
-            let mut changed = false;
-            let hold = state.held(input.id());
-            let mut interaction_finished = false;
-            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                let response = ui.add(
-                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
+        let gyro_sensor = input.gyroscope.unwrap_or(input.accelerometer);
+        let mut gyro = unscale_vector(gyroscope, gyro_sensor.scale);
+        let mut accel = unscale_vector(accelerometer, input.accelerometer.scale);
+        let mut changed = false;
+        let hold = state.held(input.id);
+        let mut interaction_finished = false;
+        if let Some(sensor) = input.gyroscope {
+            if !sensor.enabled {
+                ui.label("needs MotionPlus");
+            }
+            ui.add_enabled_ui(sensor.enabled, |ui| {
+                for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
+                    let response = ui.add(
+                        egui::Slider::new(
+                            value,
+                            gyro_sensor.range.minimum..=gyro_sensor.range.maximum,
+                        )
                         .text(label),
-                );
-                changed |= response.changed();
-                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
-            }
-            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-                .into_iter()
-                .zip(&mut accel)
-            {
-                let response = ui.add(
-                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
-                        .text(label),
-                );
-                changed |= response.changed();
-                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
-            }
-            if motion_should_neutralize(released, hold, interaction_finished) {
-                gyro = [input.range().neutral; 3];
-                accel = [input.range().neutral; 3];
-                changed = true;
-            }
-            if changed {
-                events.push(InputEvent::Motion {
-                    id: input.id(),
-                    gyroscope: scale_vector(gyro, input.gyroscope_scale(), input.range()),
-                    accelerometer: scale_vector(accel, input.accelerometer_scale(), input.range()),
-                });
-            }
-        },
-    );
+                    );
+                    changed |= response.changed();
+                    interaction_finished |= momentary_axis_interaction_finished(ui, &response);
+                }
+            });
+        }
+        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
+            .into_iter()
+            .zip(&mut accel)
+        {
+            let response = ui.add(
+                egui::Slider::new(
+                    value,
+                    input.accelerometer.range.minimum..=input.accelerometer.range.maximum,
+                )
+                .text(label),
+            );
+            changed |= response.changed();
+            interaction_finished |= momentary_axis_interaction_finished(ui, &response);
+        }
+        if motion_should_neutralize(released, hold, interaction_finished) {
+            gyro = [gyro_sensor.range.neutral; 3];
+            accel = [input.accelerometer.range.neutral; 3];
+            changed = true;
+        }
+        if changed {
+            events.push(InputEvent::Motion {
+                id: input.id,
+                gyroscope: scale_vector(gyro, gyro_sensor.scale, gyro_sensor.range),
+                accelerometer: scale_vector(
+                    accel,
+                    input.accelerometer.scale,
+                    input.accelerometer.range,
+                ),
+            });
+        }
+    });
 }
 
 fn momentary_axis_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
@@ -2158,15 +2170,16 @@ pub(super) fn draw_editor(
             }
         });
     }
-    if !topology.motion().is_empty() {
+    let motion_views = editor.motion_views();
+    if !motion_views.is_empty() {
         horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-            for motion in topology.motion() {
-                if let Some((gyroscope, accelerometer)) = editor.motion_values(motion.id()) {
+            for motion in &motion_views {
+                if let Some((gyroscope, accelerometer)) = editor.motion_values(motion.id) {
                     draw_motion(ui, motion, gyroscope, accelerometer, state, &mut events);
                 } else {
                     ui.label(format!(
                         "{}: native motion editor unavailable",
-                        motion.id().as_str()
+                        motion.id.as_str()
                     ));
                 }
             }
@@ -2179,6 +2192,9 @@ pub(super) fn draw_editor(
                     ExtraAxisInput::OneDimensional { id, .. }
                     | ExtraAxisInput::TwoDimensional { id, .. } => *id,
                 };
+                if editor.covers_extra_axis(id) {
+                    continue;
+                }
                 if let Some(value) = editor.extra_axis(id) {
                     draw_extra_axis(ui, axis, value, &mut events);
                 } else {
@@ -3882,6 +3898,27 @@ mod wii_placed_button_tests {
         editor::{self, ControllerView, WiiExtensionChoice},
         native_editor::InputEditor,
     };
+    #[test]
+    fn nunchuk_motion_hold_is_removed_but_remote_motion_hold_survives() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let mut ui = InputUiState::default();
+        let remote = InputControlId::new("accel.x");
+        let nunchuk = InputControlId::new("nunchuk.accel.x");
+        view.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        ui.set_hold(remote, true);
+        ui.set_hold(nunchuk, true);
+        ui.reconcile_topology(view.current_topology());
+        assert!(ui.held(remote) && ui.held(nunchuk));
+        view.select_wii_attachment(WiiExtensionChoice::None, false);
+        ui.reconcile_topology(view.current_topology());
+        assert!(ui.held(remote));
+        assert!(!ui.held(nunchuk));
+        view.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        ui.reconcile_topology(view.current_topology());
+        assert!(!ui.held(nunchuk));
+    }
     #[test]
     fn removed_accessory_holds_and_all_tail_buttons_stay_released_after_reattach() {
         let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {

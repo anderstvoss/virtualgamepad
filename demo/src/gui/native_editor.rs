@@ -74,7 +74,49 @@ const WII_CLASSIC_BUTTONS: &[PlacedButton] = &[
     placed("classic.plus", "+", 3, 5),
 ];
 
+#[derive(Clone, Copy)]
+pub(super) struct MotionSensorView {
+    pub(super) range: virtualgamepad::InputAxisRange,
+    pub(super) scale: [virtualgamepad::InputScale; 3],
+    pub(super) enabled: bool,
+}
+#[derive(Clone, Copy)]
+pub(super) struct MotionView {
+    pub(super) id: InputControlId,
+    pub(super) title: &'static str,
+    pub(super) gyroscope: Option<MotionSensorView>,
+    pub(super) accelerometer: MotionSensorView,
+}
+impl From<&virtualgamepad::MotionInput> for MotionView {
+    fn from(input: &virtualgamepad::MotionInput) -> Self {
+        Self {
+            id: input.id(),
+            title: input.title(),
+            gyroscope: Some(MotionSensorView {
+                range: input.range(),
+                scale: input.gyroscope_scale(),
+                enabled: true,
+            }),
+            accelerometer: MotionSensorView {
+                range: input.range(),
+                scale: input.accelerometer_scale(),
+                enabled: true,
+            },
+        }
+    }
+}
+
 pub(super) trait InputEditor {
+    fn motion_views(&self) -> Vec<MotionView> {
+        self.current_topology()
+            .motion()
+            .iter()
+            .map(MotionView::from)
+            .collect()
+    }
+    fn covers_extra_axis(&self, _id: InputControlId) -> bool {
+        false
+    }
     fn placed_button_groups(&self) -> Vec<PlacedButtonGroup> {
         Vec::new()
     }
@@ -603,6 +645,50 @@ impl InputEditor for SwitchProEditor {
 const WII_NUNCHUK_STICKS: &[InputControlId] = &[InputControlId::new("nunchuk.stick")];
 
 impl InputEditor for super::editor::WiiRemoteEditor {
+    fn motion_views(&self) -> Vec<MotionView> {
+        let mut views = vec![MotionView {
+            // Reuse the live axis ID so topology reconciliation owns the Hold cache.
+            id: InputControlId::new("accel.x"),
+            title: "Motion",
+            gyroscope: Some(Self::wii_sensor(
+                "gyro.pitch",
+                self.state().motion_plus().attached,
+            )),
+            accelerometer: Self::wii_sensor("accel.x", true),
+        }];
+        if matches!(
+            self.state().extension(),
+            gr_curated_controllers::wii_remote::WiiExtension::Nunchuk(_)
+        ) {
+            views.push(MotionView {
+                id: InputControlId::new("nunchuk.accel.x"),
+                title: "Nunchuk motion",
+                gyroscope: None,
+                accelerometer: Self::wii_sensor("nunchuk.accel.x", true),
+            });
+        }
+        views
+    }
+    fn covers_extra_axis(&self, id: InputControlId) -> bool {
+        ["accel.", "gyro.", "nunchuk.accel."]
+            .iter()
+            .any(|prefix| id.as_str().starts_with(prefix))
+    }
+    fn motion_values(&self, id: InputControlId) -> Option<MotionValues> {
+        match id.as_str() {
+            "accel.x" => Some((
+                self.state().motion_plus().gyroscope.map(i32::from),
+                self.state().accelerometer().map(i32::from),
+            )),
+            "nunchuk.accel.x" => match self.state().extension() {
+                gr_curated_controllers::wii_remote::WiiExtension::Nunchuk(n) => {
+                    Some(([0; 3], n.accelerometer.map(i32::from)))
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
     fn placed_button_groups(&self) -> Vec<PlacedButtonGroup> {
         use gr_curated_controllers::wii_remote::WiiExtension;
         let mut groups = vec![PlacedButtonGroup {
@@ -683,6 +769,78 @@ impl InputEditor for super::editor::WiiRemoteEditor {
         }
     }
 }
+impl super::editor::WiiRemoteEditor {
+    fn wii_sensor(name: &str, enabled: bool) -> MotionSensorView {
+        // Maximum shape provides the disabled gyro's declared neutral/range too.
+        let axis = (super::Kind::WiiRemote.entry().topology)()
+            .extra_axes()
+            .iter()
+            .find_map(|axis| match axis {
+                virtualgamepad::ExtraAxisInput::OneDimensional { id, range, .. }
+                    if id.as_str() == name =>
+                {
+                    Some(*range)
+                }
+                _ => None,
+            })
+            .expect("compiled Wii sensor axis");
+        MotionSensorView {
+            range: axis,
+            scale: [virtualgamepad::InputScale::IDENTITY; 3],
+            enabled,
+        }
+    }
+}
+fn apply_wii_motion(
+    state: &mut gr_curated_controllers::wii_remote::WiiRemoteState,
+    id: InputControlId,
+    gyro: [i32; 3],
+    accel: [i32; 3],
+) -> bool {
+    use gr_curated_controllers::wii_remote::WiiExtension;
+    let convert = |values: [i32; 3]| -> Option<[u16; 3]> {
+        Some([
+            u16::try_from(values[0]).ok()?,
+            u16::try_from(values[1]).ok()?,
+            u16::try_from(values[2]).ok()?,
+        ])
+    };
+    let Some(accel) = convert(accel) else {
+        return false;
+    };
+    let mut candidate = state.clone();
+    let accepted = match id.as_str() {
+        "accel.x" => {
+            if candidate.set_accelerometer(accel).is_err() {
+                return false;
+            }
+            if candidate.motion_plus().attached {
+                let Some(gyro) = convert(gyro) else {
+                    return false;
+                };
+                let slow = candidate.motion_plus().slow;
+                candidate.set_motion_plus_values(gyro, slow).is_ok()
+            } else {
+                true
+            }
+        }
+        "nunchuk.accel.x" => {
+            let WiiExtension::Nunchuk(mut n) = candidate.extension().clone() else {
+                return false;
+            };
+            n.accelerometer = accel;
+            candidate
+                .set_extension_values(WiiExtension::Nunchuk(n))
+                .is_ok()
+        }
+        _ => false,
+    };
+    if accepted {
+        *state = candidate;
+    }
+    accepted
+}
+
 fn wii_axis_index(name: &str, prefix: &str) -> Option<usize> {
     match name.strip_prefix(prefix)? {
         "x" | "pitch" => Some(0),
@@ -697,6 +855,11 @@ pub(super) fn apply_wii_event(
 ) -> bool {
     use gr_curated_controllers::wii_remote::WiiExtension;
     match *event {
+        InputEvent::Motion {
+            id,
+            gyroscope,
+            accelerometer,
+        } => apply_wii_motion(state, id, gyroscope, accelerometer),
         InputEvent::Button { id, pressed } => apply_wii_button(state, id, pressed),
         InputEvent::Axis1 { id, value } => {
             let Ok(value) = u16::try_from(value) else {
