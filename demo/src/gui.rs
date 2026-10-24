@@ -1658,7 +1658,9 @@ impl eframe::App for App {
                         backend_healthy &= healthy;
                     }
                     if display.snapshot.is_some() && named.edits.observe(display.applied) {
-                        named.view = display.snapshot.take().expect("checked snapshot");
+                        let mut next = display.snapshot.take().expect("checked snapshot");
+                        next.preserve_editor_feedback(&named.view);
+                        named.view = next;
                     }
                 }
             }
@@ -2208,6 +2210,7 @@ impl eframe::App for App {
                                                     &mut named.input_ui,
                                                 );
                                             });
+                                            self.diagnostic_log.extend(named.view.take_diagnostics());
                                             if inputs_ready {
                                                 let result =
                                                     named.view.take_edits().and_then(|edits| {
@@ -2316,6 +2319,7 @@ fn target_label(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "Evdev / uinput",
         RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_UHID_BLUETOOTH => "HID / UHID (Bluetooth)",
         RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP / HID + Audio (WIP)",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
@@ -3144,6 +3148,10 @@ mod tests {
     fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
         assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
         assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
+        assert_eq!(
+            target_label(RealizationId::LINUX_UHID_BLUETOOTH),
+            "HID / UHID (Bluetooth)"
+        );
         assert_eq!(
             target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
             "USB/IP / HID + Audio (WIP)"
