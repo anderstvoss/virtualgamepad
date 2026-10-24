@@ -1,6 +1,7 @@
 import hashlib
 import json
 import importlib.util
+import os
 import shutil
 import subprocess
 import tempfile
@@ -26,6 +27,10 @@ class ResearchWorkflow(unittest.TestCase):
         self.corpus = self.root / 'protocol-research'
         shutil.copytree(REPO / 'protocol-research', self.corpus, ignore=shutil.ignore_patterns('.git', '__pycache__'))
         git(self.corpus, 'init')
+        # Detached maintenance can recreate .git files during temporary cleanup.
+        for repo in (self.root, self.corpus):
+            git(repo, 'config', 'maintenance.auto', 'false')
+            git(repo, 'config', 'gc.auto', '0')
         git(self.corpus, 'add', '.')
         git(self.corpus, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', 'fixture')
         self.pin(git(self.corpus, 'rev-parse', 'HEAD'))
@@ -36,6 +41,15 @@ class ResearchWorkflow(unittest.TestCase):
 
     def pin(self, revision):
         git(self.root, 'update-index', '--add', '--cacheinfo', '160000,' + revision + ',protocol-research')
+
+    def test_fixture_commits_do_not_launch_background_maintenance(self):
+        for repo in (self.root, self.corpus):
+            result = subprocess.run(
+                ['git', '-C', str(repo), '-c', 'user.name=Fixture',
+                 '-c', 'user.email=fixture@example.invalid', 'commit', '--allow-empty',
+                 '-m', 'maintenance boundary'],
+                env={**os.environ, 'GIT_TRACE': '1'}, text=True, capture_output=True, check=True)
+            self.assertNotRegex(result.stderr, r'(?:maintenance run|gc)\s+--auto')
 
     def test_regeneration_and_stale_output(self):
         MODULE.check(self.root, write=True)
