@@ -1,10 +1,13 @@
+use super::native_editor::{TouchpadSource, TouchpadView};
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
+#[cfg(test)]
+use virtualgamepad::TouchpadInput;
 use virtualgamepad::{
     AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
     ExtraAxisInput, FaceButton, FaceButtonCluster, InputAxisRange, InputControlId, InputScale,
-    StickInput, TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
+    StickInput, TouchpadActuation, TriggerInputKind, TriggerStack,
 };
 
 pub(super) const CARD_MAX_WIDTH: f32 = 240.0;
@@ -154,7 +157,7 @@ impl InputUiState {
         }
     }
 
-    fn touchpad(&mut self, input: &TouchpadInput) -> &mut TouchpadState {
+    fn touchpad(&mut self, input: &impl TouchpadSource) -> &mut TouchpadState {
         let state = self.touchpads.entry(input.id()).or_default();
         state
             .contacts
@@ -758,7 +761,7 @@ fn draw_touch_lockout_seconds(
 pub(super) fn draw_touchpad(
     ui: &mut egui::Ui,
     controller_id: u64,
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     current: &[Option<(u32, u32)>],
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
@@ -1067,7 +1070,11 @@ pub(super) fn draw_touchpad(
     );
 }
 
-fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut Vec<InputEvent>) {
+fn reset_touchpad(
+    input: &impl TouchpadSource,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
     let touch_state = state.touchpad(input);
     for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
         if contact.active {
@@ -1147,7 +1154,7 @@ fn touch_keyboard_command(
 }
 
 fn release_keyboard_contact(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     events: &mut Vec<InputEvent>,
@@ -1168,7 +1175,7 @@ fn release_keyboard_contact(
 }
 
 fn update_touch_keyboard(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     command: TouchKeyboardCommand,
@@ -1241,7 +1248,7 @@ fn update_touch_keyboard(
 }
 
 fn clear_touchpad_input(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
@@ -1282,7 +1289,7 @@ fn touchpad_lockout_expired(
 }
 
 fn configure_touchpad_lockout(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut InputUiState,
     enabled: bool,
     seconds: u32,
@@ -1312,7 +1319,7 @@ fn configure_touchpad_lockout(
 }
 
 fn normalize_touch_contacts(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     events: &mut Vec<InputEvent>,
@@ -1376,7 +1383,7 @@ fn touch_contact_color(index: usize, active: bool) -> Color32 {
 }
 
 fn emit_touch_move(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     selected: usize,
     point: (u32, u32),
@@ -2141,7 +2148,8 @@ pub(super) fn draw_editor(
     state: &mut InputUiState,
 ) {
     let topology = editor.current_topology();
-    state.reconcile_topology(topology);
+    let touchpad_views = editor.touchpad_views();
+    state.reconcile_views(topology, &touchpad_views);
     let mut events = Vec::new();
     draw_button_and_stick_groups(ui, controller_id, editor, state, &mut events);
     if !topology.dpads().is_empty() || !topology.face_button_clusters().is_empty() {
@@ -2162,9 +2170,9 @@ pub(super) fn draw_editor(
             }
         });
     }
-    if !topology.touchpads().is_empty() {
+    if !touchpad_views.is_empty() {
         horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-            for touchpad in topology.touchpads() {
+            for touchpad in &touchpad_views {
                 let current = editor.touch_points(touchpad.id());
                 draw_touchpad(ui, controller_id, touchpad, &current, state, &mut events);
             }
@@ -2217,7 +2225,20 @@ pub(super) fn draw_editor(
 }
 
 impl InputUiState {
+    #[cfg(test)]
     fn reconcile_topology(&mut self, topology: &virtualgamepad::InputTopology) {
+        let views: Vec<_> = topology
+            .touchpads()
+            .iter()
+            .map(TouchpadView::from)
+            .collect();
+        self.reconcile_views(topology, &views);
+    }
+    fn reconcile_views(
+        &mut self,
+        topology: &virtualgamepad::InputTopology,
+        touchpads: &[TouchpadView],
+    ) {
         let mut ids = HashSet::from([AUXILIARY_HOLD]);
         for input in topology.auxiliary_buttons() {
             ids.insert(input.id);
@@ -2245,7 +2266,7 @@ impl InputUiState {
                 ids.insert(id);
             }
         }
-        for touchpad in topology.touchpads() {
+        for touchpad in touchpads {
             ids.insert(touchpad.id());
             match touchpad.actuation() {
                 TouchpadActuation::Button(button) => {
@@ -2284,7 +2305,7 @@ impl InputUiState {
         self.snapping_dpads
             .retain(|id, _| topology.dpads().iter().any(|d| d.id() == *id));
         self.touchpads
-            .retain(|id, _| topology.touchpads().iter().any(|t| t.id() == *id));
+            .retain(|id, _| touchpads.iter().any(|t| t.id() == *id));
     }
 }
 
@@ -3965,5 +3986,84 @@ mod wii_placed_button_tests {
                     .all(|id| !ui.latched_buttons.contains(&HoldKey::Control(*id)))
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod wii_ir_lifecycle_tests {
+    use super::*;
+    use crate::gui::{
+        Kind,
+        editor::{self, ControllerView, WiiExtensionChoice},
+        native_editor::InputEditor,
+    };
+    #[test]
+    fn ir_holds_survive_accessory_changes_reset_and_cleanup_release_every_contact() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let input = view.touchpad_views()[0];
+        let mut state = InputUiState::default();
+        state.set_hold(input.id, true);
+        for (index, contact) in state.touchpad(&input).contacts.iter_mut().enumerate() {
+            *contact = TouchContactState {
+                active: true,
+                held: true,
+                x: 100,
+                y: u32::try_from(index).unwrap(),
+                ..Default::default()
+            };
+        }
+        for extension in [
+            WiiExtensionChoice::Classic,
+            WiiExtensionChoice::Nunchuk,
+            WiiExtensionChoice::None,
+        ] {
+            view.select_wii_attachment(extension, false);
+            state.reconcile_views(view.current_topology(), &view.touchpad_views());
+            assert!(state.held(input.id));
+            assert!(
+                state
+                    .touchpad(&input)
+                    .contacts
+                    .iter()
+                    .all(|contact| contact.active && contact.held)
+            );
+        }
+        let mut events = Vec::new();
+        clear_touchpad_input(&input, &mut state, &mut events);
+        assert_eq!(events.len(), 4);
+        view.apply_events(events);
+        assert_eq!(view.touch_points(input.id), vec![None; 4]);
+        assert!(!state.held(input.id));
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
+        // UI clear is idempotent; controller removal/shutdown discard every held contact.
+        state.release_all();
+        state.release_all();
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
+        state.set_hold(input.id, true);
+        state.reconcile_views(&virtualgamepad::InputTopology::EMPTY, &[]);
+        assert!(!state.held(input.id));
+        assert!(state.touchpads.is_empty());
+        state.reconcile_views(view.current_topology(), &view.touchpad_views());
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
     }
 }

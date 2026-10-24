@@ -225,6 +225,31 @@ impl WiiRemoteEditor {
             .and_then(|extension| self.attach_wii(extension, bridge));
         record_wii_result(&self.feedback, "Attachment", &result);
     }
+    pub(super) fn edit_wii_contact(&mut self, contact: u8, point: Option<(u32, u32)>) {
+        use gr_curated_controllers::wii_remote::WiiIrPoint;
+        let result = (|| {
+            if usize::from(contact) >= self.state.ir().len() {
+                return Err("IR contact outside the four-point set".to_owned());
+            }
+            let point = point
+                .map(|(x, y)| {
+                    let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else {
+                        return Err(
+                            "IR point outside the source-backed coordinate domain".to_owned()
+                        );
+                    };
+                    WiiIrPoint::new(x, y).map_err(|error| error.to_string())
+                })
+                .transpose()?;
+            let mut points = *self.state.ir();
+            points[usize::from(contact)] = point;
+            Ok(points)
+        })();
+        match result {
+            Ok(points) => self.edit_wii_ir(points),
+            Err(error) => record_wii_result(&self.feedback, "IR", &Err(error)),
+        }
+    }
     pub(super) fn edit_wii_ir(
         &mut self,
         points: [Option<gr_curated_controllers::wii_remote::WiiIrPoint>; 4],
@@ -260,7 +285,6 @@ impl WiiRemoteEditor {
         ui: &mut super::egui::Ui,
         controller_id: u64,
     ) -> super::egui::Rect {
-        use gr_curated_controllers::wii_remote::WiiIrPoint;
         let row = super::input_clusters::horizontal_cards(
             ui,
             (controller_id, "attachment"),
@@ -292,27 +316,6 @@ impl WiiRemoteEditor {
                 });
             },
         );
-        let mut points = *self.state.ir();
-        let old = points;
-        ui.collapsing("IR points", |ui| {
-            for (i, point) in points.iter_mut().enumerate() {
-                let mut visible = point.is_some();
-                let (mut x, mut y) = point.map_or((0, 0), WiiIrPoint::coordinates);
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut visible, format!("Point {}", i + 1));
-                    ui.add(super::egui::DragValue::new(&mut x).range(0..=1023));
-                    ui.add(super::egui::DragValue::new(&mut y).range(0..=767));
-                });
-                *point = if visible {
-                    WiiIrPoint::new(x, y).ok()
-                } else {
-                    None
-                };
-            }
-        });
-        if old != points {
-            self.edit_wii_ir(points);
-        }
         row.inner_rect
     }
 }

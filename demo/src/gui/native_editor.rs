@@ -106,7 +106,85 @@ impl From<&virtualgamepad::MotionInput> for MotionView {
     }
 }
 
+// A demo view lets native point sets use the existing touch interaction machinery.
+#[derive(Clone, Copy)]
+pub(super) struct TouchpadView {
+    pub(super) id: InputControlId,
+    pub(super) title: &'static str,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) contacts: u8,
+    pub(super) actuation: virtualgamepad::TouchpadActuation,
+}
+pub(super) trait TouchpadSource {
+    fn id(&self) -> InputControlId;
+    fn title(&self) -> &'static str;
+    fn width(&self) -> u32;
+    fn height(&self) -> u32;
+    fn contacts(&self) -> u8;
+    fn actuation(&self) -> virtualgamepad::TouchpadActuation;
+}
+impl TouchpadSource for TouchpadView {
+    fn id(&self) -> InputControlId {
+        self.id
+    }
+    fn title(&self) -> &'static str {
+        self.title
+    }
+    fn width(&self) -> u32 {
+        self.width
+    }
+    fn height(&self) -> u32 {
+        self.height
+    }
+    fn contacts(&self) -> u8 {
+        self.contacts
+    }
+    fn actuation(&self) -> virtualgamepad::TouchpadActuation {
+        self.actuation
+    }
+}
+impl TouchpadSource for virtualgamepad::TouchpadInput {
+    fn id(&self) -> InputControlId {
+        self.id()
+    }
+    fn title(&self) -> &'static str {
+        self.title()
+    }
+    fn width(&self) -> u32 {
+        self.width()
+    }
+    fn height(&self) -> u32 {
+        self.height()
+    }
+    fn contacts(&self) -> u8 {
+        self.contacts()
+    }
+    fn actuation(&self) -> virtualgamepad::TouchpadActuation {
+        self.actuation()
+    }
+}
+impl From<&virtualgamepad::TouchpadInput> for TouchpadView {
+    fn from(input: &virtualgamepad::TouchpadInput) -> Self {
+        Self {
+            id: input.id(),
+            title: input.title(),
+            width: input.width(),
+            height: input.height(),
+            contacts: input.contacts(),
+            actuation: input.actuation(),
+        }
+    }
+}
+
 pub(super) trait InputEditor {
+    fn touchpad_views(&self) -> Vec<TouchpadView> {
+        self.current_topology()
+            .touchpads()
+            .iter()
+            .map(TouchpadView::from)
+            .collect()
+    }
     fn motion_views(&self) -> Vec<MotionView> {
         self.current_topology()
             .motion()
@@ -645,6 +723,31 @@ impl InputEditor for SwitchProEditor {
 const WII_NUNCHUK_STICKS: &[InputControlId] = &[InputControlId::new("nunchuk.stick")];
 
 impl InputEditor for super::editor::WiiRemoteEditor {
+    fn touchpad_views(&self) -> Vec<TouchpadView> {
+        vec![TouchpadView {
+            id: InputControlId::new("ir"),
+            title: "IR points",
+            width: 1024,
+            height: 768,
+            contacts: 4,
+            actuation: virtualgamepad::TouchpadActuation::None,
+        }]
+    }
+    fn touch_points(&self, id: InputControlId) -> TouchPoints {
+        if id.as_str() != "ir" {
+            return Vec::new();
+        }
+        self.state()
+            .ir()
+            .iter()
+            .map(|point| {
+                point.map(|point| {
+                    let (x, y) = point.coordinates();
+                    (u32::from(x), u32::from(y))
+                })
+            })
+            .collect()
+    }
     fn motion_views(&self) -> Vec<MotionView> {
         let mut views = vec![MotionView {
             // Reuse the live axis ID so topology reconciliation owns the Hold cache.
@@ -765,7 +868,13 @@ impl InputEditor for super::editor::WiiRemoteEditor {
     }
     fn apply_events(&mut self, events: Vec<InputEvent>) {
         for event in events {
-            self.edit_wii(&event);
+            if let InputEvent::Touch { id, contact, point } = event {
+                if id.as_str() == "ir" {
+                    self.edit_wii_contact(contact, point);
+                }
+            } else {
+                self.edit_wii(&event);
+            }
         }
     }
 }

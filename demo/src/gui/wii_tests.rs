@@ -467,3 +467,152 @@ fn wii_motion_uses_declared_sensor_ranges_and_round_trips_native_values() {
     assert_eq!(view.motion_values(nunchuk), None);
     assert_eq!(view.motion_values(remote), Some(([8192; 3], [1023, 1, 0])));
 }
+
+#[test]
+fn wii_ir_four_contacts_place_move_release_and_reject_invalid_points() {
+    let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+        unreachable!()
+    };
+    let ir = InputControlId::new("ir");
+    let touch = view.touchpad_views()[0];
+    assert_eq!((touch.width, touch.height, touch.contacts), (1024, 768, 4));
+    assert!(matches!(
+        touch.actuation,
+        virtualgamepad::TouchpadActuation::None
+    ));
+    for contact in 0..4u8 {
+        for point in [
+            Some((0, 0)),
+            Some((1023, 767)),
+            Some((100 + u32::from(contact), 200)),
+            None,
+        ] {
+            let before = view.touch_points(ir);
+            view.apply_events(vec![InputEvent::Touch {
+                id: ir,
+                contact,
+                point,
+            }]);
+            let after = view.touch_points(ir);
+            assert_eq!(after[usize::from(contact)], point);
+            for other in 0..4 {
+                if other != usize::from(contact) {
+                    assert_eq!(after[other], before[other]);
+                }
+            }
+            assert_eq!(
+                view.take_edits().unwrap().len(),
+                1,
+                "each accepted contact queues native set_ir"
+            );
+        }
+    }
+    for (contact, point) in [
+        (0, Some((1024, 0))),
+        (3, Some((0, 768))),
+        (2, Some((u32::MAX, 0))),
+        (4, Some((1, 2))),
+        (u8::MAX, None),
+    ] {
+        let before = view.state().clone();
+        view.apply_events(vec![InputEvent::Touch {
+            id: ir,
+            contact,
+            point,
+        }]);
+        assert_eq!(view.state(), &before);
+        assert!(view.take_edits().unwrap().is_empty());
+    }
+    let mut wrapped = ControllerView::WiiRemote(view);
+    let failures = wrapped.take_diagnostics();
+    assert_eq!(failures.len(), 5);
+    assert!(failures.iter().all(|entry| !entry.success));
+}
+
+#[test]
+fn wii_ir_renders_shared_touch_controls_without_actuation_or_legacy_list() {
+    let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+        unreachable!()
+    };
+    let context = egui::Context::default();
+    let mut state = InputUiState::default();
+    let mut labels = Vec::new();
+    let mut pointer = Pos2::ZERO;
+    for frame in 0..12 {
+        let mut events = vec![egui::Event::PointerMoved(pointer)];
+        if frame == 2 {
+            events.push(egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: Vec2::new(-1000.0, 0.0),
+                modifiers: egui::Modifiers::default(),
+            });
+        }
+        let output = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(1500.0, 2400.0),
+                )),
+                time: Some(f64::from(frame) * 0.1),
+                events,
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    view.draw_wii(ui, 12);
+                    input_clusters::draw_editor(ui, 12, &mut view, &mut state);
+                });
+            },
+        );
+        let mut current = Vec::new();
+        for shape in &output.shapes {
+            text_shapes(&shape.shape, &mut current);
+        }
+        if frame == 1 {
+            pointer = current
+                .iter()
+                .find(|(label, _)| label == "Contact 1")
+                .unwrap()
+                .1
+                .center();
+        }
+        assert_eq!(
+            current
+                .iter()
+                .filter(|(label, _)| label == "IR points")
+                .count(),
+            1
+        );
+        for item in current {
+            if !labels.iter().any(|(label, _)| label == &item.0) {
+                labels.push(item);
+            }
+        }
+    }
+    for expected in [
+        "IR points",
+        "Multitouch",
+        "Contact 1",
+        "Contact 2",
+        "Contact 3",
+        "Contact 4",
+        "Reset touchpad",
+    ] {
+        assert!(
+            labels.iter().any(|(label, _)| label == expected),
+            "missing {expected}"
+        );
+    }
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|(label, _)| label == "IR points")
+            .count(),
+        1
+    );
+    assert!(
+        !labels
+            .iter()
+            .any(|(label, _)| label == "Deflection" || label.starts_with("Point "))
+    );
+}
