@@ -18,7 +18,7 @@ const TOUCHPAD_ACTION_WIDTH: f32 = 112.0;
 // This is a cap rather than a reserved height: a row remains as tall as its content and does
 // not grow when the window does. The current topology's tallest card fits inside this bound.
 const CLUSTER_ROW_MAX_HEIGHT: f32 = 320.0;
-const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
+pub(super) const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InputValue {
@@ -361,6 +361,78 @@ pub(super) fn draw_auxiliary_buttons(
                     );
                 }
             });
+        },
+    );
+}
+
+pub(super) fn draw_placed_buttons(
+    ui: &mut egui::Ui,
+    group: &super::native_editor::PlacedButtonGroup,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    labeled_hold_card(
+        ui,
+        group.title,
+        "Hold",
+        group.hold_key,
+        state,
+        |ui, state, released| {
+            if released {
+                for id in group.buttons.iter().filter_map(|button| button.id) {
+                    release_latched_button(state, HoldKey::Control(id), || {
+                        events.push(InputEvent::Button { id, pressed: false });
+                    });
+                }
+            }
+            let rows = group
+                .buttons
+                .iter()
+                .map(|button| button.row)
+                .max()
+                .unwrap_or_default();
+            let columns = group
+                .buttons
+                .iter()
+                .map(|button| button.column)
+                .max()
+                .unwrap_or_default();
+            egui::Grid::new(group.hold_key.as_str())
+                .spacing([4.0, 3.0])
+                .show(ui, |ui| {
+                    for row in 0..=rows {
+                        for column in 0..=columns {
+                            if let Some(button) = group
+                                .buttons
+                                .iter()
+                                .find(|button| button.row == row && button.column == column)
+                            {
+                                if let Some(id) = button.id {
+                                    holdable_button(
+                                        ui,
+                                        group.hold_key,
+                                        HoldKey::Control(id),
+                                        button.label,
+                                        state,
+                                        |pressed| events.push(InputEvent::Button { id, pressed }),
+                                    );
+                                } else {
+                                    let response = ui.add_enabled(
+                                        false,
+                                        Button::new(button.label)
+                                            .min_size(Vec2::new(32.0, CONTROL_HEIGHT)),
+                                    );
+                                    if let Some(help) = button.help {
+                                        response.on_hover_text(help);
+                                    }
+                                }
+                            } else {
+                                ui.allocate_space(Vec2::new(32.0, CONTROL_HEIGHT));
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
         },
     );
 }
@@ -1984,6 +2056,70 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
     })
 }
 
+fn draw_button_and_stick_groups(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    editor: &dyn super::native_editor::InputEditor,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    let topology = editor.current_topology();
+    let groups = editor.placed_button_groups();
+    let covered: HashSet<_> = groups
+        .iter()
+        .flat_map(|group| group.buttons.iter().filter_map(|button| button.id))
+        .collect();
+    let remaining: Vec<_> = topology
+        .auxiliary_buttons()
+        .iter()
+        .copied()
+        .filter(|button| !covered.contains(&button.id))
+        .collect();
+    draw_auxiliary_buttons(ui, &remaining, state, events);
+    for group in &groups {
+        horizontal_cards(ui, (controller_id, group.hold_key), false, |ui| {
+            draw_placed_buttons(ui, group, state, events);
+            for stick in topology
+                .sticks()
+                .iter()
+                .filter(|stick| group.beside_sticks.contains(&stick.id()))
+            {
+                if let Some(value) = editor.stick_value(stick.id()) {
+                    draw_stick(ui, stick, value, state, events);
+                } else {
+                    ui.label(format!(
+                        "{}: native stick editor unavailable",
+                        stick.id().as_str()
+                    ));
+                }
+            }
+        });
+    }
+    let separate_sticks: Vec<_> = topology
+        .sticks()
+        .iter()
+        .filter(|stick| {
+            !groups
+                .iter()
+                .any(|group| group.beside_sticks.contains(&stick.id()))
+        })
+        .collect();
+    if !separate_sticks.is_empty() {
+        horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+            for stick in &separate_sticks {
+                if let Some(value) = editor.stick_value(stick.id()) {
+                    draw_stick(ui, stick, value, state, events);
+                } else {
+                    ui.label(format!(
+                        "{}: native stick editor unavailable",
+                        stick.id().as_str()
+                    ));
+                }
+            }
+        });
+    }
+}
+
 /// One layout for every native adapter. Fixed families supply their selected
 /// surface; a family with live attachments supplies its retained current shape.
 pub(super) fn draw_editor(
@@ -1995,21 +2131,7 @@ pub(super) fn draw_editor(
     let topology = editor.current_topology();
     state.reconcile_topology(topology);
     let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), state, &mut events);
-    if !topology.sticks().is_empty() {
-        horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-            for stick in topology.sticks() {
-                if let Some(value) = editor.stick_value(stick.id()) {
-                    draw_stick(ui, stick, value, state, &mut events);
-                } else {
-                    ui.label(format!(
-                        "{}: native stick editor unavailable",
-                        stick.id().as_str()
-                    ));
-                }
-            }
-        });
-    }
+    draw_button_and_stick_groups(ui, controller_id, editor, state, &mut events);
     if !topology.dpads().is_empty() || !topology.face_button_clusters().is_empty() {
         horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
             for dpad in topology.dpads() {
@@ -3749,5 +3871,62 @@ mod face_width_tests {
         assert_eq!(face_cell_width(10.0, 300.0, 3), 40.0);
         assert_eq!(face_cell_width(200.0, 90.0, 3), 30.0);
         assert_eq!(face_cell_width(10.0, 0.0, 0), 24.0);
+    }
+}
+
+#[cfg(test)]
+mod wii_placed_button_tests {
+    use super::*;
+    use crate::gui::{
+        Kind,
+        editor::{self, ControllerView, WiiExtensionChoice},
+        native_editor::InputEditor,
+    };
+    #[test]
+    fn removed_accessory_holds_and_all_tail_buttons_stay_released_after_reattach() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let mut ui = InputUiState::default();
+        for choice in [WiiExtensionChoice::Classic, WiiExtensionChoice::Nunchuk] {
+            view.select_wii_attachment(choice, true);
+            ui.reconcile_topology(view.current_topology());
+            let groups = view.placed_button_groups();
+            let accessory = &groups[1];
+            ui.set_hold(accessory.hold_key, true);
+            let controls: Vec<_> = accessory
+                .buttons
+                .iter()
+                .filter_map(|button| button.id)
+                .rev()
+                .collect();
+            for id in &controls {
+                ui.latched_buttons.insert(HoldKey::Control(*id));
+                ui.momentary_buttons.insert(HoldKey::Control(*id));
+            }
+            ui.latched_buttons
+                .insert(HoldKey::Control(InputControlId::new("a")));
+            view.select_wii_attachment(WiiExtensionChoice::None, false);
+            ui.reconcile_topology(view.current_topology());
+            assert!(!ui.held(accessory.hold_key));
+            assert!(
+                controls
+                    .iter()
+                    .all(|id| !ui.latched_buttons.contains(&HoldKey::Control(*id))
+                        && !ui.momentary_buttons.contains(&HoldKey::Control(*id)))
+            );
+            assert!(
+                ui.latched_buttons
+                    .contains(&HoldKey::Control(InputControlId::new("a")))
+            );
+            view.select_wii_attachment(choice, true);
+            ui.reconcile_topology(view.current_topology());
+            assert!(!ui.held(accessory.hold_key));
+            assert!(
+                controls
+                    .iter()
+                    .all(|id| !ui.latched_buttons.contains(&HoldKey::Control(*id)))
+            );
+        }
     }
 }

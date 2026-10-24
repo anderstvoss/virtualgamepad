@@ -261,3 +261,124 @@ fn wii_output_snapshots_update_four_leds_and_rumble_without_sony_rows() {
     });
     assert!(!other.iter().any(|(text, _)| text == "Speaker (planned)"));
 }
+
+#[test]
+fn six_shapes_show_physical_button_groups_and_nunchuk_stick_beside_its_buttons() {
+    for choice in [
+        WiiExtensionChoice::None,
+        WiiExtensionChoice::Nunchuk,
+        WiiExtensionChoice::Classic,
+    ] {
+        for bridge in [false, true] {
+            let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+                unreachable!()
+            };
+            view.select_wii_attachment(choice, bridge);
+            let groups = view.placed_button_groups();
+            let native_ids: Vec<_> = view
+                .current_topology()
+                .auxiliary_buttons()
+                .iter()
+                .map(|button| button.id)
+                .collect();
+            for button in groups.iter().flat_map(|group| group.buttons) {
+                if let Some(id) = button.id {
+                    assert!(native_ids.contains(&id));
+                }
+            }
+            let labels = render(|ui| {
+                input_clusters::draw_editor(ui, 1, &mut view, &mut InputUiState::default());
+            });
+            assert!(labels.iter().any(|(text, _)| text == "Wii Remote buttons"));
+            assert_eq!(
+                labels.iter().any(|(text, _)| text == "Nunchuk buttons"),
+                choice == WiiExtensionChoice::Nunchuk
+            );
+            assert_eq!(
+                labels.iter().any(|(text, _)| text == "Classic buttons"),
+                choice == WiiExtensionChoice::Classic
+            );
+            assert!(!labels.iter().any(|(text, _)| text == "Auxiliary buttons"));
+            if choice == WiiExtensionChoice::Nunchuk {
+                let buttons = labels
+                    .iter()
+                    .find(|(text, _)| text == "Nunchuk buttons")
+                    .unwrap()
+                    .1;
+                let stick = labels
+                    .iter()
+                    .find(|(text, _)| text == "Nunchuk stick")
+                    .unwrap()
+                    .1;
+                assert!((buttons.top() - stick.top()).abs() < 1.0);
+                assert!(stick.left() > buttons.right());
+            }
+        }
+    }
+}
+#[test]
+fn remote_button_order_matches_the_controller_and_power_cannot_emit() {
+    let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+        unreachable!()
+    };
+    let mut state = InputUiState::default();
+    let labels = render(|ui| input_clusters::draw_editor(ui, 1, &mut view, &mut state));
+    let y = |name| {
+        labels
+            .iter()
+            .find(|(text, _)| text == name)
+            .unwrap()
+            .1
+            .center()
+            .y
+    };
+    let sequence = [
+        "Power",
+        "Up",
+        "Left",
+        "Down",
+        "A",
+        "B (trigger)",
+        "Home",
+        "1",
+        "2",
+    ];
+    assert!(sequence.windows(2).all(|pair| y(pair[0]) < y(pair[1])));
+    let power = view.placed_button_groups()[0].buttons[0];
+    assert_eq!(power.label, "Power");
+    assert!(power.id.is_none());
+    assert_eq!(power.help, Some("not an input report"));
+    let context = egui::Context::default();
+    let position = labels
+        .iter()
+        .find(|(text, _)| text == "Power")
+        .unwrap()
+        .1
+        .center();
+    for pressed in [true, false] {
+        let _ = context.run(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    Pos2::ZERO,
+                    Vec2::new(1500.0, 2400.0),
+                )),
+                events: vec![
+                    egui::Event::PointerMoved(position),
+                    egui::Event::PointerButton {
+                        pos: position,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                ..Default::default()
+            },
+            |context| {
+                egui::CentralPanel::default().show(context, |ui| {
+                    input_clusters::draw_editor(ui, 1, &mut view, &mut state);
+                });
+            },
+        );
+    }
+    assert!(view.take_edits().unwrap().is_empty());
+}

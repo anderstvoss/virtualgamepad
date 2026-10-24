@@ -9,7 +9,75 @@ use super::{
 use virtualgamepad::{InputControlId, InputTopology};
 pub(super) type MotionValues = ([i32; 3], [i32; 3]);
 pub(super) type TouchPoints = Vec<Option<(u32, u32)>>;
+#[derive(Clone, Copy)]
+pub(super) struct PlacedButton {
+    pub(super) id: Option<InputControlId>,
+    pub(super) label: &'static str,
+    pub(super) column: u8,
+    pub(super) row: u8,
+    pub(super) help: Option<&'static str>,
+}
+pub(super) struct PlacedButtonGroup {
+    pub(super) title: &'static str,
+    pub(super) hold_key: InputControlId,
+    pub(super) buttons: &'static [PlacedButton],
+    pub(super) beside_sticks: &'static [InputControlId],
+}
+const fn placed(id: &'static str, label: &'static str, column: u8, row: u8) -> PlacedButton {
+    PlacedButton {
+        id: Some(InputControlId::new(id)),
+        label,
+        column,
+        row,
+        help: None,
+    }
+}
+const WII_REMOTE_BUTTONS: &[PlacedButton] = &[
+    PlacedButton {
+        id: None,
+        label: "Power",
+        column: 1,
+        row: 0,
+        help: Some("not an input report"),
+    },
+    placed("up", "Up", 1, 1),
+    placed("left", "Left", 0, 2),
+    placed("right", "Right", 2, 2),
+    placed("down", "Down", 1, 3),
+    placed("a", "A", 1, 4),
+    placed("b", "B (trigger)", 1, 5),
+    placed("minus", "−", 0, 6),
+    placed("home", "Home", 1, 6),
+    placed("plus", "+", 2, 6),
+    placed("one", "1", 1, 7),
+    placed("two", "2", 1, 8),
+];
+const WII_NUNCHUK_BUTTONS: &[PlacedButton] = &[
+    placed("nunchuk.c", "C", 0, 0),
+    placed("nunchuk.z", "Z", 1, 0),
+];
+const WII_CLASSIC_BUTTONS: &[PlacedButton] = &[
+    placed("classic.up", "Up", 1, 0),
+    placed("classic.left", "Left", 0, 1),
+    placed("classic.right", "Right", 2, 1),
+    placed("classic.down", "Down", 1, 2),
+    placed("classic.x", "X", 4, 0),
+    placed("classic.y", "Y", 3, 1),
+    placed("classic.a", "A", 5, 1),
+    placed("classic.b", "B", 4, 2),
+    placed("classic.l", "L", 0, 3),
+    placed("classic.r", "R", 5, 3),
+    placed("classic.zl", "ZL", 0, 4),
+    placed("classic.zr", "ZR", 5, 4),
+    placed("classic.minus", "−", 1, 5),
+    placed("classic.home", "Home", 2, 5),
+    placed("classic.plus", "+", 3, 5),
+];
+
 pub(super) trait InputEditor {
+    fn placed_button_groups(&self) -> Vec<PlacedButtonGroup> {
+        Vec::new()
+    }
     fn current_topology(&self) -> &'static InputTopology;
     fn stick_value(&self, id: InputControlId) -> Option<(i32, i32)>;
     fn trigger_values(&self) -> Vec<(InputControlId, InputValue)>;
@@ -532,7 +600,40 @@ impl InputEditor for SwitchProEditor {
     }
 }
 
+const WII_NUNCHUK_STICKS: &[InputControlId] = &[InputControlId::new("nunchuk.stick")];
+
 impl InputEditor for super::editor::WiiRemoteEditor {
+    fn placed_button_groups(&self) -> Vec<PlacedButtonGroup> {
+        use gr_curated_controllers::wii_remote::WiiExtension;
+        let mut groups = vec![PlacedButtonGroup {
+            title: "Wii Remote buttons",
+            hold_key: super::input_clusters::AUXILIARY_HOLD,
+            buttons: WII_REMOTE_BUTTONS,
+            beside_sticks: &[],
+        }];
+        match self.state().extension() {
+            WiiExtension::Nunchuk(_) => groups.push(PlacedButtonGroup {
+                title: "Nunchuk buttons",
+                hold_key: InputControlId::new("nunchuk"),
+                buttons: WII_NUNCHUK_BUTTONS,
+                beside_sticks: WII_NUNCHUK_STICKS,
+            }),
+            WiiExtension::Classic(_) | WiiExtension::ClassicPro(_) => {
+                groups.push(PlacedButtonGroup {
+                    title: if matches!(self.state().extension(), WiiExtension::ClassicPro(_)) {
+                        "Classic Pro buttons"
+                    } else {
+                        "Classic buttons"
+                    },
+                    hold_key: InputControlId::new("classic"),
+                    buttons: WII_CLASSIC_BUTTONS,
+                    beside_sticks: &[],
+                });
+            }
+            _ => {}
+        }
+        groups
+    }
     fn handles_module(&self, id: InputControlId) -> bool {
         matches!(id.as_str(), "nunchuk" | "classic" | "motion-plus")
     }
