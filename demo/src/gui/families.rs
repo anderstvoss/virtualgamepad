@@ -325,11 +325,23 @@ impl Controller {
                     log.push(format!("DualShock 4: {event:?}"));
                 })
                 .map_err(|error| error.to_string()),
-            Self::WiiRemote(controller) => controller
-                .service(&mut |event| {
-                    log.push(format!("Wii Remote: {event:?}"));
-                })
-                .map_err(|e| e.to_string()),
+            Self::WiiRemote(controller) => {
+                controller
+                    .service(&mut |event| {
+                        if let virtualgamepad::experimental::RawReverseEvent::ForceFeedback(event) =
+                            &event
+                        {
+                            indicators.apply_force_feedback(*event);
+                        }
+                        log.push(format!("Wii Remote: {event:?}"));
+                    })
+                    .map_err(|error| error.to_string())?;
+                let outputs = controller
+                    .host_outputs()
+                    .map_err(|error| error.to_string())?;
+                indicators.apply_wii_outputs(outputs);
+                Ok(())
+            }
             Self::SwitchPro(controller) => controller
                 .service(&mut |event| {
                     if let virtualgamepad::SwitchProOutputEvent::ForceFeedback(event) = event {

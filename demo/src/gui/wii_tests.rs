@@ -184,3 +184,80 @@ fn revision_is_wii_only_defaults_original_and_state_grid_uses_actual_revision() 
         validate_wii_recreation(Kind::DualSense, WiiRemoteRevision::EarlyIntegratedPlus).is_ok()
     );
 }
+
+#[test]
+fn wii_output_snapshots_update_four_leds_and_rumble_without_sony_rows() {
+    let mut indicators = ReverseIndicators::default();
+    for (revision, leds, rumble) in [
+        (1, [true, false, true, false], true),
+        (2, [false, true, false, true], false),
+    ] {
+        indicators.apply_wii_outputs(gr_curated_controllers::wii_remote::WiiRemoteOutputs {
+            revision,
+            leds,
+            rumble,
+        });
+        assert_eq!(indicators.wii_player_leds, Some(leds));
+        assert_eq!(indicators.rumble_active, rumble);
+        assert!(indicators.led.is_none());
+        assert!(indicators.mute_led.is_none());
+        let labels = render(|ui| {
+            draw_controller_output_cards(
+                ui,
+                Kind::WiiRemote,
+                RealizationId::LINUX_UHID_BLUETOOTH,
+                &indicators,
+            );
+        });
+        for label in [
+            "Player 1",
+            "Player 2",
+            "Player 3",
+            "Player 4",
+            "Rumble",
+            "Speaker (planned)",
+            "State",
+            "Format",
+            "Volume",
+            "Muted",
+            "Audio plan phase A3",
+        ] {
+            assert!(
+                labels.iter().any(|(text, _)| text == label),
+                "missing {label}"
+            );
+        }
+        assert_eq!(labels.iter().filter(|(text, _)| text == "On").count(), 2);
+        assert_eq!(labels.iter().filter(|(text, _)| text == "Off").count(), 2);
+        assert_eq!(labels.iter().filter(|(text, _)| text == "—").count(), 4);
+        assert!(
+            !labels
+                .iter()
+                .any(|(text, _)| text == "Lightbar" || text == "Mute")
+        );
+    }
+    let labels = render(|ui| {
+        draw_controller_output_cards(
+            ui,
+            Kind::WiiRemote,
+            RealizationId::LINUX_UINPUT,
+            &indicators,
+        );
+    });
+    assert!(
+        labels
+            .iter()
+            .any(|(text, _)| text == "Not exposed on Evdev / uinput")
+    );
+    assert!(labels.iter().any(|(text, _)| text == "Rumble"));
+    assert!(!labels.iter().any(|(text, _)| text.starts_with("Player 1")));
+    let other = render(|ui| {
+        draw_controller_output_cards(
+            ui,
+            Kind::DualSense,
+            RealizationId::LINUX_UHID_USB,
+            &indicators,
+        );
+    });
+    assert!(!other.iter().any(|(text, _)| text == "Speaker (planned)"));
+}

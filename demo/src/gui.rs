@@ -1301,6 +1301,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 
 #[derive(Clone, Default)]
 struct ReverseIndicators {
+    wii_player_leds: Option<[bool; 4]>,
     led: Option<[u8; 3]>,
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
@@ -1310,6 +1311,10 @@ struct ReverseIndicators {
     rumble_started: Option<Instant>,
 }
 impl ReverseIndicators {
+    fn apply_wii_outputs(&mut self, outputs: gr_curated_controllers::wii_remote::WiiRemoteOutputs) {
+        self.wii_player_leds = Some(outputs.leds);
+        self.set_rumble(outputs.rumble);
+    }
     fn rumble_pulse(&mut self) {
         self.rumble_until = Some(Instant::now() + Duration::from_millis(750));
     }
@@ -2182,9 +2187,7 @@ impl eframe::App for App {
                                                 ui.heading("Output");
                                             });
                                             ui.separator();
-                                            wide_card(ui, "Controller output", |ui| {
-                                                draw_feedback_rows(ui, &named.indicators);
-                                            });
+                                            draw_controller_output_cards(ui, named.kind, named.options.target, &named.indicators);
                                             if let Some((view, routing)) = audio_view.as_ref().zip(audio_routing.as_mut()).filter(|(_, routing)| routing.jack_connector.is_some() || !routing.outputs.is_empty())
                                             {
                                                 audio_routing_changed |= wide_card(ui, "Audio", |ui| {
@@ -2567,6 +2570,66 @@ fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
 
 fn format_gap(gap: Duration) -> String {
     format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
+}
+
+fn draw_controller_output_cards(
+    ui: &mut egui::Ui,
+    kind: Kind,
+    target: RealizationId,
+    indicators: &ReverseIndicators,
+) {
+    wide_card(ui, "Controller output", |ui| {
+        if kind == Kind::WiiRemote {
+            draw_wii_feedback_rows(ui, target, indicators);
+        } else {
+            draw_feedback_rows(ui, indicators);
+        }
+    });
+    if kind == Kind::WiiRemote {
+        wide_card(ui, "Speaker (planned)", |ui| {
+            ui.add_enabled_ui(false, |ui| {
+                egui::Grid::new("wii-planned-speaker")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        for label in ["State", "Format", "Volume", "Muted"] {
+                            ui.label(label);
+                            ui.label("—");
+                            ui.end_row();
+                        }
+                    });
+                ui.label("Audio plan phase A3");
+            });
+        });
+    }
+}
+fn draw_wii_feedback_rows(
+    ui: &mut egui::Ui,
+    target: RealizationId,
+    indicators: &ReverseIndicators,
+) {
+    ui.label("Player LEDs");
+    if target == RealizationId::LINUX_UHID_BLUETOOTH {
+        ui.horizontal_wrapped(|ui| {
+            for (index, mut active) in indicators
+                .wii_player_leds
+                .unwrap_or([false; 4])
+                .into_iter()
+                .enumerate()
+            {
+                ui.vertical(|ui| {
+                    ui.label(format!("Player {}", index + 1));
+                    let label = if active { "On" } else { "Off" };
+                    ui.add_enabled(false, egui::Checkbox::new(&mut active, label));
+                });
+            }
+        });
+    } else {
+        ui.label("Not exposed on Evdev / uinput");
+    }
+    ui.horizontal(|ui| {
+        ui.label("Rumble");
+        draw_rumble_contents(ui, indicators);
+    });
 }
 
 fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
