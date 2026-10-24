@@ -53,6 +53,43 @@ Gadget selection is disabled in this application demo. The compiled gadget
 profiles remain experimental research interfaces pending Gate G; a reachable
 broker socket does not establish request handling or controller support.
 
+## Wii Remote functional baseline
+
+Choose **Wii Remote**, then **Evdev / uinput** or **HID / UHID (Bluetooth)**.
+The Bluetooth target is a local UHID device with Bluetooth bus metadata, not
+radio pairing. **Advanced options** selects Original (default), Early integrated
+Plus or -TR; the state grid reports the actual revision. Early integrated Plus
+has no identity evidence and creation remains rejected by the controller package.
+
+The **Attachment** card selects None, Nunchuk or Classic, independently of the
+**MotionPlus bridge**. It reports the current topology. Classic Pro is exposed
+without conversion to Classic, but its identity has no evidence and the package
+rejects attachment. Rejected attachment and IR edits show an error in this card
+and a failed diagnostic entry; the previous accepted state remains usable.
+
+**Wii Remote buttons** follows the remote's printed arrangement; Power is disabled
+because it is not an input report. Accessory buttons, sticks and Classic analog
+triggers appear only with the corresponding attachment. **Hold** preserves inputs;
+turning it off releases them. Attachment transactions neutralize accessory inputs,
+and removed accessory UI holds do not return on reattachment.
+
+**Motion** injects remote accel (0–1023) and MotionPlus gyro (0–16383, neutral
+8192). Gyro is disabled with **needs MotionPlus** while detached. **Nunchuk
+motion** supplies accel only. These are raw simulated values, not physical
+calibration or resting measurements. **IR points** uses the shared touchpad
+controls with four contacts in 1024×768 coordinates: enable **Multitouch**, scroll
+the contact strip to select Contacts 1–4, use each contact's **Hold**, and use
+**Reset touchpad** to release all points. IR has no click/deflection actuation.
+Use an isolated consumer environment for touch experiments, as described below.
+
+On UHID Bluetooth, **Controller output** shows four host-controlled player LEDs
+and rumble from retained typed output snapshots. On uinput, rumble remains and
+LEDs read **Not exposed on Evdev / uinput**. **Speaker (planned)** is inert:
+State, Format, Volume and Muted are placeholders for audio plan phase A3. Muted
+is a host command, not an input button. This baseline adds no speaker behavior,
+provider/model changes, host permissions or physical acceptance claims. Visual
+refinement is deferred to a later GUI pass.
+
 ## Safe experiment order and next gates
 
 1. Begin with input-only neutral/buttons/sticks and typed output observation on

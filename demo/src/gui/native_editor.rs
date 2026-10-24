@@ -775,7 +775,7 @@ impl InputEditor for super::editor::WiiRemoteEditor {
     fn covers_extra_axis(&self, id: InputControlId) -> bool {
         ["accel.", "gyro.", "nunchuk.accel."]
             .iter()
-            .any(|prefix| id.as_str().starts_with(prefix))
+            .any(|prefix| wii_axis_index(id.as_str(), prefix).is_some())
     }
     fn motion_values(&self, id: InputControlId) -> Option<MotionValues> {
         match id.as_str() {

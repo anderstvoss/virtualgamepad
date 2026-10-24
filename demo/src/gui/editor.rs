@@ -179,6 +179,18 @@ impl Controller {
         }
     }
 }
+fn prepare_wii_input(
+    current: &gr_curated_controllers::wii_remote::WiiRemoteState,
+    event: &super::InputEvent,
+) -> Result<gr_curated_controllers::wii_remote::WiiRemoteState, String> {
+    let mut state = current.clone();
+    if super::native_editor::apply_wii_event(&mut state, event) {
+        Ok(state)
+    } else {
+        Err("input is unavailable in the retained Wii topology or outside its native range".into())
+    }
+}
+
 impl WiiRemoteEditor {
     fn queue_wii_edit(&mut self, edit: Edit) -> Result<(), String> {
         // A refused topology/IR edit leaves the existing batch serviceable.
@@ -191,10 +203,21 @@ impl WiiRemoteEditor {
         if !super::native_editor::apply_wii_event(&mut self.state, event) {
             return;
         }
-        let state = self.state.clone();
-        let _ = self.queue(Box::new(move |c| match c {
-            Controller::WiiRemote(c) => c.set_inputs(state).map_err(|e| e.to_string()),
-            _ => Err("Wii editor mismatch".into()),
+        let event = event.clone();
+        let feedback = self.feedback.clone();
+        let _ = self.queue(Box::new(move |c| {
+            let Controller::WiiRemote(c) = c else {
+                return Err("Wii editor mismatch".into());
+            };
+            // A preceding attach can fail after GUI preflight. Apply the event to
+            // the worker's retained topology, never an optimistic whole-state copy.
+            match prepare_wii_input(c.state(), &event) {
+                Ok(state) => c.set_inputs(state).map_err(|e| e.to_string()),
+                Err(error) => {
+                    record_wii_result(&feedback, "Input", &Err(error));
+                    Ok(())
+                }
+            }
         }));
     }
     fn attach_wii(
@@ -767,6 +790,44 @@ impl SwitchProEditor {
 mod tests {
     use super::*;
 
+    #[test]
+    fn w6_inputs_after_native_attach_failure_use_retained_topology() {
+        use gr_curated_controllers::wii_remote::{WiiRemoteButton, WiiRemoteState};
+        let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
+        else {
+            unreachable!()
+        };
+        editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        let accessory = super::super::InputEvent::Button {
+            id: virtualgamepad::InputControlId::new("nunchuk.c"),
+            pressed: true,
+        };
+        editor.edit_wii(&accessory);
+        assert!(
+            matches!(editor.state.extension(), gr_curated_controllers::wii_remote::WiiExtension::Nunchuk(n) if n.c)
+        );
+        // A worker attach failure retains the old state. A later accessory event
+        // cannot restore the optimistic shape; core events still work afterward.
+        let retained = WiiRemoteState::default();
+        assert!(prepare_wii_input(&retained, &accessory).is_err());
+        let core = super::super::InputEvent::Button {
+            id: virtualgamepad::InputControlId::new("a"),
+            pressed: true,
+        };
+        let pressed = prepare_wii_input(&retained, &core).unwrap();
+        assert!(pressed.pressed(WiiRemoteButton::A));
+        assert_eq!(pressed.extension(), retained.extension());
+        assert_eq!(pressed.motion_plus(), retained.motion_plus());
+        let released = prepare_wii_input(
+            &pressed,
+            &super::super::InputEvent::Button {
+                id: virtualgamepad::InputControlId::new("a"),
+                pressed: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(released, retained);
+    }
     #[test]
     fn w6_classic_pro_selection_round_trips_without_becoming_classic() {
         for choice in WiiExtensionChoice::ALL {
