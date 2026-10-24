@@ -3,6 +3,8 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+#[cfg(test)]
+mod wii_tests;
 use families::{Controller, Kind};
 mod host_audio;
 mod input_clusters;

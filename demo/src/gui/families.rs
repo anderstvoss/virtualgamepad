@@ -369,7 +369,7 @@ impl ControllerView {
         input_ui: &mut InputUiState,
     ) {
         if let Self::WiiRemote(editor) = self {
-            editor.draw_wii(ui);
+            editor.draw_wii(ui, controller_id);
         }
         input_clusters::draw_editor(ui, controller_id, self.input_editor(), input_ui);
     }

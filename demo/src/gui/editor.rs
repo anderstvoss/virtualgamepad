@@ -243,25 +243,55 @@ impl WiiRemoteEditor {
         }
         record_wii_result(&self.feedback, "IR", &result);
     }
-    pub(super) fn draw_wii(&mut self, ui: &mut super::egui::Ui) {
+    pub(super) fn wii_topology_name(&self) -> String {
+        let extension = WiiExtensionChoice::from_extension(self.state.extension());
+        let mut name = "Wii Remote".to_owned();
+        if self.state.motion_plus().attached {
+            name.push_str(" + MotionPlus");
+        }
+        if extension != WiiExtensionChoice::None {
+            name.push_str(" + ");
+            name.push_str(extension.label());
+        }
+        name
+    }
+    pub(super) fn draw_wii(
+        &mut self,
+        ui: &mut super::egui::Ui,
+        controller_id: u64,
+    ) -> super::egui::Rect {
         use gr_curated_controllers::wii_remote::WiiIrPoint;
-        let mut extension = WiiExtensionChoice::from_extension(self.state.extension());
-        let before = extension;
-        let mut mp = self.state.motion_plus().attached;
-        let old_mp = mp;
-        ui.horizontal(|ui| {
-            ui.label("Extension");
-            for choice in WiiExtensionChoice::ALL {
-                ui.selectable_value(&mut extension, choice, choice.label());
-            }
-            ui.checkbox(&mut mp, "MotionPlus");
-        });
-        if extension != before || mp != old_mp {
-            self.select_wii_attachment(extension, mp);
-        }
-        if let Some(error) = &self.feedback.lock().expect("editor feedback lock").error {
-            ui.colored_label(super::Color32::RED, error);
-        }
+        let row = super::input_clusters::horizontal_cards(
+            ui,
+            (controller_id, "attachment"),
+            false,
+            |ui| {
+                super::input_clusters::card(ui, "Attachment", |ui| {
+                    let mut extension = WiiExtensionChoice::from_extension(self.state.extension());
+                    let before = extension;
+                    let mut mp = self.state.motion_plus().attached;
+                    let old_mp = mp;
+                    ui.label("Extension");
+                    ui.horizontal_wrapped(|ui| {
+                        for choice in WiiExtensionChoice::ALL {
+                            ui.selectable_value(&mut extension, choice, choice.label());
+                        }
+                    });
+                    ui.checkbox(&mut mp, "MotionPlus bridge");
+                    if extension != before || mp != old_mp {
+                        self.select_wii_attachment(extension, mp);
+                    }
+                    ui.label(format!("Topology: {}", self.wii_topology_name()));
+                    if extension == WiiExtensionChoice::ClassicPro {
+                        ui.label("Classic Pro identity: No evidence");
+                    }
+                    if let Some(error) = &self.feedback.lock().expect("editor feedback lock").error
+                    {
+                        ui.colored_label(super::Color32::RED, error);
+                    }
+                });
+            },
+        );
         let mut points = *self.state.ir();
         let old = points;
         ui.collapsing("IR points", |ui| {
@@ -283,7 +313,7 @@ impl WiiRemoteEditor {
         if old != points {
             self.edit_wii_ir(points);
         }
-        ui.label("Source model: Classic Pro identity and physical calibration remain No evidence.");
+        row.inner_rect
     }
 }
 

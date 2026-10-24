@@ -22,6 +22,9 @@ pub(super) trait InputEditor {
     fn extra_axis(&self, _id: InputControlId) -> Option<(i32, i32)> {
         None
     }
+    fn handles_module(&self, _id: InputControlId) -> bool {
+        false
+    }
     fn apply_events(&mut self, events: Vec<InputEvent>);
 }
 
@@ -530,6 +533,9 @@ impl InputEditor for SwitchProEditor {
 }
 
 impl InputEditor for super::editor::WiiRemoteEditor {
+    fn handles_module(&self, id: InputControlId) -> bool {
+        matches!(id.as_str(), "nunchuk" | "classic" | "motion-plus")
+    }
     fn current_topology(&self) -> &'static InputTopology {
         self.state().input_topology()
     }

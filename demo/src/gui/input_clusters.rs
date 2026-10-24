@@ -2065,7 +2065,11 @@ pub(super) fn draw_editor(
             }
         });
     }
-    for module in topology.custom_modules() {
+    for module in topology
+        .custom_modules()
+        .iter()
+        .filter(|module| !editor.handles_module(module.id))
+    {
         ui.label(format!(
             "{}: custom module requires a declared native editor",
             module.title
