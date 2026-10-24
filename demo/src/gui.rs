@@ -3,6 +3,8 @@ mod audio_topology;
 mod editor;
 mod families;
 mod native_editor;
+#[cfg(test)]
+mod wii_tests;
 use families::{Controller, Kind};
 mod host_audio;
 mod input_clusters;
@@ -12,6 +14,7 @@ use editor::{
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use input_clusters::{InputEvent, InputUiState, InputValue, card};
 
+use gr_curated_controllers::wii_remote::WiiRemoteRevision;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -42,6 +45,7 @@ struct ControllerOptions {
     target: RealizationId,
     id: u64,
     audio: audio_lab::CreationAudio,
+    wii_revision: WiiRemoteRevision,
 }
 
 const OUTPUT_LOG_LIMIT: usize = 200;
@@ -206,12 +210,61 @@ struct AdvancedOptionsLayout {
     content_height: f32,
 }
 
+fn wii_revision_label(revision: WiiRemoteRevision) -> &'static str {
+    match revision {
+        WiiRemoteRevision::Original => "Original",
+        WiiRemoteRevision::EarlyIntegratedPlus => "Early integrated Plus",
+        WiiRemoteRevision::Tr => "-TR",
+        _ => "Unknown revision",
+    }
+}
+fn draw_wii_revision_selector(ui: &mut egui::Ui, kind: Kind, revision: &mut WiiRemoteRevision) {
+    if kind != Kind::WiiRemote {
+        return;
+    }
+    ui.strong("Wii revision");
+    egui::ComboBox::from_id_salt("wii-creation-revision")
+        .selected_text(wii_revision_label(*revision))
+        .show_ui(ui, |ui| {
+            for choice in [
+                WiiRemoteRevision::Original,
+                WiiRemoteRevision::EarlyIntegratedPlus,
+                WiiRemoteRevision::Tr,
+            ] {
+                ui.selectable_value(revision, choice, wii_revision_label(choice));
+            }
+        });
+    if !revision.has_identity_evidence() {
+        ui.label("Early integrated Plus: no identity evidence");
+    }
+}
+fn draw_wii_revision_state(ui: &mut egui::Ui, view: &ControllerView) {
+    if let ControllerView::WiiRemote(editor) = view {
+        ui.label("Revision");
+        ui.label(wii_revision_label(editor.state().revision()));
+        ui.end_row();
+    }
+}
+fn validate_wii_recreation(
+    kind: Kind,
+    revision: WiiRemoteRevision,
+) -> Result<(), virtualgamepad::ControllerError> {
+    if kind == Kind::WiiRemote && !revision.has_identity_evidence() {
+        Err(virtualgamepad::ControllerError::Open {
+            reason: "Wii revision/target lacks source-backed identity".into(),
+        })
+    } else {
+        Ok(())
+    }
+}
+
 fn draw_advanced_options(
     ui: &mut egui::Ui,
     next_controller_id: u64,
     target: RealizationId,
     kind: Kind,
     audio_creation: &mut audio_lab::CreationAudio,
+    wii_revision: &mut WiiRemoteRevision,
 ) -> AdvancedOptionsLayout {
     let max_height = advanced_options_max_height(
         ui.available_height(),
@@ -245,6 +298,7 @@ fn draw_advanced_options(
                                 bottom: 2,
                             }),
                     );
+                    draw_wii_revision_selector(ui, kind, wii_revision);
                     ui.strong("Audio configuration");
                     audio_lab::draw_creation(ui, audio_creation, target, kind.supports_audio());
                 })
@@ -1247,6 +1301,7 @@ fn spawn_service_worker_with_label<C: ServicedController + 'static>(
 
 #[derive(Clone, Default)]
 struct ReverseIndicators {
+    wii_player_leds: Option<[bool; 4]>,
     led: Option<[u8; 3]>,
     mute_led: Option<bool>,
     rumble_until: Option<Instant>,
@@ -1256,6 +1311,10 @@ struct ReverseIndicators {
     rumble_started: Option<Instant>,
 }
 impl ReverseIndicators {
+    fn apply_wii_outputs(&mut self, outputs: gr_curated_controllers::wii_remote::WiiRemoteOutputs) {
+        self.wii_player_leds = Some(outputs.leds);
+        self.set_rumble(outputs.rumble);
+    }
     fn rumble_pulse(&mut self) {
         self.rumble_until = Some(Instant::now() + Duration::from_millis(750));
     }
@@ -1314,6 +1373,7 @@ pub struct App {
     kind: Kind,
     target: RealizationId,
     audio_creation: audio_lab::CreationAudio,
+    wii_revision: WiiRemoteRevision,
     name_draft: String,
     create_count: u32,
     advanced_options_open: bool,
@@ -1335,6 +1395,7 @@ impl Default for App {
             kind: Kind::default(),
             target: audio_lab::default_creation_target(),
             audio_creation: audio_lab::CreationAudio::default(),
+            wii_revision: WiiRemoteRevision::Original,
             name_draft: String::new(),
             create_count: 1,
             advanced_options_open: false,
@@ -1513,6 +1574,7 @@ impl App {
             target: self.target,
             id: self.next_controller_id,
             audio: self.audio_creation,
+            wii_revision: self.wii_revision,
         };
         let result = self.kind.create(&options);
         match result {
@@ -1658,7 +1720,9 @@ impl eframe::App for App {
                         backend_healthy &= healthy;
                     }
                     if display.snapshot.is_some() && named.edits.observe(display.applied) {
-                        named.view = display.snapshot.take().expect("checked snapshot");
+                        let mut next = display.snapshot.take().expect("checked snapshot");
+                        next.preserve_editor_feedback(&named.view);
+                        named.view = next;
                     }
                 }
             }
@@ -1818,6 +1882,7 @@ impl eframe::App for App {
                                     self.target,
                                     self.kind,
                                     &mut self.audio_creation,
+                                    &mut self.wii_revision,
                                 )
                                 .panel_rect;
                             }
@@ -2122,9 +2187,7 @@ impl eframe::App for App {
                                                 ui.heading("Output");
                                             });
                                             ui.separator();
-                                            wide_card(ui, "Controller output", |ui| {
-                                                draw_feedback_rows(ui, &named.indicators);
-                                            });
+                                            draw_controller_output_cards(ui, named.kind, named.options.target, &named.indicators);
                                             if let Some((view, routing)) = audio_view.as_ref().zip(audio_routing.as_mut()).filter(|(_, routing)| routing.jack_connector.is_some() || !routing.outputs.is_empty())
                                             {
                                                 audio_routing_changed |= wide_card(ui, "Audio", |ui| {
@@ -2208,6 +2271,7 @@ impl eframe::App for App {
                                                     &mut named.input_ui,
                                                 );
                                             });
+                                            self.diagnostic_log.extend(named.view.take_diagnostics());
                                             if inputs_ready {
                                                 let result =
                                                     named.view.take_edits().and_then(|edits| {
@@ -2267,6 +2331,7 @@ impl eframe::App for App {
                 if let Err(error) = self
                     .audio_creation
                     .options(self.target, named.kind.supports_audio())
+                    .and_then(|_| validate_wii_recreation(named.kind, self.wii_revision))
                 {
                     self.diagnostic_log.push(DiagnosticLogEntry {
                         message: format!("Recreation rejected; original stays open: {error}"),
@@ -2316,6 +2381,7 @@ fn target_label(target: RealizationId) -> &'static str {
     match target {
         RealizationId::LINUX_UINPUT => "Evdev / uinput",
         RealizationId::LINUX_UHID_USB => "HID / UHID",
+        RealizationId::LINUX_UHID_BLUETOOTH => "HID / UHID (Bluetooth)",
         RealizationId::LINUX_USBIP_USB_AUDIO => "USB/IP / HID + Audio (WIP)",
         RealizationId::LINUX_DUMMY_HCD_USB_HID => "USB / dummy_hcd",
         _ => "Unknown target",
@@ -2366,6 +2432,7 @@ fn draw_controller_state(
                 ui.label("Type");
                 ui.label(controller.kind.label());
                 ui.end_row();
+                draw_wii_revision_state(ui, &controller.view);
             });
         ui.collapsing("Component association", |ui| {
             if let Some(association) = controller.view.association() {
@@ -2503,6 +2570,66 @@ fn boxed_metric_output(ui: &mut egui::Ui, value: impl std::fmt::Display) {
 
 fn format_gap(gap: Duration) -> String {
     format!("{:.2} ms", gap.as_secs_f64() * 1000.0)
+}
+
+fn draw_controller_output_cards(
+    ui: &mut egui::Ui,
+    kind: Kind,
+    target: RealizationId,
+    indicators: &ReverseIndicators,
+) {
+    wide_card(ui, "Controller output", |ui| {
+        if kind == Kind::WiiRemote {
+            draw_wii_feedback_rows(ui, target, indicators);
+        } else {
+            draw_feedback_rows(ui, indicators);
+        }
+    });
+    if kind == Kind::WiiRemote {
+        wide_card(ui, "Speaker (planned)", |ui| {
+            ui.add_enabled_ui(false, |ui| {
+                egui::Grid::new("wii-planned-speaker")
+                    .num_columns(2)
+                    .show(ui, |ui| {
+                        for label in ["State", "Format", "Volume", "Muted"] {
+                            ui.label(label);
+                            ui.label("—");
+                            ui.end_row();
+                        }
+                    });
+                ui.label("Audio plan phase A3");
+            });
+        });
+    }
+}
+fn draw_wii_feedback_rows(
+    ui: &mut egui::Ui,
+    target: RealizationId,
+    indicators: &ReverseIndicators,
+) {
+    ui.label("Player LEDs");
+    if target == RealizationId::LINUX_UHID_BLUETOOTH {
+        ui.horizontal_wrapped(|ui| {
+            for (index, mut active) in indicators
+                .wii_player_leds
+                .unwrap_or([false; 4])
+                .into_iter()
+                .enumerate()
+            {
+                ui.vertical(|ui| {
+                    ui.label(format!("Player {}", index + 1));
+                    let label = if active { "On" } else { "Off" };
+                    ui.add_enabled(false, egui::Checkbox::new(&mut active, label));
+                });
+            }
+        });
+    } else {
+        ui.label("Not exposed on Evdev / uinput");
+    }
+    ui.horizontal(|ui| {
+        ui.label("Rumble");
+        draw_rumble_contents(ui, indicators);
+    });
 }
 
 fn draw_feedback_rows(ui: &mut egui::Ui, indicators: &ReverseIndicators) {
@@ -3144,6 +3271,10 @@ mod tests {
     fn target_help_explains_each_provider_path_and_distinguishes_uhid() {
         assert_eq!(target_label(RealizationId::LINUX_UINPUT), "Evdev / uinput");
         assert_eq!(target_label(RealizationId::LINUX_UHID_USB), "HID / UHID");
+        assert_eq!(
+            target_label(RealizationId::LINUX_UHID_BLUETOOTH),
+            "HID / UHID (Bluetooth)"
+        );
         assert_eq!(
             target_label(RealizationId::LINUX_USBIP_USB_AUDIO),
             "USB/IP / HID + Audio (WIP)"
@@ -4141,6 +4272,7 @@ mod tests {
                                                 audio_lab::default_creation_target(),
                                                 Kind::DualSense,
                                                 &mut audio_creation,
+                                                &mut WiiRemoteRevision::Original,
                                             ));
                                             ui.add_sized(
                                                 [SIDEBAR_WIDTH, 1.0],

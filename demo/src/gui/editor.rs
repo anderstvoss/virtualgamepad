@@ -22,7 +22,76 @@ pub(super) struct Editor<S, T: 'static> {
     overflow: bool,
     diagnostics: Option<ControllerDiagnostics>,
     association: Option<virtualgamepad::ControllerAssociation>,
+    feedback: std::sync::Arc<std::sync::Mutex<EditorFeedback>>,
 }
+#[derive(Default)]
+struct EditorFeedback {
+    error: Option<String>,
+    diagnostics: Vec<super::DiagnosticLogEntry>,
+}
+
+fn record_wii_result(
+    feedback: &std::sync::Mutex<EditorFeedback>,
+    operation: &str,
+    result: &Result<(), String>,
+) {
+    let mut feedback = feedback.lock().expect("editor feedback lock");
+    feedback.error = result
+        .as_ref()
+        .err()
+        .map(|error| format!("{operation}: {error}"));
+    if let Some(message) = feedback.error.clone() {
+        if feedback.diagnostics.len() == EDIT_LIMIT {
+            feedback.diagnostics.remove(0);
+        }
+        feedback.diagnostics.push(super::DiagnosticLogEntry {
+            message,
+            success: false,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum WiiExtensionChoice {
+    None,
+    Nunchuk,
+    Classic,
+    ClassicPro,
+    Unknown,
+}
+impl WiiExtensionChoice {
+    pub(super) const ALL: [Self; 4] = [Self::None, Self::Nunchuk, Self::Classic, Self::ClassicPro];
+    pub(super) fn from_extension(value: &gr_curated_controllers::wii_remote::WiiExtension) -> Self {
+        use gr_curated_controllers::wii_remote::WiiExtension;
+        match value {
+            WiiExtension::None => Self::None,
+            WiiExtension::Nunchuk(_) => Self::Nunchuk,
+            WiiExtension::Classic(_) => Self::Classic,
+            WiiExtension::ClassicPro(_) => Self::ClassicPro,
+            _ => Self::Unknown,
+        }
+    }
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::None => "None",
+            Self::Nunchuk => "Nunchuk",
+            Self::Classic => "Classic",
+            Self::ClassicPro => "Classic Pro",
+            Self::Unknown => "Unknown extension",
+        }
+    }
+    fn extension(self) -> Result<gr_curated_controllers::wii_remote::WiiExtension, String> {
+        use gr_curated_controllers::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
+        Ok(match self {
+            Self::None => WiiExtension::None,
+            Self::Nunchuk => WiiExtension::Nunchuk(WiiNunchukState::default()),
+            Self::Classic => WiiExtension::Classic(WiiClassicState::default()),
+            Self::ClassicPro => WiiExtension::ClassicPro(WiiClassicState::default()),
+            Self::Unknown => return Err("extension requires a declared native editor".into()),
+        })
+    }
+}
+
 impl<S, T> Editor<S, T> {
     pub(super) fn state(&self) -> &S {
         &self.state
@@ -83,6 +152,7 @@ impl<S> Editor<S, Surface> {
             overflow: false,
             diagnostics,
             association,
+            feedback: std::sync::Arc::default(),
         }
     }
 }
@@ -109,15 +179,45 @@ impl Controller {
         }
     }
 }
+fn prepare_wii_input(
+    current: &gr_curated_controllers::wii_remote::WiiRemoteState,
+    event: &super::InputEvent,
+) -> Result<gr_curated_controllers::wii_remote::WiiRemoteState, String> {
+    let mut state = current.clone();
+    if super::native_editor::apply_wii_event(&mut state, event) {
+        Ok(state)
+    } else {
+        Err("input is unavailable in the retained Wii topology or outside its native range".into())
+    }
+}
+
 impl WiiRemoteEditor {
+    fn queue_wii_edit(&mut self, edit: Edit) -> Result<(), String> {
+        // A refused topology/IR edit leaves the existing batch serviceable.
+        if self.edits.len() == EDIT_LIMIT {
+            return Err("native edit batch exceeded its bound".into());
+        }
+        self.queue(edit)
+    }
     pub(super) fn edit_wii(&mut self, event: &super::InputEvent) {
         if !super::native_editor::apply_wii_event(&mut self.state, event) {
             return;
         }
-        let state = self.state.clone();
-        let _ = self.queue(Box::new(move |c| match c {
-            Controller::WiiRemote(c) => c.set_inputs(state).map_err(|e| e.to_string()),
-            _ => Err("Wii editor mismatch".into()),
+        let event = event.clone();
+        let feedback = self.feedback.clone();
+        let _ = self.queue(Box::new(move |c| {
+            let Controller::WiiRemote(c) = c else {
+                return Err("Wii editor mismatch".into());
+            };
+            // A preceding attach can fail after GUI preflight. Apply the event to
+            // the worker's retained topology, never an optimistic whole-state copy.
+            match prepare_wii_input(c.state(), &event) {
+                Ok(state) => c.set_inputs(state).map_err(|e| e.to_string()),
+                Err(error) => {
+                    record_wii_result(&feedback, "Input", &Err(error));
+                    Ok(())
+                }
+            }
         }));
     }
     fn attach_wii(
@@ -129,66 +229,117 @@ impl WiiRemoteEditor {
         candidate
             .set_attachment(value.clone(), mp)
             .map_err(|e| e.to_string())?;
-        self.queue(Box::new(move |c| match c {
-            Controller::WiiRemote(c) => c.attach(value, mp).map_err(|e| e.to_string()),
-            _ => Err("Wii editor mismatch".into()),
+        let feedback = self.feedback.clone();
+        self.queue_wii_edit(Box::new(move |c| {
+            let Controller::WiiRemote(c) = c else {
+                return Err("Wii editor mismatch".into());
+            };
+            let result = c.attach(value, mp).map_err(|error| error.to_string());
+            record_wii_result(&feedback, "Attachment", &result);
+            // Rejection is recoverable: native attachment owns rollback/neutralization.
+            Ok(())
         }))?;
         self.state = candidate;
         Ok(())
     }
-    pub(super) fn draw_wii(&mut self, ui: &mut super::egui::Ui) {
-        use gr_curated_controllers::wii_remote::{
-            WiiClassicState, WiiExtension, WiiIrPoint, WiiNunchukState,
-        };
-        let mut extension = match self.state.extension() {
-            WiiExtension::None => 0,
-            WiiExtension::Nunchuk(_) => 1,
-            _ => 2,
-        };
-        let before = extension;
-        let mut mp = self.state.motion_plus().attached;
-        let old_mp = mp;
-        ui.horizontal(|ui| {
-            ui.label("Extension");
-            ui.selectable_value(&mut extension, 0, "None");
-            ui.selectable_value(&mut extension, 1, "Nunchuk");
-            ui.selectable_value(&mut extension, 2, "Classic");
-            ui.checkbox(&mut mp, "MotionPlus");
-        });
-        if extension != before || mp != old_mp {
-            let value = match extension {
-                1 => WiiExtension::Nunchuk(WiiNunchukState::default()),
-                2 => WiiExtension::Classic(WiiClassicState::default()),
-                _ => WiiExtension::None,
-            };
-            let _ = self.attach_wii(value, mp);
-        }
-        let mut points = *self.state.ir();
-        let old = points;
-        ui.collapsing("IR points", |ui| {
-            for (i, point) in points.iter_mut().enumerate() {
-                let mut visible = point.is_some();
-                let (mut x, mut y) = point.map_or((0, 0), WiiIrPoint::coordinates);
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut visible, format!("Point {}", i + 1));
-                    ui.add(super::egui::DragValue::new(&mut x).range(0..=1023));
-                    ui.add(super::egui::DragValue::new(&mut y).range(0..=767));
-                });
-                *point = if visible {
-                    WiiIrPoint::new(x, y).ok()
-                } else {
-                    None
-                };
+    pub(super) fn select_wii_attachment(&mut self, choice: WiiExtensionChoice, bridge: bool) {
+        let result = choice
+            .extension()
+            .and_then(|extension| self.attach_wii(extension, bridge));
+        record_wii_result(&self.feedback, "Attachment", &result);
+    }
+    pub(super) fn edit_wii_contact(&mut self, contact: u8, point: Option<(u32, u32)>) {
+        use gr_curated_controllers::wii_remote::WiiIrPoint;
+        let result = (|| {
+            if usize::from(contact) >= self.state.ir().len() {
+                return Err("IR contact outside the four-point set".to_owned());
             }
-        });
-        if old != points {
-            self.state.set_ir(points);
-            let _ = self.queue(Box::new(move |c| match c {
-                Controller::WiiRemote(c) => c.set_ir(points).map_err(|e| e.to_string()),
-                _ => Err("Wii editor mismatch".into()),
-            }));
+            let point = point
+                .map(|(x, y)| {
+                    let (Ok(x), Ok(y)) = (u16::try_from(x), u16::try_from(y)) else {
+                        return Err(
+                            "IR point outside the source-backed coordinate domain".to_owned()
+                        );
+                    };
+                    WiiIrPoint::new(x, y).map_err(|error| error.to_string())
+                })
+                .transpose()?;
+            let mut points = *self.state.ir();
+            points[usize::from(contact)] = point;
+            Ok(points)
+        })();
+        match result {
+            Ok(points) => self.edit_wii_ir(points),
+            Err(error) => record_wii_result(&self.feedback, "IR", &Err(error)),
         }
-        ui.label("Source model: Classic Pro identity and physical calibration remain No evidence.");
+    }
+    pub(super) fn edit_wii_ir(
+        &mut self,
+        points: [Option<gr_curated_controllers::wii_remote::WiiIrPoint>; 4],
+    ) {
+        let feedback = self.feedback.clone();
+        let result = self.queue_wii_edit(Box::new(move |c| {
+            let Controller::WiiRemote(c) = c else {
+                return Err("Wii editor mismatch".into());
+            };
+            let result = c.set_ir(points).map_err(|error| error.to_string());
+            record_wii_result(&feedback, "IR", &result);
+            Ok(())
+        }));
+        if result.is_ok() {
+            self.state.set_ir(points);
+        }
+        record_wii_result(&self.feedback, "IR", &result);
+    }
+    pub(super) fn wii_topology_name(&self) -> String {
+        let extension = WiiExtensionChoice::from_extension(self.state.extension());
+        let mut name = "Wii Remote".to_owned();
+        if self.state.motion_plus().attached {
+            name.push_str(" + MotionPlus");
+        }
+        if extension != WiiExtensionChoice::None {
+            name.push_str(" + ");
+            name.push_str(extension.label());
+        }
+        name
+    }
+    pub(super) fn draw_wii(
+        &mut self,
+        ui: &mut super::egui::Ui,
+        controller_id: u64,
+    ) -> super::egui::Rect {
+        let row = super::input_clusters::horizontal_cards(
+            ui,
+            (controller_id, "attachment"),
+            false,
+            |ui| {
+                super::input_clusters::card(ui, "Attachment", |ui| {
+                    let mut extension = WiiExtensionChoice::from_extension(self.state.extension());
+                    let before = extension;
+                    let mut mp = self.state.motion_plus().attached;
+                    let old_mp = mp;
+                    ui.label("Extension");
+                    ui.horizontal_wrapped(|ui| {
+                        for choice in WiiExtensionChoice::ALL {
+                            ui.selectable_value(&mut extension, choice, choice.label());
+                        }
+                    });
+                    ui.checkbox(&mut mp, "MotionPlus bridge");
+                    if extension != before || mp != old_mp {
+                        self.select_wii_attachment(extension, mp);
+                    }
+                    ui.label(format!("Topology: {}", self.wii_topology_name()));
+                    if extension == WiiExtensionChoice::ClassicPro {
+                        ui.label("Classic Pro identity: No evidence");
+                    }
+                    if let Some(error) = &self.feedback.lock().expect("editor feedback lock").error
+                    {
+                        ui.colored_label(super::Color32::RED, error);
+                    }
+                });
+            },
+        );
+        row.inner_rect
     }
 }
 
@@ -220,7 +371,33 @@ pub(super) fn neutral_view(kind: super::Kind) -> ControllerView {
         }
     }
 }
+#[cfg(test)]
+pub(super) fn neutral_wii_view(revision: super::WiiRemoteRevision) -> ControllerView {
+    let ControllerView::WiiRemote(mut editor) = neutral_view(super::Kind::WiiRemote) else {
+        unreachable!()
+    };
+    editor.state = gr_curated_controllers::wii_remote::WiiRemoteState::new(revision);
+    ControllerView::WiiRemote(editor)
+}
 impl ControllerView {
+    pub(super) fn preserve_editor_feedback(&mut self, previous: &Self) {
+        if let (Self::WiiRemote(next), Self::WiiRemote(previous)) = (self, previous) {
+            next.feedback = previous.feedback.clone();
+        }
+    }
+    pub(super) fn take_diagnostics(&mut self) -> Vec<super::DiagnosticLogEntry> {
+        if let Self::WiiRemote(editor) = self {
+            std::mem::take(
+                &mut editor
+                    .feedback
+                    .lock()
+                    .expect("editor feedback lock")
+                    .diagnostics,
+            )
+        } else {
+            Vec::new()
+        }
+    }
     pub(super) fn association(&self) -> Option<&virtualgamepad::ControllerAssociation> {
         match self {
             Self::Xbox(c) => c.association.as_ref(),
@@ -614,6 +791,116 @@ mod tests {
     use super::*;
 
     #[test]
+    fn w6_inputs_after_native_attach_failure_use_retained_topology() {
+        use gr_curated_controllers::wii_remote::{WiiRemoteButton, WiiRemoteState};
+        let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
+        else {
+            unreachable!()
+        };
+        editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        let accessory = super::super::InputEvent::Button {
+            id: virtualgamepad::InputControlId::new("nunchuk.c"),
+            pressed: true,
+        };
+        editor.edit_wii(&accessory);
+        assert!(
+            matches!(editor.state.extension(), gr_curated_controllers::wii_remote::WiiExtension::Nunchuk(n) if n.c)
+        );
+        // A worker attach failure retains the old state. A later accessory event
+        // cannot restore the optimistic shape; core events still work afterward.
+        let retained = WiiRemoteState::default();
+        assert!(prepare_wii_input(&retained, &accessory).is_err());
+        let core = super::super::InputEvent::Button {
+            id: virtualgamepad::InputControlId::new("a"),
+            pressed: true,
+        };
+        let pressed = prepare_wii_input(&retained, &core).unwrap();
+        assert!(pressed.pressed(WiiRemoteButton::A));
+        assert_eq!(pressed.extension(), retained.extension());
+        assert_eq!(pressed.motion_plus(), retained.motion_plus());
+        let released = prepare_wii_input(
+            &pressed,
+            &super::super::InputEvent::Button {
+                id: virtualgamepad::InputControlId::new("a"),
+                pressed: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(released, retained);
+    }
+    #[test]
+    fn w6_classic_pro_selection_round_trips_without_becoming_classic() {
+        for choice in WiiExtensionChoice::ALL {
+            assert_eq!(
+                WiiExtensionChoice::from_extension(&choice.extension().unwrap()),
+                choice
+            );
+        }
+    }
+    #[test]
+    fn w6_rejected_attachment_keeps_selection_and_topology_and_logs_failure() {
+        let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
+        else {
+            unreachable!()
+        };
+        editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        let before = editor.state.clone();
+        let topology = editor.state.input_topology();
+        editor.select_wii_attachment(WiiExtensionChoice::ClassicPro, false);
+        assert_eq!(editor.state, before);
+        assert_eq!(editor.state.input_topology(), topology);
+        assert_eq!(
+            WiiExtensionChoice::from_extension(editor.state.extension()),
+            WiiExtensionChoice::Nunchuk
+        );
+        let feedback = editor.feedback.lock().unwrap();
+        assert!(feedback.error.as_ref().unwrap().contains("Attachment"));
+        assert_eq!(feedback.diagnostics.len(), 1);
+        assert!(!feedback.diagnostics[0].success);
+    }
+    #[test]
+    fn w6_full_batch_rejects_attachment_and_ir_without_poisoning_pending_edits() {
+        let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
+        else {
+            unreachable!()
+        };
+        for _ in 0..EDIT_LIMIT {
+            editor.queue(Box::new(|_| Ok(()))).unwrap();
+        }
+        let before = editor.state.clone();
+        editor.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        editor.edit_wii_ir([
+            Some(gr_curated_controllers::wii_remote::WiiIrPoint::new(12, 34).unwrap()),
+            None,
+            None,
+            None,
+        ]);
+        assert_eq!(editor.state, before);
+        assert_eq!(editor.take_edits().unwrap().len(), EDIT_LIMIT);
+        assert_eq!(editor.feedback.lock().unwrap().diagnostics.len(), 2);
+    }
+    #[test]
+    fn w6_native_rejection_survives_snapshot_and_diagnostic_drain() {
+        let mut old = neutral_view(super::super::Kind::WiiRemote);
+        let ControllerView::WiiRemote(editor) = &mut old else {
+            unreachable!()
+        };
+        record_wii_result(&editor.feedback, "IR", &Err("rejected".into()));
+        let mut next = neutral_view(super::super::Kind::WiiRemote);
+        next.preserve_editor_feedback(&old);
+        let diagnostics = next.take_diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert!(!diagnostics[0].success);
+        assert!(next.take_diagnostics().is_empty());
+        let ControllerView::WiiRemote(editor) = next else {
+            unreachable!()
+        };
+        assert_eq!(
+            editor.feedback.lock().unwrap().error.as_deref(),
+            Some("IR: rejected")
+        );
+    }
+    #[test]
     fn wii_attachment_projection_precedes_same_frame_native_edits() {
         use gr_curated_controllers::wii_remote::{WiiClassicState, WiiExtension, WiiNunchukState};
         let ControllerView::WiiRemote(mut editor) = neutral_view(super::super::Kind::WiiRemote)
@@ -661,6 +948,7 @@ mod tests {
             overflow: false,
             diagnostics: None,
             association: None,
+            feedback: std::sync::Arc::default(),
         };
         let original = editor.state.clone();
         for _ in 0..EDIT_LIMIT {

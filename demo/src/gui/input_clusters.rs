@@ -1,10 +1,13 @@
+use super::native_editor::{TouchpadSource, TouchpadView};
 use eframe::egui::{self, Button, Color32, Pos2, Sense, Stroke, Vec2};
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
+#[cfg(test)]
+use virtualgamepad::TouchpadInput;
 use virtualgamepad::{
     AuxiliaryButtonInput, DpadCluster, DpadDirection, DpadHoldBehavior, DpadPresentation,
     ExtraAxisInput, FaceButton, FaceButtonCluster, InputAxisRange, InputControlId, InputScale,
-    MotionInput, StickInput, TouchpadActuation, TouchpadInput, TriggerInputKind, TriggerStack,
+    StickInput, TouchpadActuation, TriggerInputKind, TriggerStack,
 };
 
 pub(super) const CARD_MAX_WIDTH: f32 = 240.0;
@@ -18,7 +21,7 @@ const TOUCHPAD_ACTION_WIDTH: f32 = 112.0;
 // This is a cap rather than a reserved height: a row remains as tall as its content and does
 // not grow when the window does. The current topology's tallest card fits inside this bound.
 const CLUSTER_ROW_MAX_HEIGHT: f32 = 320.0;
-const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
+pub(super) const AUXILIARY_HOLD: InputControlId = InputControlId::new("auxiliary-buttons");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InputValue {
@@ -154,7 +157,7 @@ impl InputUiState {
         }
     }
 
-    fn touchpad(&mut self, input: &TouchpadInput) -> &mut TouchpadState {
+    fn touchpad(&mut self, input: &impl TouchpadSource) -> &mut TouchpadState {
         let state = self.touchpads.entry(input.id()).or_default();
         state
             .contacts
@@ -361,6 +364,78 @@ pub(super) fn draw_auxiliary_buttons(
                     );
                 }
             });
+        },
+    );
+}
+
+pub(super) fn draw_placed_buttons(
+    ui: &mut egui::Ui,
+    group: &super::native_editor::PlacedButtonGroup,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
+    labeled_hold_card(
+        ui,
+        group.title,
+        "Hold",
+        group.hold_key,
+        state,
+        |ui, state, released| {
+            if released {
+                for id in group.buttons.iter().filter_map(|button| button.id) {
+                    release_latched_button(state, HoldKey::Control(id), || {
+                        events.push(InputEvent::Button { id, pressed: false });
+                    });
+                }
+            }
+            let rows = group
+                .buttons
+                .iter()
+                .map(|button| button.row)
+                .max()
+                .unwrap_or_default();
+            let columns = group
+                .buttons
+                .iter()
+                .map(|button| button.column)
+                .max()
+                .unwrap_or_default();
+            egui::Grid::new(group.hold_key.as_str())
+                .spacing([4.0, 3.0])
+                .show(ui, |ui| {
+                    for row in 0..=rows {
+                        for column in 0..=columns {
+                            if let Some(button) = group
+                                .buttons
+                                .iter()
+                                .find(|button| button.row == row && button.column == column)
+                            {
+                                if let Some(id) = button.id {
+                                    holdable_button(
+                                        ui,
+                                        group.hold_key,
+                                        HoldKey::Control(id),
+                                        button.label,
+                                        state,
+                                        |pressed| events.push(InputEvent::Button { id, pressed }),
+                                    );
+                                } else {
+                                    let response = ui.add_enabled(
+                                        false,
+                                        Button::new(button.label)
+                                            .min_size(Vec2::new(32.0, CONTROL_HEIGHT)),
+                                    );
+                                    if let Some(help) = button.help {
+                                        response.on_hover_text(help);
+                                    }
+                                }
+                            } else {
+                                ui.allocate_space(Vec2::new(32.0, CONTROL_HEIGHT));
+                            }
+                        }
+                        ui.end_row();
+                    }
+                });
         },
     );
 }
@@ -686,7 +761,7 @@ fn draw_touch_lockout_seconds(
 pub(super) fn draw_touchpad(
     ui: &mut egui::Ui,
     controller_id: u64,
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     current: &[Option<(u32, u32)>],
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
@@ -995,7 +1070,11 @@ pub(super) fn draw_touchpad(
     );
 }
 
-fn reset_touchpad(input: &TouchpadInput, state: &mut InputUiState, events: &mut Vec<InputEvent>) {
+fn reset_touchpad(
+    input: &impl TouchpadSource,
+    state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
+) {
     let touch_state = state.touchpad(input);
     for (index, contact) in touch_state.contacts.iter_mut().enumerate() {
         if contact.active {
@@ -1075,7 +1154,7 @@ fn touch_keyboard_command(
 }
 
 fn release_keyboard_contact(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     events: &mut Vec<InputEvent>,
@@ -1096,7 +1175,7 @@ fn release_keyboard_contact(
 }
 
 fn update_touch_keyboard(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     command: TouchKeyboardCommand,
@@ -1169,7 +1248,7 @@ fn update_touch_keyboard(
 }
 
 fn clear_touchpad_input(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
@@ -1210,7 +1289,7 @@ fn touchpad_lockout_expired(
 }
 
 fn configure_touchpad_lockout(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut InputUiState,
     enabled: bool,
     seconds: u32,
@@ -1240,7 +1319,7 @@ fn configure_touchpad_lockout(
 }
 
 fn normalize_touch_contacts(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     multitouch: bool,
     events: &mut Vec<InputEvent>,
@@ -1304,7 +1383,7 @@ fn touch_contact_color(index: usize, active: bool) -> Color32 {
 }
 
 fn emit_touch_move(
-    input: &TouchpadInput,
+    input: &impl TouchpadSource,
     state: &mut TouchpadState,
     selected: usize,
     point: (u32, u32),
@@ -1346,58 +1425,70 @@ fn clamp_touch_coordinate(value: i64, extent: u32) -> u32 {
 
 pub(super) fn draw_motion(
     ui: &mut egui::Ui,
-    input: &MotionInput,
+    input: &super::native_editor::MotionView,
     gyroscope: [i32; 3],
     accelerometer: [i32; 3],
     state: &mut InputUiState,
     events: &mut Vec<InputEvent>,
 ) {
-    hold_card(
-        ui,
-        input.title(),
-        input.id(),
-        state,
-        |ui, state, released| {
-            ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
+    hold_card(ui, input.title, input.id, state, |ui, state, released| {
+        ui.small("Simulated motion: Hold keeps values; otherwise release resets.")
                 .on_hover_text("The sliders inject virtual sensor values. Releasing a keyboard adjustment or leaving the slider resets momentary input to the demo's neutral value; this does not model a physical controller's resting sensor readings.");
-            let mut gyro = unscale_vector(gyroscope, input.gyroscope_scale());
-            let mut accel = unscale_vector(accelerometer, input.accelerometer_scale());
-            let mut changed = false;
-            let hold = state.held(input.id());
-            let mut interaction_finished = false;
-            for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
-                let response = ui.add(
-                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
+        let gyro_sensor = input.gyroscope.unwrap_or(input.accelerometer);
+        let mut gyro = unscale_vector(gyroscope, gyro_sensor.scale);
+        let mut accel = unscale_vector(accelerometer, input.accelerometer.scale);
+        let mut changed = false;
+        let hold = state.held(input.id);
+        let mut interaction_finished = false;
+        if let Some(sensor) = input.gyroscope {
+            if !sensor.enabled {
+                ui.label("needs MotionPlus");
+            }
+            ui.add_enabled_ui(sensor.enabled, |ui| {
+                for (label, value) in ["Gyro X", "Gyro Y", "Gyro Z"].into_iter().zip(&mut gyro) {
+                    let response = ui.add(
+                        egui::Slider::new(
+                            value,
+                            gyro_sensor.range.minimum..=gyro_sensor.range.maximum,
+                        )
                         .text(label),
-                );
-                changed |= response.changed();
-                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
-            }
-            for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
-                .into_iter()
-                .zip(&mut accel)
-            {
-                let response = ui.add(
-                    egui::Slider::new(value, input.range().minimum..=input.range().maximum)
-                        .text(label),
-                );
-                changed |= response.changed();
-                interaction_finished |= momentary_axis_interaction_finished(ui, &response);
-            }
-            if motion_should_neutralize(released, hold, interaction_finished) {
-                gyro = [input.range().neutral; 3];
-                accel = [input.range().neutral; 3];
-                changed = true;
-            }
-            if changed {
-                events.push(InputEvent::Motion {
-                    id: input.id(),
-                    gyroscope: scale_vector(gyro, input.gyroscope_scale(), input.range()),
-                    accelerometer: scale_vector(accel, input.accelerometer_scale(), input.range()),
-                });
-            }
-        },
-    );
+                    );
+                    changed |= response.changed();
+                    interaction_finished |= momentary_axis_interaction_finished(ui, &response);
+                }
+            });
+        }
+        for (label, value) in ["Accel X", "Accel Y", "Accel Z"]
+            .into_iter()
+            .zip(&mut accel)
+        {
+            let response = ui.add(
+                egui::Slider::new(
+                    value,
+                    input.accelerometer.range.minimum..=input.accelerometer.range.maximum,
+                )
+                .text(label),
+            );
+            changed |= response.changed();
+            interaction_finished |= momentary_axis_interaction_finished(ui, &response);
+        }
+        if motion_should_neutralize(released, hold, interaction_finished) {
+            gyro = [gyro_sensor.range.neutral; 3];
+            accel = [input.accelerometer.range.neutral; 3];
+            changed = true;
+        }
+        if changed {
+            events.push(InputEvent::Motion {
+                id: input.id,
+                gyroscope: scale_vector(gyro, gyro_sensor.scale, gyro_sensor.range),
+                accelerometer: scale_vector(
+                    accel,
+                    input.accelerometer.scale,
+                    input.accelerometer.range,
+                ),
+            });
+        }
+    });
 }
 
 fn momentary_axis_interaction_finished(ui: &egui::Ui, response: &egui::Response) -> bool {
@@ -1984,23 +2075,36 @@ fn unscale_vector(values: [i32; 3], scales: [InputScale; 3]) -> [i32; 3] {
     })
 }
 
-/// One layout for every native adapter. Fixed families supply their selected
-/// surface; a family with live attachments supplies its retained current shape.
-pub(super) fn draw_editor(
+fn draw_button_and_stick_groups(
     ui: &mut egui::Ui,
     controller_id: u64,
-    editor: &mut dyn super::native_editor::InputEditor,
+    editor: &dyn super::native_editor::InputEditor,
     state: &mut InputUiState,
+    events: &mut Vec<InputEvent>,
 ) {
     let topology = editor.current_topology();
-    state.reconcile_topology(topology);
-    let mut events = Vec::new();
-    draw_auxiliary_buttons(ui, topology.auxiliary_buttons(), state, &mut events);
-    if !topology.sticks().is_empty() {
-        horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
-            for stick in topology.sticks() {
+    let groups = editor.placed_button_groups();
+    let covered: HashSet<_> = groups
+        .iter()
+        .flat_map(|group| group.buttons.iter().filter_map(|button| button.id))
+        .collect();
+    let remaining: Vec<_> = topology
+        .auxiliary_buttons()
+        .iter()
+        .copied()
+        .filter(|button| !covered.contains(&button.id))
+        .collect();
+    draw_auxiliary_buttons(ui, &remaining, state, events);
+    for group in &groups {
+        horizontal_cards(ui, (controller_id, group.hold_key), false, |ui| {
+            draw_placed_buttons(ui, group, state, events);
+            for stick in topology
+                .sticks()
+                .iter()
+                .filter(|stick| group.beside_sticks.contains(&stick.id()))
+            {
                 if let Some(value) = editor.stick_value(stick.id()) {
-                    draw_stick(ui, stick, value, state, &mut events);
+                    draw_stick(ui, stick, value, state, events);
                 } else {
                     ui.label(format!(
                         "{}: native stick editor unavailable",
@@ -2010,6 +2114,44 @@ pub(super) fn draw_editor(
             }
         });
     }
+    let separate_sticks: Vec<_> = topology
+        .sticks()
+        .iter()
+        .filter(|stick| {
+            !groups
+                .iter()
+                .any(|group| group.beside_sticks.contains(&stick.id()))
+        })
+        .collect();
+    if !separate_sticks.is_empty() {
+        horizontal_cards(ui, (controller_id, "sticks"), false, |ui| {
+            for stick in &separate_sticks {
+                if let Some(value) = editor.stick_value(stick.id()) {
+                    draw_stick(ui, stick, value, state, events);
+                } else {
+                    ui.label(format!(
+                        "{}: native stick editor unavailable",
+                        stick.id().as_str()
+                    ));
+                }
+            }
+        });
+    }
+}
+
+/// One layout for every native adapter. Fixed families supply their selected
+/// surface; a family with live attachments supplies its retained current shape.
+pub(super) fn draw_editor(
+    ui: &mut egui::Ui,
+    controller_id: u64,
+    editor: &mut dyn super::native_editor::InputEditor,
+    state: &mut InputUiState,
+) {
+    let topology = editor.current_topology();
+    let touchpad_views = editor.touchpad_views();
+    state.reconcile_views(topology, &touchpad_views);
+    let mut events = Vec::new();
+    draw_button_and_stick_groups(ui, controller_id, editor, state, &mut events);
     if !topology.dpads().is_empty() || !topology.face_button_clusters().is_empty() {
         horizontal_cards(ui, (controller_id, "spatial"), false, |ui| {
             for dpad in topology.dpads() {
@@ -2028,23 +2170,24 @@ pub(super) fn draw_editor(
             }
         });
     }
-    if !topology.touchpads().is_empty() {
+    if !touchpad_views.is_empty() {
         horizontal_cards(ui, (controller_id, "touchpads"), true, |ui| {
-            for touchpad in topology.touchpads() {
+            for touchpad in &touchpad_views {
                 let current = editor.touch_points(touchpad.id());
                 draw_touchpad(ui, controller_id, touchpad, &current, state, &mut events);
             }
         });
     }
-    if !topology.motion().is_empty() {
+    let motion_views = editor.motion_views();
+    if !motion_views.is_empty() {
         horizontal_cards(ui, (controller_id, "motion"), false, |ui| {
-            for motion in topology.motion() {
-                if let Some((gyroscope, accelerometer)) = editor.motion_values(motion.id()) {
+            for motion in &motion_views {
+                if let Some((gyroscope, accelerometer)) = editor.motion_values(motion.id) {
                     draw_motion(ui, motion, gyroscope, accelerometer, state, &mut events);
                 } else {
                     ui.label(format!(
                         "{}: native motion editor unavailable",
-                        motion.id().as_str()
+                        motion.id.as_str()
                     ));
                 }
             }
@@ -2057,6 +2200,9 @@ pub(super) fn draw_editor(
                     ExtraAxisInput::OneDimensional { id, .. }
                     | ExtraAxisInput::TwoDimensional { id, .. } => *id,
                 };
+                if editor.covers_extra_axis(id) {
+                    continue;
+                }
                 if let Some(value) = editor.extra_axis(id) {
                     draw_extra_axis(ui, axis, value, &mut events);
                 } else {
@@ -2065,7 +2211,11 @@ pub(super) fn draw_editor(
             }
         });
     }
-    for module in topology.custom_modules() {
+    for module in topology
+        .custom_modules()
+        .iter()
+        .filter(|module| !editor.handles_module(module.id))
+    {
         ui.label(format!(
             "{}: custom module requires a declared native editor",
             module.title
@@ -2075,7 +2225,20 @@ pub(super) fn draw_editor(
 }
 
 impl InputUiState {
+    #[cfg(test)]
     fn reconcile_topology(&mut self, topology: &virtualgamepad::InputTopology) {
+        let views: Vec<_> = topology
+            .touchpads()
+            .iter()
+            .map(TouchpadView::from)
+            .collect();
+        self.reconcile_views(topology, &views);
+    }
+    fn reconcile_views(
+        &mut self,
+        topology: &virtualgamepad::InputTopology,
+        touchpads: &[TouchpadView],
+    ) {
         let mut ids = HashSet::from([AUXILIARY_HOLD]);
         for input in topology.auxiliary_buttons() {
             ids.insert(input.id);
@@ -2103,7 +2266,7 @@ impl InputUiState {
                 ids.insert(id);
             }
         }
-        for touchpad in topology.touchpads() {
+        for touchpad in touchpads {
             ids.insert(touchpad.id());
             match touchpad.actuation() {
                 TouchpadActuation::Button(button) => {
@@ -2142,7 +2305,7 @@ impl InputUiState {
         self.snapping_dpads
             .retain(|id, _| topology.dpads().iter().any(|d| d.id() == *id));
         self.touchpads
-            .retain(|id, _| topology.touchpads().iter().any(|t| t.id() == *id));
+            .retain(|id, _| touchpads.iter().any(|t| t.id() == *id));
     }
 }
 
@@ -3745,5 +3908,162 @@ mod face_width_tests {
         assert_eq!(face_cell_width(10.0, 300.0, 3), 40.0);
         assert_eq!(face_cell_width(200.0, 90.0, 3), 30.0);
         assert_eq!(face_cell_width(10.0, 0.0, 0), 24.0);
+    }
+}
+
+#[cfg(test)]
+mod wii_placed_button_tests {
+    use super::*;
+    use crate::gui::{
+        Kind,
+        editor::{self, ControllerView, WiiExtensionChoice},
+        native_editor::InputEditor,
+    };
+    #[test]
+    fn nunchuk_motion_hold_is_removed_but_remote_motion_hold_survives() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let mut ui = InputUiState::default();
+        let remote = InputControlId::new("accel.x");
+        let nunchuk = InputControlId::new("nunchuk.accel.x");
+        view.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        ui.set_hold(remote, true);
+        ui.set_hold(nunchuk, true);
+        ui.reconcile_topology(view.current_topology());
+        assert!(ui.held(remote) && ui.held(nunchuk));
+        view.select_wii_attachment(WiiExtensionChoice::None, false);
+        ui.reconcile_topology(view.current_topology());
+        assert!(ui.held(remote));
+        assert!(!ui.held(nunchuk));
+        view.select_wii_attachment(WiiExtensionChoice::Nunchuk, true);
+        ui.reconcile_topology(view.current_topology());
+        assert!(!ui.held(nunchuk));
+    }
+    #[test]
+    fn removed_accessory_holds_and_all_tail_buttons_stay_released_after_reattach() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let mut ui = InputUiState::default();
+        for choice in [WiiExtensionChoice::Classic, WiiExtensionChoice::Nunchuk] {
+            view.select_wii_attachment(choice, true);
+            ui.reconcile_topology(view.current_topology());
+            let groups = view.placed_button_groups();
+            let accessory = &groups[1];
+            ui.set_hold(accessory.hold_key, true);
+            let controls: Vec<_> = accessory
+                .buttons
+                .iter()
+                .filter_map(|button| button.id)
+                .rev()
+                .collect();
+            for id in &controls {
+                ui.latched_buttons.insert(HoldKey::Control(*id));
+                ui.momentary_buttons.insert(HoldKey::Control(*id));
+            }
+            ui.latched_buttons
+                .insert(HoldKey::Control(InputControlId::new("a")));
+            view.select_wii_attachment(WiiExtensionChoice::None, false);
+            ui.reconcile_topology(view.current_topology());
+            assert!(!ui.held(accessory.hold_key));
+            assert!(
+                controls
+                    .iter()
+                    .all(|id| !ui.latched_buttons.contains(&HoldKey::Control(*id))
+                        && !ui.momentary_buttons.contains(&HoldKey::Control(*id)))
+            );
+            assert!(
+                ui.latched_buttons
+                    .contains(&HoldKey::Control(InputControlId::new("a")))
+            );
+            view.select_wii_attachment(choice, true);
+            ui.reconcile_topology(view.current_topology());
+            assert!(!ui.held(accessory.hold_key));
+            assert!(
+                controls
+                    .iter()
+                    .all(|id| !ui.latched_buttons.contains(&HoldKey::Control(*id)))
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod wii_ir_lifecycle_tests {
+    use super::*;
+    use crate::gui::{
+        Kind,
+        editor::{self, ControllerView, WiiExtensionChoice},
+        native_editor::InputEditor,
+    };
+    #[test]
+    fn ir_holds_survive_accessory_changes_reset_and_cleanup_release_every_contact() {
+        let ControllerView::WiiRemote(mut view) = editor::neutral_view(Kind::WiiRemote) else {
+            unreachable!()
+        };
+        let input = view.touchpad_views()[0];
+        let mut state = InputUiState::default();
+        state.set_hold(input.id, true);
+        for (index, contact) in state.touchpad(&input).contacts.iter_mut().enumerate() {
+            *contact = TouchContactState {
+                active: true,
+                held: true,
+                x: 100,
+                y: u32::try_from(index).unwrap(),
+                ..Default::default()
+            };
+        }
+        for extension in [
+            WiiExtensionChoice::Classic,
+            WiiExtensionChoice::Nunchuk,
+            WiiExtensionChoice::None,
+        ] {
+            view.select_wii_attachment(extension, false);
+            state.reconcile_views(view.current_topology(), &view.touchpad_views());
+            assert!(state.held(input.id));
+            assert!(
+                state
+                    .touchpad(&input)
+                    .contacts
+                    .iter()
+                    .all(|contact| contact.active && contact.held)
+            );
+        }
+        let mut events = Vec::new();
+        clear_touchpad_input(&input, &mut state, &mut events);
+        assert_eq!(events.len(), 4);
+        view.apply_events(events);
+        assert_eq!(view.touch_points(input.id), vec![None; 4]);
+        assert!(!state.held(input.id));
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
+        // UI clear is idempotent; controller removal/shutdown discard every held contact.
+        state.release_all();
+        state.release_all();
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
+        state.set_hold(input.id, true);
+        state.reconcile_views(&virtualgamepad::InputTopology::EMPTY, &[]);
+        assert!(!state.held(input.id));
+        assert!(state.touchpads.is_empty());
+        state.reconcile_views(view.current_topology(), &view.touchpad_views());
+        assert!(
+            state
+                .touchpad(&input)
+                .contacts
+                .iter()
+                .all(|contact| !contact.active && !contact.held)
+        );
     }
 }
