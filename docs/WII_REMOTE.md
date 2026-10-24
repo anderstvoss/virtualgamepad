@@ -472,3 +472,10 @@ revision and requires the revision to be within the adopted pin's history;
 older valid declarations remain allowed. The new deterministic regression rejects
 a newer record referenced by an older declaration, an unknown revision and a
 revision beyond the adopted pin. Existing SDL cell bytes remain unchanged.
+
+The adopted research pin also includes the test-discovery repair in
+[#43](https://github.com/anderstvoss/controller-protocol-research/pull/43):
+`e5256908f56e57d9910bbc6ae1b283492d743483`. The corpus tests load the Cemu reducer
+relative to their source file, so parent-checkout discovery follows the same
+path as research-root discovery. The repair changes no evidence records or
+runtime helpers.
